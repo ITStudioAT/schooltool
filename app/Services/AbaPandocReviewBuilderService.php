@@ -1025,6 +1025,7 @@ class AbaPandocReviewBuilderService
             $submitter = trim((string) ($titlePageDetails['submitter'] ?? ''));
             $advisor = trim((string) ($titlePageDetails['advisor'] ?? ''));
             $class = trim((string) ($titlePageDetails['class'] ?? ''));
+            $schoolYear = trim((string) ($titlePageDetails['school_year'] ?? ''));
             $school = trim((string) ($titlePageDetails['school'] ?? ''));
             $schoolAddress = trim((string) ($titlePageDetails['school_address'] ?? ''));
             $schoolCity = trim((string) ($titlePageDetails['school_city'] ?? ''));
@@ -1054,6 +1055,9 @@ class AbaPandocReviewBuilderService
             if ($class !== '') {
                 $detailLines[] = 'Klasse: '.$class;
             }
+            if ($schoolYear !== '') {
+                $detailLines[] = 'Schuljahr: '.$schoolYear;
+            }
             $schoolDisplay = $schoolFull;
             if ($schoolDisplay === '') {
                 $schoolParts = array_values(array_filter([$school, $schoolAddress, $schoolCity], static fn (string $value): bool => $value !== ''));
@@ -1064,7 +1068,7 @@ class AbaPandocReviewBuilderService
             }
             $detailLines[] = 'Datum: '.($date !== '' ? $date : '--');
 
-            return array_values(array_slice($detailLines, 0, 8));
+            return array_values(array_slice($detailLines, 0, 10));
         }
 
         if ($specialAreaKey === 'figure_index') {
@@ -2151,6 +2155,7 @@ class AbaPandocReviewBuilderService
         $submitter = '';
         $advisor = '';
         $class = '';
+        $schoolYear = '';
         $school = '';
         $schoolAddress = '';
         $schoolCity = '';
@@ -2169,44 +2174,53 @@ class AbaPandocReviewBuilderService
                 continue;
             }
 
-            if ($submitter === '' && @preg_match('/^(verfasst von|vorgelegt von)$/iu', $text) === 1) {
-                for ($nextIndex = $index + 1; $nextIndex < $lineCount; $nextIndex++) {
-                    $next = trim((string) ($contentLines[$nextIndex]['text'] ?? ''));
-                    if ($next === '') {
-                        continue;
-                    }
-                    if ($this->isTitlePageMetadataHeaderLine($next)) {
-                        break;
-                    }
-                    $submitter = $next;
-
-                    break;
+            if ($submitter === '') {
+                $inlineSubmitter = $this->extractLabeledTitlePageValue(
+                    $text,
+                    '(?:verfasst von|vorgelegt von|verfasser(?:\*?in)?)'
+                );
+                if ($inlineSubmitter !== null) {
+                    $submitter = $inlineSubmitter;
+                }
+            }
+            if ($submitter === '' && @preg_match('/^(?:verfasst von|vorgelegt von|verfasser(?:\*?in)?)$/iu', $text) === 1) {
+                $nextSubmitter = $this->findNextTitlePageMetadataValue($contentLines, $index);
+                if ($nextSubmitter !== null) {
+                    $submitter = $nextSubmitter;
                 }
             }
             if ($submitter === '' && @preg_match('/^\s*von\s+(.+)$/iu', $text, $submitterMatch) === 1) {
                 $submitter = trim((string) ($submitterMatch[1] ?? ''));
             }
 
-            if ($advisor === '' && @preg_match('/\b(?:betreuer|betreut von)\b\s*[:\-]?\s*(.+)$/iu', $text, $advisorMatch) === 1) {
-                $advisor = trim((string) ($advisorMatch[1] ?? ''));
+            if ($advisor === '') {
+                $inlineAdvisor = $this->extractLabeledTitlePageValue(
+                    $text,
+                    '(?:betreuer(?:\*?in)?|betreut von)'
+                );
+                if ($inlineAdvisor !== null) {
+                    $advisor = $inlineAdvisor;
+                }
             }
-            if ($advisor === '' && @preg_match('/^(betreuer|betreut von)$/iu', $text) === 1) {
-                for ($nextIndex = $index + 1; $nextIndex < $lineCount; $nextIndex++) {
-                    $next = trim((string) ($contentLines[$nextIndex]['text'] ?? ''));
-                    if ($next === '') {
-                        continue;
-                    }
-                    if ($this->isTitlePageMetadataHeaderLine($next)) {
-                        break;
-                    }
-                    $advisor = $next;
-
-                    break;
+            if ($advisor === '' && @preg_match('/^(?:betreuer(?:\*?in)?|betreut von)$/iu', $text) === 1) {
+                $nextAdvisor = $this->findNextTitlePageMetadataValue($contentLines, $index);
+                if ($nextAdvisor !== null) {
+                    $advisor = $nextAdvisor;
                 }
             }
 
-            if ($class === '' && @preg_match('/\bklasse\b\s*[:\-]?\s*([a-z0-9\-\/]+)/iu', $text, $classMatch) === 1) {
-                $class = trim((string) ($classMatch[1] ?? ''));
+            if ($class === '') {
+                $inlineClass = $this->extractLabeledTitlePageValue($text, 'klasse');
+                if ($inlineClass !== null) {
+                    $class = trim((string) preg_replace('/\s+/u', ' ', $inlineClass));
+                }
+            }
+
+            if ($schoolYear === '') {
+                $detectedSchoolYear = $this->extractSchoolYearFromTitlePageLine($text);
+                if ($detectedSchoolYear !== null) {
+                    $schoolYear = $detectedSchoolYear;
+                }
             }
 
             if ($date === '') {
@@ -2246,6 +2260,7 @@ class AbaPandocReviewBuilderService
             'submitter' => $submitter !== '' ? $submitter : null,
             'advisor' => $advisor !== '' ? $advisor : null,
             'class' => $class !== '' ? $class : null,
+            'school_year' => $schoolYear !== '' ? $schoolYear : null,
             'school' => $school !== '' ? $school : null,
             'school_address' => $schoolAddress !== '' ? $schoolAddress : null,
             'school_city' => $schoolCity !== '' ? $schoolCity : null,
@@ -2371,6 +2386,53 @@ class AbaPandocReviewBuilderService
         return @preg_match('/^(verfasst von|vorgelegt von|verfasser(?:\*?in)?\b|betreuer(?:\*?in)?\b|betreut von\b|klasse\b|schuljahr\b|ort,?\s*datum\b|datum\b|unterschrift\b|titel\b|thema\b)/iu', trim($text)) === 1;
     }
 
+    private function extractLabeledTitlePageValue(string $text, string $labelPattern): ?string
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($normalized === '') {
+            return null;
+        }
+
+        $regex = '/\b'.$labelPattern.'\b\s*[:\-]?\s*(.+)$/iu';
+        if (@preg_match($regex, $normalized, $matches) !== 1) {
+            return null;
+        }
+
+        $value = trim((string) ($matches[1] ?? ''));
+        if ($value === '' || $this->isTitlePageMetadataHeaderLine($value)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<int, array{order:int,text:string}>  $contentLines
+     */
+    private function findNextTitlePageMetadataValue(array $contentLines, int $currentIndex): ?string
+    {
+        $lineCount = count($contentLines);
+        for ($nextIndex = $currentIndex + 1; $nextIndex < $lineCount; $nextIndex++) {
+            $nextText = trim((string) ($contentLines[$nextIndex]['text'] ?? ''));
+            if ($nextText === '' || $this->isLikelyTitlePageArtifactText($nextText)) {
+                continue;
+            }
+            if ($this->isTitlePageMetadataHeaderLine($nextText)) {
+                break;
+            }
+            if ($this->isLikelyTitlePageSchoolLine($nextText) || $this->isLikelyAddressLine($nextText) || $this->isLikelyPostalCityLine($nextText)) {
+                break;
+            }
+            if ($this->extractDateFromTitlePageLine($nextText) !== null) {
+                break;
+            }
+
+            return $nextText;
+        }
+
+        return null;
+    }
+
     private function isLikelyAddressLine(string $text): bool
     {
         $trimmed = trim($text);
@@ -2397,6 +2459,9 @@ class AbaPandocReviewBuilderService
     {
         $candidate = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
         if ($candidate === '') {
+            return null;
+        }
+        if (@preg_match('/\bschuljahr\b/iu', $candidate) === 1) {
             return null;
         }
 
@@ -2426,6 +2491,29 @@ class AbaPandocReviewBuilderService
         return null;
     }
 
+    private function extractSchoolYearFromTitlePageLine(string $text): ?string
+    {
+        $candidate = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (@preg_match('/\bschuljahr\b\s*[:\-]?\s*(.+)$/iu', $candidate, $matches) === 1) {
+            $tail = trim((string) ($matches[1] ?? ''));
+            if ($tail === '') {
+                return null;
+            }
+            if (@preg_match('/\b((?:19|20)\d{2}\s*(?:\/|-)\s*(?:\d{2}|\d{4}))\b/u', $tail, $rangeMatch) === 1) {
+                return trim((string) preg_replace('/\s+/u', '', (string) ($rangeMatch[1] ?? '')));
+            }
+            if (@preg_match('/\b((?:19|20)\d{2})\b/u', $tail, $yearMatch) === 1) {
+                return trim((string) ($yearMatch[1] ?? ''));
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @param  array<int, array{order:int,text:string,is_heading_candidate:bool}>  $titleCandidates
      * @return array{title:string|null,subtitle:string|null,document_type:string|null}
@@ -2433,15 +2521,12 @@ class AbaPandocReviewBuilderService
     private function extractTitlePageStructuredHeading(array $titleCandidates): array
     {
         $scoredCandidates = [];
-        $documentType = '';
+        $documentTypeCandidates = [];
 
         foreach ($titleCandidates as $candidate) {
             $text = trim((string) ($candidate['text'] ?? ''));
             if ($text === '' || $this->isLikelyTitlePageArtifactText($text)) {
                 continue;
-            }
-            if ($documentType === '') {
-                $documentType = $this->extractDocumentTypeFromLine($text) ?? '';
             }
             if ($this->isTitlePageMetadataHeaderLine($text)) {
                 continue;
@@ -2459,40 +2544,89 @@ class AbaPandocReviewBuilderService
                 continue;
             }
 
+            $order = (int) ($candidate['order'] ?? 0);
+            $isHeadingCandidate = (bool) ($candidate['is_heading_candidate'] ?? false);
+            $split = $this->splitTitleLineAndInlineDocumentType($text);
+            $candidateText = trim((string) ($split['title'] ?? $text));
+            $inlineDocumentType = trim((string) ($split['document_type'] ?? ''));
+            if ($inlineDocumentType !== '') {
+                $this->collectTitlePageDocumentTypeCandidate($documentTypeCandidates, $inlineDocumentType, $order, 90);
+            }
+
+            $detectedDocumentType = $this->extractDocumentTypeFromLine($text);
+            if ($detectedDocumentType !== null) {
+                $priority = $this->isDedicatedDocumentTypeLine($text) ? 120 : 70;
+                $this->collectTitlePageDocumentTypeCandidate($documentTypeCandidates, $detectedDocumentType, $order, $priority);
+            }
+
+            if ($candidateText === '') {
+                continue;
+            }
+            if ($this->isDedicatedDocumentTypeLine($text) && $this->sectionCompareKey($candidateText) === $this->sectionCompareKey($text)) {
+                continue;
+            }
+
+            $score = $this->scoreTitleLineCandidate($candidateText, $isHeadingCandidate);
+            if ($inlineDocumentType !== '') {
+                $score += 8;
+            }
             $scoredCandidates[] = [
-                'text' => $text,
-                'order' => (int) ($candidate['order'] ?? 0),
-                'is_heading_candidate' => (bool) ($candidate['is_heading_candidate'] ?? false),
-                'score' => $this->scoreTitleLineCandidate($text, (bool) ($candidate['is_heading_candidate'] ?? false)),
+                'text' => $candidateText,
+                'order' => $order,
+                'is_heading_candidate' => $isHeadingCandidate,
+                'score' => $score,
             ];
         }
 
+        if ($scoredCandidates === []) {
+            usort(
+                $documentTypeCandidates,
+                static fn (array $left, array $right): int => ((int) ($right['priority'] ?? 0)) <=> ((int) ($left['priority'] ?? 0))
+                    ?: ((int) ($left['order'] ?? PHP_INT_MAX) <=> (int) ($right['order'] ?? PHP_INT_MAX))
+            );
+            $documentType = trim((string) ($documentTypeCandidates[0]['value'] ?? ''));
+
+            return [
+                'title' => null,
+                'subtitle' => null,
+                'document_type' => $documentType !== '' ? $documentType : null,
+            ];
+        }
+
+        $sortedByScore = $scoredCandidates;
         usort(
-            $scoredCandidates,
+            $sortedByScore,
             static fn (array $left, array $right): int => ((int) ($right['score'] ?? 0)) <=> ((int) ($left['score'] ?? 0))
                 ?: ((int) ($left['order'] ?? PHP_INT_MAX) <=> (int) ($right['order'] ?? PHP_INT_MAX))
         );
 
-        $title = trim((string) ($scoredCandidates[0]['text'] ?? ''));
-        $subtitle = '';
+        $headingCandidates = array_values(array_filter(
+            $scoredCandidates,
+            static fn (array $candidate): bool => (bool) ($candidate['is_heading_candidate'] ?? false)
+        ));
+        usort($headingCandidates, static fn (array $left, array $right): int => ((int) ($left['order'] ?? PHP_INT_MAX)) <=> ((int) ($right['order'] ?? PHP_INT_MAX)));
 
-        if ($title !== '' && str_contains($title, '|')) {
-            $parts = array_values(array_filter(array_map('trim', explode('|', $title)), static fn (string $value): bool => $value !== ''));
-            if ($parts !== []) {
-                $left = trim((string) ($parts[0] ?? ''));
-                $right = trim((string) ($parts[count($parts) - 1] ?? ''));
-                $rightType = $this->extractDocumentTypeFromLine($right);
-                if ($rightType !== null && $documentType === '') {
-                    $documentType = $rightType;
-                }
-                if ($rightType !== null && $left !== '') {
-                    $title = $left;
-                }
+        $selectedTitleCandidate = null;
+        foreach ($headingCandidates as $headingCandidate) {
+            if ((int) ($headingCandidate['score'] ?? 0) < 8) {
+                continue;
             }
+            $selectedTitleCandidate = $headingCandidate;
+            break;
+        }
+        if (! is_array($selectedTitleCandidate)) {
+            $selectedTitleCandidate = $sortedByScore[0];
         }
 
+        $title = trim((string) ($selectedTitleCandidate['text'] ?? ''));
         $titleKey = $this->sectionCompareKey($title);
-        foreach (array_slice($scoredCandidates, 1) as $candidate) {
+        $titleOrder = (int) ($selectedTitleCandidate['order'] ?? 0);
+        $subtitle = '';
+
+        $candidatesByOrder = $scoredCandidates;
+        usort($candidatesByOrder, static fn (array $left, array $right): int => ((int) ($left['order'] ?? PHP_INT_MAX)) <=> ((int) ($right['order'] ?? PHP_INT_MAX)));
+
+        foreach ($candidatesByOrder as $candidate) {
             $candidateText = trim((string) ($candidate['text'] ?? ''));
             if ($candidateText === '') {
                 continue;
@@ -2500,25 +2634,127 @@ class AbaPandocReviewBuilderService
             if ($this->sectionCompareKey($candidateText) === $titleKey) {
                 continue;
             }
-            if ($this->isLikelyTitlePageSchoolLine($candidateText)) {
+            if ((int) ($candidate['order'] ?? 0) < $titleOrder) {
                 continue;
             }
             if ($this->looksLikeDocumentTypeLine($candidateText)) {
-                if ($documentType === '') {
-                    $documentType = trim($candidateText);
-                }
-
+                continue;
+            }
+            if ((int) ($candidate['score'] ?? 0) < 8 && mb_strlen($candidateText) < 18) {
                 continue;
             }
             $subtitle = $candidateText;
             break;
         }
 
+        usort(
+            $documentTypeCandidates,
+            static fn (array $left, array $right): int => ((int) ($right['priority'] ?? 0)) <=> ((int) ($left['priority'] ?? 0))
+                ?: ((int) ($left['order'] ?? PHP_INT_MAX) <=> (int) ($right['order'] ?? PHP_INT_MAX))
+        );
+        $documentType = trim((string) ($documentTypeCandidates[0]['value'] ?? ''));
+
         return [
             'title' => $title !== '' ? $title : null,
             'subtitle' => $subtitle !== '' ? $subtitle : null,
             'document_type' => $documentType !== '' ? $documentType : null,
         ];
+    }
+
+    /**
+     * @return array{title:string,document_type:string|null}
+     */
+    private function splitTitleLineAndInlineDocumentType(string $text): array
+    {
+        $trimmed = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($trimmed === '') {
+            return ['title' => '', 'document_type' => null];
+        }
+        if (! str_contains($trimmed, '|')) {
+            return ['title' => $trimmed, 'document_type' => null];
+        }
+
+        $parts = array_values(array_filter(array_map(
+            static fn (string $part): string => trim($part),
+            explode('|', $trimmed)
+        ), static fn (string $part): bool => $part !== ''));
+        if (count($parts) < 2) {
+            return ['title' => $trimmed, 'document_type' => null];
+        }
+
+        $right = trim((string) ($parts[count($parts) - 1] ?? ''));
+        $rightDocumentType = $this->extractDocumentTypeFromLine($right);
+        if ($rightDocumentType === null) {
+            return ['title' => $trimmed, 'document_type' => null];
+        }
+
+        $leftParts = array_slice($parts, 0, -1);
+        $left = trim(implode(' | ', $leftParts));
+
+        return [
+            'title' => $left !== '' ? $left : $trimmed,
+            'document_type' => $rightDocumentType,
+        ];
+    }
+
+    /**
+     * @param  array<int, array{value:string,order:int,priority:int}>  $documentTypeCandidates
+     */
+    private function collectTitlePageDocumentTypeCandidate(array &$documentTypeCandidates, string $value, int $order, int $priority): void
+    {
+        $normalizedValue = trim((string) preg_replace('/\s+/u', ' ', trim($value)));
+        if ($normalizedValue === '') {
+            return;
+        }
+
+        $newEntry = [
+            'value' => $normalizedValue,
+            'order' => $order > 0 ? $order : PHP_INT_MAX,
+            'priority' => $priority,
+        ];
+        $newKey = $this->sectionCompareKey($normalizedValue);
+
+        foreach ($documentTypeCandidates as $index => $existing) {
+            $existingKey = $this->sectionCompareKey((string) ($existing['value'] ?? ''));
+            if ($existingKey === '' || $newKey === '' || $existingKey !== $newKey) {
+                continue;
+            }
+
+            $existingPriority = (int) ($existing['priority'] ?? 0);
+            $existingOrder = (int) ($existing['order'] ?? PHP_INT_MAX);
+            if (
+                $newEntry['priority'] > $existingPriority
+                || ($newEntry['priority'] === $existingPriority && $newEntry['order'] < $existingOrder)
+            ) {
+                $documentTypeCandidates[$index] = $newEntry;
+            }
+
+            return;
+        }
+
+        $documentTypeCandidates[] = $newEntry;
+    }
+
+    private function isDedicatedDocumentTypeLine(string $text): bool
+    {
+        $trimmed = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($trimmed === '') {
+            return false;
+        }
+
+        $detectedType = $this->extractDocumentTypeFromLine($trimmed);
+        if ($detectedType === null) {
+            return false;
+        }
+
+        if ($this->sectionCompareKey($trimmed) === $this->sectionCompareKey($detectedType)) {
+            return true;
+        }
+        if (@preg_match('/^(?:dokumenttyp|arbeitsart|arbeit)\b\s*[:\-]\s*/iu', $trimmed) === 1) {
+            return true;
+        }
+
+        return false;
     }
 
     private function scoreTitleLineCandidate(string $text, bool $isHeadingCandidate): int
@@ -2570,7 +2806,7 @@ class AbaPandocReviewBuilderService
             return null;
         }
 
-        $keywordPattern = '/\b(abschlie(?:ss|ß)ende arbeit|dokumentation|doku|vorwissenschaftliche arbeit|diplomarbeit|fachbereichsarbeit|seminararbeit|projektarbeit)\b/iu';
+        $keywordPattern = '/\b(abschlie(?:ss|ß)ende arbeit|dokumentation|doku|vorwissenschaftliche arbeit|diplomarbeit|fachbereichsarbeit|seminararbeit|projektarbeit|aba)\b/iu';
         if (@preg_match($keywordPattern, $trimmed) !== 1) {
             return null;
         }
@@ -2590,7 +2826,7 @@ class AbaPandocReviewBuilderService
             return $trimmed;
         }
 
-        if (@preg_match('/\b(abschlie(?:ss|ß)ende arbeit|vorwissenschaftliche arbeit|diplomarbeit|fachbereichsarbeit|seminararbeit|projektarbeit)\b/iu', $trimmed, $matches) === 1) {
+        if (@preg_match('/\b(abschlie(?:ss|ß)ende arbeit|vorwissenschaftliche arbeit|diplomarbeit|fachbereichsarbeit|seminararbeit|projektarbeit|aba)\b/iu', $trimmed, $matches) === 1) {
             return trim((string) ($matches[1] ?? ''));
         }
 
@@ -2604,6 +2840,9 @@ class AbaPandocReviewBuilderService
             return false;
         }
         if ($this->isTitlePageMetadataHeaderLine($trimmed)) {
+            return false;
+        }
+        if ($this->looksLikeDocumentTypeLine($trimmed)) {
             return false;
         }
 

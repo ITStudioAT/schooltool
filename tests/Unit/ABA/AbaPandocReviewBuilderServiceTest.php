@@ -447,14 +447,73 @@ test('builds a single titlepage section from fragmented titlepage candidates and
     $titleSection = $titlePageSections[0] ?? null;
 
     expect($titlePageSections)->toHaveCount(1)
-        ->and($titlePageDetails['title'] ?? null)->toContain('Eine Dokumentation über den einzigen südkoreanischen Regisseur')
-        ->and($titlePageDetails['document_type'] ?? null)->toBe('DOKU')
+        ->and($titlePageDetails['title'] ?? null)->toBe('WER IST BONG JOON-HO?')
+        ->and($titlePageDetails['subtitle'] ?? null)->toContain('Eine Dokumentation über den einzigen südkoreanischen Regisseur')
+        ->and($titlePageDetails['document_type'] ?? null)->toBe('Abschließende Arbeit')
         ->and($titlePageDetails['advisor'] ?? null)->toBe('Dipl.-Ing. Günther Kron')
         ->and($titlePageDetails['school_full'] ?? null)->toBe('Christian-Doppler-Gymnasium, Franz Josef-Kai 41, 5020 Salzburg')
         ->and($titlePageDetails['date'] ?? null)->toBe('Februar 2026')
         ->and($titleSection)->toBeArray()
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Titel: WER IST BONG JOON-HO?')
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Untertitel: Eine Dokumentation über den einzigen südkoreanischen Regisseur mit einem Oscar')
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Dokumenttyp: Abschließende Arbeit')
         ->and($titleSection['detail_lines'] ?? [])->toContain('Datum: Februar 2026')
         ->and($titleSection['detail_lines'] ?? [])->toContain('Betreuer: Dipl.-Ing. Günther Kron');
+});
+
+test('extracts schoolyear separately from date on titlepage metadata', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Die Rolle der Fotografie in sozialen Medien',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 2,
+            'plain_text' => 'Schuljahr: 2025/26',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 3,
+            'plain_text' => 'Verfasser*in: Sandra Banu',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => 'Betreuer*in: Dipl.-Ing. Günther Kron',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $titlePageDetails = is_array($review['title_page_details'] ?? null) ? $review['title_page_details'] : [];
+    $specialSections = is_array($review['special_sections'] ?? null) ? $review['special_sections'] : [];
+    $titleSection = collect($specialSections)->first(fn (array $item): bool => ($item['special_area_key'] ?? null) === 'titlepage');
+
+    expect($titlePageDetails['school_year'] ?? null)->toBe('2025/26')
+        ->and($titlePageDetails['date'] ?? null)->toBeNull()
+        ->and($titlePageDetails['submitter'] ?? null)->toBe('Sandra Banu')
+        ->and($titlePageDetails['advisor'] ?? null)->toBe('Dipl.-Ing. Günther Kron')
+        ->and($titleSection)->toBeArray()
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Schuljahr: 2025/26')
+        ->and($titleSection['detail_lines'] ?? [])->toContain('Datum: --');
 });
 
 test('normalizes numbering and compare keys for tightly glued chapter headings', function () {
