@@ -6,6 +6,12 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
+            <div class="d-flex align-center ga-2 mb-3">
+                <v-btn-toggle v-model="sortMode" mandatory density="compact" color="primary">
+                    <v-btn value="class_last_name" size="small">Klasse, Name</v-btn>
+                    <v-btn value="last_name_first_name" size="small">Name</v-btn>
+                </v-btn-toggle>
+            </div>
             <v-alert v-if="!students.length" type="info" variant="tonal">
                 Keine Schüler:innen im Kurs vorhanden.
             </v-alert>
@@ -20,8 +26,8 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="row in rows" :key="`performance-row-${row.student_id}`">
-                            <td class="student-cell">{{ row.student_label }}</td>
+                        <tr v-for="row in rows" :key="`performance-row-${row.student_id}`" :class="{ 'performance-row--canceled': row.is_canceled }">
+                            <td class="student-cell" :class="{ 'student-cell--canceled': row.is_canceled }">{{ row.student_label }}</td>
                             <td v-for="column in typeColumns" :key="`performance-cell-${row.student_id}-${column.type}`">
                                 <div v-if="row.byType[column.type]?.length" class="performance-items">
                                     <div v-for="(item, index) in row.byType[column.type]" :key="`item-${row.student_id}-${column.type}-${index}`" class="performance-item">
@@ -73,6 +79,7 @@ export default {
             entryStore: null,
             courseWorkStore: null,
             teachingStore: null,
+            sortMode: 'class_last_name',
         }
     },
     async beforeMount() {
@@ -92,20 +99,10 @@ export default {
             return list
                 .filter((student) => !!student?.id)
                 .sort((a, b) => {
-                    const classCompare = String(a?.schoolclass || a?.class || '').localeCompare(String(b?.schoolclass || b?.class || ''), 'de', {
-                        numeric: true,
-                        sensitivity: 'base',
-                    })
-                    if (classCompare !== 0) {
-                        return classCompare
-                    }
-
-                    const lastNameCompare = String(a?.last_name || '').localeCompare(String(b?.last_name || ''), 'de', { sensitivity: 'base' })
-                    if (lastNameCompare !== 0) {
-                        return lastNameCompare
-                    }
-
-                    return String(a?.first_name || '').localeCompare(String(b?.first_name || ''), 'de', { sensitivity: 'base' })
+                    const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                    const canceledB = this.isStudentCanceled(b) ? 1 : 0
+                    if (canceledA !== canceledB) return canceledA - canceledB
+                    return this.compareStudentsBySort(a, b)
                 })
         },
         studentsById() {
@@ -235,6 +232,7 @@ export default {
                 return {
                     student_id: studentId,
                     student_label: this.studentLabelWithClass(student),
+                    is_canceled: this.isStudentCanceled(student),
                     byType: grouped[studentId] || {},
                 }
             })
@@ -249,6 +247,27 @@ export default {
         },
     },
     methods: {
+        isStudentCanceled(student) {
+            return !!student?.canceled_at || !!student?.deleted_at
+        },
+        compareStudentsBySort(a, b) {
+            const lastA = String(a?.last_name || '')
+            const lastB = String(b?.last_name || '')
+            const firstA = String(a?.first_name || '')
+            const firstB = String(b?.first_name || '')
+            const classA = String(a?.schoolclass || a?.class || '')
+            const classB = String(b?.schoolclass || b?.class || '')
+            if (this.sortMode === 'last_name_first_name') {
+                const cmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (cmp !== 0) return cmp
+                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            }
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+        },
         async loadDataForSelectedCourse() {
             if (!this.selectedCourse?.id || !this.entryStore || !this.courseWorkStore) {
                 return
@@ -391,5 +410,18 @@ export default {
 .performance-item {
     white-space: normal;
     word-break: break-word;
+}
+
+.student-cell--canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.performance-row--canceled td {
+    opacity: 0.6;
+}
+
+.performance-row--canceled .student-cell--canceled {
+    opacity: 0.75;
 }
 </style>

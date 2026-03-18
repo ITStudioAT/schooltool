@@ -6,6 +6,12 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
+            <div class="d-flex align-center ga-2 mb-3">
+                <v-btn-toggle v-model="sortMode" mandatory density="compact" color="primary">
+                    <v-btn value="class_last_name" size="small">Klasse, Name</v-btn>
+                    <v-btn value="last_name_first_name" size="small">Name</v-btn>
+                </v-btn-toggle>
+            </div>
             <v-alert v-if="!students.length" type="info" variant="tonal">
                 Keine Schüler:innen im Kurs vorhanden.
             </v-alert>
@@ -27,9 +33,9 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="student in students" :key="student.id">
+                        <tr v-for="student in students" :key="student.id" :class="{ 'attendance-row--canceled': isStudentCanceled(student) }">
                             <th class="sticky-col">
-                                <div class="attendance-student-name">
+                                <div class="attendance-student-name" :class="{ 'attendance-student-name--canceled': isStudentCanceled(student) }">
                                     {{ student.last_name }}, {{ student.first_name }}
                                 </div>
                                 <div class="attendance-student-class">
@@ -78,17 +84,21 @@ export default {
             default: null,
         },
     },
+    data() {
+        return {
+            sortMode: 'class_last_name',
+        }
+    },
     computed: {
         students() {
             const list = Array.isArray(this.selectedCourse?.students_info) ? [...this.selectedCourse.students_info] : []
             return list
                 .filter((student) => student?.id)
                 .sort((a, b) => {
-                    const lastNameCompare = String(a?.last_name || '').localeCompare(String(b?.last_name || ''), 'de', { sensitivity: 'base' })
-                    if (lastNameCompare !== 0) {
-                        return lastNameCompare
-                    }
-                    return String(a?.first_name || '').localeCompare(String(b?.first_name || ''), 'de', { sensitivity: 'base' })
+                    const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                    const canceledB = this.isStudentCanceled(b) ? 1 : 0
+                    if (canceledA !== canceledB) return canceledA - canceledB
+                    return this.compareStudentsBySort(a, b)
                 })
         },
         studentIdOrder() {
@@ -150,6 +160,27 @@ export default {
         },
     },
     methods: {
+        isStudentCanceled(student) {
+            return !!student?.canceled_at || !!student?.deleted_at
+        },
+        compareStudentsBySort(a, b) {
+            const lastA = String(a?.last_name || '')
+            const lastB = String(b?.last_name || '')
+            const firstA = String(a?.first_name || '')
+            const firstB = String(b?.first_name || '')
+            const classA = String(a?.schoolclass || a?.class || '')
+            const classB = String(b?.schoolclass || b?.class || '')
+            if (this.sortMode === 'last_name_first_name') {
+                const cmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (cmp !== 0) return cmp
+                return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+            }
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+        },
         normalizeDateKey(date) {
             if (!date) {
                 return ''
@@ -472,5 +503,15 @@ thead .attendance-percent-sticky {
 .attendance-free-marker {
     font-weight: 400;
     font-size: 0.86rem;
+}
+
+.attendance-student-name--canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.attendance-row--canceled td,
+.attendance-row--canceled th {
+    opacity: 0.6;
 }
 </style>

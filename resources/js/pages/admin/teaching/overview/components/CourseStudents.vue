@@ -497,8 +497,13 @@ export default {
             const selectedDate = this.selected_courseDate
             const selectedCourse = this.selected_course
             if (!selectedDate?.id || !selectedCourse?.id) return null
-            const exists = (selectedCourse.course_dates || []).some((d) => String(d?.id) === String(selectedDate.id))
-            return exists ? selectedDate : null
+            const courseDates = selectedCourse.course_dates || []
+            // If course_dates is populated, validate membership; otherwise trust selected_courseDate
+            if (courseDates.length) {
+                const exists = courseDates.some((d) => String(d?.id) === String(selectedDate.id))
+                return exists ? selectedDate : null
+            }
+            return selectedDate
         },
         selectedCourseDateKey() {
             return this.normalizeDateKey(this.selectedCourseDateForCourse?.date)
@@ -618,15 +623,15 @@ export default {
                     if (this.selected_courseDate?.id) {
                         const dates = Array.isArray(course.course_dates) ? [...course.course_dates] : []
                         const idx = dates.findIndex((d) => String(d?.id) === String(this.selected_courseDate.id))
-                        if (idx === -1) {
-                            this.selected_courseDate = null
-                        } else {
+                        if (idx !== -1) {
                             const fresh = dates[idx] || null
                             this.selected_courseDate = fresh
                             if (fresh) {
                                 this.syncPresenceMapFromDate(fresh)
                             }
                         }
+                        // If not found in course_dates, keep the existing selected_courseDate —
+                        // course_dates may not be fully loaded yet (URL restoration timing)
                     }
                 } else {
                     this.behaviourEntryStore.courseEntries = []

@@ -130,7 +130,6 @@ export const useCourseDateStore = defineStore('AdminCourseDateStore', {
 
         clearDates() {
             this.courseDates = []
-            this.selected_courseDate = null
         },
     },
 })
