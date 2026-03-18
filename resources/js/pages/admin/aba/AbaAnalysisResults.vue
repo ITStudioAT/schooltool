@@ -112,7 +112,7 @@
                 </ItsGridBox>
             </v-col>
 
-            <v-col cols="12" :lg="leftColumnVisible ? 8 : 12">
+            <v-col cols="12" :lg="leftColumnVisible ? 8 : 12" class="d-flex flex-column">
                 <ItsGridBox
                     v-if="visibleCards.dokumentpruefung"
                     class="mb-3"
@@ -163,7 +163,7 @@
 
                 <ItsGridBox
                     v-if="visibleCards.kapitel"
-                    class="results-structure-card"
+                    class="results-structure-card mt-3 order-local-structure"
                     variant="overview"
                     color="primary"
                     title="Erkannte Kapitel / Abschnitte (lokal)"
@@ -267,7 +267,7 @@
 
                 <ItsGridBox
                     v-if="visibleCards.kapitel"
-                    class="results-structure-card mt-3"
+                    class="results-structure-card order-pandoc-structure"
                     variant="overview"
                     color="primary"
                     title="Erkannte Kapitel / Abschnitte (Pandoc)"
@@ -302,36 +302,13 @@
                                             <span>{{ pandocNodeDisplayTitle(root) }}</span>
                                             <v-chip size="x-small" color="teal" variant="tonal">{{ root.type_label }}</v-chip>
                                             <v-chip
-                                                v-if="!isPandocUiContainerNode(root)"
-                                                size="x-small"
-                                                :color="sectionMatchStatusColor(pandocNodeMatchStatus(root))"
-                                                variant="tonal">
-                                                {{ sectionMatchStatusLabel(pandocNodeMatchStatus(root)) }}
-                                            </v-chip>
-                                            <v-chip
                                                 v-if="!isPandocUiContainerNode(root) && String(root.confidence || '').trim() !== ''"
                                                 size="x-small"
                                                 :color="confidenceColorByValue(root.confidence)"
                                                 variant="tonal">
-                                                {{ String(root.confidence || 'low').toUpperCase() }}
-                                            </v-chip>
-                                            <v-chip
-                                                v-if="!isPandocUiContainerNode(root) && String(root.strategy || '').trim() !== ''"
-                                                size="x-small"
-                                                color="deep-purple"
-                                                variant="tonal">
-                                                {{ root.strategy || 'heuristic' }}
+                                                {{ confidenceLabelGerman(root.confidence) }}
                                             </v-chip>
                                             <v-chip v-if="root.position_label" size="x-small" color="grey" variant="outlined">{{ root.position_label }}</v-chip>
-                                            <v-chip
-                                                v-if="root.content_scope && !isPandocUiContainerNode(root)"
-                                                size="x-small"
-                                                color="blue-grey"
-                                                variant="outlined">
-                                                {{ root.content_scope === 'own_content_only' ? 'nur Eigenteil' : 'inkl. Kinder' }}
-                                            </v-chip>
-                                            <v-chip v-if="!isPandocUiContainerNode(root) && !root.is_usable_heading" size="x-small" color="red" variant="tonal">unsicher</v-chip>
-                                            <v-chip v-if="!isPandocUiContainerNode(root) && String(root.type || '').toLowerCase() !== 'figure'" size="x-small" color="grey" variant="outlined">{{ pandocHeadingLevelLabel(root.heading_level) }}</v-chip>
                                         </div>
                                         <v-chip size="x-small" color="primary" variant="tonal" class="chapter-panel-title__meta">
                                             {{ pandocDescendantCount(root) }} Unter-Datensätze
@@ -340,14 +317,16 @@
                                 </v-expansion-panel-title>
                                 <v-expansion-panel-text>
                                     <div v-if="root.detail_lines && root.detail_lines.length > 0" class="review-item__subtext mb-2">
-                                        <div v-for="(line, lineIndex) in root.detail_lines.slice(0, 8)" :key="`pandoc-root-${root.id}-detail-${lineIndex}`">
-                                            {{ line }}
+                                        <div v-for="(line, lineIndex) in root.detail_lines.slice(0, 8)" :key="`pandoc-root-${root.id}-detail-${lineIndex}`" class="detail-line">
+                                            <template v-if="line.includes(':')">
+                                                <span class="detail-line__label">{{ line.substring(0, line.indexOf(':') + 1) }}</span>{{ line.substring(line.indexOf(':') + 1) }}
+                                            </template>
+                                            <template v-else>{{ line }}</template>
                                         </div>
                                     </div>
 
-                                    <div v-if="pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length > 0" class="review-item__subtext mb-2">
-                                        <div class="text-caption font-weight-medium mb-1">Textinhalt</div>
-                                        <div class="pandoc-content-block">
+                                    <div v-if="shouldShowPandocRootContent(root) && pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length > 0" class="review-item__subtext mb-2">
+                                        <div class="pandoc-content-block pandoc-root-content-block">
                                             <div
                                                 v-for="(line, lineIndex) in pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root))"
                                                 :key="`pandoc-root-${root.id}-content-${lineIndex}`"
@@ -376,7 +355,7 @@
                                     </div>
 
                                     <v-alert
-                                        v-if="pandocDescendantRows(root).length === 0 && pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length === 0"
+                                        v-if="(!root.children || root.children.length === 0) && (!root.detail_lines || root.detail_lines.length === 0)"
                                         type="info"
                                         variant="tonal"
                                         density="compact"
@@ -384,50 +363,76 @@
                                         Keine Unterstruktur erkannt.
                                     </v-alert>
 
-                                    <div v-else class="review-list">
-                                        <v-sheet
-                                            v-for="child in pandocDescendantRows(root)"
-                                            :key="`pandoc-desc-${root.id}-${child.id}`"
-                                            class="review-item pa-2"
-                                            rounded="lg"
-                                            :style="pandocHierarchyIndentStyle(child.depth)">
-                                            <div class="review-item__chips">
-                                                <v-chip size="x-small" color="teal" variant="tonal">{{ child.type_label }}</v-chip>
-                                                <v-chip v-if="String(child.type || '').toLowerCase() !== 'figure'" size="x-small" color="grey" variant="outlined">{{ pandocHeadingLevelLabel(child.heading_level) }}</v-chip>
-                                                <v-chip size="x-small" :color="sectionMatchStatusColor(pandocNodeMatchStatus(child))" variant="tonal">
-                                                    {{ sectionMatchStatusLabel(pandocNodeMatchStatus(child)) }}
-                                                </v-chip>
-                                                <v-chip size="x-small" :color="confidenceColorByValue(child.confidence)" variant="tonal">
-                                                    {{ String(child.confidence || 'low').toUpperCase() }}
-                                                </v-chip>
-                                                <v-chip size="x-small" color="deep-purple" variant="tonal">{{ child.strategy || 'heuristic' }}</v-chip>
-                                                <v-chip v-if="child.position_label" size="x-small" color="grey" variant="outlined">{{ child.position_label }}</v-chip>
-                                                <v-chip
-                                                    v-if="child.content_scope"
-                                                    size="x-small"
-                                                    color="blue-grey"
-                                                    variant="outlined">
-                                                    {{ child.content_scope === 'own_content_only' ? 'nur Eigenteil' : 'inkl. Kinder' }}
-                                                </v-chip>
-                                                <v-chip v-if="!child.is_usable_heading" size="x-small" color="red" variant="tonal">unsicher</v-chip>
-                                            </div>
-                                            <div class="review-item__text" :class="pandocNodeTitleClasses(child)">{{ pandocNodeDisplayTitle(child) }}</div>
-                                            <div v-if="child.caption" class="review-item__subtext mt-1">{{ child.caption }}</div>
-                                            <div v-if="pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true })).length > 0" class="review-item__subtext mt-1">
-                                                <div class="pandoc-content-block">
-                                                    <div
-                                                        v-for="(line, lineIndex) in pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true }))"
-                                                        :key="`pandoc-desc-${root.id}-${child.id}-content-${lineIndex}`"
-                                                        class="pandoc-content-line"
-                                                        :class="`pandoc-content-line--${line.kind}`"
-                                                        :style="pandocContentLineStyle(line)">
-                                                        <span class="pandoc-content-line__text">{{ line.text }}</span>
-                                                        <span v-if="line.page" class="pandoc-content-line__page">{{ line.page }}</span>
+                                    <v-expansion-panels
+                                        v-else
+                                        v-model="openPandocChildPanels"
+                                        multiple
+                                        variant="accordion"
+                                        class="pandoc-child-panels">
+                                        <v-expansion-panel
+                                            v-for="child in root.children"
+                                            :key="`pandoc-child-${root.id}-${child.id}`"
+                                            :value="child.id"
+                                            elevation="0">
+                                            <v-expansion-panel-title density="compact" class="pandoc-child-panel-title">
+                                                <span class="pandoc-child-title-text review-item__text" :class="pandocNodeTitleClasses(child)">{{ pandocNodeDisplayTitle(child) }}</span>
+                                                <div class="review-item__chips ml-2">
+                                                    <v-chip size="x-small" color="teal" variant="tonal">{{ child.type_label }}</v-chip>
+                                                    <v-chip size="x-small" :color="confidenceColorByValue(child.confidence)" variant="tonal">
+                                                        {{ confidenceLabelGerman(child.confidence) }}
+                                                    </v-chip>
+                                                    <v-chip v-if="child.position_label" size="x-small" color="grey" variant="outlined">{{ child.position_label }}</v-chip>
+                                                </div>
+                                            </v-expansion-panel-title>
+                                            <v-expansion-panel-text class="pandoc-child-panel-text">
+                                                <div v-if="child.caption" class="review-item__subtext mb-2">{{ child.caption }}</div>
+                                                <div v-if="pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true })).length > 0" class="review-item__subtext mb-2">
+                                                    <div class="pandoc-content-block">
+                                                        <div
+                                                            v-for="(line, lineIndex) in pandocNodeDisplayLines(child, pandocNodeDisplayLineLimit(child, { descendant: true }))"
+                                                            :key="`pandoc-child-${root.id}-${child.id}-content-${lineIndex}`"
+                                                            class="pandoc-content-line"
+                                                            :class="`pandoc-content-line--${line.kind}`"
+                                                            :style="pandocContentLineStyle(line)">
+                                                            <span class="pandoc-content-line__text">{{ line.text }}</span>
+                                                            <span v-if="line.page" class="pandoc-content-line__page">{{ line.page }}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        </v-sheet>
-                                    </div>
+                                                <div v-if="pandocDescendantRows(child).length > 0" class="review-list">
+                                                    <v-sheet
+                                                        v-for="desc in pandocDescendantRows(child)"
+                                                        :key="`pandoc-desc-${root.id}-${child.id}-${desc.id}`"
+                                                        class="review-item pa-2"
+                                                        rounded="lg"
+                                                        :style="pandocHierarchyIndentStyle(desc.depth)">
+                                                        <div class="review-item__chips">
+                                                            <v-chip size="x-small" color="teal" variant="tonal">{{ desc.type_label }}</v-chip>
+                                                            <v-chip size="x-small" :color="confidenceColorByValue(desc.confidence)" variant="tonal">
+                                                                {{ confidenceLabelGerman(desc.confidence) }}
+                                                            </v-chip>
+                                                            <v-chip v-if="desc.position_label" size="x-small" color="grey" variant="outlined">{{ desc.position_label }}</v-chip>
+                                                        </div>
+                                                        <div class="review-item__text" :class="pandocNodeTitleClasses(desc)">{{ pandocNodeDisplayTitle(desc) }}</div>
+                                                        <div v-if="desc.caption" class="review-item__subtext mt-1">{{ desc.caption }}</div>
+                                                        <div v-if="pandocNodeDisplayLines(desc, pandocNodeDisplayLineLimit(desc, { descendant: true })).length > 0" class="review-item__subtext mt-1">
+                                                            <div class="pandoc-content-block">
+                                                                <div
+                                                                    v-for="(line, lineIndex) in pandocNodeDisplayLines(desc, pandocNodeDisplayLineLimit(desc, { descendant: true }))"
+                                                                    :key="`pandoc-desc2-${root.id}-${child.id}-${desc.id}-content-${lineIndex}`"
+                                                                    class="pandoc-content-line"
+                                                                    :class="`pandoc-content-line--${line.kind}`"
+                                                                    :style="pandocContentLineStyle(line)">
+                                                                    <span class="pandoc-content-line__text">{{ line.text }}</span>
+                                                                    <span v-if="line.page" class="pandoc-content-line__page">{{ line.page }}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </v-sheet>
+                                                </div>
+                                            </v-expansion-panel-text>
+                                        </v-expansion-panel>
+                                    </v-expansion-panels>
                                 </v-expansion-panel-text>
                             </v-expansion-panel>
                         </v-expansion-panels>
@@ -804,6 +809,7 @@ export default {
             pollInFlight: false,
             openChapterPanels: [],
             openPandocSectionPanels: [],
+            openPandocChildPanels: [],
         }
     },
 
@@ -4408,6 +4414,19 @@ export default {
 
             return text === 'inhaltsverzeichnis'
         },
+        isPandocTitlepageNode(node) {
+            const semantic = String(node?.semantic_type || node?.area || '').trim().toLowerCase()
+            const type = String(node?.type || '').trim().toLowerCase()
+            const zone = String(node?.zone_context || '').trim().toLowerCase()
+            return semantic === 'titlepage'
+                || semantic === 'title_page'
+                || type === 'titlepage'
+                || type === 'title_page'
+                || zone === 'title_page'
+        },
+        shouldShowPandocRootContent(node) {
+            return !this.isPandocTitlepageNode(node)
+        },
         isPandocUiContainerNode(node) {
             const rootKind = String(node?.root_kind || '').trim().toLowerCase()
             const semantic = String(node?.semantic_type || '').trim().toLowerCase()
@@ -5226,6 +5245,16 @@ export default {
 
             return 'red'
         },
+        confidenceLabelGerman(confidence) {
+            if (confidence === 'high') {
+                return 'hoch'
+            }
+            if (confidence === 'medium') {
+                return 'mittel'
+            }
+
+            return 'niedrig'
+        },
     },
 }
 </script>
@@ -5432,6 +5461,35 @@ export default {
     gap: 8px;
 }
 
+.pandoc-child-panels {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.pandoc-child-panel-title {
+    min-height: 40px !important;
+    padding: 6px 12px !important;
+    gap: 4px;
+}
+
+.pandoc-child-panel-title :deep(.v-expansion-panel-title__overlay),
+.pandoc-child-panel-title :deep(.v-expansion-panel-title__icon) {
+    flex-shrink: 0;
+}
+
+.pandoc-child-title-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pandoc-child-panel-text :deep(.v-expansion-panel-text__wrapper) {
+    padding: 8px 12px 12px;
+}
+
 .review-item {
     border: 1px solid rgba(15, 23, 42, 0.12);
     background: rgba(255, 255, 255, 0.88);
@@ -5472,6 +5530,19 @@ export default {
     gap: 2px;
 }
 
+.detail-line {
+    font-size: 0.875rem;
+}
+
+.pandoc-root-content-block .pandoc-content-line__text {
+    font-size: 0.875rem;
+    font-weight: 400;
+}
+
+.detail-line__label {
+    font-weight: 600;
+}
+
 .pandoc-content-block {
     white-space: pre-wrap;
     line-height: 1.45;
@@ -5491,7 +5562,7 @@ export default {
 .pandoc-content-line__text {
     white-space: normal;
     word-break: break-word;
-    font-size: 0.84rem;
+    font-size: 0.875rem;
     line-height: 1.42;
 }
 
@@ -5532,6 +5603,14 @@ export default {
 
 .pandoc-content-line--toc-subentry .pandoc-content-line__text {
     color: rgba(15, 23, 42, 0.82);
+}
+
+.order-pandoc-structure {
+    order: 1;
+}
+
+.order-local-structure {
+    order: 2;
 }
 
 @media (min-width: 1280px) {

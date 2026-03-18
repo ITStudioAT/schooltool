@@ -1023,6 +1023,7 @@ class AbaPandocReviewBuilderService
             $subtitle = trim((string) ($titlePageDetails['subtitle'] ?? ''));
             $documentType = trim((string) ($titlePageDetails['document_type'] ?? ''));
             $submitter = trim((string) ($titlePageDetails['submitter'] ?? ''));
+            $submitterLabel = trim((string) ($titlePageDetails['submitter_label'] ?? ''));
             $advisor = trim((string) ($titlePageDetails['advisor'] ?? ''));
             $class = trim((string) ($titlePageDetails['class'] ?? ''));
             $schoolYear = trim((string) ($titlePageDetails['school_year'] ?? ''));
@@ -1040,6 +1041,7 @@ class AbaPandocReviewBuilderService
             if (
                 $subtitle !== ''
                 && $this->sectionCompareKey($subtitle) !== $this->sectionCompareKey($title)
+                && ! $this->isTitlePageMetadataHeaderLine($subtitle)
             ) {
                 $detailLines[] = 'Untertitel: '.$subtitle;
             }
@@ -1047,7 +1049,8 @@ class AbaPandocReviewBuilderService
                 $detailLines[] = 'Dokumenttyp: '.$documentType;
             }
             if ($submitter !== '') {
-                $detailLines[] = 'Verfasst von: '.$submitter;
+                $submitterFieldLabel = $submitterLabel !== '' ? $submitterLabel : 'Verfasst von';
+                $detailLines[] = $submitterFieldLabel.': '.$submitter;
             }
             if ($advisor !== '') {
                 $detailLines[] = 'Betreuer: '.$advisor;
@@ -2460,6 +2463,7 @@ class AbaPandocReviewBuilderService
         $documentType = trim((string) ($structuredHeading['document_type'] ?? ''));
 
         $submitter = '';
+        $submitterLabel = '';
         $advisor = '';
         $class = '';
         $schoolYear = '';
@@ -2484,16 +2488,18 @@ class AbaPandocReviewBuilderService
             if ($submitter === '') {
                 $inlineSubmitter = $this->extractLabeledTitlePageValue(
                     $text,
-                    '(?:verfasst von|vorgelegt von|verfasser(?:\*?in)?)'
+                    '(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?)'
                 );
                 if ($inlineSubmitter !== null) {
                     $submitter = $inlineSubmitter;
+                    $submitterLabel = $this->extractSubmitterLabelFromTitlePageLine($text) ?? $submitterLabel;
                 }
             }
-            if ($submitter === '' && @preg_match('/^(?:verfasst von|vorgelegt von|verfasser(?:\*?in)?)$/iu', $text) === 1) {
+            if ($submitter === '' && @preg_match('/^(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?)$/iu', $text) === 1) {
                 $nextSubmitter = $this->findNextTitlePageMetadataValue($contentLines, $index);
                 if ($nextSubmitter !== null) {
                     $submitter = $nextSubmitter;
+                    $submitterLabel = $this->extractSubmitterLabelFromTitlePageLine($text) ?? $submitterLabel;
                 }
             }
             if ($submitter === '' && @preg_match('/^\s*von\s+(.+)$/iu', $text, $submitterMatch) === 1) {
@@ -2565,6 +2571,7 @@ class AbaPandocReviewBuilderService
             'subtitle' => $subtitle !== '' ? $subtitle : null,
             'document_type' => $documentType !== '' ? $documentType : null,
             'submitter' => $submitter !== '' ? $submitter : null,
+            'submitter_label' => $submitterLabel !== '' ? $submitterLabel : null,
             'advisor' => $advisor !== '' ? $advisor : null,
             'class' => $class !== '' ? $class : null,
             'school_year' => $schoolYear !== '' ? $schoolYear : null,
@@ -2690,7 +2697,30 @@ class AbaPandocReviewBuilderService
 
     private function isTitlePageMetadataHeaderLine(string $text): bool
     {
-        return @preg_match('/^(verfasst von|vorgelegt von|verfasser(?:\*?in)?\b|betreuer(?:\*?in)?\b|betreut von\b|klasse\b|schuljahr\b|ort,?\s*datum\b|datum\b|unterschrift\b|titel\b|thema\b)/iu', trim($text)) === 1;
+        return @preg_match('/^(eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?\b|betreuer(?:\*?in)?\b|betreut von\b|klasse\b|schuljahr\b|ort,?\s*datum\b|datum\b|unterschrift\b|titel\b|thema\b)/iu', trim($text)) === 1;
+    }
+
+    private function extractSubmitterLabelFromTitlePageLine(string $text): ?string
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', trim($text)));
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (@preg_match('/\beingereicht von\b/iu', $normalized) === 1) {
+            return 'Eingereicht von';
+        }
+        if (@preg_match('/\bverfasst von\b/iu', $normalized) === 1) {
+            return 'Verfasst von';
+        }
+        if (@preg_match('/\bvorgelegt von\b/iu', $normalized) === 1) {
+            return 'Vorgelegt von';
+        }
+        if (@preg_match('/\bverfasser(?:\*?in)?\b/iu', $normalized) === 1) {
+            return 'Verfasser*in';
+        }
+
+        return null;
     }
 
     private function extractLabeledTitlePageValue(string $text, string $labelPattern): ?string
