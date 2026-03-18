@@ -4,7 +4,6 @@
             <section class="teaching-overview-toolbar" :class="{ 'is-locked': isControlLocked }">
                 <v-btn-toggle
                     v-model="functionalPanelSelection"
-                    multiple
                     class="teaching-overview-panel-switcher"
                     color="primary">
                     <v-btn
@@ -22,14 +21,8 @@
         </div>
     </v-col>
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="show_my_courses || show_students">
-        <v-row v-if="show_my_courses" :style="contentLockStyle">
-            <v-col>
-                <MyCourses />
-            </v-col>
-        </v-row>
-
-        <v-row v-if="show_my_courses && show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle" class="mt-n6">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="show_students || (show_timetable && !selected_course)">
+        <v-row v-if="show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
             <v-col>
                 <MyTimetable />
             </v-col>
@@ -48,13 +41,6 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" md="6" lg="5" xl="3" v-if="show_my_courses && show_my_infos && !selected_course && action != 'teaching_course_new_or_edit'">
-        <v-row>
-            <v-col>
-                <MyInfos />
-            </v-col>
-        </v-row>
-    </v-col>
 
     <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_infos">
@@ -76,7 +62,38 @@
         </v-row>
     </v-col>
 
-    <More v-if="show_more && action != 'teaching_course_new_or_edit'" />
+    <v-col cols="12" v-if="(show_attendance || show_performances) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+        <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
+            <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                <v-btn :value="1" size="small">Sem 1</v-btn>
+                <v-btn :value="2" size="small">Sem 2</v-btn>
+                <v-btn :value="3" size="small">Sem 1+2</v-btn>
+            </v-btn-toggle>
+        </div>
+        <v-row v-if="show_attendance">
+            <v-col>
+                <AttendanceMatrix
+                    :selected-course="selected_course"
+                    :active-semester="activeSemester"
+                    :semester-count="semesterCount"
+                    :sem2-start-date="sem2StartDate" />
+            </v-col>
+        </v-row>
+        <v-row v-if="show_performances" :class="show_attendance ? 'mt-n6' : ''">
+            <v-col>
+                <PerformancesDummy
+                    :selected-course="selected_course"
+                    :active-semester="activeSemester"
+                    :semester-count="semesterCount"
+                    :sem2-start-date="sem2StartDate" />
+            </v-col>
+        </v-row>
+    </v-col>
+
+    <!-- MyCourses nur für den Neu/Bearbeiten-Dialog -->
+    <div style="display:none">
+        <MyCourses />
+    </div>
 </template>
 
 <script>
@@ -84,28 +101,31 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import MyCourses from './components/MyCourses.vue'
 import CourseStudents from './components/CourseStudents.vue'
 import CourseStudent from './components/CourseStudent.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
-import MyInfos from './components/MyInfos.vue'
 import MyTimetable from './components/MyTimetable.vue'
-import More from '../more/More.vue'
+import AttendanceMatrix from '../more/components/AttendanceMatrix.vue'
+import PerformancesDummy from '../more/components/PerformancesDummy.vue'
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyInfos, MyTimetable, More },
+    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyTimetable, AttendanceMatrix, PerformancesDummy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.schoolHourStore = useSchoolHourStore()
-        this.selected_course = null
-        this.selected_course_id = null
+        this.teachingStore = useTeachingStore()
         this.selected_course_student = null
         this.action_2 = ''
-        this.show_my_courses = true
+        if (!this.teachingStore.settings) {
+            await this.teachingStore.loadSettings()
+        }
+        this.activeSemester = Number(this.config?.user?.teaching_active_semester) || 1
         await this.refreshOverviewData()
     },
 
@@ -116,8 +136,8 @@ export default {
             adminStore: null,
             courseStore: null,
             schoolHourStore: null,
-            selected_course_old: null,
-            show_more: false,
+            teachingStore: null,
+            activeSemester: 1,
         }
     },
 
@@ -126,13 +146,13 @@ export default {
         ...mapWritableState(useCourseStore, [
             'selected_course',
             'selected_course_id',
-            'show_my_courses',
             'show_timetable',
-            'show_my_infos',
             'show_students',
             'show_infos',
             'show_works',
             'show_dates',
+            'show_attendance',
+            'show_performances',
             'selected_course_student',
         ]),
         isControlLocked() {
@@ -142,10 +162,10 @@ export default {
             return this.action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''
         },
         hasLeftOverviewColumn() {
-            return this.show_my_courses || this.show_students
+            return this.show_students || (this.show_timetable && !this.selected_course)
         },
         hasMiddleOverviewColumn() {
-            return this.show_my_courses && this.show_my_infos && !this.selected_course && this.action != 'teaching_course_new_or_edit'
+            return false
         },
         hasRightOverviewColumn() {
             return (this.show_infos || this.show_dates || this.show_works) && this.action != 'teaching_course_new_or_edit'
@@ -174,43 +194,54 @@ export default {
             }
             return 'toolbar-width-xl-12'
         },
+        teachingSchemas() {
+            return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []
+        },
+        selectedSchema() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return null
+            return this.teachingSchemas.find((s) => String(s.id) === String(schemaId)) || null
+        },
+        semesterCount() {
+            return Number(this.selectedSchema?.grading?.semester_count) || 1
+        },
+        sem2StartDate() {
+            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+        },
         functionalPanels() {
-            const panels = [{ id: 'my_courses', label: 'Meine Fächer', icon: 'mdi-book-open-variant' }]
+            const panels = []
             if (this.selected_course) {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
-                panels.push({ id: 'more', label: 'Mehr', icon: 'mdi-dots-horizontal-circle-outline' })
+                panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
+                panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
             }
             return panels
         },
         functionalPanelSelection: {
             get() {
-                const activePanels = []
-                if (this.show_my_courses) {
-                    activePanels.push('my_courses')
-                }
-                if (this.selected_course && this.show_students) {
-                    activePanels.push('students')
-                }
-                if (this.selected_course && this.show_infos) {
-                    activePanels.push('infos')
-                }
-                if (this.selected_course && this.show_works) {
-                    activePanels.push('works')
-                }
-                if (this.selected_course && this.show_dates) {
-                    activePanels.push('dates')
-                }
-                if (this.selected_course && this.show_more) {
-                    activePanels.push('more')
-                }
-                return activePanels
+                if (!this.selected_course) return undefined
+                if (this.show_students) return 'students'
+                if (this.show_infos) return 'infos'
+                if (this.show_works) return 'works'
+                if (this.show_dates) return 'dates'
+                if (this.show_attendance) return 'attendance'
+                if (this.show_performances) return 'performances'
+                return undefined
             },
             set(value) {
-                const selectedPanels = Array.isArray(value) ? value : []
-                this.syncFunctionalPanelSelection(selectedPanels)
+                this.show_students = value === 'students'
+                this.show_infos = value === 'infos'
+                this.show_works = value === 'works'
+                this.show_dates = value === 'dates'
+                this.show_attendance = value === 'attendance'
+                this.show_performances = value === 'performances'
+                if (!value) {
+                    this.action_2 = ''
+                    this.selected_course_student = null
+                }
             },
         },
     },
@@ -218,10 +249,28 @@ export default {
     watch: {
         selected_course(newCourse) {
             if (newCourse) {
+                this.show_students = false
                 this.show_infos = true
+                this.show_works = false
+                this.show_dates = false
+                this.show_attendance = false
+                this.show_performances = false
             } else {
-                this.show_more = false
+                this.show_students = true
+                this.show_infos = false
+                this.show_works = false
+                this.show_dates = false
+                this.show_attendance = false
+                this.show_performances = false
             }
+        },
+        activeSemester(val) {
+            if (val !== this.config?.user?.teaching_active_semester) {
+                this.teachingStore?.saveActiveSemester(val)
+            }
+        },
+        'config.user.teaching_active_semester'(val) {
+            if (val) this.activeSemester = Number(val) || 1
         },
     },
 
@@ -229,98 +278,6 @@ export default {
         async refreshOverviewData() {
             await this.courseStore.index()
             await this.schoolHourStore.index()
-        },
-        toggleMyCourses() {
-            const next = !this.show_my_courses
-            this.show_my_courses = next
-            if (next) {
-                this.action_2 = ''
-                this.selected_course = null
-                this.selected_course_id = null
-                this.selected_course_student = null
-                this.show_infos = false
-            }
-        },
-        toggleFunctionalPanel(panel) {
-            if (this.isControlLocked) {
-                return
-            }
-
-            if (panel === 'my_courses') {
-                this.toggleMyCourses()
-                return
-            }
-            if (panel === 'students' && this.selected_course) {
-                this.show_students = !this.show_students
-                return
-            }
-            if (panel === 'infos' && this.selected_course) {
-                this.show_infos = !this.show_infos
-                return
-            }
-            if (panel === 'works' && this.selected_course) {
-                this.show_works = !this.show_works
-                return
-            }
-            if (panel === 'dates' && this.selected_course) {
-                this.show_dates = !this.show_dates
-                return
-            }
-            if (panel === 'more' && this.selected_course) {
-                this.show_more = !this.show_more
-            }
-        },
-        syncFunctionalPanelSelection(nextSelection) {
-            const requestedPanels = new Set(nextSelection)
-            const currentPanels = new Set(this.functionalPanelSelection)
-
-            const moreRequested = requestedPanels.has('more')
-            const moreCurrentlyActive = currentPanels.has('more')
-
-            if (moreRequested && !moreCurrentlyActive) {
-                this.show_more = true
-                this.show_my_courses = false
-                this.show_students = false
-                this.show_infos = false
-                this.show_works = false
-                this.show_dates = false
-                this.action_2 = ''
-                this.selected_course_student = null
-                return
-            }
-
-            if (moreCurrentlyActive && !moreRequested) {
-                this.show_more = false
-                this.show_my_courses = false
-                this.show_students = true
-                this.show_infos = true
-                this.show_works = true
-                this.show_dates = true
-                this.action_2 = ''
-                this.selected_course_student = null
-                return
-            }
-
-            if (moreRequested && moreCurrentlyActive && requestedPanels.size > 1) {
-                requestedPanels.delete('more')
-            }
-
-            this.functionalPanels.forEach((panel) => {
-                const isActive = currentPanels.has(panel.id)
-                const shouldBeActive = requestedPanels.has(panel.id)
-                if (isActive !== shouldBeActive) {
-                    this.toggleFunctionalPanel(panel.id)
-                }
-            })
-        },
-        toggleShowMyCourses() {
-            if (this.show_my_courses) {
-                this.selected_course_old = { ...this.selected_course }
-            }
-            this.show_my_courses = !this.show_my_courses
-            if (this.show_my_courses) {
-                this.selected_course = { ...this.selected_course_old }
-            }
         },
     },
 }

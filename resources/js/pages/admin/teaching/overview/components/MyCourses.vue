@@ -391,6 +391,14 @@ export default {
             const course = this.courses.find((c) => c.id === newId) || null
             this.selectCourse(course)
         },
+        async 'courseStore.pending_edit_course_id'(id) {
+            if (!id) return
+            const course = this.courses.find((c) => c.id === id) || null
+            this.courseStore.pending_edit_course_id = null
+            if (course) {
+                await this.editCourse(course)
+            }
+        },
         'data.classes': {
             handler(newClasses) {
                 if (this.action !== 'teaching_course_new_or_edit') return

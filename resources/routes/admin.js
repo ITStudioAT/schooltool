@@ -40,7 +40,7 @@ const routes = [
     { path: '/admin/register_system/details', component: RegisterSystem_Details },
     { path: '/admin/super_admin', component: SuperAdmin },
     { path: '/admin/tutoring', component: Tutoring },
-    { path: '/admin/teaching', component: Teaching },
+    { path: '/admin/teaching/:section?', component: Teaching },
     { path: '/admin/materials', component: Materials },
     { path: '/admin/groups', component: Groups },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },

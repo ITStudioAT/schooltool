@@ -517,12 +517,12 @@ export default {
             this.show_infos = true
 
             const dateId = item?.courseDateId
-            if (!dateId) {
-                this.selected_courseDate = null
-                return
-            }
-            const date = (course?.course_dates || []).find((d) => d?.id === dateId) || null
+            const date = dateId ? (course?.course_dates || []).find((d) => d?.id === dateId) || null : null
             this.selected_courseDate = date
+
+            const query = { course: String(course.id) }
+            if (date?.id) query.date = String(date.id)
+            this.$router.replace({ query }).catch(() => {})
         },
         normalizeDateToString(date) {
             const y = date.getFullYear()
@@ -633,6 +633,22 @@ export default {
 .timetable-item--free {
     background-color: #c8e6c9 !important;
     border-left: 4px solid #4caf50;
+    position: relative;
+    overflow: hidden;
+}
+
+.timetable-item--free::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+        to top right,
+        transparent calc(50% - 0.6px),
+        rgba(0, 0, 0, 0.22) calc(50% - 0.6px),
+        rgba(0, 0, 0, 0.22) calc(50% + 0.6px),
+        transparent calc(50% + 0.6px)
+    );
+    pointer-events: none;
 }
 
 .timetable-item--today {
@@ -763,4 +779,5 @@ export default {
 .timetable-grid-item.timetable-item--today {
     border-left-color: #ff9800;
 }
+
 </style>

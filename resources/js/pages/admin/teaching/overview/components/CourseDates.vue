@@ -390,6 +390,17 @@ export default {
     },
 
     watch: {
+        selected_course: {
+            immediate: true,
+            handler(course) {
+                if (!course || this.selected_courseDate) return
+                if (this.$route.query.date) return
+                const highlightedId = this.highlightedDateId
+                if (!highlightedId) return
+                const date = (course.course_dates || []).find((d) => d.id === highlightedId)
+                if (date) this.selectCourseDate(date)
+            },
+        },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
@@ -503,7 +514,16 @@ export default {
         },
         selectCourseDate(courseDate) {
             if (!courseDate) return
+            if (this.selected_courseDate?.id === courseDate.id) {
+                this.selected_courseDate = null
+                const query = { ...this.$route.query }
+                delete query.date
+                this.$router.replace({ query }).catch(() => {})
+                return
+            }
             this.selected_courseDate = courseDate
+            const query = { ...this.$route.query, date: String(courseDate.id) }
+            this.$router.replace({ query }).catch(() => {})
         },
         async toggleStatus(courseDate, status) {
             const userStatuses = ['pruefung', 'entfaellt']

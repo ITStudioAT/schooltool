@@ -40,11 +40,11 @@
             <template #prepend>
                 <v-btn icon="mdi-menu-open" v-if="!show_navigation_drawer" @click="show_navigation_drawer = true" />
                 <img
-                    :src="'/storage/images/logos/' + config?.selected_school?.logo + '?t=' + Date.now()"
+                    :src="`${selectedSchoolLogoSrc}?t=${Date.now()}`"
                     alt="Logo"
                     height="60px"
                     class="pl-2"
-                    v-if="config?.selected_school?.logo" />
+                    v-if="selectedSchoolLogoSrc" />
             </template>
             <template #title>
                 {{ config?.selected_school?.long_name }}
@@ -106,6 +106,34 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'load_config']),
+        selectedSchoolLogoSrc() {
+            const logo = this.config?.selected_school?.logo
+            if (!logo) return null
+
+            const rawLogo = String(logo).trim().replace(/\\/g, '/')
+            if (!rawLogo) return null
+
+            if (rawLogo.startsWith('http://') || rawLogo.startsWith('https://') || rawLogo.startsWith('/storage/')) {
+                return rawLogo
+            }
+
+            const normalizedLogo = rawLogo.replace(/^\/+/, '')
+            if (!normalizedLogo) return null
+
+            if (normalizedLogo.startsWith('storage/')) {
+                return `/${normalizedLogo}`
+            }
+
+            if (normalizedLogo.startsWith('images/')) {
+                return `/storage/${normalizedLogo}`
+            }
+
+            if (normalizedLogo.startsWith('logos/')) {
+                return `/storage/images/${normalizedLogo}`
+            }
+
+            return `/storage/images/${normalizedLogo}`
+        },
         isMenuInteractionDisabled() {
             return this.is_navigation_locked || this.is_loading > 0 || this.is_route_navigation_pending
         },

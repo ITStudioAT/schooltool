@@ -7,6 +7,7 @@
             :active-section="activeSection"
             :chips="headerChips"
             :show-current-user-chip="true"
+            :focus-label="nowLabel"
             secondary-color="#1d4ed8"
             right-orb-color="#a5b4fc" />
 
@@ -31,6 +32,71 @@
             </div>
         </v-sheet>
 
+        <v-sheet v-if="courses.length && main_action === 'overview'" rounded="xl" class="teaching-subnav mb-2">
+            <div class="teaching-subnav__inner">
+                <div class="teaching-subnav__courses">
+                    <v-btn
+                        v-for="course in courses"
+                        :key="course.id"
+                        size="small"
+                        rounded="xl"
+                        :variant="selected_course?.id === course.id ? 'flat' : 'tonal'"
+                        :class="selected_course?.id === course.id ? 'teaching-subnav__course-btn--active' : 'teaching-subnav__course-btn--idle'"
+                        class="teaching-subnav__course-btn"
+                        @click="handleCourseSelect(course)">
+                        {{ course.title }}
+                    </v-btn>
+                </div>
+                <v-btn
+                    v-if="selected_course"
+                    size="small"
+                    icon="mdi-close"
+                    variant="text"
+                    density="compact"
+                    title="Auswahl aufheben"
+                    @click="handleCourseClear" />
+                <div class="teaching-subnav__actions ml-auto d-flex ga-2">
+                    <v-btn
+                        v-if="selected_course"
+                        icon="mdi-pencil-outline"
+                        variant="tonal"
+                        color="warning"
+                        title="Fach bearbeiten"
+                        @click="handleEditCourse" />
+                    <v-btn
+                        v-if="selected_course"
+                        icon="mdi-delete-outline"
+                        variant="tonal"
+                        color="error"
+                        title="Fach löschen"
+                        @click="show_delete_confirm = true" />
+                    <v-btn
+                        icon="mdi-plus"
+                        variant="tonal"
+                        title="Neues Fach anlegen"
+                        class="teaching-subnav__add-btn"
+                        @click="handleNewCourse" />
+                </div>
+            </div>
+        </v-sheet>
+
+        <v-dialog v-model="show_delete_confirm" max-width="420" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                    Fach löschen
+                </v-card-title>
+                <v-card-text class="px-4">
+                    Soll das Fach <strong>„{{ selected_course?.title }}"</strong> wirklich gelöscht werden? Diese Aktion kann nicht rückgängig gemacht werden.
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-btn variant="tonal" @click="show_delete_confirm = false">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="error" variant="flat" :loading="delete_loading" @click="handleDeleteCourse">Löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-row class="w-100 teaching-content" dense>
             <Overview v-if="main_action === 'overview'" />
             <Settings v-if="main_action === 'settings'" :key="`settings-${settings_view_key}`" />
@@ -45,6 +111,10 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
+import { parseLocalDate } from '@/helpers/date'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 import Overview from './overview/Overview.vue'
@@ -58,27 +128,50 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.courseStore = useCourseStore()
+        this.schoolHourStore = useSchoolHourStore()
         const teachingStore = useTeachingStore()
         if (!teachingStore.settings) {
             await teachingStore.loadSettings()
         }
+        if (!this.courseStore.courses.length) {
+            await this.courseStore.index()
+        }
+        if (!this.schoolHourStore.school_hours.length) {
+            await this.schoolHourStore.index()
+        }
+    },
+
+    mounted() {
+        this.nowTimer = setInterval(() => { this.nowTs = Date.now() }, 1000)
     },
 
     unmounted() {
         this.action = ''
         this.action_2 = ''
+        if (this.nowTimer) clearInterval(this.nowTimer)
     },
 
     data() {
         return {
             adminStore: null,
-            main_action: 'overview',
+            courseStore: null,
+            schoolHourStore: null,
+            main_action: this.$route.params.section || 'overview',
             settings_view_key: 0,
+            show_delete_confirm: false,
+            delete_loading: false,
+            nowTs: Date.now(),
+            nowTimer: null,
+            _urlRestored: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id']),
+        ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
+        ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isNavigationLocked() {
             return this.action != '' || this.action_2 != ''
         },
@@ -95,31 +188,144 @@ export default {
             }
             return roles.slice(0, 2).join(' / ')
         },
+        myCourses() {
+            const userId = this.config?.user?.id
+            const list = Array.isArray(this.courses) ? this.courses : []
+            if (!userId) return list
+            return list.filter((course) => course?.user_id === userId)
+        },
+        myStudentCount() {
+            const ids = new Set()
+            this.myCourses.forEach((course) => {
+                const info = Array.isArray(course?.students_info) ? course.students_info : []
+                if (info.length) {
+                    info.forEach((s) => { if (!s?.canceled_at && s?.id != null) ids.add(String(s.id)) })
+                    return
+                }
+                ;(Array.isArray(course?.students) ? course.students : []).forEach((s) => {
+                    if (s == null) return
+                    ids.add(String(typeof s === 'object' ? s.id : s))
+                })
+            })
+            return ids.size
+        },
+        nowLabel() {
+            return new Date(this.nowTs).toLocaleString('de-DE', {
+                weekday: 'long',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+            })
+        },
+        schoolHoursByHour() {
+            return (Array.isArray(this.school_hours) ? this.school_hours : []).reduce((carry, item) => {
+                const hour = Number(item?.hour)
+                if (Number.isFinite(hour)) carry[hour] = item
+                return carry
+            }, {})
+        },
+        nextLessonStartAt() {
+            const now = new Date(this.nowTs)
+            let nearestTs = null
+            this.myCourses.forEach((course) => {
+                ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
+                    const date = (cd?.date || '').toString().slice(0, 10)
+                    const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
+                    if (!hours.length) return
+                    const start = this.lessonStartFromHour(date, hours[0])
+                    if (!start || start <= now) return
+                    if (nearestTs === null || start.getTime() < nearestTs) nearestTs = start.getTime()
+                })
+            })
+            return nearestTs ? new Date(nearestTs) : null
+        },
+        activeLessonEndAt() {
+            const now = new Date(this.nowTs)
+            let nearestEndTs = null
+            this.myCourses.forEach((course) => {
+                ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
+                    const date = (cd?.date || '').toString().slice(0, 10)
+                    const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
+                    if (!hours.length) return
+                    const start = this.lessonStartFromHour(date, hours[0])
+                    const end = this.lessonEndFromHour(date, hours[hours.length - 1])
+                    if (!start || !end || end <= start) return
+                    if (now < start || now >= end) return
+                    if (nearestEndTs === null || end.getTime() < nearestEndTs) nearestEndTs = end.getTime()
+                })
+            })
+            return nearestEndTs ? new Date(nearestEndTs) : null
+        },
+        lessonStatusNote() {
+            if (this.activeLessonEndAt) {
+                const diffS = Math.max(0, Math.floor((this.activeLessonEndAt.getTime() - this.nowTs) / 1000))
+                const h = Math.floor(diffS / 3600)
+                const m = Math.floor((diffS % 3600) / 60)
+                const s = diffS % 60
+                const remaining = h > 0
+                    ? `${this.padTwo(h)}h ${this.padTwo(m)}m`
+                    : `${this.padTwo(m)}m ${this.padTwo(s)}s`
+                return `Aktiver Unterricht – noch ${remaining}`
+            }
+            if (this.nextLessonStartAt) {
+                const diffS = Math.max(0, Math.floor((this.nextLessonStartAt.getTime() - this.nowTs) / 1000))
+                const days = Math.floor(diffS / 86400)
+                const h = Math.floor((diffS % 86400) / 3600)
+                const m = Math.floor((diffS % 3600) / 60)
+                const parts = []
+                if (days > 0) parts.push(`${days}d`)
+                if (h > 0) parts.push(`${this.padTwo(h)}h`)
+                parts.push(`${this.padTwo(m)}m`)
+                return `Nächster Unterricht in ${parts.join(' ')}`
+            }
+            return null
+        },
+        schoolyearStats() {
+            const from = this.config?.selected_schoolyear?.from
+            const until = this.config?.selected_schoolyear?.until
+            if (!from || !until) return null
+            const start = parseLocalDate(from)
+            const end = parseLocalDate(until)
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return null
+            start.setHours(0, 0, 0, 0)
+            end.setHours(0, 0, 0, 0)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const total = Math.max(1, Math.floor((end - start) / 86400000) + 1)
+            const elapsed = Math.min(total, Math.max(0, Math.floor((today - start) / 86400000) + 1))
+            const remaining = Math.max(0, Math.floor((end - today) / 86400000))
+            const progress = Math.round((elapsed / total) * 100)
+            return { elapsed, remaining, progress }
+        },
         headerChips() {
-            return [
-                {
-                    key: 'school',
-                    text: this.selectedSchoolLabel,
-                    icon: 'mdi-domain',
-                },
-                {
-                    key: 'schoolyear',
-                    text: this.selectedSchoolyearLabel,
-                    icon: 'mdi-calendar-month-outline',
-                },
-                {
-                    key: 'role',
-                    text: this.selectedRoleLabel,
-                    icon: 'mdi-shield-account',
-                },
+            const chips = [
+                { key: 'school', text: this.selectedSchoolLabel, icon: 'mdi-domain' },
+                { key: 'schoolyear', text: this.selectedSchoolyearLabel, icon: 'mdi-calendar-month-outline' },
             ]
+            if (this.courses.length) {
+                chips.push({ key: 'courses', text: `${this.myCourses.length} Kurse`, icon: 'mdi-book-open-variant' })
+                chips.push({ key: 'students', text: `${this.myStudentCount} Schüler:innen`, icon: 'mdi-account-group' })
+            }
+            if (this.schoolyearStats) {
+                chips.push({ key: 'sy-elapsed', text: `${this.schoolyearStats.elapsed} Tage vergangen`, icon: 'mdi-calendar-check-outline' })
+                chips.push({ key: 'sy-remaining', text: `${this.schoolyearStats.remaining} Tage verbleibend`, icon: 'mdi-calendar-end' })
+            }
+            return chips
         },
         activeSection() {
+            const progressNote = this.schoolyearStats !== null
+                ? `Schuljahr: ${this.schoolyearStats.progress}% abgeschlossen`
+                : ''
+            const lessonNote = this.lessonStatusNote || ''
+            const overviewNote = [lessonNote, progressNote].filter(Boolean).join(' · ')
             const sections = {
                 overview: {
                     label: 'Übersicht',
                     icon: 'mdi-view-dashboard-outline',
-                    note: 'Kurse, Schüler:innen und Termine im Tagesfokus.',
+                    note: overviewNote,
                 },
                 settings: {
                     label: 'Einstellungen',
@@ -185,6 +391,31 @@ export default {
         },
     },
 
+    watch: {
+        courses: {
+            immediate: true,
+            handler(courses) {
+                if (this._urlRestored || !courses.length) return
+                const courseId = Number(this.$route.query.course)
+                if (!courseId) {
+                    this._urlRestored = true
+                    return
+                }
+                const course = courses.find((c) => c.id === courseId)
+                if (!course) return
+                this._urlRestored = true
+                this.courseStore.selected_course = course
+                this.courseStore.selected_course_id = course.id
+                const dateId = Number(this.$route.query.date)
+                if (dateId) {
+                    const courseDateStore = useCourseDateStore()
+                    const date = (course.course_dates || []).find((d) => d.id === dateId) || null
+                    if (date) courseDateStore.selected_courseDate = date
+                }
+            },
+        },
+    },
+
     methods: {
         hasAnyRole(requiredRoles) {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
@@ -198,11 +429,88 @@ export default {
                 this.openSettings()
                 return
             }
-            this.main_action = target
+            this.navigateTo(target)
+        },
+        navigateTo(section) {
+            this.main_action = section
+            const path = section === 'overview' ? '/admin/teaching' : `/admin/teaching/${section}`
+            this.$router.replace({ path, query: { ...this.$route.query } })
         },
         openSettings() {
             this.settings_view_key++
-            this.main_action = 'settings'
+            this.navigateTo('settings')
+        },
+        lessonStartFromHour(dateStr, hour) {
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const from = (schoolHour?.from || '').toString().trim()
+            if (!dateStr || !from) return null
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+            const parts = from.split(':').map(Number)
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+            date.setHours(parts[0], parts[1], parts[2] ?? 0, 0)
+            return date
+        },
+        lessonEndFromHour(dateStr, hour) {
+            const schoolHour = this.schoolHoursByHour[Number(hour)]
+            const until = (schoolHour?.until || '').toString().trim()
+            if (!dateStr || !until) return null
+            const date = parseLocalDate(dateStr)
+            if (isNaN(date.getTime())) return null
+            const parts = until.split(':').map(Number)
+            if (!Number.isFinite(parts[0]) || !Number.isFinite(parts[1])) return null
+            date.setHours(parts[0], parts[1], parts[2] ?? 0, 0)
+            return date
+        },
+        padTwo(v) {
+            return String(v).padStart(2, '0')
+        },
+        handleCourseSelect(course) {
+            if (this.selected_course?.id === course.id) {
+                this.handleCourseClear()
+                return
+            }
+            this.selected_courseDate = null
+            this.selected_course = course
+            this.selected_course_id = course.id
+            this.$router.replace({ query: { course: String(course.id) } }).catch(() => {})
+        },
+        handleCourseClear() {
+            this.selected_course = null
+            this.selected_course_id = null
+            this.selected_courseDate = null
+            this.$router.replace({ query: {} }).catch(() => {})
+        },
+        async handleDeleteCourse() {
+            if (!this.selected_course) {
+                return
+            }
+            this.delete_loading = true
+            const ok = await this.courseStore.destroy(this.selected_course.id)
+            if (ok) {
+                await this.courseStore.index()
+                this.selected_course = null
+                this.selected_course_id = null
+                this.selected_course_student = null
+                this.action_2 = ''
+            }
+            this.delete_loading = false
+            this.show_delete_confirm = false
+        },
+        handleEditCourse() {
+            if (!this.selected_course) {
+                return
+            }
+            this.navigateTo('overview')
+            this.pending_edit_course_id = this.selected_course.id
+        },
+        handleNewCourse() {
+            this.selected_course = null
+            this.selected_course_id = null
+            this.selected_course_student = null
+            this.action_2 = ''
+            this.navigateTo('overview')
+            this.action = 'teaching_course_new_or_edit'
         },
     },
 }
@@ -253,6 +561,56 @@ export default {
 
 .teaching-nav.is-locked {
     opacity: 0.68;
+}
+
+.teaching-subnav {
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: rgba(15, 23, 42, 0.7);
+    padding: 8px 12px;
+}
+
+.teaching-subnav__inner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+}
+
+.teaching-subnav__courses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+}
+
+.teaching-subnav__course-btn {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+    height: 30px !important;
+    font-size: 0.82rem;
+}
+
+.teaching-subnav__course-btn--idle {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #a5b4fc !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+}
+
+.teaching-subnav__course-btn--idle:hover {
+    background: rgba(99, 102, 241, 0.28) !important;
+    color: #c7d2fe !important;
+}
+
+.teaching-subnav__course-btn--active {
+    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+    color: #fff !important;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.45) !important;
+}
+
+.teaching-subnav__add-btn {
+    color: #a5b4fc !important;
 }
 
 .teaching-content {

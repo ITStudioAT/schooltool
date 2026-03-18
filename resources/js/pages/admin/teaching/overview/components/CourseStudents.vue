@@ -1325,11 +1325,24 @@ export default {
         },
         selectPrevCourseDate() {
             if (!this.hasPrevCourseDate) return
-            this.selected_courseDate = this.sortedCourseDates[this.selectedCourseDateIndex - 1] || null
+            const date = this.sortedCourseDates[this.selectedCourseDateIndex - 1] || null
+            this.selected_courseDate = date
+            this.syncDateToUrl(date)
         },
         selectNextCourseDate() {
             if (!this.hasNextCourseDate) return
-            this.selected_courseDate = this.sortedCourseDates[this.selectedCourseDateIndex + 1] || null
+            const date = this.sortedCourseDates[this.selectedCourseDateIndex + 1] || null
+            this.selected_courseDate = date
+            this.syncDateToUrl(date)
+        },
+        syncDateToUrl(date) {
+            const query = { ...this.$route.query }
+            if (date?.id) {
+                query.date = String(date.id)
+            } else {
+                delete query.date
+            }
+            this.$router.replace({ query }).catch(() => {})
         },
     },
 }

@@ -337,6 +337,11 @@ export default {
 </script>
 
 <style scoped>
+.attendance-matrix-card {
+    border: 1px dashed rgba(16, 38, 58, 0.2);
+    background: rgba(255, 255, 255, 0.9);
+}
+
 .attendance-matrix-wrap {
     overflow-x: auto;
 }
