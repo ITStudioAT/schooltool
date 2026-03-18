@@ -275,7 +275,7 @@
                                     </v-btn>
                                 </div>
 
-                                <div class="entries-semester-filter">
+                                <div v-if="hasTwoSemesters" class="entries-semester-filter">
                                     <v-btn-toggle v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="primary">
                                         <v-btn :value="1" size="small">1. Sem</v-btn>
                                         <v-btn :value="2" size="small">2. Sem</v-btn>
@@ -306,7 +306,7 @@
                                                         <v-chip v-if="item.entry.type" size="small" variant="outlined">
                                                             {{ entryTypeChipLabel(item.entry.type) }}
                                                         </v-chip>
-                                                        <v-chip v-if="item.entry.is_required_entry" size="small" color="error" variant="flat">
+                                                        <v-chip v-if="item.entry.is_required_entry" size="small" :color="entryGradeChipColor(item.entry)" variant="flat" :prepend-icon="entryGradeChipColor(item.entry) === 'success' ? 'mdi-check' : undefined">
                                                             Erforderlich
                                                         </v-chip>
                                                         <div class="entry-main text-caption">
@@ -413,7 +413,7 @@
                                     </div>
                                 </div>
 
-                                <div class="dates-semester-filter">
+                                <div v-if="hasTwoSemesters" class="dates-semester-filter">
                                     <v-btn-toggle v-model="selectedSemesterDates" class="semester-toggle" mandatory density="compact" color="primary">
                                         <v-btn :value="1" size="small">1. Sem</v-btn>
                                         <v-btn :value="2" size="small">2. Sem</v-btn>
@@ -626,6 +626,14 @@ export default {
         },
         dateLabel() {
             return new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())
+        },
+
+        hasTwoSemesters() {
+            const schemas = Array.isArray(this.user?.teaching_schemas) ? this.user.teaching_schemas : []
+            const courseSchemaId = this.course?.teaching_schema_id
+            if (!schemas.length || courseSchemaId == null) return false
+            const schema = schemas.find((item) => String(item?.id) === String(courseSchemaId)) || null
+            return Number(schema?.grading?.semester_count) === 2
         },
 
         schemaWorkTypeLabels() {

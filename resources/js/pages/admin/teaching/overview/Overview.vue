@@ -249,8 +249,8 @@ export default {
     watch: {
         selected_course(newCourse) {
             if (newCourse) {
-                this.show_students = false
-                this.show_infos = true
+                this.show_students = true
+                this.show_infos = false
                 this.show_works = false
                 this.show_dates = false
                 this.show_attendance = false
