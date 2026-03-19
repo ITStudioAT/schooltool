@@ -126,7 +126,7 @@ export default {
         workColumnsFromSchema() {
             const schemaId = this.selectedCourse?.teaching_schema_id
             const works = schemaId ? this.teachingStore?.worksForSchema(schemaId) || [] : []
-            return works
+            const allWorkColumns = works
                 .map((work) => {
                     const type = String(work?.short_name || '').trim()
                     if (!type) {
@@ -139,6 +139,48 @@ export default {
                     }
                 })
                 .filter((item) => !!item)
+
+            if (!this.schemaCategoryTypes.length) {
+                return allWorkColumns
+            }
+
+            const workColumnsByType = new Map(allWorkColumns.map((column) => [column.type, column]))
+            const columnsFromCategories = this.schemaCategoryTypes.map((type) => {
+                const existingColumn = workColumnsByType.get(type)
+                if (existingColumn) {
+                    return existingColumn
+                }
+
+                return {
+                    type,
+                    label: this.typeLabel(type),
+                }
+            })
+
+            return columnsFromCategories.filter((item) => !!item)
+        },
+        schemaCategoryTypes() {
+            const schemaId = this.selectedCourse?.teaching_schema_id
+            const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) || {} : {}
+            const categories = Array.isArray(grading?.categories) ? grading.categories : []
+
+            const types = categories.flatMap((category) => {
+                const works = Array.isArray(category?.works) ? category.works : []
+                return works
+                    .map((work) => {
+                        if (typeof work === 'string') {
+                            return String(work).trim()
+                        }
+
+                        return String(work?.short_name || '').trim()
+                    })
+                    .filter((type) => !!type)
+            })
+
+            return [...new Set(types)]
+        },
+        hasSchemaWorkColumns() {
+            return this.workColumnsFromSchema.length > 0
         },
         typeColumns() {
             const seen = new Set()
@@ -152,17 +194,19 @@ export default {
                 columns.push(column)
             })
 
-            this.filteredEntries.forEach((entry) => {
-                const type = String(entry?.type || '').trim()
-                if (!type || seen.has(type)) {
-                    return
-                }
-                seen.add(type)
-                columns.push({
-                    type,
-                    label: this.typeLabel(type),
+            if (!this.hasSchemaWorkColumns) {
+                this.filteredEntries.forEach((entry) => {
+                    const type = String(entry?.type || '').trim()
+                    if (!type || seen.has(type)) {
+                        return
+                    }
+                    seen.add(type)
+                    columns.push({
+                        type,
+                        label: this.typeLabel(type),
+                    })
                 })
-            })
+            }
 
             if (!columns.length) {
                 columns.push({
