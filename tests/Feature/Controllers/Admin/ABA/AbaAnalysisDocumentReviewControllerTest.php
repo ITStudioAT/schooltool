@@ -217,7 +217,7 @@ test('analysis results page includes integrated document review section and endp
         ->toContain('strukturell ähnlich')
         ->toContain('nur Pandoc')
         ->toContain('nur lokal')
-        ->toContain('Weitere Eigenschaften')
+        ->not->toContain('<div class="text-caption font-weight-medium mb-1">Weitere Eigenschaften</div>')
         ->toContain('Kein Logo erkannt.')
         ->toContain('Logo erkannt, aber kein renderbares Asset verfügbar.')
         ->toContain('Logo-Asset vorhanden, aber Rendering fehlgeschlagen.')

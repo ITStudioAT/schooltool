@@ -37,6 +37,9 @@
                             <template #title>
                                 <v-list-item-title class="aba-title-row aba-title-text">
                                     <span>{{ aba.title }}</span>
+                                    <v-chip size="x-small" color="primary" variant="tonal" class="aba-id-chip">
+                                        #{{ aba.id }}
+                                    </v-chip>
                                     <v-btn
                                         icon="mdi-pencil"
                                         size="x-small"
@@ -98,7 +101,7 @@
                                         variant="tonal"
                                         color="info"
                                         prepend-icon="mdi-poll"
-                                        :disabled="isRefreshing"
+                                        :disabled="isResultsDisabled(aba)"
                                         @click="openResults(aba)">
                                         Ergebnisse
                                     </v-btn>
@@ -694,6 +697,10 @@ export default {
         isAnalysisRunning(aba) {
             const status = this.analysisStatusFor(aba)
             return status === 'started' || status === 'running'
+        },
+        isResultsDisabled(aba) {
+            const abaId = Number(aba?.id || 0)
+            return this.isRefreshing || this.startingAnalysisAbaId === abaId || this.isAnalysisRunning(aba)
         },
         hasPendingAnalysis() {
             return this.abas.some((aba) => {

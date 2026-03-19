@@ -329,7 +329,6 @@
                                         <div
                                             v-if="Array.isArray(root.additional_properties) && root.additional_properties.length > 0"
                                             class="mb-2">
-                                            <div class="text-caption font-weight-medium mb-1">Weitere Eigenschaften</div>
                                             <div
                                                 v-for="(property, propertyIndex) in root.additional_properties"
                                                 :key="`pandoc-root-${root.id}-property-${propertyIndex}`"
@@ -340,6 +339,7 @@
                                         </div>
 
                                         <v-alert
+                                            v-if="shouldShowTitlePageLogoSummary(root)"
                                             :type="titlePageLogoStatusColor(root)"
                                             variant="tonal"
                                             density="compact"
@@ -1356,6 +1356,10 @@ export default {
                 ? this.documentReview.review
                 : {}
         },
+        documentReviewNormalizationBlocks() {
+            const blocks = this.documentReviewPayload?.normalization?.blocks
+            return Array.isArray(blocks) ? blocks : []
+        },
         documentReviewTitlePageProcessing() {
             return this.documentReviewData.title_page_processing && typeof this.documentReviewData.title_page_processing === 'object'
                 ? this.documentReviewData.title_page_processing
@@ -1382,12 +1386,25 @@ export default {
                 : {}
         },
         documentReviewTitlePageNormalizedDetailLines() {
-            return this.buildTitlePageDetailLinesFromNormalized(this.documentReviewTitlePageNormalized)
+            return this.buildTitlePageDetailLinesFromNormalized(this.documentReviewTitlePageNormalized, {
+                aba: this.aba,
+                normalizationBlocks: this.documentReviewNormalizationBlocks,
+            })
         },
         documentReviewTitlePageAdditionalProperties() {
-            return this.normalizeTitlePageAdditionalProperties(
+            const normalized = this.normalizeTitlePageAdditionalProperties(
                 this.documentReviewTitlePageNormalized?.additional_properties
             )
+
+            const withRecoveredDocumentType = this.ensureRecoveredDocumentTypeProperty(normalized, {
+                documentTypeLabel: this.documentTypeLabel,
+                normalizationBlocks: this.documentReviewNormalizationBlocks,
+            })
+
+            return this.ensureRecoveredSchoolProperties(withRecoveredDocumentType, {
+                aba: this.aba,
+                normalizationBlocks: this.documentReviewNormalizationBlocks,
+            })
         },
         documentReviewComparison() {
             return this.documentReview.comparison && typeof this.documentReview.comparison === 'object'
@@ -4577,27 +4594,716 @@ export default {
                 || type === 'title_page'
                 || zone === 'title_page'
         },
-        buildTitlePageDetailLinesFromNormalized(normalized) {
+        buildTitlePageDetailLinesFromNormalized(normalized, options = {}) {
             const output = normalized && typeof normalized === 'object'
                 ? normalized
                 : {}
+            const recoveryContext = this.buildTitlePageRecoveryContext({
+                ...options,
+                normalizedOutput: output,
+            })
             const lines = []
-            const append = (label, value) => {
-                const text = String(value || '').trim()
+            const append = (label, field, value) => {
+                const text = this.normalizeTitlePageCoreFieldValue(field, value)
                 if (text === '') {
                     return
                 }
                 lines.push(`${label}: ${text}`)
             }
 
-            append('Titel', output.title)
-            append('Untertitel', output.subtitle)
-            append('Verfasser*in', output.author)
-            append('Betreuer', output.advisor)
-            append('Klasse', output.class)
-            append('Datum', output.date)
+            const title = this.normalizeTitlePageCoreFieldValue('title', output.title)
+                || this.normalizeTitlePageCoreFieldValue('title', this.recoverMissingCoreTitle(recoveryContext))
+            const author = this.normalizeTitlePageCoreFieldValue('author', output.author)
+                || this.normalizeTitlePageCoreFieldValue('author', this.recoverMissingAuthorFromFinalProperties(recoveryContext))
+            const classValue = this.normalizeTitlePageCoreFieldValue('class', output.class)
+                || this.normalizeTitlePageCoreFieldValue('class', this.recoverMissingClassFromFinalProperties(recoveryContext))
+
+            append('Titel', 'title', title)
+            append('Untertitel', 'subtitle', output.subtitle)
+            append('Verfasser*in', 'author', author)
+            append('Betreuer', 'advisor', output.advisor)
+            append('Klasse', 'class', classValue)
+            append('Datum', 'date', output.date)
 
             return lines
+        },
+        normalizeTitlePageCoreFieldValue(field, value) {
+            let text = this.cleanLabelArtifactValue(value, { role: field })
+            if (text === '') {
+                return ''
+            }
+
+            if (this.isPlaceholderMetadataValue(text, field)) {
+                return ''
+            }
+            if (field === 'title' && this.isLocationDatePseudoTitle(text)) {
+                return ''
+            }
+            if (field === 'class' && this.isMergedMultiFieldValue(text, field)) {
+                const recoveredClass = this.recoverClassToken(text)
+                return recoveredClass !== '' ? recoveredClass : ''
+            }
+
+            return text
+        },
+        buildTitlePageRecoveryContext(options = {}) {
+            const providedAba = options?.aba && typeof options.aba === 'object' ? options.aba : null
+            const providedBlocks = Array.isArray(options?.normalizationBlocks) ? options.normalizationBlocks : []
+            const providedDocumentType = String(options?.documentTypeLabel || '').trim()
+            const providedNormalizedOutput = options?.normalizedOutput && typeof options.normalizedOutput === 'object'
+                ? options.normalizedOutput
+                : null
+            const providedTitlePageDetails = options?.titlePageDetails && typeof options.titlePageDetails === 'object'
+                ? options.titlePageDetails
+                : null
+            const providedDisplayValues = options?.displayValues && typeof options.displayValues === 'object'
+                ? options.displayValues
+                : null
+            const providedAnalysisStats = options?.analysisStats && typeof options.analysisStats === 'object'
+                ? options.analysisStats
+                : null
+
+            return {
+                aba: providedAba || (this.aba && typeof this.aba === 'object' ? this.aba : null),
+                normalizationBlocks: providedBlocks.length > 0
+                    ? providedBlocks
+                    : (Array.isArray(this.documentReviewNormalizationBlocks) ? this.documentReviewNormalizationBlocks : []),
+                documentTypeLabel: providedDocumentType !== ''
+                    ? providedDocumentType
+                    : String(this.documentTypeLabel || '').trim(),
+                normalizedOutput: providedNormalizedOutput
+                    || (this.documentReviewTitlePageNormalized && typeof this.documentReviewTitlePageNormalized === 'object'
+                        ? this.documentReviewTitlePageNormalized
+                        : null),
+                titlePageDetails: providedTitlePageDetails
+                    || (this.documentReviewData?.title_page_details && typeof this.documentReviewData.title_page_details === 'object'
+                        ? this.documentReviewData.title_page_details
+                        : null),
+                displayValues: providedDisplayValues
+                    || (this.displayValues && typeof this.displayValues === 'object' ? this.displayValues : null),
+                analysisStats: providedAnalysisStats
+                    || (this.analysisStats && typeof this.analysisStats === 'object' ? this.analysisStats : null),
+            }
+        },
+        recoverMissingCoreTitle(context = {}) {
+            const titleCandidates = [
+                context?.aba?.title,
+                context?.displayValues?.title_page_title,
+                context?.analysisStats?.title_page_title,
+                context?.displayValues?.title_page_details?.title,
+                context?.analysisStats?.title_page_details?.title,
+                context?.titlePageDetails?.title,
+            ]
+            for (const candidate of titleCandidates) {
+                const value = String(candidate || '').trim()
+                if (value === '') {
+                    continue
+                }
+                if (this.isLocationDatePseudoTitle(value) || this.isPlaceholderMetadataValue(value, 'title')) {
+                    continue
+                }
+
+                return value
+            }
+
+            return this.recoverTitleFromNormalizationBlocks(context?.normalizationBlocks)
+        },
+        recoverMissingAuthorFromFinalProperties(context = {}) {
+            const authorCandidates = [
+                context?.aba?.student_name,
+                context?.displayValues?.title_page_submitter,
+                context?.analysisStats?.title_page_submitter,
+                context?.displayValues?.title_page_details?.submitter,
+                context?.analysisStats?.title_page_details?.submitter,
+                context?.titlePageDetails?.submitter,
+            ]
+            for (const candidate of authorCandidates) {
+                const value = this.normalizeTitlePageCoreFieldValue('author', candidate)
+                if (value !== '') {
+                    return value
+                }
+            }
+
+            const lines = this.titlePageTextLinesFromNormalizationBlocks(context?.normalizationBlocks)
+            for (let index = 0; index < lines.length; index++) {
+                const line = String(lines[index] || '').trim()
+                if (line === '' || this.isArchiveNavigationNoise(line, 'other')) {
+                    continue
+                }
+
+                const labeledMatch = line.match(/\b(verfasser(?:\s*\/\s*in)?|verfasser\*in|eingereicht von|verfasst von)\b\s*[:\-]?\s*(.+)$/iu)
+                if (labeledMatch) {
+                    const inlineCandidate = this.normalizeTitlePageCoreFieldValue('author', String(labeledMatch[2] || '').trim())
+                    if (this.isLikelyAuthorName(inlineCandidate)) {
+                        return inlineCandidate
+                    }
+                }
+
+                const normalizedLine = this.comparableTitlePageText(line)
+                const introducesAuthorOnNextLine = normalizedLine.endsWith('verfasst von')
+                    || normalizedLine.endsWith('eingereicht von')
+                    || /^(verfasser(?:\s*\/\s*in)?|verfasser\*in)\s*:?$/iu.test(line)
+                if (!introducesAuthorOnNextLine) {
+                    continue
+                }
+
+                for (let lookahead = index + 1; lookahead < lines.length && lookahead <= index + 2; lookahead++) {
+                    const nextLine = this.normalizeTitlePageCoreFieldValue('author', String(lines[lookahead] || '').trim())
+                    if (this.isLikelyAuthorName(nextLine)) {
+                        return nextLine
+                    }
+                }
+            }
+
+            return ''
+        },
+        recoverMissingClassFromFinalProperties(context = {}) {
+            const studentClass = this.recoverClassToken(String(context?.aba?.student_class || '').trim())
+            if (studentClass !== '') {
+                return studentClass
+            }
+
+            const classCandidates = [
+                context?.displayValues?.title_page_class,
+                context?.analysisStats?.title_page_class,
+                context?.displayValues?.title_page_details?.class,
+                context?.analysisStats?.title_page_details?.class,
+                context?.titlePageDetails?.class,
+            ]
+            for (const candidate of classCandidates) {
+                const value = this.normalizeTitlePageCoreFieldValue('class', candidate)
+                if (value !== '') {
+                    return value
+                }
+            }
+
+            const lines = this.titlePageTextLinesFromNormalizationBlocks(context?.normalizationBlocks)
+            for (const line of lines) {
+                const direct = this.recoverClassToken(line)
+                if (direct !== '') {
+                    return direct
+                }
+
+                const labeledMatch = line.match(/\bklasse\b\s*[:\-]?\s*([0-9]{1,2}[A-Za-z]{1,4}[0-9]?)\b/iu)
+                if (labeledMatch) {
+                    return this.recoverClassToken(String(labeledMatch[1] || ''))
+                }
+            }
+
+            return ''
+        },
+        recoverMissingDocumentTypeFromFinalProperties(context = {}) {
+            const directDocumentTypeCandidates = [
+                context?.normalizedOutput?.document_type,
+                context?.titlePageDetails?.document_type,
+                context?.displayValues?.title_page_details?.document_type,
+                context?.analysisStats?.title_page_details?.document_type,
+                context?.documentTypeLabel,
+            ]
+            for (const candidate of directDocumentTypeCandidates) {
+                const normalizedDocumentType = this.normalizeDocumentTypeValue(String(candidate || '').trim())
+                const normalizedLookupValue = this.comparableTitlePageText(normalizedDocumentType)
+                if (
+                    normalizedDocumentType !== ''
+                    && !['unbekannt', 'unknown', '-', 'aba', 'other'].includes(normalizedLookupValue)
+                ) {
+                    return normalizedDocumentType
+                }
+            }
+
+            const lines = this.titlePageTextLinesFromNormalizationBlocks(context?.normalizationBlocks)
+            for (const line of lines) {
+                const normalized = this.comparableTitlePageText(line)
+                if (normalized.includes('abschliessende arbeit')) {
+                    return 'Abschließende Arbeit'
+                }
+                if (normalized.includes('vorwissenschaftliche arbeit')) {
+                    return 'Vorwissenschaftliche Arbeit'
+                }
+
+                const labeledMatch = line.match(/\bdokumenttyp\b\s*[:\-]\s*(.+)$/iu)
+                if (labeledMatch) {
+                    const labeledValue = this.normalizeDocumentTypeValue(String(labeledMatch[1] || '').trim())
+                    if (labeledValue !== '') {
+                        return labeledValue
+                    }
+                }
+            }
+
+            return ''
+        },
+        recoverMissingSchoolFromFinalProperties(context = {}) {
+            const schoolCandidates = [
+                context?.normalizedOutput?.school,
+                context?.titlePageDetails?.school,
+                context?.displayValues?.title_page_details?.school,
+                context?.analysisStats?.title_page_details?.school,
+            ]
+            for (const candidate of schoolCandidates) {
+                const value = this.cleanLabelArtifactValue(candidate, { role: 'school' })
+                if (value === '' || this.isPlaceholderMetadataValue(value, 'school') || this.isArchiveNavigationNoise(value, 'school')) {
+                    continue
+                }
+
+                return value
+            }
+
+            return this.recoverSchoolPartsFromNormalizationBlocks(context?.normalizationBlocks).school
+        },
+        recoverMissingSchoolFullFromFinalProperties(context = {}) {
+            const schoolFullCandidates = [
+                context?.normalizedOutput?.school_full,
+                context?.titlePageDetails?.school_full,
+                context?.displayValues?.title_page_details?.school_full,
+                context?.analysisStats?.title_page_details?.school_full,
+            ]
+            for (const candidate of schoolFullCandidates) {
+                const value = this.cleanLabelArtifactValue(candidate, { role: 'school_full' })
+                if (value === '' || this.isPlaceholderMetadataValue(value, 'school_full') || this.isArchiveNavigationNoise(value, 'school_full')) {
+                    continue
+                }
+
+                return value
+            }
+
+            return this.recoverSchoolPartsFromNormalizationBlocks(context?.normalizationBlocks).school_full
+        },
+        ensureRecoveredSchoolProperties(properties, options = {}) {
+            const entries = Array.isArray(properties) ? [...properties] : []
+            const hasSchool = entries.some((property) =>
+                this.titlePagePropertyRole(property) === 'school'
+                    && String(property?.value || '').trim() !== ''
+                    && !this.isArchiveNavigationNoise(String(property?.value || ''), 'school')
+            )
+            const hasSchoolFull = entries.some((property) =>
+                this.titlePagePropertyRole(property) === 'school_full'
+                    && String(property?.value || '').trim() !== ''
+                    && !this.isArchiveNavigationNoise(String(property?.value || ''), 'school_full')
+            )
+            if (hasSchool && hasSchoolFull) {
+                return entries
+            }
+
+            const context = this.buildTitlePageRecoveryContext(options)
+            const recoveredSchool = hasSchool ? '' : this.recoverMissingSchoolFromFinalProperties(context)
+            const recoveredSchoolFull = hasSchoolFull ? '' : this.recoverMissingSchoolFullFromFinalProperties(context)
+            if (recoveredSchool === '' && recoveredSchoolFull === '') {
+                return entries
+            }
+
+            if (!hasSchool && recoveredSchool !== '') {
+                entries.push({
+                    label: 'Schule',
+                    value: recoveredSchool,
+                    source_label: 'Schule',
+                    normalized_label: 'schule',
+                    order: null,
+                })
+            }
+            if (!hasSchoolFull && recoveredSchoolFull !== '') {
+                entries.push({
+                    label: 'Schule (vollständig)',
+                    value: recoveredSchoolFull,
+                    source_label: 'Schule (vollständig)',
+                    normalized_label: 'schule_vollstaendig',
+                    order: null,
+                })
+            }
+
+            return entries
+        },
+        ensureRecoveredDocumentTypeProperty(properties, options = {}) {
+            const entries = Array.isArray(properties) ? properties : []
+            const hasDocumentType = entries.some((property) =>
+                this.titlePagePropertyRole(property) === 'document_type'
+                    && String(property?.value || '').trim() !== ''
+            )
+            if (hasDocumentType) {
+                return entries
+            }
+
+            const context = this.buildTitlePageRecoveryContext(options)
+            const recoveredValue = this.recoverMissingDocumentTypeFromFinalProperties(context)
+            if (recoveredValue === '') {
+                return entries
+            }
+
+            return [
+                {
+                    label: 'Dokumenttyp',
+                    value: recoveredValue,
+                    source_label: 'Dokumenttyp',
+                    normalized_label: 'dokumenttyp',
+                    order: null,
+                },
+                ...entries,
+            ]
+        },
+        recoverSchoolPartsFromNormalizationBlocks(blocks) {
+            const lines = this.titlePageTextLinesFromNormalizationBlocks(blocks)
+            if (lines.length === 0) {
+                return {
+                    school: '',
+                    school_address: '',
+                    school_city: '',
+                    school_full: '',
+                }
+            }
+
+            let school = ''
+            let schoolAddress = ''
+            let schoolCity = ''
+            for (let index = 0; index < lines.length; index++) {
+                const line = String(lines[index] || '').trim()
+                if (!this.isLikelySchoolNameCandidate(line) || this.isArchiveNavigationNoise(line, 'school')) {
+                    continue
+                }
+
+                school = line
+                for (let nextIndex = index + 1; nextIndex < lines.length && nextIndex <= index + 4; nextIndex++) {
+                    const next = String(lines[nextIndex] || '').trim()
+                    if (next === '' || this.isArchiveNavigationNoise(next, 'other')) {
+                        continue
+                    }
+                    if (this.isLikelyTitlePageMetadataLine(next) || this.isLocationDatePseudoTitle(next)) {
+                        break
+                    }
+                    if (this.isLikelySchoolCityLine(next)) {
+                        if (schoolCity === '') {
+                            schoolCity = next
+                        }
+                        continue
+                    }
+                    if (this.isLikelySchoolAddressLine(next)) {
+                        schoolAddress = schoolAddress === '' ? next : `${schoolAddress}, ${next}`
+                        continue
+                    }
+
+                    if (schoolAddress === '' && schoolCity === '') {
+                        break
+                    }
+
+                    break
+                }
+
+                break
+            }
+
+            const schoolFullParts = [school, schoolAddress, schoolCity].filter((part) => String(part || '').trim() !== '')
+
+            return {
+                school,
+                school_address: schoolAddress,
+                school_city: schoolCity,
+                school_full: schoolFullParts.join(', '),
+            }
+        },
+        recoverTitleFromNormalizationBlocks(blocks) {
+            const lines = this.titlePageTextLinesFromNormalizationBlocks(blocks)
+            for (const line of lines) {
+                if (!this.isRecoverableTitleCandidate(line)) {
+                    continue
+                }
+
+                return line
+            }
+
+            return ''
+        },
+        isRecoverableTitleCandidate(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+            if (this.isPlaceholderMetadataValue(text, 'title') || this.isLocationDatePseudoTitle(text)) {
+                return false
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            if (normalized === '') {
+                return false
+            }
+
+            const looksLikeLabelLine = /(verfasst von|eingereicht von|betreuer(?:\s*\/\s*in)?|klasse|schuljahr|dokumenttyp|schule|schuladresse|schulort|datum)\s*[:\-]/iu.test(text)
+            if (looksLikeLabelLine) {
+                return false
+            }
+
+            if (normalized.includes('inhaltsverzeichnis') || normalized.includes('archiv') || normalized.includes('tag der offenen tur')) {
+                return false
+            }
+            if (normalized.includes('gymnasium') || normalized.includes('schule vollstandig')) {
+                return false
+            }
+            if (normalized.includes('abschliessende arbeit') || normalized.includes('vorwissenschaftliche arbeit')) {
+                return false
+            }
+
+            if (text.includes('|') && this.titlePageUppercaseRatio(text) >= 0.5) {
+                return false
+            }
+
+            return text.length >= 12
+        },
+        titlePageTextLinesFromNormalizationBlocks(blocks) {
+            if (!Array.isArray(blocks) || blocks.length === 0) {
+                return []
+            }
+
+            const unique = new Set()
+            const lines = []
+            const titlePageBlocks = [...blocks]
+                .filter((block) => this.isTitlePageNormalizationBlock(block))
+                .sort((left, right) => Number(left?.order || 0) - Number(right?.order || 0))
+
+            const appendLine = (value) => {
+                const line = String(value || '').trim()
+                if (line === '') {
+                    return
+                }
+                const key = line.toLowerCase()
+                if (unique.has(key)) {
+                    return
+                }
+                unique.add(key)
+                lines.push(line)
+            }
+
+            titlePageBlocks.forEach((block) => {
+                const candidates = [
+                    block?.plain_text,
+                    block?.text,
+                    block?.content_text,
+                ]
+                candidates.forEach((candidate) => {
+                    String(candidate || '')
+                        .split(/\r?\n/gu)
+                        .forEach((line) => appendLine(line))
+                })
+            })
+
+            return lines
+        },
+        isTitlePageNormalizationBlock(block) {
+            if (!block || typeof block !== 'object') {
+                return false
+            }
+
+            const zone = String(block?.document_zone?.zone || block?.zone_context || block?.zone || '').trim().toLowerCase()
+            return zone === 'title_page' || zone === 'titlepage'
+        },
+        isLikelySchoolNameCandidate(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            if (normalized === '') {
+                return false
+            }
+            if (normalized.includes('inhaltsverzeichnis')) {
+                return false
+            }
+
+            return /\b(gymnasium|schule|lyzeum|college|akademie|htl|hak|hblw|berufsschule)\b/iu.test(text)
+        },
+        isLikelySchoolAddressLine(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+
+            const hasStreetToken = /\b(kai|strasse|straße|gasse|platz|allee|weg|ring|ufer|promenade|street|road)\b/iu.test(text)
+            const hasHouseNumber = /\d{1,4}[A-Za-z]?/u.test(text)
+
+            return hasStreetToken && hasHouseNumber
+        },
+        isLikelySchoolCityLine(value) {
+            return /^\s*\d{4}\s+[\p{L}][\p{L}\s\-().]{1,80}$/u.test(String(value || '').trim())
+        },
+        isLikelyTitlePageMetadataLine(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+
+            return /^(eingereicht von|verfasst von|vorgelegt von|verfasser(?:\s*\/\s*in)?|verfasser\*in|betreuer(?:\s*\/\s*in)?|betreuer\*in|klasse|schuljahr|ort,?\s*datum|datum|unterschrift|titel|thema|dokumenttyp)\b/iu.test(text)
+        },
+        isLikelyAuthorName(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+            if (/[0-9]/u.test(text)) {
+                return false
+            }
+            if (this.isPlaceholderMetadataValue(text, 'author')) {
+                return false
+            }
+            if (this.isLocationDatePseudoTitle(text)) {
+                return false
+            }
+            if (this.isArchiveNavigationNoise(text, 'other')) {
+                return false
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            if (normalized === '') {
+                return false
+            }
+            if (/(klasse|schuljahr|betreuer|dokumenttyp|schule|abgabe|datum|inhaltsverzeichnis|archiv)/u.test(normalized)) {
+                return false
+            }
+
+            const parts = text.split(/\s+/u).filter((part) => part !== '')
+
+            return parts.length >= 2 && parts.length <= 6
+        },
+        recoverClassToken(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return ''
+            }
+
+            const match = text.match(/\b([0-9]{1,2}[A-Za-z]{1,4}[0-9]?)\b/u)
+            return match ? String(match[1] || '').trim() : ''
+        },
+        normalizeDocumentTypeValue(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return ''
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            const startsWithVwa = normalized.startsWith('vorwissenschaftliche arbeit')
+            const hasMergedTail = normalized.includes('verfasst von')
+            if (startsWithVwa && hasMergedTail) {
+                return 'Vorwissenschaftliche Arbeit'
+            }
+            if (!startsWithVwa && hasMergedTail) {
+                return ''
+            }
+
+            return text
+        },
+        cleanLabelArtifactValue(value, options = {}) {
+            let text = String(value || '').trim()
+            if (text === '') {
+                return ''
+            }
+
+            const role = String(options?.role || '').trim().toLowerCase()
+            if (['advisor', 'author'].includes(role)) {
+                text = text
+                    .replace(/^\s*(?:betreuer(?:\s*\/\s*in)?|betreuer\*in|verfasser(?:\s*\/\s*in)?|verfasser\*in)\s*[:\-]\s*/iu, '')
+                    .replace(/^\s*\/\s*in\s*[:\-]\s*/iu, '')
+                    .trim()
+            }
+
+            return text
+        },
+        isLocationDatePseudoTitle(value) {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            const hasDateFormula = normalized.includes('abgabedatum')
+                || normalized.includes('abgabe datum')
+                || normalized.includes('abgabe')
+                || normalized.includes('datum')
+            if (!hasDateFormula) {
+                return false
+            }
+
+            const looksLikeLocationPrefix = /^[\p{L}][\p{L}\-.\s]{1,40},\s*/u.test(text)
+
+            return looksLikeLocationPrefix
+        },
+        isArchiveNavigationNoise(value, role = 'other') {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            const hasArchiveMarker = text.includes('Archiv]') || normalized.startsWith('archiv ')
+            const hasOpenHouseMarker = normalized.includes('tag der offenen tur')
+            if (!hasArchiveMarker && !hasOpenHouseMarker) {
+                return false
+            }
+
+            return ['school', 'school_full', 'other'].includes(role)
+        },
+        isPlaceholderMetadataValue(value, role = 'other') {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return true
+            }
+            if (/^[:\-–—|,.;/\\]+$/u.test(text)) {
+                return true
+            }
+
+            const normalized = this.comparableTitlePageText(text)
+            if (normalized === 'inhaltsverzeichnis' && ['subtitle', 'title', 'other'].includes(role)) {
+                return true
+            }
+
+            return false
+        },
+        isMergedMultiFieldValue(value, role = 'other') {
+            const text = String(value || '').trim()
+            if (text === '') {
+                return false
+            }
+            if (role !== 'class') {
+                return false
+            }
+
+            const hasClassToken = /\b\d{1,2}[a-zA-Z]{1,4}\d?\b/u.test(text)
+            const hasMergedCanonicalLabels = /(schuljahr|betreuer(?:\s*\/\s*in)?|betreuer\*in|verfasser(?:\s*\/\s*in)?|datum|dokumenttyp)\s*[:\-]/iu.test(text)
+
+            return hasClassToken && hasMergedCanonicalLabels
+        },
+        normalizeTitlePageAdditionalProperty(property) {
+            if (!property || typeof property !== 'object') {
+                return null
+            }
+
+            const role = this.titlePagePropertyRole(property)
+            const normalizedRole = String(role || 'other').trim().toLowerCase()
+            let value = this.cleanLabelArtifactValue(property.value, { role: normalizedRole })
+            if (normalizedRole === 'document_type') {
+                value = this.normalizeDocumentTypeValue(value)
+            }
+            if (value === '') {
+                return null
+            }
+            if (this.isPlaceholderMetadataValue(value, normalizedRole)) {
+                return null
+            }
+            const label = String(property.label || property.source_label || '').trim()
+            const archiveCandidate = `${label} ${value}`.trim()
+            if (
+                this.isArchiveNavigationNoise(value, normalizedRole)
+                || this.isArchiveNavigationNoise(label, normalizedRole)
+                || this.isArchiveNavigationNoise(archiveCandidate, normalizedRole)
+            ) {
+                return null
+            }
+            if (normalizedRole === 'title' && this.isLocationDatePseudoTitle(value)) {
+                return null
+            }
+            if (normalizedRole === 'class' && this.isMergedMultiFieldValue(value, normalizedRole)) {
+                return null
+            }
+
+            return {
+                ...property,
+                value,
+            }
         },
         normalizeTitlePageAdditionalProperties(properties) {
             if (!Array.isArray(properties)) {
@@ -4614,6 +5320,9 @@ export default {
                 const label = String(property.label || property.source_label || property.normalized_label || '').trim()
                 const value = String(property.value || '').trim()
                 if (label === '' || value === '') {
+                    return
+                }
+                if (this.isTitlePageAdditionalPropertyUiMetaText(label) || this.isTitlePageAdditionalPropertyUiMetaText(value)) {
                     return
                 }
 
@@ -4643,13 +5352,302 @@ export default {
                 return Number(left._index || 0) - Number(right._index || 0)
             })
 
-            return normalized.map(({ _index, ...property }) => property)
+            const filtered = this.filterTitlePageAdditionalProperties(normalized)
+
+            return filtered.map(({ _index, ...property }) => property)
+        },
+        isTitlePageAdditionalPropertyUiMetaText(value) {
+            return String(value || '').trim() === 'Weitere Eigenschaften'
+        },
+        filterTitlePageAdditionalProperties(properties) {
+            if (!Array.isArray(properties) || properties.length === 0) {
+                return []
+            }
+
+            const context = this.buildTitlePageAdditionalPropertyContext(properties)
+            const filtered = []
+
+            properties.forEach((property) => {
+                if (!property || typeof property !== 'object') {
+                    return
+                }
+
+                const normalizedProperty = this.normalizeTitlePageAdditionalProperty(property)
+                if (!normalizedProperty) {
+                    return
+                }
+
+                if (!this.isCanonicalTitlePagePropertyLabel(normalizedProperty) && this.isNoisyAiImageDescriptionProperty(normalizedProperty)) {
+                    return
+                }
+                if (this.isSplitArtifactProperty(normalizedProperty, context)) {
+                    return
+                }
+                if (this.isRedundantAgainstFullSchoolField(normalizedProperty, context)) {
+                    return
+                }
+
+                filtered.push(normalizedProperty)
+            })
+
+            return filtered
+        },
+        buildTitlePageAdditionalPropertyContext(properties) {
+            const context = {
+                school_full: '',
+                school: '',
+                school_address: '',
+            }
+
+            if (!Array.isArray(properties)) {
+                return context
+            }
+
+            properties.forEach((property) => {
+                const role = this.titlePagePropertyRole(property)
+                const value = String(property?.value || '').trim()
+                if (value === '') {
+                    return
+                }
+
+                if (role === 'school_full' && context.school_full === '') {
+                    context.school_full = value
+                }
+                if (role === 'school' && context.school === '') {
+                    context.school = value
+                }
+                if (role === 'school_address' && context.school_address === '') {
+                    context.school_address = value
+                }
+            })
+
+            return context
+        },
+        normalizeTitlePagePropertyLabelKey(value) {
+            return String(value || '')
+                .trim()
+                .toLowerCase()
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/gu, '')
+                .replace(/ß/gu, 'ss')
+                .replace(/[^a-z0-9]+/gu, '_')
+                .replace(/^_+|_+$/gu, '')
+        },
+        titlePagePropertyRole(property) {
+            const normalizedLabel = this.normalizeTitlePagePropertyLabelKey(property?.normalized_label || '')
+            const label = this.normalizeTitlePagePropertyLabelKey(property?.label || property?.source_label || '')
+            const keys = [normalizedLabel, label]
+
+            if (keys.some((key) => ['titel', 'title'].includes(key))) {
+                return 'title'
+            }
+            if (keys.some((key) => ['untertitel', 'subtitle'].includes(key))) {
+                return 'subtitle'
+            }
+            if (keys.some((key) => ['verfasser', 'verfasser_in', 'verfasserin', 'author'].includes(key))) {
+                return 'author'
+            }
+            if (keys.some((key) => ['betreuer', 'betreuer_in', 'betreuerin', 'advisor'].includes(key))) {
+                return 'advisor'
+            }
+            if (keys.some((key) => ['klasse', 'class'].includes(key))) {
+                return 'class'
+            }
+            if (keys.some((key) => ['datum', 'date'].includes(key))) {
+                return 'date'
+            }
+            if (keys.some((key) => ['dokumenttyp', 'document_type'].includes(key))) {
+                return 'document_type'
+            }
+            if (keys.some((key) => ['schule_vollstaendig', 'school_full'].includes(key))) {
+                return 'school_full'
+            }
+            if (keys.some((key) => ['schuladresse', 'school_address'].includes(key))) {
+                return 'school_address'
+            }
+            if (keys.some((key) => ['schulort', 'school_city', 'school_location'].includes(key))) {
+                return 'school_city'
+            }
+            if (keys.some((key) => ['schule', 'school'].includes(key))) {
+                return 'school'
+            }
+
+            return 'other'
+        },
+        isCanonicalTitlePagePropertyLabel(property) {
+            return this.titlePagePropertyRole(property) !== 'other'
+        },
+        comparableTitlePageText(value) {
+            return String(value || '')
+                .trim()
+                .toLowerCase()
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/gu, '')
+                .replace(/ß/gu, 'ss')
+                .replace(/[^a-z0-9]+/gu, ' ')
+                .replace(/\s+/gu, ' ')
+                .trim()
+        },
+        comparableTitlePageContains(haystack, needle) {
+            const normalizedHaystack = this.comparableTitlePageText(haystack)
+            const normalizedNeedle = this.comparableTitlePageText(needle)
+            if (normalizedHaystack === '' || normalizedNeedle === '') {
+                return false
+            }
+
+            return normalizedHaystack.includes(normalizedNeedle)
+        },
+        titlePageUppercaseRatio(value) {
+            const text = String(value || '')
+            const letters = text.match(/\p{L}/gu) || []
+            if (letters.length === 0) {
+                return 0
+            }
+            const uppercaseLetters = letters.filter((char) => char.toUpperCase() === char && char.toLowerCase() !== char)
+
+            return uppercaseLetters.length / letters.length
+        },
+        isNoisyAiImageDescription(value) {
+            const normalized = this.comparableTitlePageText(value)
+            if (normalized === '') {
+                return false
+            }
+
+            const startsAsImageDescription = normalized.startsWith('ein bild das')
+                || normalized.startsWith('ein bild')
+                || normalized.includes('bild das')
+            const hasContainsVerb = normalized.includes('enthalt') || normalized.includes('zeigt')
+            const genericVisualTerms = ['schrift', 'grafik', 'grafiken', 'text', 'kreis', 'logo', 'symbol', 'symbole']
+            const visualTermCount = genericVisualTerms.filter((term) => normalized.includes(term)).length
+            const hasAiToken = normalized.includes('ki') || normalized.includes('ai')
+            const hasGeneratedToken = normalized.includes('generierte inhalte')
+                || normalized.includes('generiert')
+                || normalized.includes('generated content')
+            const hasErrorHint = normalized.includes('fehlerhaft')
+                || normalized.includes('ungenau')
+                || normalized.includes('unvollstandig')
+            const hasAiDisclaimer = hasAiToken && hasGeneratedToken && hasErrorHint
+
+            return hasAiDisclaimer || (startsAsImageDescription && hasContainsVerb && visualTermCount >= 2 && (hasAiToken || hasGeneratedToken))
+        },
+        isNoisyAiImageDescriptionProperty(property) {
+            const candidates = [
+                property?.value,
+                property?.label,
+                property?.source_label,
+                `${String(property?.label || '').trim()} ${String(property?.value || '').trim()}`.trim(),
+                `${String(property?.source_label || '').trim()} ${String(property?.label || '').trim()} ${String(property?.value || '').trim()}`.trim(),
+            ]
+
+            return candidates.some((candidate) => this.isNoisyAiImageDescription(candidate))
+        },
+        isSplitArtifactProperty(property, context = {}) {
+            const label = String(property?.label || '').trim()
+            const value = String(property?.value || '').trim()
+            if (label === '' || value === '') {
+                return false
+            }
+            if (this.isCanonicalTitlePagePropertyLabel(property)) {
+                return false
+            }
+
+            const labelWords = label.split(/\s+/u).filter((word) => word !== '')
+            const valueWords = value.split(/\s+/u).filter((word) => word !== '')
+            const looksHeadlineSplit = this.titlePageUppercaseRatio(label) >= 0.6
+                && labelWords.length >= 3
+                && (value.includes('|') || value.includes('?'))
+
+            const strongerValues = [context.school_full, context.school_address, context.school]
+                .map((entry) => String(entry || '').trim())
+                .filter((entry) => entry !== '')
+            const combinedVariants = [
+                `${label} ${value}`,
+                `${label}-${value}`,
+                `${label}: ${value}`,
+            ]
+            const coveredByStrongerField = strongerValues.some((strongerValue) =>
+                combinedVariants.some((variant) => this.comparableTitlePageContains(strongerValue, variant))
+            )
+
+            const looksLikeFragmentPair = labelWords.length <= 3
+                && valueWords.length <= 6
+                && label.length <= 30
+                && value.length <= 60
+
+            return looksHeadlineSplit || (looksLikeFragmentPair && coveredByStrongerField)
+        },
+        isRedundantAgainstFullSchoolField(property, context = {}) {
+            const fullSchool = String(context.school_full || '').trim()
+            if (fullSchool === '') {
+                return false
+            }
+
+            const role = this.titlePagePropertyRole(property)
+            if (!['school_city', 'school_address'].includes(role)) {
+                return false
+            }
+
+            const value = String(property?.value || '').trim()
+            if (value === '' || !this.comparableTitlePageContains(fullSchool, value)) {
+                return false
+            }
+
+            if (role === 'school_city') {
+                return true
+            }
+
+            return role === 'school_address'
+        },
+        normalizeTitlePageLogoStatusMessage(value) {
+            return String(value || '')
+                .trim()
+                .replace(/\s+/gu, ' ')
+                .toLowerCase()
+        },
+        titlePageLogoAssetIdentity(asset) {
+            const path = String(asset?.logo_asset_path || '').trim()
+            if (path !== '') {
+                const disk = String(asset?.logo_asset_disk || 'local').trim().toLowerCase() || 'local'
+                return `${disk}:${path.toLowerCase()}`
+            }
+
+            const candidates = [
+                asset?.asset_id,
+                asset?.rel_id,
+                asset?.target,
+                asset?.logo_asset_filename,
+                asset?.logo_extraction_filename,
+                asset?.hash,
+                asset?.filename,
+                asset?.logo_asset_url,
+            ]
+            for (const candidate of candidates) {
+                const normalized = String(candidate || '').trim()
+                if (normalized !== '') {
+                    return normalized.toLowerCase()
+                }
+            }
+
+            return null
+        },
+        titlePageLogoSuccessDedupeKey(asset) {
+            const identity = this.titlePageLogoAssetIdentity(asset)
+            if (identity !== null) {
+                return `asset:${identity}`
+            }
+
+            const logoType = String(asset?.logo_type || '').trim().toLowerCase()
+            const successText = String(asset?.logo_ui_display_note || '').trim() !== ''
+                ? `Logo-Asset verfügbar und renderbar. ${String(asset?.logo_ui_display_note || '').trim()}`
+                : 'Logo-Asset verfügbar und renderbar.'
+
+            return `fallback:${logoType}|${this.normalizeTitlePageLogoStatusMessage(successText)}`
         },
         normalizeTitlePageLogoAssets(logos, uiModel = {}) {
             const sourceLogos = Array.isArray(logos) ? logos : []
             const uiLogoAssets = Array.isArray(uiModel?.logo_assets) ? uiModel.logo_assets : []
 
-            return sourceLogos
+            const normalizedAssets = sourceLogos
                 .map((entry, index) => {
                     const logo = entry && typeof entry === 'object'
                         ? entry
@@ -4694,6 +5692,29 @@ export default {
                     }
                 })
                 .sort((left, right) => Number(left.asset_index || 0) - Number(right.asset_index || 0))
+
+            const seenSuccess = new Set()
+            const deduped = []
+            normalizedAssets.forEach((asset) => {
+                const isSuccess = Boolean(asset.logo_detected)
+                    && Boolean(asset.logo_asset_available)
+                    && Boolean(asset.logo_ui_displayable)
+
+                if (!isSuccess) {
+                    deduped.push(asset)
+                    return
+                }
+
+                const dedupeKey = this.titlePageLogoSuccessDedupeKey(asset)
+                if (seenSuccess.has(dedupeKey)) {
+                    return
+                }
+
+                seenSuccess.add(dedupeKey)
+                deduped.push(asset)
+            })
+
+            return deduped
         },
         titlePageLogoNodeKey(node) {
             return String(node?.id || 'titlepage')
@@ -4702,6 +5723,11 @@ export default {
             const nodeKey = this.titlePageLogoNodeKey(node)
             const assetIndex = Number(asset?.asset_index ?? index)
             return `${nodeKey}-asset-${assetIndex}`
+        },
+        shouldShowTitlePageLogoSummary(node) {
+            const assets = Array.isArray(node?.logo_assets) ? node.logo_assets : []
+            const status = this.resolveTitlePageLogoStatus(node)
+            return !(status === 'asset_ready' && assets.length > 0)
         },
         resolveTitlePageLogoAssetStatus(node, asset, index = 0) {
             const detected = Boolean(asset?.logo_detected)
