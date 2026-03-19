@@ -325,8 +325,77 @@
                                         </div>
                                     </div>
 
+                                    <div v-if="isPandocTitlepageNode(root)" class="review-item__subtext mb-2">
+                                        <div
+                                            v-if="Array.isArray(root.additional_properties) && root.additional_properties.length > 0"
+                                            class="mb-2">
+                                            <div class="text-caption font-weight-medium mb-1">Weitere Eigenschaften</div>
+                                            <div
+                                                v-for="(property, propertyIndex) in root.additional_properties"
+                                                :key="`pandoc-root-${root.id}-property-${propertyIndex}`"
+                                                class="detail-line">
+                                                <span class="detail-line__label">{{ property.label || property.normalized_label || 'Eigenschaft' }}:</span>
+                                                {{ property.value }}
+                                            </div>
+                                        </div>
+
+                                        <v-alert
+                                            :type="titlePageLogoStatusColor(root)"
+                                            variant="tonal"
+                                            density="compact"
+                                            rounded="lg"
+                                            class="mb-2 text-caption">
+                                            {{ titlePageLogoStatusText(root) }}
+                                            <span v-if="root.logo_ui_display_note" class="d-block mt-1">{{ root.logo_ui_display_note }}</span>
+                                        </v-alert>
+
+                                        <div
+                                            v-if="Array.isArray(root.logo_assets) && root.logo_assets.length > 0"
+                                            class="titlepage-logo-grid">
+                                            <div
+                                                v-for="(asset, assetIndex) in root.logo_assets"
+                                                :key="asset.id || titlePageLogoAssetNodeKey(root, asset, assetIndex)"
+                                                class="titlepage-logo-card">
+                                                <v-alert
+                                                    :type="titlePageLogoAssetStatusColor(root, asset, assetIndex)"
+                                                    variant="tonal"
+                                                    density="compact"
+                                                    rounded="lg"
+                                                    class="mb-2 text-caption">
+                                                    {{ titlePageLogoAssetStatusText(root, asset, assetIndex) }}
+                                                    <span
+                                                        v-if="asset.logo_ui_display_note"
+                                                        class="d-block mt-1">
+                                                        {{ asset.logo_ui_display_note }}
+                                                    </span>
+                                                </v-alert>
+
+                                                <div
+                                                    v-if="resolveTitlePageLogoAssetStatus(root, asset, assetIndex) === 'asset_ready'"
+                                                    class="titlepage-logo-preview-wrap">
+                                                    <img
+                                                        :src="asset.logo_asset_url"
+                                                        :alt="asset.logo_alt_text || 'Logo der Titelseite'"
+                                                        class="titlepage-logo-preview"
+                                                        @load="onTitlePageLogoLoaded(root, asset, assetIndex)"
+                                                        @error="onTitlePageLogoError(root, asset, assetIndex)">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div v-else-if="resolveTitlePageLogoStatus(root) === 'asset_ready'" class="titlepage-logo-preview-wrap">
+                                            <img
+                                                :src="root.logo_asset_url"
+                                                :alt="root.logo_alt_text || 'Logo der Titelseite'"
+                                                class="titlepage-logo-preview"
+                                                @load="onTitlePageLogoLoaded(root)"
+                                                @error="onTitlePageLogoError(root)">
+                                        </div>
+                                    </div>
+
                                     <div v-if="shouldShowPandocRootContent(root) && pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root)).length > 0" class="review-item__subtext mb-2">
-                                        <div class="pandoc-content-block pandoc-root-content-block">
+                                        <div
+                                            class="pandoc-content-block pandoc-root-content-block"
+                                            :class="root.area === 'abstract' ? 'pandoc-root-content-block--abstract' : ''">
                                             <div
                                                 v-for="(line, lineIndex) in pandocNodeDisplayLines(root, pandocNodeDisplayLineLimit(root))"
                                                 :key="`pandoc-root-${root.id}-content-${lineIndex}`"
@@ -810,6 +879,8 @@ export default {
             openChapterPanels: [],
             openPandocSectionPanels: [],
             openPandocChildPanels: [],
+            titlePageLogoRenderErrors: {},
+            titlePageLogoRenderLoads: {},
         }
     },
 
@@ -1284,6 +1355,39 @@ export default {
             return this.documentReview.review && typeof this.documentReview.review === 'object'
                 ? this.documentReview.review
                 : {}
+        },
+        documentReviewTitlePageProcessing() {
+            return this.documentReviewData.title_page_processing && typeof this.documentReviewData.title_page_processing === 'object'
+                ? this.documentReviewData.title_page_processing
+                : {}
+        },
+        documentReviewTitlePageNormalized() {
+            return this.documentReviewTitlePageProcessing.normalized_output && typeof this.documentReviewTitlePageProcessing.normalized_output === 'object'
+                ? this.documentReviewTitlePageProcessing.normalized_output
+                : {}
+        },
+        documentReviewTitlePageLogo() {
+            return this.documentReviewTitlePageProcessing.logo && typeof this.documentReviewTitlePageProcessing.logo === 'object'
+                ? this.documentReviewTitlePageProcessing.logo
+                : {}
+        },
+        documentReviewTitlePageLogos() {
+            return Array.isArray(this.documentReviewTitlePageProcessing.logos)
+                ? this.documentReviewTitlePageProcessing.logos
+                : []
+        },
+        documentReviewTitlePageUiModel() {
+            return this.documentReviewTitlePageProcessing.ui_model && typeof this.documentReviewTitlePageProcessing.ui_model === 'object'
+                ? this.documentReviewTitlePageProcessing.ui_model
+                : {}
+        },
+        documentReviewTitlePageNormalizedDetailLines() {
+            return this.buildTitlePageDetailLinesFromNormalized(this.documentReviewTitlePageNormalized)
+        },
+        documentReviewTitlePageAdditionalProperties() {
+            return this.normalizeTitlePageAdditionalProperties(
+                this.documentReviewTitlePageNormalized?.additional_properties
+            )
         },
         documentReviewComparison() {
             return this.documentReview.comparison && typeof this.documentReview.comparison === 'object'
@@ -1801,6 +1905,18 @@ export default {
                             text,
                             display_text: String(item?.display_text || text),
                             detail_lines: Array.isArray(item?.detail_lines) ? item.detail_lines.map((line) => String(line || '').trim()).filter((line) => line !== '') : [],
+                            logo_asset_url: null,
+                            logo_alt_text: null,
+                            logo_ui_display_note: null,
+                            logo_detected: false,
+                            logo_count: 0,
+                            logo_detected_count: 0,
+                            logo_asset_available: false,
+                            logo_asset_available_count: 0,
+                            logo_ui_displayable: false,
+                            logo_ui_displayable_count: 0,
+                            logo_assets: [],
+                            additional_properties: [],
                             type_label: String(item?.section_type_label || this.localSectionTypeLabel(sectionType || 'abschnitt')),
                             confidence: String(item?.confidence || 'low'),
                             strategy: String(item?.strategy || 'heuristic'),
@@ -1826,6 +1942,39 @@ export default {
                         }
                     })
                     .map((item) => {
+                        if (item.area === 'titlepage') {
+                            const normalizedDetailLines = this.documentReviewTitlePageNormalizedDetailLines
+                            if (normalizedDetailLines.length > 0) {
+                                item.detail_lines = normalizedDetailLines
+                            }
+                            item.additional_properties = this.documentReviewTitlePageAdditionalProperties
+
+                            const logo = this.documentReviewTitlePageLogo
+                            const uiModel = this.documentReviewTitlePageUiModel
+                            const logos = this.normalizeTitlePageLogoAssets(this.documentReviewTitlePageLogos, uiModel)
+                                .map((entry, index) => ({
+                                    ...entry,
+                                    id: this.titlePageLogoAssetNodeKey(item, entry, index),
+                                }))
+                            const displayableLogos = logos.filter((entry) => entry.logo_ui_displayable && String(entry.logo_asset_url || '').trim() !== '')
+                            const primaryLogo = displayableLogos[0] || logos[0] || null
+                            item.logo_assets = logos
+                            item.logo_count = logos.length
+                            item.logo_detected_count = logos.filter((entry) => entry.logo_detected).length
+                            item.logo_asset_available_count = logos.filter((entry) => entry.logo_asset_available).length
+                            item.logo_ui_displayable_count = displayableLogos.length
+                            item.logo_detected = item.logo_detected_count > 0 || Boolean(logo.logo_detected)
+                            item.logo_asset_available = item.logo_asset_available_count > 0 || Boolean(logo.logo_asset_available)
+                            item.logo_ui_displayable = item.logo_ui_displayable_count > 0 || Boolean(logo.logo_ui_displayable)
+                            item.logo_asset_url = primaryLogo
+                                ? String(primaryLogo.logo_asset_url || '').trim() || null
+                                : (String(logo.logo_asset_url || uiModel.logo_asset_url || '').trim() || null)
+                            item.logo_alt_text = primaryLogo
+                                ? String(primaryLogo.logo_alt_text || 'Logo der Titelseite').trim()
+                                : String(logo.logo_alt_text || uiModel.logo_alt_text || 'Logo der Titelseite').trim()
+                            item.logo_ui_display_note = String(logo.logo_ui_display_note || '').trim() || null
+                        }
+
                         if (item.area === 'figure_index' && item.detail_lines.length === 0 && this.pandocFigureIndexEntries.length > 0) {
                             const figureLines = this.pandocFigureIndexEntries.slice(0, 6).map((entry) => {
                                 const caption = String(entry?.caption || '').trim()
@@ -2096,6 +2245,8 @@ export default {
             if (this.abaId <= 0 || !this.mainDocument) {
                 this.documentReviewPayload = null
                 this.documentReviewError = ''
+                this.titlePageLogoRenderErrors = {}
+                this.titlePageLogoRenderLoads = {}
                 return
             }
 
@@ -2107,6 +2258,8 @@ export default {
             this.documentReviewError = ''
 
             try {
+                this.titlePageLogoRenderErrors = {}
+                this.titlePageLogoRenderLoads = {}
                 const response = await axios.get(`/api/admin/abas/${this.abaId}/analysis/document-review`)
                 this.documentReviewPayload = response?.data?.data || null
             } catch (error) {
@@ -4424,6 +4577,277 @@ export default {
                 || type === 'title_page'
                 || zone === 'title_page'
         },
+        buildTitlePageDetailLinesFromNormalized(normalized) {
+            const output = normalized && typeof normalized === 'object'
+                ? normalized
+                : {}
+            const lines = []
+            const append = (label, value) => {
+                const text = String(value || '').trim()
+                if (text === '') {
+                    return
+                }
+                lines.push(`${label}: ${text}`)
+            }
+
+            append('Titel', output.title)
+            append('Untertitel', output.subtitle)
+            append('Verfasser*in', output.author)
+            append('Betreuer', output.advisor)
+            append('Klasse', output.class)
+            append('Datum', output.date)
+
+            return lines
+        },
+        normalizeTitlePageAdditionalProperties(properties) {
+            if (!Array.isArray(properties)) {
+                return []
+            }
+
+            const normalized = []
+            const seen = new Set()
+            properties.forEach((property, index) => {
+                if (!property || typeof property !== 'object') {
+                    return
+                }
+
+                const label = String(property.label || property.source_label || property.normalized_label || '').trim()
+                const value = String(property.value || '').trim()
+                if (label === '' || value === '') {
+                    return
+                }
+
+                const dedupeKey = `${String(property.normalized_label || label).trim().toLowerCase()}|${value.toLowerCase()}`
+                if (seen.has(dedupeKey)) {
+                    return
+                }
+                seen.add(dedupeKey)
+
+                normalized.push({
+                    label,
+                    value,
+                    source_label: String(property.source_label || label).trim(),
+                    normalized_label: String(property.normalized_label || '').trim() || null,
+                    order: Number.isFinite(Number(property.order)) ? Number(property.order) : null,
+                    _index: index,
+                })
+            })
+
+            normalized.sort((left, right) => {
+                const leftOrder = Number.isFinite(Number(left.order)) ? Number(left.order) : Number.MAX_SAFE_INTEGER
+                const rightOrder = Number.isFinite(Number(right.order)) ? Number(right.order) : Number.MAX_SAFE_INTEGER
+                if (leftOrder !== rightOrder) {
+                    return leftOrder - rightOrder
+                }
+
+                return Number(left._index || 0) - Number(right._index || 0)
+            })
+
+            return normalized.map(({ _index, ...property }) => property)
+        },
+        normalizeTitlePageLogoAssets(logos, uiModel = {}) {
+            const sourceLogos = Array.isArray(logos) ? logos : []
+            const uiLogoAssets = Array.isArray(uiModel?.logo_assets) ? uiModel.logo_assets : []
+
+            return sourceLogos
+                .map((entry, index) => {
+                    const logo = entry && typeof entry === 'object'
+                        ? entry
+                        : {}
+                    const matchingUiAsset = uiLogoAssets.find((asset) => {
+                        if (!asset || typeof asset !== 'object') {
+                            return false
+                        }
+
+                        const logoIndex = Number(logo.asset_index ?? -1)
+                        const uiIndex = Number(asset.asset_index ?? -2)
+                        if (logoIndex >= 0 && uiIndex >= 0 && logoIndex === uiIndex) {
+                            return true
+                        }
+
+                        const logoPath = String(logo.logo_asset_path || '').trim()
+                        const uiPath = String(asset.logo_asset_path || '').trim()
+
+                        return logoPath !== '' && logoPath === uiPath
+                    }) || {}
+                    const detected = Boolean(logo.logo_detected ?? true)
+                    const assetAvailable = Boolean(logo.logo_asset_available)
+                    const uiDisplayable = Boolean(logo.logo_ui_displayable)
+                    const assetUrl = String(logo.logo_asset_url || matchingUiAsset.logo_asset_url || '').trim() || null
+                    const altText = String(logo.logo_alt_text || matchingUiAsset.logo_alt_text || logo.logo_description || `Titelseitenbild ${index + 1}`).trim()
+
+                    return {
+                        id: this.titlePageLogoAssetNodeKey({ id: 'titlepage' }, logo, index),
+                        asset_index: Number(logo.asset_index ?? matchingUiAsset.asset_index ?? index),
+                        logo_detected: detected,
+                        logo_description: String(logo.logo_description || matchingUiAsset.logo_description || '').trim() || null,
+                        logo_position: String(logo.logo_position || matchingUiAsset.logo_position || '').trim() || null,
+                        logo_type: String(logo.logo_type || '').trim() || null,
+                        logo_asset_available: assetAvailable,
+                        logo_ui_displayable: uiDisplayable,
+                        logo_asset_path: String(logo.logo_asset_path || matchingUiAsset.logo_asset_path || '').trim() || null,
+                        logo_asset_disk: String(logo.logo_asset_disk || matchingUiAsset.logo_asset_disk || 'local').trim() || 'local',
+                        logo_asset_mime_type: String(logo.logo_asset_mime_type || matchingUiAsset.logo_asset_mime_type || '').trim() || null,
+                        logo_asset_url: assetUrl,
+                        logo_alt_text: altText !== '' ? altText : `Titelseitenbild ${index + 1}`,
+                        logo_ui_display_note: String(logo.logo_ui_display_note || matchingUiAsset.logo_ui_display_note || '').trim() || null,
+                    }
+                })
+                .sort((left, right) => Number(left.asset_index || 0) - Number(right.asset_index || 0))
+        },
+        titlePageLogoNodeKey(node) {
+            return String(node?.id || 'titlepage')
+        },
+        titlePageLogoAssetNodeKey(node, asset, index = 0) {
+            const nodeKey = this.titlePageLogoNodeKey(node)
+            const assetIndex = Number(asset?.asset_index ?? index)
+            return `${nodeKey}-asset-${assetIndex}`
+        },
+        resolveTitlePageLogoAssetStatus(node, asset, index = 0) {
+            const detected = Boolean(asset?.logo_detected)
+            const assetAvailable = Boolean(asset?.logo_asset_available)
+            const uiDisplayable = Boolean(asset?.logo_ui_displayable)
+            const assetUrl = String(asset?.logo_asset_url || '').trim()
+
+            if (!detected) {
+                return 'no_logo_detected'
+            }
+
+            if (!assetAvailable || !uiDisplayable || assetUrl === '') {
+                return 'detected_without_asset'
+            }
+
+            const key = this.titlePageLogoAssetNodeKey(node, asset, index)
+            if (Boolean(this.titlePageLogoRenderErrors[key])) {
+                return 'asset_render_failed'
+            }
+
+            return 'asset_ready'
+        },
+        resolveTitlePageLogoStatus(node) {
+            const assets = Array.isArray(node?.logo_assets) ? node.logo_assets : []
+            if (assets.length > 0) {
+                const statuses = assets.map((asset, index) => this.resolveTitlePageLogoAssetStatus(node, asset, index))
+                if (statuses.includes('asset_render_failed')) {
+                    return 'asset_render_failed'
+                }
+                if (statuses.includes('detected_without_asset')) {
+                    return 'detected_without_asset'
+                }
+                if (statuses.includes('asset_ready')) {
+                    return 'asset_ready'
+                }
+
+                return 'no_logo_detected'
+            }
+
+            const detected = Boolean(node?.logo_detected)
+            if (!detected) {
+                return 'no_logo_detected'
+            }
+
+            const assetAvailable = Boolean(node?.logo_asset_available)
+            const uiDisplayable = Boolean(node?.logo_ui_displayable)
+            const assetUrl = String(node?.logo_asset_url || '').trim()
+            if (!assetAvailable || !uiDisplayable || assetUrl === '') {
+                return 'detected_without_asset'
+            }
+
+            const key = this.titlePageLogoNodeKey(node)
+            if (Boolean(this.titlePageLogoRenderErrors[key])) {
+                return 'asset_render_failed'
+            }
+
+            return 'asset_ready'
+        },
+        titlePageLogoStatusText(node) {
+            const status = this.resolveTitlePageLogoStatus(node)
+            const detectedCount = Number(node?.logo_detected_count || 0)
+            const availableCount = Number(node?.logo_asset_available_count || 0)
+            if (status === 'no_logo_detected') {
+                return 'Kein Logo erkannt.'
+            }
+            if (status === 'detected_without_asset') {
+                if (detectedCount > 1) {
+                    return `${detectedCount} Logos/Bilder erkannt, aber nicht alle sind renderbar (${availableCount} Asset verfügbar).`
+                }
+
+                return 'Logo erkannt, aber kein renderbares Asset verfügbar.'
+            }
+            if (status === 'asset_render_failed') {
+                return 'Logo-Asset vorhanden, aber Rendering fehlgeschlagen.'
+            }
+
+            return 'Logo-Asset verfügbar und renderbar.'
+        },
+        titlePageLogoStatusColor(node) {
+            const status = this.resolveTitlePageLogoStatus(node)
+            if (status === 'asset_ready') {
+                return 'success'
+            }
+            if (status === 'asset_render_failed') {
+                return 'error'
+            }
+            if (status === 'detected_without_asset') {
+                return 'warning'
+            }
+
+            return 'info'
+        },
+        titlePageLogoAssetStatusText(node, asset, index = 0) {
+            const status = this.resolveTitlePageLogoAssetStatus(node, asset, index)
+            if (status === 'no_logo_detected') {
+                return 'Kein Logo erkannt.'
+            }
+            if (status === 'detected_without_asset') {
+                return 'Logo erkannt, aber kein renderbares Asset verfügbar.'
+            }
+            if (status === 'asset_render_failed') {
+                return 'Logo-Asset vorhanden, aber Rendering fehlgeschlagen.'
+            }
+
+            return 'Logo-Asset verfügbar und renderbar.'
+        },
+        titlePageLogoAssetStatusColor(node, asset, index = 0) {
+            const status = this.resolveTitlePageLogoAssetStatus(node, asset, index)
+            if (status === 'asset_ready') {
+                return 'success'
+            }
+            if (status === 'asset_render_failed') {
+                return 'error'
+            }
+            if (status === 'detected_without_asset') {
+                return 'warning'
+            }
+
+            return 'info'
+        },
+        onTitlePageLogoLoaded(node, asset = null, index = 0) {
+            const key = asset
+                ? this.titlePageLogoAssetNodeKey(node, asset, index)
+                : this.titlePageLogoNodeKey(node)
+            this.titlePageLogoRenderErrors = {
+                ...this.titlePageLogoRenderErrors,
+                [key]: false,
+            }
+            this.titlePageLogoRenderLoads = {
+                ...this.titlePageLogoRenderLoads,
+                [key]: true,
+            }
+        },
+        onTitlePageLogoError(node, asset = null, index = 0) {
+            const key = asset
+                ? this.titlePageLogoAssetNodeKey(node, asset, index)
+                : this.titlePageLogoNodeKey(node)
+            this.titlePageLogoRenderErrors = {
+                ...this.titlePageLogoRenderErrors,
+                [key]: true,
+            }
+            this.titlePageLogoRenderLoads = {
+                ...this.titlePageLogoRenderLoads,
+                [key]: false,
+            }
+        },
         shouldShowPandocRootContent(node) {
             return !this.isPandocTitlepageNode(node)
         },
@@ -5530,13 +5954,19 @@ export default {
     gap: 2px;
 }
 
+/* Titelseite und Abstract teilen dieselbe Schriftquelle: --aba-document-font aus admin.css */
 .detail-line {
     font-size: 0.875rem;
+    font-family: var(--aba-document-font, 'Roboto', sans-serif);
 }
 
 .pandoc-root-content-block .pandoc-content-line__text {
     font-size: 0.875rem;
     font-weight: 400;
+}
+
+.pandoc-root-content-block--abstract .pandoc-content-line__text {
+    font-family: var(--aba-document-font, 'Roboto', sans-serif);
 }
 
 .detail-line__label {
@@ -5611,6 +6041,38 @@ export default {
 
 .order-local-structure {
     order: 2;
+}
+
+.titlepage-logo-preview-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 220px;
+    border: 1px solid rgba(15, 118, 110, 0.25);
+    border-radius: 10px;
+    background: rgba(15, 118, 110, 0.03);
+    padding: 8px;
+}
+
+.titlepage-logo-preview {
+    display: block;
+    max-width: 200px;
+    max-height: 120px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.titlepage-logo-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.titlepage-logo-card {
+    border: 1px dashed rgba(15, 118, 110, 0.22);
+    border-radius: 10px;
+    padding: 8px;
+    background: rgba(15, 118, 110, 0.02);
 }
 
 @media (min-width: 1280px) {

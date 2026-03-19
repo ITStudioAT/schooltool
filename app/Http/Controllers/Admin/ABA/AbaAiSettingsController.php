@@ -193,7 +193,9 @@ class AbaAiSettingsController extends Controller
             $blocks = is_array($normalization['blocks'] ?? null)
                 ? array_values($normalization['blocks'])
                 : [];
-            $review = $reviewBuilderService->buildReview($blocks);
+            $review = $reviewBuilderService->buildReview($blocks, [
+                'source_docx_path' => $tempPath,
+            ]);
             $summary = array_merge(
                 $reviewBuilderService->buildSummary($blocks),
                 [

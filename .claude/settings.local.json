@@ -54,7 +54,11 @@
       "Bash(wc -l /c/laravel/schooltool/app/ABA/Services/*.php)",
       "Bash(./vendor/bin/pint app/ABA/Knowledge/KnowledgeQueryService.php app/ABA/Knowledge/KnowledgeContextBuilder.php app/Ai/Agents/AbaKnowledgeAssistantAgent.php app/ABA/Services/QueryKnowledgeBase.php app/Http/Controllers/Admin/ABA/AbaKnowledgeQueryController.php --format agent)",
       "Bash(./vendor/bin/pint tests/Unit/ABA/KnowledgeQueryServiceTest.php tests/Feature/ABA/QueryKnowledgeBaseTest.php --format agent)",
-      "Bash(./vendor/bin/pint tests/Feature/Controllers/Admin/ABA/AbaKnowledgeQueryControllerTest.php --format agent)"
+      "Bash(./vendor/bin/pint tests/Feature/Controllers/Admin/ABA/AbaKnowledgeQueryControllerTest.php --format agent)",
+      "Bash(./vendor/bin/pint app/Services/AbaPandocAstNormalizerService.php tests/Unit/ABA/AbaPandocAstNormalizerServiceTest.php --format agent)",
+      "Bash(./vendor/bin/pint app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaLocalDocumentStructureExtractor.php tests/Unit/ABA/AbaLocalDocumentStructureExtractorBoldMarkerTest.php --format agent)",
+      "Bash(find c:laravelschooltoolresources -type f \\\\\\(-name *.css -o -name *.scss \\\\\\))",
+      "Bash(./vendor/bin/pint --dirty --format agent app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaPandocReviewBuilderService.php app/Http/Controllers/Admin/ABA/AbaAnalysisRunController.php)"
     ],
     "deny": [],
     "ask": []

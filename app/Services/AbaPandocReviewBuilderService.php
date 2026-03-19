@@ -4,6 +4,10 @@ namespace App\Services;
 
 class AbaPandocReviewBuilderService
 {
+    public function __construct(
+        private readonly AbaTitlePageProcessorService $titlePageProcessorService,
+    ) {}
+
     /**
      * @param  array<int, array<string,mixed>>  $blocks
      * @return array<string,int>
@@ -77,13 +81,14 @@ class AbaPandocReviewBuilderService
      *   special_sections:array<int, array<string,mixed>>,
      *   figure_index_entries:array<int, array<string,mixed>>,
      *   title_page_details:array<string,mixed>,
+     *   title_page_processing:array<string,mixed>,
      *   bibliography_groups:array<int, array<string,mixed>>,
      *   zone_overview:array<int, array<string,mixed>>,
      *   outline:array<string,mixed>,
      *   counts:array<string,int>
      * }
      */
-    public function buildReview(array $blocks): array
+    public function buildReview(array $blocks, array $options = []): array
     {
         $headingItems = [];
         $imageBlocks = [];
@@ -236,6 +241,7 @@ class AbaPandocReviewBuilderService
         }
 
         $titlePageDetails = $this->extractTitlePageDetails($blocks, $headingItems);
+        $titlePageProcessing = $this->titlePageProcessorService->process($titlePageDetails, $blocks, $options);
         $figureItems = $this->buildFigureItems($imageBlocks);
         $figureIndexEntries = $this->buildFigureIndexEntries($blocks);
         $outline = $this->buildOutline($headingItems, $figureItems);
@@ -284,6 +290,7 @@ class AbaPandocReviewBuilderService
             'special_sections' => $specialSections,
             'figure_index_entries' => $figureIndexEntries,
             'title_page_details' => $titlePageDetails,
+            'title_page_processing' => $titlePageProcessing,
             'bibliography_groups' => $bibliographyGroups,
             'zone_overview' => $zoneOverview,
             'outline' => [

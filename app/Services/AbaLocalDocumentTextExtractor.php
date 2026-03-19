@@ -393,6 +393,14 @@ class AbaLocalDocumentTextExtractor
         } elseif ($this->looksLikeNumberedHeading($text)) {
             $outlineSource = 'numbered';
             $headingLevel = $this->numberedHeadingLevel($text);
+        } elseif (
+            ! $preserveAsListLine
+            && ! $isTocLine
+            && $this->paragraphIsEntirelyBold($xpath, $paragraph)
+            && $this->looksLikeBoldSectionMarkerText($rawText)
+        ) {
+            $outlineSource = 'bold_marker';
+            $headingLevel = 3;
         }
 
         if ($outlineSource !== null) {
@@ -1185,6 +1193,86 @@ class AbaLocalDocumentTextExtractor
         );
 
         return $boldCount > 0;
+    }
+
+    /**
+     * Prüft, ob alle textführenden Runs des Absatzes fett formatiert sind.
+     * Konservativere Variante von paragraphHasBoldRun.
+     */
+    private function paragraphIsEntirelyBold(\DOMXPath $xpath, \DOMNode $paragraph): bool
+    {
+        $totalTextRuns = (int) $xpath->evaluate(
+            'count(.//w:r[normalize-space(w:t)!=""])',
+            $paragraph
+        );
+
+        if ($totalTextRuns === 0) {
+            return false;
+        }
+
+        $boldTextRuns = (int) $xpath->evaluate(
+            'count(.//w:r[normalize-space(w:t)!=""][w:rPr/w:b[not(@w:val) or @w:val="1" or @w:val="true" or @w:val="on"]])',
+            $paragraph
+        );
+
+        return $boldTextRuns === $totalTextRuns;
+    }
+
+    /**
+     * Konservative Textheuristik: Erkennt eigenständige hervorgehobene Zwischenmarker
+     * (wie „Instagram" oder „Pinterest") ohne formalen DOCX-Heading-Style.
+     *
+     * Schlägt nicht an bei:
+     * - längeren Fließtexten
+     * - nummerierten Ausdrücken (Heading-Erkennung übernimmt diese)
+     * - Quellenangaben, Abbildungs-/Tabellenbeschriftungen
+     * - Fließtext mit Satzzeichen am Ende
+     */
+    private function looksLikeBoldSectionMarkerText(string $text): bool
+    {
+        $trimmed = trim($text);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        // Maximale Wortanzahl: konservativ auf 5 begrenzt
+        $words = array_values(array_filter(preg_split('/\s+/u', $trimmed) ?: []));
+        $wordCount = count($words);
+        if ($wordCount === 0 || $wordCount > 5) {
+            return false;
+        }
+
+        // Maximale Zeichenanzahl
+        if (mb_strlen($trimmed) > 50) {
+            return false;
+        }
+
+        // Kein Satzzeichen am Ende (kein Fließtextfragment)
+        if (preg_match('/[.!?,;:]\s*$/u', $trimmed) === 1) {
+            return false;
+        }
+
+        // Nicht mit Ziffern beginnen (nummerierte Überschriften werden anderweitig erkannt)
+        if (preg_match('/^\d/u', $trimmed) === 1) {
+            return false;
+        }
+
+        // Keine Quellenangabe: beginnt mit ( oder enthält typische Zitatmarker
+        if (preg_match('/^\(|vgl\.|ebd\.|bzw\.|et\s+al\./iu', $trimmed) === 1) {
+            return false;
+        }
+
+        // Keine Abbildungs- oder Tabellenbeschriftung
+        if (preg_match('/^(Abbildung|Abb\.|Tabelle|Tab\.|Figure|Fig\.)\s+/iu', $trimmed) === 1) {
+            return false;
+        }
+
+        // Muss mindestens einen Buchstaben enthalten
+        if (preg_match('/\p{L}/u', $trimmed) !== 1) {
+            return false;
+        }
+
+        return true;
     }
 
     private function resolveWordHeadingLevel(

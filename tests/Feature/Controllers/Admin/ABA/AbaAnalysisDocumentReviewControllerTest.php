@@ -145,6 +145,15 @@ test('aba teacher can load integrated document review for main docx', function (
         ->assertJsonPath('data.review.special_sections', fn (mixed $value): bool => is_array($value))
         ->assertJsonPath('data.review.figure_index_entries', fn (mixed $value): bool => is_array($value))
         ->assertJsonPath('data.review.title_page_details', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.source_extraction', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.normalized_output', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.normalized_output.additional_properties', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.logo', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.logos', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.ui_model', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.ui_model.additional_properties', fn (mixed $value): bool => is_array($value))
+        ->assertJsonPath('data.review.title_page_processing.ui_model.logo_assets', fn (mixed $value): bool => is_array($value))
         ->assertJsonPath('data.review.outline.frontmatter_sections', fn (mixed $value): bool => is_array($value))
         ->assertJsonPath('data.review.outline.main_content_outline', fn (mixed $value): bool => is_array($value))
         ->assertJsonPath('data.review.outline.main_content_orphan_figures', fn (mixed $value): bool => is_array($value))
@@ -170,6 +179,24 @@ test('document review reports unavailable for non-docx main document', function 
         ->assertJsonPath('data.message', fn (mixed $value): bool => is_string($value) && str_contains($value, 'DOCX'));
 });
 
+test('aba teacher can stream title page logo asset from document review endpoint', function () {
+    $user = createDocumentReviewUser($this->school, $this->schoolyear);
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $user->id,
+    ]);
+
+    $assetPath = 'aba/titlepage-assets/test-logo.png';
+    Storage::disk('local')->put($assetPath, "\x89PNG\r\n\x1a\nfake-logo-binary");
+
+    $this->actingAs($user, 'sanctum')
+        ->get('/api/admin/abas/'.$aba->id.'/analysis/document-review/logo-asset?path='.rawurlencode($assetPath).'&disk=local')
+        ->assertSuccessful()
+        ->assertHeaderContains('Content-Type', 'image/')
+        ->assertStreamedContent("\x89PNG\r\n\x1a\nfake-logo-binary");
+});
+
 test('analysis results page includes integrated document review section and endpoint', function () {
     $content = file_get_contents(resource_path('js/pages/admin/aba/AbaAnalysisResults.vue'));
 
@@ -190,6 +217,10 @@ test('analysis results page includes integrated document review section and endp
         ->toContain('strukturell ähnlich')
         ->toContain('nur Pandoc')
         ->toContain('nur lokal')
+        ->toContain('Weitere Eigenschaften')
+        ->toContain('Kein Logo erkannt.')
+        ->toContain('Logo erkannt, aber kein renderbares Asset verfügbar.')
+        ->toContain('Logo-Asset vorhanden, aber Rendering fehlgeschlagen.')
         ->toContain('Wahrscheinliche TOC-Artefakte')
         ->toContain('Leere Überschriften');
 });

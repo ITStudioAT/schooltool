@@ -130,7 +130,7 @@ class AbaPandocAstNormalizerService
             $inlines = is_array($block['c'] ?? null) ? array_values($block['c']) : [];
             $isImageOnlyInlineSequence = $this->isImageOnlyInlineSequence($inlines);
             $inlinePayload = $this->reconstructInlinePayload($inlines);
-            $text = $inlinePayload['text'];
+            $text = $this->collapseSpuriousInlineLineBreaks($inlinePayload['text']);
             $signals = $inlinePayload['signals'];
             $images = $inlinePayload['images'];
 
@@ -2099,5 +2099,27 @@ class AbaPandocAstNormalizerService
         $normalized = trim((string) $value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * Bereinigt Pandoc-/DOCX-Konvertierungsartefakte in Absatztexten:
+     * 1. Zeilenumbrüche innerhalb Klammer-Quellenangaben: (vgl.\nFoo, o.\nJ.) → (vgl. Foo, o. J.)
+     * 2. Zeilenumbrüche nach Einzelbuchstaben-Initialen: A.\nEldridge → A. Eldridge
+     */
+    private function collapseSpuriousInlineLineBreaks(string $text): string
+    {
+        // Zeilenumbrüche innerhalb runder Klammern zusammenfassen (Quellenangaben, Verweise)
+        $text = preg_replace_callback(
+            '/\(([^()]+)\)/u',
+            static function (array $m): string {
+                return '('.preg_replace('/\s*\n\s*/u', ' ', $m[1]).')';
+            },
+            $text
+        ) ?? $text;
+
+        // Zeilenumbrüche nach Einzelbuchstaben-Initialen zusammenfassen: A.\nEldridge → A. Eldridge
+        $text = preg_replace('/\b([A-ZÄÖÜ])\.\n([A-ZÄÖÜa-zäöü])/u', '$1. $2', $text) ?? $text;
+
+        return $text;
     }
 }

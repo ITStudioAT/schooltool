@@ -15,6 +15,9 @@ use App\Services\AbaPandocAstNormalizerService;
 use App\Services\AbaPandocDocxExtractionService;
 use App\Services\AbaPandocReviewBuilderService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\Response;
 
 class AbaAnalysisRunController extends Controller
 {
@@ -139,7 +142,27 @@ class AbaAnalysisRunController extends Controller
         $blocks = is_array($pandocPayload['blocks'] ?? null)
             ? array_values($pandocPayload['blocks'])
             : [];
-        $review = $reviewBuilderService->buildReview($blocks);
+        $logoSourcePath = null;
+        $logoSourceIsTemp = false;
+        try {
+            $preparedLogoSource = $localTextExtractor->prepareLocalFile($mainDocument);
+            $logoSourcePath = trim((string) ($preparedLogoSource['absolute_path'] ?? ''));
+            $logoSourceIsTemp = (bool) ($preparedLogoSource['is_temp'] ?? false);
+        } catch (\Throwable) {
+            $logoSourcePath = null;
+            $logoSourceIsTemp = false;
+        }
+
+        try {
+            $review = $reviewBuilderService->buildReview($blocks, [
+                'source_docx_path' => $logoSourcePath,
+            ]);
+            $review = $this->enrichTitlePageProcessingForUi($aba, $review);
+        } finally {
+            if ($logoSourceIsTemp && is_string($logoSourcePath) && $logoSourcePath !== '') {
+                @unlink($logoSourcePath);
+            }
+        }
         $summary = array_merge(
             $reviewBuilderService->buildSummary($blocks),
             [
@@ -168,6 +191,63 @@ class AbaAnalysisRunController extends Controller
                 'normalization' => is_array($pandocContext['normalization'] ?? null) ? $pandocContext['normalization'] : [],
             ],
         ]);
+    }
+
+    public function showDocumentReviewLogoAsset(Aba $aba, Request $request): Response
+    {
+        if (! $authUser = $this->userHasRole(['aba_teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (! $this->canAccessAba($aba, (int) $authUser->id, (int) $authUser->school_id)) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $requestedPath = trim((string) $request->query('path', ''));
+        $requestedDisk = trim((string) $request->query('disk', 'local'));
+        if ($requestedPath === '' || str_contains($requestedPath, '..')) {
+            abort(404);
+        }
+
+        $allowedDisks = ['local', 'public'];
+        $disk = in_array($requestedDisk, $allowedDisks, true) ? $requestedDisk : 'local';
+        $path = ltrim(str_replace('\\', '/', $requestedPath), '/');
+        if ($path === '' || ! str_starts_with($path, 'aba/titlepage-assets')) {
+            abort(404);
+        }
+        if (! Storage::disk($disk)->exists($path)) {
+            abort(404);
+        }
+
+        $stream = Storage::disk($disk)->readStream($path);
+        if (! is_resource($stream)) {
+            abort(404);
+        }
+
+        $mimeType = Storage::disk($disk)->mimeType($path);
+        $filename = basename($path);
+
+        return response()->stream(
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            break;
+                        }
+                        echo $chunk;
+                    }
+                } finally {
+                    fclose($stream);
+                }
+            },
+            200,
+            [
+                'Content-Type' => is_string($mimeType) && $mimeType !== '' ? $mimeType : 'application/octet-stream',
+                'Content-Disposition' => 'inline; filename="'.$filename.'"',
+                'Cache-Control' => 'private, max-age=300',
+            ]
+        );
     }
 
     /**
@@ -346,5 +426,76 @@ class AbaAnalysisRunController extends Controller
     private function canAccessAba(Aba $aba, int $userId, int $schoolId): bool
     {
         return (int) $aba->school_id === $schoolId && (int) $aba->user_id === $userId;
+    }
+
+    /**
+     * @param  array<string,mixed>  $review
+     * @return array<string,mixed>
+     */
+    private function enrichTitlePageProcessingForUi(Aba $aba, array $review): array
+    {
+        $processing = is_array($review['title_page_processing'] ?? null)
+            ? $review['title_page_processing']
+            : [];
+        if ($processing === []) {
+            return $review;
+        }
+
+        $buildAssetUrl = static function (string $path, string $disk) use ($aba): string {
+            return '/api/admin/abas/'.$aba->id.'/analysis/document-review/logo-asset?path='.rawurlencode($path).'&disk='.rawurlencode($disk);
+        };
+
+        $logo = is_array($processing['logo'] ?? null) ? $processing['logo'] : [];
+        $logos = is_array($processing['logos'] ?? null) ? array_values($processing['logos']) : [];
+
+        $firstLogoAssetUrl = null;
+        foreach ($logos as $index => $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $assetPath = trim((string) ($entry['logo_asset_path'] ?? ''));
+            $assetDisk = trim((string) ($entry['logo_asset_disk'] ?? 'local')) ?: 'local';
+            $assetUrl = $assetPath !== '' ? $buildAssetUrl($assetPath, $assetDisk) : null;
+            $entry['logo_asset_url'] = $assetUrl;
+            $logos[$index] = $entry;
+
+            if ($firstLogoAssetUrl === null && is_string($assetUrl) && $assetUrl !== '') {
+                $firstLogoAssetUrl = $assetUrl;
+            }
+        }
+        $processing['logos'] = $logos;
+
+        $summaryPath = trim((string) ($logo['logo_asset_path'] ?? ''));
+        $summaryDisk = trim((string) ($logo['logo_asset_disk'] ?? 'local')) ?: 'local';
+        $summaryUrl = $summaryPath !== '' ? $buildAssetUrl($summaryPath, $summaryDisk) : $firstLogoAssetUrl;
+        $logo['logo_asset_url'] = $summaryUrl;
+        $processing['logo'] = $logo;
+
+        $uiModel = is_array($processing['ui_model'] ?? null) ? $processing['ui_model'] : [];
+        $uiLogoAssets = is_array($uiModel['logo_assets'] ?? null) ? array_values($uiModel['logo_assets']) : [];
+        foreach ($uiLogoAssets as $index => $asset) {
+            if (! is_array($asset)) {
+                continue;
+            }
+
+            $assetPath = trim((string) ($asset['logo_asset_path'] ?? ''));
+            $assetDisk = trim((string) ($asset['logo_asset_disk'] ?? 'local')) ?: 'local';
+            $assetUrl = $assetPath !== '' ? $buildAssetUrl($assetPath, $assetDisk) : null;
+            $asset['logo_asset_url'] = $assetUrl;
+            $uiLogoAssets[$index] = $asset;
+        }
+
+        $uiModel['logo_assets'] = $uiLogoAssets;
+        $uiModel['logo_asset_url'] = $summaryUrl;
+        $uiModel['show_logo'] = count(array_filter(
+            $uiLogoAssets,
+            static fn (array $asset): bool => (bool) ($asset['logo_ui_displayable'] ?? false) && trim((string) ($asset['logo_asset_url'] ?? '')) !== ''
+        )) > 0;
+        $processing['ui_model'] = $uiModel;
+
+        $review['title_page_processing'] = $processing;
+
+        return $review;
     }
 }

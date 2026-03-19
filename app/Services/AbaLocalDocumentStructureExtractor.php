@@ -890,7 +890,8 @@ class AbaLocalDocumentStructureExtractor
     {
         return str_contains($source, 'docx_style')
             || str_contains($source, 'html_heading')
-            || str_contains($source, 'mammoth_heading');
+            || str_contains($source, 'mammoth_heading')
+            || str_contains($source, 'bold_marker');
     }
 
     private function normalizeIntValue(mixed $value): ?int

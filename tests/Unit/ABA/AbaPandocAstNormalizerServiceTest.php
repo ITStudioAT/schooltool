@@ -550,3 +550,124 @@ test('returns invalid_ast error when pandoc blocks are missing', function () {
     expect($result['ok'] ?? true)->toBeFalse()
         ->and($result['error']['type'] ?? null)->toBe('invalid_ast');
 });
+
+test('collapses line breaks inside parenthetical citation references', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => 'Laut Mathpal'],
+                    ['t' => 'Space'],
+                    ['t' => 'Str', 'c' => '(vgl.'],
+                    ['t' => 'LineBreak'],
+                    ['t' => 'Str', 'c' => 'Mathpal,'],
+                    ['t' => 'Space'],
+                    ['t' => 'Str', 'c' => 'o.'],
+                    ['t' => 'LineBreak'],
+                    ['t' => 'Str', 'c' => 'J.)'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('paragraph')
+        ->and($block['text'] ?? null)->toBe('Laut Mathpal (vgl. Mathpal, o. J.)');
+});
+
+test('detects single-word strong platform name as heuristic heading', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Instagram']]],
+                ],
+            ],
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Pinterest']]],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($result['blocks'][0]['type'] ?? null)->toBe('heading')
+        ->and($result['blocks'][0]['text'] ?? null)->toBe('Instagram')
+        ->and($result['blocks'][1]['type'] ?? null)->toBe('heading')
+        ->and($result['blocks'][1]['text'] ?? null)->toBe('Pinterest');
+});
+
+test('keeps strong-plus-body paragraph as paragraph not as heading', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Strong', 'c' => [['t' => 'Str', 'c' => 'Instagram']]],
+                    ['t' => 'Str', 'c' => ','],
+                    ['t' => 'Space'],
+                    ['t' => 'Str', 'c' => 'die weltweit bekannte und meistgenutzte App der Fotografen, ist als eine der populärsten Social-Media-Plattformen für alle ein wichtiger Teil unseres Alltags.'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('paragraph');
+});
+
+test('collapses line breaks after single-letter initials in paragraph text', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => 'Die Autorin A.'],
+                    ['t' => 'LineBreak'],
+                    ['t' => 'Str', 'c' => 'Eldridge erläutert die Funktionen.'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('paragraph')
+        ->and($block['text'] ?? null)->toBe('Die Autorin A. Eldridge erläutert die Funktionen.');
+});
+
+test('preserves intentional line breaks within paragraph text', function () {
+    $ast = [
+        'blocks' => [
+            [
+                't' => 'Para',
+                'c' => [
+                    ['t' => 'Str', 'c' => 'Erste Zeile des Absatzes'],
+                    ['t' => 'LineBreak'],
+                    ['t' => 'Str', 'c' => 'Zweite Zeile des Absatzes'],
+                ],
+            ],
+        ],
+    ];
+
+    $result = app(AbaPandocAstNormalizerService::class)->normalizeAst($ast);
+    $block = $result['blocks'][0] ?? [];
+
+    expect($result['ok'] ?? false)->toBeTrue()
+        ->and($block['type'] ?? null)->toBe('paragraph')
+        ->and(str_contains($block['text'] ?? '', "\n"))->toBeTrue();
+});

@@ -1,5 +1,11 @@
 @import './schooltool-design.css';
 
+:root {
+    /* Schriftart für Dokumentabschnitte (Titelseite, Abstract, Frontmatter). */
+    /* Änderungen hier wirken sich auf alle Dokumentabschnitte aus. */
+    --aba-document-font: 'Roboto', sans-serif;
+}
+
 * {
     font-family: 'Roboto', sans-serif;
 }
