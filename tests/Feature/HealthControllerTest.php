@@ -2,7 +2,7 @@
 
 /**
  * HealthController Tests
- * 
+ *
  * These tests cover the health check functionality including:
  * - Queue testing and status checking
  * - Job dispatch verification
@@ -14,6 +14,7 @@ use App\Models\QueueTest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
@@ -27,14 +28,14 @@ beforeEach(function () {
         'long_name' => 'Test School',
         'short_name' => 'TS',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
     ]);
-    
+
     // Create admin role
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    
+
     // Create test user
     $this->user = User::factory()->create([
         'email' => 'test@example.com',
@@ -47,16 +48,16 @@ beforeEach(function () {
         'email_verified_at' => now(),
         'is_active' => true,
     ]);
-    
+
     $this->user->assignRole('admin');
 });
 
 // Test Queue Tests
 test('test queue creates queue test record', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'success',
@@ -70,7 +71,7 @@ test('test queue creates queue test record', function () {
             'status' => 'dispatched',
             'message' => 'Queue test initiated',
         ]);
-    
+
     // Verify record was created in database
     $this->assertDatabaseHas('queue_tests', [
         'id' => $response->json('testId'),
@@ -80,38 +81,38 @@ test('test queue creates queue test record', function () {
 
 test('test queue returns valid test id', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $testId = $response->json('testId');
-    
+
     expect($testId)->toBeString()
         ->and($testId)->not->toBeEmpty();
-    
+
     // Verify test ID is a valid UUID
     expect(QueueTest::find($testId))->not->toBeNull();
 });
 
 test('test queue requires authentication', function () {
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $response->assertStatus(401);
 });
 
 test('test queue dispatches job correctly', function () {
     Queue::fake();
-    
+
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $response->assertStatus(200);
-    
+
     // Verify a job was dispatched (closure-based job)
     // Note: Closure jobs are harder to assert, but we can check the DB record
     $testId = $response->json('testId');
     $queueTest = QueueTest::find($testId);
-    
+
     expect($queueTest)->not->toBeNull()
         ->and($queueTest->status)->toBe('dispatched')
         ->and($queueTest->dispatched_at)->not->toBeNull();
@@ -119,12 +120,12 @@ test('test queue dispatches job correctly', function () {
 
 test('test queue sets correct initial status', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $testId = $response->json('testId');
     $queueTest = QueueTest::find($testId);
-    
+
     // The job might complete immediately in sync queue, so just check it exists
     expect($queueTest->status)->toBeIn(['dispatched', 'completed'])
         ->and($queueTest->dispatched_at)->not->toBeNull();
@@ -132,12 +133,12 @@ test('test queue sets correct initial status', function () {
 
 test('test queue includes dispatched timestamp', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $response->assertStatus(200)
         ->assertJsonStructure(['dispatched_at']);
-    
+
     $dispatchedAt = $response->json('dispatched_at');
     expect($dispatchedAt)->not->toBeNull();
 });
@@ -145,19 +146,20 @@ test('test queue includes dispatched timestamp', function () {
 // Check Queue Status Tests
 test('check queue status returns status for valid test id', function () {
     $this->actingAs($this->user);
-    
+
     // Create a queue test record
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
         'status' => 'dispatched',
         'dispatched_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200)
         ->assertJsonStructure([
             'success',
+            'test_id',
             'status',
             'is_completed',
             'dispatched_at',
@@ -173,7 +175,7 @@ test('check queue status returns status for valid test id', function () {
 
 test('check queue status returns completed status', function () {
     $this->actingAs($this->user);
-    
+
     // Create a completed queue test record
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
@@ -181,9 +183,9 @@ test('check queue status returns completed status', function () {
         'dispatched_at' => now()->subSeconds(5),
         'processed_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200)
         ->assertJson([
             'success' => true,
@@ -194,10 +196,10 @@ test('check queue status returns completed status', function () {
 
 test('check queue status calculates duration correctly', function () {
     $this->actingAs($this->user);
-    
+
     $dispatchedAt = now()->subSeconds(10);
     $processedAt = now();
-    
+
     // Create a completed queue test record
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
@@ -205,13 +207,13 @@ test('check queue status calculates duration correctly', function () {
         'dispatched_at' => $dispatchedAt,
         'processed_at' => $processedAt,
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200);
-    
+
     $duration = $response->json('duration_seconds');
-    
+
     expect($duration)->toBeInt()
         ->and($duration)->toBeGreaterThanOrEqual(9)
         ->and($duration)->toBeLessThanOrEqual(11);
@@ -219,16 +221,16 @@ test('check queue status calculates duration correctly', function () {
 
 test('check queue status returns null duration for incomplete jobs', function () {
     $this->actingAs($this->user);
-    
+
     // Create a dispatched (not completed) queue test record
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
         'status' => 'dispatched',
         'dispatched_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200)
         ->assertJson([
             'duration_seconds' => null,
@@ -237,11 +239,11 @@ test('check queue status returns null duration for incomplete jobs', function ()
 
 test('check queue status returns 404 for non-existent test', function () {
     $this->actingAs($this->user);
-    
+
     $fakeId = '00000000-0000-0000-0000-000000000000';
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $fakeId);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$fakeId);
+
     $response->assertStatus(404)
         ->assertJson([
             'success' => false,
@@ -251,22 +253,22 @@ test('check queue status returns 404 for non-existent test', function () {
 
 test('check queue status returns 404 for another users test', function () {
     $this->actingAs($this->user);
-    
+
     // Create another user
     $otherUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     // Create a queue test for the other user
     $queueTest = QueueTest::create([
         'user_id' => $otherUser->id,
         'status' => 'dispatched',
         'dispatched_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(404)
         ->assertJson([
             'success' => false,
@@ -280,50 +282,120 @@ test('check queue status requires authentication', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $queueTest = QueueTest::create([
         'user_id' => $user->id,
         'status' => 'dispatched',
         'dispatched_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(401);
 });
 
-test('check queue status requires test_id parameter', function () {
+test('check queue status returns not found when no test id is provided and no recent test exists', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue/check');
-    
-    // Will return 404 as test_id is null
-    $response->assertStatus(404);
+
+    $response->assertStatus(404)
+        ->assertJson([
+            'success' => false,
+            'message' => 'Test not found',
+        ]);
+});
+
+test('check queue status falls back to latest users test when test id is missing', function () {
+    $this->actingAs($this->user);
+
+    QueueTest::create([
+        'user_id' => $this->user->id,
+        'status' => 'dispatched',
+        'dispatched_at' => now()->subMinute(),
+    ]);
+
+    $latestQueueTest = QueueTest::create([
+        'user_id' => $this->user->id,
+        'status' => 'completed',
+        'dispatched_at' => now()->subSeconds(5),
+        'processed_at' => now(),
+    ]);
+
+    $response = $this->getJson('/api/admin/test-queue/check');
+
+    $response->assertStatus(200)
+        ->assertJson([
+            'success' => true,
+            'test_id' => $latestQueueTest->id,
+            'status' => 'completed',
+            'is_completed' => true,
+        ]);
+});
+
+test('check queue status accepts camel case testId parameter', function () {
+    $this->actingAs($this->user);
+
+    $queueTest = QueueTest::create([
+        'user_id' => $this->user->id,
+        'status' => 'dispatched',
+        'dispatched_at' => now(),
+    ]);
+
+    $response = $this->getJson('/api/admin/test-queue/check?testId='.$queueTest->id);
+
+    $response->assertStatus(200)
+        ->assertJson([
+            'success' => true,
+            'test_id' => $queueTest->id,
+            'status' => 'dispatched',
+            'is_completed' => false,
+        ]);
+});
+
+test('check queue status treats undefined test id as missing and falls back to latest test', function () {
+    $this->actingAs($this->user);
+
+    $queueTest = QueueTest::create([
+        'user_id' => $this->user->id,
+        'status' => 'dispatched',
+        'dispatched_at' => now(),
+    ]);
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id=undefined');
+
+    $response->assertStatus(200)
+        ->assertJson([
+            'success' => true,
+            'test_id' => $queueTest->id,
+            'status' => 'dispatched',
+            'is_completed' => false,
+        ]);
 });
 
 // Integration Tests
 test('full queue test workflow works end to end', function () {
     $this->actingAs($this->user);
-    
+
     // Step 1: Initiate queue test
     $initiateResponse = $this->getJson('/api/admin/test-queue');
-    
+
     $initiateResponse->assertStatus(200);
     $testId = $initiateResponse->json('testId');
-    
+
     // Step 2: Check status (might be completed already in sync queue)
-    $statusResponse = $this->getJson('/api/admin/test-queue/check?test_id=' . $testId);
-    
+    $statusResponse = $this->getJson('/api/admin/test-queue/check?test_id='.$testId);
+
     $statusResponse->assertStatus(200)
         ->assertJsonStructure([
             'status',
             'is_completed',
         ]);
-    
+
     // Verify the record exists
     $queueTest = QueueTest::find($testId);
     expect($queueTest)->not->toBeNull();
-    
+
     // If not completed, manually complete it
     if ($queueTest->status !== 'completed') {
         $queueTest->update([
@@ -331,32 +403,32 @@ test('full queue test workflow works end to end', function () {
             'processed_at' => now(),
         ]);
     }
-    
+
     // Step 3: Check completed status
-    $completedResponse = $this->getJson('/api/admin/test-queue/check?test_id=' . $testId);
-    
+    $completedResponse = $this->getJson('/api/admin/test-queue/check?test_id='.$testId);
+
     $completedResponse->assertStatus(200)
         ->assertJson([
             'status' => 'completed',
             'is_completed' => true,
         ]);
-    
+
     expect($completedResponse->json('duration_seconds'))->not->toBeNull();
 });
 
 test('multiple queue tests can be created by same user', function () {
     $this->actingAs($this->user);
-    
+
     // Create first test
     $response1 = $this->getJson('/api/admin/test-queue');
     $testId1 = $response1->json('testId');
-    
+
     // Create second test
     $response2 = $this->getJson('/api/admin/test-queue');
     $testId2 = $response2->json('testId');
-    
+
     expect($testId1)->not->toBe($testId2);
-    
+
     // Both tests should be in database
     $this->assertDatabaseHas('queue_tests', ['id' => $testId1]);
     $this->assertDatabaseHas('queue_tests', ['id' => $testId2]);
@@ -364,23 +436,23 @@ test('multiple queue tests can be created by same user', function () {
 
 test('queue test model uses uuid for primary key', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $testId = $response->json('testId');
-    
+
     // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     expect($testId)->toMatch('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i');
 });
 
 test('queue test belongs to user', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $testId = $response->json('testId');
     $queueTest = QueueTest::find($testId);
-    
+
     expect($queueTest->user)->not->toBeNull()
         ->and($queueTest->user->id)->toBe($this->user->id)
         ->and($queueTest->user->email)->toBe($this->user->email);
@@ -388,29 +460,29 @@ test('queue test belongs to user', function () {
 
 test('check queue status includes all timestamps', function () {
     $this->actingAs($this->user);
-    
+
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
         'status' => 'completed',
         'dispatched_at' => now()->subMinutes(5),
         'processed_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200);
-    
+
     $data = $response->json();
-    
+
     expect($data['dispatched_at'])->not->toBeNull()
         ->and($data['processed_at'])->not->toBeNull();
 });
 
 test('test queue response has correct json structure', function () {
     $this->actingAs($this->user);
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(5)
         ->assertJsonStructure([
@@ -420,25 +492,26 @@ test('test queue response has correct json structure', function () {
             'dispatched_at',
             'message',
         ]);
-    
+
     expect($response->json('success'))->toBeTrue();
 });
 
 test('check queue status response has correct json structure', function () {
     $this->actingAs($this->user);
-    
+
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
         'status' => 'dispatched',
         'dispatched_at' => now(),
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200)
-        ->assertJsonCount(6)
+        ->assertJsonCount(7)
         ->assertJsonStructure([
             'success',
+            'test_id',
             'status',
             'is_completed',
             'dispatched_at',
@@ -450,7 +523,7 @@ test('check queue status response has correct json structure', function () {
 // Edge Cases
 test('check queue status handles missing processed_at for completed status', function () {
     $this->actingAs($this->user);
-    
+
     // Edge case: status is completed but processed_at is null
     $queueTest = QueueTest::create([
         'user_id' => $this->user->id,
@@ -458,9 +531,9 @@ test('check queue status handles missing processed_at for completed status', fun
         'dispatched_at' => now(),
         'processed_at' => null,
     ]);
-    
-    $response = $this->getJson('/api/admin/test-queue/check?test_id=' . $queueTest->id);
-    
+
+    $response = $this->getJson('/api/admin/test-queue/check?test_id='.$queueTest->id);
+
     $response->assertStatus(200)
         ->assertJson([
             'is_completed' => true,
@@ -470,17 +543,16 @@ test('check queue status handles missing processed_at for completed status', fun
 
 test('test queue creates record with current timestamp', function () {
     $this->actingAs($this->user);
-    
+
     $before = now()->subSecond();
-    
+
     $response = $this->getJson('/api/admin/test-queue');
-    
+
     $after = now()->addSecond();
-    
+
     $testId = $response->json('testId');
     $queueTest = QueueTest::find($testId);
-    
-    expect($queueTest->dispatched_at)->toBeInstanceOf(\Carbon\Carbon::class)
+
+    expect($queueTest->dispatched_at)->toBeInstanceOf(Carbon::class)
         ->and($queueTest->dispatched_at->between($before, $after))->toBeTrue();
 });
-

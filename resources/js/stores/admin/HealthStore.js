@@ -36,13 +36,18 @@ export const useHealthStore = defineStore('AdminHealthStore', {
             const adminStore = useAdminStore()
             //adminStore.is_loading++
             try {
-                const response = await axios.get(`/api/admin/test-queue/check`, { params: { test_id } })
+                const normalizedTestId = String(test_id ?? '').trim()
+                const normalizedLower = normalizedTestId.toLowerCase()
+                const hasExplicitTestId = normalizedTestId !== '' && normalizedLower !== 'undefined' && normalizedLower !== 'null'
+                const params = hasExplicitTestId ? { test_id: normalizedTestId } : {}
+
+                const response = await axios.get(`/api/admin/test-queue/check`, { params })
                 this.data_2 = response.data
                 return response.data
             } catch (error) {
                 notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
                     type: 'error',
                     timeout: 3000,
                 })

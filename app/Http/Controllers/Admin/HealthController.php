@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\QueueTest;
 use App\Models\SchoolTool;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class HealthController extends Controller
 {
-    public function testQueue()
+    public function testQueue(): JsonResponse
     {
         $user = Auth::user();
 
@@ -19,14 +20,14 @@ class HealthController extends Controller
         $queueTest = QueueTest::create([
             'user_id' => $user->id,
             'status' => 'dispatched',
-            'dispatched_at' => now()
+            'dispatched_at' => now(),
         ]);
 
         // Dispatch job
         dispatch(function () use ($queueTest) {
             $queueTest->update([
                 'status' => 'completed',
-                'processed_at' => now()
+                'processed_at' => now(),
             ]);
         });
 
@@ -40,22 +41,18 @@ class HealthController extends Controller
             'testId' => $testId,
             'status' => $status,
             'dispatched_at' => $dispatchedAt,
-            'message' => 'Queue test initiated'
+            'message' => 'Queue test initiated',
         ]);
     }
 
-    public function checkQueueStatus(Request $request)
+    public function checkQueueStatus(Request $request): JsonResponse
     {
+        $queueTest = $this->resolveQueueTestForStatusCheck($request);
 
-        $testId = $request->test_id;
-        $queueTest = QueueTest::where('id', $testId)
-            ->where('user_id', Auth::id())
-            ->first();
-
-        if (!$queueTest) {
+        if (! $queueTest) {
             return response()->json([
                 'success' => false,
-                'message' => 'Test not found'
+                'message' => 'Test not found',
             ], 404);
         }
 
@@ -72,15 +69,16 @@ class HealthController extends Controller
 
         return response()->json([
             'success' => true,
+            'test_id' => $queueTest->id,
             'status' => $status,
             'is_completed' => $isCompleted,
             'dispatched_at' => $dispatchedAt,
             'processed_at' => $processedAt,
-            'duration_seconds' => $duration
+            'duration_seconds' => $duration,
         ]);
     }
 
-    public function testCron()
+    public function testCron(): JsonResponse
     {
         $schooltool = SchoolTool::findOrFail(1);
         $healthy = Carbon::parse($schooltool->health_at)
@@ -88,9 +86,53 @@ class HealthController extends Controller
 
         $data = [
             'is_healthy' => $healthy,
-            'health_at' =>  Carbon::parse($schooltool->health_at)->format('Y-m-d H:i:s')
+            'health_at' => Carbon::parse($schooltool->health_at)->format('Y-m-d H:i:s'),
         ];
 
         return response()->json($data, 200);
+    }
+
+    private function resolveQueueTestForStatusCheck(Request $request): ?QueueTest
+    {
+        $userId = Auth::id();
+        if ($userId === null) {
+            return null;
+        }
+
+        $normalizedTestId = $this->normalizeTestId(
+            $request->input('test_id', $request->input('testId'))
+        );
+
+        $query = QueueTest::query()
+            ->where('user_id', (int) $userId);
+
+        if ($normalizedTestId === null) {
+            return $query
+                ->where('dispatched_at', '>=', now()->subMinutes(10))
+                ->latest('dispatched_at')
+                ->first();
+        }
+
+        return $query
+            ->where('id', $normalizedTestId)
+            ->first();
+    }
+
+    private function normalizeTestId(mixed $testId): ?string
+    {
+        if (! is_scalar($testId)) {
+            return null;
+        }
+
+        $normalizedTestId = trim((string) $testId);
+        if ($normalizedTestId === '') {
+            return null;
+        }
+
+        if (in_array(strtolower($normalizedTestId), ['null', 'undefined'], true)) {
+            return null;
+        }
+
+        return $normalizedTestId;
     }
 }

@@ -609,15 +609,23 @@ export default {
             this.queue_test_result = 0
 
             try {
-                await this.healthStore.testQueue()
+                const queueTestStarted = await this.healthStore.testQueue()
+                const queueTestId = this.data?.testId
+                if (!queueTestStarted || !queueTestId) {
+                    throw new Error('Queue test could not be initialized')
+                }
+
                 // Mehrmals prüfen bis completed
                 let attempts = 0
                 const maxAttempts = 20
 
-                this.queue_test_result = 999
                 while (attempts < maxAttempts) {
-                    const status = await this.healthStore.checkQueueStatus(this.data?.testId)
-                    if (status && status.is_completed) {
+                    const status = await this.healthStore.checkQueueStatus(queueTestId)
+                    if (!status) {
+                        break
+                    }
+
+                    if (status.is_completed) {
                         this.queue_test_result = 1
                         break
                     }
