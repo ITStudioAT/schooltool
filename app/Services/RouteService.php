@@ -10,9 +10,11 @@ class RouteService
     {
         // Lade Route-Metadaten basierend auf erster URI-Sektion
         $routeGroup = explode('/', trim($fullPath, '/'))[0] ?? 'homepage';
-        if ($routeGroup == "") $routeGroup = "homepage";
+        if ($routeGroup == '') {
+            $routeGroup = 'homepage';
+        }
 
-        $routeFile = base_path('routes/meta/web/' . $routeGroup . '.php');
+        $routeFile = base_path('routes/meta/web/'.$routeGroup.'.php');
         $route_roles = file_exists($routeFile) ? include $routeFile : [];
 
         $roles = $this->matchRouteRoles($fullPath, $route_roles['roles'] ?? []);
@@ -20,10 +22,21 @@ class RouteService
         // super_admin zu den erlaubten Rollen hinzufügen
         // $roles[] = 'super_admin';
 
-        if (is_null($roles)) return RouteResult::NOT_FOUND;
-        if (empty($roles)) return RouteResult::ALLOWED;
-        if (! $user) return RouteResult::NOT_EXISTS;
-        if (! ($user->hasAnyRole($roles) || $user->hasRole('super_admin'))) return RouteResult::NOT_ALLOWED;
+        if (is_null($roles)) {
+            return RouteResult::NOT_FOUND;
+        }
+        if (empty($roles)) {
+            return RouteResult::ALLOWED;
+        }
+        if (! $user) {
+            return RouteResult::NOT_EXISTS;
+        }
+        if ($this->requiresAbaTeacherRole($fullPath) && ! $user->hasRole('aba_teacher')) {
+            return RouteResult::NOT_ALLOWED;
+        }
+        if (! ($user->hasAnyRole($roles) || $user->hasRole('super_admin'))) {
+            return RouteResult::NOT_ALLOWED;
+        }
 
         if (str_starts_with($fullPath, '/admin/groups') && ! $this->hasValidGroupsLicence($user)) {
             return RouteResult::NOT_ALLOWED;
@@ -37,6 +50,21 @@ class RouteService
         $configFlag = $this->configFlagForLicence($requiredLicence);
         if ($configFlag && ! config($configFlag, false)) {
             return RouteResult::NOT_ALLOWED;
+        }
+
+        if ($requiredLicence === 'ABA') {
+            $abaLicenceStatus = app(LicenceService::class)->toolAccessStatusForUser(
+                $user,
+                $user->selectedSchool,
+                'ABA',
+                ['aba_teacher']
+            );
+
+            if ($abaLicenceStatus !== 'active') {
+                return RouteResult::NOT_ALLOWED;
+            }
+
+            return RouteResult::ALLOWED;
         }
 
         $licenceStatus = app(LicenceService::class)->licenceStatus($user->selectedSchool, $requiredLicence);
@@ -61,7 +89,16 @@ class RouteService
             return 'Lehrertool';
         }
 
+        if (str_starts_with($fullPath, '/admin/aba')) {
+            return 'ABA';
+        }
+
         return null;
+    }
+
+    private function requiresAbaTeacherRole(string $fullPath): bool
+    {
+        return str_starts_with($fullPath, '/admin/aba');
     }
 
     private function hasValidGroupsLicence($user): bool
@@ -72,6 +109,7 @@ class RouteService
         }
 
         $licenceService = app(LicenceService::class);
+
         return $licenceService->licenceStatus($school, 'Lehrertool') === 'active'
             || $licenceService->licenceStatus($school, 'Materialientool') === 'active';
     }
@@ -97,7 +135,7 @@ class RouteService
         foreach ($roleMap as $pattern => $roles) {
             if (str_ends_with($pattern, '/*')) {
                 $prefix = substr($pattern, 0, -2); // Entfernt nur das '/*' am Ende
-                if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+                if ($path === $prefix || str_starts_with($path, $prefix.'/')) {
                     return $roles;
                 }
             }
@@ -123,7 +161,7 @@ class RouteService
         }
 
         $rolesMap = $route_roles['roles'] ?? [];
-        $routeKey = $method . ' ' . $toPath; // z.B. "POST /admin/users/7"
+        $routeKey = $method.' '.$toPath; // z.B. "POST /admin/users/7"
 
         $matchedKey = null;
 

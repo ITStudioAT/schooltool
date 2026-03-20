@@ -14,7 +14,6 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolyearService;
 use App\Services\UserService;
-use Illuminate\Http\Request;
 
 class SchoolyearController extends Controller
 {
@@ -24,13 +23,14 @@ class SchoolyearController extends Controller
     public function index(SchoolyearIndexRequest $request)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher', 'aba_teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         $school_id = $auth_user->school_id;
 
         $schoolyears = Schoolyear::where('school_id', $school_id)->orderBy('name')->get();
+
         return response()->json(SchoolyearResource::collection($schoolyears), 200);
     }
 
@@ -53,6 +53,7 @@ class SchoolyearController extends Controller
         }
 
         $schoolyears = $query->orderBy('name')->paginate(config('schooltool.pagination'));
+
         return response()->json([
             'data' => SchoolyearResource::collection($schoolyears),
             'meta' => new PaginateResource($schoolyears),
@@ -73,7 +74,6 @@ class SchoolyearController extends Controller
         $schoolyear = Schoolyear::create($validated);
         $userService->setNewSchoolyear($auth_user, $schoolyear);
 
-
         return response()->json(new SchoolyearResource($schoolyear), 200);
     }
 
@@ -92,6 +92,7 @@ class SchoolyearController extends Controller
         }
         $validated = $request->validated();
         $schoolyear->update($validated);
+
         return response()->json(new SchoolyearResource($schoolyear), 200);
     }
 
@@ -104,19 +105,22 @@ class SchoolyearController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($schoolyear->hasDependencies()) abort(409, 'Das Schuljahr hat noch Abhängigkeiten und kann nicht gelöscht werden');
+        if ($schoolyear->hasDependencies()) {
+            abort(409, 'Das Schuljahr hat noch Abhängigkeiten und kann nicht gelöscht werden');
+        }
 
         // Setzen eines des Schuljahres auf NULL für alle Benutzer, die das zu löschendes Schuljahr benutzen.
         $userService->setSchoolyearToNull($schoolyear);
 
         $schoolyear->delete();
+
         return response()->noContent();
     }
 
-    // Set active schoolyear to user    
+    // Set active schoolyear to user
     public function setActiveSchoolyear(SetActiveSchoolyearRequest $request, SchoolyearService $schoolyearService)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'teacher', 'aba_teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

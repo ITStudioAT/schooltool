@@ -1,0 +1,100 @@
+<?php
+
+namespace App\Http\Controllers\Admin\ABA;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\AbaAttachmentService;
+use App\Services\FileUploadService;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+class AbaChunkUploadController extends Controller
+{
+    public function upload(
+        Request $request,
+        FileUploadService $fileUploadService,
+        AbaAttachmentService $service
+    ): Response {
+        $authUser = $this->authorizeForAba();
+        $this->assertUploadLengthWithinLimit($request, $service, $authUser);
+
+        $id = $fileUploadService->upload();
+
+        return response($id, 200)->header('Content-Type', 'text/plain');
+    }
+
+    public function uploadNext(
+        Request $request,
+        FileUploadService $fileUploadService,
+        AbaAttachmentService $service
+    ) {
+        $authUser = $this->authorizeForAba();
+        $this->assertUploadLengthWithinLimit($request, $service, $authUser);
+
+        $uploadId = trim((string) $request->query('patch'));
+        if ($uploadId === '' || ! preg_match('/^[a-f0-9-]{20,64}$/i', $uploadId)) {
+            throw ValidationException::withMessages([
+                'upload' => 'Ungültige Upload-ID.',
+            ]);
+        }
+
+        $originalName = (string) ($request->header('Upload-Name') ?? 'dokument');
+        $base = pathinfo($originalName, PATHINFO_FILENAME);
+        $slug = Str::slug((string) $base, '-');
+        $targetName = $slug !== '' ? $uploadId.'-'.mb_substr($slug, 0, 80) : $uploadId;
+
+        $result = $fileUploadService->uploadNext(
+            $request,
+            $service->tempUploadStoragePathForUser($authUser),
+            $targetName
+        );
+
+        if ($result instanceof Response) {
+            return $result;
+        }
+
+        $tempPath = $service->resolveTempUploadPathForUser($authUser, $uploadId);
+        if ($tempPath === null) {
+            throw ValidationException::withMessages([
+                'upload' => 'Upload konnte nicht abgeschlossen werden.',
+            ]);
+        }
+
+        return response($uploadId, 200)->header('Content-Type', 'text/plain');
+    }
+
+    public function destroy(string $upload_id, AbaAttachmentService $service): Response
+    {
+        $authUser = $this->authorizeForAba();
+        $service->deleteTempUpload($authUser, $upload_id);
+
+        return response()->noContent();
+    }
+
+    private function authorizeForAba(): User
+    {
+        if (! $authUser = $this->userHasRole(['aba_teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $authUser;
+    }
+
+    private function assertUploadLengthWithinLimit(Request $request, AbaAttachmentService $service, User $authUser): void
+    {
+        $uploadLength = (int) ($request->header('Upload-Length') ?? 0);
+        if ($uploadLength <= 0) {
+            return;
+        }
+
+        $maxBytes = $service->maxUploadSizeKbForUser($authUser) * 1024;
+        if ($maxBytes > 0 && $uploadLength > $maxBytes) {
+            throw ValidationException::withMessages([
+                'file' => 'Datei überschreitet die maximal erlaubte Uploadgröße.',
+            ]);
+        }
+    }
+}

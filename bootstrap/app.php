@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AbaAccess;
 use App\Http\Middleware\ApiAllowed;
 use App\Http\Middleware\ToolLicensed;
 use App\Http\Middleware\WebAllowed;
@@ -17,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
         $middleware->alias([
+            'aba-access' => AbaAccess::class,
             'web-allowed' => WebAllowed::class,
             'api-allowed' => ApiAllowed::class,
             'tool-licensed' => ToolLicensed::class,

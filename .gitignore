@@ -18,6 +18,10 @@
 /public/hot
 /public/storage
 /storage/*
+!/storage/app/
+!/storage/app/google/
+!/storage/app/google/.gitkeep
+/storage/app/google/*.json
 /storage/*.key
 /storage/pail
 /storage/debugbar
@@ -26,13 +30,14 @@
 /docusaurus
 /vendor
 /docusaurus
+bin/pandoc/
 Homestead.json
 Homestead.yaml
 Thumbs.db
 _ide_helper.php
 
+
 # Test route files
 /routes/meta/web/test.php
 /routes/meta/web/empty.php
 bin/pandoc/pandoc.exe
-bin/pandoc/

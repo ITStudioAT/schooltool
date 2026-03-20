@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 SchoolTool is a German-language Laravel application providing administrative tools for schools. The primary features include:
+
 - **Registration System (Anmeldetool)**: Allows students/parents to register for school dates/events
 - **Tutoring System**: Manages tutoring services
 - **User Management**: Multi-role system with super-admin, admin, and regular users
@@ -22,16 +23,19 @@ SchoolTool is a German-language Laravel application providing administrative too
 ## Development Commands
 
 ### Setup
+
 ```bash
 composer setup  # Runs: install, .env copy, key:generate, migrate, npm install, npm run build
 ```
 
 ### Development Server
+
 ```bash
 composer dev    # Runs 3 services concurrently: artisan serve, queue:listen, vite dev
 ```
 
 Individual services:
+
 ```bash
 php artisan serve              # Laravel development server
 php artisan queue:listen --tries=1  # Queue worker
@@ -39,6 +43,7 @@ npm run dev                    # Vite dev server (port 5173)
 ```
 
 ### Testing
+
 ```bash
 composer test                  # Runs full Pest test suite
 php artisan test               # Alternative test command
@@ -46,11 +51,13 @@ php artisan test --filter=TestName  # Run specific test
 ```
 
 ### Building
+
 ```bash
 npm run build                  # Production build with Vite
 ```
 
 ### Code Quality
+
 ```bash
 ./vendor/bin/pint              # Laravel Pint (code formatting)
 ```
@@ -66,6 +73,7 @@ The application consists of three independent Single Page Applications:
 3. **Application SPA** (`/application/*`): Additional application features
 
 Each SPA has its own:
+
 - Entry point: `resources/js/apps/{admin,homepage,application}.js`
 - Router: `resources/routes/{admin,homepage,application}.js`
 - Vuetify config: `resources/plugins/{admin,homepage,application}.js`
@@ -75,6 +83,7 @@ Each SPA has its own:
 ### Backend Structure
 
 Controllers are organized by area:
+
 - `app/Http/Controllers/Admin/*`: Admin-only features
 - `app/Http/Controllers/Homepage/*`: Public registration/tutoring
 - `app/Http/Controllers/Spa/*`: SPA framework features (routes, install/update)
@@ -83,6 +92,7 @@ Controllers are organized by area:
 Services (`app/Services/*`) contain business logic and are heavily tested. Each service typically has a corresponding test in `tests/Unit/` or `tests/Feature/Services/`.
 
 Key models:
+
 - `User`: With Spatie roles/permissions, Sanctum auth, 2FA support
 - `School`: Multi-tenancy support
 - `Schoolyear`: Academic year management
@@ -95,12 +105,14 @@ Key models:
 ### Frontend Structure
 
 **Stores** (`resources/js/stores/`):
+
 - Use Pinia for state management
 - `ResourceStore.js`: Factory pattern for creating standard CRUD stores
 - Separate stores by SPA: `admin/*`, `homepage/*`, `application/*`
 - `NotificationStore.js`: Global notification system
 
 **Components**:
+
 - Shared components in `resources/js/pages/components/`
 - Custom components: `ItsTable`, `ItsGridBox`, `ItsMenuButton`, `ItsOverlayBox`, `ItsInfoBox`, `ItsNotification`, `FileUpload`, `SearchField`, `Pagination`
 - Vuetify components are auto-imported
@@ -110,16 +122,19 @@ Key models:
 ### API Architecture
 
 All API routes in `routes/api.php` follow `/api/{area}/{resource}` pattern:
+
 - Protected by global and API throttling (600 req/min per user)
 - Most admin routes require `auth:sanctum` middleware
 - Role-based access via `api-allowed` middleware
 - CSRF protection via Sanctum
 
 Public routes:
+
 - `/api/homepage/register/*`: Registration system
 - `/api/homepage/tutoring/*`: Tutoring system
 
 Admin routes grouped by required roles:
+
 - `api-allowed:user,admin,register_admin`: User profile operations
 - `api-allowed:admin,register_admin`: School/register management
 - `api-allowed:admin`: User/role administration
@@ -127,6 +142,7 @@ Admin routes grouped by required roles:
 ### Custom SPA Package (`itstudioat/spa`)
 
 This package provides:
+
 - Base authentication views and routes
 - Role and permission management (via Spatie)
 - Email verification system
@@ -136,6 +152,7 @@ This package provides:
 ## Testing Strategy
 
 The project uses Pest for testing with good coverage:
+
 - **Unit tests**: Service classes (`tests/Unit/*ServiceTest.php`)
 - **Feature tests**: Controllers (`tests/Feature/*ControllerTest.php`)
 - **Jobs tests**: Queue jobs (`tests/Unit/*JobTest.php`)
@@ -146,17 +163,21 @@ Note: Feature tests extend `Tests\TestCase` which provides database access.
 ## Configuration Notes
 
 ### Throttling
+
 Configured in `config/spa.php`:
+
 - Web: 200 req/min per user
 - API: 600 req/min per user
 - Global: 400 req/min total
 
 ### Token Management
+
 - Email verification tokens expire after 120 minutes (configurable)
 - Sanctum tokens for API authentication
 - Optional 2FA with time-limited tokens
 
 ### Multi-tenancy
+
 Users belong to a school (`school_id`) and can switch schools if they have permissions. Active school/schoolyear/register stored in user session.
 
 ## Important Development Notes
@@ -172,6 +193,7 @@ Users belong to a school (`school_id`) and can switch schools if they have permi
 ## Recent Development (from README)
 
 Current work on `tutoring` branch:
+
 - Welcome screen for users (18.11.2025)
 - User management for super-admin with role selection, CRUD operations
 - Extensive Pest test coverage added (v3.2.10-3.2.11)
@@ -185,6 +207,115 @@ Migrations in `database/migrations/`. Recent additions include `school_tools` ta
 ## File Aliases
 
 Vite configured with `@` alias pointing to `resources/js/` for cleaner imports.
+
+## ABA Subproject Activation
+
+If the user says `ABA`, `we are working on ABA`, or otherwise clearly indicates that the current task belongs to the ABA subproject, treat that as an activation signal for the ABA workflow.
+
+When ABA is activated, do not stay at the level of abstract analysis, generic advice, or detached specification if implementation in the repository is possible. First inspect the relevant repository context, then make concrete changes in the existing Laravel/Vue codebase.
+
+### ABA Working Mode
+
+When ABA is active, follow this order:
+
+1. Inspect the existing repository structure relevant to the task.
+2. Identify the Laravel backend and Vue frontend integration points.
+3. Reuse existing architecture, conventions, services, components, stores, and rendering patterns.
+4. Implement concrete code changes in the repository.
+5. Add or update tests.
+6. Run the minimum relevant checks.
+7. Report changed files, implemented logic, verification steps, and any remaining limitations.
+
+### ABA Baseline Assumptions
+
+Unless the user explicitly says otherwise, assume the following for ABA tasks:
+
+- ABA work happens inside this existing Laravel/Vue application.
+- Backend work must fit the current Laravel 12 structure already used in the repository.
+- Frontend work must fit the existing Vue 3 / Vuetify / Pinia patterns already used in the repository.
+- Do not create a parallel architecture for ABA unless explicitly requested.
+- Prefer extending existing import, parsing, normalization, rendering, preview, asset, or document-processing flows over inventing new ones.
+- Do not answer with only a conceptual target structure if the repository can be changed directly.
+
+### ABA Typical Task Areas
+
+ABA tasks commonly involve one or more of the following:
+
+- document import or extraction
+- normalization of imported text
+- correction of OCR or conversion artifacts
+- Pandoc-compatible transformation
+- preservation or repair of semantic formatting
+- structured content preparation for backend/frontend use
+- Vue preview or rendering of imported content
+- UI consistency with backend-normalized content
+- extraction or handling of page-related assets such as logos
+- regression-safe fixes with tests
+
+### ABA Repository Check
+
+Before coding for ABA, always check:
+
+- where relevant Laravel controllers, services, actions, DTOs, resources, models, or jobs are located
+- where relevant Vue pages, components, stores, or composables are located
+- whether there is existing logic for document import, parsing, Pandoc, OCR cleanup, preview rendering, or asset handling
+- which tests already cover nearby functionality
+- whether the change belongs primarily in backend normalization, shared transformation logic, persistence, or UI rendering
+
+### ABA Implementation Rules
+
+When ABA is active:
+
+- Prefer implementation over explanation.
+- Do not stop at a mock JSON structure, sample output, or conceptual description if code changes are possible.
+- Integrate into existing application flow instead of creating isolated one-off logic.
+- Keep business and normalization logic out of Vue when it belongs in backend or shared transformation layers.
+- Keep frontend rendering consistent with backend output.
+- Make the smallest production-appropriate change that cleanly solves the problem.
+- Preserve existing behavior outside the affected ABA case as much as possible.
+
+### ABA Content Processing Rules
+
+For ABA text/document-processing tasks:
+
+- Preserve the semantic structure of the original source whenever possible.
+- Prefer the original source over faulty imported, OCR, or Pandoc-converted output.
+- Remove false formatting introduced by OCR/import/conversion.
+- Keep only formatting that is actually present in the source material.
+- Treat section markers or subhead-like labels consistently.
+- Remove artificial line breaks inside continuous sentences.
+- Preserve real paragraph boundaries.
+- Keep citations and references as continuous units.
+- Ensure normalized backend output and Vue rendering remain consistent.
+- Add regression coverage for broken formatting cases once fixed.
+
+### ABA Done Definition
+
+An ABA task is not done until, where applicable:
+
+- code has been changed in the existing Laravel/Vue codebase
+- the solution follows existing project conventions
+- affected tests have been added or updated
+- the minimum relevant tests/checks have been run
+- formatting has been applied where required
+- the final response includes:
+    - changed files
+    - what was implemented
+    - what was verified
+    - any remaining limitations or follow-up items
+
+### ABA Guardrails
+
+- Do not replace repository-specific pipelines with generic text rewriting if the project already has structured processing.
+- Do not silently invent document structure that is unsupported by the existing code.
+- Do not move backend/business normalization into the UI without a strong reason.
+- Do not add documentation files unless explicitly requested.
+- Do not change dependencies without approval.
+
+### ABA Trigger Interpretation
+
+The standalone message `ABA` should be interpreted as:
+“Activate ABA project rules, inspect the relevant repository context first, and then implement changes in the existing codebase.”
 
 ===
 
@@ -302,6 +433,7 @@ This project has domain-specific skills available. You MUST activate the relevan
 - Use appropriate PHP type hints for method parameters.
 
 <!-- Explicit Return Types and Method Params -->
+
 ```php
 protected function isAccessible(User $user, ?string $path = null): bool
 {

@@ -1,0 +1,90 @@
+{
+    "version": "1.0",
+    "generated_at": "2026-03-14T16:08:19+01:00",
+    "mode": "ai",
+    "success": true,
+    "proposal_file": "ai-seed-hardening-draft-2026-03-14.md",
+    "summary": {
+        "total_issues_found": 22,
+        "issues_researched": 22,
+        "items_verified": 22,
+        "scope_violations_filtered": 0,
+        "sections_in_draft": 1,
+        "items_applied_to_draft": 1,
+        "items_unresolved": 21,
+        "duration_seconds": -117.119232,
+        "proposal_file": "C:\\laravel\\schooltool\\ai/knowledge/aba/sources/proposals/ai-seed-hardening-draft-2026-03-14.md"
+    },
+    "pipeline_log": [
+        {
+            "stage": "issue_detection",
+            "event": "start",
+            "message": "Erkenne offene Issues im Seed ...",
+            "at": "2026-03-14T16:06:22+01:00"
+        },
+        {
+            "stage": "issue_detection",
+            "event": "result",
+            "data": {
+                "total_issues": 22,
+                "by_type": {
+                    "editorial_meta": 0,
+                    "source_placeholder": 2,
+                    "verification_needed": 0,
+                    "scope_remnant": 0,
+                    "weak_statement": 20
+                }
+            },
+            "at": "2026-03-14T16:06:22+01:00"
+        },
+        {
+            "stage": "ai_research",
+            "event": "start",
+            "message": "Starte KI-Recherche für 22 Issues ...",
+            "at": "2026-03-14T16:06:22+01:00"
+        },
+        {
+            "stage": "ai_research",
+            "event": "result",
+            "data": {
+                "issues_processed": 22,
+                "output_file": "ai-seed-research-2026-03-14.json"
+            },
+            "at": "2026-03-14T16:07:41+01:00"
+        },
+        {
+            "stage": "ai_verification",
+            "event": "start",
+            "message": "Starte KI-Verifikation ...",
+            "at": "2026-03-14T16:07:41+01:00"
+        },
+        {
+            "stage": "ai_verification",
+            "event": "result",
+            "data": {
+                "items_verified": 22,
+                "scope_violations": 0,
+                "output_file": "ai-seed-verification-2026-03-14.json"
+            },
+            "at": "2026-03-14T16:08:18+01:00"
+        },
+        {
+            "stage": "ai_hardening_draft",
+            "event": "start",
+            "message": "Generiere gehärteten Seed-Entwurf ...",
+            "at": "2026-03-14T16:08:18+01:00"
+        },
+        {
+            "stage": "ai_hardening_draft",
+            "event": "result",
+            "data": {
+                "sections_generated": 1,
+                "items_applied": 1,
+                "items_skipped": 21,
+                "output_file": "ai-seed-hardening-draft-2026-03-14.md"
+            },
+            "at": "2026-03-14T16:08:19+01:00"
+        }
+    ],
+    "error": null
+}

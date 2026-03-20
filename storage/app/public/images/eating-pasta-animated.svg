@@ -1,0 +1,347 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="801.006" height="561.084" viewBox="0 0 801.006 561.084" role="img">
+<!--
+  All elements translated by baking the root g transform(-1197.724 -252.32)
+  into each sub-group's transform.
+  Root offset: tx=-1197.724  ty=-252.32
+-->
+
+<!-- ════════════════════════════════════════
+     GROUND / FLOOR SHADOWS — fade in first
+════════════════════════════════════════ -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.1s" dur="0.5s" fill="freeze"/>
+  <!-- shadow left -->
+  <path d="M450.112,611.363c0,9.524-32.29,17.253-72.126,17.253S307.43,620.9,307.43,611.363s30.721-17.253,70.556-17.253S450.112,601.879,450.112,611.363Z"
+    transform="translate(949.258 33.296) translate(-1197.724 -252.32)" fill="#090814"/>
+  <!-- shadow right -->
+  <path d="M717.13,613.293c0,9.524,32.29,17.253,72.126,17.253s70.556-7.716,70.556-17.253S829.078,596,789.256,596,717.13,603.769,717.13,613.293Z"
+    transform="translate(1079.974 33.899) translate(-1197.724 -252.32)" fill="#090814"/>
+</g>
+
+<!-- ════════════════════════════════════════
+     TABLE — legs grow up, surface fades in
+════════════════════════════════════════ -->
+<!-- Left table legs (grow upward) -->
+<g>
+  <rect x="49.5" y="558.6" width="15.684" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="142.695" begin="0.3s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+    <animate attributeName="y" from="558.6" to="415.9" begin="0.3s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="173.4" y="558.6" width="15.684" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="142.695" begin="0.4s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+    <animate attributeName="y" from="558.6" to="415.9" begin="0.4s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+</g>
+
+<!-- Right table legs (grow upward, rotate 180 = just bottom-anchored) -->
+<g>
+  <rect x="627.6" y="561.1" width="15.684" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="142.695" begin="0.3s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="751.5" y="561.1" width="15.684" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="142.695" begin="0.4s" dur="0.55s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+</g>
+
+<!-- Center table legs (vertical) -->
+<g>
+  <rect x="198.9" y="282.7" width="17.926" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="257.03" begin="0.35s" dur="0.6s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="590.5" y="282.7" width="17.926" height="0" fill="#40414d">
+    <animate attributeName="height" from="0" to="257.03" begin="0.45s" dur="0.6s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+</g>
+
+<!-- Horizontal bar (rotated 90°, is actually the long table crossbar) -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.7s" dur="0.4s" fill="freeze"/>
+  <rect width="17.926" height="388.54" transform="translate(1797.156 730.781) rotate(90) translate(-1197.724 -252.32)" fill="#40414d"/>
+</g>
+
+<!-- Table top surface — fade + drop in -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.6s" dur="0.5s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate"
+    from="0 -10" to="0 0" begin="0.6s" dur="0.5s"
+    calcMode="spline" keySplines="0.25,0.1,0.25,1" fill="freeze"/>
+  <!-- main table surface -->
+  <path d="M267.269,386.78H681.451A29.019,29.019,0,0,1,710.471,415.8v3.852H238.25V415.8a29.019,29.019,0,0,1,29.019-29.019Z"
+    transform="translate(1122.551 127.319) translate(-1197.724 -252.32)" fill="#dfe6f5"/>
+  <path d="M267.269,382.24H681.451a29.019,29.019,0,0,1,29.019,29.019v3.852H238.25v-3.852a29.019,29.019,0,0,1,29.019-29.019Z"
+    transform="translate(1122.551 125.87) translate(-1197.724 -252.32)" fill="#dfe6f5"/>
+</g>
+
+<!-- Fork holder tray (dark rectangle) -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.75s" dur="0.4s" fill="freeze"/>
+  <path d="M142.66,485.75H307.3v14.378a13.85,13.85,0,0,1-13.85,13.85H166.4a23.743,23.743,0,0,1-23.743-23.743Z"
+    transform="translate(1092.053 158.896) translate(-1197.724 -252.32)" fill="#40414d"/>
+  <!-- angled fork/utensil -->
+  <path d="M9.26,0h3.482a9.233,9.233,0,0,1,9.233,9.233V195.985H16.7A16.7,16.7,0,0,1,0,179.286V9.233A9.233,9.233,0,0,1,9.26,0Z"
+    transform="translate(1197.724 481.699) rotate(-12.72) translate(-1197.724 -252.32)" fill="#40414d"/>
+  <!-- right fork/knife utensils -->
+  <path d="M23.743,0H150.794a13.85,13.85,0,0,1,13.85,13.85V28.228H0V23.743A23.743,23.743,0,0,1,23.743,0Z"
+    transform="translate(1861.319 655.176) translate(-1197.724 -252.32)" fill="#40414d"/>
+</g>
+
+<!-- ════════════════════════════════════════
+     PASTA BOWL + LEMONS — pop up from table
+════════════════════════════════════════ -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.9s" dur="0.01s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate"
+    from="0 20" to="0 0" begin="0.9s" dur="0.5s"
+    calcMode="spline" keySplines="0.34,1.56,0.64,1" fill="freeze"/>
+
+  <!-- Lemon / orange circles group (concentric rings, 3 groups) -->
+  <!-- Group 1: center ~399, 199 -->
+  <circle cx="1596.911" cy="451.325" r="35.865" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M36.025-.5A36.534,36.534,0,0,1,50.242,69.679,36.534,36.534,0,0,1,21.807,2.371,36.3,36.3,0,0,1,36.025-.5Zm0,71.73a35.215,35.215,0,0,0,13.7-67.645A35.215,35.215,0,0,0,22.321,68.464,34.984,34.984,0,0,0,36.025,71.23Z"
+    transform="translate(1560.887 415.301) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <circle cx="1603.838" cy="462.754" r="28.426" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M28.585-.5A29.093,29.093,0,0,1,39.907,55.384a29.092,29.092,0,0,1-22.643-53.6A28.9,28.9,0,0,1,28.585-.5Zm0,56.851A27.774,27.774,0,0,0,39.393,3,27.773,27.773,0,0,0,17.778,54.169,27.591,27.591,0,0,0,28.585,56.351Z"
+    transform="translate(1568.327 422.741) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <circle cx="1610.088" cy="472.985" r="21.659" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M21.818-.5A22.318,22.318,0,0,1,37.6,37.6,22.318,22.318,0,1,1,6.037,6.037,22.172,22.172,0,0,1,21.818-.5Zm0,43.318A21,21,0,0,0,36.667,6.97a21,21,0,1,0-29.7,29.7A20.862,20.862,0,0,0,21.818,42.818Z"
+    transform="translate(1575.094 448.937) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <circle cx="1621.088" cy="485.302" r="12.175" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M12.334-.5A12.834,12.834,0,1,1-.5,12.334,12.849,12.849,0,0,1,12.334-.5Zm0,24.35A11.515,11.515,0,1,0,.819,12.334,11.528,11.528,0,0,0,12.334,23.85Z"
+    transform="translate(1584.578 438.992) translate(-1197.724 -252.32)" fill="#ffab50"/>
+
+  <!-- Group 2: center ~378, 218 -->
+  <circle cx="1575.992" cy="470.756" r="35.865" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M36.025-.5A36.534,36.534,0,0,1,50.242,69.679,36.534,36.534,0,0,1,21.807,2.371,36.3,36.3,0,0,1,36.025-.5Zm0,71.73a35.215,35.215,0,0,0,13.7-67.645A35.215,35.215,0,0,0,22.321,68.464,34.984,34.984,0,0,0,36.025,71.23Z"
+    transform="translate(1539.967 434.731) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <circle cx="1582.92" cy="478.182" r="28.426" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <circle cx="1589.846" cy="485.11" r="21.659" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <circle cx="1600.171" cy="498.754" r="12.175" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+
+  <!-- Group 3: center ~420, 218 -->
+  <circle cx="1617.832" cy="470.756" r="35.865" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <path d="M36.025-.5A36.534,36.534,0,0,1,50.242,69.679,36.534,36.534,0,0,1,21.807,2.371,36.3,36.3,0,0,1,36.025-.5Zm0,71.73a35.215,35.215,0,0,0,13.7-67.645A35.215,35.215,0,0,0,22.321,68.464,34.984,34.984,0,0,0,36.025,71.23Z"
+    transform="translate(1581.807 434.731) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <circle cx="1624.76" cy="478.182" r="28.426" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <circle cx="1631.688" cy="485.11" r="21.659" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+  <circle cx="1642.011" cy="498.754" r="12.175" transform="translate(-1197.724 -252.32)" fill="#ffd77c"/>
+
+  <!-- Pasta bowl (purple trapezoid) -->
+  <path d="M360.6,346H510.035v7.017a52.762,52.762,0,0,1-52.762,52.762H413.362A52.762,52.762,0,0,1,360.6,353.017Z"
+    transform="translate(1161.588 114.308) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+  <path d="M633.405,467.42a59.766,59.766,0,0,1-59.74,58.276H544a59.905,59.905,0,0,0,13.191,1.5h29.89a59.779,59.779,0,0,0,59.806-59.779Z"
+    transform="translate(1024.736 -7.125) translate(-1197.724 -252.32)" opacity="0.1"/>
+</g>
+
+<!-- ════════════════════════════════════════
+     PASTA STRANDS — grow down one by one
+════════════════════════════════════════ -->
+<g>
+  <rect x="339.83" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.1s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="341.149" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.17s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="342.469" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.24s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="343.788" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.31s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="345.107" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.38s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="346.426" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.45s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+  <rect x="347.745" y="141.706" width="1.319" height="0" fill="#ffd77c">
+    <animate attributeName="height" from="0" to="54.081" begin="1.52s" dur="0.4s"
+      calcMode="spline" keySplines="0.4,0,0.2,1" fill="freeze"/>
+  </rect>
+</g>
+
+<!-- ════════════════════════════════════════
+     STEAM WISPS — wavy rise loops
+     Steam paths use their original coords with baked transform
+════════════════════════════════════════ -->
+<!-- Left steam wisp 1 -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="1.6s" dur="0.5s" fill="freeze"/>
+  <g>
+    <animate attributeName="opacity" values="0.8;0;0.8" keyTimes="0;0.7;1"
+      dur="2.2s" begin="2.2s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0.45,0,0.55,1"/>
+    <animateTransform attributeName="transform" type="translate"
+      values="0,0; 0,-14; 0,-14" keyTimes="0;0.7;1"
+      dur="2.2s" begin="2.2s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0,0,1,1" additive="sum"/>
+    <path d="M546.3,424.415l-73.511-9.524c-2.981-.383-5.276-1.517-5.2-2.506h0c.132-.989,2.638-1.451,5.685-1.016l73.352,10.618c2.018.29,3.548,1.055,3.456,1.728h0C549.992,424.349,548.3,424.679,546.3,424.415Z"
+      transform="translate(1000.357 -25.06) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <path d="M546.808,424.034l-73.735-7.624c-2.994-.3-5.54.251-5.632,1.24h0c-.092.989,2.3,2.031,5.276,2.3l73.867,6.6c2.031.185,3.693-.211,3.759-.884h0C550.4,424.944,548.826,424.245,546.808,424.034Z"
+      transform="translate(1000.309 -23.426) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+  </g>
+</g>
+
+<!-- Left steam wisp 2 (offset timing) -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="1.8s" dur="0.5s" fill="freeze"/>
+  <g>
+    <animate attributeName="opacity" values="0.6;0;0.6" keyTimes="0;0.7;1"
+      dur="2.5s" begin="2.8s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0.45,0,0.55,1"/>
+    <animateTransform attributeName="transform" type="translate"
+      values="0,0; -3,-18; -3,-18" keyTimes="0;0.7;1"
+      dur="2.5s" begin="2.8s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0,0,1,1" additive="sum"/>
+    <path d="M612.39,467.415l73.5-9.524c2.981-.383,5.276-1.517,5.2-2.506h0c-.132-.989-2.638-1.451-5.685-1.016l-73.352,10.618c-2.018.29-3.548,1.055-3.456,1.728h0C608.683,467.349,610.372,467.679,612.39,467.415Z"
+      transform="translate(1045.343 -11.341) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <path d="M611.965,467.034,685.7,459.41c2.994-.3,5.54.251,5.632,1.24h0c.092.989-2.3,2.031-5.276,2.3l-73.867,6.6c-2.031.185-3.693-.211-3.759-.884h0C608.378,467.944,609.947,467.245,611.965,467.034Z"
+      transform="translate(1045.293 -9.707) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+  </g>
+</g>
+
+<!-- ════════════════════════════════════════
+     LEFT PERSON — fade + rise, then bob
+════════════════════════════════════════ -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.5s" dur="0.6s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate"
+    from="-20 0" to="0 0" begin="0.5s" dur="0.6s"
+    calcMode="spline" keySplines="0.25,0.1,0.25,1" fill="freeze"/>
+  <g>
+    <!-- gentle bob -->
+    <animateTransform attributeName="transform" type="translate"
+      values="0,0; 0,-4; 0,0" keyTimes="0;0.5;1"
+      dur="3.2s" begin="2s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0.45,0,0.55,1"/>
+
+    <!-- head -->
+    <circle cx="43.529" cy="43.529" r="43.529"
+      transform="translate(1304.742 304.99) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+    <!-- hair / dark head top -->
+    <path d="M299.371,115.592c6.154,9.984.48,23.134-7.1,32.082s-17.357,16.8-20.741,28.032c-3.035,10.068-.274,20.926,3.295,30.817s8.006,19.753,8.374,30.261-4.606,22.114-14.5,25.662c-10.158,3.641-22.167-2.081-31.95,2.47-12.744,5.928-15.632,26.45-29.524,28.578-8.55,1.309-16.474-6.1-18.863-14.416s-.673-17.186,1.054-25.661l14.2-69.665,11.814-57.965c2.351-11.536,5.141-23.876,13.811-31.841,10.594-9.733,26.563-9.964,40.937-9.381,13.207.536,26.946,1.439,38.444,7.96s19.942,20.38,15.964,32.985c-3.716-8.871-14.818-13.848-23.913-10.719"
+      transform="translate(1066.225 208.575) translate(-1197.724 -252.32)" fill="#090814"/>
+
+    <!-- torso / body -->
+    <path d="M372.555,415.875s-46.167-11.871-52.762,55.4,5.276,75.186-14.51,116.077,134.543,5.276,134.543,5.276-7.914-9.233-32.976-5.276l-11.871-35.614s-3.957-15.829,18.467-15.829,11.872-46.167,11.872-46.167-11.872-39.572-18.467-43.529S388.384,418.514,372.555,415.875Z"
+      transform="translate(948.014 -23.828) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <!-- legs lower -->
+    <path d="M307.473,554.365s-15.829,54.081,31.657,63.315l51.443-2.638s72.548-14.51,92.334-3.957c0,0,7.914,1.319,5.276,11.872s3.957,81.781,3.957,81.781V728.48s44.848,0,50.124-5.276c0,0-3.957-21.1,0-38.253s-6.6-71.229-6.6-71.229l-1.042-32.554a22.635,22.635,0,0,0-11.951-19.522,17.676,17.676,0,0,0-8.1-2.058s-89.7-14.51-121.353-11.872S307.473,554.365,307.473,554.365Z"
+      transform="translate(948.464 18.392) translate(-1197.724 -252.32)" fill="#d6d6e3"/>
+    <!-- shoes -->
+    <path d="M452.482,682.551s-15.829,19.786-9.233,27.7,39.572,23.044,50.124,22.424c11.212-.66,48.8,1.319,50.124-15.829,0,0,2.638-7.914-31.657-9.233S488.1,670.68,488.1,670.68Z"
+      transform="translate(992.079 57.726) translate(-1197.724 -252.32)" fill="#090814"/>
+
+    <!-- arm reaching to bowl -->
+    <path d="M379.6,421.68s23.743,27.7,26.381,36.933,31.657,32.976,31.657,32.976-21.1,15.829-17.148,23.743-27.7-26.381-27.7-26.381L355.86,434.87Z"
+      transform="translate(964.71 -21.718) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <!-- arm lower right -->
+    <path d="M392.455,487.68s96.291,10.552,112.119,7.914c0,0,70.7-8.706,52.762,9.233-1.319,1.319-47.486,11.872-52.762,10.552s-117.4,0-117.4,0l-1.319-13.19Z"
+      transform="translate(974.281 -0.661) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+    <!-- arm/body path -->
+    <path d="M334.806,473.021l69.91,63.315s13.191-26.381,17.148-26.381-47.486-77.824-47.486-77.824-13.191-15.829-21.1-7.914S321.616,426.854,334.806,473.021Z"
+      transform="translate(956.744 -21.616) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <!-- reaching hand -->
+    <path d="M412.412,492.333s10.552,13.191,17.148,0,21.1-56.719,21.1-56.719,35.614-38.253,47.486-26.381-29.019,32.976-29.019,32.976-14.51,80.462-27.7,81.781-32.976,0-32.976,0l-6.6-14.51Z"
+      transform="translate(979.386 -26.418) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+    <!-- torso/chest detail -->
+    <path d="M400.543,400.512s-11.871,38.253-11.871,52.762-50.124-3.957-48.8-11.871,29.019-36.933,30.338-48.8S400.543,400.512,400.543,400.512Z"
+      transform="translate(959.599 -32.207) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+  </g>
+</g>
+
+<!-- ════════════════════════════════════════
+     RIGHT PERSON — fade + rise from right, then bob
+════════════════════════════════════════ -->
+<g opacity="0">
+  <animate attributeName="opacity" from="0" to="1" begin="0.55s" dur="0.6s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate"
+    from="20 0" to="0 0" begin="0.55s" dur="0.6s"
+    calcMode="spline" keySplines="0.25,0.1,0.25,1" fill="freeze"/>
+  <g>
+    <!-- bob slightly offset from left person -->
+    <animateTransform attributeName="transform" type="translate"
+      values="0,0; 0,-4; 0,0" keyTimes="0;0.5;1"
+      dur="3.5s" begin="2.3s" repeatCount="indefinite"
+      calcMode="spline" keySplines="0.45,0,0.55,1;0.45,0,0.55,1"/>
+
+    <!-- head -->
+    <circle cx="43.146" cy="43.146" r="43.146"
+      transform="translate(1806.668 289.161) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+    <!-- hair dark -->
+    <path d="M785.8,375.465c-6.6,4.195-6.688,13.679-2.44,20.247s11.568,10.909,18.612,15c2.045,1.187,4.3,2.414,6.6,2.15a9.721,9.721,0,0,0,4.722-2.387,162.846,162.846,0,0,0,14.088-12.359c6.411-6.305,12.571-14.074,11.568-22.872-1.134-9.985-11-17.5-14.984-26.961-3.35-7.914-2.348-16.792-5.276-24.877S805.5,307.837,797.82,312.072c-2.836,1.556-4.551,4.34-6.925,6.437-5.883,5.2-15.367,5.711-23.413,3.337s-10.434-12.069-21.659-12.1c5.58,1.965,9.352,7.782,8.495,13.085-4.5,2.546-10.407,1.095-15.829,1s-11.871,2.942-10.935,7.822c.818,3.957,6.529,6.9,5.685,10.856a89.379,89.379,0,0,1-31.842,9.761c-2.018.224,12.122,11.977,13.731,12.755,5.9,2.823,12.98,4.894,19.219,7.057C751.3,377.945,768.656,379.99,785.8,375.465Z"
+      transform="translate(1074.892 -57.43) translate(-1197.724 -252.32)" fill="#090814"/>
+
+    <!-- body / torso -->
+    <path d="M857.872,619.748s-11.661-73.471,0-73.471,18.071-99.707,18.071-99.707,2.348,12.623,9.537,5.2a114.473,114.473,0,0,1,8.521-8.125,118.326,118.326,0,0,0,16.343-16.317c8.165-10.552,38.477,34.981,38.477,34.981s18.651,20.986,16.33,71.136c-.251,5.276-.356,10.711-.369,16.211C964.757,567.435,972.236,619.748,857.872,619.748Z"
+      transform="translate(1087.572 -29.724) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <!-- arm left side -->
+    <path d="M811.076,479.054l1.161,25.656s-61.811,3.5-74.632-9.326-59.212-9.985-58.3,0c.58,6.411,31.486,26.816,50.124,27.99S772.56,533.1,783.113,536.2c9.906,2.915,35.483,5.487,48.9,5.751a19.786,19.786,0,0,0,18.467-11.2,18.667,18.667,0,0,0,1.451-10.882c-2.335-15.156,0-47.816,0-47.816Z"
+      transform="translate(1067.901 -5.647) translate(-1197.724 -252.32)" fill="#ed9da0"/>
+    <!-- torso front shirt area -->
+    <path d="M795.527,419.906s-26.816,3.5-23.321,43.146,8.165,43.146,8.165,43.146,39.651-3.5,44.307-4.669,2.335-44.307,2.335-44.307S825.839,418.719,795.527,419.906Z"
+      transform="translate(1097.446 -22.293) translate(-1197.724 -252.32)" fill="#6c63ff"/>
+    <!-- highlight on torso -->
+    <path d="M825.016,680.89a25.734,25.734,0,0,1,1.886,13.731c-3.5,27.99-54.807,46.642-68.8,50.124-7.374,1.847-15.406-2.467-18.77-7.651,2.163,6.094,11.476,12.1,19.944,9.985,14-3.5,65.306-22.16,68.8-50.124a25.6,25.6,0,0,0-3.06-16.066Z"
+      transform="translate(1087.057 60.983) translate(-1197.724 -252.32)" fill="#fff" opacity="0.1"/>
+  </g>
+</g>
+
+<!-- ════════════════════════════════════════
+     PASTA STRANDS LOOP — gentle sway after intro
+     The strands oscillate left-right continuously
+════════════════════════════════════════ -->
+<g>
+  <animateTransform attributeName="transform" type="translate"
+    values="0,0; 2,0; 0,0; -2,0; 0,0" keyTimes="0;0.25;0.5;0.75;1"
+    dur="3s" begin="2.5s" repeatCount="indefinite"
+    calcMode="spline"
+    keySplines="0.45,0,0.55,1;0.45,0,0.55,1;0.45,0,0.55,1;0.45,0,0.55,1"/>
+  <!-- strands outline paths (from original) -->
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1537.515 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1538.834 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1540.153 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1541.472 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1542.791 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1544.11 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+  <path d="M-.125-.125H1.524V54.286H-.125ZM1.194.2H.2V53.956h.989Z"
+    transform="translate(1545.429 393.986) translate(-1197.724 -252.32)" fill="#ffab50"/>
+</g>
+
+<!-- ════════════════════════════════════════
+     LEMON / CITRUS PULSE LOOP
+     The concentric circles breathe gently
+════════════════════════════════════════ -->
+<!-- Innermost lemon circles pulse scale -->
+<g>
+  <animateTransform attributeName="transform" type="scale"
+    values="1,1; 1.04,1.04; 1,1" keyTimes="0;0.5;1"
+    dur="2.8s" begin="2.5s" repeatCount="indefinite"
+    calcMode="spline" keySplines="0.45,0,0.55,1;0.45,0,0.55,1"
+    additive="sum"/>
+  <!-- small innermost ring group 1 -->
+  <circle cx="1596.913" cy="451.327" r="12.175"
+    transform="translate(-1197.724 -252.32)" fill="#ffd77c" opacity="0.7"/>
+</g>
+
+</svg>
