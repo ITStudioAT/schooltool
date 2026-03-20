@@ -28,7 +28,18 @@
                             :disabled="!hasNextStudent"
                             @click="goToNextStudent" />
                     </div>
-                    <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
+                    <div class="d-flex align-center ga-2">
+                        <v-btn
+                            :color="show_auswertung ? 'success' : 'primary'"
+                            :variant="show_auswertung ? 'flat' : 'tonal'"
+                            :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
+                            :aria-pressed="show_auswertung ? 'true' : 'false'"
+                            :disabled="!hasAuswertungContent"
+                            @click="show_auswertung = !show_auswertung">
+                            Auswerten
+                        </v-btn>
+                        <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
+                    </div>
                 </v-card>
 
                 <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
@@ -39,139 +50,9 @@
                     </v-btn-toggle>
                 </div>
 
-                <v-card variant="outlined" class="mt-4">
-                    <v-card-text v-if="!is_editing">
-                        <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
-                        <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
-                        <div class="w-100 text-right">
-                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editComment" />
-                        </div>
-                    </v-card-text>
-                    <v-card-text v-else>
-                        <v-form ref="form" @submit.prevent="saveComment">
-                            <div class="mb-4">
-                                <label class="text-caption text-medium-emphasis">Kommentar</label>
-                                <ItsRichTextEditor v-model="edit_comment" />
-                            </div>
-
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit">Speichern</v-btn>
-                            </div>
-                        </v-form>
-                    </v-card-text>
-                </v-card>
-
-
-                <v-card variant="outlined" class="mt-4">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-clipboard-text</v-icon>
-                        Einträge
-                        <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
-                            {{ filteredEntries.length }}
-                        </v-chip>
-                        <v-spacer />
-                        <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
-                            {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
-                        </v-btn>
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newEntry" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text class="pa-0">
+                <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">
+                    <v-card-text class="py-2">
                         <v-list density="compact">
-                            <template v-for="item in sortedEntriesGrouped" :key="item.key">
-                                <v-list-item v-if="item.kind === 'header'">
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-divider />
-                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
-                                        <v-divider />
-                                    </div>
-                                </v-list-item>
-                                <v-list-item v-else>
-                                    <div
-                                        class="entry-row d-flex flex-column ga-1 w-100"
-                                        :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
-                                        <div class="d-flex align-center ga-2 w-100">
-                                            <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
-                                                {{ formatDate(item.entry.date) }}
-                                            </v-chip>
-                                            <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
-                                                Zählt zu Sem 2
-                                            </v-chip>
-                                            <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
-                                                {{ workTypeLabel(item.entry.type) }}
-                                            </v-chip>
-                                            <v-chip
-                                                v-if="entryWorkTitle(item.entry)"
-                                                size="x-small"
-                                                variant="outlined"
-                                                color="primary"
-                                                class="entry-work-title">
-                                                {{ entryWorkTitle(item.entry) }}
-                                            </v-chip>
-                                            <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
-                                                <v-icon start size="12">mdi-lock</v-icon>
-                                                Aus Arbeit
-                                            </v-chip>
-                                            <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
-                                                {{ entryDisplayGrade(item.entry) }}
-                                            </v-chip>
-                                            <v-spacer />
-                                            <div class="entry-actions d-flex align-center ga-1">
-                                            <v-btn
-                                                v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
-                                                icon="mdi-open-in-new"
-                                                size="x-small"
-                                                color="info"
-                                                variant="tonal"
-                                                @click="jumpToWork(item.entry)" />
-                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry)" icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
-                                            <v-btn
-                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id !== item.entry.id"
-                                                icon="mdi-delete"
-                                                size="x-small"
-                                                color="warning"
-                                                variant="tonal"
-                                                @click="delete_entry_id = item.entry.id" />
-                                            <v-btn
-                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id"
-                                                icon="mdi-delete-off"
-                                                size="x-small"
-                                                color="success"
-                                                variant="tonal"
-                                                @click="delete_entry_id = null" />
-                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
-                                        </div>
-                                        </div>
-                                        <div v-if="entryWorkDescription(item.entry)" class="text-caption text-medium-emphasis" style="padding-left: 4px;">
-                                            {{ entryWorkDescription(item.entry) }}
-                                        </div>
-                                        <div v-if="entryWorkComment(item.entry)" class="text-caption" style="padding-left: 4px;">
-                                            <strong>Kommentar:</strong> {{ entryWorkComment(item.entry) }}
-                                        </div>
-                                        <div v-if="!entryIsDerivedFromWork(item.entry) && item.entry.description" class="text-caption" style="padding-left: 4px;">
-                                            <strong>Kommentar:</strong> {{ item.entry.description }}
-                                        </div>
-                                    </div>
-                                </v-list-item>
-                            </template>
-                            <v-list-item v-if="!filteredEntries?.length">
-                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                    <v-divider v-if="hasAuswertungContent" />
-                    <v-card-text v-if="hasAuswertungContent" class="py-2">
-                        <div class="d-flex align-center justify-space-between mb-2">
-                            <div class="text-subtitle-2">Auswertung</div>
-                            <v-btn
-                                :icon="show_auswertung ? 'mdi-eye' : 'mdi-eye-off'"
-                                size="x-small"
-                                variant="tonal"
-                                color="primary"
-                                @click="show_auswertung = !show_auswertung" />
-                        </div>
-                        <v-list v-if="show_auswertung" density="compact">
                             <template v-if="showSemester1Auswertung">
                                 <v-list-item>
                                     <div class="d-flex align-center ga-2 w-100">
@@ -188,7 +69,7 @@
                                 <template v-for="cat in semester1Groups" :key="`sem1-cat-${cat.name}`">
                                     <v-list-item>
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
+                                        <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
                                             {{ cat.name }}
                                         </v-list-item-title>
                                         <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
@@ -196,7 +77,7 @@
                                             Alle erforderlich
                                         </v-chip>
                                         <v-spacer />
-                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : ((cat.value != null || cat.grade) ? 'text-medium-emphasis' : 'text-warning')">
+                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
                                             Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                         </div>
                                     </div>
@@ -207,22 +88,27 @@
                                         </div>
                                     </v-list-item>
                                     <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
-                                        <div class="d-flex align-center ga-2 w-100">
-                                            <v-chip v-if="row.type" size="x-small" variant="outlined">
-                                                {{ workTypeLabel(row.type) }}
-                                            </v-chip>
-                                            <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
-                                                NB
-                                            </v-chip>
-                                            <v-spacer />
-                                            <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
-                                            <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
-                                                {{ formatDate(row.date) }}
-                                            </v-chip>
-                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
-                                                {{ row.value }}
-                                            </v-chip>
+                                        <div class="w-100">
+                                            <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
+                                                <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
+                                                    {{ workTypeLabel(row.type) }}
+                                                </div>
+                                                <v-spacer />
+                                                <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                    {{ formatDate(row.date) }}
+                                                </v-chip>
+                                                <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
+                                                    {{ row.value }}
+                                                </v-chip>
+                                                <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
+                                                <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                                <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
+                                                    NB
+                                                </v-chip>
+                                            </div>
+                                            <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
+                                                {{ row.workTitle }}
+                                            </div>
                                         </div>
                                     </v-list-item>
                                 </template>
@@ -253,7 +139,7 @@
                                 <template v-for="cat in semester2Groups" :key="`sem2-cat-${cat.name}`">
                                     <v-list-item>
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2" :class="!cat.rows.length ? 'text-warning' : ''">
+                                        <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
                                             {{ cat.name }}
                                         </v-list-item-title>
                                         <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
@@ -261,7 +147,7 @@
                                             Alle erforderlich
                                         </v-chip>
                                         <v-spacer />
-                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : ((cat.value != null || cat.grade) ? 'text-medium-emphasis' : 'text-warning')">
+                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
                                             Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                         </div>
                                         </div>
@@ -272,22 +158,27 @@
                                         </div>
                                     </v-list-item>
                                     <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
-                                        <div class="d-flex align-center ga-2 w-100">
-                                            <v-chip v-if="row.type" size="x-small" variant="outlined">
-                                                {{ workTypeLabel(row.type) }}
-                                            </v-chip>
-                                            <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
-                                                NB
-                                            </v-chip>
-                                            <v-spacer />
-                                            <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                            <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
-                                            <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
-                                                {{ formatDate(row.date) }}
-                                            </v-chip>
-                                            <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
-                                                {{ row.value }}
-                                            </v-chip>
+                                        <div class="w-100">
+                                            <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
+                                                <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
+                                                    {{ workTypeLabel(row.type) }}
+                                                </div>
+                                                <v-spacer />
+                                                <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                    {{ formatDate(row.date) }}
+                                                </v-chip>
+                                                <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
+                                                    {{ row.value }}
+                                                </v-chip>
+                                                <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
+                                                <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                                <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
+                                                    NB
+                                                </v-chip>
+                                            </div>
+                                            <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
+                                                {{ row.workTitle }}
+                                            </div>
                                         </div>
                                     </v-list-item>
                                 </template>
@@ -355,7 +246,126 @@
                                 </div>                                
                             </v-list-item>
                         </v-list>
+
                     </v-card-text>
+                </v-card>
+                <v-card variant="outlined" class="mt-4">
+                    <v-card-text v-if="!is_editing">
+                        <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
+                        <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
+                        <div class="w-100 text-right">
+                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editComment" />
+                        </div>
+                    </v-card-text>
+                    <v-card-text v-else>
+                        <v-form ref="form" @submit.prevent="saveComment">
+                            <div class="mb-4">
+                                <label class="text-caption text-medium-emphasis">Kommentar</label>
+                                <ItsRichTextEditor v-model="edit_comment" />
+                            </div>
+
+                            <div class="d-flex flex-row align-center justify-space-between mt-4">
+                                <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
+                                <v-btn color="success" flat tile type="submit">Speichern</v-btn>
+                            </div>
+                        </v-form>
+                    </v-card-text>
+                </v-card>
+
+
+                <v-card variant="outlined" class="mt-4">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                        <v-icon size="18">mdi-clipboard-text</v-icon>
+                        Einträge
+                        <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
+                            {{ filteredEntries.length }}
+                        </v-chip>
+                        <v-spacer />
+                        <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
+                            {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
+                        </v-btn>
+                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newEntry" />
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <template v-for="item in sortedEntriesGrouped" :key="item.key">
+                                <v-list-item v-if="item.kind === 'header'">
+                                    <div class="d-flex align-center ga-2 w-100">
+                                        <v-divider />
+                                        <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
+                                        <v-divider />
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-else>
+                                    <div
+                                        class="entry-row d-flex flex-column ga-1 w-100"
+                                        :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
+                                                {{ formatDate(item.entry.date) }}
+                                            </v-chip>
+                                            <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
+                                                Zählt zu Sem 2
+                                            </v-chip>
+                                            <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
+                                                {{ workTypeLabel(item.entry.type) }}
+                                            </v-chip>
+                                            <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
+                                                <v-icon start size="12">mdi-lock</v-icon>
+                                                Aus Arbeit
+                                            </v-chip>
+                                            <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
+                                                {{ entryDisplayGrade(item.entry) }}
+                                            </v-chip>
+                                            <v-spacer />
+                                            <div class="entry-actions d-flex align-center ga-1">
+                                            <v-btn
+                                                v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
+                                                icon="mdi-open-in-new"
+                                                size="x-small"
+                                                color="info"
+                                                variant="tonal"
+                                                @click="jumpToWork(item.entry)" />
+                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry)" icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
+                                            <v-btn
+                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id !== item.entry.id"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="tonal"
+                                                @click="delete_entry_id = item.entry.id" />
+                                            <v-btn
+                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id"
+                                                icon="mdi-delete-off"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                @click="delete_entry_id = null" />
+                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
+                                        </div>
+                                        </div>
+                                        <div v-if="entryWorkTitle(item.entry)" class="text-caption text-medium-emphasis entry-work-title-line">
+                                            {{ entryWorkTitle(item.entry) }}
+                                        </div>
+                                        <div v-if="entryWorkDescription(item.entry)" class="text-caption text-medium-emphasis" style="padding-left: 4px;">
+                                            {{ entryWorkDescription(item.entry) }}
+                                        </div>
+                                        <div v-if="entryWorkComment(item.entry)" class="text-caption" style="padding-left: 4px;">
+                                            <strong>Kommentar:</strong> {{ entryWorkComment(item.entry) }}
+                                        </div>
+                                        <div v-if="!entryIsDerivedFromWork(item.entry) && item.entry.description" class="text-caption" style="padding-left: 4px;">
+                                            <strong>Kommentar:</strong> {{ item.entry.description }}
+                                        </div>
+                                    </div>
+                                </v-list-item>
+                            </template>
+                            <v-list-item v-if="!filteredEntries?.length">
+                                <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+
                 </v-card>
 
                 <v-card v-if="showBehaviourEnabled" variant="outlined" class="mt-4">
@@ -1958,6 +1968,10 @@ export default {
             if (!Number.isNaN(num)) return num.toFixed(2)
             return String(value)
         },
+        categoryHasBewertung(category) {
+            if (!category || category.isNa || category.isNb) return false
+            return category.value != null || (category.grade != null && category.grade !== '')
+        },
         pointsGradeForAnyWork(points) {
             const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && (w.points_table || []).length)
             return pointsWork ? this.pointsGradeForWork(pointsWork, points) : null
@@ -2156,6 +2170,7 @@ export default {
                         rows.push({
                             key: `entry-${entry.id}`,
                             type,
+                            workTitle: this.entryWorkTitle(entry),
                             value: value !== null ? value : this.effectiveGradeKeyForEntry(entry, work),
                             date: entry.date || null,
                             requireAllEntries,
@@ -2226,6 +2241,7 @@ export default {
                 undefinedRows.push({
                     key: `entry-${entry.id}`,
                     type: entry.type,
+                    workTitle: this.entryWorkTitle(entry),
                     value: value !== null ? value : effectiveGrade,
                     date: entry.date || null,
                     requireAllEntries,
@@ -2399,15 +2415,20 @@ export default {
     font-weight: 600;
 }
 
-.entry-work-title {
-    max-width: min(460px, 60vw);
+.entry-work-title-line {
+    padding-left: 4px;
+    font-weight: 500;
+    line-height: 1.35;
 }
 
-.entry-work-title :deep(.v-chip__content) {
-    overflow: hidden;
-    display: block;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+.auswertung-entry-title {
+    padding-left: 4px;
+    line-height: 1.35;
+}
+
+.auswertung-entry-work-title {
+    padding-left: 4px;
+    line-height: 1.35;
 }
 
 .entry-row {
@@ -2482,12 +2503,6 @@ export default {
     flex: 0 0 auto;
 }
 
-.entry-work-title {
-    flex: 0 1 auto;
-    min-width: 0;
-    width: fit-content;
-}
-
 @media (max-width: 700px) {
     .star-description {
         flex-basis: 100%;
@@ -2523,10 +2538,9 @@ export default {
         justify-content: flex-end;
     }
 
-    .entry-work-title {
-        flex-basis: 100%;
-        min-width: 0;
-        max-width: 100%;
+    .entry-work-title-line {
+        width: 100%;
     }
 }
 </style>
+

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import PerformancesDummy from '@/pages/admin/teaching/more/components/PerformancesDummy.vue'
 
 describe('PerformancesDummy type columns', () => {
+    it('defaults student sort mode to name', () => {
+        const data = (PerformancesDummy as any).data.call({})
+
+        expect(data.sortMode).toBe('last_name_first_name')
+    })
+
     it('filters schema work columns by grading categories when categories are configured', () => {
         const columns = (PerformancesDummy as any).computed.workColumnsFromSchema.call({
             selectedCourse: { teaching_schema_id: 'schema-inf2' },

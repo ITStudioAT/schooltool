@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import MyCourses from '@/pages/admin/teaching/overview/components/MyCourses.vue'
 
 describe('MyCourses counts', () => {
+    it('defaults student sort mode to name', () => {
+        const data = (MyCourses as any).data.call({})
+
+        expect(data.students_sort_mode).toBe('last_name_first_name')
+    })
+
     it('counts only non-canceled students in activeSelectedStudentsCount', () => {
         const ctx = {
             data: {

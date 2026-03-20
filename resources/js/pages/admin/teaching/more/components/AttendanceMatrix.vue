@@ -86,7 +86,7 @@ export default {
     },
     data() {
         return {
-            sortMode: 'class_last_name',
+            sortMode: 'last_name_first_name',
         }
     },
     computed: {

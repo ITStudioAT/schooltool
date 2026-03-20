@@ -335,7 +335,7 @@ export default {
 
             delete_level: 0,
             courses_view_variant: 'v1',
-            students_sort_mode: 'class_last_name',
+            students_sort_mode: 'last_name_first_name',
             student_search_string: '',
             student_search_results: [],
             student_search_loading: false,

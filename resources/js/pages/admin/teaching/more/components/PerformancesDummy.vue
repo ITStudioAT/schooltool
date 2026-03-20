@@ -79,7 +79,7 @@ export default {
             entryStore: null,
             courseWorkStore: null,
             teachingStore: null,
-            sortMode: 'class_last_name',
+            sortMode: 'last_name_first_name',
         }
     },
     async beforeMount() {

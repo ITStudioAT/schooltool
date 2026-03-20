@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 
 describe('CourseStudents sorting', () => {
+    it('defaults student sort mode to name', () => {
+        const data = (CourseStudents as any).data.call({
+            emptyBulkEntryForm: () => ({}),
+        })
+
+        expect(data.students_sort_mode).toBe('last_name_first_name')
+    })
+
     it('places canceled students at the bottom of the list', () => {
         const ctx = {
             selected_course: {

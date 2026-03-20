@@ -303,7 +303,7 @@ export default {
             presence_by_student: {},
             savingAttendance: false,
             hasUnsavedAttendanceChanges: false,
-            students_sort_mode: 'class_last_name',
+            students_sort_mode: 'last_name_first_name',
         }
     },
 

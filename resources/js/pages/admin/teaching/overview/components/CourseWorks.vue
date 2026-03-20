@@ -48,10 +48,14 @@
                                 {{ formatDate(workListDate(work)) }}
                             </v-chip>
                             <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
-                            <div class="work-title text-body-2 flex-grow-1" :class="workHasAllGrades(work) ? 'text-success' : ''">
-                                <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
-                                <span v-else class="text-medium-emphasis">eine Arbeit</span>
-                                <span v-if="work.title || work.description">– {{ work.title || work.description }}</span>
+                            <div class="work-title flex-grow-1">
+                                <div class="text-caption text-medium-emphasis work-type-first-line">
+                                    <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
+                                    <span v-else class="text-medium-emphasis">eine Arbeit</span>
+                                </div>
+                                <div v-if="work.title || work.description" class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
+                                    {{ work.title || work.description }}
+                                </div>
                             </div>
                             <div class="work-actions d-flex align-center ga-1">
                                 <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
@@ -514,7 +518,7 @@ export default {
             bulk_grade: null,
             bulk_comment: '',
             selected_student_ids: [],
-            students_sort_mode: 'class_last_name',
+            students_sort_mode: 'last_name_first_name',
             show_chip_grading_view: false,
             comment_dialog_open: false,
             comment_dialog_group_index: null,
@@ -1439,6 +1443,15 @@ export default {
 
 .work-title {
     min-width: 140px;
+}
+
+.work-type-first-line {
+    padding-left: 1px;
+    line-height: 1.35;
+}
+
+.work-title-second-line {
+    line-height: 1.35;
 }
 
 .work-actions {

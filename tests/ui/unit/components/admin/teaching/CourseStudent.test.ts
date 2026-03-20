@@ -125,6 +125,81 @@ describe('CourseStudent auswertung labels', () => {
     })
 })
 
+describe('CourseStudent entry title rendering', () => {
+    it('renders work title as text line instead of chip in entries list', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="text-caption text-medium-emphasis entry-work-title-line"')
+        expect(source).not.toContain('class="entry-work-title"')
+        expect(source).not.toContain('v-chip\n                                                v-if="entryWorkTitle(item.entry)"')
+    })
+})
+
+describe('CourseStudent auswertung entry title rendering', () => {
+    it('renders row title and row work title as text lines in auswertung list', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const mainRowIndex = source.indexOf('class="d-flex align-center ga-2 w-100 auswertung-entry-main-row"')
+        const workTitleIndex = source.indexOf('v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title"')
+
+        expect(source).toContain('class="d-flex align-center ga-2 w-100 auswertung-entry-main-row"')
+        expect(source).toContain('class="text-caption text-medium-emphasis auswertung-entry-title"')
+        expect(source).toContain('v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title"')
+        expect(source).toContain('v-chip v-if="row.date" size="x-small" variant="tonal" color="primary"')
+        expect(source).toContain('v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? \'error\' : \'primary\'"')
+        expect(mainRowIndex).toBeGreaterThan(-1)
+        expect(workTitleIndex).toBeGreaterThan(mainRowIndex)
+        expect(source).toContain('workTitle: this.entryWorkTitle(entry)')
+        expect(source).not.toContain('v-chip v-if="row.type" size="x-small" variant="outlined"')
+    })
+})
+
+describe('CourseStudent auswertung category colors', () => {
+    it('uses success color for category title and Bewertung when rating exists', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("categoryHasBewertung(cat) ? 'text-success'")
+        expect(source).toContain('categoryHasBewertung(category)')
+    })
+})
+
+describe('CourseStudent auswertung trigger placement', () => {
+    it('uses Auswerten button near Zurück and removes inline Auswertung header row', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const auswertenButtonIndex = source.indexOf('Auswerten')
+        const auswertungCardIndex = source.indexOf('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">')
+        const entriesTitleIndex = source.indexOf('Einträge')
+
+        expect(source).toContain(":color=\"show_auswertung ? 'success' : 'primary'\"")
+        expect(source).toContain(":variant=\"show_auswertung ? 'flat' : 'tonal'\"")
+        expect(source).toContain(":prepend-icon=\"show_auswertung ? 'mdi-eye-off' : 'mdi-eye'\"")
+        expect(source).toContain(":aria-pressed=\"show_auswertung ? 'true' : 'false'\"")
+        expect(source).toContain('@click="show_auswertung = !show_auswertung"')
+        expect(source).toContain('Auswerten')
+        expect(source).toContain('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">')
+        expect(source).not.toContain('v-card-text v-if="hasAuswertungContent && show_auswertung" class="py-2"')
+        expect(source).not.toContain('<div class="text-subtitle-2">Auswertung</div>')
+        expect(auswertenButtonIndex).toBeGreaterThan(-1)
+        expect(auswertungCardIndex).toBeGreaterThan(auswertenButtonIndex)
+        expect(entriesTitleIndex).toBeGreaterThan(auswertungCardIndex)
+    })
+})
+
 describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
     const methods = (CourseStudent as any).methods
 
@@ -143,6 +218,7 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
             workConfigForType: () => null,
             gradeValueForWork: methods.gradeValueForWork,
             pointsGradeForWork: methods.pointsGradeForWork,
+            entryWorkTitle: () => '',
             ...overrides,
         }
     }
