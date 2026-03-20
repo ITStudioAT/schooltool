@@ -12,6 +12,7 @@ import StudentOverview from '@/pages/homepage/student/overview/Overview.vue'
 import StudentPassword from '@/pages/homepage/student/password/Password.vue'
 import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
 import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
+import Cashier from '@/pages/homepage/cashier/Cashier.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -28,6 +29,7 @@ const routes = [
     { path: '/student/password', component: StudentPassword },
     { path: '/student/profile', component: StudentProfile },
     { path: '/student/course/:id', component: StudentCourse },
+    { path: '/homepage/cashier', component: Cashier },
 ]
 
 const router = createRouter({

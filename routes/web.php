@@ -106,6 +106,10 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         });
     }
 
+    Route::get('/homepage/cashier/', function () {
+        return view('homepage');
+    });
+
     Route::get('/', function () {
         return view('homepage');
     });
