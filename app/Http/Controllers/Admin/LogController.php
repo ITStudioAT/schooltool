@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
@@ -104,7 +105,7 @@ class LogController extends Controller
         return response()->noContent();
     }
 
-    public function restartQueues(): \Illuminate\Http\Response
+    public function restartQueues(): Response
     {
         if (! $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -116,18 +117,6 @@ class LogController extends Controller
             Log::warning('cache:clear failed during queue restart.', [
                 'message' => $exception->getMessage(),
             ]);
-        }
-
-        if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
-            try {
-                Artisan::call('horizon:terminate');
-            } catch (CommandNotFoundException) {
-                // Horizon command is not available in this environment.
-            } catch (\Throwable $exception) {
-                Log::warning('horizon:terminate failed during queue restart.', [
-                    'message' => $exception->getMessage(),
-                ]);
-            }
         }
 
         try {

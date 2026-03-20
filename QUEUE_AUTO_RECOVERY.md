@@ -414,7 +414,6 @@ private function notifyAdmin($message) {
 
 ### Externe Monitoring-Tools
 
-- **Laravel Horizon**: Für Redis-Queue (nicht aktuell verwendet)
 - **Laravel Telescope**: Entwicklungs-Monitoring (bereits installiert)
 - **Uptime Robot**: Externe Health-Check URL überwachen
 

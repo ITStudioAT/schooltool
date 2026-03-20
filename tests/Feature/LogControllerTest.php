@@ -125,10 +125,6 @@ test('delete_log clears file and writes backup', function () {
 test('restart_queues restarts queues and runs health recovery command', function () {
     Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
 
-    if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
-        Artisan::shouldReceive('call')->once()->with('horizon:terminate')->andReturn(0);
-    }
-
     Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
     Artisan::shouldReceive('call')
         ->once()
@@ -142,10 +138,6 @@ test('restart_queues restarts queues and runs health recovery command', function
 
 test('restart_queues still returns success when queue health recovery check fails', function () {
     Artisan::shouldReceive('call')->once()->with('cache:clear')->andReturn(0);
-
-    if (class_exists(\Laravel\Horizon\HorizonServiceProvider::class)) {
-        Artisan::shouldReceive('call')->once()->with('horizon:terminate')->andReturn(0);
-    }
 
     Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
     Artisan::shouldReceive('call')

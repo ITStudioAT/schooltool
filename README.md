@@ -63,10 +63,6 @@ php artisan ide-helper:models -W
 
 - Tutoring: Archive received requests
 
-## 3.4.1 - 18.12.2025
-
-- Laravel Horizon implementated
-
 ## 3.3.0 - 17.12.2025
 
 - Tutoring alpha merged in Main

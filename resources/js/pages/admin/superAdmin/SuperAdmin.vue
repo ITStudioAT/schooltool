@@ -374,14 +374,6 @@ export default {
                     action: 'log',
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
-                {
-                    key: 'horizon',
-                    label: 'Horizon',
-                    meta: 'Queue',
-                    icon: 'mdi-horizontal-rotate-clockwise',
-                    action: 'horizon',
-                    visible: true,
-                },
             ].filter((item) => item.visible)
         },
         visibleLicenceNavigationItems() {
@@ -465,11 +457,6 @@ export default {
 
             if (item.action === 'log') {
                 this.log_dialog = true
-                return
-            }
-
-            if (item.action === 'horizon') {
-                this.moveToHorizon()
                 return
             }
 
@@ -591,9 +578,6 @@ export default {
         },
         redirectAfterImpersonation(path) {
             window.location.href = path
-        },
-        moveToHorizon() {
-            window.open('/horizon', '_blank')
         },
     },
 }
