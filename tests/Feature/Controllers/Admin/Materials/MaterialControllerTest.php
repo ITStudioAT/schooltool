@@ -25,6 +25,12 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpPresentation\PhpPresentation;
+use PhpOffice\PhpPresentation\Shape\RichText;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpWord\PhpWord;
+use PHPUnit\Framework\SkippedTestError;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -87,7 +93,7 @@ beforeEach(function () {
 function createLinkedImportedCard(User $targetUser, School $school, Schoolyear $schoolyear, string $permission): MaterialCard
 {
     if (! materialShareTablesAvailable()) {
-        throw new \PHPUnit\Framework\SkippedTestError('Material sharing tables are not available in this reset state.');
+        throw new SkippedTestError('Material sharing tables are not available in this reset state.');
     }
 
     $sourceUser = User::factory()->create([
@@ -397,7 +403,7 @@ test('teacher can create duplicate unit names when allow_duplicate is true', fun
     expect($secondUnitId)->toBeGreaterThan(0);
     expect($secondUnitId)->not->toBe($firstUnitId);
 
-    $duplicateCount = \App\Models\MaterialUnit::query()
+    $duplicateCount = MaterialUnit::query()
         ->where('topic_id', $topicId)
         ->where('name', 'Lineare Gleichungen')
         ->count();
@@ -433,7 +439,7 @@ test('teacher can post topic with allow_duplicate and reuses existing topic name
     expect($secondTopicId)->toBeGreaterThan(0);
     expect($secondTopicId)->toBe($firstTopicId);
 
-    $duplicateCount = \App\Models\MaterialTopic::query()
+    $duplicateCount = MaterialTopic::query()
         ->where('subject_id', $subjectId)
         ->where('name', 'Algebra')
         ->count();
@@ -499,7 +505,7 @@ test('teacher can delete unused subject topic and unit', function () {
     $this->assertDatabaseMissing('material_subjects', ['id' => $subjectId]);
 });
 
-test('teacher can delete subject when only subject level is used', function () {
+test('teacher cannot delete subject when only subject level is used in materials', function () {
     $subject = MaterialSubject::query()->create([
         'user_id' => $this->teacher->id,
         'name' => 'Physik',
@@ -521,12 +527,12 @@ test('teacher can delete subject when only subject level is used', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
     $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
-        ->assertStatus(204);
+        ->assertStatus(422);
 
-    $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
+    $this->assertDatabaseHas('material_subjects', ['id' => $subject->id]);
 });
 
-test('teacher can delete topic when only topic level is used', function () {
+test('teacher cannot delete topic when only topic level is used in materials', function () {
     $subject = MaterialSubject::query()->create([
         'user_id' => $this->teacher->id,
         'name' => 'Chemie',
@@ -550,9 +556,9 @@ test('teacher can delete topic when only topic level is used', function () {
 
     $this->actingAs($this->teacher, 'sanctum');
     $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
-        ->assertStatus(204);
+        ->assertStatus(422);
 
-    $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
+    $this->assertDatabaseHas('material_topics', ['id' => $topic->id]);
 });
 
 test('teacher cannot delete subject when a topic below is used', function () {
@@ -2219,7 +2225,7 @@ test('excel attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
+    $spreadsheet = new Spreadsheet;
     $sheet = $spreadsheet->getActiveSheet();
     $sheet->setCellValue('A1', 'Kategorie');
     $sheet->setCellValue('B1', 'Wert');
@@ -2229,7 +2235,7 @@ test('excel attachment preview is rendered as html', function () {
     $tmpFile = tempnam(sys_get_temp_dir(), 'materials-xlsx-');
     expect($tmpFile)->toBeString();
 
-    \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx')->save($tmpFile);
+    IOFactory::createWriter($spreadsheet, 'Xlsx')->save($tmpFile);
     $xlsxContent = file_get_contents($tmpFile);
     @unlink($tmpFile);
     $spreadsheet->disconnectWorksheets();
@@ -2263,14 +2269,14 @@ test('word attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $document = new \PhpOffice\PhpWord\PhpWord;
+    $document = new PhpWord;
     $section = $document->addSection();
     $section->addText('Word Vorschau Inhalt');
 
     $tmpFile = tempnam(sys_get_temp_dir(), 'materials-docx-');
     expect($tmpFile)->toBeString();
 
-    \PhpOffice\PhpWord\IOFactory::createWriter($document, 'Word2007')->save($tmpFile);
+    PhpOffice\PhpWord\IOFactory::createWriter($document, 'Word2007')->save($tmpFile);
     $docxContent = file_get_contents($tmpFile);
     @unlink($tmpFile);
 
@@ -2301,9 +2307,9 @@ test('powerpoint attachment preview is rendered as html', function () {
         'keywords' => [],
     ]);
 
-    $presentation = new \PhpOffice\PhpPresentation\PhpPresentation;
+    $presentation = new PhpPresentation;
     $slide = $presentation->getActiveSlide();
-    $shape = new \PhpOffice\PhpPresentation\Shape\RichText;
+    $shape = new RichText;
     $shape->setHeight(120)->setWidth(620)->setOffsetX(32)->setOffsetY(48);
     $shape->createTextRun('PowerPoint Vorschau Inhalt');
     $slide->addShape($shape);
@@ -2311,7 +2317,7 @@ test('powerpoint attachment preview is rendered as html', function () {
     $tmpFile = tempnam(sys_get_temp_dir(), 'materials-pptx-');
     expect($tmpFile)->toBeString();
 
-    \PhpOffice\PhpPresentation\IOFactory::createWriter($presentation, 'PowerPoint2007')->save($tmpFile);
+    PhpOffice\PhpPresentation\IOFactory::createWriter($presentation, 'PowerPoint2007')->save($tmpFile);
     $pptxContent = file_get_contents($tmpFile);
     @unlink($tmpFile);
 

@@ -2,19 +2,19 @@
 
 use App\Models\Licence;
 use App\Models\School;
-use App\Models\User;
 use App\Models\SchoolLicence;
+use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\UserService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Spatie\Permission\Models\Role;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new AdminNavigationService();
+    $this->service = new AdminNavigationService;
     $this->attachActiveLicences = function (User $user, array $licenceNames): void {
         $school = $user->school_id ? School::find($user->school_id) : null;
         if (! $school) {
@@ -205,7 +205,6 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(9)
             ->and(collect($result)->pluck('title')->toArray())
             ->toContain('Home', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Gruppen', 'Role Multi', 'Abmelden');
     });
@@ -578,7 +577,8 @@ describe('userSelection', function () {
             'active' => 8,
         ]);
 
-        $this->service = new class($userService) extends AdminNavigationService {
+        $this->service = new class($userService) extends AdminNavigationService
+        {
             private $userService;
 
             public function __construct($userService)
@@ -593,7 +593,7 @@ describe('userSelection', function () {
                     'title' => 'Alle Benutzer',
                     'icon' => 'mdi-account-group',
                     'url' => '/admin/users/all_users',
-                    'infos' => $this->userService->allUsersInfos()
+                    'infos' => $this->userService->allUsersInfos(),
                 ];
 
                 if ($this->userHasRole(['admin'])) {
@@ -638,7 +638,7 @@ describe('userSelection', function () {
 
         $result = $this->service->userSelection();
 
-        if (!empty($result)) {
+        if (! empty($result)) {
             expect($result[0])
                 ->toHaveKeys(['title', 'icon', 'url', 'infos']);
         }

@@ -11,12 +11,11 @@ namespace Tests\Feature\Console {
     use App\Console\Commands\AppUpdateCommand;
     use App\Services\InstallUpdateService;
     use App\Services\RecordsCreateService;
+    use Illuminate\Console\OutputStyle;
     use Illuminate\Support\Facades\Artisan;
     use Mockery;
-    use Illuminate\Console\OutputStyle;
     use Symfony\Component\Console\Input\ArrayInput;
     use Symfony\Component\Console\Output\BufferedOutput;
-    use Tests\TestCase;
 
     it('runs update workflow without frontend build when package.json is absent', function () {
         $install = Mockery::mock(InstallUpdateService::class);
@@ -37,6 +36,7 @@ namespace Tests\Feature\Console {
             'materials_admin',
             'student',
             'materials_moderator',
+            'aba_teacher',
         ])->once();
         $install->shouldReceive('findOrCreateFolders')->once();
         $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
@@ -53,10 +53,10 @@ namespace Tests\Feature\Console {
         Artisan::shouldReceive('call')->with('optimize:clear')->once()->andReturn(0);
         Artisan::shouldReceive('call')->with('queue:restart')->once()->andReturn(0);
 
-        $command = new AppUpdateCommand();
+        $command = new AppUpdateCommand;
         $command->setLaravel(app());
         $input = new ArrayInput([]);
-        $output = new BufferedOutput();
+        $output = new BufferedOutput;
         $command->setOutput(new OutputStyle($input, $output));
 
         $exitCode = $command->handle($install, $records);

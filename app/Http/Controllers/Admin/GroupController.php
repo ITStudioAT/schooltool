@@ -11,6 +11,8 @@ use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\LicenceService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -740,7 +742,7 @@ class GroupController extends Controller
         }
 
         try {
-            $lastSynced = \Carbon\Carbon::parse($lastSyncedAt);
+            $lastSynced = Carbon::parse($lastSyncedAt);
         } catch (\Throwable) {
             return true;
         }
@@ -783,7 +785,7 @@ class GroupController extends Controller
             abort(422, 'Keine aktive Schule ausgewählt.');
         }
 
-        $licenceService = app(\App\Services\LicenceService::class);
+        $licenceService = app(LicenceService::class);
         $hasValidLicence =
             $licenceService->licenceStatus($school, 'Lehrertool') === 'active'
             || $licenceService->licenceStatus($school, 'Materialientool') === 'active';
@@ -827,9 +829,9 @@ class GroupController extends Controller
     /**
      * @param  array<string, int>|null  $schoolGroupSourceCounts
      * @param  array<int, int>|null  $ownCourseSourceCounts
-     * @param  array{registered: array<string, \Illuminate\Support\Collection>, all: array<string, \Illuminate\Support\Collection>}|null  $parentGroupContacts
-     * @param  array{registered: array<int, \Illuminate\Support\Collection>, all: array<int, \Illuminate\Support\Collection>}|null  $ownCourseParentContacts
-     * @param  array{registered: \Illuminate\Support\Collection<int, array<string, mixed>>, all: \Illuminate\Support\Collection<int, array<string, mixed>>}|null  $allSchoolMembers
+     * @param  array{registered: array<string, Collection>, all: array<string, Collection>}|null  $parentGroupContacts
+     * @param  array{registered: array<int, Collection>, all: array<int, Collection>}|null  $ownCourseParentContacts
+     * @param  array{registered: Collection<int, array<string, mixed>>, all: Collection<int, array<string, mixed>>}|null  $allSchoolMembers
      */
     private function serializeGroup(
         UserGroup $group,
@@ -838,8 +840,7 @@ class GroupController extends Controller
         ?array $parentGroupContacts = null,
         ?array $ownCourseParentContacts = null,
         ?array $allSchoolMembers = null
-    ): array
-    {
+    ): array {
         $storedMembersCount = (int) ($group->group_members_count ?? 0);
         $linkedMembersCount = (int) ($group->members_count ?? 0);
         $membersCount = $storedMembersCount > 0 ? $storedMembersCount : $linkedMembersCount;
@@ -2992,6 +2993,7 @@ class GroupController extends Controller
                 if ($existingMember->isDirty()) {
                     $existingMember->save();
                 }
+
                 continue;
             }
 
@@ -3037,12 +3039,18 @@ class GroupController extends Controller
         $storedKey = $this->storedGroupMemberKeyFromPayload($payload);
         /** @var UserGroupMember|null $existingMember */
         $existingMember = $existingMembers->get($storedKey);
+        if (! $existingMember) {
+            $linkedUserKey = $this->groupMemberDeduplicationKeyFromPayload($payload);
+            if ($linkedUserKey !== $storedKey) {
+                $existingMember = $existingMembers->get($linkedUserKey);
+            }
+        }
 
         $provider = (string) ($payload['member_provider'] ?? '');
         $memberRef = (string) ($payload['member_ref'] ?? '');
         $import116Id = null;
         if ($provider === UserGroupMember::PROVIDER_IMPORT116_STUDENT) {
-            $import116Id = (int) preg_replace('/[^0-9]/', '', $memberRef);
+            $import116Id = $this->import116IdFromMemberRef($memberRef);
         }
 
         return [
@@ -3494,7 +3502,7 @@ class GroupController extends Controller
      */
     private function resolveImportStudentStoredPayload(UserGroupMember $member, int $schoolId): ?array
     {
-        $importId = (int) preg_replace('/[^0-9]/', '', (string) $member->member_ref);
+        $importId = (int) ($this->import116IdFromMemberRef((string) $member->member_ref) ?? 0);
         if ($importId <= 0) {
             return null;
         }
@@ -3683,7 +3691,7 @@ class GroupController extends Controller
 
         $import116Id = null;
         if ($provider === UserGroupMember::PROVIDER_IMPORT116_STUDENT) {
-            $import116Id = (int) preg_replace('/[^0-9]/', '', $memberRef);
+            $import116Id = $this->import116IdFromMemberRef($memberRef);
         }
 
         return [
@@ -3705,5 +3713,16 @@ class GroupController extends Controller
             'is_missing' => $statusLabel !== null,
             'status_label' => $statusLabel,
         ];
+    }
+
+    private function import116IdFromMemberRef(string $memberRef): ?int
+    {
+        if (! preg_match('/:(\d+)$/', $memberRef, $matches)) {
+            return null;
+        }
+
+        $import116Id = (int) ($matches[1] ?? 0);
+
+        return $import116Id > 0 ? $import116Id : null;
     }
 }

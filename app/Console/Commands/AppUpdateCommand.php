@@ -11,7 +11,9 @@ use Symfony\Component\Process\Process;
 class AppUpdateCommand extends Command
 {
     protected $signature = 'app:update';
+
     protected $description = 'Update application: migrations, records, roles, folders, and build assets';
+
     public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService): int
     {
         // CLEAR CONSOLE
@@ -31,10 +33,9 @@ class AppUpdateCommand extends Command
         $this->info('✅ Records in test-files deleted');
         $this->line(str_repeat('.', 50));
 
-
         // ✅ Roles and records
         $this->info('▶ ROLES AND RECORDS');
-        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin', 'teacher', 'lunch_admin', 'lunch_user', 'teaching_admin', 'materials_admin', 'student', 'materials_moderator', 'lunch_admin', 'lunch_user', 'aba_teacher']);
+        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin', 'teacher', 'lunch_admin', 'lunch_user', 'teaching_admin', 'materials_admin', 'student', 'materials_moderator', 'aba_teacher']);
         $this->info('✅ Roles checked');
 
         $recordsCreateService->initRecords();
@@ -46,9 +47,9 @@ class AppUpdateCommand extends Command
         $service->findOrCreateFolders();
         $this->info('✅ Folders checked');
         $cleanup = $service->pruneOrphanPrivateSchoolFolders();
-        $this->info('✅ Orphan school folders cleaned: ' . count($cleanup['deleted']));
+        $this->info('✅ Orphan school folders cleaned: '.count($cleanup['deleted']));
         if (! empty($cleanup['failed'])) {
-            $this->warn('⚠️ Failed to delete orphan school folders: ' . count($cleanup['failed']));
+            $this->warn('⚠️ Failed to delete orphan school folders: '.count($cleanup['failed']));
         }
         $this->line(str_repeat('.', 50));
 
@@ -58,14 +59,13 @@ class AppUpdateCommand extends Command
         $this->info('✅ Debugbar cleared');
         $this->line(str_repeat('.', 50));
 
-
         // Frontend build (optional, if Node is available)
         if (file_exists(base_path('package.json'))) {
             $this->info('▶ BUILDING FRONTEND (npm run build)...');
             $isWindows = PHP_OS_FAMILY === 'Windows';
             $scriptDir = base_path('scripts');
-            $posixScript = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.sh';
-            $winScript   = $scriptDir . DIRECTORY_SEPARATOR . 'build_frontend.cmd';
+            $posixScript = $scriptDir.DIRECTORY_SEPARATOR.'build_frontend.sh';
+            $winScript = $scriptDir.DIRECTORY_SEPARATOR.'build_frontend.cmd';
 
             if ($isWindows) {
                 $this->info('▶ Windows detected');

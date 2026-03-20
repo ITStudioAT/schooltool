@@ -2,6 +2,8 @@
 
 use App\Models\Licence;
 use App\Models\Register;
+use App\Models\RegisterDate;
+use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -15,12 +17,13 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new SchoolService();
+    $this->service = new SchoolService;
 
     // Create required roles
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
@@ -171,6 +174,25 @@ describe('create', function () {
 
         // Cleanup
         File::delete($tempPath);
+    });
+
+    it('stores uploaded logo in public logos directory', function () {
+        $tempPath = storage_path('app/private/temp/1/logo-path-check.jpg');
+        File::ensureDirectoryExists(dirname($tempPath));
+        File::put($tempPath, 'logo payload');
+
+        $school = $this->service->create([
+            'long_name' => 'Path Check School',
+            'short_name' => 'PCS',
+            'upload_file' => $tempPath,
+        ]);
+
+        $storedLogoPath = storage_path('app/public/images/logos/'.$school->logo);
+
+        expect(File::exists($storedLogoPath))->toBeTrue();
+
+        File::delete($tempPath);
+        File::delete($storedLogoPath);
     });
 });
 
@@ -519,7 +541,7 @@ describe('switchSchool', function () {
         // No user with this email in school2
 
         $this->service->switchSchool($user1, $school2->id);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Wechsel zu der Schule nicht möglich.');
+    })->throws(HttpException::class, 'Wechsel zu der Schule nicht möglich.');
 
     it('logs out current user before switching', function () {
         $school1 = School::factory()->create();
@@ -593,7 +615,7 @@ describe('addAdmin', function () {
         ];
 
         $this->service->addAdmin($school->id, $schoolyear->id, $data, ['admin']);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Dieser Admin existiert bereits');
+    })->throws(HttpException::class, 'Dieser Admin existiert bereits');
 
     it('aborts when adding super_admin but one already exists', function () {
         $school = School::factory()->create();
@@ -609,7 +631,7 @@ describe('addAdmin', function () {
         ];
 
         $this->service->addAdmin($school->id, $schoolyear->id, $data, ['super_admin']);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'existiert bereits ein Super-Admin');
+    })->throws(HttpException::class, 'existiert bereits ein Super-Admin');
 
     it('generates password for new admin', function () {
         $school = School::factory()->create();
@@ -670,7 +692,7 @@ describe('deleteAdmin', function () {
 
     it('cannot delete user id 1', function () {
         $this->service->deleteAdmin(1, true);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Big-Boss-User kann nicht gelöscht werden');
+    })->throws(HttpException::class, 'Big-Boss-User kann nicht gelöscht werden');
 
     it('aborts when user has bookings and delete_complete is true', function () {
         $school = School::factory()->create();
@@ -681,12 +703,12 @@ describe('deleteAdmin', function () {
         $user->assignRole('admin');
 
         // Create a booking
-        $registerDate = \App\Models\RegisterDate::factory()->create(['register_id' => $register->id]);
-        \App\Models\RegisterDateBooking::factory()->create([
+        $registerDate = RegisterDate::factory()->create(['register_id' => $register->id]);
+        RegisterDateBooking::factory()->create([
             'register_date_id' => $registerDate->id,
             'user_id' => $user->id,
         ]);
 
         $this->service->deleteAdmin($user->id, true);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'hat noch gebuchte Anmeldungen');
+    })->throws(HttpException::class, 'hat noch gebuchte Anmeldungen');
 });

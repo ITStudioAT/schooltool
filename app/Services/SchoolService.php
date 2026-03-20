@@ -4,12 +4,10 @@ namespace App\Services;
 
 use App\Http\Resources\Admin\LicenceResource;
 use App\Http\Resources\Admin\UserResource;
-use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
-
 use App\Models\Teacher;
 use App\Models\User;
 use Carbon\Carbon;
@@ -21,10 +19,8 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
-
 class SchoolService
 {
-
     public function create($data)
     {
         return DB::transaction(function () use ($data) {
@@ -33,7 +29,7 @@ class SchoolService
             unset($data['upload_file']);
 
             // Schule anlegen
-            $school  = School::create($data);
+            $school = School::create($data);
 
             // Schuljahre aus Config anlegen (ab aktuellem Schuljahr)
             $schoolyear = $this->createSchoolyearsFromConfig($school);
@@ -57,22 +53,22 @@ class SchoolService
 
             // SchoolTool - Record erzeugen
             $schoolTool = SchoolTool::create([
-                'school_id' =>  $school->id,
+                'school_id' => $school->id,
                 'tutoring_student_must_be_confirmed' => false,
                 'tutoring_confirmer_email' => '',
             ]);
 
             // Folder für Logo etc anlegen (immer lokal, da Teaching-Uploads direkt auf lokales Dateisystem schreiben)
-            $hlp_path = $school->id . '/temp';
-            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+            $hlp_path = $school->id.'/temp';
+            if (! Storage::disk('local')->directoryExists($hlp_path)) {
                 Storage::disk('local')->makeDirectory($hlp_path);
             }
-            $hlp_path = $school->id . '/excel';
-            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+            $hlp_path = $school->id.'/excel';
+            if (! Storage::disk('local')->directoryExists($hlp_path)) {
                 Storage::disk('local')->makeDirectory($hlp_path);
             }
-            $hlp_path = $school->id . '/pdf';
-            if (!Storage::disk('local')->directoryExists($hlp_path)) {
+            $hlp_path = $school->id.'/pdf';
+            if (! Storage::disk('local')->directoryExists($hlp_path)) {
                 Storage::disk('local')->makeDirectory($hlp_path);
             }
 
@@ -88,7 +84,7 @@ class SchoolService
     private function createSchoolyearsFromConfig(School $school): Schoolyear
     {
         $schoolyears = collect(config('schooltool.schoolyears', []))
-            ->filter(fn($entry) => !empty($entry['name']) && !empty($entry['from']) && !empty($entry['to']))
+            ->filter(fn ($entry) => ! empty($entry['name']) && ! empty($entry['from']) && ! empty($entry['to']))
             ->values();
 
         if ($schoolyears->isEmpty()) {
@@ -104,12 +100,14 @@ class SchoolService
         $startIndex = $schoolyears->search(function ($entry) use ($today) {
             $from = Carbon::parse($entry['from'])->startOfDay();
             $to = Carbon::parse($entry['to'])->endOfDay();
+
             return $today->betweenIncluded($from, $to);
         });
 
         if ($startIndex === false) {
             $startIndex = $schoolyears->search(function ($entry) use ($today) {
                 $from = Carbon::parse($entry['from'])->startOfDay();
+
                 return $from->greaterThanOrEqualTo($today);
             });
         }
@@ -167,19 +165,27 @@ class SchoolService
     {
 
         // Schule 1 kann nicht gelöscht werden (Big Boss Schule)
-        if ($id == 1) return false;
+        if ($id == 1) {
+            return false;
+        }
 
         // Schule mit Registers kann nicht gelöscht werden
-        if (School::where('id', $id)->has('registers')->exists()) return false;
+        if (School::where('id', $id)->has('registers')->exists()) {
+            return false;
+        }
 
         // Die Schule hat mehr User als nur den Super-Admin und kann daher nicht gelöscht werden
-        if (School::where('id', $id)->has('users', '>', 1)->exists())  return false;
+        if (School::where('id', $id)->has('users', '>', 1)->exists()) {
+            return false;
+        }
 
         // Eine Schule darf nicht gelöscht werden, wenn eines ihrer Schuljahre noch Abhängigkeiten hat
         $hasSchoolyearDependencies = Schoolyear::where('school_id', $id)
             ->get()
-            ->contains(fn(Schoolyear $schoolyear) => $schoolyear->hasDependencies());
-        if ($hasSchoolyearDependencies) return false;
+            ->contains(fn (Schoolyear $schoolyear) => $schoolyear->hasDependencies());
+        if ($hasSchoolyearDependencies) {
+            return false;
+        }
 
         $school = School::findOrFail($id);
 
@@ -191,7 +197,6 @@ class SchoolService
             $user->syncRoles([]);   // removes all role assignments
             $user->delete();
         });
-
 
         // Schuljahr der Schule löschen
         Schoolyear::where('school_id', $id)->delete();
@@ -250,7 +255,7 @@ class SchoolService
         $schoolLicencesById = SchoolLicence::query()
             ->where('school_id', $school_id)
             ->get()
-            ->keyBy(fn(SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
+            ->keyBy(fn (SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
 
         $licenceRows = $licences
             ->map(function ($licence) use ($authUser, $licenceService, $schoolLicencesById) {
@@ -295,7 +300,7 @@ class SchoolService
             is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
             is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
         ))
-            ->map(fn($role) => is_string($role) ? trim($role) : '')
+            ->map(fn ($role) => is_string($role) ? trim($role) : '')
             ->filter()
             ->unique()
             ->values()
@@ -342,7 +347,7 @@ class SchoolService
                 $planPrice = isset($plan['price_per_year']) ? trim((string) $plan['price_per_year']) : '';
                 $planKey = $planId !== null && $planId > 0
                     ? "id:{$planId}"
-                    : 'txt:' . $planText . '|price:' . $planPrice;
+                    : 'txt:'.$planText.'|price:'.$planPrice;
 
                 if (isset($seenPlanKeys[$planKey])) {
                     continue;
@@ -371,9 +376,9 @@ class SchoolService
         $isSchoolLicenceActive = ! $schoolLicenceRequired || $this->isDateActiveForSchoolInfo($schoolLicenceValidUntil);
 
         $requiredRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
-            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->filter(fn ($isRequired) => (bool) $isRequired)
             ->keys()
-            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
             ->values()
             ->all();
@@ -381,14 +386,14 @@ class SchoolService
         $userRoles = $authUser
             ? $authUser->roles()
                 ->pluck('name')
-                ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+                ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
                 ->filter()
                 ->values()
                 ->all()
             : [];
 
         $matchedRoles = collect($userRoles)
-            ->filter(fn(string $roleName) => in_array($roleName, $requiredRoles, true))
+            ->filter(fn (string $roleName) => in_array($roleName, $requiredRoles, true))
             ->values()
             ->all();
 
@@ -421,7 +426,7 @@ class SchoolService
                             && isset($plan['id'])
                             && (int) $plan['id'] === (int) $planId;
                     });
-                $firstPlan = collect($plans)->first(fn($plan) => is_array($plan));
+                $firstPlan = collect($plans)->first(fn ($plan) => is_array($plan));
                 $plan = is_array($selectedPlan) ? $selectedPlan : $firstPlan;
 
                 $isActive = $assigned && $isActivated && (
@@ -448,10 +453,10 @@ class SchoolService
             ->values()
             ->all();
 
-        $hasUserLicence = collect($roleSummaries)->contains(fn(array $entry) => (bool) ($entry['is_active'] ?? false));
-        $selectedRoleSummary = collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['is_active'] ?? false))
-            ?? collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['is_activated'] ?? false))
-            ?? collect($roleSummaries)->first(fn(array $entry) => (bool) ($entry['assigned'] ?? false))
+        $hasUserLicence = collect($roleSummaries)->contains(fn (array $entry) => (bool) ($entry['is_active'] ?? false));
+        $selectedRoleSummary = collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['is_active'] ?? false))
+            ?? collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['is_activated'] ?? false))
+            ?? collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['assigned'] ?? false))
             ?? collect($roleSummaries)->first();
 
         $toolHasUserLicence = count($requiredRoles) > 0;
@@ -478,6 +483,7 @@ class SchoolService
         // Legacy shape: role => "YYYY-MM-DD" (or null)
         if (is_string($entry)) {
             $validUntil = trim($entry);
+
             return [
                 'valid_until' => $validUntil !== '' ? $validUntil : null,
                 'is_activated' => false,
@@ -545,7 +551,9 @@ class SchoolService
             ->where('school_id', $school_id)
             ->first();
 
-        if (! $targetUser) abort(403, 'Wechsel zu der Schule nicht möglich.');
+        if (! $targetUser) {
+            abort(403, 'Wechsel zu der Schule nicht möglich.');
+        }
 
         if (Auth::check()) {
             Auth::guard('web')->logout();
@@ -566,17 +574,14 @@ class SchoolService
         $destDir = storage_path('app/public/images/logos');           // /storage/app/public/images/logos
 
         // 2) Build new filename
-        $baseName  = pathinfo($source, PATHINFO_FILENAME);      // "logo"
+        $baseName = pathinfo($source, PATHINFO_FILENAME);      // "logo"
         $extension = pathinfo($source, PATHINFO_EXTENSION);     // "jpg"
         $newFilename = "logo_{$school->id}.{$extension}";  // "logo_12.jpg"
-        $destPath = $destDir . DIRECTORY_SEPARATOR . $newFilename;
-
-
-
+        $destPath = $destDir.DIRECTORY_SEPARATOR.$newFilename;
 
         // 3) copy the file
         // make sure the target directory exists
-        File::ensureDirectoryExists(dirname($destDir));
+        File::ensureDirectoryExists($destDir);
 
         // copy the file
         File::copy($source, $destPath);
@@ -591,15 +596,19 @@ class SchoolService
     public function addAdmin($school_id, $schoolyear_id, $data, $roles): User
     {
 
-        if ($user = User::where('school_id', $school_id)->where('email', $data['email'])->first()) abort(409, "Dieser Admin existiert bereits und kann daher nicht angelegt werden.");
+        if ($user = User::where('school_id', $school_id)->where('email', $data['email'])->first()) {
+            abort(409, 'Dieser Admin existiert bereits und kann daher nicht angelegt werden.');
+        }
 
         // Check if the user shoul get an super_admin role, but there exists an super_admin user ==> not allowed
-        $role = "super_admin";
+        $role = 'super_admin';
         if (in_array($role, $roles)) {
             if ($users = User::where('school_id', $school_id)
                 ->role($role) // provided by Spatie\Permission\Traits\HasRoles
                 ->count() > 0
-            ) abort(409, "Für diese Schule existiert bereits ein Super-Admin.");
+            ) {
+                abort(409, 'Für diese Schule existiert bereits ein Super-Admin.');
+            }
         }
 
         $data['school_id'] = $school_id;
@@ -614,13 +623,16 @@ class SchoolService
         $user->save();
 
         $user->assignRole($roles);
+
         return $user;
     }
 
     public function deleteAdmin($user_id, $is_delete_complete)
     {
 
-        if ($user_id == 1) abort(409, "Der Big-Boss-User kann nicht gelöscht werden.");
+        if ($user_id == 1) {
+            abort(409, 'Der Big-Boss-User kann nicht gelöscht werden.');
+        }
         $user = User::findOrFail($user_id);
 
         $roles = ['admin', 'register_admin'];
@@ -629,7 +641,9 @@ class SchoolService
         }
 
         if ($is_delete_complete) {
-            if (count($user->registerDateBookings) > 0) abort(409, 'Der Benutzer hat noch gebuchte Anmeldungen und kann nicht gelöscht werden. Seine Rollen wurden gelöscht.');
+            if (count($user->registerDateBookings) > 0) {
+                abort(409, 'Der Benutzer hat noch gebuchte Anmeldungen und kann nicht gelöscht werden. Seine Rollen wurden gelöscht.');
+            }
 
             $user->delete();
         }

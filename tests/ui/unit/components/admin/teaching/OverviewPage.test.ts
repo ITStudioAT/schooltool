@@ -16,73 +16,80 @@ describe('Teaching overview controls', () => {
         expect(schoolHourIndex).toHaveBeenCalledTimes(1)
     })
 
-    it('resets course context when showing courses again', () => {
+    it('resets to students panel defaults when selected course changes', () => {
         const ctx = {
-            show_my_courses: false,
-            action_2: 'course_student_view',
-            selected_course: { id: 22, title: 'Physik' },
-            selected_course_id: 22,
-            selected_course_student: { id: 99 },
-            show_infos: true,
-        }
-
-        ;(Overview as any).methods.toggleMyCourses.call(ctx)
-
-        expect(ctx.show_my_courses).toBe(true)
-        expect(ctx.action_2).toBe('')
-        expect(ctx.selected_course).toBeNull()
-        expect(ctx.selected_course_id).toBeNull()
-        expect(ctx.selected_course_student).toBeNull()
-        expect(ctx.show_infos).toBe(false)
-    })
-
-    it('keeps Meine Fächer visible and enables Infos when a course is selected', () => {
-        const ctx = {
-            show_my_courses: true,
-            show_infos: false,
-        }
-
-        ;(Overview as any).watch.selected_course.call(ctx, { id: 7, title: 'Biologie' })
-
-        expect(ctx.show_my_courses).toBe(true)
-        expect(ctx.show_infos).toBe(true)
-    })
-
-    it('toggles mirrored submenu flags for a selected course', () => {
-        const ctx = {
-            isControlLocked: false,
-            selected_course: { id: 5 },
             show_students: false,
+            show_infos: true,
+            show_works: true,
+            show_dates: true,
+            show_attendance: true,
+            show_performances: true,
+        }
+
+        ;(Overview as any).watch.selected_course.call(ctx, { id: 22, title: 'Physik' })
+
+        expect(ctx.show_students).toBe(true)
+        expect(ctx.show_infos).toBe(false)
+        expect(ctx.show_works).toBe(false)
+        expect(ctx.show_dates).toBe(false)
+        expect(ctx.show_attendance).toBe(false)
+        expect(ctx.show_performances).toBe(false)
+    })
+
+    it('maps functionalPanelSelection getter to active panel', () => {
+        const ctx = {
+            selected_course: { id: 7, title: 'Biologie' },
+            show_students: false,
+            show_infos: true,
+            show_works: false,
+            show_dates: false,
+            show_attendance: false,
+            show_performances: false,
+        }
+
+        const active = (Overview as any).computed.functionalPanelSelection.get.call(ctx)
+
+        expect(active).toBe('infos')
+    })
+
+    it('toggles mirrored panel flags through functionalPanelSelection setter', () => {
+        const ctx = {
+            show_students: true,
             show_infos: false,
             show_works: false,
             show_dates: false,
-            toggleMyCourses: vi.fn(),
+            show_attendance: false,
+            show_performances: false,
+            action_2: 'course_student_view',
+            selected_course_student: { id: 99 },
         }
 
-        ;(Overview as any).methods.toggleFunctionalPanel.call(ctx, 'students')
-        ;(Overview as any).methods.toggleFunctionalPanel.call(ctx, 'infos')
-        ;(Overview as any).methods.toggleFunctionalPanel.call(ctx, 'works')
-        ;(Overview as any).methods.toggleFunctionalPanel.call(ctx, 'dates')
+        ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, 'performances')
 
-        expect(ctx.show_students).toBe(true)
-        expect(ctx.show_infos).toBe(true)
-        expect(ctx.show_works).toBe(true)
-        expect(ctx.show_dates).toBe(true)
+        expect(ctx.show_students).toBe(false)
+        expect(ctx.show_performances).toBe(true)
+        expect(ctx.show_infos).toBe(false)
+        ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, null)
+        expect(ctx.show_performances).toBe(false)
+        expect(ctx.action_2).toBe('')
+        expect(ctx.selected_course_student).toBeNull()
     })
 
-    it('syncs new submenu selection by toggling only changed panels', () => {
-        const toggleFunctionalPanel = vi.fn()
+    it('persists active semester updates when diverging from config value', () => {
+        const saveActiveSemester = vi.fn()
         const ctx = {
-            functionalPanels: [{ id: 'my_courses' }, { id: 'students' }, { id: 'infos' }],
-            functionalPanelSelection: ['my_courses'],
-            toggleFunctionalPanel,
+            config: {
+                user: {
+                    teaching_active_semester: 1,
+                },
+            },
+            teachingStore: { saveActiveSemester },
         }
 
-        ;(Overview as any).methods.syncFunctionalPanelSelection.call(ctx, ['students', 'infos'])
+        ;(Overview as any).watch.activeSemester.call(ctx, 2)
+        ;(Overview as any).watch.activeSemester.call(ctx, 1)
 
-        expect(toggleFunctionalPanel).toHaveBeenCalledTimes(3)
-        expect(toggleFunctionalPanel).toHaveBeenCalledWith('my_courses')
-        expect(toggleFunctionalPanel).toHaveBeenCalledWith('students')
-        expect(toggleFunctionalPanel).toHaveBeenCalledWith('infos')
+        expect(saveActiveSemester).toHaveBeenCalledTimes(1)
+        expect(saveActiveSemester).toHaveBeenCalledWith(2)
     })
 })

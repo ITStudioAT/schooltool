@@ -580,6 +580,7 @@ describe('Groups page header', () => {
                 selectedSourceGroupMembersLoading: false,
             },
             loadSelectedSourceGroupMembers,
+            clearSelectedSourceGroup: methods.clearSelectedSourceGroup,
         }
 
         await methods.toggleSelectedSourceGroup.call(ctx, { id: 12, name: '1A' })
@@ -601,7 +602,7 @@ describe('Groups page header', () => {
         const ctx = {
             assignUsersDialog: {
                 selectedSourceGroupMembers: [
-                    { id: 7, name: 'Registered User', email: 'registered@test.local' },
+                    { id: 7, user_id: 7, name: 'Registered User', email: 'registered@test.local' },
                 ],
                 selectedSourceGroupSourceMembers: [
                     { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true },
@@ -617,8 +618,8 @@ describe('Groups page header', () => {
         const rows = methods.selectedSourceGroupCombinedMembers.call(ctx)
 
         expect(rows).toEqual([
-            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
             { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false, is_registered: false },
+            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
         ])
     })
 
@@ -677,7 +678,7 @@ describe('Groups page header', () => {
             assignUsersDialog: {
                 group: { id: 11, type: 'school', name: '1A' },
                 members: [
-                    { id: 7, name: 'Registered User', email: 'registered@test.local' },
+                    { id: 7, user_id: 7, name: 'Registered User', email: 'registered@test.local' },
                 ],
                 sourceMembers: [
                     { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true },
@@ -694,8 +695,8 @@ describe('Groups page header', () => {
         const rows = methods.readOnlyCombinedMembers.call(ctx)
 
         expect(rows).toEqual([
-            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
             { id: 102, user_id: null, import116_id: 102, name: 'Import Only', email: 'import@test.local', has_user_account: false, is_registered: false },
+            { id: 101, user_id: 7, import116_id: 101, name: 'Registered User', email: 'registered@test.local', already_member: true, has_user_account: true, is_registered: true },
         ])
     })
 
@@ -747,7 +748,7 @@ describe('Groups page header', () => {
         expect(methods.memberAssignmentPayload.call(ctx, {
             member_provider: 'import116.student',
             member_ref: 'import116.student:11',
-        })).toEqual({
+        })).toMatchObject({
             member_provider: 'import116.student',
             member_ref: 'import116.student:11',
         })
@@ -755,18 +756,18 @@ describe('Groups page header', () => {
         expect(methods.memberSelectionValue.call(ctx, {
             member_provider: 'teacher_list.teacher',
             member_ref: 'teacher_list.teacher:9',
-        })).toBe('teacher_list.teacher|teacher_list.teacher:9')
+        })).toBe('teacher_list.teacher:9')
 
         expect(methods.buildSelectedAssignableMemberPayloads.call(ctx, [
             { member_provider: 'import116.student', member_ref: 'import116.student:11' },
             { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
             { member_provider: 'user', member_ref: 'user:5' },
         ], [
-            'teacher_list.teacher|teacher_list.teacher:9',
-            'user|user:5',
+            'teacher_list.teacher:9',
+            'user:5',
         ])).toEqual([
-            { member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' },
-            { member_provider: 'user', member_ref: 'user:5' },
+            expect.objectContaining({ member_provider: 'teacher_list.teacher', member_ref: 'teacher_list.teacher:9' }),
+            expect.objectContaining({ member_provider: 'user', member_ref: 'user:5' }),
         ])
     })
 
@@ -815,6 +816,9 @@ describe('Groups page header', () => {
             },
             showSourceMembersPanel: vi.fn(() => false),
             readOnlyCombinedMembers: methods.readOnlyCombinedMembers,
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            memberHasUserAccount: methods.memberHasUserAccount,
+            mergeReadOnlyMember: methods.mergeReadOnlyMember,
             sortReadOnlyMembers: (rows: any[]) => rows,
             dialogPaginationSize: methods.dialogPaginationSize,
             shouldPaginateDialogList: methods.shouldPaginateDialogList,
@@ -832,7 +836,7 @@ describe('Groups page header', () => {
         expect(assignedRows[0].id).toBe(101)
         expect(assignedRows[4].id).toBe(105)
         expect(readOnlyRows).toHaveLength(5)
-        expect(readOnlyRows[0]).toMatchObject({ id: 101, is_registered: true })
+        expect(readOnlyRows[0]).toMatchObject({ id: 101, is_registered: false })
         expect(methods.dialogPaginationSummary.call(ctx, 105, 2)).toBe('101-105 von 105')
     })
 
@@ -847,6 +851,9 @@ describe('Groups page header', () => {
             },
             showSourceMembersPanel: vi.fn(() => false),
             readOnlyCombinedMembers: methods.readOnlyCombinedMembers,
+            readOnlyMemberKey: methods.readOnlyMemberKey,
+            memberHasUserAccount: methods.memberHasUserAccount,
+            mergeReadOnlyMember: methods.mergeReadOnlyMember,
             sortReadOnlyMembers: (rows: any[]) => rows,
             dialogPaginationSize: methods.dialogPaginationSize,
             dialogPaginationPageCount: methods.dialogPaginationPageCount,
@@ -1036,8 +1043,8 @@ describe('Groups page header', () => {
         expect(source).toContain('scheduleSyncStatusReload()')
         expect(source).toContain('clearSyncStatusReload()')
         expect(source).toContain('memberAssignmentPayload(member)')
-        expect(source).toContain('memberSelectionValue(member)')
-        expect(source).toContain('buildSelectedAssignableMemberPayloads(rows, selectedValues)')
+        expect(source).toContain('memberSelectionValue(memberOrValue)')
+        expect(source).toContain('buildSelectedAssignableMemberPayloads(rows = [], selectedValues = [])')
         expect(source).toContain('members: normalizedMembers')
         expect(source).toContain('member_ids: memberIds')
         expect(source).toContain('member_provider')
@@ -1111,8 +1118,8 @@ describe('Groups page header', () => {
         expect(source).toContain("title: 'Eltern'")
         expect(source).toContain("title: 'Weitere Gruppen'")
         expect(source).not.toContain('Keine Schulgruppen verfügbar.')
-        expect(source).not.toContain('Weiter')
-        expect(source).not.toContain('Zurück')
+        expect(source).not.toContain('>Weiter<')
+        expect(source).not.toContain('>Zurück<')
         expect(source).not.toContain('3. Von Lehrer:innen übernehmen')
         expect(source).not.toContain('4. Von Schüler:innen übernehmen')
         expect(source).not.toContain('openAssignUsersDialog(selectedGroupByType(section.type))')

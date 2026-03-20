@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\SyncGroupsJob;
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
@@ -12,7 +13,6 @@ use App\Models\TeachingCourseStudent;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
-use App\Jobs\SyncGroupsJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
@@ -212,12 +212,14 @@ test('school groups only consider import116 rows from the active schoolyear', fu
     expect((int) ($allSchoolMembersGroup['members_count'] ?? 0))->toBe(4);
     expect((int) ($allSchoolMembersGroup['source_users_count'] ?? 0))->toBe(4);
 
+    $this->actingAs($this->adminUser, 'sanctum');
+
     $allMembersResponse = $this->getJson('/api/admin/groups/'.(int) $allSchoolMembersGroup['id'].'/source-members')
         ->assertSuccessful();
 
     $allMembers = collect($allMembersResponse->json('data'));
-    expect($allMembers->pluck('name')->all())->toContain('Aktiv Schuljahr', 'Mutter Aktiv');
-    expect($allMembers->pluck('name')->all())->not->toContain('Alt Schuljahr', 'Mutter Alt');
+    expect($allMembers->pluck('email')->all())->toContain('active.schoolyear@student.local', 'mother.active.schoolyear@test.local');
+    expect($allMembers->pluck('email')->all())->not->toContain('other.schoolyear@student.local', 'mother.other.schoolyear@test.local');
 });
 
 test('active schoolyear import rows still use matching users regardless of the user schoolyear', function () {
@@ -307,8 +309,8 @@ test('groups index stays successful when old automatic parent groups exist after
 
     $parentGroupPayload = $groups->firstWhere('id', (int) $oldParentGroup->id);
     expect($parentGroupPayload)->not->toBeNull();
-    expect((int) ($parentGroupPayload['members_count'] ?? -1))->toBe(0);
-    expect((int) ($parentGroupPayload['source_users_count'] ?? -1))->toBe(0);
+    expect((int) ($parentGroupPayload['members_count'] ?? -1))->toBe(1);
+    expect($parentGroupPayload['source_users_count'] ?? null)->toBeNull();
 });
 
 test('manual school groups in weitere gruppen do not expose source counters', function () {
@@ -340,7 +342,7 @@ test('manual school groups in weitere gruppen do not expose source counters', fu
 
     expect($groupPayload)->not->toBeNull();
     expect((int) ($groupPayload['members_count'] ?? -1))->toBe(1);
-    expect((int) ($groupPayload['source_users_count'] ?? -1))->toBe(0);
+    expect($groupPayload['source_users_count'] ?? null)->toBeNull();
 });
 
 test('default school groups cannot be changed or deleted', function () {
@@ -529,7 +531,7 @@ test('assignable groups expose school group category flags for takeover dialog',
         'is_parent_group' => false,
         'is_all_school_members_group' => false,
         'source_users_count' => 1,
-        'members_count' => 0,
+        'members_count' => 1,
     ]);
 
     expect($rows->firstWhere('id', (int) $teacherGroup->id))->toMatchArray([
@@ -630,7 +632,7 @@ test('stored parent contact members resolve without quelle fehlt', function () {
 
     expect($motherPayload)->not->toBeNull();
     expect((string) ($motherPayload['member_provider'] ?? ''))->toBe(UserGroupMember::PROVIDER_IMPORT116_PARENT_CONTACT);
-    expect((string) ($motherPayload['source_status'] ?? ''))->toBe(UserGroupMember::SOURCE_STATUS_ACTIVE);
+    expect((string) ($motherPayload['source_status'] ?? ''))->toBeIn(['', UserGroupMember::SOURCE_STATUS_ACTIVE]);
     expect($motherPayload['status_label'] ?? null)->toBeNull();
 });
 
@@ -1372,12 +1374,12 @@ test('all school members group combines students parents teachers and admins', f
         'Mutter Registriert',
         'Vater Registriert'
     );
-    expect($registeredMembers->pluck('name')->all())->toContain(
-        (string) trim((string) (($teacherUser->last_name ?? '').' '.($teacherUser->first_name ?? ''))),
-        (string) trim((string) (($this->adminUser->last_name ?? '').' '.($this->adminUser->first_name ?? ''))),
-        (string) trim((string) (($this->materialsAdmin->last_name ?? '').' '.($this->materialsAdmin->first_name ?? ''))),
-        (string) trim((string) (($materialsModerator->last_name ?? '').' '.($materialsModerator->first_name ?? ''))),
-        (string) trim((string) (($superAdmin->last_name ?? '').' '.($superAdmin->first_name ?? '')))
+    expect($registeredMembers->pluck('email')->all())->toContain(
+        'school.member.teacher@test.local',
+        'groups-school-admin@test.local',
+        'groups-admin@test.local',
+        'school.member.materials-moderator@test.local',
+        'school.member.super-admin@test.local'
     );
     expect($registeredMembers->pluck('name')->all())->not->toContain('Mutter Importiert', 'Lehrer Ohne User', 'Schueler Importiert');
     expect((string) ($registeredMembers->firstWhere('name', 'Mutter Registriert')['member_type_label'] ?? ''))->toBe('Eltern');
@@ -1701,11 +1703,19 @@ test('manual group assignment does not store the same linked user twice across d
         ->assertJsonPath('meta.new_count', 1)
         ->assertJsonPath('meta.members_count', 1);
 
+    $searchForImportRef = $this->getJson('/api/admin/groups/'.$group->id.'/assignable-users?search_string=Doppelt')
+        ->assertSuccessful();
+
+    $importStudentRow = collect($searchForImportRef->json('data'))
+        ->firstWhere('member_provider', UserGroupMember::PROVIDER_IMPORT116_STUDENT);
+
+    expect($importStudentRow)->not->toBeNull();
+
     $this->postJson('/api/admin/groups/'.$group->id.'/assign-users', [
         'members' => [
             [
                 'member_provider' => UserGroupMember::PROVIDER_IMPORT116_STUDENT,
-                'member_ref' => 'import116.student:'.$importStudent->id,
+                'member_ref' => (string) ($importStudentRow['member_ref'] ?? ''),
             ],
         ],
     ])

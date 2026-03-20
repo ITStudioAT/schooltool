@@ -38,6 +38,27 @@ function materialShareRoutesAvailable(): bool
         ->contains(fn ($route) => $route->uri() === 'api/admin/materials/shares');
 }
 
+function ensureMaterialShareTablesExist(): void
+{
+    $requiredTables = [
+        'material_share_rules',
+        'material_share_targets',
+        'material_unit_inbox_imports',
+        'material_topic_inbox_imports',
+        'material_share_rule_archives',
+    ];
+
+    $missingTableExists = collect($requiredTables)
+        ->contains(fn (string $table): bool => ! Schema::hasTable($table));
+
+    if (! $missingTableExists) {
+        return;
+    }
+
+    $migration = require database_path('migrations/2026_03_07_120000_recreate_material_sharing_tables_after_reset.php');
+    $migration->up();
+}
+
 beforeEach(function () {
     if (! materialShareRoutesAvailable()) {
         $this->markTestSkipped('Material sharing API is disabled in this reset state.');
@@ -86,6 +107,10 @@ beforeEach(function () {
         'licence_id' => $materialsLicence->id,
         'valid_until' => now()->addYear(),
     ]);
+});
+
+afterEach(function () {
+    ensureMaterialShareTablesExist();
 });
 
 function workspaceEveryonePayload(string $permission = MaterialShareTarget::PERMISSION_READ_ONLY, string $audienceScope = MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL): array
