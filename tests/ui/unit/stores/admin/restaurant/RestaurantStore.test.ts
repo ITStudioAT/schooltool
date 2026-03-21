@@ -51,6 +51,8 @@ describe('RestaurantStore', () => {
                 ],
                 allergen_options: [{ character: 'G', short_description: 'Milch oder Laktose' }],
                 allergen_suggestions: ['Milch'],
+                user_settings: { restaurant_foods_pagination_number: 16 },
+                can_manage_user_settings: true,
                 stats: { foods_count: 4 },
             },
         })
@@ -62,7 +64,38 @@ describe('RestaurantStore', () => {
         expect(store.categories.map((category) => category.title)).toEqual(['Vorspeise', 'Nachspeise'])
         expect(store.ingredientIcons.map((icon) => icon.title)).toEqual(['Fisch', 'Schwein'])
         expect(store.allergenOptions).toEqual([{ character: 'G', short_description: 'Milch oder Laktose' }])
+        expect(store.userSettings.restaurant_foods_pagination_number).toBe(16)
+        expect(store.canManageUserSettings).toBe(true)
         expect(store.stats.foods_count).toBe(4)
+    })
+
+    it('updates restaurant user settings locally after save', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: { restaurant_foods_pagination_number: 24 },
+            },
+        })
+
+        const store = useRestaurantStore()
+        store.settings = {
+            categories: [],
+            ingredient_icons: [],
+            allergen_options: [],
+            allergen_suggestions: [],
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
+            stats: {},
+        }
+
+        const result = await store.updateUserSettings(24)
+
+        expect(result).toEqual({ restaurant_foods_pagination_number: 24 })
+        expect(store.userSettings.restaurant_foods_pagination_number).toBe(24)
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/user-settings', {
+            data: {
+                restaurant_foods_pagination_number: 24,
+            },
+        })
     })
 
     it('stores category locally after creation', async () => {
@@ -78,6 +111,8 @@ describe('RestaurantStore', () => {
             ingredient_icons: [],
             allergen_options: [],
             allergen_suggestions: [],
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
             stats: {},
         }
 
@@ -97,6 +132,8 @@ describe('RestaurantStore', () => {
             ingredient_icons: [{ id: 9, title: 'Schwein', sort_order: 10 }],
             allergen_options: [],
             allergen_suggestions: [],
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
             stats: {},
         }
 

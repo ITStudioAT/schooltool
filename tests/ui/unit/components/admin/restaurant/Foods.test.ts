@@ -28,6 +28,8 @@ function mountFoods(options: {
                         { character: 'G', short_description: 'Milch oder Laktose' },
                     ],
                     allergen_suggestions: [],
+                    user_settings: { restaurant_foods_pagination_number: 12 },
+                    can_manage_user_settings: true,
                     stats: {},
                 },
             },
@@ -56,6 +58,7 @@ function mountFoods(options: {
                 'v-checkbox': { template: '<input type="checkbox" />' },
                 'v-sheet': { template: '<div><slot /></div>' },
                 'v-img': { template: '<img v-bind="$attrs" />' },
+                'v-pagination': { template: '<div class="v-pagination" v-bind="$attrs"></div>' },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-avatar': { template: '<div><slot /></div>' },
                 'v-chip': { template: '<div class="v-chip" v-bind="$attrs"><slot /></div>' },
@@ -224,6 +227,39 @@ describe('Restaurant foods component', () => {
         expect(refreshButton.exists()).toBe(true)
         expect(refreshButton.attributes('color')).toBe('warning')
         expect(refreshButton.attributes('variant')).toBe('flat')
+    })
+
+    it('paginates the food cards and saves the user page size from the dialog', async () => {
+        const foods = Array.from({ length: 13 }, (_, index) => ({
+            id: index + 1,
+            title: `Speise ${index + 1}`,
+            description: '',
+            price: '',
+            food_image_url: null,
+            category: { title: 'Kategorie' },
+            allergens: [],
+            ingredient_icons: [],
+        }))
+
+        const { wrapper, restaurantStore } = mountFoods({ foods })
+        restaurantStore.updateUserSettings = vi.fn().mockResolvedValue({
+            restaurant_foods_pagination_number: 5,
+        })
+
+        expect((wrapper.vm as any).paginatedFoods).toHaveLength(12)
+        expect((wrapper.vm as any).pageCount).toBe(2)
+        expect((wrapper.vm as any).paginationSummary).toBe('1 - 12 von 13')
+        expect(wrapper.find('.food-pagination__selector').exists()).toBe(true)
+        expect(wrapper.find('.food-pagination__counter').exists()).toBe(true)
+
+        ;(wrapper.vm as any).openPaginationDialog()
+        expect((wrapper.vm as any).paginationDialog).toBe(true)
+
+        ;(wrapper.vm as any).paginationDialogValue = '24'
+        await (wrapper.vm as any).savePaginationDialog()
+
+        expect(restaurantStore.updateUserSettings).toHaveBeenCalledWith(24)
+        expect((wrapper.vm as any).paginationDialog).toBe(false)
     })
 
     it('switches to a compact card view with title and category only', async () => {

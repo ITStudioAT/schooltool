@@ -10,11 +10,14 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 class RestaurantService
 {
+    private const DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER = 12;
+
     public function settingsForUser(User $authUser): array
     {
         $this->ensureDefaultCategories($authUser);
@@ -40,6 +43,8 @@ class RestaurantService
             'ingredient_icons' => $ingredientIcons,
             'allergen_options' => $this->configuredAllergenOptions(),
             'allergen_suggestions' => $this->extractAllergenSuggestions($foods),
+            'user_settings' => $this->userSettingsForUser($authUser),
+            'can_manage_user_settings' => $this->supportsRestaurantFoodsPaginationSettings(),
             'stats' => [
                 'foods_count' => $foods->count(),
                 'categories_count' => $categories->count(),
@@ -48,6 +53,26 @@ class RestaurantService
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
             ],
         ];
+    }
+
+    public function userSettingsForUser(User $user): array
+    {
+        return [
+            'restaurant_foods_pagination_number' => $this->restaurantFoodsPaginationNumberForUser($user),
+        ];
+    }
+
+    public function updateUserSettings(User $user, int $restaurantFoodsPaginationNumber): array
+    {
+        if (! $this->supportsRestaurantFoodsPaginationSettings()) {
+            abort(500, 'Benutzereinstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
+        }
+
+        $normalized = max(1, min(200, $restaurantFoodsPaginationNumber));
+        $user->restaurant_foods_pagination_number = $normalized;
+        $user->save();
+
+        return $this->userSettingsForUser($user->fresh());
     }
 
     public function foodsForUser(User $authUser): Collection
@@ -420,6 +445,25 @@ class RestaurantService
         }
 
         return number_format((float) $value, 1, '.', '');
+    }
+
+    private function supportsRestaurantFoodsPaginationSettings(): bool
+    {
+        return Schema::hasTable('users') && Schema::hasColumn('users', 'restaurant_foods_pagination_number');
+    }
+
+    private function restaurantFoodsPaginationNumberForUser(User $user): int
+    {
+        $configValue = (int) config('schooltool.pagination', self::DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER);
+        $fallback = $configValue > 0 ? $configValue : self::DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER;
+
+        if (! $this->supportsRestaurantFoodsPaginationSettings()) {
+            return $fallback;
+        }
+
+        $value = (int) ($user->restaurant_foods_pagination_number ?? 0);
+
+        return $value > 0 ? min(200, $value) : $fallback;
     }
 
     private function storeImage(mixed $file, string $directory): ?string

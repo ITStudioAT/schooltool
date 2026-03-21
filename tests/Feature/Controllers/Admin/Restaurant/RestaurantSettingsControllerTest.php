@@ -44,10 +44,27 @@ test('settings creates default categories for empty school', function () {
         ->toEqual(['Vorspeise', 'Hauptspeise', 'Nachspeise'])
         ->and($response->json('allergen_options'))
         ->toEqual(config('schooltool.eu_allergens'))
+        ->and($response->json('user_settings.restaurant_foods_pagination_number'))
+        ->toBe((int) config('schooltool.pagination'))
+        ->and($response->json('can_manage_user_settings'))
+        ->toBeTrue()
         ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
         ->toEqual(['Fisch', 'Schwein'])
         ->and($response->json('ingredient_icons.0.image_url'))
         ->toStartWith('data:image/svg+xml;base64,');
+});
+
+test('restaurant user can update own foods pagination setting', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/user-settings', [
+        'data' => [
+            'restaurant_foods_pagination_number' => 18,
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.restaurant_foods_pagination_number', 18);
+
+    expect((int) $this->admin->fresh()->restaurant_foods_pagination_number)->toBe(18);
 });
 
 test('category CRUD works for restaurant settings', function () {

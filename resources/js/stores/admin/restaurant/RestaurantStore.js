@@ -54,6 +54,8 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
         ingredientIcons: (state) => state.settings?.ingredient_icons || [],
         allergenOptions: (state) => state.settings?.allergen_options || [],
         allergenSuggestions: (state) => state.settings?.allergen_suggestions || [],
+        userSettings: (state) => state.settings?.user_settings || {},
+        canManageUserSettings: (state) => state.settings?.can_manage_user_settings === true,
         stats: (state) => state.settings?.stats || {},
     },
 
@@ -77,6 +79,55 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                     timeout: 3000,
                 })
                 return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateUserSettings(restaurantFoodsPaginationNumber) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const value = Number(restaurantFoodsPaginationNumber)
+
+            if (! Number.isFinite(value) || value <= 0) {
+                notification.notify({
+                    message: 'Bitte eine gültige Zahl für Speisen pro Seite eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.put('/api/admin/restaurant/user-settings', {
+                    data: {
+                        restaurant_foods_pagination_number: Math.max(1, Math.min(200, Math.round(value))),
+                    },
+                })
+
+                this.settings = {
+                    ...(this.settings || {}),
+                    user_settings: response?.data?.data || {},
+                    can_manage_user_settings: true,
+                }
+
+                notification.notify({
+                    message: 'Benutzereinstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der Benutzereinstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
             } finally {
                 adminStore.is_loading--
             }

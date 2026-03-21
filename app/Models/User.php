@@ -6,15 +6,23 @@ namespace App\Models;
 
 use App\Notifications\StandardEmail;
 use App\Traits\UserTrait;
+use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Notifications\DatabaseNotificationCollection;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Lab404\Impersonate\Models\Impersonate as ImpersonateTrait;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\PersonalAccessToken;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
@@ -23,11 +31,11 @@ use Spatie\Permission\Traits\HasRoles;
  * @property int|null $schoolyear_id
  * @property int|null $register_id
  * @property string $email
- * @property \Illuminate\Support\Carbon|null $email_verified_at
+ * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $remember_token
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property string|null $last_name
  * @property string|null $first_name
  * @property string|null $phone
@@ -35,7 +43,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $login_ip
  * @property int|null $is_2fa
  * @property string|null $token_2fa
- * @property \Illuminate\Support\Carbon|null $token_2fa_expires_at
+ * @property Carbon|null $token_2fa_expires_at
  * @property string|null $token_2fa_2
  * @property string|null $token_2fa_2_expires_at
  * @property string|null $email_2fa
@@ -46,18 +54,18 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $confirmed_at
  * @property string|null $uuid
  * @property string|null $uuid_at
- * @property-read \Illuminate\Notifications\DatabaseNotificationCollection<int, \Illuminate\Notifications\DatabaseNotification> $notifications
+ * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
  * @property-read int|null $notifications_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Permission> $permissions
+ * @property-read Collection<int, Permission> $permissions
  * @property-read int|null $permissions_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $registerDateBookings
+ * @property-read Collection<int, RegisterDateBooking> $registerDateBookings
  * @property-read int|null $register_date_bookings_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \Spatie\Permission\Models\Role> $roles
+ * @property-read Collection<int, Role> $roles
  * @property-read int|null $roles_count
  * @property-read Register|null $selectedRegister
  * @property-read School|null $selectedSchool
  * @property-read Schoolyear|null $selectedSchoolyear
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \Laravel\Sanctum\PersonalAccessToken> $tokens
+ * @property-read Collection<int, PersonalAccessToken> $tokens
  * @property-read int|null $tokens_count
  *
  * @method static \Database\Factories\UserFactory factory($count = null, $state = [])
@@ -101,7 +109,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @method bool hasAllRoles(string|int|array|\Spatie\Permission\Contracts\Role|\Illuminate\Support\Collection $roles, string|null $guard = null)
  * @method \Illuminate\Database\Eloquent\Collection|\Spatie\Permission\Models\Role[] getRoleNames()
  *
- * @mixin \Spatie\Permission\Traits\HasRoles
+ * @mixin HasRoles
  * @mixin IdeHelperUser
  *
  * @property string|null $sex
@@ -124,7 +132,7 @@ class User extends Authenticatable
 {
     use HasApiTokens;
 
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory;
 
     use HasRoles;
@@ -159,6 +167,7 @@ class User extends Authenticatable
         'teaching_notifications',
         'teaching_show_behaviour',
         'materials_pagination_number',
+        'restaurant_foods_pagination_number',
     ];
 
     // Protected fields that should NOT be mass assignable:

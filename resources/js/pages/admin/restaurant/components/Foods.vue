@@ -35,7 +35,7 @@
             </v-alert>
 
             <v-row v-else dense>
-                <v-col v-for="food in foods" :key="food.id" cols="12" :md="isCompactView ? 4 : 6" :xl="isCompactView ? 3 : 4">
+                <v-col v-for="food in paginatedFoods" :key="food.id" cols="12" :md="isCompactView ? 4 : 6" :xl="isCompactView ? 3 : 4">
                     <v-card rounded="xl" variant="outlined" class="food-card h-100" :class="{ 'food-card--compact': isCompactView }">
                         <v-card-text class="pa-4">
                             <div class="text-h6 font-weight-bold">{{ food.title }}</div>
@@ -116,6 +116,35 @@
                     </v-card>
                 </v-col>
             </v-row>
+
+            <div v-if="foods.length" class="food-pagination d-flex flex-wrap align-center justify-space-between ga-3 mt-4">
+                <div class="d-flex flex-wrap align-center ga-3">
+                    <div class="food-pagination__selector">
+                        <div class="food-pagination__label">Pro Seite:</div>
+
+                        <v-btn
+                            size="small"
+                            rounded="pill"
+                            class="food-pagination__counter"
+                            color="primary"
+                            variant="flat"
+                            @click="openPaginationDialog">
+                            {{ currentPaginationNumber }}
+                        </v-btn>
+                    </div>
+
+                    <div class="text-body-2 text-medium-emphasis">
+                        {{ paginationSummary }}
+                    </div>
+                </div>
+
+                <v-pagination
+                    v-if="pageCount > 1"
+                    v-model="currentPage"
+                    :length="pageCount"
+                    :total-visible="6"
+                    density="comfortable" />
+            </div>
         </ItsGridBox>
 
         <v-dialog v-model="dialog" max-width="760">
@@ -255,6 +284,32 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="paginationDialog" max-width="420" persistent>
+            <v-card rounded="xl">
+                <v-card-title>Speisen pro Seite</v-card-title>
+
+                <v-card-text>
+                    <v-text-field
+                        v-model="paginationDialogValue"
+                        label="Anzahl"
+                        type="number"
+                        min="1"
+                        max="200"
+                        variant="outlined"
+                        density="comfortable"
+                        autofocus />
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="closePaginationDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" @click="savePaginationDialog">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
 
         <v-dialog v-model="deleteDialog" max-width="440">
             <v-card rounded="xl">
@@ -311,7 +366,10 @@ export default {
         return {
             dialog: false,
             deleteDialog: false,
+            paginationDialog: false,
             isCompactView: false,
+            currentPage: 1,
+            paginationDialogValue: '12',
             editingFoodId: null,
             pendingDeleteFood: null,
             form: emptyForm(),
@@ -322,9 +380,33 @@ export default {
 
     computed: {
         ...mapState(useFoodStore, ['foods']),
-        ...mapState(useRestaurantStore, ['categories', 'ingredientIcons', 'allergenOptions']),
+        ...mapState(useRestaurantStore, ['categories', 'ingredientIcons', 'allergenOptions', 'userSettings', 'canManageUserSettings']),
         categoryTitles() {
             return this.categories.map((category) => category.title)
+        },
+        currentPaginationNumber() {
+            const value = Number(this.userSettings?.restaurant_foods_pagination_number || 0)
+
+            return Number.isFinite(value) && value > 0 ? Math.min(200, Math.round(value)) : 12
+        },
+        pageCount() {
+            return Math.max(1, Math.ceil(this.foods.length / this.currentPaginationNumber))
+        },
+        paginatedFoods() {
+            const start = (this.currentPage - 1) * this.currentPaginationNumber
+            const end = start + this.currentPaginationNumber
+
+            return this.foods.slice(start, end)
+        },
+        paginationSummary() {
+            if (! this.foods.length) {
+                return '0 - 0 von 0'
+            }
+
+            const from = (this.currentPage - 1) * this.currentPaginationNumber + 1
+            const to = Math.min(this.currentPage * this.currentPaginationNumber, this.foods.length)
+
+            return `${from} - ${to} von ${this.foods.length}`
         },
         foodImagePreview() {
             if (! this.form.foodImage) {
@@ -338,7 +420,49 @@ export default {
         },
     },
 
+    watch: {
+        currentPaginationNumber: {
+            immediate: true,
+            handler() {
+                this.paginationDialogValue = String(this.currentPaginationNumber)
+                this.clampCurrentPage()
+            },
+        },
+        foods() {
+            this.clampCurrentPage()
+        },
+    },
+
     methods: {
+        clampCurrentPage() {
+            this.currentPage = Math.min(Math.max(1, this.currentPage), this.pageCount)
+        },
+        normalizePaginationNumber(value) {
+            const normalized = Math.max(1, Math.min(200, Math.round(Number(value))))
+
+            return Number.isFinite(normalized) && normalized > 0 ? normalized : this.currentPaginationNumber
+        },
+        openPaginationDialog() {
+            this.paginationDialogValue = String(this.currentPaginationNumber)
+            this.paginationDialog = true
+        },
+        closePaginationDialog() {
+            this.paginationDialog = false
+            this.paginationDialogValue = String(this.currentPaginationNumber)
+        },
+        async savePaginationDialog() {
+            const normalized = this.normalizePaginationNumber(this.paginationDialogValue)
+
+            if (! this.canManageUserSettings || normalized === this.currentPaginationNumber) {
+                this.closePaginationDialog()
+                this.clampCurrentPage()
+                return
+            }
+
+            await useRestaurantStore().updateUserSettings(normalized)
+            this.closePaginationDialog()
+            this.clampCurrentPage()
+        },
         hasPrice(price) {
             return ! (price === null || price === undefined || price === '')
         },
@@ -525,12 +649,22 @@ export default {
 
 <style scoped>
 .food-card {
+    display: flex;
+    flex-direction: column;
     border-color: rgba(15, 23, 42, 0.1);
     background: rgba(255, 255, 255, 0.96);
 }
 
 .food-card--compact {
     background: rgba(255, 255, 255, 0.98);
+}
+
+.food-card :deep(.v-card-text) {
+    flex: 1 1 auto;
+}
+
+.food-card :deep(.v-card-actions) {
+    margin-top: auto;
 }
 
 .food-card__actions--compact {
@@ -554,6 +688,35 @@ export default {
     max-height: 60px;
     border-radius: 0.75rem;
     background: rgba(248, 250, 252, 0.92);
+}
+
+.food-pagination {
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 1rem;
+}
+
+.food-pagination__selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 1rem;
+    background: linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.88));
+    box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.4);
+}
+
+.food-pagination__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(71, 85, 105, 0.92);
+}
+
+.food-pagination__counter {
+    min-width: 3.2rem;
+    font-weight: 700;
 }
 
 .allergen-chip-list {
