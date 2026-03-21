@@ -1686,19 +1686,31 @@ class MaterialShareController extends Controller
                 sourceStatusMeta: $sourceStatusMeta,
             );
 
-            $createdCard = $materialService->createCard($authUser, [
-                'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
-                'source_url' => $sourceCard->source_url,
-                'source_text' => $sourceCard->source_text,
-                'type' => $targetType,
-                'status' => $targetStatus,
-                'notes' => $sourceCard->notes,
-                'classifications' => [$targetClassification],
-            ]);
-            $this->syncCardClassificationToResolvedTarget($createdCard, $targetClassification);
+            $cardTitle = trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material';
+            $createdCard = $importMode === MaterialInboxImport::MODE_COPY
+                ? $this->findExistingTargetCardForMaterialInsert(
+                    user: $authUser,
+                    workspaceId: (int) ($targetClassification['workspace_id'] ?? 0),
+                    title: $cardTitle,
+                    targetClassification: $targetClassification,
+                )
+                : null;
 
-            $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
-            $keywordService->rebuild($createdCard->fresh());
+            if (! $createdCard) {
+                $createdCard = $materialService->createCard($authUser, [
+                    'title' => $cardTitle,
+                    'source_url' => $sourceCard->source_url,
+                    'source_text' => $sourceCard->source_text,
+                    'type' => $targetType,
+                    'status' => $targetStatus,
+                    'notes' => $sourceCard->notes,
+                    'classifications' => [$targetClassification],
+                ]);
+                $this->syncCardClassificationToResolvedTarget($createdCard, $targetClassification);
+
+                $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+                $keywordService->rebuild($createdCard->fresh());
+            }
 
             if ($this->hasMaterialInboxImportsTable()) {
                 $importPayload = [
@@ -1803,6 +1815,7 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'workspace_id' => (int) ($subject->workspace_id ?? 0),
                 'subject_id' => (int) $subject->id,
                 'topic_id' => null,
                 'unit_id' => null,
@@ -1814,7 +1827,7 @@ class MaterialShareController extends Controller
 
         if ($targetLevel === 'topic') {
             $topic = MaterialTopic::query()
-                ->with('subject:id,user_id,name')
+                ->with('subject:id,user_id,workspace_id,name')
                 ->find($targetId);
 
             if (! $topic || (int) ($topic->subject?->user_id ?? 0) !== (int) $user->id) {
@@ -1828,6 +1841,7 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'workspace_id' => (int) ($topic->subject?->workspace_id ?? 0),
                 'subject_id' => (int) ($topic->subject?->id ?? 0),
                 'topic_id' => (int) $topic->id,
                 'unit_id' => null,
@@ -1839,7 +1853,7 @@ class MaterialShareController extends Controller
 
         if ($targetLevel === 'unit') {
             $unit = MaterialUnit::query()
-                ->with('topic.subject:id,user_id,name')
+                ->with('topic.subject:id,user_id,workspace_id,name')
                 ->find($targetId);
 
             if (! $unit || (int) ($unit->topic?->subject?->user_id ?? 0) !== (int) $user->id) {
@@ -1854,6 +1868,7 @@ class MaterialShareController extends Controller
             }
 
             return [
+                'workspace_id' => (int) ($unit->topic?->subject?->workspace_id ?? 0),
                 'subject_id' => (int) ($unit->topic?->subject?->id ?? 0),
                 'topic_id' => (int) ($unit->topic?->id ?? 0),
                 'unit_id' => (int) $unit->id,
@@ -2389,6 +2404,66 @@ class MaterialShareController extends Controller
             if ($candidateClassificationKeys === $expectedClassificationKeys) {
                 return $candidate;
             }
+        }
+
+        return null;
+    }
+
+    private function findExistingTargetCardForMaterialInsert(
+        User $user,
+        int $workspaceId,
+        string $title,
+        array $targetClassification,
+    ): ?MaterialCard {
+        $normalizedTitle = trim($title);
+        $subjectId = (int) ($targetClassification['subject_id'] ?? 0);
+        $topicId = (int) ($targetClassification['topic_id'] ?? 0);
+        $unitId = (int) ($targetClassification['unit_id'] ?? 0);
+
+        if ($workspaceId <= 0 || $normalizedTitle === '' || $subjectId <= 0) {
+            return null;
+        }
+
+        $candidates = MaterialCard::query()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->whereRaw('LOWER(title) = ?', [mb_strtolower($normalizedTitle)])
+            ->whereHas('classifications', function ($query) use ($subjectId, $topicId, $unitId): void {
+                $query->where('subject_id', $subjectId);
+
+                if ($topicId > 0) {
+                    $query->where('topic_id', $topicId);
+                } else {
+                    $query->whereNull('topic_id');
+                }
+
+                if ($unitId > 0) {
+                    $query->where('unit_id', $unitId);
+                } else {
+                    $query->whereNull('unit_id');
+                }
+            })
+            ->with([
+                'attachments',
+                'classifications.subject',
+                'classifications.topic',
+                'classifications.unit',
+            ])
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            if (
+                $this->materialInboxImportsHasImportModeColumn()
+                && MaterialInboxImport::query()
+                    ->where('target_user_id', (int) $user->id)
+                    ->where('target_material_card_id', (int) $candidate->id)
+                    ->where('import_mode', MaterialInboxImport::MODE_LINK)
+                    ->exists()
+            ) {
+                continue;
+            }
+
+            return $candidate;
         }
 
         return null;

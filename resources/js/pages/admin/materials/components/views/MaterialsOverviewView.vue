@@ -133,7 +133,7 @@
                 </v-list>
             </div>
         </v-alert>
-        <div v-if="!subjectsTreeWorkspaceStructureExpanded && !isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+        <div v-if="!isSubjectsContentsOverview && !subjectsTreeWorkspaceStructureExpanded && !isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
             <v-btn
                 size="small"
                 color="warning"
@@ -177,6 +177,16 @@
                     </div>
                 </template>
                 <v-spacer />
+                <v-btn
+                    v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden"
+                    size="small"
+                    color="warning"
+                    variant="outlined"
+                    prepend-icon="mdi-eye-outline"
+                    :disabled="isRestoringLastDeletedMaterial || isPurgingDeletedMaterial"
+                    @click="showDeletedMaterialRestoreList">
+                    Restore-Liste einblenden
+                </v-btn>
                 <v-btn
                     v-if="isWorkspaceSubjectsContentsSource && !hideSubjectsOverviewPrintButton"
                     size="small"
@@ -355,13 +365,14 @@
                                                             color="secondary"
                                                             class="inbox-hierarchy-insert-btn"
                                                             prepend-icon="mdi-tray-arrow-down"
-                                                            @click.stop="openSharedInsertDraft({
-                                                                ruleId: item.ruleId,
-                                                                level: 'topic',
-                                                                targetId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
-                                                                label: topic.name || 'Thema',
-                                                                parentLabel: subject.name || '',
-                                                            })">
+                                                        @click.stop="openSharedInsertDraft({
+                                                            ruleId: item.ruleId,
+                                                            level: 'topic',
+                                                            targetId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                            label: topic.name || 'Thema',
+                                                            parentLabel: subject.name || '',
+                                                            nodeData: topic,
+                                                        })">
                                                             Einordnen
                                                         </v-btn>
                                                     </div>
@@ -419,6 +430,7 @@
                                                                     targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
                                                                     label: material.title || 'Material',
                                                                     parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
+                                                                    sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
                                                                 })">
                                                                 Einordnen
                                                             </v-btn>
@@ -499,6 +511,8 @@
                                                                         targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
                                                                         label: material.title || 'Material',
                                                                         parentLabel: `${subject.name || ''} / ${topic.name || ''} / ${unit.name || ''}`,
+                                                                        sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                                        sourceUnitId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
                                                                     })">
                                                                     Einordnen
                                                                 </v-btn>
@@ -959,13 +973,13 @@
             @manage-types="openTypeManager"
             @save="handleEditSave"
             @cancel="closeEditDialog">
-            <template #extra-content>
-                <div class="mt-4 d-flex flex-wrap justify-end ga-2">
-                    <v-btn v-if="canEditLinkedDeleteMaterial" color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
-                        Material löschen
-                    </v-btn>
-                </div>
+            <template #bottom-left>
+                <v-btn v-if="canEditLinkedDeleteMaterial" color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
+                    Material löschen
+                </v-btn>
+            </template>
 
+            <template #extra-content>
                 <div class="mt-4">
                     <div class="text-subtitle-2 mb-2">Anhänge</div>
 
@@ -1275,6 +1289,206 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="sharedTopicInsertDialogOpen" max-width="560" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6">Thema einordnen</v-card-title>
+            <v-card-text>
+                <p class="mb-2">
+                    Soll das Thema
+                    <strong>{{ sharedTopicInsertDraft.label || 'Thema' }}</strong>
+                    in ein Fach deines Workspace eingeordnet werden?
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-4">
+                    Wähle das Zielfach. Dort wird das Thema mit enthaltenen Materialien eingeordnet.
+                </p>
+                <div v-if="sharedTopicInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                    Es sind noch keine Fächer im Workspace vorhanden.
+                </div>
+                <div v-else class="d-grid ga-2">
+                    <v-btn
+                        v-for="subject in sharedTopicInsertSubjectOptions"
+                        :key="`shared-topic-insert-subject-${subject.id}`"
+                        variant="tonal"
+                        :color="Number(sharedTopicInsertDraft.targetSubjectId) === Number(subject.id) ? 'primary' : 'secondary'"
+                        class="justify-start"
+                        @click="sharedTopicInsertDraft.targetSubjectId = Number(subject.id)">
+                        {{ subject.name }}
+                    </v-btn>
+                </div>
+            </v-card-text>
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn
+                    variant="text"
+                    :disabled="sharedTopicInsertDialogLoading"
+                    @click="closeSharedTopicInsertDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-tray-arrow-down"
+                    :loading="sharedTopicInsertDialogLoading"
+                    :disabled="sharedTopicInsertDialogLoading || !sharedTopicInsertDraft.targetSubjectId"
+                    @click="confirmSharedTopicInsert">
+                    Einordnen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="sharedUnitInsertDialogOpen" max-width="560" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6">Bereich einordnen</v-card-title>
+            <v-card-text>
+                <p class="mb-2">
+                    Soll der Bereich
+                    <strong>{{ sharedUnitInsertDraft.label || 'Bereich' }}</strong>
+                    in ein Thema deines Workspace eingeordnet werden?
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-4">
+                    Wähle zuerst ein Fach mit Themen und danach das Zielthema.
+                </p>
+
+                <div v-if="sharedUnitInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                    Es sind noch keine passenden Fächer mit Themen im Workspace vorhanden.
+                </div>
+                <template v-else>
+                    <div class="text-caption font-weight-bold mb-2">Fach</div>
+                    <div class="d-grid ga-2 mb-4">
+                        <v-btn
+                            v-for="subject in sharedUnitInsertSubjectOptions"
+                            :key="`shared-unit-insert-subject-${subject.id}`"
+                            variant="tonal"
+                            :color="Number(sharedUnitInsertDraft.targetSubjectId) === Number(subject.id) ? 'primary' : 'secondary'"
+                            class="justify-start"
+                            @click="selectSharedUnitInsertSubject(subject.id)">
+                            {{ subject.name }}
+                        </v-btn>
+                    </div>
+
+                    <div class="text-caption font-weight-bold mb-2">Thema</div>
+                    <div v-if="sharedUnitInsertTopicOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                        Für das ausgewählte Fach sind keine Themen verfügbar.
+                    </div>
+                    <div v-else class="d-grid ga-2">
+                        <v-btn
+                            v-for="topic in sharedUnitInsertTopicOptions"
+                            :key="`shared-unit-insert-topic-${topic.id}`"
+                            variant="tonal"
+                            :color="Number(sharedUnitInsertDraft.targetTopicId) === Number(topic.id) ? 'primary' : 'secondary'"
+                            class="justify-start"
+                            @click="sharedUnitInsertDraft.targetTopicId = Number(topic.id)">
+                            {{ topic.name }}
+                        </v-btn>
+                    </div>
+                </template>
+            </v-card-text>
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn
+                    variant="text"
+                    :disabled="sharedUnitInsertDialogLoading"
+                    @click="closeSharedUnitInsertDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-tray-arrow-down"
+                    :loading="sharedUnitInsertDialogLoading"
+                    :disabled="sharedUnitInsertDialogLoading || !sharedUnitInsertDraft.targetTopicId"
+                    @click="confirmSharedUnitInsert">
+                    Einordnen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="sharedMaterialInsertDialogOpen" max-width="620" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6">Material einordnen</v-card-title>
+            <v-card-text>
+                <p class="mb-2">
+                    Soll das Material
+                    <strong>{{ sharedMaterialInsertDraft.label || 'Material' }}</strong>
+                    in deinen Workspace eingeordnet werden?
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-4">
+                    Wähle zuerst ein Fach. Optional kannst du das Material auch direkt in ein Thema oder in einen Bereich einordnen.
+                </p>
+
+                <div v-if="sharedMaterialInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                    Es sind noch keine Fächer im Workspace vorhanden.
+                </div>
+                <template v-else>
+                    <div class="text-caption font-weight-bold mb-2">Fach</div>
+                    <div class="d-grid ga-2 mb-4">
+                        <v-btn
+                            v-for="subject in sharedMaterialInsertSubjectOptions"
+                            :key="`shared-material-insert-subject-${subject.id}`"
+                            variant="tonal"
+                            :color="Number(sharedMaterialInsertDraft.targetSubjectId) === Number(subject.id) ? 'primary' : 'secondary'"
+                            class="justify-start"
+                            @click="selectSharedMaterialInsertSubject(subject.id)">
+                            {{ subject.name }}
+                        </v-btn>
+                    </div>
+
+                    <div class="text-caption font-weight-bold mb-2">Thema</div>
+                    <div v-if="sharedMaterialInsertDraft.targetSubjectId && sharedMaterialInsertTopicOptions.length === 0" class="text-body-2 text-medium-emphasis mb-4">
+                        Für das ausgewählte Fach sind keine Themen vorhanden. Das Material wird im Fach eingeordnet.
+                    </div>
+                    <div v-else-if="sharedMaterialInsertTopicOptions.length > 0" class="d-grid ga-2 mb-4">
+                        <v-btn
+                            v-for="topic in sharedMaterialInsertTopicOptions"
+                            :key="`shared-material-insert-topic-${topic.id}`"
+                            variant="tonal"
+                            :color="Number(sharedMaterialInsertDraft.targetTopicId) === Number(topic.id) ? 'primary' : 'secondary'"
+                            class="justify-start"
+                            @click="selectSharedMaterialInsertTopic(topic.id)">
+                            {{ topic.name }}
+                        </v-btn>
+                    </div>
+
+                    <div v-if="sharedMaterialInsertDraft.targetTopicId" class="text-caption font-weight-bold mb-2">Bereich</div>
+                    <div v-if="sharedMaterialInsertDraft.targetTopicId && sharedMaterialInsertUnitOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                        Für das ausgewählte Thema sind keine Bereiche vorhanden. Das Material wird im Thema eingeordnet.
+                    </div>
+                    <div v-else-if="sharedMaterialInsertUnitOptions.length > 0" class="d-grid ga-2">
+                        <v-btn
+                            v-for="unit in sharedMaterialInsertUnitOptions"
+                            :key="`shared-material-insert-unit-${unit.id}`"
+                            variant="tonal"
+                            :color="Number(sharedMaterialInsertDraft.targetUnitId) === Number(unit.id) ? 'primary' : 'secondary'"
+                            class="justify-start"
+                            @click="sharedMaterialInsertDraft.targetUnitId = Number(unit.id)">
+                            {{ unit.name }}
+                        </v-btn>
+                    </div>
+                </template>
+            </v-card-text>
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn
+                    variant="text"
+                    :disabled="sharedMaterialInsertDialogLoading"
+                    @click="closeSharedMaterialInsertDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-tray-arrow-down"
+                    :loading="sharedMaterialInsertDialogLoading"
+                    :disabled="sharedMaterialInsertDialogLoading || !sharedMaterialInsertTargetId"
+                    @click="confirmSharedMaterialInsert">
+                    Einordnen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <MaterialShareDraftDialog
         v-model="shareDummyDialogOpen"
         :target="shareTarget"
@@ -1483,6 +1697,41 @@ export default {
                 subjectId: null,
                 label: '',
             },
+            sharedTopicInsertDialogOpen: false,
+            sharedTopicInsertDialogLoading: false,
+            sharedTopicInsertDraft: {
+                ruleId: null,
+                topicId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                nodeData: null,
+            },
+            sharedUnitInsertDialogOpen: false,
+            sharedUnitInsertDialogLoading: false,
+            sharedUnitInsertDraft: {
+                ruleId: null,
+                unitId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetTopicId: null,
+                nodeData: null,
+            },
+            sharedMaterialInsertDialogOpen: false,
+            sharedMaterialInsertDialogLoading: false,
+            sharedMaterialInsertDraft: {
+                ruleId: null,
+                materialId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetLevel: 'subject',
+                targetTopicId: null,
+                targetUnitId: null,
+                sourceTopicId: null,
+                sourceUnitId: null,
+            },
             shareAssignmentsLoading: false,
             shareAssignmentsError: '',
             shareAssignments: [],
@@ -1521,6 +1770,92 @@ export default {
                       { value: 'done', label: 'ok', color: '#2e7d32' },
                       { value: 'update_needed', label: 'Änderung nötig', color: '#c62828' },
                   ]
+        },
+        sharedTopicInsertSubjectOptions() {
+            return (Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : [])
+                .map((subject) => ({
+                    id: Number(subject?.id || 0),
+                    name: String(subject?.name || '').trim() || 'Fach',
+                }))
+                .filter((subject) => subject.id > 0)
+        },
+        sharedUnitInsertSubjectOptions() {
+            return (Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : [])
+                .filter((subject) => Array.isArray(subject?.topics) && subject.topics.length > 0)
+                .map((subject) => ({
+                    id: Number(subject?.id || 0),
+                    name: String(subject?.name || '').trim() || 'Fach',
+                }))
+                .filter((subject) => subject.id > 0)
+        },
+        sharedUnitInsertTopicOptions() {
+            const targetSubjectId = Number(this.sharedUnitInsertDraft?.targetSubjectId || 0)
+            if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return []
+
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            const subject = subjects.find((item) => Number(item?.id || 0) === targetSubjectId)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+
+            return topics
+                .map((topic) => ({
+                    id: Number(topic?.id || 0),
+                    name: String(topic?.name || '').trim() || 'Thema',
+                }))
+                .filter((topic) => topic.id > 0)
+        },
+        sharedMaterialInsertSubjectOptions() {
+            return (Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : [])
+                .map((subject) => ({
+                    id: Number(subject?.id || 0),
+                    name: String(subject?.name || '').trim() || 'Fach',
+                }))
+                .filter((subject) => subject.id > 0)
+        },
+        sharedMaterialInsertTopicOptions() {
+            const targetSubjectId = Number(this.sharedMaterialInsertDraft?.targetSubjectId || 0)
+            if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return []
+
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            const subject = subjects.find((item) => Number(item?.id || 0) === targetSubjectId)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+
+            return topics
+                .map((topic) => ({
+                    id: Number(topic?.id || 0),
+                    name: String(topic?.name || '').trim() || 'Thema',
+                }))
+                .filter((topic) => topic.id > 0)
+        },
+        sharedMaterialInsertUnitOptions() {
+            const targetTopicId = Number(this.sharedMaterialInsertDraft?.targetTopicId || 0)
+            if (!Number.isFinite(targetTopicId) || targetTopicId <= 0) return []
+
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            for (const subject of subjects) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                const topic = topics.find((item) => Number(item?.id || 0) === targetTopicId)
+                if (!topic) continue
+
+                const units = Array.isArray(topic?.units) ? topic.units : []
+                return units
+                    .map((unit) => ({
+                        id: Number(unit?.id || 0),
+                        name: String(unit?.name || '').trim() || 'Bereich',
+                    }))
+                    .filter((unit) => unit.id > 0)
+            }
+
+            return []
+        },
+        sharedMaterialInsertTargetId() {
+            if (Number(this.sharedMaterialInsertDraft?.targetUnitId || 0) > 0) {
+                return Number(this.sharedMaterialInsertDraft.targetUnitId)
+            }
+            if (Number(this.sharedMaterialInsertDraft?.targetTopicId || 0) > 0) {
+                return Number(this.sharedMaterialInsertDraft.targetTopicId)
+            }
+            const targetSubjectId = Number(this.sharedMaterialInsertDraft?.targetSubjectId || 0)
+            return targetSubjectId > 0 ? targetSubjectId : 0
         },
         typeOptions() {
             const items = this.materialCardStore?.config?.type_values
@@ -2106,6 +2441,62 @@ export default {
                 label: '',
             }
         },
+        closeSharedTopicInsertDialog(force = false) {
+            if (this.sharedTopicInsertDialogLoading && force !== true) return
+            this.sharedTopicInsertDialogOpen = false
+            this.sharedTopicInsertDraft = {
+                ruleId: null,
+                topicId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                nodeData: null,
+            }
+        },
+        closeSharedUnitInsertDialog(force = false) {
+            if (this.sharedUnitInsertDialogLoading && force !== true) return
+            this.sharedUnitInsertDialogOpen = false
+            this.sharedUnitInsertDraft = {
+                ruleId: null,
+                unitId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetTopicId: null,
+                nodeData: null,
+            }
+        },
+        closeSharedMaterialInsertDialog(force = false) {
+            if (this.sharedMaterialInsertDialogLoading && force !== true) return
+            this.sharedMaterialInsertDialogOpen = false
+            this.sharedMaterialInsertDraft = {
+                ruleId: null,
+                materialId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetTopicId: null,
+                targetUnitId: null,
+                sourceTopicId: null,
+                sourceUnitId: null,
+            }
+        },
+        selectSharedUnitInsertSubject(subjectId) {
+            const normalizedSubjectId = Number(subjectId || 0)
+            this.sharedUnitInsertDraft.targetSubjectId = normalizedSubjectId > 0 ? normalizedSubjectId : null
+            this.sharedUnitInsertDraft.targetTopicId = null
+        },
+        selectSharedMaterialInsertSubject(subjectId) {
+            const normalizedSubjectId = Number(subjectId || 0)
+            this.sharedMaterialInsertDraft.targetSubjectId = normalizedSubjectId > 0 ? normalizedSubjectId : null
+            this.sharedMaterialInsertDraft.targetTopicId = null
+            this.sharedMaterialInsertDraft.targetUnitId = null
+        },
+        selectSharedMaterialInsertTopic(topicId) {
+            const normalizedTopicId = Number(topicId || 0)
+            this.sharedMaterialInsertDraft.targetTopicId = normalizedTopicId > 0 ? normalizedTopicId : null
+            this.sharedMaterialInsertDraft.targetUnitId = null
+        },
         async confirmSharedSubjectInsert() {
             if (this.sharedSubjectInsertDialogLoading) return
 
@@ -2135,6 +2526,303 @@ export default {
                 this.sharedSubjectInsertDialogLoading = false
             }
         },
+        collectSharedTopicInsertMaterials(topicNode) {
+            if (!topicNode || typeof topicNode !== 'object') return []
+
+            const materials = []
+            const directMaterials = Array.isArray(topicNode?.materials) ? topicNode.materials : []
+            for (const material of directMaterials) {
+                const materialId = Number(material?.id || 0)
+                if (materialId > 0) {
+                    materials.push({
+                        id: materialId,
+                        sourceUnitId: 0,
+                        sourceUnitName: '',
+                    })
+                }
+            }
+
+            const units = Array.isArray(topicNode?.units) ? topicNode.units : []
+            for (const unit of units) {
+                const sourceUnitId = Number(unit?.id || 0)
+                const sourceUnitName = String(unit?.name || '').trim() || 'Einheit'
+                const unitMaterials = Array.isArray(unit?.materials) ? unit.materials : []
+                for (const material of unitMaterials) {
+                    const materialId = Number(material?.id || 0)
+                    if (materialId > 0) {
+                        materials.push({
+                            id: materialId,
+                            sourceUnitId,
+                            sourceUnitName,
+                        })
+                    }
+                }
+            }
+
+            return materials
+        },
+        collectSharedUnitInsertMaterials(unitNode) {
+            if (!unitNode || typeof unitNode !== 'object') return []
+
+            const sourceUnitId = Number(unitNode?.id || 0)
+            const sourceUnitName = String(unitNode?.name || '').trim() || 'Einheit'
+            const directMaterials = Array.isArray(unitNode?.materials) ? unitNode.materials : []
+
+            return directMaterials
+                .map((material) => ({
+                    id: Number(material?.id || 0),
+                    sourceUnitId,
+                    sourceUnitName,
+                }))
+                .filter((material) => material.id > 0)
+        },
+        findSharedTopicInsertExistingTopic(subjectId, topicName) {
+            const normalizedSubjectId = Number(subjectId || 0)
+            const normalizedTopicName = String(topicName || '').trim().toLocaleLowerCase()
+            if (!Number.isFinite(normalizedSubjectId) || normalizedSubjectId <= 0 || normalizedTopicName === '') {
+                return 0
+            }
+
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            const subject = subjects.find((item) => Number(item?.id || 0) === normalizedSubjectId)
+            const topics = Array.isArray(subject?.topics) ? subject.topics : []
+            const existingTopic = topics.find((topic) => String(topic?.name || '').trim().toLocaleLowerCase() === normalizedTopicName)
+
+            return Number(existingTopic?.id || 0)
+        },
+        async ensureSharedTopicInsertTargetTopic(subjectId, topicName) {
+            const existingTopicId = this.findSharedTopicInsertExistingTopic(subjectId, topicName)
+            if (existingTopicId > 0) {
+                return existingTopicId
+            }
+
+            const response = await axios.post('/api/admin/materials/topics', {
+                data: {
+                    subject_id: Number(subjectId || 0),
+                    name: String(topicName || '').trim(),
+                },
+            })
+
+            return Number(response?.data?.data?.id || 0)
+        },
+        async ensureSharedTopicInsertTargetUnit(topicId, unitName) {
+            const response = await axios.post('/api/admin/materials/units', {
+                data: {
+                    topic_id: Number(topicId || 0),
+                    name: String(unitName || '').trim(),
+                },
+            })
+
+            return Number(response?.data?.data?.id || 0)
+        },
+        findSharedUnitInsertExistingUnit(topicId, unitName) {
+            const normalizedTopicId = Number(topicId || 0)
+            const normalizedUnitName = String(unitName || '').trim().toLocaleLowerCase()
+            if (!Number.isFinite(normalizedTopicId) || normalizedTopicId <= 0 || normalizedUnitName === '') {
+                return 0
+            }
+
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            for (const subject of subjects) {
+                const topics = Array.isArray(subject?.topics) ? subject.topics : []
+                for (const topic of topics) {
+                    if (Number(topic?.id || 0) !== normalizedTopicId) continue
+
+                    const units = Array.isArray(topic?.units) ? topic.units : []
+                    const existingUnit = units.find((unit) => String(unit?.name || '').trim().toLocaleLowerCase() === normalizedUnitName)
+                    return Number(existingUnit?.id || 0)
+                }
+            }
+
+            return 0
+        },
+        async ensureSharedUnitInsertTargetUnit(topicId, unitName) {
+            const existingUnitId = this.findSharedUnitInsertExistingUnit(topicId, unitName)
+            if (existingUnitId > 0) {
+                return existingUnitId
+            }
+
+            return this.ensureSharedTopicInsertTargetUnit(topicId, unitName)
+        },
+        async confirmSharedTopicInsert() {
+            if (this.sharedTopicInsertDialogLoading) return
+
+            const ruleId = Number(this.sharedTopicInsertDraft?.ruleId || 0)
+            const sourceTopicId = Number(this.sharedTopicInsertDraft?.topicId || 0)
+            const targetSubjectId = Number(this.sharedTopicInsertDraft?.targetSubjectId || 0)
+            const topicLabel = String(this.sharedTopicInsertDraft?.label || '').trim() || 'Thema'
+            const topicNode = this.sharedTopicInsertDraft?.nodeData || null
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(sourceTopicId) || sourceTopicId <= 0) return
+            if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return
+
+            const materials = this.collectSharedTopicInsertMaterials(topicNode)
+            if (materials.length === 0) return
+
+            this.sharedTopicInsertDialogLoading = true
+            try {
+                const targetTopicId = await this.ensureSharedTopicInsertTargetTopic(targetSubjectId, topicLabel)
+                if (!Number.isFinite(targetTopicId) || targetTopicId <= 0) {
+                    throw new Error('target_topic_not_created')
+                }
+
+                const targetUnitIdsByName = new Map()
+                for (const material of materials) {
+                    let targetLevel = 'topic'
+                    let targetId = targetTopicId
+                    const sourceUnitId = Number(material?.sourceUnitId || 0)
+
+                    if (sourceUnitId > 0) {
+                        const cacheKey = String(material?.sourceUnitName || '').trim().toLocaleLowerCase()
+                        if (!targetUnitIdsByName.has(cacheKey)) {
+                            const targetUnitId = await this.ensureSharedTopicInsertTargetUnit(targetTopicId, material?.sourceUnitName || 'Einheit')
+                            if (!Number.isFinite(targetUnitId) || targetUnitId <= 0) {
+                                throw new Error('target_unit_not_created')
+                            }
+                            targetUnitIdsByName.set(cacheKey, targetUnitId)
+                        }
+                        targetLevel = 'unit'
+                        targetId = Number(targetUnitIdsByName.get(cacheKey) || 0)
+                    }
+
+                    const result = await this.performSharedInboxMutation({
+                        method: 'post',
+                        url: '/api/admin/materials/shares/inbox/material-insert',
+                        data: {
+                            rule_id: ruleId,
+                            material_id: Number(material?.id || 0),
+                            target_level: targetLevel,
+                            target_id: targetId,
+                            ...(sourceTopicId > 0 ? { source_topic_id: sourceTopicId } : {}),
+                            ...(sourceUnitId > 0 ? { source_unit_id: sourceUnitId } : {}),
+                        },
+                        errorMessage: 'Thema konnte nicht eingeordnet werden.',
+                    })
+
+                    if (result === null) {
+                        return
+                    }
+                }
+
+                useNotificationStore().notify({
+                    message: `Thema "${topicLabel}" eingeordnet.`,
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                this.closeSharedTopicInsertDialog(true)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.loadSharedObjectsForMe()
+            } finally {
+                this.sharedTopicInsertDialogLoading = false
+            }
+        },
+        async confirmSharedUnitInsert() {
+            if (this.sharedUnitInsertDialogLoading) return
+
+            const ruleId = Number(this.sharedUnitInsertDraft?.ruleId || 0)
+            const sourceUnitId = Number(this.sharedUnitInsertDraft?.unitId || 0)
+            const targetTopicId = Number(this.sharedUnitInsertDraft?.targetTopicId || 0)
+            const unitLabel = String(this.sharedUnitInsertDraft?.label || '').trim() || 'Bereich'
+            const unitNode = this.sharedUnitInsertDraft?.nodeData || null
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(sourceUnitId) || sourceUnitId <= 0) return
+            if (!Number.isFinite(targetTopicId) || targetTopicId <= 0) return
+
+            const materials = this.collectSharedUnitInsertMaterials(unitNode)
+            if (materials.length === 0) return
+
+            this.sharedUnitInsertDialogLoading = true
+            try {
+                const targetUnitId = await this.ensureSharedUnitInsertTargetUnit(targetTopicId, unitLabel)
+                if (!Number.isFinite(targetUnitId) || targetUnitId <= 0) {
+                    throw new Error('target_unit_not_created')
+                }
+
+                for (const material of materials) {
+                    const result = await this.performSharedInboxMutation({
+                        method: 'post',
+                        url: '/api/admin/materials/shares/inbox/material-insert',
+                        data: {
+                            rule_id: ruleId,
+                            material_id: Number(material?.id || 0),
+                            target_level: 'unit',
+                            target_id: targetUnitId,
+                            source_unit_id: sourceUnitId,
+                        },
+                        errorMessage: 'Bereich konnte nicht eingeordnet werden.',
+                    })
+
+                    if (result === null) {
+                        return
+                    }
+                }
+
+                useNotificationStore().notify({
+                    message: `Bereich "${unitLabel}" eingeordnet.`,
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                this.closeSharedUnitInsertDialog(true)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.loadSharedObjectsForMe()
+            } finally {
+                this.sharedUnitInsertDialogLoading = false
+            }
+        },
+        async confirmSharedMaterialInsert() {
+            if (this.sharedMaterialInsertDialogLoading) return
+
+            const ruleId = Number(this.sharedMaterialInsertDraft?.ruleId || 0)
+            const materialId = Number(this.sharedMaterialInsertDraft?.materialId || 0)
+            const targetLevel = Number(this.sharedMaterialInsertDraft?.targetUnitId || 0) > 0
+                ? 'unit'
+                : Number(this.sharedMaterialInsertDraft?.targetTopicId || 0) > 0
+                    ? 'topic'
+                    : 'subject'
+            const targetId = Number(this.sharedMaterialInsertTargetId || 0)
+            const label = String(this.sharedMaterialInsertDraft?.label || '').trim() || 'Material'
+            const sourceTopicId = Number(this.sharedMaterialInsertDraft?.sourceTopicId || 0)
+            const sourceUnitId = Number(this.sharedMaterialInsertDraft?.sourceUnitId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(materialId) || materialId <= 0) return
+            if (!['subject', 'topic', 'unit'].includes(targetLevel)) return
+            if (!Number.isFinite(targetId) || targetId <= 0) return
+
+            this.sharedMaterialInsertDialogLoading = true
+            try {
+                const result = await this.performSharedInboxMutation({
+                    method: 'post',
+                    url: '/api/admin/materials/shares/inbox/material-insert',
+                    data: {
+                        rule_id: ruleId,
+                        material_id: materialId,
+                        target_level: targetLevel,
+                        target_id: targetId,
+                        ...(sourceTopicId > 0 ? { source_topic_id: sourceTopicId } : {}),
+                        ...(sourceUnitId > 0 ? { source_unit_id: sourceUnitId } : {}),
+                    },
+                    errorMessage: 'Material konnte nicht eingeordnet werden.',
+                })
+
+                if (result === null) {
+                    return
+                }
+
+                useNotificationStore().notify({
+                    message: `Material "${label}" eingeordnet.`,
+                    type: 'success',
+                    timeout: 2000,
+                })
+
+                this.closeSharedMaterialInsertDialog(true)
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.loadSharedObjectsForMe()
+            } finally {
+                this.sharedMaterialInsertDialogLoading = false
+            }
+        },
         openSharedInsertDraft(payload = {}) {
             const level = String(payload?.level || '').trim().toLowerCase()
             if (!this.canShowSharedInsertButton(level)) return
@@ -2151,6 +2839,64 @@ export default {
                     label: String(payload?.label || '').trim() || 'Fach',
                 }
                 this.sharedSubjectInsertDialogOpen = true
+                return
+            }
+
+            if (level === 'topic') {
+                const ruleId = Number(payload?.ruleId || 0)
+                const topicId = Number(payload?.targetId || 0)
+                if (!Number.isFinite(ruleId) || ruleId <= 0) return
+                if (!Number.isFinite(topicId) || topicId <= 0) return
+
+                this.sharedTopicInsertDraft = {
+                    ruleId,
+                    topicId,
+                    label: String(payload?.label || '').trim() || 'Thema',
+                    parentLabel: String(payload?.parentLabel || '').trim(),
+                    targetSubjectId: null,
+                    nodeData: payload?.nodeData || null,
+                }
+                this.sharedTopicInsertDialogOpen = true
+                return
+            }
+
+            if (level === 'unit') {
+                const ruleId = Number(payload?.ruleId || 0)
+                const unitId = Number(payload?.targetId || 0)
+                if (!Number.isFinite(ruleId) || ruleId <= 0) return
+                if (!Number.isFinite(unitId) || unitId <= 0) return
+
+                this.sharedUnitInsertDraft = {
+                    ruleId,
+                    unitId,
+                    label: String(payload?.label || '').trim() || 'Bereich',
+                    parentLabel: String(payload?.parentLabel || '').trim(),
+                    targetSubjectId: null,
+                    targetTopicId: null,
+                    nodeData: payload?.nodeData || null,
+                }
+                this.sharedUnitInsertDialogOpen = true
+                return
+            }
+
+            if (level === 'material') {
+                const ruleId = Number(payload?.ruleId || 0)
+                const materialId = Number(payload?.targetId || 0)
+                if (!Number.isFinite(ruleId) || ruleId <= 0) return
+                if (!Number.isFinite(materialId) || materialId <= 0) return
+
+                this.sharedMaterialInsertDraft = {
+                    ruleId,
+                    materialId,
+                    label: String(payload?.label || '').trim() || 'Material',
+                    parentLabel: String(payload?.parentLabel || '').trim(),
+                    targetSubjectId: null,
+                    targetTopicId: null,
+                    targetUnitId: null,
+                    sourceTopicId: Number.isFinite(Number(payload?.sourceTopicId)) ? Number(payload.sourceTopicId) : null,
+                    sourceUnitId: Number.isFinite(Number(payload?.sourceUnitId)) ? Number(payload.sourceUnitId) : null,
+                }
+                this.sharedMaterialInsertDialogOpen = true
                 return
             }
 
@@ -3590,6 +4336,7 @@ export default {
                         if (subjectFilter !== '' && subjectName !== subjectFilter) {
                             return null
                         }
+                        const subjectMatchedByName = subjectFilter !== '' && subjectName === subjectFilter
 
                         const nextTopics = (Array.isArray(subject?.topics) ? subject.topics : [])
                             .map((topic) => {
@@ -3597,17 +4344,19 @@ export default {
                                 if (topicFilter !== '' && topicName !== topicFilter) {
                                     return null
                                 }
+                                const topicMatchedByName = topicFilter !== '' && topicName === topicFilter
 
                                 const nextUnits = (Array.isArray(topic?.units) ? topic.units : []).filter((unit) => {
                                     const unitName = this.normalizeFilterText(unit?.name).toLocaleLowerCase()
                                     if (unitFilter !== '' && unitName !== unitFilter) {
                                         return false
                                     }
-                                    return Array.isArray(unit?.materials) && unit.materials.length > 0
+                                    const unitMatchedByName = unitFilter !== '' && unitName === unitFilter
+                                    return unitMatchedByName || topicMatchedByName || subjectMatchedByName || (Array.isArray(unit?.materials) && unit.materials.length > 0)
                                 })
 
                                 const topicHasMaterials = Array.isArray(topic?.materials) && topic.materials.length > 0
-                                if (!topicHasMaterials && nextUnits.length === 0) {
+                                if (!subjectMatchedByName && !topicMatchedByName && !topicHasMaterials && nextUnits.length === 0) {
                                     return null
                                 }
 
@@ -3619,7 +4368,7 @@ export default {
                             .filter(Boolean)
 
                         const subjectHasMaterials = Array.isArray(subject?.materials) && subject.materials.length > 0
-                        if (!subjectHasMaterials && nextTopics.length === 0) {
+                        if (!subjectMatchedByName && !subjectHasMaterials && nextTopics.length === 0) {
                             return null
                         }
 

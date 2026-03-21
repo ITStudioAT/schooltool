@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
+import axios from 'axios'
 import MaterialsOverviewView from '@/pages/admin/materials/components/views/MaterialsOverviewView.vue'
+
+const notificationNotifyMock = vi.fn()
+
+vi.mock('@/stores/spa/NotificationStore', () => ({
+    useNotificationStore: () => ({
+        notify: notificationNotifyMock,
+    }),
+}))
 
 describe('MaterialsOverviewView', () => {
     it('keeps linked topic metadata from classification tree in subjects overview', () => {
@@ -407,6 +416,127 @@ describe('MaterialsOverviewView', () => {
         })
     })
 
+    it('opens a persistent topic insert dialog when shared topic Einordnen is clicked', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            subjectsContentsOverviewItems: [{ id: 7, name: 'Deutsch', topics: [] }],
+            sharedTopicInsertDialogOpen: false,
+            sharedTopicInsertDraft: {
+                ruleId: null,
+                topicId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                nodeData: null,
+            },
+        }
+
+        methods.openSharedInsertDraft.call(vm, {
+            level: 'topic',
+            ruleId: 31,
+            targetId: 18,
+            label: 'Digitale Kompetenzen',
+            parentLabel: 'Medienbildung',
+            nodeData: { id: 18, name: 'Digitale Kompetenzen', materials: [], units: [] },
+        })
+
+        expect(vm.sharedTopicInsertDialogOpen).toBe(true)
+        expect(vm.sharedTopicInsertDraft).toEqual({
+            ruleId: 31,
+            topicId: 18,
+            label: 'Digitale Kompetenzen',
+            parentLabel: 'Medienbildung',
+            targetSubjectId: null,
+            nodeData: { id: 18, name: 'Digitale Kompetenzen', materials: [], units: [] },
+        })
+    })
+
+    it('opens a persistent unit insert dialog when shared unit Einordnen is clicked', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            subjectsContentsOverviewItems: [
+                { id: 7, name: 'Deutsch', topics: [{ id: 3, name: 'Grammatik' }] },
+            ],
+            sharedUnitInsertDialogOpen: false,
+            sharedUnitInsertDraft: {
+                ruleId: null,
+                unitId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetTopicId: null,
+                nodeData: null,
+            },
+        }
+
+        methods.openSharedInsertDraft.call(vm, {
+            level: 'unit',
+            ruleId: 32,
+            targetId: 19,
+            label: 'E-Mails',
+            parentLabel: 'Digitale Kompetenzen',
+            nodeData: { id: 19, name: 'E-Mails', materials: [] },
+        })
+
+        expect(vm.sharedUnitInsertDialogOpen).toBe(true)
+        expect(vm.sharedUnitInsertDraft).toEqual({
+            ruleId: 32,
+            unitId: 19,
+            label: 'E-Mails',
+            parentLabel: 'Digitale Kompetenzen',
+            targetSubjectId: null,
+            targetTopicId: null,
+            nodeData: { id: 19, name: 'E-Mails', materials: [] },
+        })
+    })
+
+    it('opens a persistent material insert dialog when shared material Einordnen is clicked', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            subjectsContentsOverviewItems: [
+                { id: 2, name: 'Informatik', topics: [] },
+            ],
+            sharedMaterialInsertDialogOpen: false,
+            sharedMaterialInsertDraft: {
+                ruleId: null,
+                materialId: null,
+                label: '',
+                parentLabel: '',
+                targetSubjectId: null,
+                targetTopicId: null,
+                targetUnitId: null,
+                sourceTopicId: null,
+                sourceUnitId: null,
+            },
+        }
+
+        methods.openSharedInsertDraft.call(vm, {
+            level: 'material',
+            ruleId: 33,
+            targetId: 91,
+            label: 'Arbeitsblatt',
+            parentLabel: 'Informatik / Digitale Kompetenzen / E-Mails',
+            sourceTopicId: 21,
+            sourceUnitId: 31,
+        })
+
+        expect(vm.sharedMaterialInsertDialogOpen).toBe(true)
+        expect(vm.sharedMaterialInsertDraft).toEqual({
+            ruleId: 33,
+            materialId: 91,
+            label: 'Arbeitsblatt',
+            parentLabel: 'Informatik / Digitale Kompetenzen / E-Mails',
+            targetSubjectId: null,
+            targetTopicId: null,
+            targetUnitId: null,
+            sourceTopicId: 21,
+            sourceUnitId: 31,
+        })
+    })
+
     it('confirms shared subject Einordnen and refreshes shared/workspace trees', async () => {
         const methods = MaterialsOverviewView?.methods || {}
         const performSharedInboxMutation = vi.fn().mockResolvedValue({ subject_id: 99 })
@@ -445,6 +575,292 @@ describe('MaterialsOverviewView', () => {
             subjectId: null,
             label: '',
         })
+    })
+
+    it('confirms shared topic Einordnen into selected workspace subject and refreshes trees', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn()
+            .mockResolvedValueOnce({ id: 501 })
+            .mockResolvedValueOnce({ id: 502 })
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const ensureSharedTopicInsertTargetTopic = vi.fn().mockResolvedValue(120)
+        const ensureSharedTopicInsertTargetUnit = vi.fn().mockResolvedValue(220)
+        const collectSharedTopicInsertMaterials = vi.fn().mockReturnValue([
+            { id: 901, sourceUnitId: 0, sourceUnitName: '' },
+            { id: 902, sourceUnitId: 44, sourceUnitName: 'Kapitel A' },
+        ])
+        const closeSharedTopicInsertDialog = vi.fn()
+        const vm = {
+            ...methods,
+            performSharedInboxMutation,
+            loadCards,
+            loadSharedObjectsForMe,
+            ensureSharedTopicInsertTargetTopic,
+            ensureSharedTopicInsertTargetUnit,
+            collectSharedTopicInsertMaterials,
+            closeSharedTopicInsertDialog,
+            sharedTopicInsertDialogLoading: false,
+            sharedTopicInsertDraft: {
+                ruleId: 55,
+                topicId: 12,
+                label: 'Digitale Kompetenzen',
+                parentLabel: 'Medienbildung',
+                targetSubjectId: 9,
+                nodeData: { id: 12, name: 'Digitale Kompetenzen' },
+            },
+        }
+
+        await methods.confirmSharedTopicInsert.call(vm)
+
+        expect(ensureSharedTopicInsertTargetTopic).toHaveBeenCalledWith(9, 'Digitale Kompetenzen')
+        expect(ensureSharedTopicInsertTargetUnit).toHaveBeenCalledWith(120, 'Kapitel A')
+        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/material-insert',
+            data: {
+                rule_id: 55,
+                material_id: 901,
+                target_level: 'topic',
+                target_id: 120,
+                source_topic_id: 12,
+            },
+        }))
+        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/material-insert',
+            data: {
+                rule_id: 55,
+                material_id: 902,
+                target_level: 'unit',
+                target_id: 220,
+                source_topic_id: 12,
+                source_unit_id: 44,
+            },
+        }))
+        expect(closeSharedTopicInsertDialog).toHaveBeenCalledWith(true)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+    })
+
+    it('reuses an existing target topic with the same name when shared topic Einordnen is confirmed', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const axiosPost = vi.spyOn(axios, 'post')
+        axiosPost.mockImplementation(() => {
+            throw new Error('axios.post should not be called')
+        })
+
+        const vm = {
+            ...methods,
+            subjectsContentsOverviewItems: [
+                {
+                    id: 9,
+                    name: 'Informatik',
+                    topics: [
+                        { id: 120, name: 'Digitale Kompetenzen' },
+                    ],
+                },
+            ],
+        }
+
+        const result = await methods.ensureSharedTopicInsertTargetTopic.call(vm, 9, 'Digitale Kompetenzen')
+
+        expect(result).toBe(120)
+        expect(axiosPost).not.toHaveBeenCalled()
+        axiosPost.mockRestore()
+    })
+
+    it('offers shared unit insert subjects only when they already contain topics', () => {
+        const computed = MaterialsOverviewView?.computed || {}
+        const vm = {
+            subjectsContentsOverviewItems: [
+                { id: 1, name: 'Mathematik', topics: [] },
+                { id: 2, name: 'Informatik', topics: [{ id: 21, name: 'Digitale Kompetenzen' }] },
+            ],
+            sharedUnitInsertDraft: {
+                targetSubjectId: 2,
+            },
+        }
+
+        expect(computed.sharedUnitInsertSubjectOptions.call(vm)).toEqual([
+            { id: 2, name: 'Informatik' },
+        ])
+        expect(computed.sharedUnitInsertTopicOptions.call(vm)).toEqual([
+            { id: 21, name: 'Digitale Kompetenzen' },
+        ])
+    })
+
+    it('offers shared material targets only below workspace root', () => {
+        const computed = MaterialsOverviewView?.computed || {}
+        const vm = {
+            subjectsContentsOverviewItems: [
+                {
+                    id: 2,
+                    name: 'Informatik',
+                    topics: [
+                        {
+                            id: 21,
+                            name: 'Digitale Kompetenzen',
+                            units: [
+                                { id: 31, name: 'E-Mails' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            sharedMaterialInsertDraft: {
+                targetSubjectId: 2,
+                targetTopicId: 21,
+            },
+        }
+
+        expect(computed.sharedMaterialInsertSubjectOptions.call(vm)).toEqual([
+            { id: 2, name: 'Informatik' },
+        ])
+        expect(computed.sharedMaterialInsertTopicOptions.call(vm)).toEqual([
+            { id: 21, name: 'Digitale Kompetenzen' },
+        ])
+        expect(computed.sharedMaterialInsertUnitOptions.call(vm)).toEqual([
+            { id: 31, name: 'E-Mails' },
+        ])
+    })
+
+    it('confirms shared unit Einordnen into selected workspace topic and refreshes trees', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn()
+            .mockResolvedValueOnce({ id: 601 })
+            .mockResolvedValueOnce({ id: 602 })
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const ensureSharedUnitInsertTargetUnit = vi.fn().mockResolvedValue(320)
+        const collectSharedUnitInsertMaterials = vi.fn().mockReturnValue([
+            { id: 903, sourceUnitId: 44, sourceUnitName: 'E-Mails' },
+            { id: 904, sourceUnitId: 44, sourceUnitName: 'E-Mails' },
+        ])
+        const closeSharedUnitInsertDialog = vi.fn()
+        const vm = {
+            ...methods,
+            performSharedInboxMutation,
+            loadCards,
+            loadSharedObjectsForMe,
+            ensureSharedUnitInsertTargetUnit,
+            collectSharedUnitInsertMaterials,
+            closeSharedUnitInsertDialog,
+            sharedUnitInsertDialogLoading: false,
+            sharedUnitInsertDraft: {
+                ruleId: 56,
+                unitId: 44,
+                label: 'E-Mails',
+                parentLabel: 'Digitale Kompetenzen',
+                targetSubjectId: 9,
+                targetTopicId: 120,
+                nodeData: { id: 44, name: 'E-Mails' },
+            },
+        }
+
+        await methods.confirmSharedUnitInsert.call(vm)
+
+        expect(ensureSharedUnitInsertTargetUnit).toHaveBeenCalledWith(120, 'E-Mails')
+        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/material-insert',
+            data: {
+                rule_id: 56,
+                material_id: 903,
+                target_level: 'unit',
+                target_id: 320,
+                source_unit_id: 44,
+            },
+        }))
+        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/material-insert',
+            data: {
+                rule_id: 56,
+                material_id: 904,
+                target_level: 'unit',
+                target_id: 320,
+                source_unit_id: 44,
+            },
+        }))
+        expect(closeSharedUnitInsertDialog).toHaveBeenCalledWith(true)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+    })
+
+    it('reuses an existing target unit with the same name when shared unit Einordnen is confirmed', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const ensureSharedTopicInsertTargetUnit = vi.fn()
+        const vm = {
+            ...methods,
+            ensureSharedTopicInsertTargetUnit,
+            subjectsContentsOverviewItems: [
+                {
+                    id: 2,
+                    name: 'Informatik',
+                    topics: [
+                        {
+                            id: 21,
+                            name: 'Digitale Kompetenzen',
+                            units: [
+                                { id: 88, name: 'E-Mails' },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        }
+
+        const result = await methods.ensureSharedUnitInsertTargetUnit.call(vm, 21, 'E-Mails')
+
+        expect(result).toBe(88)
+        expect(ensureSharedTopicInsertTargetUnit).not.toHaveBeenCalled()
+    })
+
+    it('confirms shared material Einordnen into selected workspace target and refreshes trees', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn().mockResolvedValue({ id: 700 })
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const closeSharedMaterialInsertDialog = vi.fn()
+        const vm = {
+            ...methods,
+            performSharedInboxMutation,
+            loadCards,
+            loadSharedObjectsForMe,
+            closeSharedMaterialInsertDialog,
+            sharedMaterialInsertDialogLoading: false,
+            sharedMaterialInsertTargetId: 31,
+            sharedMaterialInsertDraft: {
+                ruleId: 57,
+                materialId: 905,
+                label: 'Arbeitsblatt',
+                parentLabel: 'Informatik / Digitale Kompetenzen / E-Mails',
+                targetSubjectId: 2,
+                targetTopicId: 21,
+                targetUnitId: 31,
+                sourceTopicId: 21,
+                sourceUnitId: 44,
+            },
+        }
+
+        await methods.confirmSharedMaterialInsert.call(vm)
+
+        expect(performSharedInboxMutation).toHaveBeenCalledWith(expect.objectContaining({
+            method: 'post',
+            url: '/api/admin/materials/shares/inbox/material-insert',
+            data: {
+                rule_id: 57,
+                material_id: 905,
+                target_level: 'unit',
+                target_id: 31,
+                source_topic_id: 21,
+                source_unit_id: 44,
+            },
+        }))
+        expect(closeSharedMaterialInsertDialog).toHaveBeenCalledWith(true)
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
     })
 
     it('normalizes and sorts shared objects from inbox users response', () => {

@@ -99,6 +99,7 @@ function renderTree(
         archivedSharedObjectsForMe?: any[]
         sharedObjectsForMeLoading?: boolean
         sharedObjectsForMeError?: string
+        initiallyCollapseHierarchy?: boolean
     } = {}
 ) {
     const Host = defineComponent({
@@ -150,6 +151,7 @@ function renderTree(
                 :shared-for-me-archive-expanded="sharedForMeArchiveExpanded"
                 :workspace-structure-expanded="workspaceStructureExpanded"
                 :expanded-shared-items="expandedSharedItems"
+                :initially-collapse-hierarchy="initiallyCollapseHierarchy"
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
                 @toggle-shared-for-me-archive-expanded="toggleSharedForMeArchiveExpanded"
                 @toggle-workspace-structure-expanded="toggleWorkspaceStructureExpanded"
@@ -182,6 +184,7 @@ function renderTree(
             archivedSharedObjectsForMe: { type: Array, default: () => [] },
             sharedObjectsForMeLoading: { type: Boolean, default: false },
             sharedObjectsForMeError: { type: String, default: '' },
+            initiallyCollapseHierarchy: { type: Boolean, default: false },
         },
     })
 
@@ -195,11 +198,20 @@ function renderTree(
             archivedSharedObjectsForMe: Array.isArray(options.archivedSharedObjectsForMe) ? options.archivedSharedObjectsForMe : [],
             sharedObjectsForMeLoading: options.sharedObjectsForMeLoading === true,
             sharedObjectsForMeError: String(options.sharedObjectsForMeError || ''),
+            initiallyCollapseHierarchy: options.initiallyCollapseHierarchy === true,
         },
         global: {
             stubs: vuetifyStubs,
         }
     })
+}
+
+async function openWorkspace(): Promise<void> {
+    const workspaceToggle = screen.getByRole('button', { name: /workspace/i })
+
+    if (workspaceToggle.getAttribute('aria-expanded') !== 'true') {
+        await fireEvent.click(workspaceToggle)
+    }
 }
 
 describe('MaterialsSubjectsContentsTree', () => {
@@ -243,6 +255,432 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
     })
 
+    it('collapses and expands a workspace subject', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [
+                    {
+                        id: 91,
+                        title: 'Arbeitsblatt A',
+                        attachmentsCount: 0,
+                        status: 'inbox',
+                    },
+                ],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ])
+
+        await openWorkspace()
+
+        const toggle = screen.getByRole('button', { name: 'Fach Mathematik ein- oder ausklappen' })
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Arbeitsblatt A')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Algebra')).not.toBeInTheDocument()
+        expect(screen.queryByText('Arbeitsblatt A')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Arbeitsblatt A')).toBeInTheDocument()
+    })
+
+    it('keeps nested workspace hierarchy expanded by default when the component uses its real defaults', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [
+                    {
+                        id: 91,
+                        title: 'Arbeitsblatt A',
+                        attachmentsCount: 0,
+                        status: 'inbox',
+                    },
+                ],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ])
+
+        await openWorkspace()
+
+        expect(screen.getByRole('button', { name: 'Fach Mathematik ein- oder ausklappen' })).toBeInTheDocument()
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Arbeitsblatt A')).toBeInTheDocument()
+    })
+
+    it('collapses and expands a workspace topic', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [
+                            {
+                                id: 91,
+                                title: 'Thema Material',
+                                attachmentsCount: 0,
+                                status: 'inbox',
+                            },
+                        ],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ])
+
+        await openWorkspace()
+
+        const toggle = screen.getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })
+
+        expect(screen.getByText('Thema Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Thema Material')).not.toBeInTheDocument()
+        expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Thema Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+    })
+
+    it('shows collapse toggles only for subjects topics and units with child elements', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                            {
+                                id: 22,
+                                name: 'Leere Unit',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+            {
+                id: 2,
+                name: 'Biologie',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 781,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Geteiltes Fach',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                        {
+                                            id: 31,
+                                            name: 'Leere Shared Unit',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            id: 11,
+                            name: 'Leeres Fach',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 916,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Archiviertes Fach',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Archiv',
+                    hierarchy: [
+                        {
+                            id: 30,
+                            name: 'Chemie',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 40,
+                                    name: 'Atome',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 50,
+                                            name: 'Moleküle',
+                                            materials: [],
+                                        },
+                                        {
+                                            id: 51,
+                                            name: 'Leere Archivunit',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            id: 31,
+                            name: 'Leeres Archivfach',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await openWorkspace()
+
+        expect(screen.getByRole('button', { name: 'Fach Mathematik ein- oder ausklappen' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Fach Biologie ein- oder ausklappen' })).toBeNull()
+        expect(screen.getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Bereich Lineare Gleichungen ein- oder ausklappen' })).toBeNull()
+        expect(screen.queryByRole('button', { name: 'Bereich Leere Unit ein- oder ausklappen' })).toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const sharedItem = screen.getByText('Geteiltes Fach').closest('.overview-shared-item') as HTMLElement
+        expect(screen.getByRole('button', { name: 'Fach Informatik ein- oder ausklappen' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Fach Leeres Fach ein- oder ausklappen' })).toBeNull()
+        expect(within(sharedItem).getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })).toBeInTheDocument()
+        expect(within(sharedItem).queryByRole('button', { name: 'Bereich Leere Shared Unit ein- oder ausklappen' })).toBeNull()
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const archivedItem = screen.getByText('Archiviertes Fach').closest('.overview-shared-item') as HTMLElement
+        expect(screen.getByRole('button', { name: 'Fach Chemie ein- oder ausklappen' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Fach Leeres Archivfach ein- oder ausklappen' })).toBeNull()
+        expect(within(archivedItem).getByRole('button', { name: 'Thema Atome ein- oder ausklappen' })).toBeInTheDocument()
+        expect(within(archivedItem).queryByRole('button', { name: 'Bereich Leere Archivunit ein- oder ausklappen' })).toBeNull()
+    })
+
+    it('collapses and expands a workspace unit', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [
+                                    {
+                                        id: 91,
+                                        title: 'Unit Material',
+                                        attachmentsCount: 0,
+                                        status: 'inbox',
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ])
+
+        await openWorkspace()
+
+        const toggle = screen.getByRole('button', { name: 'Bereich Lineare Gleichungen ein- oder ausklappen' })
+
+        expect(screen.getByText('Unit Material')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Unit Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Unit Material')).toBeInTheDocument()
+    })
+
+    it('collapses and expands a shared unit hierarchy', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 773,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Geteilte Unit',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [
+                                                {
+                                                    id: 101,
+                                                    title: 'Geteiltes Unit-Material',
+                                                    attachmentsCount: 0,
+                                                    status: 'inbox',
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Bereich Lineare Gleichungen ein- oder ausklappen' })
+
+        expect(screen.getByText('Geteiltes Unit-Material')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Geteiltes Unit-Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Geteiltes Unit-Material')).toBeInTheDocument()
+    })
+
+    it('collapses and expands an archived shared unit hierarchy', async () => {
+        renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 917,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Archivierte Unit',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Archiv',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [
+                                                {
+                                                    id: 101,
+                                                    title: 'Archiviertes Unit-Material',
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Bereich Lineare Gleichungen ein- oder ausklappen' })
+
+        expect(screen.getByText('Archiviertes Unit-Material')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Archiviertes Unit-Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Archiviertes Unit-Material')).toBeInTheDocument()
+    })
+
     it('shows workspace Struktur ändern mode with node actions and emits workspace move refresh event', async () => {
         axiosMock.post.mockResolvedValue({ data: {} })
 
@@ -276,6 +714,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             enableCreateButtons: true,
         })
 
+        await openWorkspace()
+
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
         expect(screen.queryByTitle('Fach nach oben')).not.toBeInTheDocument()
         expect(screen.getByText('Struktur ändern')).toBeInTheDocument()
@@ -287,6 +727,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getAllByTitle('Thema hinzufügen').length).toBeGreaterThan(0)
         expect(screen.queryByTitle(/Neues Material in/i)).not.toBeInTheDocument()
         const mathematikRow = screen.getByText('Mathematik').closest('.overview-subjects-node-row') as HTMLElement
+        expect(within(mathematikRow).queryByTitle('Teilen')).toBeNull()
         expect(within(mathematikRow).getByTitle('Fach nach oben')).toBeDisabled()
         expect(within(mathematikRow).getByTitle('Fach nach unten')).not.toBeDisabled()
 
@@ -311,6 +752,8 @@ describe('MaterialsSubjectsContentsTree', () => {
         renderTree([], {
             enableCreateButtons: true,
         })
+
+        await openWorkspace()
 
         expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
         expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
@@ -356,6 +799,122 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(sharedItem).not.toBeNull()
         expect((sharedItem as HTMLElement).style.flex).toContain('24rem')
         expect((sharedItem as HTMLElement).style.maxWidth).toBe('28rem')
+    })
+
+    it('collapses and expands a shared subject hierarchy', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 771,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Geteiltes Fach',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Geteiltes Material',
+                                    attachmentsCount: 0,
+                                    status: 'inbox',
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Fach Informatik ein- oder ausklappen' })
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Geteiltes Material')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Algebra')).not.toBeInTheDocument()
+        expect(screen.queryByText('Geteiltes Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Geteiltes Material')).toBeInTheDocument()
+    })
+
+    it('collapses and expands a shared topic hierarchy', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 772,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Geteiltes Thema',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [
+                                        {
+                                            id: 101,
+                                            title: 'Geteiltes Topic-Material',
+                                            attachmentsCount: 0,
+                                            status: 'inbox',
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })
+
+        expect(screen.getByText('Geteiltes Topic-Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Geteiltes Topic-Material')).not.toBeInTheDocument()
+        expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Geteiltes Topic-Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
     })
 
     it('shows archived shared objects when Für mich geteilt - Archiv is expanded', async () => {
@@ -445,6 +1004,118 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
         expect(screen.getByRole('button', { name: 'Aktivieren' })).toBeInTheDocument()
+    })
+
+    it('collapses and expands an archived shared subject hierarchy', async () => {
+        renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 914,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Archiviertes Fach',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Archiv',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Archiviertes Material',
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [],
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Fach Informatik ein- oder ausklappen' })
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Archiviertes Material')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Algebra')).not.toBeInTheDocument()
+        expect(screen.queryByText('Archiviertes Material')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Algebra')).toBeInTheDocument()
+        expect(screen.getByText('Archiviertes Material')).toBeInTheDocument()
+    })
+
+    it('collapses and expands an archived shared topic hierarchy', async () => {
+        renderTree([], {
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 915,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Archiviertes Thema',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Archiv',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Algebra',
+                                    materials: [
+                                        {
+                                            id: 101,
+                                            title: 'Archiviertes Topic-Material',
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'Lineare Gleichungen',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const toggle = screen.getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })
+
+        expect(screen.getByText('Archiviertes Topic-Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.queryByText('Archiviertes Topic-Material')).not.toBeInTheDocument()
+        expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
+
+        await fireEvent.click(toggle)
+
+        expect(screen.getByText('Archiviertes Topic-Material')).toBeInTheDocument()
+        expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
     })
 
     it('emits archive-shared-item when Archivieren is clicked in Für mich geteilt', async () => {
@@ -547,7 +1218,6 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(firstCard.className).toContain('overview-shared-item--expanded')
         expect(secondCard.className).toContain('overview-shared-item--disabled')
-        expect(within(firstCard).queryByRole('button', { name: 'Archivieren' })).toBeNull()
         expect(within(secondCard).getByRole('button', { name: 'Archivieren' })).toBeDisabled()
         expect(within(secondCard).getByRole('button', { name: 'Anzeigen' })).toBeDisabled()
 
@@ -929,13 +1599,14 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
-
         expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
         expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
 
         await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
 
         expect(screen.getAllByRole('button', { name: 'Fach hinzufügen' })).toHaveLength(1)
+        const sharedItem = screen.getByText('Alle Materialien').closest('.overview-shared-item') as HTMLElement
+        expect(within(sharedItem).queryByTitle('Teilen')).toBeNull()
     })
 
     it('renders shared add-material actions inline next to the node title', async () => {
@@ -2044,7 +2715,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.')).not.toBeInTheDocument()
     })
 
-    it('renders linked permission chip on a linked topic', () => {
+    it('renders linked permission chip on a linked topic', async () => {
         renderTree([
             {
                 id: 1,
@@ -2064,11 +2735,13 @@ describe('MaterialsSubjectsContentsTree', () => {
             },
         ])
 
+        await openWorkspace()
+
         expect(screen.getByText('Algebra')).toBeInTheDocument()
         expect(screen.getByText('NUR LESEN')).toBeInTheDocument()
     })
 
-    it('renders linked permission chip on a linked unit', () => {
+    it('renders linked permission chip on a linked unit', async () => {
         renderTree([
             {
                 id: 1,
@@ -2093,6 +2766,8 @@ describe('MaterialsSubjectsContentsTree', () => {
                 ],
             },
         ])
+
+        await openWorkspace()
 
         expect(screen.getByText('Brueche')).toBeInTheDocument()
         expect(screen.getByText('LESEN/SCHREIBEN')).toBeInTheDocument()
@@ -2127,6 +2802,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             { enableRemoveButtons: true }
         )
 
+        await openWorkspace()
+
         await fireEvent.click(screen.getAllByText('Link entfernen')[0])
 
         const events = emitted('unlink-linked-unit') || []
@@ -2157,6 +2834,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             { enableRemoveButtons: true }
         )
 
+        await openWorkspace()
+
         await fireEvent.click(screen.getByText('Link entfernen'))
 
         const events = emitted('unlink-linked-topic') || []
@@ -2173,6 +2852,8 @@ describe('MaterialsSubjectsContentsTree', () => {
                 topics: [],
             },
         ])
+
+        await openWorkspace()
 
         const shareButtons = screen.getAllByTitle('Teilen')
         await fireEvent.click(shareButtons[0])
@@ -2196,6 +2877,8 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
             { enableShareButtons: true }
         )
+
+        await openWorkspace()
 
         const shareButtons = screen.getAllByTitle('Teilen')
         await fireEvent.click(shareButtons[1])

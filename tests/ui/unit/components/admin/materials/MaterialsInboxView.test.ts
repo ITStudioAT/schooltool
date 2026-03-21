@@ -1143,8 +1143,16 @@ describe('MaterialsInboxView', () => {
         expect(topicHead).not.toBeNull()
         await fireEvent.click(within(topicHead as HTMLElement).getByRole('button', { name: 'Einfächern' }))
         await waitFor(() => {
-            expect(screen.getByText('Thema: Algebra')).toBeInTheDocument()
+            expect(screen.getByText('Thema einordnen')).toBeInTheDocument()
         })
+        expect(
+            screen.getByText((_, element) =>
+                String(element?.tagName || '').toLowerCase() === 'p'
+                && String(element?.textContent || '').includes('Soll das Thema')
+            )
+        ).toBeInTheDocument()
+        expect(screen.getByText('Wähle das Zielfach im Workspace. Das legt fest, wohin das Thema eingeordnet wird.')).toBeInTheDocument()
+        expect(screen.getByText('Zielfach im Workspace')).toBeInTheDocument()
         expect(screen.queryByText('Themen')).not.toBeInTheDocument()
         expect(screen.queryByText('Einheiten')).not.toBeInTheDocument()
 
@@ -1183,6 +1191,91 @@ describe('MaterialsInboxView', () => {
                 && String(payload?.target_level || '') === 'topic'
             )).toBe(true)
         })
+    })
+
+    it('opens the topic einordnen dialog from the standard subject hierarchy topic button', async () => {
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/shares/inbox-users') {
+                return Promise.resolve({
+                    data: {
+                        data: [
+                            {
+                                id: 91,
+                                label: 'Hierarchy Source',
+                                email: 'hierarchy-topic@test.local',
+                                shared_rules_count: 1,
+                                shared_items: [
+                                    {
+                                        rule_id: 981,
+                                        scope_type: 'subject',
+                                        scope_label: 'Fach',
+                                        scope_object_label: 'Medienbildung',
+                                        scope_path_label: 'Medienbildung - Digitale Kompetenzen',
+                                        permission: 'read_write',
+                                        permission_label: 'LESEN/SCHREIBEN',
+                                        hierarchy: [
+                                            {
+                                                id: 51,
+                                                name: 'Medienbildung',
+                                                topics: [
+                                                    {
+                                                        id: 52,
+                                                        name: 'Digitale Kompetenzen',
+                                                        units: [
+                                                            {
+                                                                id: 0,
+                                                                name: 'Ohne Einheit',
+                                                                materials: [{ id: 801, title: 'Material X' }],
+                                                            },
+                                                        ],
+                                                    },
+                                                ],
+                                            },
+                                        ],
+                                        updated_at: '',
+                                    },
+                                ],
+                            },
+                        ],
+                        meta: { needs_migration: false },
+                    },
+                })
+            }
+            if (url === '/api/admin/materials/config') {
+                return Promise.resolve({
+                    data: {
+                        classification_tree: [
+                            {
+                                id: 61,
+                                name: 'Informatik',
+                                topics: [],
+                            },
+                        ],
+                    },
+                })
+            }
+            return Promise.reject(new Error('unexpected url'))
+        })
+
+        renderMaterialsInboxView()
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Anzeigen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await waitFor(() => {
+            expect(screen.getByText('Digitale Kompetenzen')).toBeInTheDocument()
+        })
+
+        const hierarchyTopicButton = screen.getAllByRole('button', { name: 'Einfächern' })[1]
+        await fireEvent.click(hierarchyTopicButton)
+
+        await waitFor(() => {
+            expect(screen.getByText('Thema einordnen')).toBeInTheDocument()
+        })
+        expect(screen.getByText('Zielfach im Workspace')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Informatik' })).toBeInTheDocument()
     })
 
     it('topic scope shows subject line and omits "Ohne Einheit" for direct topic materials', async () => {

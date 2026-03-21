@@ -3924,6 +3924,129 @@ test('repeated unit fanout creates a second unit mapping and assigns materials t
     expect((int) $secondClassification->unit_id)->toBe((int) $targetUnitSecond->id);
 });
 
+test('repeated copied topic insert reuses existing target material card', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-repeat-topic-copy@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Digitale Kompetenzen',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-repeat-topic-copy@test.local',
+    ]);
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathe',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Kapitel 1',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Wiederholung Thema',
+        'source_text' => 'A',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_TOPIC,
+        'scope_id' => $sourceTopic->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $firstInsert = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => 'copy',
+        'source_topic_id' => $sourceTopic->id,
+    ])->assertStatus(200);
+
+    $firstCardId = (int) $firstInsert->json('data.id');
+    expect($firstCardId)->toBeGreaterThan(0);
+
+    $secondInsert = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => 'copy',
+        'source_topic_id' => $sourceTopic->id,
+    ])->assertStatus(200);
+
+    $secondCardId = (int) $secondInsert->json('data.id');
+    expect($secondCardId)->toBe($firstCardId);
+
+    expect(
+        MaterialCard::query()
+            ->where('user_id', $recipient->id)
+            ->where('workspace_id', $targetSubject->workspace_id)
+            ->where('title', 'Wiederholung Thema')
+            ->count()
+    )->toBe(1);
+
+    expect(
+        MaterialCardClassification::query()
+            ->where('material_card_id', $firstCardId)
+            ->where('subject_id', $targetSubject->id)
+            ->where('topic_id', $targetTopic->id)
+            ->whereNull('unit_id')
+            ->count()
+    )->toBe(1);
+});
+
 test('repeated linked unit fanout keeps each linked card on its selected duplicate target unit', function () {
     if (! Schema::hasTable('material_inbox_imports') || ! Schema::hasColumn('material_inbox_imports', 'import_mode')) {
         $this->markTestSkipped('Linked inbox import mode is not available.');

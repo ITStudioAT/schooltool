@@ -26,18 +26,6 @@
 
         <v-btn
             class="materials-menu-btn"
-            :class="{ 'materials-menu-btn--active': modelValue === 'new_material' }"
-            rounded="pill"
-            size="large"
-            variant="flat"
-            prepend-icon="mdi-plus-circle-outline"
-            :disabled="disabled"
-            @click="$emit('update:modelValue', 'new_material')">
-            Neues Material
-        </v-btn>
-
-        <v-btn
-            class="materials-menu-btn"
             :class="{ 'materials-menu-btn--active': modelValue === 'settings' }"
             rounded="pill"
             size="large"

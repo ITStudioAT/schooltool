@@ -335,7 +335,7 @@
                                                                         size="x-small"
                                                                         variant="tonal"
                                                                         color="primary"
-                                                                        @click.stop="onDummyObjectAction(item, 'topic-einfachern')">
+                                                                        @click.stop="openTopicEinfachernDialog(item, topic)">
                                                                         Einfächern
                                                                     </v-btn>
                                                                 </div>
@@ -478,7 +478,7 @@
             max-width="960">
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center justify-space-between ga-2">
-                    <span>Einfächern</span>
+                    <span>{{ einfachernDialogTitle }}</span>
                     <v-chip size="small" variant="tonal" color="primary">
                         {{ einfachernDialog.materialTitle || 'Material' }}
                     </v-chip>
@@ -497,28 +497,28 @@
                     </div>
 
                     <template v-else>
-                        <div v-if="einfachernDialog.tree.length === 0" class="einfachern-empty">
-                            <div class="text-body-2 text-medium-emphasis">
-                                Es sind noch keine Fächer vorhanden.
-                            </div>
-                            <v-btn
-                                v-if="einfachernDialog.mode === 'material'"
-                                size="small"
-                                variant="tonal"
-                                color="primary"
-                                :loading="einfachernDialog.submitting"
-                                @click="onOriginalEinfuegen">
-                                Als Original einfügen
-                            </v-btn>
-                        </div>
+                        <div v-if="einfachernDialog.mode === 'topic'" class="einfachern-topic-dialog">
+                            <p class="mb-2">
+                                Soll das Thema
+                                <strong>{{ einfachernTopicSourceLabel }}</strong>
+                                in eines deiner Fächer eingeordnet werden?
+                            </p>
+                            <p class="text-body-2 text-medium-emphasis mb-4">
+                                Wähle das Zielfach im Workspace. Das legt fest, wohin das Thema eingeordnet wird.
+                            </p>
 
-                        <div v-else class="einfachern-columns">
-                            <div class="einfachern-column">
-                                <div class="einfachern-column-title">Fächer</div>
+                            <div v-if="einfachernDialog.tree.length === 0" class="einfachern-empty">
+                                <div class="text-body-2 text-medium-emphasis">
+                                    Es sind noch keine Fächer vorhanden.
+                                </div>
+                            </div>
+
+                            <div v-else class="einfachern-column">
+                                <div class="einfachern-column-title">Zielfach im Workspace</div>
                                 <div class="einfachern-list">
                                     <v-btn
                                         v-for="subject in einfachernDialog.tree"
-                                        :key="`einfachern-subject-${subject.id || subject.name}`"
+                                        :key="`einfachern-topic-subject-${subject.id || subject.name}`"
                                         size="small"
                                         block
                                         :variant="Number(einfachernDialog.subjectId) === Number(subject.id) ? 'flat' : 'tonal'"
@@ -529,45 +529,80 @@
                                     </v-btn>
                                 </div>
                             </div>
-                            <div v-if="einfachernAllowsTopicTarget" class="einfachern-column">
-                                <div class="einfachern-column-title">Themen</div>
-                                <div v-if="einfachernTopics.length === 0" class="text-caption text-medium-emphasis">
-                                    Kein Thema ausgewählt.
-                                </div>
-                                <div v-else class="einfachern-list">
-                                    <v-btn
-                                        v-for="topic in einfachernTopics"
-                                        :key="`einfachern-topic-${topic.id || topic.name}`"
-                                        size="small"
-                                        block
-                                        :variant="Number(einfachernDialog.topicId) === Number(topic.id) ? 'flat' : 'tonal'"
-                                        :color="Number(einfachernDialog.topicId) === Number(topic.id) ? 'primary' : 'secondary'"
-                                        class="justify-start"
-                                        @click="selectEinfachernTopic(topic)">
-                                        {{ topic.name }}
-                                    </v-btn>
-                                </div>
-                            </div>
-                            <div v-if="einfachernAllowsUnitTarget" class="einfachern-column">
-                                <div class="einfachern-column-title">Einheiten</div>
-                                <div v-if="einfachernUnits.length === 0" class="text-caption text-medium-emphasis">
-                                    Keine Einheit ausgewählt.
-                                </div>
-                                <div v-else class="einfachern-list">
-                                    <v-btn
-                                        v-for="unit in einfachernUnits"
-                                        :key="`einfachern-unit-${unit.id || unit.name}`"
-                                        size="small"
-                                        block
-                                        :variant="Number(einfachernDialog.unitId) === Number(unit.id) ? 'flat' : 'tonal'"
-                                        :color="Number(einfachernDialog.unitId) === Number(unit.id) ? 'primary' : 'secondary'"
-                                        class="justify-start"
-                                        @click="selectEinfachernUnit(unit)">
-                                        {{ unit.name }}
-                                    </v-btn>
-                                </div>
-                            </div>
                         </div>
+                        <template v-else>
+                            <div v-if="einfachernDialog.tree.length === 0" class="einfachern-empty">
+                                <div class="text-body-2 text-medium-emphasis">
+                                    Es sind noch keine Fächer vorhanden.
+                                </div>
+                                <v-btn
+                                    v-if="einfachernDialog.mode === 'material'"
+                                    size="small"
+                                    variant="tonal"
+                                    color="primary"
+                                    :loading="einfachernDialog.submitting"
+                                    @click="onOriginalEinfuegen">
+                                    Als Original einfügen
+                                </v-btn>
+                            </div>
+
+                            <div v-else class="einfachern-columns">
+                                <div class="einfachern-column">
+                                    <div class="einfachern-column-title">Fächer</div>
+                                    <div class="einfachern-list">
+                                        <v-btn
+                                            v-for="subject in einfachernDialog.tree"
+                                            :key="`einfachern-subject-${subject.id || subject.name}`"
+                                            size="small"
+                                            block
+                                            :variant="Number(einfachernDialog.subjectId) === Number(subject.id) ? 'flat' : 'tonal'"
+                                            :color="Number(einfachernDialog.subjectId) === Number(subject.id) ? 'primary' : 'secondary'"
+                                            class="justify-start"
+                                            @click="selectEinfachernSubject(subject)">
+                                            {{ subject.name }}
+                                        </v-btn>
+                                    </div>
+                                </div>
+                                <div v-if="einfachernAllowsTopicTarget" class="einfachern-column">
+                                    <div class="einfachern-column-title">Themen</div>
+                                    <div v-if="einfachernTopics.length === 0" class="text-caption text-medium-emphasis">
+                                        Kein Thema ausgewählt.
+                                    </div>
+                                    <div v-else class="einfachern-list">
+                                        <v-btn
+                                            v-for="topic in einfachernTopics"
+                                            :key="`einfachern-topic-${topic.id || topic.name}`"
+                                            size="small"
+                                            block
+                                            :variant="Number(einfachernDialog.topicId) === Number(topic.id) ? 'flat' : 'tonal'"
+                                            :color="Number(einfachernDialog.topicId) === Number(topic.id) ? 'primary' : 'secondary'"
+                                            class="justify-start"
+                                            @click="selectEinfachernTopic(topic)">
+                                            {{ topic.name }}
+                                        </v-btn>
+                                    </div>
+                                </div>
+                                <div v-if="einfachernAllowsUnitTarget" class="einfachern-column">
+                                    <div class="einfachern-column-title">Einheiten</div>
+                                    <div v-if="einfachernUnits.length === 0" class="text-caption text-medium-emphasis">
+                                        Keine Einheit ausgewählt.
+                                    </div>
+                                    <div v-else class="einfachern-list">
+                                        <v-btn
+                                            v-for="unit in einfachernUnits"
+                                            :key="`einfachern-unit-${unit.id || unit.name}`"
+                                            size="small"
+                                            block
+                                            :variant="Number(einfachernDialog.unitId) === Number(unit.id) ? 'flat' : 'tonal'"
+                                            :color="Number(einfachernDialog.unitId) === Number(unit.id) ? 'primary' : 'secondary'"
+                                            class="justify-start"
+                                            @click="selectEinfachernUnit(unit)">
+                                            {{ unit.name }}
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
                     </template>
                 </v-card-text>
                 <v-card-actions class="d-flex justify-space-between">
@@ -647,8 +682,26 @@ export default {
         this.loadInboxUsers()
     },
     computed: {
+        einfachernDialogTitle() {
+            return String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase() === 'topic'
+                ? 'Thema einordnen'
+                : 'Einfächern'
+        },
         einfachernSelectedSubject() {
             return this.einfachernDialog.tree.find((subject) => Number(subject?.id || 0) === Number(this.einfachernDialog.subjectId || 0)) || null
+        },
+        einfachernTopicSourceLabel() {
+            const explicitName = String(this.einfachernDialog.sourceTopicName || '').trim()
+            if (explicitName !== '') {
+                return explicitName
+            }
+
+            const materialTitle = String(this.einfachernDialog.materialTitle || '').trim()
+            if (materialTitle.toLocaleLowerCase().startsWith('thema:')) {
+                return materialTitle.slice(6).trim() || 'Thema'
+            }
+
+            return materialTitle || 'Thema'
         },
         einfachernTopics() {
             return Array.isArray(this.einfachernSelectedSubject?.topics) ? this.einfachernSelectedSubject.topics : []
@@ -698,6 +751,12 @@ export default {
             return null
         },
         einfachernSelectionLabel() {
+            if (String(this.einfachernDialog.mode || '').trim().toLocaleLowerCase() === 'topic') {
+                return this.einfachernSelectedSubject
+                    ? `Zielfach: ${String(this.einfachernSelectedSubject?.name || '').trim() || 'Fach'}`
+                    : 'Kein Zielfach ausgewählt.'
+            }
+
             const labels = [
                 String(this.einfachernSelectedSubject?.name || '').trim(),
                 this.einfachernAllowsTopicTarget ? String(this.einfachernSelectedTopic?.name || '').trim() : '',
@@ -1639,6 +1698,11 @@ export default {
     display: grid;
     gap: 10px;
     justify-items: start;
+}
+
+.einfachern-topic-dialog {
+    display: grid;
+    gap: 12px;
 }
 
 .einfachern-columns {
