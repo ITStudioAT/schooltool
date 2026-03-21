@@ -2889,6 +2889,40 @@ test('can einfächern shared subject as full tree copy into local workspace', fu
         ]);
     }
 
+    $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$sourceSubject->id.'/insert-tree', [
+        'rule_id' => (int) $rule->id,
+    ])
+        ->assertOk()
+        ->assertJsonPath('message', 'Fachstruktur eingeordnet.')
+        ->assertJsonPath('data.subject_id', (int) $targetSubject->id)
+        ->assertJsonPath('data.copied_materials_count', 0);
+
+    expect(
+        MaterialSubject::query()
+            ->where('user_id', $recipient->id)
+            ->where('workspace_id', (int) $targetWorkspace->id)
+            ->where('name', 'Informatik')
+            ->count()
+    )->toBe(1);
+    expect(
+        MaterialTopic::query()
+            ->where('subject_id', (int) $targetSubject->id)
+            ->where('name', 'Digitale Grundlagen')
+            ->count()
+    )->toBe(1);
+    expect(
+        MaterialUnit::query()
+            ->where('topic_id', (int) $targetTopic->id)
+            ->where('name', 'Rechtliche Grundlagen')
+            ->count()
+    )->toBe(1);
+    expect(
+        MaterialCard::query()
+            ->where('user_id', $recipient->id)
+            ->where('workspace_id', (int) $targetWorkspace->id)
+            ->count()
+    )->toBe(3);
+
     expect((int) $response->json('data.subject_id'))->toBe((int) $targetSubject->id);
 });
 

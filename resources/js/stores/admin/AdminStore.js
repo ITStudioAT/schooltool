@@ -14,6 +14,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         api_response: null,
         show_navigation_drawer: true,
         is_navigation_locked: false,
+        is_struktur_modus: false,
         user_roles: [],
         selected_school: null,
         selected_schoolyear: null,

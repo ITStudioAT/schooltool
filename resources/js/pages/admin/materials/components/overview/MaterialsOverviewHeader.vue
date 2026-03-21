@@ -4,7 +4,7 @@
             <div class="text-h4 font-weight-bold mb-2">Übersicht</div>
         </v-col>
 
-        <v-col cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
+        <v-col v-if="!strukturModus" cols="12" md="4" class="d-flex justify-md-end align-center flex-wrap ga-2">
             <v-btn-toggle
                 v-if="!hideOverviewModeToggle"
                 :model-value="overviewViewMode"
@@ -58,6 +58,10 @@ export default {
             default: false,
         },
         actionDisabled: {
+            type: Boolean,
+            default: false,
+        },
+        strukturModus: {
             type: Boolean,
             default: false,
         },

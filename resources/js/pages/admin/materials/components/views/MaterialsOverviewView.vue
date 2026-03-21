@@ -1,15 +1,28 @@
 <template>
-    <v-card class="materials-shell pa-4 pa-md-8" rounded="xl" elevation="0">
+    <v-card :class="['materials-shell pa-4 pa-md-8', { 'materials-shell--struktur-modus': subjectsTreeWorkspaceStructureExpanded }]" rounded="xl" elevation="0">
         <MaterialsOverviewHeader
             :hide-overview-mode-toggle="hideOverviewModeToggle"
             :overview-view-mode="overviewViewMode"
             :is-loading="isLoading"
             :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+            :struktur-modus="subjectsTreeWorkspaceStructureExpanded"
             @update:overview-view-mode="setOverviewMode"
             @refresh="loadCards" />
 
+        <Teleport to="body">
+            <div v-if="subjectsTreeWorkspaceStructureExpanded" class="struktur-modus-fab">
+                <v-btn
+                    color="warning"
+                    variant="flat"
+                    prepend-icon="mdi-close"
+                    @click="toggleSubjectsTreeWorkspaceStructureExpanded">
+                    Struktur schließen
+                </v-btn>
+            </div>
+        </Teleport>
+
         <MaterialsOverviewFilters
-            v-if="!isSharedSubjectsContentsSource"
+            v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded"
             :action-disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :badge-count-content="badgeCountContent"
             :subject-all-count="subjectAllCount"
@@ -48,7 +61,7 @@
             :is-status-filter-active="isStatusFilterActive"
             :toggle-status-filter="toggleStatusFilter" />
 
-        <v-alert v-if="!isSharedSubjectsContentsSource" type="info" variant="tonal" class="mb-4">
+        <v-alert v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" type="info" variant="tonal" class="mb-4">
             {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
             <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
         </v-alert>
@@ -120,7 +133,7 @@
                 </v-list>
             </div>
         </v-alert>
-        <div v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+        <div v-if="!subjectsTreeWorkspaceStructureExpanded && !isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
             <v-btn
                 size="small"
                 color="warning"
@@ -131,12 +144,12 @@
                 Restore-Liste einblenden
             </v-btn>
         </div>
-        <MaterialsOverviewSortBar v-if="!isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
+        <MaterialsOverviewSortBar v-if="!subjectsTreeWorkspaceStructureExpanded && !isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
 
         <v-skeleton-loader v-if="!isSharedSubjectsContentsSource && isLoading && !hasCards" type="list-item-three-line@4" />
 
         <template v-else-if="isSubjectsContentsOverview">
-            <div class="d-flex flex-wrap align-center ga-2 mb-3">
+            <div v-if="!subjectsTreeWorkspaceStructureExpanded" class="d-flex flex-wrap align-center ga-2 mb-3">
                 <template v-if="showSubjectsContentsSourceToggle">
                     <div class="subjects-source-switch">
                     <v-btn
@@ -1285,6 +1298,7 @@ import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import MaterialsCreateInlineForm from '../forms/MaterialsCreateInlineForm.vue'
 import MaterialTypeManagerDialog from '../forms/MaterialTypeManagerDialog.vue'
@@ -2000,6 +2014,9 @@ export default {
                 status: '',
             })
         },
+    },
+    beforeUnmount() {
+        useAdminStore().is_struktur_modus = false
     },
     async beforeMount() {
         const metaToken = document?.head?.querySelector?.('meta[name="csrf-token"]')?.content
@@ -3042,6 +3059,7 @@ export default {
         },
         toggleSubjectsTreeWorkspaceStructureExpanded() {
             this.subjectsTreeWorkspaceStructureExpanded = !this.subjectsTreeWorkspaceStructureExpanded
+            useAdminStore().is_struktur_modus = this.subjectsTreeWorkspaceStructureExpanded
         },
         toggleSubjectsTreeSharedItemExpanded(ruleId) {
             const key = this.subjectsTreeSharedItemKey(ruleId)
@@ -6769,6 +6787,18 @@ ${content}
     --inbox-font-topic: clamp(14px, 0.82rem + 0.45vw, 16px);
     --inbox-font-unit: clamp(11px, 0.64rem + 0.2vw, 12px);
     --inbox-font-material: var(--inbox-font-unit);
+}
+
+.materials-shell--struktur-modus {
+    background: rgba(251, 140, 0, 0.18) !important;
+    transition: background 0.3s ease;
+}
+
+:global(.struktur-modus-fab) {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 2000;
 }
 
 .inbox-shared-object-title {

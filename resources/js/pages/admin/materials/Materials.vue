@@ -47,7 +47,7 @@
                 </v-btn>
             </v-card>
 
-            <MaterialsMenu v-model="main_action" :disabled="isMenuLocked" />
+            <MaterialsMenu v-model="main_action" :disabled="isMenuLocked || adminStore?.is_struktur_modus" />
             <v-row class="w-100" dense>
                 <v-col cols="12" lg="10" xl="9" class="mx-auto">
                     <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />

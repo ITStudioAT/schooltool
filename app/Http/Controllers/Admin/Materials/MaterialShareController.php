@@ -1037,18 +1037,30 @@ class MaterialShareController extends Controller
                     sourceStatusMeta: $sourceStatusMeta,
                 );
 
-                $createdCard = $materialService->createCard($authUser, [
-                    'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
-                    'source_url' => $sourceCard->source_url,
-                    'source_text' => $sourceCard->source_text,
-                    'type' => $targetType,
-                    'status' => $targetStatus,
-                    'notes' => $sourceCard->notes,
-                    'classifications' => $targetClassifications,
-                ], $workspaceId);
+                $targetTitle = trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material';
+                $createdCard = $this->findExistingTargetCardForSubjectTreeInsert(
+                    user: $authUser,
+                    workspaceId: $workspaceId,
+                    title: $targetTitle,
+                    classifications: $targetClassifications,
+                );
+                $createdNow = false;
 
-                $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
-                $keywordService->rebuild($createdCard->fresh());
+                if (! $createdCard instanceof MaterialCard) {
+                    $createdCard = $materialService->createCard($authUser, [
+                        'title' => $targetTitle,
+                        'source_url' => $sourceCard->source_url,
+                        'source_text' => $sourceCard->source_text,
+                        'type' => $targetType,
+                        'status' => $targetStatus,
+                        'notes' => $sourceCard->notes,
+                        'classifications' => $targetClassifications,
+                    ], $workspaceId);
+
+                    $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+                    $keywordService->rebuild($createdCard->fresh());
+                    $createdNow = true;
+                }
 
                 if ($this->hasMaterialInboxImportsTable()) {
                     $importPayload = [
@@ -1070,7 +1082,9 @@ class MaterialShareController extends Controller
                     );
                 }
 
-                $copiedMaterialsCount++;
+                if ($createdNow) {
+                    $copiedMaterialsCount++;
+                }
             }
 
             return [
@@ -2338,6 +2352,75 @@ class MaterialShareController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    private function findExistingTargetCardForSubjectTreeInsert(
+        User $user,
+        int $workspaceId,
+        string $title,
+        array $classifications,
+    ): ?MaterialCard {
+        $normalizedTitle = trim($title);
+        if ($workspaceId <= 0 || $normalizedTitle === '') {
+            return null;
+        }
+
+        $expectedClassificationKeys = $this->normalizedClassificationKeys($classifications);
+        if ($expectedClassificationKeys === []) {
+            return null;
+        }
+
+        $candidates = MaterialCard::query()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->whereRaw('LOWER(title) = ?', [mb_strtolower($normalizedTitle)])
+            ->with([
+                'classifications.subject:id,name',
+                'classifications.topic:id,name',
+                'classifications.unit:id,name',
+            ])
+            ->get();
+
+        foreach ($candidates as $candidate) {
+            $candidateClassificationKeys = $this->normalizedClassificationKeys(
+                $this->currentMaterialClassificationPayload($candidate)
+            );
+
+            if ($candidateClassificationKeys === $expectedClassificationKeys) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizedClassificationKeys(array $classifications): array
+    {
+        $keys = collect($classifications)
+            ->filter(fn ($row) => is_array($row))
+            ->map(function (array $row): ?string {
+                $subject = trim((string) ($row['subject'] ?? ''));
+                $topic = trim((string) ($row['topic'] ?? ''));
+                $unit = trim((string) ($row['unit'] ?? ''));
+
+                if ($subject === '') {
+                    return null;
+                }
+
+                if ($topic === '') {
+                    $unit = '';
+                }
+
+                return mb_strtolower($subject.'|'.$topic.'|'.$unit);
+            })
+            ->filter(fn ($key) => is_string($key) && $key !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        sort($keys);
+
+        return $keys;
     }
 
     private function subjectClassificationPayload(MaterialSubject $subject): array

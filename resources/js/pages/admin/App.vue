@@ -105,7 +105,7 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'load_config']),
+        ...mapWritableState(useAdminStore, ['config', 'is_loading', 'show_navigation_drawer', 'is_navigation_locked', 'is_struktur_modus', 'load_config']),
         selectedSchoolLogoSrc() {
             const logo = this.config?.selected_school?.logo
             if (!logo) return null
@@ -135,7 +135,7 @@ export default {
             return `/storage/images/${normalizedLogo}`
         },
         isMenuInteractionDisabled() {
-            return this.is_navigation_locked || this.is_loading > 0 || this.is_route_navigation_pending
+            return this.is_navigation_locked || this.is_loading > 0 || this.is_route_navigation_pending || this.is_struktur_modus
         },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
