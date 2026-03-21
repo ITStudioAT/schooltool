@@ -28,6 +28,10 @@ use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
 use App\Http\Controllers\Admin\RegisterPrintController;
 use App\Http\Controllers\Admin\RegisterUserController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SchoolController;
 use App\Http\Controllers\Admin\SchoolToolController;
@@ -246,6 +250,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin', 'tool-licensed:Lehrertool'])->group(function () {
         Route::post('/admin/teaching_upload/{slug}', [FileUploadController::class, 'upload']);
         Route::patch('/admin/teaching_upload/{slug}', [FileUploadController::class, 'uploadNext']);
+    });
+
+    /* SANCTUM - admin, lunch_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,lunch_admin'])->group(function () {
+        Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
+        Route::apiResource('/admin/restaurant/foods', RestaurantFoodController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
     });
 
     /* SANCTUM - tutoring_user */

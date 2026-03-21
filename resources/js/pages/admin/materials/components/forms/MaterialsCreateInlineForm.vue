@@ -403,7 +403,7 @@
                     prepend-icon="mdi-text-box-plus-outline"
                     :disabled="isSaving"
                     @click="openTextAttachmentDialog">
-                    Text hinzufuegen
+                    Text hinzufügen
                 </v-btn>
                 <v-btn
                     variant="tonal"
@@ -447,7 +447,7 @@
                 Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.
             </div>
             <div class="text-caption text-medium-emphasis mt-1">
-                Oder Inhalte per Zwischenablage einfuegen (Bild, Datei, Link).
+                Oder Inhalte per Zwischenablage einfügen (Bild, Datei, Link).
             </div>
 
             <v-alert
@@ -465,14 +465,14 @@
                 variant="flat"
                 icon="mdi-keyboard-outline"
                 class="mt-2">
-                Jetzt bitte <strong>STRG+V</strong> druecken.
+                Jetzt bitte <strong>STRG+V</strong> drücken.
             </v-alert>
 
             <v-textarea
                 v-if="clipboardPasteArmed"
                 ref="clipboardPasteField"
                 :model-value="clipboardPasteBuffer"
-                label="Jetzt Strg+V hier einfuegen"
+                label="Jetzt Strg+V hier einfügen"
                 variant="outlined"
                 density="comfortable"
                 rows="2"
@@ -559,7 +559,7 @@
                     <ItsRichTextEditor v-model="textAttachmentDraftContent" />
 
                     <div class="text-caption text-medium-emphasis mt-2">
-                        Der Inhalt wird als HTML-Datei gespeichert und beim Speichern des Materials als Anhang uebernommen.
+                        Der Inhalt wird als HTML-Datei gespeichert und beim Speichern des Materials als Anhang übernommen.
                     </div>
 
                     <v-alert
@@ -583,7 +583,7 @@
                         prepend-icon="mdi-content-save-outline"
                         :disabled="isSaving || !canAddTextAttachment"
                         @click="appendTextAttachment">
-                        Als Anhang uebernehmen
+                        Als Anhang übernehmen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -1326,7 +1326,7 @@ ${bodyHtml}
                 key: `text|${Date.now()}|${rows.length}`,
             })
             this.emitPendingAttachments(rows)
-            this.setClipboardImportStatus('success', 'Text wurde als Anhang hinzugefuegt.')
+            this.setClipboardImportStatus('success', 'Text wurde als Anhang hinzugefügt.')
             this.closeTextAttachmentDialog()
         },
         extractUrlsFromText(text) {
@@ -1729,7 +1729,7 @@ ${bodyHtml}
             }, 15000)
 
             const fallbackMessage = this.normalizeText(message)
-                || 'Direktes Lesen blockiert. Bitte jetzt Strg+V druecken.'
+                || 'Direktes Lesen blockiert. Bitte jetzt Strg+V drücken.'
             this.setClipboardImportStatus('warning', fallbackMessage)
             this.focusClipboardPasteField()
         },
@@ -1805,11 +1805,11 @@ ${bodyHtml}
 
             // Reliable mode: one click arms paste capture, then user presses STRG+V.
             if (!this.clipboardPasteArmed) {
-                this.armClipboardPasteFallback('Jetzt bitte STRG+V druecken.')
+                this.armClipboardPasteFallback('Jetzt bitte STRG+V drücken.')
                 return
             }
 
-            this.setClipboardImportStatus('warning', 'Jetzt bitte STRG+V druecken.')
+            this.setClipboardImportStatus('warning', 'Jetzt bitte STRG+V drücken.')
             this.focusClipboardPasteField()
         },
         onAttachmentPaste(event) {
@@ -1845,7 +1845,7 @@ ${bodyHtml}
 
             this.appendClipboardPayload(payload, 'paste')
             this.disarmClipboardPasteFallback()
-            this.setClipboardImportStatus('success', `Eingefuegt: ${this.summarizeClipboardPayload(payload)}.`)
+            this.setClipboardImportStatus('success', `Eingefügt: ${this.summarizeClipboardPayload(payload)}.`)
             return true
         },
         normalizeColor(value) {

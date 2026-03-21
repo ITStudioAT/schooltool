@@ -49,7 +49,7 @@ const routes = [
     { path: '/admin/materials', component: Materials },
     { path: '/admin/groups', component: Groups },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
-    { path: '/admin/restaurant', component: Restaurant },
+    { path: '/admin/restaurant/:section?', component: Restaurant },
     { path: '/admin/aba', component: Aba },
     { path: '/admin/aba/results/:abaId', component: AbaResults },
     { path: '/admin/aba/ai-settings', component: AbaAiSettings },
