@@ -170,7 +170,7 @@
                     color="primary"
                     variant="outlined"
                     prepend-icon="mdi-printer-outline"
-                    :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                    :disabled="isLoading || isDeletingId !== null || isSavingEdit || isOpeningSubjectsOverviewScreen"
                     @click="openSubjectsOverviewScreen">
                     Übersicht / Druck
                 </v-btn>
@@ -241,7 +241,7 @@
                                 <v-expand-transition>
                                     <div v-if="isSharedHierarchyOpen(item.ruleId)" class="inbox-hierarchy-card">
                                         <div class="inbox-shared-object-title inbox-shared-object-title--all">
-                                            {{ item.scopeObjectLabel || 'Freigabe' }} ({{ item.materialsCount }})
+                                            <span>{{ item.scopeObjectLabel || 'Freigabe' }} ({{ item.materialsCount }})</span>
                                         </div>
                                         <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">
                                             Keine Hierarchie für diese Freigabe verfügbar.
@@ -253,6 +253,22 @@
                                                 class="inbox-hierarchy-subject">
                                                 <div class="inbox-hierarchy-subject-head inbox-hierarchy-level-subject">
                                                     <div class="inbox-hierarchy-context-line">{{ subject.name }}</div>
+                                                    <v-btn
+                                                        v-if="canShowSharedInsertButton('subject')"
+                                                        size="x-small"
+                                                        variant="tonal"
+                                                        color="secondary"
+                                                        class="inbox-hierarchy-insert-btn"
+                                                        prepend-icon="mdi-tray-arrow-down"
+                                                        @click.stop="openSharedInsertDraft({
+                                                            ruleId: item.ruleId,
+                                                            level: 'subject',
+                                                            targetId: Number.isFinite(Number(subject?.id)) ? Number(subject.id) : null,
+                                                            label: subject.name || 'Fach',
+                                                            parentLabel: '',
+                                                        })">
+                                                        Einordnen
+                                                    </v-btn>
                                                 </div>
                                                 <div
                                                     v-if="Array.isArray(subject.materials) && subject.materials.length > 0"
@@ -295,6 +311,22 @@
                                                             :color="material.statusColor || statusColor(material.status)">
                                                             {{ material.statusLabel || statusLabel(material.status) }}
                                                         </v-chip>
+                                                        <v-btn
+                                                            v-if="canShowSharedInsertButton('material')"
+                                                            size="x-small"
+                                                            variant="tonal"
+                                                            color="secondary"
+                                                            class="inbox-hierarchy-insert-btn"
+                                                            prepend-icon="mdi-tray-arrow-down"
+                                                            @click.stop="openSharedInsertDraft({
+                                                                ruleId: item.ruleId,
+                                                                level: 'material',
+                                                                targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                label: material.title || 'Material',
+                                                                parentLabel: subject.name || '',
+                                                            })">
+                                                            Einordnen
+                                                        </v-btn>
                                                     </div>
                                                 </div>
                                                 <div
@@ -303,6 +335,22 @@
                                                     class="inbox-hierarchy-topic inbox-hierarchy-level-topic">
                                                     <div class="inbox-hierarchy-topic-head">
                                                         <div class="inbox-hierarchy-topic-title">{{ topic.name }}</div>
+                                                        <v-btn
+                                                            v-if="canShowSharedInsertButton('topic')"
+                                                            size="x-small"
+                                                            variant="tonal"
+                                                            color="secondary"
+                                                            class="inbox-hierarchy-insert-btn"
+                                                            prepend-icon="mdi-tray-arrow-down"
+                                                            @click.stop="openSharedInsertDraft({
+                                                                ruleId: item.ruleId,
+                                                                level: 'topic',
+                                                                targetId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                                label: topic.name || 'Thema',
+                                                                parentLabel: subject.name || '',
+                                                            })">
+                                                            Einordnen
+                                                        </v-btn>
                                                     </div>
                                                     <div
                                                         v-if="Array.isArray(topic.materials) && topic.materials.length > 0"
@@ -345,6 +393,22 @@
                                                                 :color="material.statusColor || statusColor(material.status)">
                                                                 {{ material.statusLabel || statusLabel(material.status) }}
                                                             </v-chip>
+                                                            <v-btn
+                                                                v-if="canShowSharedInsertButton('material')"
+                                                                size="x-small"
+                                                                variant="tonal"
+                                                                color="secondary"
+                                                                class="inbox-hierarchy-insert-btn"
+                                                                prepend-icon="mdi-tray-arrow-down"
+                                                                @click.stop="openSharedInsertDraft({
+                                                                    ruleId: item.ruleId,
+                                                                    level: 'material',
+                                                                    targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                    label: material.title || 'Material',
+                                                                    parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
+                                                                })">
+                                                                Einordnen
+                                                            </v-btn>
                                                         </div>
                                                     </div>
                                                     <div
@@ -353,6 +417,22 @@
                                                         class="inbox-hierarchy-unit inbox-hierarchy-level-unit">
                                                         <div class="inbox-hierarchy-unit-head">
                                                             <div class="inbox-hierarchy-unit-title">{{ unit.name }}</div>
+                                                            <v-btn
+                                                                v-if="canShowSharedInsertButton('unit')"
+                                                                size="x-small"
+                                                                variant="tonal"
+                                                                color="secondary"
+                                                                class="inbox-hierarchy-insert-btn"
+                                                                prepend-icon="mdi-tray-arrow-down"
+                                                                @click.stop="openSharedInsertDraft({
+                                                                    ruleId: item.ruleId,
+                                                                    level: 'unit',
+                                                                    targetId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
+                                                                    label: unit.name || 'Bereich',
+                                                                    parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
+                                                                })">
+                                                                Einordnen
+                                                            </v-btn>
                                                         </div>
                                                         <div class="inbox-hierarchy-material-lines">
                                                             <div
@@ -393,6 +473,22 @@
                                                                     :color="material.statusColor || statusColor(material.status)">
                                                                     {{ material.statusLabel || statusLabel(material.status) }}
                                                                 </v-chip>
+                                                                <v-btn
+                                                                    v-if="canShowSharedInsertButton('material')"
+                                                                    size="x-small"
+                                                                    variant="tonal"
+                                                                    color="secondary"
+                                                                    class="inbox-hierarchy-insert-btn"
+                                                                    prepend-icon="mdi-tray-arrow-down"
+                                                                    @click.stop="openSharedInsertDraft({
+                                                                        ruleId: item.ruleId,
+                                                                        level: 'material',
+                                                                        targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                        label: material.title || 'Material',
+                                                                        parentLabel: `${subject.name || ''} / ${topic.name || ''} / ${unit.name || ''}`,
+                                                                    })">
+                                                                    Einordnen
+                                                                </v-btn>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -421,10 +517,7 @@
                     rounded
                     class="mb-3" />
 
-                <v-alert v-else-if="!subjectsContentsOverviewItems.length" type="info" variant="tonal" class="mb-0">Keine Fachstruktur mit Materialien gefunden.</v-alert>
-
                 <MaterialsSubjectsContentsTree
-                    v-else
                     :items="subjectsContentsOverviewItems"
                     :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null || isArchivingSharedRuleId !== null || isUnarchivingSharedRuleId !== null"
                     :enable-share-buttons="enableShareButtons"
@@ -457,6 +550,7 @@
                     @open-material="openDetailDialog"
                     @open-shared-material="openSharedMaterialFromTree"
                     @open-share="openShareDialog"
+                    @open-shared-insert-draft="openSharedInsertDraft"
                     @open-create="openCreateDialogFromTree"
                     @open-attachments="openAttachmentManager"
                     @open-shared-attachments="openSharedMaterialAttachmentsFromTree"
@@ -1134,6 +1228,40 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="sharedSubjectInsertDialogOpen" max-width="560" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6">Fach einordnen</v-card-title>
+            <v-card-text>
+                <p class="mb-2">
+                    Soll das Fach
+                    <strong>{{ sharedSubjectInsertDraft.label || 'Fach' }}</strong>
+                    mit kompletter Struktur in deinen Workspace eingeordnet werden?
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-0">
+                    Es werden Themen, Bereiche und alle enthaltenen Materialien kopiert.
+                </p>
+            </v-card-text>
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn
+                    variant="text"
+                    :disabled="sharedSubjectInsertDialogLoading"
+                    @click="closeSharedSubjectInsertDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-tray-arrow-down"
+                    :loading="sharedSubjectInsertDialogLoading"
+                    :disabled="sharedSubjectInsertDialogLoading"
+                    @click="confirmSharedSubjectInsert">
+                    Einordnen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <MaterialShareDraftDialog
         v-model="shareDummyDialogOpen"
         :target="shareTarget"
@@ -1277,6 +1405,7 @@ export default {
             subjectsContentsOverviewItems: [],
             subjectsContentsOverviewSnapshotKey: '',
             subjectsContentsOverviewRequestId: 0,
+            isOpeningSubjectsOverviewScreen: false,
             showSecondaryFilters: false,
             currentPage: 1,
             subjectFilter: '',
@@ -1333,6 +1462,13 @@ export default {
             textAttachmentEditorError: '',
             shareDialogOpen: false,
             shareDummyDialogOpen: false,
+            sharedSubjectInsertDialogOpen: false,
+            sharedSubjectInsertDialogLoading: false,
+            sharedSubjectInsertDraft: {
+                ruleId: null,
+                subjectId: null,
+                label: '',
+            },
             shareAssignmentsLoading: false,
             shareAssignmentsError: '',
             shareAssignments: [],
@@ -1506,12 +1642,11 @@ export default {
             return Number.isFinite(ruleId) && ruleId > 0 && Number.isFinite(materialId) && materialId > 0
         },
         isEditLinkedReadOnly() {
-            return this.isEditLinkedMaterial && this.normalizedEditLinkedPermission === 'read_only'
+            return this.isEditLinkedMaterial && !this.linkedPermissionAllowsFieldEditing(this.normalizedEditLinkedPermission)
         },
         canEditLinkedAppendContent() {
             if (!this.isEditLinkedMaterial) return true
-            return this.normalizedEditLinkedPermission === 'read_write'
-                || this.normalizedEditLinkedPermission === 'full_access'
+            return this.linkedPermissionAllowsAppend(this.normalizedEditLinkedPermission)
         },
         canEditLinkedDeleteAttachments() {
             if (!this.isEditLinkedMaterial) return true
@@ -1920,6 +2055,97 @@ export default {
         await this.refreshLastDeletedMaterialRestoreInfo()
     },
     methods: {
+        workspaceHasInsertSubjectTarget() {
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            return subjects.length > 0
+        },
+        workspaceHasInsertTopicTarget() {
+            const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
+            return subjects.some((subject) => Array.isArray(subject?.topics) && subject.topics.length > 0)
+        },
+        canShowSharedInsertButton(level) {
+            const normalizedLevel = String(level || '').trim().toLowerCase()
+            if (normalizedLevel === 'subject') return true
+            if (normalizedLevel === 'topic') return this.workspaceHasInsertSubjectTarget()
+            if (normalizedLevel === 'unit') return this.workspaceHasInsertTopicTarget()
+            if (normalizedLevel === 'material') return this.workspaceHasInsertSubjectTarget()
+            return false
+        },
+        sharedInsertLevelLabel(level) {
+            const normalized = String(level || '').trim().toLowerCase()
+            if (normalized === 'all') return 'Freigabe'
+            if (normalized === 'subject') return 'Fach'
+            if (normalized === 'topic') return 'Thema'
+            if (normalized === 'unit') return 'Bereich'
+            if (normalized === 'material') return 'Material'
+            return 'Element'
+        },
+        closeSharedSubjectInsertDialog(force = false) {
+            if (this.sharedSubjectInsertDialogLoading && force !== true) return
+            this.sharedSubjectInsertDialogOpen = false
+            this.sharedSubjectInsertDraft = {
+                ruleId: null,
+                subjectId: null,
+                label: '',
+            }
+        },
+        async confirmSharedSubjectInsert() {
+            if (this.sharedSubjectInsertDialogLoading) return
+
+            const ruleId = Number(this.sharedSubjectInsertDraft?.ruleId || 0)
+            const subjectId = Number(this.sharedSubjectInsertDraft?.subjectId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+            if (!Number.isFinite(subjectId) || subjectId <= 0) return
+
+            this.sharedSubjectInsertDialogLoading = true
+            try {
+                const result = await this.performSharedInboxMutation({
+                    method: 'post',
+                    url: `/api/admin/materials/shares/inbox/subjects/${subjectId}/insert-tree`,
+                    data: {
+                        rule_id: ruleId,
+                    },
+                    successMessage: `Fach "${String(this.sharedSubjectInsertDraft?.label || 'Fach').trim() || 'Fach'}" eingeordnet.`,
+                    errorMessage: 'Fach konnte nicht eingeordnet werden.',
+                })
+
+                if (result !== null) {
+                    this.closeSharedSubjectInsertDialog(true)
+                    await this.loadCards(null, { forceFilterCountRefresh: true })
+                    await this.loadSharedObjectsForMe()
+                }
+            } finally {
+                this.sharedSubjectInsertDialogLoading = false
+            }
+        },
+        openSharedInsertDraft(payload = {}) {
+            const level = String(payload?.level || '').trim().toLowerCase()
+            if (!this.canShowSharedInsertButton(level)) return
+
+            if (level === 'subject') {
+                const ruleId = Number(payload?.ruleId || 0)
+                const subjectId = Number(payload?.targetId || 0)
+                if (!Number.isFinite(ruleId) || ruleId <= 0) return
+                if (!Number.isFinite(subjectId) || subjectId <= 0) return
+
+                this.sharedSubjectInsertDraft = {
+                    ruleId,
+                    subjectId,
+                    label: String(payload?.label || '').trim() || 'Fach',
+                }
+                this.sharedSubjectInsertDialogOpen = true
+                return
+            }
+
+            const label = String(payload?.label || '').trim() || this.sharedInsertLevelLabel(level)
+            const levelLabel = this.sharedInsertLevelLabel(level)
+            const notification = useNotificationStore()
+            notification.notify({
+                message: `${levelLabel} "${label}" kann bald eingeordnet werden.`,
+                type: 'info',
+                timeout: 2500,
+            })
+        },
         openShareDialog(target = {}) {
             this.shareTarget = {
                 level: String(target?.level || '').trim(),
@@ -1983,8 +2209,9 @@ export default {
         },
         sharePermissionRank(permission) {
             const normalized = String(permission || '').trim()
-            if (normalized === 'full_access') return 3
-            if (normalized === 'read_write') return 2
+            if (normalized === 'full_access') return 4
+            if (normalized === 'read_write') return 3
+            if (normalized === 'read_append') return 2
             if (normalized === 'read_only') return 1
             return 1
         },
@@ -1992,6 +2219,7 @@ export default {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_append') return 'info'
             if (normalized === 'read_only') return 'primary'
             return 'primary'
         },
@@ -2004,6 +2232,7 @@ export default {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'full_access'
             if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_append') return 'read_append'
             if (normalized === 'read_only') return 'read_only'
             return ''
         },
@@ -2017,7 +2246,16 @@ export default {
             const normalized = this.normalizeLinkedPermission(permission)
             if (normalized === 'full_access') return 'VOLLZUGRIFF'
             if (normalized === 'read_write') return 'LESEN/SCHREIBEN'
+            if (normalized === 'read_append') return 'LESEN/HINZUFÜGEN'
             return 'NUR LESEN'
+        },
+        linkedPermissionAllowsFieldEditing(permission) {
+            const normalized = this.normalizeLinkedPermission(permission)
+            return normalized === '' || normalized === 'read_write' || normalized === 'full_access'
+        },
+        linkedPermissionAllowsAppend(permission) {
+            const normalized = this.normalizeLinkedPermission(permission)
+            return normalized === '' || normalized === 'read_append' || normalized === 'read_write' || normalized === 'full_access'
         },
         sharedRuleCard(ruleId) {
             const id = Number(ruleId)
@@ -2058,10 +2296,11 @@ export default {
         },
         cardAllowsFieldEditing(card) {
             const permission = this.linkedPermissionForCard(card)
-            return permission === '' || permission === 'read_write' || permission === 'full_access'
+            return this.linkedPermissionAllowsFieldEditing(permission)
         },
         cardAllowsAttachmentAppend(card) {
-            return this.cardAllowsFieldEditing(card)
+            const permission = this.linkedPermissionForCard(card)
+            return this.linkedPermissionAllowsAppend(permission)
         },
         cardAllowsAttachmentDelete(card) {
             const permission = this.linkedPermissionForCard(card)
@@ -2251,6 +2490,7 @@ export default {
             const normalized = String(permission || '').trim().toLocaleLowerCase()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_append') return 'info'
             return 'primary'
         },
         sharedScopeTypeLabel(scopeType) {
@@ -2693,7 +2933,7 @@ export default {
                 linked_permission: permission,
                 linked_permission_label: permissionLabel,
             })
-            this.detailDialogReadOnlyMode = permission === 'read_only'
+            this.detailDialogReadOnlyMode = !this.linkedPermissionAllowsFieldEditing(permission)
             this.detailDialogOpen = true
             this.detailDialogLoading = true
             this.detailDeleteStep = 0
@@ -2704,7 +2944,7 @@ export default {
                 if (Number(this.detailDialogCard?.id || 0) !== cardId) return
                 if (detail && typeof detail === 'object') {
                     this.detailDialogCard = this.sanitizeDialogCard(detail)
-                    this.detailDialogReadOnlyMode = this.normalizeLinkedPermission(detail?.linked_permission) === 'read_only'
+                    this.detailDialogReadOnlyMode = !this.linkedPermissionAllowsFieldEditing(detail?.linked_permission)
                 }
             } catch (error) {
                 const notification = useNotificationStore()
@@ -2938,7 +3178,10 @@ export default {
                 this.isLoadingSharedObjectsForMe = false
             }
         },
-        openSubjectsOverviewScreen() {
+        async openSubjectsOverviewScreen() {
+            if (this.isOpeningSubjectsOverviewScreen) return
+            this.isOpeningSubjectsOverviewScreen = true
+
             const filters = this.buildSubjectsContentsOverviewFilters()
             const query = {
                 source: 'overview',
@@ -2951,10 +3194,17 @@ export default {
                 query[filterKey] = normalizedValue
             }
 
-            this.$router.push({
-                path: '/admin/materials/subjects-overview',
-                query,
-            })
+            try {
+                await this.$router.push({
+                    path: '/admin/materials/subjects-overview',
+                    query,
+                })
+                if (String(this.$route?.path || '') !== '/admin/materials/subjects-overview') {
+                    this.isOpeningSubjectsOverviewScreen = false
+                }
+            } catch {
+                this.isOpeningSubjectsOverviewScreen = false
+            }
         },
         setOverviewSortMode(value) {
             const nextSortMode = ['date', 'name'].includes(String(value)) ? String(value) : 'date'
@@ -5508,7 +5758,7 @@ ${content}
                 this.attachmentRows = this.toAttachmentRows(refreshedCard?.attachments)
                 if (this.detailDialogOpen && Number(this.detailDialogCard?.id || 0) === id) {
                     this.detailDialogCard = sanitizedCard
-                    this.detailDialogReadOnlyMode = this.normalizeLinkedPermission(refreshedCard?.linked_permission) === 'read_only'
+                    this.detailDialogReadOnlyMode = !this.linkedPermissionAllowsFieldEditing(refreshedCard?.linked_permission)
                 }
 
                 const nextTitle = String(refreshedCard?.title || '').trim()
@@ -6667,6 +6917,18 @@ ${content}
 
 .inbox-hierarchy-material-count-clickable {
     cursor: pointer;
+}
+
+.inbox-hierarchy-insert-btn {
+    text-transform: none;
+    letter-spacing: 0.01em;
+    font-weight: 600;
+    color: #2e6ea4 !important;
+}
+
+.inbox-hierarchy-insert-btn :deep(.v-btn__content),
+.inbox-hierarchy-insert-btn :deep(.v-icon) {
+    color: #2e6ea4 !important;
 }
 
 .overview-subjects-tree {

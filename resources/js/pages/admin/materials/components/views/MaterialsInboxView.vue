@@ -825,6 +825,7 @@ export default {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_append') return 'info'
             return 'primary'
         },
         isArchivingRule(ruleId) {
@@ -1678,3 +1679,4 @@ export default {
     }
 }
 </style>
+

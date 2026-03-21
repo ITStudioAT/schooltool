@@ -1471,9 +1471,14 @@ export default {
             const normalized = String(permission || '').trim().toLocaleLowerCase()
             if (normalized === 'full_access') return 'full_access'
             if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_append') return 'read_append'
             if (normalized === 'read_only') return 'read_only'
             if (normalized === 'read-only') return 'read_only'
             return ''
+        },
+        linkedPermissionAllowsFieldEditing(permission) {
+            const normalized = this.normalizeLinkedPermission(permission)
+            return normalized === 'read_write' || normalized === 'full_access'
         },
         findUnitNodeById(unitId) {
             const id = Number(unitId)
@@ -1506,7 +1511,7 @@ export default {
         },
         isTopicReadOnlyLinked(topic) {
             if (topic?.isLinked !== true) return false
-            return this.normalizeLinkedPermission(topic?.linkedPermission) === 'read_only'
+            return !this.linkedPermissionAllowsFieldEditing(topic?.linkedPermission)
         },
         canEditTopicNode(topic) {
             const topicId = Number(topic?.id)
@@ -1520,7 +1525,7 @@ export default {
         },
         isUnitReadOnlyLinked(unit) {
             if (unit?.isLinked !== true) return false
-            return this.normalizeLinkedPermission(unit?.linkedPermission) === 'read_only'
+            return !this.linkedPermissionAllowsFieldEditing(unit?.linkedPermission)
         },
         canEditUnitNode(unit) {
             const unitId = Number(unit?.id)

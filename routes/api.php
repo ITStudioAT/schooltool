@@ -23,6 +23,7 @@ use App\Http\Controllers\Admin\Materials\MaterialShareController;
 use App\Http\Controllers\Admin\Materials\MaterialStatusController;
 use App\Http\Controllers\Admin\Materials\MaterialTypeController;
 use App\Http\Controllers\Admin\Materials\MaterialUserSettingsController;
+use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
 use App\Http\Controllers\Admin\NavigationController;
 use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
@@ -333,6 +334,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
         Route::get('/admin/materials/config', [MaterialController::class, 'config']);
+        Route::post('/admin/materials/workspaces', [MaterialWorkspaceController::class, 'store']);
+        Route::put('/admin/materials/workspaces/{material_workspace}', [MaterialWorkspaceController::class, 'update']);
         Route::post('/admin/materials/subjects', [MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [MaterialClassificationController::class, 'updateSubject']);
         Route::delete('/admin/materials/subjects/{material_subject}', [MaterialClassificationController::class, 'destroySubject']);
@@ -397,6 +400,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/shares/inbox/subjects/{material_subject}/move', [MaterialShareController::class, 'moveInboxSubject']);
         Route::post('/admin/materials/shares/inbox/topics/{material_topic}/move', [MaterialShareController::class, 'moveInboxTopic']);
         Route::post('/admin/materials/shares/inbox/units/{material_unit}/move', [MaterialShareController::class, 'moveInboxUnit']);
+        Route::post('/admin/materials/shares/inbox/subjects/{material_subject}/insert-tree', [MaterialShareController::class, 'insertInboxSubjectTree']);
         Route::put('/admin/materials/shares/inbox/subjects/{material_subject}', [MaterialShareController::class, 'updateInboxSubject']);
         Route::put('/admin/materials/shares/inbox/topics/{material_topic}', [MaterialShareController::class, 'updateInboxTopic']);
         Route::put('/admin/materials/shares/inbox/units/{material_unit}', [MaterialShareController::class, 'updateInboxUnit']);

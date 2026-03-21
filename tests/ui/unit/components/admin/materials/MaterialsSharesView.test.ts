@@ -142,11 +142,11 @@ describe('MaterialsSharesView', () => {
     it('offers all permission options for each scope type', () => {
         const ctx = createViewCtx()
 
-        expect(ctx.permissionOptionsForScope('all').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('subject').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('topic').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('unit').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
-        expect(ctx.permissionOptionsForScope('material').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(ctx.permissionOptionsForScope('all').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
+        expect(ctx.permissionOptionsForScope('subject').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
+        expect(ctx.permissionOptionsForScope('topic').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
+        expect(ctx.permissionOptionsForScope('unit').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
+        expect(ctx.permissionOptionsForScope('material').map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
     })
 
     it('loadShares stores rows and needsMigration meta', async () => {

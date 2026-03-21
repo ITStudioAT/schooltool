@@ -245,6 +245,88 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
+        async createWorkspace(name = 'Workspace') {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const normalizedName = String(name ?? '').trim().slice(0, 255) || 'Workspace'
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/materials/workspaces', {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Workspace angelegt.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Workspace konnte nicht angelegt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async renameWorkspace(workspaceId, name) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            const id = Number(workspaceId || 0)
+            const normalizedName = String(name ?? '').trim().slice(0, 255)
+
+            if (!Number.isFinite(id) || id <= 0) {
+                notification.notify({
+                    message: 'Workspace konnte nicht gefunden werden.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            if (!normalizedName) {
+                notification.notify({
+                    message: 'Bitte einen Workspace-Namen eingeben.',
+                    type: 'warning',
+                    timeout: 2500,
+                })
+                return null
+            }
+
+            adminStore.is_loading++
+            try {
+                const response = await axios.put(`/api/admin/materials/workspaces/${id}`, {
+                    data: {
+                        name: normalizedName,
+                    },
+                })
+                await this.loadConfig()
+                notification.notify({
+                    message: 'Workspace umbenannt.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Workspace konnte nicht umbenannt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async index(page = 1) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

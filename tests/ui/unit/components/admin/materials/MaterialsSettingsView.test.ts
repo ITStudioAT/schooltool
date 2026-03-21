@@ -33,6 +33,13 @@ function buildContext() {
                                         linked_permission_label: 'LESEN/SCHREIBEN',
                                     },
                                     {
+                                        id: 33,
+                                        name: 'Append Linked Unit',
+                                        is_linked: true,
+                                        linked_permission: 'read_append',
+                                        linked_permission_label: 'LESEN/HINZUFÜGEN',
+                                    },
+                                    {
                                         id: 32,
                                         name: 'Manual Unit',
                                         is_linked: false,
@@ -74,16 +81,18 @@ function buildContext() {
 }
 
 describe('MaterialsSettingsView unit edit guards', () => {
-    it('marks linked read-only units as non-editable', () => {
+    it('marks linked read-only and append-only units as non-editable', () => {
         const ctx = buildContext()
         const units = ctx.subjectTreeItems[0].topics[0].units
         const readOnlyUnit = units.find((entry: any) => Number(entry.id) === 30)
         const writableLinkedUnit = units.find((entry: any) => Number(entry.id) === 31)
+        const appendLinkedUnit = units.find((entry: any) => Number(entry.id) === 33)
         const manualUnit = units.find((entry: any) => Number(entry.id) === 32)
 
         expect(readOnlyUnit.isLinked).toBe(true)
         expect(readOnlyUnit.linkedPermission).toBe('read_only')
         expect(ctx.canEditUnitNode(readOnlyUnit)).toBe(false)
+        expect(ctx.canEditUnitNode(appendLinkedUnit)).toBe(false)
         expect(ctx.canEditUnitNode(writableLinkedUnit)).toBe(true)
         expect(ctx.canEditUnitNode(manualUnit)).toBe(true)
     })

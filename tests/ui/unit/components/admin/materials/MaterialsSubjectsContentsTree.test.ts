@@ -168,6 +168,7 @@ function renderTree(
                 @open-attachments="$emit('open-attachments', $event)"
                 @open-shared-material="$emit('open-shared-material', $event)"
                 @open-shared-attachments="$emit('open-shared-attachments', $event)"
+                @open-shared-insert-draft="$emit('open-shared-insert-draft', $event)"
                 @unlink-linked-material="$emit('unlink-linked-material', $event)"
                 @unlink-linked-topic="$emit('unlink-linked-topic', $event)"
                 @unlink-linked-unit="$emit('unlink-linked-unit', $event)" />
@@ -304,6 +305,20 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((movedEvents[0]?.[0] as any)?.level).toBe('topic')
         expect((movedEvents[0]?.[0] as any)?.nodeId).toBe(11)
         expect((movedEvents[0]?.[0] as any)?.direction).toBe('down')
+    })
+
+    it('shows Struktur ändern for an empty workspace and allows adding the first subject', async () => {
+        renderTree([], {
+            enableCreateButtons: true,
+        })
+
+        expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getByRole('button', { name: 'Struktur schließen' })).toBeInTheDocument()
+        expect(screen.getAllByTitle('Fach hinzufügen')).toHaveLength(1)
     })
 
     it('shows shared objects when Für mich geteilt is expanded', async () => {
@@ -893,6 +908,237 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.queryByText('Lineare Gleichungen')).not.toBeInTheDocument()
         expect(sharedItem.style.flex).toContain('24rem')
         expect(sharedItem.style.maxWidth).toBe('28rem')
+    })
+
+    it('shows Struktur ändern for empty shared read-write workspace and allows adding the first subject', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 78,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace B',
+                    permission: 'read_write',
+                    permissionLabel: 'LESEN/SCHREIBEN',
+                    fromUserLabel: 'Lehrer Zwei',
+                    materialsCount: 0,
+                    hierarchy: [],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getByRole('button', { name: 'Struktur ändern' })).toBeInTheDocument()
+        expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getAllByRole('button', { name: 'Fach hinzufügen' })).toHaveLength(1)
+    })
+
+    it('renders shared add-material actions inline next to the node title', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 79,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Alle Materialien',
+                    scopePathLabel: 'Workspace C',
+                    permission: 'read_write',
+                    permissionLabel: 'LESEN/SCHREIBEN',
+                    fromUserLabel: 'Lehrer Drei',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const addButton = screen.getByTitle('Neues Material in Fach anlegen')
+        const nodeMain = addButton.closest('.overview-shared-hierarchy-node-main')
+        expect(nodeMain).not.toBeNull()
+    })
+
+    it('shows add-material action for shared READ/ADD permission', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 80,
+                    scopeType: 'subject',
+                    scopeObjectLabel: 'Informatik',
+                    scopePathLabel: 'Informatik',
+                    permission: 'read_append',
+                    permissionLabel: 'LESEN/HINZUFÜGEN',
+                    fromUserLabel: 'Lehrer Vier',
+                    materialsCount: 0,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        expect(screen.getByTitle('Neues Material in Fach anlegen')).toBeInTheDocument()
+    })
+
+    it('shows Einordnen buttons on all shared tree levels and emits insert draft payload', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Lokales Fach',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Lokales Thema',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 81,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Workspace',
+                    scopePathLabel: 'Workspace',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Fuenf',
+                    materialsCount: 3,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Digitale Kompetenzen',
+                                    materials: [
+                                        {
+                                            id: 102,
+                                            title: 'Themamaterial',
+                                            status: 'inbox',
+                                            statusLabel: 'Neu/Idee',
+                                            attachmentsCount: 0,
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'EMails',
+                                            materials: [
+                                                {
+                                                    id: 103,
+                                                    title: 'Bereichsmaterial',
+                                                    status: 'inbox',
+                                                    statusLabel: 'Neu/Idee',
+                                                    attachmentsCount: 0,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const insertButtons = screen.getAllByRole('button', { name: 'Einordnen' })
+        expect(insertButtons.length).toBeGreaterThanOrEqual(6)
+
+        await fireEvent.click(insertButtons[0])
+
+        const draftEvents = emitted('open-shared-insert-draft') || []
+        expect(draftEvents).toHaveLength(1)
+        expect((draftEvents[0]?.[0] as any)?.ruleId).toBe(81)
+        expect(['subject', 'topic', 'unit', 'material']).toContain((draftEvents[0]?.[0] as any)?.level)
+    })
+
+    it('shows only subject Einordnen when local workspace has no subject/topic targets', async () => {
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 82,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Workspace',
+                    scopePathLabel: 'Workspace',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Sechs',
+                    materialsCount: 1,
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 201,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Digitale Kompetenzen',
+                                    materials: [],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'EMails',
+                                            materials: [],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+
+        const insertButtons = screen.getAllByRole('button', { name: 'Einordnen' })
+        expect(insertButtons).toHaveLength(1)
     })
 
     it('renders empty shared branches and direct materials on subject topic and unit level', async () => {

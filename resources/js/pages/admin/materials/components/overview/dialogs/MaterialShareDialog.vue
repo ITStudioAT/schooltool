@@ -380,12 +380,14 @@ export default {
             const normalized = String(mode || '').trim()
             if (normalized === 'full_access') return 'full_access'
             if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_append') return 'read_append'
             return 'read_only'
         },
         allowedShareModesForScope() {
             return [
                 { value: 'full_access', label: 'Vollzugriff' },
                 { value: 'read_write', label: 'Lesen/Schreiben' },
+                { value: 'read_append', label: 'Lesen/Hinzufügen' },
                 { value: 'read_only', label: 'Nur Lesen' },
             ]
         },
@@ -395,10 +397,10 @@ export default {
             this.shareMode = allowedModes.includes(normalizedMode) ? normalizedMode : 'read_write'
         },
         shareModeLabel(mode) {
-            return ({ full_access: 'Vollzugriff', read_write: 'Lesen/Schreiben', read_only: 'Nur Lesen' })[String(mode || '').trim()] || 'Nur Lesen'
+            return ({ full_access: 'Vollzugriff', read_write: 'Lesen/Schreiben', read_append: 'Lesen/Hinzufügen', read_only: 'Nur Lesen' })[String(mode || '').trim()] || 'Nur Lesen'
         },
         permissionChipColor(permission) {
-            return ({ full_access: 'error', read_write: 'warning', read_only: 'primary' })[String(permission || '').trim()] || 'primary'
+            return ({ full_access: 'error', read_write: 'warning', read_append: 'info', read_only: 'primary' })[String(permission || '').trim()] || 'primary'
         },
         targetChipColor(target) {
             if (target?.target_type === 'everyone') return 'success'

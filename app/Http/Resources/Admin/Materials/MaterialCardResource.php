@@ -111,6 +111,7 @@ class MaterialCardResource extends JsonResource
         return match ($this->linkedPermission()) {
             MaterialShareTarget::PERMISSION_FULL_ACCESS => 'VOLLZUGRIFF',
             MaterialShareTarget::PERMISSION_READ_WRITE => 'LESEN/SCHREIBEN',
+            MaterialShareTarget::PERMISSION_READ_APPEND => 'LESEN/HINZUFÜGEN',
             MaterialShareTarget::PERMISSION_READ_ONLY => 'NUR LESEN',
             default => null,
         };

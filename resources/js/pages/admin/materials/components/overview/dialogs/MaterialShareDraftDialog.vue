@@ -249,6 +249,7 @@
                         </div>
                         <v-btn-toggle v-model="shareMode" mandatory color="primary" variant="outlined" class="share-draft-permission-toggle" :disabled="!hasRecipientSelection">
                             <v-btn value="read_only" class="share-draft-mode-btn">NUR LESEN</v-btn>
+                            <v-btn value="read_append" class="share-draft-mode-btn">LESEN/HINZUFÜGEN</v-btn>
                             <v-btn value="read_write" class="share-draft-mode-btn">LESEN/SCHREIBEN</v-btn>
                             <v-btn value="full_access" class="share-draft-mode-btn">VOLLZUGRIFF</v-btn>
                         </v-btn-toggle>
@@ -519,7 +520,7 @@ export default {
             }
         },
         shareModeLabel(mode) {
-            return ({ read_only: 'NUR LESEN', read_write: 'LESEN/SCHREIBEN', full_access: 'VOLLZUGRIFF' })[String(mode || '').trim()] || 'NUR LESEN'
+            return ({ read_only: 'NUR LESEN', read_append: 'LESEN/HINZUFÜGEN', read_write: 'LESEN/SCHREIBEN', full_access: 'VOLLZUGRIFF' })[String(mode || '').trim()] || 'NUR LESEN'
         },
         clearSameSchoolSearch() {
             this.sameSchoolSearch = ''

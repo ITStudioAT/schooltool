@@ -30,11 +30,17 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpWord\Element\Section;
+use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Shared\Html;
+use PhpOffice\PhpWord\Style\Language;
 
 class MaterialController extends Controller
 {
@@ -701,7 +707,7 @@ class MaterialController extends Controller
         $section = $phpWord->addSection();
 
         try {
-            \PhpOffice\PhpWord\Shared\Html::addHtml($section, $normalizedBodyHtml, false, false);
+            Html::addHtml($section, $normalizedBodyHtml, false, false);
         } catch (\Throwable $error) {
             Log::warning('DOCX export fallback to plain text.', [
                 'attachment_id' => (int) $material_card_attachment->id,
@@ -723,7 +729,7 @@ class MaterialController extends Controller
         $tempDocxPath = $tempPath.'.docx';
 
         try {
-            $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+            $writer = IOFactory::createWriter($phpWord, 'Word2007');
             $writer->save($tempDocxPath);
         } catch (\Throwable $error) {
             @unlink($tempDocxPath);
@@ -805,7 +811,7 @@ class MaterialController extends Controller
         return array_values(array_filter(array_unique($candidates), static fn (string $diskName): bool => $diskName !== ''));
     }
 
-    private function resolveAttachmentStorageDisk(string $relativePath, bool $allowSharedDiskFallback = false): ?\Illuminate\Contracts\Filesystem\Filesystem
+    private function resolveAttachmentStorageDisk(string $relativePath, bool $allowSharedDiskFallback = false): ?Filesystem
     {
         $path = trim($relativePath);
         if ($path === '') {
@@ -970,7 +976,7 @@ class MaterialController extends Controller
     private function assertLinkedCardAllowsEdit(MaterialService $service, User $authUser, MaterialCard $card): void
     {
         $permission = $this->linkedPermissionForCard($service, $authUser, $card);
-        if ($permission === MaterialShareTarget::PERMISSION_READ_ONLY) {
+        if ($permission !== null && ! in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
             abort(403, 'Dieses verlinkte Material ist auf NUR LESEN gesetzt.');
         }
     }
@@ -1216,7 +1222,7 @@ class MaterialController extends Controller
         return $text;
     }
 
-    private function addPlainTextToDocxSection(\PhpOffice\PhpWord\Element\Section $section, string $text): void
+    private function addPlainTextToDocxSection(Section $section, string $text): void
     {
         $normalizedText = trim($text);
         if ($normalizedText === '') {
@@ -1247,13 +1253,13 @@ class MaterialController extends Controller
         }
     }
 
-    private function newDocxDocument(): \PhpOffice\PhpWord\PhpWord
+    private function newDocxDocument(): PhpWord
     {
-        $phpWord = new \PhpOffice\PhpWord\PhpWord;
+        $phpWord = new PhpWord;
         $phpWord->setDefaultFontSize(12);
 
         $docLocale = $this->docxLanguageFromLaravelLocale();
-        $phpWord->getSettings()->setThemeFontLang(new \PhpOffice\PhpWord\Style\Language($docLocale));
+        $phpWord->getSettings()->setThemeFontLang(new Language($docLocale));
 
         $phpWord->addTitleStyle(1, ['bold' => true, 'size' => 24], ['spaceAfter' => 240]);
         $phpWord->addTitleStyle(2, ['bold' => true, 'size' => 20], ['spaceAfter' => 220]);
@@ -1322,7 +1328,7 @@ class MaterialController extends Controller
 
     private function attachmentDownloadContentType(
         MaterialCardAttachment $attachment,
-        \Illuminate\Contracts\Filesystem\Filesystem $disk,
+        Filesystem $disk,
         string $relativePath
     ): string {
         $storedMimeType = trim((string) ($attachment->mime_type ?? ''));

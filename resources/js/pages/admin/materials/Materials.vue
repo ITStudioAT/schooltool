@@ -1,23 +1,96 @@
 <template>
     <v-container fluid class="materials-page ma-0 w-100 pa-2">
-        <MaterialsMenu v-model="main_action" :disabled="isMenuLocked" />
-        <v-row class="w-100" dense>
-            <v-col cols="12" lg="10" xl="9" class="mx-auto">
-                <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
-                <MaterialsFreigabeView v-if="main_action === 'teilen'" />
-                <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
-                <MaterialsSettingsView
-                    v-if="main_action === 'settings'"
-                    :initial-selected-action="initialSettingsAction"
-                    :initial-selected-subject-action="initialSubjectAction"
-                    @menu-lock-change="setMenuLocked" />
-            </v-col>
-        </v-row>
+        <template v-if="isWorkspaceCheckLoading">
+            <v-row class="w-100" dense>
+                <v-col cols="12" lg="10" xl="9" class="mx-auto">
+                    <v-card class="materials-shell pa-6" rounded="xl" elevation="0">
+                        <v-skeleton-loader type="article" />
+                    </v-card>
+                </v-col>
+            </v-row>
+        </template>
+
+        <template v-else-if="!hasWorkspace">
+            <v-row class="w-100" dense>
+                <v-col cols="12" lg="8" xl="7" class="mx-auto">
+                    <v-card class="materials-shell pa-6" rounded="xl" elevation="0">
+                        <div class="text-h6 font-weight-bold mb-2">Kein Workspace vorhanden</div>
+                        <div class="text-body-1 mb-5">
+                            Für die Materialverwaltung ist zuerst ein Workspace nötig.
+                        </div>
+                        <v-btn
+                            color="primary"
+                            prepend-icon="mdi-briefcase-plus-outline"
+                            :loading="isSavingWorkspace"
+                            :disabled="isSavingWorkspace"
+                            @click="openCreateWorkspaceDialog">
+                            Workspace erstellen
+                        </v-btn>
+                    </v-card>
+                </v-col>
+            </v-row>
+        </template>
+
+        <template v-else>
+            <v-card tile flat color="transparent" class="workspace-bar d-flex align-center justify-space-between flex-wrap ga-2 w-100 mb-3">
+                <div class="workspace-bar__label">
+                    Workspace: <span class="workspace-bar__name">{{ activeWorkspaceName }}</span>
+                </div>
+                <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    prepend-icon="mdi-pencil-outline"
+                    :disabled="isMenuLocked"
+                    @click="openRenameWorkspaceDialog">
+                    Workspace umbenennen
+                </v-btn>
+            </v-card>
+
+            <MaterialsMenu v-model="main_action" :disabled="isMenuLocked" />
+            <v-row class="w-100" dense>
+                <v-col cols="12" lg="10" xl="9" class="mx-auto">
+                    <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
+                    <MaterialsFreigabeView v-if="main_action === 'shared'" />
+                    <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
+                    <MaterialsSettingsView
+                        v-if="main_action === 'settings'"
+                        :initial-selected-action="initialSettingsAction"
+                        :initial-selected-subject-action="initialSubjectAction"
+                        @menu-lock-change="setMenuLocked" />
+                </v-col>
+            </v-row>
+        </template>
+
+        <v-dialog v-model="workspaceDialogOpen" persistent max-width="520">
+            <v-card>
+                <v-card-title>
+                    {{ workspaceDialogMode === 'rename' ? 'Workspace umbenennen' : 'Workspace erstellen' }}
+                </v-card-title>
+                <v-card-text>
+                    <v-text-field
+                        v-model="workspaceDialogName"
+                        label="Workspace-Name"
+                        :disabled="isSavingWorkspace"
+                        maxlength="255"
+                        autofocus
+                        hide-details="auto" />
+                </v-card-text>
+                <v-card-actions>
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="isSavingWorkspace" @click="closeWorkspaceDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" :loading="isSavingWorkspace" @click="submitWorkspaceDialog">
+                        {{ workspaceDialogMode === 'rename' ? 'Speichern' : 'Anlegen' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-container>
 </template>
 
 <script>
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
 import MaterialsFreigabeView from './components/views/MaterialsFreigabeView.vue'
 import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
@@ -36,14 +109,23 @@ export default {
     data() {
         return {
             adminStore: null,
+            materialCardStore: null,
             main_action: 'overview',
             isMenuLocked: false,
+            isWorkspaceCheckLoading: true,
+            workspaceDialogOpen: false,
+            workspaceDialogName: 'Workspace',
+            workspaceDialogMode: 'create',
+            isSavingWorkspace: false,
         }
     },
-    beforeMount() {
+    async beforeMount() {
         this.adminStore = useAdminStore()
+        this.materialCardStore = useMaterialCardStore()
         this.applyRouteSelection()
         this.setMenuLocked(false)
+        await this.materialCardStore.loadConfig()
+        this.isWorkspaceCheckLoading = false
     },
     unmounted() {
         this.setMenuLocked(false)
@@ -59,9 +141,21 @@ export default {
             if (value !== 'new_material' && value !== 'settings') {
                 this.setMenuLocked(false)
             }
+
+            this.syncRouteMainAction(value)
         },
     },
     computed: {
+        hasWorkspace() {
+            return Number(this.materialCardStore?.config?.workspace?.id || 0) > 0
+        },
+        activeWorkspaceId() {
+            return Number(this.materialCardStore?.config?.workspace?.id || 0)
+        },
+        activeWorkspaceName() {
+            const name = String(this.materialCardStore?.config?.workspace?.name || '').trim()
+            return name || 'Workspace'
+        },
         initialSettingsAction() {
             const value = String(this.$route?.query?.settings_action || '').trim()
             return value || null
@@ -72,12 +166,89 @@ export default {
         },
     },
     methods: {
+        async openCreateWorkspaceDialog() {
+            if (this.isSavingWorkspace) {
+                return
+            }
+
+            this.isSavingWorkspace = true
+            try {
+                await this.materialCardStore.createWorkspace('Workspace')
+            } finally {
+                this.isSavingWorkspace = false
+            }
+        },
+        openRenameWorkspaceDialog() {
+            if (!this.hasWorkspace) {
+                return
+            }
+
+            this.workspaceDialogMode = 'rename'
+            this.workspaceDialogName = this.activeWorkspaceName
+            this.workspaceDialogOpen = true
+        },
+        closeWorkspaceDialog() {
+            if (this.isSavingWorkspace) {
+                return
+            }
+
+            this.workspaceDialogOpen = false
+        },
+        async submitWorkspaceDialog() {
+            if (this.isSavingWorkspace) {
+                return
+            }
+
+            const normalizedName = String(this.workspaceDialogName || '').trim().slice(0, 255)
+            if (!normalizedName) {
+                return
+            }
+
+            this.isSavingWorkspace = true
+            try {
+                const response = this.workspaceDialogMode === 'rename'
+                    ? await this.materialCardStore.renameWorkspace(this.activeWorkspaceId, normalizedName)
+                    : await this.materialCardStore.createWorkspace(normalizedName)
+
+                if (response) {
+                    this.workspaceDialogOpen = false
+                }
+            } finally {
+                this.isSavingWorkspace = false
+            }
+        },
         applyRouteSelection() {
             if (this.$route?.path !== '/admin/materials') return
             const queryValue = String(this.$route?.query?.main_action || '').trim()
-            const allowed = ['overview', 'teilen', 'new_material', 'settings']
-            if (allowed.includes(queryValue)) {
-                this.main_action = queryValue
+            const normalizedQueryValue = queryValue === 'teilen' ? 'shared' : queryValue
+            const allowed = ['overview', 'shared', 'new_material', 'settings']
+            if (allowed.includes(normalizedQueryValue)) {
+                this.main_action = normalizedQueryValue
+                if (queryValue !== normalizedQueryValue) {
+                    this.syncRouteMainAction(normalizedQueryValue)
+                }
+            }
+        },
+        syncRouteMainAction(value) {
+            if (this.$route?.path !== '/admin/materials') return
+
+            const allowed = ['overview', 'shared', 'new_material', 'settings']
+            const normalized = allowed.includes(String(value || '').trim()) ? String(value || '').trim() : 'overview'
+            const current = String(this.$route?.query?.main_action || '').trim()
+            if (current === normalized) return
+
+            const nextQuery = {
+                ...(this.$route?.query || {}),
+                main_action: normalized,
+            }
+
+            const navigation = this.$router?.replace?.({
+                path: '/admin/materials',
+                query: nextQuery,
+            })
+
+            if (navigation && typeof navigation.catch === 'function') {
+                navigation.catch(() => {})
             }
         },
         setMenuLocked(value) {
@@ -127,6 +298,20 @@ export default {
     bottom: -120px;
     left: -130px;
     background: #ff9f5e;
+}
+
+:deep(.workspace-bar) {
+    position: relative;
+    z-index: 1;
+}
+
+.workspace-bar__label {
+    color: #f8efe7;
+    font-weight: 700;
+}
+
+.workspace-bar__name {
+    color: #ffd4b2;
 }
 
 :deep(.materials-shell) {

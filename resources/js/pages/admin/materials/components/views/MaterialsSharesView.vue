@@ -215,6 +215,7 @@ export default {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'full_access'
             if (normalized === 'read_write') return 'read_write'
+            if (normalized === 'read_append') return 'read_append'
             if (normalized === 'read_only') return 'read_only'
             return 'read_only'
         },
@@ -222,6 +223,7 @@ export default {
             return [
                 { value: 'full_access', label: 'VOLLZUGRIFF' },
                 { value: 'read_write', label: 'LESEN/SCHREIBEN' },
+                { value: 'read_append', label: 'LESEN/HINZUFÜGEN' },
                 { value: 'read_only', label: 'NUR LESEN' },
             ]
         },
@@ -229,6 +231,7 @@ export default {
             const normalized = this.normalizePermission(permission)
             if (normalized === 'full_access') return 'VOLLZUGRIFF'
             if (normalized === 'read_write') return 'LESEN/SCHREIBEN'
+            if (normalized === 'read_append') return 'LESEN/HINZUFÜGEN'
             return 'NUR LESEN'
         },
         targetChipLabel(target) {
@@ -244,13 +247,14 @@ export default {
         },
         permissionRank(permission) {
             const normalized = this.normalizePermission(permission)
-            if (normalized === 'full_access') return 3
-            if (normalized === 'read_write') return 2
+            if (normalized === 'full_access') return 4
+            if (normalized === 'read_write') return 3
+            if (normalized === 'read_append') return 2
             if (normalized === 'read_only') return 1
             return 0
         },
         permissionColor(permission) {
-            return ({ full_access: 'error', read_write: 'warning', read_only: 'primary' })[this.normalizePermission(permission)] || 'primary'
+            return ({ full_access: 'error', read_write: 'warning', read_append: 'info', read_only: 'primary' })[this.normalizePermission(permission)] || 'primary'
         },
         isStatusBusy(id) {
             return this.statusBusyIds.includes(Number(id))

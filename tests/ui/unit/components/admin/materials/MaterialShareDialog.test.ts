@@ -223,14 +223,14 @@ describe('MaterialShareDialog', () => {
             shareMode: 'full_access',
         })
 
-        expect(unitCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(unitCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
         unitCtx.ensureShareModeForScope('unit')
         expect(unitCtx.shareMode).toBe('full_access')
 
         const subjectCtx = createDialogCtx({
             target: { level: 'subject', id: 12, label: 'Mathematik' },
         })
-        expect(subjectCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_only'])
+        expect(subjectCtx.availableShareModes.map((entry: any) => entry.value)).toEqual(['full_access', 'read_write', 'read_append', 'read_only'])
     })
 
     it('requestStoreTarget keeps full access for topic scope', async () => {

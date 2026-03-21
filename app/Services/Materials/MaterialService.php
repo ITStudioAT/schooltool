@@ -63,10 +63,13 @@ class MaterialService
         return [
             'module' => 'materials',
             'school_id' => $user->school_id,
-            'workspace' => [
-                'id' => (int) $workspace->id,
-                'name' => (string) $workspace->name,
-            ],
+            'workspace' => $workspace instanceof MaterialWorkspace
+                ? [
+                    'id' => (int) $workspace->id,
+                    'name' => (string) $workspace->name,
+                ]
+                : null,
+            'has_workspace' => $workspace instanceof MaterialWorkspace,
             'status_values' => $this->statusValuesForUser($user),
             'type_values' => $this->typeValuesForUser($user),
             'default_type_values' => $this->defaultTypeValues(),
@@ -86,7 +89,12 @@ class MaterialService
         $this->syncLinkedInboxImportsForUser($user);
         $this->syncLinkedUnitInboxImportsForUser($user);
         $this->syncLinkedTopicInboxImportsForUser($user);
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return MaterialCard::query()
+                ->whereRaw('1 = 0')
+                ->paginate($this->materialsPaginationNumberForUser($user));
+        }
 
         $query = MaterialCard::query()
             ->where('user_id', $user->id)
@@ -426,7 +434,10 @@ class MaterialService
             return null;
         }
 
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return null;
+        }
 
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
@@ -458,7 +469,10 @@ class MaterialService
             return null;
         }
 
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return null;
+        }
 
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
@@ -490,7 +504,10 @@ class MaterialService
             return false;
         }
 
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return false;
+        }
 
         /** @var MaterialCard|null $card */
         $card = MaterialCard::onlyTrashed()
@@ -517,7 +534,10 @@ class MaterialService
             return [];
         }
 
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return [];
+        }
 
         $cards = MaterialCard::onlyTrashed()
             ->where('user_id', $user->id)
@@ -2207,7 +2227,10 @@ class MaterialService
             return [];
         }
 
-        $workspaceId = $this->activeWorkspaceIdForUser($user);
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId === null) {
+            return [];
+        }
 
         $subjectsQuery = MaterialSubject::query()
             ->where('user_id', $user->id)
@@ -3555,7 +3578,7 @@ class MaterialService
                 continue;
             }
 
-            if ($permission !== MaterialShareTarget::PERMISSION_READ_ONLY) {
+            if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
                 $targetUpdatedAt = $targetCard->updated_at;
                 $sourceUpdatedAt = $sourceCard->updated_at;
                 $targetIsNewer = $targetUpdatedAt && (! $sourceUpdatedAt || $targetUpdatedAt->gt($sourceUpdatedAt));
@@ -4077,8 +4100,9 @@ class MaterialService
     private function linkedPermissionRank(string $permission): int
     {
         return match ($permission) {
-            MaterialShareTarget::PERMISSION_FULL_ACCESS => 3,
-            MaterialShareTarget::PERMISSION_READ_WRITE => 2,
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 4,
+            MaterialShareTarget::PERMISSION_READ_WRITE => 3,
+            MaterialShareTarget::PERMISSION_READ_APPEND => 2,
             MaterialShareTarget::PERMISSION_READ_ONLY => 1,
             default => 0,
         };
@@ -4089,6 +4113,7 @@ class MaterialService
         return match ($permission) {
             MaterialShareTarget::PERMISSION_FULL_ACCESS => 'VOLLZUGRIFF',
             MaterialShareTarget::PERMISSION_READ_WRITE => 'LESEN/SCHREIBEN',
+            MaterialShareTarget::PERMISSION_READ_APPEND => 'LESEN/HINZUFÜGEN',
             MaterialShareTarget::PERMISSION_READ_ONLY => 'NUR LESEN',
             default => mb_strtoupper(trim((string) $permission)),
         };
@@ -4110,7 +4135,7 @@ class MaterialService
         return array_fill_keys($memberGroupIds, true);
     }
 
-    private function activeWorkspaceForUser(User $user): MaterialWorkspace
+    private function activeWorkspaceForUser(User $user): ?MaterialWorkspace
     {
         $userId = (int) $user->id;
         $workspaceId = $this->activeWorkspaceByUserId[$userId] ?? 0;
@@ -4122,14 +4147,32 @@ class MaterialService
         }
 
         $workspace = $this->workspaceService->resolveActiveWorkspace($user);
-        $this->activeWorkspaceByUserId[$userId] = (int) $workspace->id;
+        if ($workspace instanceof MaterialWorkspace) {
+            $this->activeWorkspaceByUserId[$userId] = (int) $workspace->id;
+        }
 
         return $workspace;
     }
 
+    private function optionalActiveWorkspaceIdForUser(User $user): ?int
+    {
+        $workspace = $this->activeWorkspaceForUser($user);
+
+        return $workspace instanceof MaterialWorkspace
+            ? (int) $workspace->id
+            : null;
+    }
+
     private function activeWorkspaceIdForUser(User $user): int
     {
-        return (int) $this->activeWorkspaceForUser($user)->id;
+        $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
+        if ($workspaceId !== null && $workspaceId > 0) {
+            return $workspaceId;
+        }
+
+        throw ValidationException::withMessages([
+            'workspace' => 'Bitte zuerst einen Workspace erstellen.',
+        ]);
     }
 
     private function supportsMaterialInboxImports(): bool

@@ -156,6 +156,7 @@ export default {
             const normalized = String(permission || '').trim()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
+            if (normalized === 'read_append') return 'info'
             return 'primary'
         },
         linkedPermissionLabel(card) {
@@ -165,6 +166,7 @@ export default {
             const permission = String(card?.linked_permission || '').trim()
             if (permission === 'full_access') return 'VOLLZUGRIFF'
             if (permission === 'read_write') return 'LESEN/SCHREIBEN'
+            if (permission === 'read_append') return 'LESEN/HINZUFÜGEN'
             return 'NUR LESEN'
         },
     },
@@ -262,3 +264,4 @@ export default {
     white-space: nowrap;
 }
 </style>
+

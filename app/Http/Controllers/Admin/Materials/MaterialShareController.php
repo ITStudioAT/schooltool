@@ -109,6 +109,7 @@ class MaterialShareController extends Controller
         $rules = MaterialShareRule::query()
             ->where('school_id', $schoolId)
             ->when($workspaceId !== null, fn ($query) => $query->where('workspace_id', $workspaceId))
+            ->when($workspaceId === null, fn ($query) => $query->whereRaw('1 = 0'))
             ->when($scopeTypeFilter !== '', fn ($query) => $query->where('scope_type', $scopeTypeFilter))
             ->when($scopeTypeFilter !== '' && $scopeIdFilter !== null, fn ($query) => $query->where('scope_id', $scopeIdFilter))
             ->with([
@@ -684,6 +685,7 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
+        $this->assertInboxPermissionAllowsStructureDelete((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
@@ -706,6 +708,7 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
+        $this->assertInboxPermissionAllowsStructureDelete((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
@@ -728,6 +731,7 @@ class MaterialShareController extends Controller
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
+        $this->assertInboxPermissionAllowsStructureDelete((string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY));
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
@@ -841,6 +845,247 @@ class MaterialShareController extends Controller
         return response()->json([
             'data' => $this->serializeInboxMaterialDetail($createdCard, $ruleId, $permission),
         ], 200);
+    }
+
+    public function insertInboxSubjectTree(
+        Request $request,
+        MaterialSubject $material_subject,
+        MaterialService $materialService,
+        MaterialKeywordService $keywordService,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $sourceSubjectId = (int) $material_subject->id;
+
+        $this->assertSubjectMatchesInboxRule($material_subject, $rule);
+        $subjectHierarchy = $this->resolveInboxSubjectHierarchyNode($rule, $sourceSubjectId);
+        if (! is_array($subjectHierarchy)) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        $sourceCards = $this->resolveInboxSourceCardsForSubject($rule, $sourceSubjectId);
+        $workspace = $this->workspaceService->createWorkspace($authUser, 'Workspace');
+        $workspaceId = (int) ($workspace->id ?? 0);
+        if ($workspaceId <= 0) {
+            abort(422, 'Workspace konnte nicht ermittelt werden.');
+        }
+
+        $result = DB::transaction(function () use (
+            $authUser,
+            $materialService,
+            $keywordService,
+            $rule,
+            $ruleId,
+            $sourceSubjectId,
+            $subjectHierarchy,
+            $sourceCards,
+            $workspaceId,
+        ): array {
+            $subjectName = trim((string) ($subjectHierarchy['name'] ?? ''));
+            if ($subjectName === '') {
+                $subjectName = 'Fach';
+            }
+
+            $targetSubject = $materialService->createSubject(
+                $authUser,
+                $subjectName,
+                $workspaceId,
+            );
+
+            $targetTopicsBySourceId = [];
+            $targetUnitsBySourceId = [];
+            $sourceTopics = is_array($subjectHierarchy['topics'] ?? null) ? $subjectHierarchy['topics'] : [];
+
+            foreach ($sourceTopics as $sourceTopicRow) {
+                $topicName = trim((string) ($sourceTopicRow['name'] ?? ''));
+                if ($topicName === '') {
+                    continue;
+                }
+
+                $targetTopic = $materialService->createTopic(
+                    $authUser,
+                    $targetSubject,
+                    $topicName,
+                    false,
+                );
+
+                $sourceTopicId = (int) ($sourceTopicRow['id'] ?? 0);
+                if ($sourceTopicId > 0) {
+                    $targetTopicsBySourceId[$sourceTopicId] = $targetTopic;
+                }
+
+                $sourceUnits = is_array($sourceTopicRow['units'] ?? null) ? $sourceTopicRow['units'] : [];
+                foreach ($sourceUnits as $sourceUnitRow) {
+                    $unitName = trim((string) ($sourceUnitRow['name'] ?? ''));
+                    if ($unitName === '') {
+                        continue;
+                    }
+
+                    $targetUnit = $materialService->createUnit(
+                        $authUser,
+                        $targetTopic,
+                        $unitName,
+                        false,
+                    );
+
+                    $sourceUnitId = (int) ($sourceUnitRow['id'] ?? 0);
+                    if ($sourceUnitId > 0) {
+                        $targetUnitsBySourceId[$sourceUnitId] = $targetUnit;
+                    }
+                }
+            }
+
+            $copiedMaterialsCount = 0;
+
+            foreach ($sourceCards as $sourceCard) {
+                if (! $sourceCard instanceof MaterialCard) {
+                    continue;
+                }
+
+                $classificationRows = $this->classificationRowsForCardAndScope(
+                    $sourceCard,
+                    (string) ($rule->scope_type ?? ''),
+                    (int) ($rule->scope_id ?? 0),
+                );
+                $matchedSourceSubject = false;
+                $targetClassifications = [];
+                $seenClassificationKeys = [];
+
+                foreach ($classificationRows as $row) {
+                    $rowSourceSubjectId = (int) ($row['subject_id'] ?? 0);
+                    if ($rowSourceSubjectId !== $sourceSubjectId) {
+                        continue;
+                    }
+
+                    $matchedSourceSubject = true;
+                    $attachLevel = (string) ($row['attach_level'] ?? 'unit');
+                    $targetTopic = null;
+                    $targetUnit = null;
+
+                    if (in_array($attachLevel, ['topic', 'unit'], true)) {
+                        $sourceTopicId = (int) ($row['topic_id'] ?? 0);
+                        $targetTopic = $sourceTopicId > 0 ? ($targetTopicsBySourceId[$sourceTopicId] ?? null) : null;
+                        if (! $targetTopic instanceof MaterialTopic) {
+                            continue;
+                        }
+                    }
+
+                    if ($attachLevel === 'unit') {
+                        $sourceUnitId = (int) ($row['unit_id'] ?? 0);
+                        $targetUnit = $sourceUnitId > 0 ? ($targetUnitsBySourceId[$sourceUnitId] ?? null) : null;
+                        if (! $targetUnit instanceof MaterialUnit) {
+                            continue;
+                        }
+                    }
+
+                    $subjectId = (int) $targetSubject->id;
+                    $topicId = $targetTopic instanceof MaterialTopic ? (int) $targetTopic->id : 0;
+                    $unitId = $targetUnit instanceof MaterialUnit ? (int) $targetUnit->id : 0;
+                    $classificationKey = $subjectId.'|'.$topicId.'|'.$unitId;
+
+                    if (isset($seenClassificationKeys[$classificationKey])) {
+                        continue;
+                    }
+                    $seenClassificationKeys[$classificationKey] = true;
+
+                    $targetClassifications[] = [
+                        'subject' => (string) ($targetSubject->name ?? ''),
+                        'topic' => $targetTopic instanceof MaterialTopic ? (string) ($targetTopic->name ?? '') : '',
+                        'unit' => $targetUnit instanceof MaterialUnit ? (string) ($targetUnit->name ?? '') : '',
+                    ];
+                }
+
+                if ($targetClassifications === [] && $matchedSourceSubject) {
+                    $targetClassifications[] = [
+                        'subject' => (string) ($targetSubject->name ?? ''),
+                        'topic' => '',
+                        'unit' => '',
+                    ];
+                }
+
+                if ($targetClassifications === []) {
+                    continue;
+                }
+
+                $sourceTypeMeta = $this->resolveMaterialTypeMeta(
+                    schoolId: (int) ($sourceCard->school_id ?? 0),
+                    userId: (int) ($sourceCard->user_id ?? 0),
+                    typeValue: trim((string) ($sourceCard->type ?? '')),
+                );
+                $sourceStatusMeta = $this->resolveMaterialStatusMeta(
+                    schoolId: (int) ($sourceCard->school_id ?? 0),
+                    statusValue: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+                );
+
+                $targetType = $this->ensureTargetMaterialType(
+                    targetUser: $authUser,
+                    sourceType: trim((string) ($sourceCard->type ?? '')),
+                    sourceTypeMeta: $sourceTypeMeta,
+                );
+                $targetStatus = $this->ensureTargetMaterialStatus(
+                    targetUser: $authUser,
+                    sourceStatus: trim((string) ($sourceCard->status ?? MaterialCard::STATUS_INBOX)),
+                    sourceStatusMeta: $sourceStatusMeta,
+                );
+
+                $createdCard = $materialService->createCard($authUser, [
+                    'title' => trim((string) ($sourceCard->title ?? '')) !== '' ? (string) $sourceCard->title : 'Material',
+                    'source_url' => $sourceCard->source_url,
+                    'source_text' => $sourceCard->source_text,
+                    'type' => $targetType,
+                    'status' => $targetStatus,
+                    'notes' => $sourceCard->notes,
+                    'classifications' => $targetClassifications,
+                ], $workspaceId);
+
+                $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+                $keywordService->rebuild($createdCard->fresh());
+
+                if ($this->hasMaterialInboxImportsTable()) {
+                    $importPayload = [
+                        'source_rule_id' => $ruleId,
+                        'source_school_id' => (int) $rule->school_id,
+                        'source_material_id' => (int) $sourceCard->id,
+                        'imported_at' => now(),
+                    ];
+                    if ($this->materialInboxImportsHasImportModeColumn()) {
+                        $importPayload['import_mode'] = MaterialInboxImport::MODE_COPY;
+                    }
+
+                    MaterialInboxImport::query()->updateOrCreate(
+                        [
+                            'target_user_id' => (int) $authUser->id,
+                            'target_material_card_id' => (int) $createdCard->id,
+                        ],
+                        $importPayload,
+                    );
+                }
+
+                $copiedMaterialsCount++;
+            }
+
+            return [
+                'subject_id' => (int) $targetSubject->id,
+                'subject_name' => (string) ($targetSubject->name ?? ''),
+                'topics_count' => count($targetTopicsBySourceId),
+                'units_count' => count($targetUnitsBySourceId),
+                'copied_materials_count' => $copiedMaterialsCount,
+            ];
+        });
+
+        return response()->json([
+            'message' => 'Fachstruktur eingeordnet.',
+            'data' => $result,
+        ]);
     }
 
     public function storeInboxLinkAttachment(MaterialCardLinkAttachmentStoreRequest $request, MaterialService $service)
@@ -1874,6 +2119,88 @@ class MaterialShareController extends Controller
         return $query->first();
     }
 
+    private function resolveInboxSourceCardsForSubject(MaterialShareRule $rule, int $subjectId): Collection
+    {
+        if ($subjectId <= 0) {
+            return collect();
+        }
+
+        $scopeType = (string) ($rule->scope_type ?? '');
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+
+        $query = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->when($creatorUserId > 0, fn ($inner) => $inner->where('user_id', $creatorUserId))
+            ->when((int) ($rule->workspace_id ?? 0) > 0, fn ($inner) => $inner->where('workspace_id', (int) $rule->workspace_id))
+            ->whereHas('classifications', fn ($inner) => $inner->where('subject_id', $subjectId))
+            ->with([
+                'attachments',
+                'classifications.subject:id,name,sort_order',
+                'classifications.topic:id,name,sort_order',
+                'classifications.unit:id,name,sort_order',
+            ])
+            ->orderBy('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereKey($scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('subject_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('topic_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('unit_id', $scopeId));
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            return collect();
+        }
+
+        return $query->get([
+            'id',
+            'school_id',
+            'user_id',
+            'workspace_id',
+            'title',
+            'source_url',
+            'source_text',
+            'subject',
+            'area',
+            'unit',
+            'type',
+            'status',
+            'notes',
+        ]);
+    }
+
+    private function resolveInboxSubjectHierarchyNode(MaterialShareRule $rule, int $subjectId): ?array
+    {
+        if ($subjectId <= 0) {
+            return null;
+        }
+
+        $hierarchy = $this->resolveScopeHierarchy($rule);
+        foreach ($hierarchy as $subject) {
+            if ((int) ($subject['id'] ?? 0) !== $subjectId) {
+                continue;
+            }
+
+            return is_array($subject) ? $subject : null;
+        }
+
+        return null;
+    }
+
     private function assertInboxPermissionAllowsEdit(string $permission): void
     {
         if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
@@ -1885,7 +2212,7 @@ class MaterialShareController extends Controller
 
     private function assertInboxPermissionAllowsAttachmentAppend(string $permission): void
     {
-        if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
+        if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_APPEND, MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
             return;
         }
 
@@ -1903,11 +2230,20 @@ class MaterialShareController extends Controller
 
     private function assertInboxPermissionAllowsStructureEdit(string $permission): void
     {
+        if (in_array($permission, [MaterialShareTarget::PERMISSION_READ_WRITE, MaterialShareTarget::PERMISSION_FULL_ACCESS], true)) {
+            return;
+        }
+
+        abort(403, 'Die Fachstruktur kann nur mit LESEN/SCHREIBEN oder VOLLZUGRIFF bearbeitet werden.');
+    }
+
+    private function assertInboxPermissionAllowsStructureDelete(string $permission): void
+    {
         if ($permission === MaterialShareTarget::PERMISSION_FULL_ACCESS) {
             return;
         }
 
-        abort(403, 'Die Fachstruktur kann nur mit VOLLZUGRIFF bearbeitet werden.');
+        abort(403, 'Die Fachstruktur kann nur mit VOLLZUGRIFF gelöscht werden.');
     }
 
     private function assertInboxPermissionAllowsMaterialDelete(string $permission): void
@@ -1980,7 +2316,12 @@ class MaterialShareController extends Controller
             return $workspaceId;
         }
 
-        return (int) $this->workspaceService->resolveActiveWorkspace($sourceOwner)->id;
+        $workspace = $this->workspaceService->resolveActiveWorkspace($sourceOwner);
+        if (! $workspace) {
+            abort(422, 'Für den Besitzer existiert kein Workspace.');
+        }
+
+        return (int) $workspace->id;
     }
 
     private function currentMaterialClassificationPayload(MaterialCard $card): array
@@ -3529,8 +3870,9 @@ class MaterialShareController extends Controller
     private function permissionRank(string $permission): int
     {
         return match ($permission) {
-            MaterialShareTarget::PERMISSION_FULL_ACCESS => 3,
-            MaterialShareTarget::PERMISSION_READ_WRITE => 2,
+            MaterialShareTarget::PERMISSION_FULL_ACCESS => 4,
+            MaterialShareTarget::PERMISSION_READ_WRITE => 3,
+            MaterialShareTarget::PERMISSION_READ_APPEND => 2,
             MaterialShareTarget::PERMISSION_READ_ONLY => 1,
             default => 0,
         };
@@ -3738,6 +4080,10 @@ class MaterialShareController extends Controller
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
         $workspaceId = $this->activeWorkspaceIdForUser($authUser);
+        if ($workspaceId === null) {
+            $workspace = $this->workspaceService->createWorkspace($authUser, 'Workspace');
+            $workspaceId = (int) $workspace->id;
+        }
 
         $data = $request->validate([
             'scope_type' => ['required', 'string', Rule::in(MaterialShareRule::SCOPES)],
@@ -4060,6 +4406,9 @@ class MaterialShareController extends Controller
         }
 
         $workspace = $this->workspaceService->resolveActiveWorkspace($user);
+        if (! $workspace) {
+            return null;
+        }
 
         return (int) $workspace->id;
     }
@@ -4523,6 +4872,7 @@ class MaterialShareController extends Controller
         return match ($permission) {
             MaterialShareTarget::PERMISSION_FULL_ACCESS => 'Vollzugriff',
             MaterialShareTarget::PERMISSION_READ_WRITE => 'Lesen/Schreiben',
+            MaterialShareTarget::PERMISSION_READ_APPEND => 'Lesen/Hinzufügen',
             MaterialShareTarget::PERMISSION_READ_ONLY => 'Nur Lesen',
             default => $permission,
         };

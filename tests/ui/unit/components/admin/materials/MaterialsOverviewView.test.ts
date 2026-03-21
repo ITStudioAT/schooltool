@@ -337,6 +337,116 @@ describe('MaterialsOverviewView', () => {
         expect(loadShareAssignments).not.toHaveBeenCalled()
     })
 
+    it('provides readable labels for shared insert target levels', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+
+        expect(methods.sharedInsertLevelLabel.call({}, 'all')).toBe('Freigabe')
+        expect(methods.sharedInsertLevelLabel.call({}, 'subject')).toBe('Fach')
+        expect(methods.sharedInsertLevelLabel.call({}, 'topic')).toBe('Thema')
+        expect(methods.sharedInsertLevelLabel.call({}, 'unit')).toBe('Bereich')
+        expect(methods.sharedInsertLevelLabel.call({}, 'material')).toBe('Material')
+        expect(methods.sharedInsertLevelLabel.call({}, 'unknown')).toBe('Element')
+    })
+
+    it('shows shared insert actions only when local workspace prerequisites exist', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+
+        const noWorkspaceVm = {
+            ...methods,
+            subjectsContentsOverviewItems: [],
+        }
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'subject')).toBe(true)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'topic')).toBe(false)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'unit')).toBe(false)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'material')).toBe(false)
+
+        const subjectOnlyVm = {
+            ...methods,
+            subjectsContentsOverviewItems: [
+                { id: 1, name: 'Mathematik', topics: [] },
+            ],
+        }
+        expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'topic')).toBe(true)
+        expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'unit')).toBe(false)
+        expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'material')).toBe(true)
+
+        const topicVm = {
+            ...methods,
+            subjectsContentsOverviewItems: [
+                { id: 1, name: 'Mathematik', topics: [{ id: 2, name: 'Algebra' }] },
+            ],
+        }
+        expect(methods.canShowSharedInsertButton.call(topicVm, 'unit')).toBe(true)
+    })
+
+    it('opens a persistent confirm dialog when shared subject Einordnen is clicked', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            subjectsContentsOverviewItems: [],
+            sharedSubjectInsertDialogOpen: false,
+            sharedSubjectInsertDraft: {
+                ruleId: null,
+                subjectId: null,
+                label: '',
+            },
+        }
+
+        methods.openSharedInsertDraft.call(vm, {
+            level: 'subject',
+            ruleId: 21,
+            targetId: 9,
+            label: 'Informatik',
+        })
+
+        expect(vm.sharedSubjectInsertDialogOpen).toBe(true)
+        expect(vm.sharedSubjectInsertDraft).toEqual({
+            ruleId: 21,
+            subjectId: 9,
+            label: 'Informatik',
+        })
+    })
+
+    it('confirms shared subject Einordnen and refreshes shared/workspace trees', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const performSharedInboxMutation = vi.fn().mockResolvedValue({ subject_id: 99 })
+        const loadCards = vi.fn().mockResolvedValue(undefined)
+        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const vm = {
+            ...methods,
+            performSharedInboxMutation,
+            loadCards,
+            loadSharedObjectsForMe,
+            sharedSubjectInsertDialogLoading: false,
+            sharedSubjectInsertDialogOpen: true,
+            sharedSubjectInsertDraft: {
+                ruleId: 44,
+                subjectId: 12,
+                label: 'Digitale Grundlagen',
+            },
+        }
+
+        await methods.confirmSharedSubjectInsert.call(vm)
+
+        expect(performSharedInboxMutation).toHaveBeenCalledWith(
+            expect.objectContaining({
+                method: 'post',
+                url: '/api/admin/materials/shares/inbox/subjects/12/insert-tree',
+                data: {
+                    rule_id: 44,
+                },
+            })
+        )
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(vm.sharedSubjectInsertDialogOpen).toBe(false)
+        expect(vm.sharedSubjectInsertDraft).toEqual({
+            ruleId: null,
+            subjectId: null,
+            label: '',
+        })
+    })
+
     it('normalizes and sorts shared objects from inbox users response', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = {
@@ -877,6 +987,136 @@ describe('MaterialsOverviewView', () => {
         }
     })
 
+    it('renders Einordnen buttons for all shared hierarchy levels in shared cards', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    subjectsContentsSource: 'shared',
+                    isLoadingSharedObjectsForMe: false,
+                    sharedObjectsForMeError: '',
+                    subjectsContentsOverviewItems: [
+                        {
+                            id: 1,
+                            name: 'Lokales Fach',
+                            topics: [
+                                {
+                                    id: 2,
+                                    name: 'Lokales Thema',
+                                    units: [],
+                                },
+                            ],
+                        },
+                    ],
+                    sharedObjectsForMeCards: [
+                        {
+                            ruleId: 21,
+                            scopeType: 'all',
+                            scopeLabel: 'Workspace',
+                            scopeObjectLabel: 'Alle Materialien',
+                            scopePathLabel: 'Teamraum Informatik',
+                            permission: 'read_write',
+                            permissionLabel: 'LESEN/SCHREIBEN',
+                            fromUserLabel: 'Lehrer Eins',
+                            fromSchoolLabel: 'Abendgymnasium',
+                            hierarchy: [
+                                {
+                                    id: 1,
+                                    name: 'Informatik',
+                                    materials: [
+                                        { id: 100, title: 'Fachmaterial', status: 'inbox', statusLabel: 'Neu/Idee', attachmentsCount: 0 },
+                                    ],
+                                    topics: [
+                                        {
+                                            id: 2,
+                                            name: 'Algebra',
+                                            materials: [
+                                                { id: 101, title: 'Themamaterial', status: 'inbox', statusLabel: 'Neu/Idee', attachmentsCount: 0 },
+                                            ],
+                                            units: [
+                                                {
+                                                    id: 3,
+                                                    name: 'Einheit 1',
+                                                    materials: [
+                                                        { id: 102, title: 'Bereichsmaterial', status: 'inbox', statusLabel: 'Neu/Idee', attachmentsCount: 0 },
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                            materialsCount: 3,
+                        },
+                    ],
+                    openSharedHierarchyCards: {
+                        'shared-rule-21': true,
+                    },
+                }
+            },
+            global: {
+                stubs: {
+                    'v-row': { template: '<div><slot /></div>' },
+                    VRow: { template: '<div><slot /></div>' },
+                    'v-col': { template: '<div><slot /></div>' },
+                    VCol: { template: '<div><slot /></div>' },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    VChip: { template: '<span><slot /></span>' },
+                    'v-icon': { template: '<i><slot /></i>' },
+                    VIcon: { template: '<i><slot /></i>' },
+                    'v-btn': {
+                        emits: ['click'],
+                        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+                    },
+                    VBtn: {
+                        emits: ['click'],
+                        template: '<button type="button" @click="$emit(\'click\', $event)"><slot /></button>',
+                    },
+                    'v-alert': { template: '<div><slot /></div>' },
+                    VAlert: { template: '<div><slot /></div>' },
+                    'v-list': { template: '<div><slot /></div>' },
+                    VList: { template: '<div><slot /></div>' },
+                    'v-list-item': { template: '<div><slot /></div>' },
+                    VListItem: { template: '<div><slot /></div>' },
+                    'v-progress-linear': { template: '<div />' },
+                    VProgressLinear: { template: '<div />' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    VSkeletonLoader: { template: '<div />' },
+                    'v-text-field': { template: '<input />' },
+                    VTextField: { template: '<input />' },
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-tooltip': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    VTooltip: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    'v-expand-transition': { template: '<div><slot /></div>' },
+                    VExpandTransition: { template: '<div><slot /></div>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        try {
+            const insertButtons = wrapper
+                .findAll('button')
+                .filter((button) => String(button.text() || '').trim() === 'Einordnen')
+
+            expect(insertButtons.length).toBe(6)
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
     it('keeps the subjects tree mounted while the overview reloads existing items', () => {
         const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
 
@@ -943,6 +1183,73 @@ describe('MaterialsOverviewView', () => {
 
         try {
             expect(wrapper.find('[data-test="overview-loader"]').exists()).toBe(true)
+            expect(wrapper.find('[data-test="subjects-tree"]').exists()).toBe(true)
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
+    it('keeps shared sections visible when workspace tree is empty', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    isLoadingSubjectsContentsOverview: false,
+                    subjectsContentsOverviewItems: [],
+                    sharedObjectsForMeCards: [],
+                    archivedSharedObjectsForMeCards: [],
+                }
+            },
+            global: {
+                stubs: {
+                    'v-row': { template: '<div><slot /></div>' },
+                    VRow: { template: '<div><slot /></div>' },
+                    'v-col': { template: '<div><slot /></div>' },
+                    VCol: { template: '<div><slot /></div>' },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    VChip: { template: '<span><slot /></span>' },
+                    'v-icon': { template: '<i><slot /></i>' },
+                    VIcon: { template: '<i><slot /></i>' },
+                    'v-btn': { template: '<button type="button"><slot /></button>' },
+                    VBtn: { template: '<button type="button"><slot /></button>' },
+                    MaterialsSubjectsContentsTree: { template: '<div data-test="subjects-tree" />' },
+                    'materials-subjects-contents-tree': { template: '<div data-test="subjects-tree" />' },
+                    'v-progress-linear': { template: '<div data-test="overview-loader" />' },
+                    VProgressLinear: { template: '<div data-test="overview-loader" />' },
+                    'v-alert': { template: '<div data-test="overview-alert"><slot /></div>' },
+                    VAlert: { template: '<div data-test="overview-alert"><slot /></div>' },
+                    'v-list': { template: '<div><slot /></div>' },
+                    VList: { template: '<div><slot /></div>' },
+                    'v-list-item': { template: '<div><slot /></div>' },
+                    VListItem: { template: '<div><slot /></div>' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    VSkeletonLoader: { template: '<div />' },
+                    'v-text-field': { template: '<input />' },
+                    VTextField: { template: '<input />' },
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-tooltip': { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    VTooltip: { template: '<div><slot name="activator" :props="{}" /><slot /></div>' },
+                    'v-expand-transition': { template: '<div><slot /></div>' },
+                    VExpandTransition: { template: '<div><slot /></div>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        try {
+            expect(wrapper.find('[data-test="overview-alert"]').exists()).toBe(true)
             expect(wrapper.find('[data-test="subjects-tree"]').exists()).toBe(true)
         } finally {
             beforeMountSpy.mockRestore()
@@ -1236,6 +1543,22 @@ describe('MaterialsOverviewView', () => {
         expect(dialogCard).toBeTruthy()
         expect(dialogCard.id).toBe(1234)
         expect(methods.cardAllowsFieldEditing.call(vm, dialogCard)).toBe(false)
+    })
+
+    it('treats read_append links as append-only', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+        }
+
+        const card = {
+            is_linked: true,
+            linked_permission: 'read_append',
+        }
+
+        expect(methods.cardAllowsFieldEditing.call(vm, card)).toBe(false)
+        expect(methods.cardAllowsAttachmentAppend.call(vm, card)).toBe(true)
+        expect(methods.linkedPermissionLabelForPermission.call(vm, 'read_append')).toBe('LESEN/HINZUFÜGEN')
     })
 
     it('preserves shared inbox context when opening the edit dialog', () => {

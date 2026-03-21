@@ -78,6 +78,19 @@ beforeEach(function () {
     $this->teacher = $this->materialsModerator;
     $this->regularUser = $makeUser('user@materials.test', 'user');
 
+    collect([
+        $this->superAdmin,
+        $this->admin,
+        $this->materialsAdmin,
+        $this->materialsModerator,
+    ])->each(function (User $user): void {
+        MaterialWorkspace::query()->create([
+            'user_id' => (int) $user->id,
+            'name' => 'Workspace',
+            'is_default' => true,
+        ]);
+    });
+
     $materialsLicence = Licence::firstOrCreate(
         ['name' => 'Materialientool'],
         ['long_name' => 'Materialientool']
@@ -269,20 +282,70 @@ test('config exposes user pagination settings for materials overview', function 
         ->assertJsonPath('user_settings.materials_pagination_number', (int) config('schooltool.pagination'));
 });
 
-test('config creates and returns default workspace for current user', function () {
-    $this->actingAs($this->materialsModerator, 'sanctum');
+test('config returns null workspace when user has none', function () {
+    $noWorkspaceUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'materials-no-workspace@materials.test',
+    ]);
+    $noWorkspaceUser->assignRole('materials_moderator');
 
-    $response = $this->getJson('/api/admin/materials/config')
+    $this->actingAs($noWorkspaceUser, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')
         ->assertStatus(200)
-        ->assertJsonPath('workspace.name', 'Workspace');
+        ->assertJsonPath('workspace', null)
+        ->assertJsonPath('has_workspace', false);
+});
 
-    $workspaceId = (int) $response->json('workspace.id');
+test('can create workspace for current user', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'materials-create-workspace@materials.test',
+    ]);
+    $user->assignRole('materials_moderator');
+
+    $this->actingAs($user, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/workspaces', [
+        'data' => [
+            'name' => 'Workspace',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Workspace');
+
+    $workspaceId = (int) $response->json('data.id');
     expect($workspaceId)->toBeGreaterThan(0);
 
     $this->assertDatabaseHas('material_workspaces', [
         'id' => $workspaceId,
-        'user_id' => (int) $this->materialsModerator->id,
+        'user_id' => (int) $user->id,
+        'name' => 'Workspace',
         'is_default' => 1,
+    ]);
+});
+
+test('can rename own workspace', function () {
+    $this->actingAs($this->materialsModerator, 'sanctum');
+
+    $workspace = MaterialWorkspace::query()
+        ->where('user_id', (int) $this->materialsModerator->id)
+        ->orderBy('id')
+        ->first();
+    expect($workspace)->not->toBeNull();
+
+    $this->putJson('/api/admin/materials/workspaces/'.(int) $workspace?->id, [
+        'data' => [
+            'name' => 'Mein Workspace',
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Mein Workspace');
+
+    $this->assertDatabaseHas('material_workspaces', [
+        'id' => (int) $workspace?->id,
+        'user_id' => (int) $this->materialsModerator->id,
+        'name' => 'Mein Workspace',
     ]);
 });
 

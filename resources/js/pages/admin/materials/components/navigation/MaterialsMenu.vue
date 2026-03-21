@@ -14,13 +14,13 @@
 
         <v-btn
             class="materials-menu-btn"
-            :class="{ 'materials-menu-btn--active': modelValue === 'teilen' }"
+            :class="{ 'materials-menu-btn--active': modelValue === 'shared' }"
             rounded="pill"
             size="large"
             variant="flat"
             prepend-icon="mdi-share-variant-outline"
             :disabled="disabled"
-            @click="$emit('update:modelValue', 'teilen')">
+            @click="$emit('update:modelValue', 'shared')">
             Geteilt
         </v-btn>
 

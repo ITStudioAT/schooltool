@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 class MaterialWorkspaceService
 {
-    public function resolveActiveWorkspace(User $user): MaterialWorkspace
+    public function resolveActiveWorkspace(User $user): ?MaterialWorkspace
     {
         $existingDefault = MaterialWorkspace::query()
             ->where('user_id', (int) $user->id)
@@ -20,7 +20,7 @@ class MaterialWorkspaceService
             return $existingDefault;
         }
 
-        return DB::transaction(function () use ($user): MaterialWorkspace {
+        return DB::transaction(function () use ($user): ?MaterialWorkspace {
             $workspace = MaterialWorkspace::query()
                 ->where('user_id', (int) $user->id)
                 ->orderBy('id')
@@ -28,11 +28,7 @@ class MaterialWorkspaceService
                 ->first();
 
             if (! $workspace instanceof MaterialWorkspace) {
-                return MaterialWorkspace::query()->create([
-                    'user_id' => (int) $user->id,
-                    'name' => 'Workspace',
-                    'is_default' => true,
-                ]);
+                return null;
             }
 
             MaterialWorkspace::query()
@@ -46,5 +42,45 @@ class MaterialWorkspaceService
 
             return $workspace->fresh();
         });
+    }
+
+    public function createWorkspace(User $user, string $name): MaterialWorkspace
+    {
+        $normalizedName = trim($name);
+        if ($normalizedName === '') {
+            $normalizedName = 'Workspace';
+        }
+
+        return DB::transaction(function () use ($user, $normalizedName): MaterialWorkspace {
+            $existingWorkspace = MaterialWorkspace::query()
+                ->where('user_id', (int) $user->id)
+                ->orderByDesc('is_default')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingWorkspace instanceof MaterialWorkspace) {
+                return $existingWorkspace;
+            }
+
+            return MaterialWorkspace::query()->create([
+                'user_id' => (int) $user->id,
+                'name' => $normalizedName,
+                'is_default' => true,
+            ]);
+        });
+    }
+
+    public function renameWorkspace(MaterialWorkspace $workspace, string $name): MaterialWorkspace
+    {
+        $normalizedName = trim($name);
+        if ($normalizedName === '') {
+            $normalizedName = 'Workspace';
+        }
+
+        $workspace->name = $normalizedName;
+        $workspace->save();
+
+        return $workspace->fresh();
     }
 }
