@@ -684,7 +684,7 @@
                                 </li>
                             </ul>
                             <div
-                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible() && subject.topics && subject.topics.length > 0"
+                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
                                 class="overview-shared-structure-create-row overview-shared-structure-create-row--topic-bottom">
                                 <v-btn
                                     prepend-icon="mdi-plus"
@@ -696,29 +696,29 @@
                                     :disabled="actionBusy"
                                     title="Bereich hinzufügen"
                                     aria-label="Bereich hinzufügen"
-                                    @click.stop="openWorkspaceCreateUnitDialog(subject.topics[subject.topics.length - 1])">
+                                    @click.stop="openWorkspaceCreateUnitDialog(topic)">
                                     Bereich
-                                </v-btn>
-                            </div>
-                            <div
-                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
-                                <v-btn
-                                    prepend-icon="mdi-plus"
-                                    size="small"
-                                    density="comfortable"
-                                    variant="outlined"
-                                    color="primary"
-                                    class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                                    :disabled="actionBusy"
-                                    title="Thema hinzufügen"
-                                    aria-label="Thema hinzufügen"
-                                    @click.stop="openWorkspaceCreateTopicDialog(subject)">
-                                    Thema
                                 </v-btn>
                             </div>
                         </li>
                     </ul>
+                    <div
+                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                        class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
+                        <v-btn
+                            prepend-icon="mdi-plus"
+                            size="small"
+                            density="comfortable"
+                            variant="outlined"
+                            color="primary"
+                            class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
+                            :disabled="actionBusy"
+                            title="Thema hinzufügen"
+                            aria-label="Thema hinzufügen"
+                            @click.stop="openWorkspaceCreateTopicDialog(subject)">
+                            Thema
+                        </v-btn>
+                    </div>
                 </div>
             </li>
         </ul>

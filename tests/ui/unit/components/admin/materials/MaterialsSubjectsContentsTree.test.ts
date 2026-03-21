@@ -748,6 +748,78 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((movedEvents[0]?.[0] as any)?.direction).toBe('down')
     })
 
+    it('shows a Bereich button for each workspace topic and creates a unit for an empty topic', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 51,
+                    name: 'Prismen',
+                    topic_id: 12,
+                },
+            },
+        })
+
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                    {
+                        id: 12,
+                        name: 'Geometrie',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        await openWorkspace()
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+
+        expect(screen.getAllByTitle('Bereich hinzufügen')).toHaveLength(3)
+
+        const geometrieRow = screen.getByText('Geometrie').closest('.overview-subjects-item') as HTMLElement
+
+        await fireEvent.click(within(geometrieRow).getByTitle('Bereich hinzufügen'))
+
+        expect(screen.getByText('Bereich hinzufügen')).toBeInTheDocument()
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Prismen')
+        await fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/units', {
+            data: {
+                topic_id: 12,
+                name: 'Prismen',
+            },
+        })
+
+        const createdEvents = emitted('workspace-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('unit')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(51)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Prismen')
+        expect((createdEvents[0]?.[0] as any)?.parentTopicId).toBe(12)
+    })
+
     it('shows Struktur ändern for an empty workspace and allows adding the first subject', async () => {
         renderTree([], {
             enableCreateButtons: true,
