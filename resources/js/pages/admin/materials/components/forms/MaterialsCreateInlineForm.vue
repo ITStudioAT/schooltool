@@ -85,7 +85,7 @@
                     variant="flat"
                     :loading="isSaving"
                     :disabled="!canSave || isSaving"
-                    @click="$emit('save')">
+                    @click="handleSave">
                     {{ saveLabel }}
                 </v-btn>
             </div>
@@ -164,47 +164,7 @@
                         class="classification-row mb-1"
                         :class="{ 'classification-row-active': activeClassificationIndex === entry.index }">
                         <v-col cols="12" class="py-1">
-                            <div class="d-flex align-center justify-space-between mb-0">
-                                <div class="classification-chip-label mb-0">Fach</div>
-                                <v-btn
-                                    icon="mdi-plus"
-                                    size="x-small"
-                                    variant="text"
-                                    color="primary"
-                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
-                                    :title="'Fach hinzufügen'"
-                                    @click="openClassificationCreateField('subject')" />
-                            </div>
-                            <div
-                                v-if="classificationCreateField === 'subject'"
-                                class="classification-inline-create d-flex flex-wrap align-center ga-2 mt-2 mb-2">
-                                <v-text-field
-                                    :model-value="classificationCreateValue"
-                                    label="Neues Fach"
-                                    variant="outlined"
-                                    density="comfortable"
-                                    hide-details="auto"
-                                    class="classification-inline-create-field"
-                                    :disabled="isClassificationReadOnly || isSaving || classificationCreateSaving"
-                                    @update:modelValue="classificationCreateValue = normalizeText($event)"
-                                    @keyup.enter="submitClassificationCreateField"
-                                    @keydown.esc="cancelClassificationCreateField" />
-                                <v-btn
-                                    icon="mdi-check"
-                                    size="small"
-                                    variant="flat"
-                                    color="primary"
-                                    :loading="classificationCreateSaving"
-                                    :disabled="isClassificationReadOnly || !canSubmitClassificationCreate"
-                                    @click="submitClassificationCreateField" />
-                                <v-btn
-                                    icon="mdi-close"
-                                    size="small"
-                                    variant="text"
-                                    color="warning"
-                                    :disabled="isClassificationReadOnly || classificationCreateSaving"
-                                    @click="cancelClassificationCreateField" />
-                            </div>
+                            <div class="classification-chip-label mb-0">Fach</div>
                             <v-chip-group
                                 :model-value="normalizedClassificationDraft.subject"
                                 column
@@ -230,7 +190,7 @@
                             </v-chip-group>
                         </v-col>
 
-                        <v-col cols="12" class="py-1">
+                        <v-col v-if="!!normalizeText(normalizedClassificationDraft.subject)" cols="12" class="py-1">
                             <div class="d-flex align-center justify-space-between mb-0">
                                 <div class="classification-chip-label mb-0">Thema</div>
                                 <v-btn
@@ -297,7 +257,7 @@
                             </v-chip-group>
                         </v-col>
 
-                        <v-col cols="12" class="py-1">
+                        <v-col v-if="!!normalizeText(normalizedClassificationDraft.topic)" cols="12" class="py-1">
                             <div class="d-flex align-center justify-space-between mb-0">
                                 <div class="classification-chip-label mb-0">Bereich</div>
                                 <v-btn
@@ -362,6 +322,9 @@
                                     {{ unit }}
                                 </v-chip>
                             </v-chip-group>
+                        </v-col>
+
+                        <v-col v-if="!!normalizeText(normalizedClassificationDraft.subject)" cols="12" class="py-1">
                             <div class="classification-action-row mt-2">
                                 <v-btn
                                     icon="mdi-delete-outline"
@@ -590,6 +553,15 @@
         </v-dialog>
 
         <slot name="extra-content" />
+
+        <v-alert
+            v-if="!isReadOnly && !hasClassification"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="mt-4">
+            Es muss mindestens eine Zuordnung (Fach/Thema/Bereich) angegeben werden.
+        </v-alert>
 
         <div class="d-flex flex-wrap justify-space-between align-center ga-2 mt-5">
             <div><slot name="bottom-left" /></div>
@@ -839,9 +811,14 @@ export default {
                 fetch: null,
             }
         },
+        hasClassification() {
+            return this.assignedClassificationItems.length > 0
+        },
         canSave() {
             if (this.isReadOnly) return true
-            return String(this.title || '').trim().length > 0
+            const hasTitle = String(this.title || '').trim().length > 0
+            const hasClassification = this.hasClassification || !!this.normalizedClassificationDraft.subject
+            return hasTitle && hasClassification
         },
         isClassificationReadOnly() {
             return this.isReadOnly || this.classificationReadOnly
@@ -1150,6 +1127,7 @@ export default {
                 const nextName = this.normalizeText(created?.name) || name
                 this.updateClassificationDraftField(field, nextName)
                 this.cancelClassificationCreateField()
+                this.$emit('update:classificationEditorVisible', false)
             } finally {
                 this.classificationCreateSaving = false
             }
@@ -2288,6 +2266,12 @@ ${bodyHtml}
 
             this.classificationDraft = nextDraft
             this.classificationDraftDirty = true
+        },
+        handleSave() {
+            if (this.canApplyClassificationDraft) {
+                this.applyClassificationDraft()
+            }
+            this.$emit('save')
         },
         applyClassificationDraft() {
             if (this.isClassificationReadOnly) return

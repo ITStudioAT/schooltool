@@ -2947,13 +2947,7 @@ export default {
 
             this.createForm = createDefaultEditForm()
             this.createForm.status = this.defaultStatusValue
-            this.createForm.classifications = [
-                {
-                    subject,
-                    topic,
-                    unit,
-                },
-            ]
+            this.createForm.classifications = [{ subject, topic, unit }]
             this.createSharedContext = Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
                 ? {
                     ruleId: sharedRuleId,
@@ -2961,7 +2955,7 @@ export default {
                     nodeLevel: sharedNodeLevel,
                 }
                 : null
-            this.createClassificationEditorVisible = true
+            this.createClassificationEditorVisible = false
             this.createDialogOpen = true
         },
         shareIndicatorKey(scopeType, scopeId) {

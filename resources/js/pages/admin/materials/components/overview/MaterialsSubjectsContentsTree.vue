@@ -3648,17 +3648,29 @@ export default {
     margin: 6px 0 0 0;
     padding: 0 0 0 30px;
     display: grid;
-    gap: 4px;
+    gap: 5px;
 }
 
 .overview-subjects-material-item {
-    display: inline-flex;
-    align-items: flex-start;
+    display: flex;
+    align-items: center;
     gap: 6px;
     color: rgba(35, 61, 76, 0.92);
     font-size: 0.92rem;
     line-height: 1.32;
     flex-wrap: wrap;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(40, 58, 80, 0.15);
+    border-left: 3px solid rgba(31, 95, 191, 0.35);
+    border-radius: 7px;
+    padding: 5px 10px 5px 9px;
+    box-shadow: 0 1px 3px rgba(40, 58, 80, 0.07);
+    transition: box-shadow 0.15s ease;
+}
+
+.overview-subjects-material-item:hover {
+    box-shadow: 0 2px 8px rgba(40, 58, 80, 0.12);
+    border-left-color: rgba(31, 95, 191, 0.6);
 }
 
 .overview-subjects-material-link {

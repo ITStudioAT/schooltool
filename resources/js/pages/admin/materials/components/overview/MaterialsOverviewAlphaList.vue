@@ -138,8 +138,15 @@ export default {
 
 <style scoped>
 .overview-alpha-item {
-    border: 1px solid rgba(40, 58, 80, 0.12);
-    background-color: rgba(255, 255, 255, 0.72);
+    border: 1.5px solid rgba(40, 58, 80, 0.18);
+    background-color: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 2px 8px rgba(40, 58, 80, 0.08);
+    transition: box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.overview-alpha-item:hover {
+    box-shadow: 0 4px 16px rgba(40, 58, 80, 0.14);
+    border-color: rgba(40, 58, 80, 0.28);
 }
 
 .overview-alpha-line {

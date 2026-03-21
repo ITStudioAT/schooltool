@@ -58,10 +58,27 @@
       "Bash(./vendor/bin/pint app/Services/AbaPandocAstNormalizerService.php tests/Unit/ABA/AbaPandocAstNormalizerServiceTest.php --format agent)",
       "Bash(./vendor/bin/pint app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaLocalDocumentStructureExtractor.php tests/Unit/ABA/AbaLocalDocumentStructureExtractorBoldMarkerTest.php --format agent)",
       "Bash(find c:laravelschooltoolresources -type f \\\\\\(-name *.css -o -name *.scss \\\\\\))",
-      "Bash(./vendor/bin/pint --dirty --format agent app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaPandocReviewBuilderService.php app/Http/Controllers/Admin/ABA/AbaAnalysisRunController.php)"
+      "Bash(./vendor/bin/pint --dirty --format agent app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaPandocReviewBuilderService.php app/Http/Controllers/Admin/ABA/AbaAnalysisRunController.php)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(powershell -c \"[console]::Beep\\(800,200\\)\")",
+      "Bash(/tmp/beep_test2.ps1:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(mshta.exe \"vbscript:Execute\\(\"\"CreateObject\\(chr\\(87\\)&chr\\(83\\)&chr\\(99\\)&chr\\(114\\)&chr\\(105\\)&chr\\(112\\)&chr\\(116\\)&chr\\(46\\)&chr\\(83\\)&chr\\(104\\)&chr\\(101\\)&chr\\(108\\)&chr\\(108\\)\\).Run chr\\(112\\)&chr\\(111\\)&chr\\(119\\)&chr\\(101\\)&chr\\(114\\)&chr\\(115\\)&chr\\(104\\)&chr\\(101\\)&chr\\(108\\)&chr\\(108\\)&chr\\(32\\)&chr\\(45\\)&chr\\(83\\)&chr\\(84\\)&chr\\(65\\)&chr\\(32\\)&chr\\(45\\)&chr\\(99\\)&chr\\(32\\)&chr\\(40\\)&chr\\(78\\)&chr\\(101\\)&chr\\(119\\)&chr\\(45\\)&chr\\(79\\)&chr\\(98\\)&chr\\(106\\)&chr\\(101\\)&chr\\(99\\)&chr\\(116\\)&chr\\(32\\)&chr\\(77\\)&chr\\(101\\)&chr\\(100\\)&chr\\(105\\)&chr\\(97\\)&chr\\(46\\)&chr\\(83\\)&chr\\(111\\)&chr\\(117\\)&chr\\(110\\)&chr\\(100\\)&chr\\(80\\)&chr\\(108\\)&chr\\(97\\)&chr\\(121\\)&chr\\(101\\)&chr\\(114\\)&chr\\(32\\)&chr\\(39\\)&chr\\(67\\)&chr\\(58\\)&chr\\(92\\)&chr\\(87\\)&chr\\(105\\)&chr\\(110\\)&chr\\(100\\)&chr\\(111\\)&chr\\(119\\)&chr\\(115\\)&chr\\(92\\)&chr\\(77\\)&chr\\(101\\)&chr\\(100\\)&chr\\(105\\)&chr\\(97\\)&chr\\(92\\)&chr\\(100\\)&chr\\(105\\)&chr\\(110\\)&chr\\(103\\)&chr\\(46\\)&chr\\(119\\)&chr\\(97\\)&chr\\(118\\)&chr\\(39\\)&chr\\(41\\)&chr\\(46\\)&chr\\(80\\)&chr\\(108\\)&chr\\(97\\)&chr\\(121\\)&chr\\(83\\)&chr\\(121\\)&chr\\(110\\)&chr\\(99\\)&chr\\(40\\)&chr\\(41\\),0,True:close\"\"\\)\")",
+      "Bash(cmd.exe /c \"powershell -c \"\"\\(New-Object Media.SoundPlayer ''C:\\\\Windows\\\\Media\\\\ding.wav''\\).PlaySync\\(\\)\"\"\")",
+      "Bash(python -c \"import winsound; winsound.PlaySound\\(''C:/Windows/Media/ding.wav'', winsound.SND_FILENAME\\)\")",
+      "Bash(/tmp/toast_beep.ps1:*)",
+      "Bash(/tmp/play_chimes.ps1:*)",
+      "Bash(/tmp/play_ring05.ps1:*)",
+      "Bash(/tmp/play_ring08.ps1:*)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\kron\\.claude",
+      "\\tmp",
+      "C:\\Users\\kron"
+    ]
   },
   "model": "claude-opus-4-6"
 }
