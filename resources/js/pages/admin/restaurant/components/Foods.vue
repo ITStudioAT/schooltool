@@ -165,14 +165,31 @@
                                 density="comfortable" />
                         </v-col>
 
-                        <v-col cols="12" md="5">
-                            <v-combobox
-                                v-model="form.categoryTitle"
-                                :items="categoryTitles"
-                                label="Kategorie"
-                                variant="outlined"
-                                density="comfortable"
-                                clearable />
+                        <v-col cols="12">
+                            <div class="category-selector">
+                                <div class="category-selector__header">
+                                    <div class="text-subtitle-2">Kategorie</div>
+                                    <div class="text-body-2 text-medium-emphasis">
+                                        Genau eine Kategorie auswählen.
+                                    </div>
+                                </div>
+
+                                <div v-if="categories.length" class="d-flex flex-wrap ga-2 category-chip-list">
+                                    <v-chip
+                                        v-for="category in categories"
+                                        :key="`food-category-${category.id}`"
+                                        class="category-chip"
+                                        :class="{ 'category-chip--selected': isSelectedCategory(category.id) }"
+                                        variant="outlined"
+                                        @click="selectCategory(category.id)">
+                                        {{ category.title }}
+                                    </v-chip>
+                                </div>
+
+                                <v-alert v-else type="info" variant="tonal" density="comfortable" class="mt-3">
+                                    Bitte zuerst unter Einstellungen eine Kategorie anlegen.
+                                </v-alert>
+                            </div>
                         </v-col>
 
                         <v-col cols="12">
@@ -350,7 +367,7 @@ function emptyForm() {
     return {
         title: '',
         description: '',
-        categoryTitle: '',
+        categoryId: null,
         allergens: [],
         ingredientIconIds: [],
         price: '',
@@ -381,9 +398,6 @@ export default {
     computed: {
         ...mapState(useFoodStore, ['foods']),
         ...mapState(useRestaurantStore, ['categories', 'ingredientIcons', 'allergenOptions', 'userSettings', 'canManageUserSettings']),
-        categoryTitles() {
-            return this.categories.map((category) => category.title)
-        },
         currentPaginationNumber() {
             const value = Number(this.userSettings?.restaurant_foods_pagination_number || 0)
 
@@ -559,6 +573,24 @@ export default {
 
             this.form.ingredientIconIds = [...this.form.ingredientIconIds, iconId]
         },
+        isSelectedCategory(categoryId) {
+            return Number(this.form.categoryId) === Number(categoryId)
+        },
+        selectCategory(categoryId) {
+            const normalizedCategoryId = Number(categoryId)
+
+            if (! Number.isFinite(normalizedCategoryId) || normalizedCategoryId <= 0) {
+                this.form.categoryId = null
+                return
+            }
+
+            if (this.isSelectedCategory(normalizedCategoryId)) {
+                this.form.categoryId = null
+                return
+            }
+
+            this.form.categoryId = normalizedCategoryId
+        },
         openCreateDialog() {
             this.editingFoodId = null
             this.form = emptyForm()
@@ -573,7 +605,7 @@ export default {
             this.form = {
                 title: food.title || '',
                 description: food.description || '',
-                categoryTitle: food.category?.title || '',
+                categoryId: food.category?.id || null,
                 allergens: [...(food.allergens || [])],
                 ingredientIconIds: (food.ingredient_icons || []).map((icon) => icon.id),
                 price: this.normalizePriceInput(food.price),
@@ -622,7 +654,7 @@ export default {
             const payload = {
                 title: this.form.title,
                 description: this.form.description,
-                category_title: this.form.categoryTitle,
+                category_id: this.form.categoryId,
                 allergens: this.form.allergens,
                 ingredient_icon_ids: this.form.ingredientIconIds,
                 price: this.normalizePricePayload(this.form.price),
@@ -717,6 +749,51 @@ export default {
 .food-pagination__counter {
     min-width: 3.2rem;
     font-weight: 700;
+}
+
+.category-selector {
+    padding: 1rem 1.05rem 0.95rem;
+    border: 1px solid rgba(14, 116, 144, 0.14);
+    border-radius: 1.1rem;
+    background:
+        radial-gradient(circle at top left, rgba(224, 242, 254, 0.9), transparent 38%),
+        linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+    box-shadow: 0 16px 34px -28px rgba(15, 23, 42, 0.5);
+}
+
+.category-selector__header {
+    display: grid;
+    gap: 0.2rem;
+    margin-bottom: 0.8rem;
+}
+
+.category-chip-list {
+    width: 100%;
+}
+
+.category-chip {
+    border-radius: 999px;
+    border: 1px solid rgba(14, 116, 144, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+    box-shadow: 0 12px 26px -22px rgba(15, 23, 42, 0.42);
+    color: rgb(15, 23, 42);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding-inline: 0.2rem;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.category-chip:hover {
+    transform: translateY(-1px);
+    border-color: rgba(8, 145, 178, 0.34);
+    box-shadow: 0 16px 28px -22px rgba(14, 116, 144, 0.34);
+}
+
+.category-chip--selected {
+    border-color: rgba(14, 116, 144, 0.88);
+    background: linear-gradient(135deg, rgb(8, 145, 178), rgb(14, 116, 144));
+    color: rgb(255, 255, 255);
+    box-shadow: 0 18px 32px -22px rgba(14, 116, 144, 0.52);
 }
 
 .allergen-chip-list {

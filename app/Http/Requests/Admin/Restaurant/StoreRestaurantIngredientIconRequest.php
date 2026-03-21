@@ -25,8 +25,7 @@ class StoreRestaurantIngredientIconRequest extends FormRequest
                 'max:120',
                 Rule::unique('restaurant_ingredient_icons', 'title')->where(fn ($query) => $query->where('school_id', $schoolId)),
             ],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
-            'image' => ['nullable', File::image()->max('3mb')],
+            'image' => ['nullable', File::types(['svg'])->max('3mb')],
         ];
     }
 }

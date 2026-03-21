@@ -7,6 +7,7 @@ import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
 function mountFoods(options: {
     foods?: any[]
+    categories?: any[]
     ingredientIcons?: any[]
     allergenOptions?: any[]
 } = {}) {
@@ -19,7 +20,10 @@ function mountFoods(options: {
             },
             AdminRestaurantStore: {
                 settings: {
-                    categories: [],
+                    categories: options.categories ?? [
+                        { id: 1, title: 'Hauptspeise' },
+                        { id: 2, title: 'Dessert' },
+                    ],
                     ingredient_icons: options.ingredientIcons ?? [
                         { id: 2, title: 'Schwein', image_url: 'data:image/svg+xml;base64,AAA=' },
                     ],
@@ -52,7 +56,6 @@ function mountFoods(options: {
                 'v-dialog': { template: '<div><slot /></div>' },
                 'v-spacer': { template: '<div />' },
                 'v-text-field': { template: '<input />' },
-                'v-combobox': { template: '<input />' },
                 'v-textarea': { template: '<textarea />' },
                 'file-pond': { template: '<div class="file-pond"></div>' },
                 'v-checkbox': { template: '<input type="checkbox" />' },
@@ -150,6 +153,25 @@ describe('Restaurant foods component', () => {
         expect(ctx.form.ingredientIconIds).toEqual([5])
     })
 
+    it('selects exactly one category chip at a time and allows deselecting it', () => {
+        const ctx = {
+            form: {
+                categoryId: null,
+            },
+        }
+
+        ctx.isSelectedCategory = (categoryId: number) => (Foods as any).methods.isSelectedCategory.call(ctx, categoryId)
+
+        ;(Foods as any).methods.selectCategory.call(ctx, 2)
+        expect(ctx.form.categoryId).toBe(2)
+
+        ;(Foods as any).methods.selectCategory.call(ctx, 5)
+        expect(ctx.form.categoryId).toBe(5)
+
+        ;(Foods as any).methods.selectCategory.call(ctx, 5)
+        expect(ctx.form.categoryId).toBe(null)
+    })
+
     it('stores the selected PQINA file in the form state', () => {
         const file = new File(['image'], 'meal.png', { type: 'image/png' })
         const ctx = {
@@ -163,6 +185,38 @@ describe('Restaurant foods component', () => {
 
         expect(ctx.form.foodImage).toBe(file)
         expect(ctx.form.removeFoodImage).toBe(false)
+    })
+
+    it('loads the existing category id into the edit form and stores category_id on save', async () => {
+        const food = {
+            id: 7,
+            title: 'Pasta',
+            description: 'Mit Sauce',
+            price: '4.5',
+            food_image_url: null,
+            category: { id: 2, title: 'Dessert' },
+            allergens: ['A'],
+            ingredient_icons: [{ id: 2, title: 'Schwein', image_url: 'data:image/svg+xml;base64,AAA=' }],
+        }
+        const { wrapper, foodStore, restaurantStore } = mountFoods({
+            foods: [food],
+        })
+
+        foodStore.update = vi.fn().mockResolvedValue({ id: 7 })
+        restaurantStore.loadSettings = vi.fn().mockResolvedValue(undefined)
+
+        ;(wrapper.vm as any).openEditDialog(food)
+        expect((wrapper.vm as any).form.categoryId).toBe(2)
+
+        ;(wrapper.vm as any).form.categoryId = 1
+        await (wrapper.vm as any).saveFood()
+
+        expect(foodStore.update).toHaveBeenCalledWith(7, expect.objectContaining({
+            category_id: 1,
+        }))
+        expect(foodStore.update).not.toHaveBeenCalledWith(7, expect.objectContaining({
+            category_title: expect.anything(),
+        }))
     })
 
     it('opens a delete confirmation before removing a food', async () => {
@@ -299,6 +353,9 @@ describe('Restaurant foods component', () => {
     it('renders allergen and ingredient icon selector chips in wrapping rows', () => {
         const { wrapper } = mountFoods()
 
+        expect(wrapper.find('.category-chip-list').exists()).toBe(true)
+        expect(wrapper.findAll('.category-chip')).toHaveLength(2)
+        expect(wrapper.find('.category-chip-list').classes()).toContain('flex-wrap')
         expect(wrapper.find('.allergen-chip-list').exists()).toBe(true)
         expect(wrapper.findAll('.allergen-chip')).toHaveLength(2)
         expect(wrapper.find('.allergen-chip-list').classes()).toContain('flex-wrap')

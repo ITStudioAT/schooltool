@@ -28,8 +28,7 @@ class UpdateRestaurantIngredientIconRequest extends FormRequest
                     ->ignore($ingredientIconId)
                     ->where(fn ($query) => $query->where('school_id', $schoolId)),
             ],
-            'sort_order' => ['nullable', 'integer', 'min:0', 'max:1000'],
-            'image' => ['nullable', File::image()->max('3mb')],
+            'image' => ['nullable', File::types(['svg'])->max('3mb')],
             'remove_image' => ['nullable', 'boolean'],
         ];
     }

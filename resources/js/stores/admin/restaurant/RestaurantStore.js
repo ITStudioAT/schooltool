@@ -240,7 +240,7 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                 const ingredientIcons = [...this.ingredientIcons, response.data.data]
                 this.settings = {
                     ...(this.settings || {}),
-                    ingredient_icons: sortByOrderAndTitle(ingredientIcons),
+                    ingredient_icons: sortByTitle(ingredientIcons),
                 }
                 notification.notify({
                     message: 'Zutaten-Symbol wurde gespeichert.',
@@ -276,7 +276,7 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                 })
                 this.settings = {
                     ...(this.settings || {}),
-                    ingredient_icons: sortByOrderAndTitle(ingredientIcons),
+                    ingredient_icons: sortByTitle(ingredientIcons),
                 }
                 notification.notify({
                     message: 'Zutaten-Symbol wurde aktualisiert.',

@@ -94,13 +94,12 @@ test('category CRUD works for restaurant settings', function () {
     ]);
 });
 
-test('ingredient icon CRUD works and stores image', function () {
+test('ingredient icon CRUD works with svg upload and title ordering', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     $created = $this->post('/api/admin/restaurant/ingredient_icons', [
         'title' => 'Schwein',
-        'sort_order' => 10,
-        'image' => UploadedFile::fake()->image('pork.png'),
+        'image' => UploadedFile::fake()->create('pork.svg', 10, 'image/svg+xml'),
     ], ['Accept' => 'application/json']);
 
     $created->assertCreated()
@@ -113,7 +112,6 @@ test('ingredient icon CRUD works and stores image', function () {
     $updated = $this->post("/api/admin/restaurant/ingredient_icons/{$iconId}", [
         '_method' => 'PUT',
         'title' => 'Schwein deutlich',
-        'sort_order' => 20,
         'remove_image' => '1',
     ], ['Accept' => 'application/json']);
 
@@ -125,6 +123,17 @@ test('ingredient icon CRUD works and stores image', function () {
 
     $this->deleteJson("/api/admin/restaurant/ingredient_icons/{$iconId}")
         ->assertNoContent();
+});
+
+test('ingredient icon upload only accepts svg files', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->post('/api/admin/restaurant/ingredient_icons', [
+        'title' => 'Kein SVG',
+        'image' => UploadedFile::fake()->image('pork.png'),
+    ], ['Accept' => 'application/json'])
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['image']);
 });
 
 test('cannot delete category or ingredient icon while in use', function () {

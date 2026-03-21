@@ -196,7 +196,6 @@ class RestaurantService
         return RestaurantIngredientIcon::query()->create([
             'school_id' => $authUser->school_id,
             'title' => trim((string) $validated['title']),
-            'sort_order' => (int) ($validated['sort_order'] ?? 0),
             'image_path' => $this->storeImage($validated['image'] ?? null, 'restaurant/ingredient-icons'),
         ]);
     }
@@ -221,7 +220,6 @@ class RestaurantService
 
         $ingredientIcon->update([
             'title' => trim((string) $validated['title']),
-            'sort_order' => (int) ($validated['sort_order'] ?? 0),
             'image_path' => $imagePath,
         ]);
 
