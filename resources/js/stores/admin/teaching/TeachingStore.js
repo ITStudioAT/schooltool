@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import {
+    normalizeTeachingCategoryEvaluationValueItems,
+    teachingCategoryEvaluationColorForValue,
+    teachingCategoryEvaluationValueLabels,
+} from '@/helpers/teachingCategoryEvaluation'
 
 export const useTeachingStore = defineStore('AdminTeachingStore', {
     state: () => {
@@ -24,6 +29,34 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
         gradingForSchema: (state) => (schemaId) => {
             const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
             return schema?.grading || {}
+        },
+        categoryEvaluationValueItemsForSchema: (state) => (schemaId) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
+            if (!schema) {
+                return []
+            }
+
+            return normalizeTeachingCategoryEvaluationValueItems(schema?.grading?.category_evaluation_values)
+        },
+        categoryEvaluationValuesForSchema: (state) => (schemaId) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
+            if (!schema) {
+                return []
+            }
+
+            return teachingCategoryEvaluationValueLabels(schema?.grading?.category_evaluation_values)
+        },
+        categoryEvaluationValueColorForSchema: (state) => (schemaId, value) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
+            if (!schema) {
+                return ''
+            }
+
+            return teachingCategoryEvaluationColorForValue(schema?.grading?.category_evaluation_values, value)
+        },
+        defaultCategoryEvaluationValueForSchema: (state) => (schemaId) => {
+            const schema = (state.settings?.teaching_schemas || []).find((s) => String(s.id) === String(schemaId))
+            return schema?.grading?.default_category_evaluation_value || null
         },
         hasTwoSemesters: (state) => {
             const schemas = state.settings?.teaching_schemas || []

@@ -36,15 +36,6 @@
                 <div class="workspace-bar__label">
                     Workspace: <span class="workspace-bar__name">{{ activeWorkspaceName }}</span>
                 </div>
-                <v-btn
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    prepend-icon="mdi-pencil-outline"
-                    :disabled="isMenuLocked"
-                    @click="openRenameWorkspaceDialog">
-                    Workspace umbenennen
-                </v-btn>
             </v-card>
 
             <MaterialsMenu v-model="main_action" :disabled="isMenuLocked || adminStore?.is_struktur_modus" />

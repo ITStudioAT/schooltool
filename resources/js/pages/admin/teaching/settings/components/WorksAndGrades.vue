@@ -394,7 +394,7 @@ export default {
             await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.action = ''
             this.edit_index = null
-            this.is_editing = false
+            this.is_editing = true
         },
 
         async deleteWork(index) {

@@ -7,6 +7,10 @@ export const useCourseStore = defineStore('StudentCourseStore', {
             courses: [],
             course: null,
             entries: [],
+            categoryEvaluations: [],
+            gradingCategories: [],
+            categoryEvaluationValues: [],
+            categoryEvaluationDefaultValue: null,
             typeLabels: {},
         }
     },
@@ -52,6 +56,10 @@ export const useCourseStore = defineStore('StudentCourseStore', {
             try {
                 const response = await axios.get(`/api/homepage/student/courses/${courseId}/entries`)
                 this.entries = response.data?.entries ?? []
+                this.categoryEvaluations = response.data?.category_evaluations ?? []
+                this.gradingCategories = response.data?.grading_categories ?? []
+                this.categoryEvaluationValues = response.data?.category_evaluation_values ?? []
+                this.categoryEvaluationDefaultValue = response.data?.category_evaluation_default_value ?? null
                 this.typeLabels = response.data?.type_labels ?? {}
                 return true
             } catch (error) {
@@ -63,6 +71,10 @@ export const useCourseStore = defineStore('StudentCourseStore', {
                     timeout: 3000,
                 })
                 this.entries = []
+                this.categoryEvaluations = []
+                this.gradingCategories = []
+                this.categoryEvaluationValues = []
+                this.categoryEvaluationDefaultValue = null
                 this.typeLabels = {}
                 return false
             }

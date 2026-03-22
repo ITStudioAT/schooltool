@@ -20,6 +20,7 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
 use App\Models\User;
+use App\Services\TeachingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
@@ -116,10 +117,13 @@ function validTeachingSettingsPayload(string $schemaId = 'schema-1'): array
                     'semester_count' => 2,
                     'semester_1_weight' => 40,
                     'semester_2_weight' => 60,
+                    'category_evaluation_values' => TeachingService::defaultCategoryEvaluationValues(),
+                    'default_category_evaluation_value' => TeachingService::defaultCategoryEvaluationDefaultValue(),
                     'categories' => [
                         [
                             'name' => 'Mitarbeit',
                             'weight' => 100,
+                            'category_evaluation_enabled' => false,
                             'works' => [
                                 ['short_name' => 'MA', 'factor' => 100],
                             ],
@@ -625,7 +629,9 @@ describe('settings and semester endpoints', function () {
         $schemas = $response->json('settings.teaching_schemas');
         expect($schemas)->toBeArray()
             ->and(count($schemas))->toBeGreaterThan(0)
-            ->and($schemas[0]['name'])->toBe('Standard');
+            ->and($schemas[0]['name'])->toBe('Standard')
+            ->and($schemas[0]['grading']['category_evaluation_values'] ?? null)->toMatchArray(TeachingService::defaultCategoryEvaluationValues())
+            ->and($schemas[0]['grading']['default_category_evaluation_value'] ?? null)->toBe(TeachingService::defaultCategoryEvaluationDefaultValue());
         expect($response->json('settings.teaching_show_behaviour'))->toBeTrue();
 
         $this->assertDatabaseCount('teaching_schemas', 1);
@@ -717,6 +723,73 @@ describe('settings and semester endpoints', function () {
             'id' => $this->admin->id,
             'teaching_show_behaviour' => 0,
         ]);
+    });
+
+    test('save_settings persists category evaluation values inside schema grading', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-category-values');
+        $payload['teaching_schemas'][0]['grading']['category_evaluation_values'] = [
+            ['value' => 'Keine Bewertung', 'color' => '#b0bec5'],
+            ['value' => 'Offen', 'color' => '#fb8c00'],
+            ['value' => 'Bestanden', 'color' => '#43a047'],
+            ['value' => '1', 'color' => '#2e7d32'],
+            ['value' => 'Nicht bestanden', 'color' => '#c62828'],
+        ];
+        $payload['teaching_schemas'][0]['grading']['default_category_evaluation_value'] = 'Bestanden';
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_values', [
+                ['value' => 'Keine Bewertung', 'color' => '#b0bec5'],
+                ['value' => 'Offen', 'color' => '#fb8c00'],
+                ['value' => 'Bestanden', 'color' => '#43a047'],
+                ['value' => '1', 'color' => '#2e7d32'],
+                ['value' => 'Nicht bestanden', 'color' => '#c62828'],
+            ])
+            ->assertJsonPath('settings.teaching_schemas.0.grading.default_category_evaluation_value', 'Bestanden');
+
+        $this->assertDatabaseHas('teaching_schemas', [
+            'user_id' => $this->admin->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schema_id' => 'schema-category-values',
+        ]);
+
+        expect(TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('schema_id', 'schema-category-values')
+            ->first()?->grading)
+            ->toMatchArray([
+                'category_evaluation_values' => [
+                    ['value' => 'Keine Bewertung', 'color' => '#b0bec5'],
+                    ['value' => 'Offen', 'color' => '#fb8c00'],
+                    ['value' => 'Bestanden', 'color' => '#43a047'],
+                    ['value' => '1', 'color' => '#2e7d32'],
+                    ['value' => 'Nicht bestanden', 'color' => '#c62828'],
+                ],
+                'default_category_evaluation_value' => 'Bestanden',
+            ]);
+    });
+
+    test('save_settings persists category evaluation toggle on grading categories', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-category-toggle');
+        $payload['teaching_schemas'][0]['grading']['categories'][0]['category_evaluation_enabled'] = true;
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.grading.categories.0.category_evaluation_enabled', true);
+
+        expect(TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('schema_id', 'schema-category-toggle')
+            ->first()?->grading['categories'][0]['category_evaluation_enabled'] ?? null)
+            ->toBeTrue();
     });
 
     test('save_settings renames behaviour type in course entries for all students of the school', function () {
@@ -1106,6 +1179,12 @@ describe('save_settings contract validation', function () {
             }),
             'teaching_schemas.0.grading.categories.0.weight',
         ],
+        'category evaluation toggle boolean' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                $data['teaching_schemas'][0]['grading']['categories'][0]['category_evaluation_enabled'] = 'yes';
+            }),
+            'teaching_schemas.0.grading.categories.0.category_evaluation_enabled',
+        ],
         'category work short_name required' => [
             fn (array $payload): array => tap($payload, function (&$data) {
                 unset($data['teaching_schemas'][0]['grading']['categories'][0]['works'][0]['short_name']);
@@ -1117,6 +1196,24 @@ describe('save_settings contract validation', function () {
                 unset($data['teaching_notifications'][0]['short_name']);
             }),
             'teaching_notifications.0.short_name',
+        ],
+        'category evaluation value max 50' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                $data['teaching_schemas'][0]['grading']['category_evaluation_values'][0]['value'] = str_repeat('A', 51);
+            }),
+            'teaching_schemas.0.grading.category_evaluation_values.0.value',
+        ],
+        'category evaluation color must be hex' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                $data['teaching_schemas'][0]['grading']['category_evaluation_values'][0]['color'] = 'blue';
+            }),
+            'teaching_schemas.0.grading.category_evaluation_values.0.color',
+        ],
+        'default category evaluation value max 50' => [
+            fn (array $payload): array => tap($payload, function (&$data) {
+                $data['teaching_schemas'][0]['grading']['default_category_evaluation_value'] = str_repeat('A', 51);
+            }),
+            'teaching_schemas.0.grading.default_category_evaluation_value',
         ],
     ]);
 });

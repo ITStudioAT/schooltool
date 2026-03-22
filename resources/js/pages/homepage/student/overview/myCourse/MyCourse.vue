@@ -261,19 +261,31 @@
                                 <p>Lade Leistungen...</p>
                             </div>
 
-                            <div v-else class="entries-section">
-                                <div class="entries-toolbar">
-                                    <div class="entries-toolbar-title">
-                                        <v-icon size="18">mdi-clipboard-text</v-icon>
-                                        <span>Leistungen</span>
-                                        <v-chip v-if="sortedEntries.length" size="x-small" color="primary" variant="tonal">
-                                            {{ sortedEntries.length }}
-                                        </v-chip>
+                                <div v-else class="entries-section">
+                                    <div class="entries-toolbar">
+                                        <div class="entries-toolbar-title">
+                                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                                            <span>Leistungen</span>
+                                            <v-chip v-if="sortedEntries.length" size="x-small" color="primary" variant="tonal">
+                                                {{ sortedEntries.length }}
+                                            </v-chip>
+                                        </div>
+                                        <div class="entries-toolbar-actions">
+                                            <v-btn
+                                                size="small"
+                                                variant="tonal"
+                                                color="primary"
+                                                prepend-icon="mdi-refresh"
+                                                :loading="loadingEntries"
+                                                :disabled="loadingEntries"
+                                                @click="loadEntries">
+                                                Aktualisieren
+                                            </v-btn>
+                                            <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
+                                                {{ sortByType ? 'Sort: Typ' : 'Sort: Datum' }}
+                                            </v-btn>
+                                        </div>
                                     </div>
-                                    <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
-                                        {{ sortByType ? 'Sort: Typ' : 'Sort: Datum' }}
-                                    </v-btn>
-                                </div>
 
                                 <div v-if="hasTwoSemesters" class="entries-semester-filter">
                                     <v-btn-toggle v-model="selectedSemester" class="semester-toggle" mandatory density="compact" color="primary">
@@ -295,59 +307,83 @@
                                                     </div>
                                                 </v-list-item>
                                                 <v-list-item v-else>
-                                                    <div class="entry-row" :class="[
-                                                        item.stripe % 2 === 1 ? 'entry-row--alt' : 'entry-row--base',
-                                                        isEntryOpen(item.entry) ? 'entry-row--open' : ''
+                                                    <div class="entry-category-group" :class="[
+                                                        item.group.categoryClass,
+                                                        item.stripe % 2 === 1 ? 'entry-category-group--alt' : 'entry-category-group--base',
                                                     ]">
-                                                        <v-icon size="22" :color="getEntryStatusColor(item.entry)">{{ getEntryIcon(item.entry.type) }}</v-icon>
-                                                        <v-chip v-if="item.entry.date" size="small" variant="tonal" color="primary">
-                                                            {{ formatDate(item.entry.date) }}
-                                                        </v-chip>
-                                                        <v-chip v-if="item.entry.type" size="small" variant="outlined">
-                                                            {{ entryTypeChipLabel(item.entry.type) }}
-                                                        </v-chip>
-                                                        <v-chip v-if="item.entry.is_required_entry" size="small" :color="entryGradeChipColor(item.entry)" variant="flat" :prepend-icon="entryGradeChipColor(item.entry) === 'success' ? 'mdi-check' : undefined">
-                                                            Erforderlich
-                                                        </v-chip>
-                                                        <div class="entry-main text-caption">
-                                                            <div v-if="entryTitle(item.entry)" class="entry-title">{{ entryTitle(item.entry) }}</div>
-                                                            <!-- Show expand button for work entries with details -->
-                                                            <div v-if="item.entry.work && (item.entry.work.description || item.entry.work.is_group_work)" class="entry-work-toggle">
-                                                                <v-btn size="x-small" variant="tonal" color="primary" @click="toggleEntryExpansion(item.entry.id)">
-                                                                    <v-icon start size="small">{{ expandedEntries[item.entry.id] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
-                                                                    Aufgaben-Details
-                                                                </v-btn>
-                                                            </div>
-                                                            <!-- Show work details if expanded -->
-                                                            <div v-if="item.entry.work && expandedEntries[item.entry.id]" class="entry-work-details">
-                                                                <div v-if="item.entry.work.description" class="work-detail-item">
-                                                                    <strong>Beschreibung:</strong>
-                                                                    <div class="work-description-content" v-html="item.entry.work.description"></div>
+                                                        <div v-if="item.group.categoryName || item.group.categoryEvaluationValue" class="entry-category-group-head">
+                                                            <v-chip v-if="item.group.categoryName" size="small" color="secondary" variant="flat" class="entry-category-chip">
+                                                                Kategorie: {{ item.group.categoryName }}
+                                                            </v-chip>
+                                                            <v-chip
+                                                                v-if="item.group.categoryEvaluationEnabled && shouldShowCategoryEvaluationValue(item.group.categoryEvaluationValue)"
+                                                                size="small"
+                                                                :color="categoryEvaluationValueColor(item.group.categoryEvaluationValue)"
+                                                                variant="flat"
+                                                                class="entry-category-evaluation-chip">
+                                                                {{ item.group.categoryEvaluationValue }}
+                                                            </v-chip>
+                                                        </div>
+                                                        <div class="entry-category-group-list">
+                                                            <div
+                                                                v-for="(entry, entryIndex) in item.group.entries"
+                                                                :key="`entry-${item.group.key}-${entry.id || entryIndex}`"
+                                                                class="entry-category-group-entry">
+                                                                <div class="entry-row" :class="[
+                                                                    entryIndex % 2 === 1 ? 'entry-row--alt' : 'entry-row--base',
+                                                                    isEntryOpen(entry) ? 'entry-row--open' : '',
+                                                                ]">
+                                                                    <v-chip v-if="entry.date" size="small" variant="tonal" color="primary">
+                                                                        {{ formatDate(entry.date) }}
+                                                                    </v-chip>
+                                                                    <div class="entry-main text-caption">
+                                                                        <div v-if="entryTitle(entry)" class="entry-title-row">
+                                                                            <v-icon size="22" :color="getEntryStatusColor(entry)">{{ getEntryIcon(entry.type) }}</v-icon>
+                                                                            <div class="entry-title">{{ entryTitle(entry) }}</div>
+                                                                        </div>
+                                                                        <div v-if="entry.work && (entry.work.description || entry.work.is_group_work)" class="entry-work-toggle">
+                                                                            <v-btn size="x-small" variant="tonal" color="primary" @click="toggleEntryExpansion(entry.id)">
+                                                                                <v-icon start size="small">{{ expandedEntries[entry.id] ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
+                                                                                Aufgaben-Details
+                                                                            </v-btn>
+                                                                        </div>
+                                                                        <div v-if="entry.work && expandedEntries[entry.id]" class="entry-work-details">
+                                                                            <div v-if="entry.work.description" class="work-detail-item">
+                                                                                <strong>Beschreibung:</strong>
+                                                                                <div class="work-description-content" v-html="entry.work.description"></div>
+                                                                            </div>
+                                                                            <div v-if="entry.work.is_group_work" class="work-detail-item">
+                                                                                <strong>Gruppenarbeit:</strong>
+                                                                                Ja
+                                                                                <span v-if="entry.work.group_size">({{ entry.work.group_size }} Personen)</span>
+                                                                            </div>
+                                                                            <div v-if="entry.work.is_group_work" class="work-detail-item">
+                                                                                <strong>Gruppenmitglieder:</strong>
+                                                                                <span v-if="entry.work.group_members && entry.work.group_members.length">
+                                                                                    {{ entry.work.group_members.join(', ') }}
+                                                                                </span>
+                                                                                <span v-else class="text-muted">Keine weiteren Gruppenmitglieder</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div v-if="!entry.work && entryDescription(entry)" class="entry-description">
+                                                                            {{ entryDescription(entry) }}
+                                                                        </div>
+                                                                        <div v-if="entryComment(entry)" class="entry-comment">
+                                                                            {{ entryComment(entry) }}
+                                                                        </div>
+                                                                    </div>
+                                                                    <v-chip v-if="entry.type" size="small" variant="outlined">
+                                                                        {{ entryTypeChipLabel(entry.type) }}
+                                                                    </v-chip>
+                                                                    <v-chip v-if="entry.is_required_entry" size="small" :color="entryGradeChipColor(entry)" variant="flat" :prepend-icon="entryGradeChipColor(entry) === 'success' ? 'mdi-check' : undefined">
+                                                                        Erforderlich
+                                                                    </v-chip>
+                                                                    <v-chip class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(entry)">
+                                                                        {{ entry.grade || 'offen' }}
+                                                                    </v-chip>
                                                                 </div>
-                                                                <div v-if="item.entry.work.is_group_work" class="work-detail-item">
-                                                                    <strong>Gruppenarbeit:</strong>
-                                                                    Ja
-                                                                    <span v-if="item.entry.work.group_size">({{ item.entry.work.group_size }} Personen)</span>
-                                                                </div>
-                                                                <div v-if="item.entry.work.is_group_work" class="work-detail-item">
-                                                                    <strong>Gruppenmitglieder:</strong>
-                                                                    <span v-if="item.entry.work.group_members && item.entry.work.group_members.length">
-                                                                        {{ item.entry.work.group_members.join(', ') }}
-                                                                    </span>
-                                                                    <span v-else class="text-muted">Keine weiteren Gruppenmitglieder</span>
-                                                                </div>
-                                                            </div>
-                                                            <!-- Show description and comment for non-work entries -->
-                                                            <div v-if="!item.entry.work && entryDescription(item.entry)" class="entry-description">
-                                                                {{ entryDescription(item.entry) }}
-                                                            </div>
-                                                            <div v-if="entryComment(item.entry)" class="entry-comment">
-                                                                {{ entryComment(item.entry) }}
                                                             </div>
                                                         </div>
-                                                        <v-chip class="entry-grade" size="small" variant="tonal" :color="entryGradeChipColor(item.entry)">
-                                                            {{ item.entry.grade || 'offen' }}
-                                                        </v-chip>
                                                     </div>
                                                 </v-list-item>
                                             </template>
@@ -432,7 +468,7 @@
                                                         getDateStatusClass(dateEntry.status),
                                                         { 'date-row--today': isDateToday(dateEntry.date) },
                                                     ]">
-                                                    <v-icon size="22" :color="getDateIconColor(dateEntry.status)">mdi-calendar</v-icon>
+                                                    <v-icon size="22" :color="getDateIconColor(dateEntry.date, dateEntry.status)">{{ getDateLeadingIcon(dateEntry.date) }}</v-icon>
                                                     <v-chip v-if="isDateToday(dateEntry.date)" size="small" color="warning" variant="flat">
                                                         Heute
                                                     </v-chip>
@@ -478,6 +514,11 @@ import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
 import { useCourseStore } from '@/stores/student/CourseStore'
 import { parseLocalDate } from '@/helpers/date'
+import {
+    normalizeTeachingCategoryEvaluationValueItems,
+    teachingCategoryEvaluationColorForValue,
+    teachingCategoryEvaluationValueLabels,
+} from '@/helpers/teachingCategoryEvaluation'
 import StudentNavigationDrawer from '../../components/StudentNavigationDrawer.vue'
 import '../../../../../../css/student.css'
 
@@ -567,6 +608,23 @@ export default {
         courseDates() {
             return this.course?.course_dates || []
         },
+        courseCategoryEvaluations() {
+            return Array.isArray(this.courseStore?.categoryEvaluations) ? this.courseStore.categoryEvaluations : []
+        },
+        categoryEvaluationValueItems() {
+            if (Array.isArray(this.courseStore?.categoryEvaluationValues) && this.courseStore.categoryEvaluationValues.length) {
+                return normalizeTeachingCategoryEvaluationValueItems(this.courseStore.categoryEvaluationValues)
+            }
+
+            if (!this.currentTeachingSchema) {
+                return []
+            }
+
+            return normalizeTeachingCategoryEvaluationValueItems(this.currentTeachingSchema?.grading?.category_evaluation_values)
+        },
+        courseGradingCategories() {
+            return Array.isArray(this.courseStore?.gradingCategories) ? this.courseStore.gradingCategories : []
+        },
         courseRemainingLabel() {
             const endAtRaw = (this.course?.active_course_end_at || this.simulatedCourseEndAt || '').toString().trim()
             if (!endAtRaw) {
@@ -629,24 +687,23 @@ export default {
         },
 
         hasTwoSemesters() {
-            const schemas = Array.isArray(this.user?.teaching_schemas) ? this.user.teaching_schemas : []
-            const courseSchemaId = this.course?.teaching_schema_id
-            if (!schemas.length || courseSchemaId == null) return false
-            const schema = schemas.find((item) => String(item?.id) === String(courseSchemaId)) || null
+            const schema = this.currentTeachingSchema
+            if (!schema) return false
             return Number(schema?.grading?.semester_count) === 2
         },
 
-        schemaWorkTypeLabels() {
+        currentTeachingSchema() {
             const schemas = Array.isArray(this.user?.teaching_schemas) ? this.user.teaching_schemas : []
-            if (!schemas.length) return {}
+            if (!schemas.length) return null
 
             const courseSchemaId = this.course?.teaching_schema_id
-            let schema = null
+            if (courseSchemaId == null) return null
 
-            if (courseSchemaId !== null && courseSchemaId !== undefined) {
-                schema = schemas.find((item) => String(item?.id) === String(courseSchemaId)) || null
-            }
+            return schemas.find((item) => String(item?.id) === String(courseSchemaId)) || null
+        },
 
+        schemaWorkTypeLabels() {
+            const schema = this.currentTeachingSchema
             if (!schema) return {}
 
             const works = Array.isArray(schema.works) ? schema.works : []
@@ -656,6 +713,54 @@ export default {
                 }
                 return result
             }, {})
+        },
+
+        schemaGradingCategories() {
+            if (this.courseGradingCategories.length) {
+                return this.courseGradingCategories.map((category, index) => ({
+                    name: String(category?.name || '').trim(),
+                    index,
+                    categoryEvaluationEnabled: Boolean(category?.category_evaluation_enabled),
+                    works: (Array.isArray(category?.works) ? category.works : [])
+                        .map((work) => String(work || '').trim())
+                        .filter((work) => work !== ''),
+                })).filter((category) => category.name !== '')
+            }
+
+            const schema = this.currentTeachingSchema
+            const categories = Array.isArray(schema?.grading?.categories) ? schema.grading.categories : []
+
+            return categories
+                .map((category, index) => ({
+                    name: String(category?.name || '').trim(),
+                    index,
+                    categoryEvaluationEnabled: Boolean(category?.category_evaluation_enabled),
+                    works: (Array.isArray(category?.works) ? category.works : [])
+                        .map((work) => {
+                            if (typeof work === 'string') {
+                                return String(work).trim()
+                            }
+
+                            return String(work?.short_name || '').trim()
+                        })
+                        .filter((work) => work !== ''),
+                }))
+                .filter((category) => category.name !== '')
+        },
+        categoryEvaluationDefaultValue() {
+            const storeDefault = String(this.courseStore?.categoryEvaluationDefaultValue || '').trim()
+            if (storeDefault) {
+                return storeDefault
+            }
+
+            const cleanedValues = teachingCategoryEvaluationValueLabels(this.categoryEvaluationValueItems)
+
+            const configuredDefault = String(this.currentTeachingSchema?.grading?.default_category_evaluation_value || '').trim()
+            if (configuredDefault && cleanedValues.includes(configuredDefault)) {
+                return configuredDefault
+            }
+
+            return cleanedValues[0] || ''
         },
 
         notificationTypeLabels() {
@@ -763,21 +868,30 @@ export default {
 
         groupedEntries() {
             const entries = this.sortedEntries
+            if (!this.hasTwoSemesters) {
+                return this.buildEntryGroups(entries).map((group, index) => ({
+                    kind: 'group',
+                    key: `group-${group.key}`,
+                    group,
+                    stripe: index,
+                }))
+            }
+
             if (this.selectedSemester !== 3) {
-                return entries.map((entry, index) => ({
-                    kind: 'entry',
-                    key: `entry-${entry.id || index}`,
-                    entry,
+                return this.buildEntryGroups(entries).map((group, index) => ({
+                    kind: 'group',
+                    key: `group-${group.key}`,
+                    group,
                     stripe: index,
                 }))
             }
 
             const boundary = this.normalizeDateKey(this.semesterBoundary)
             if (!boundary) {
-                return entries.map((entry, index) => ({
-                    kind: 'entry',
-                    key: `entry-${entry.id || index}`,
-                    entry,
+                return this.buildEntryGroups(entries).map((group, index) => ({
+                    kind: 'group',
+                    key: `group-${group.key}`,
+                    group,
                     stripe: index,
                 }))
             }
@@ -796,21 +910,21 @@ export default {
             const grouped = []
             let stripeIndex = 0
             grouped.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
-            sem2.forEach((entry, index) => {
+            this.buildEntryGroups(sem2).forEach((group, index) => {
                 grouped.push({
-                    kind: 'entry',
-                    key: `sem2-entry-${entry.id || index}`,
-                    entry,
+                    kind: 'group',
+                    key: `sem2-group-${group.key || index}`,
+                    group,
                     stripe: stripeIndex,
                 })
                 stripeIndex += 1
             })
             grouped.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
-            sem1.forEach((entry, index) => {
+            this.buildEntryGroups(sem1).forEach((group, index) => {
                 grouped.push({
-                    kind: 'entry',
-                    key: `sem1-entry-${entry.id || index}`,
-                    entry,
+                    kind: 'group',
+                    key: `sem1-group-${group.key || index}`,
+                    group,
                     stripe: stripeIndex,
                 })
                 stripeIndex += 1
@@ -848,6 +962,34 @@ export default {
 
         toggleSortByType() {
             this.sortByType = !this.sortByType
+        },
+
+        buildEntryGroups(entries) {
+            const groups = []
+            const groupsByKey = new Map()
+
+            entries.forEach((entry, index) => {
+                const category = this.entryCategory(entry)
+                const categoryName = String(category?.name || '').trim()
+                const groupKey = categoryName !== '' ? `category-${categoryName}` : `entry-${entry.id || index}`
+
+                if (!groupsByKey.has(groupKey)) {
+                    const group = {
+                        key: groupKey,
+                        categoryName,
+                        categoryEvaluationEnabled: Boolean(category?.categoryEvaluationEnabled),
+                        categoryEvaluationValue: category?.categoryEvaluationEnabled ? this.entryCategoryEvaluationValue(entry) : '',
+                        categoryClass: category ? this.entryCategoryClass(entry) : '',
+                        entries: [],
+                    }
+                    groupsByKey.set(groupKey, group)
+                    groups.push(group)
+                }
+
+                groupsByKey.get(groupKey).entries.push(entry)
+            })
+
+            return groups
         },
 
         normalizeDateKey(date) {
@@ -946,6 +1088,70 @@ export default {
             return `${type} - ${this.getEntryTypeLabel(type)}`
         },
 
+        entryCategory(entry) {
+            const type = String(entry?.type || '').trim()
+            if (!type) {
+                return null
+            }
+
+            return this.schemaGradingCategories.find((category) => category.works.includes(type)) || null
+        },
+
+        entryCategoryLabel(entry) {
+            return this.entryCategory(entry)?.name || ''
+        },
+
+        entryCategoryClass(entry) {
+            const category = this.entryCategory(entry)
+            if (!category) {
+                return ''
+            }
+
+            return `entry-category-group--category-${category.index % 4}`
+        },
+
+        entrySemester(entry) {
+            if (!this.hasTwoSemesters) {
+                return 1
+            }
+
+            const boundary = this.normalizeDateKey(this.semesterBoundary)
+            if (!boundary) {
+                return 1
+            }
+
+            const entryDate = this.normalizeDateKey(entry?.date)
+            if (!entryDate) {
+                return 1
+            }
+
+            return entryDate >= boundary ? 2 : 1
+        },
+
+        entryCategoryEvaluationValue(entry) {
+            const category = this.entryCategory(entry)
+            if (!category?.categoryEvaluationEnabled) {
+                return ''
+            }
+
+            const evaluation = this.courseCategoryEvaluations.find((item) => {
+                return Number(item?.semester) === this.entrySemester(entry)
+                    && String(item?.category_name || '').trim() === category.name
+            })
+
+            return String(evaluation?.value || '').trim() || this.categoryEvaluationDefaultValue
+        },
+
+        shouldShowCategoryEvaluationValue(value) {
+            const normalized = String(value || '').trim()
+
+            return normalized !== '' && normalized !== 'Keine Bewertung'
+        },
+
+        categoryEvaluationValueColor(value) {
+            return teachingCategoryEvaluationColorForValue(this.categoryEvaluationValueItems, value, '#4f6fb3')
+        },
+
         normalizeText(value) {
             return String(value || '')
                 .replace(/\s+/g, ' ')
@@ -1021,6 +1227,17 @@ export default {
             const targetKey = this.normalizeDateKey(dateValue)
             if (!targetKey) return false
             return targetKey === this.normalizeDateKey(new Date())
+        },
+        isDatePast(dateValue) {
+            const targetKey = this.normalizeDateKey(dateValue)
+            if (!targetKey) return false
+            const todayKey = this.normalizeDateKey(new Date())
+            if (!todayKey) return false
+
+            return targetKey < todayKey
+        },
+        getDateLeadingIcon(dateValue) {
+            return this.isDatePast(dateValue) ? 'mdi-check-circle' : 'mdi-calendar'
         },
         isLiveTimerTestMode() {
             const liveTimerQuery = this.$route?.query?.live_timer
@@ -1132,7 +1349,10 @@ export default {
             return ''
         },
 
-        getDateIconColor(status) {
+        getDateIconColor(dateValue, status) {
+            if (this.isDatePast(dateValue)) {
+                return '#4caf50'
+            }
             if (!status || !Array.isArray(status)) return '#2196f3'
             const statusStr = status.join(' ').toLowerCase()
             if (statusStr.includes('pruefung') || statusStr.includes('prüfung')) {
@@ -1272,6 +1492,13 @@ export default {
     flex-wrap: wrap;
 }
 
+.entries-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .entries-toolbar-title {
     display: inline-flex;
     align-items: center;
@@ -1310,6 +1537,39 @@ export default {
     white-space: nowrap;
 }
 
+.entry-category-group {
+    border: 2px solid rgba(201, 216, 236, 0.95);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.entry-category-group--base {
+    background-color: #ffffff;
+}
+
+.entry-category-group--alt {
+    background-color: #f8fafc;
+}
+
+.entry-category-group-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    padding: 12px 12px 0;
+}
+
+.entry-category-group-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+}
+
+.entry-category-group-entry + .entry-category-group-entry {
+    border-top: 1px solid rgba(49, 77, 93, 0.12);
+}
+
 .entry-row {
     display: flex;
     flex-wrap: wrap;
@@ -1331,6 +1591,22 @@ export default {
 .entry-row--open {
     border-left: 4px solid #ff9800 !important;
     background-color: #fff3e0 !important;
+}
+
+.entry-category-group--category-0 {
+    border-color: rgba(13, 110, 253, 0.28);
+}
+
+.entry-category-group--category-1 {
+    border-color: rgba(46, 125, 50, 0.28);
+}
+
+.entry-category-group--category-2 {
+    border-color: rgba(255, 143, 0, 0.34);
+}
+
+.entry-category-group--category-3 {
+    border-color: rgba(123, 31, 162, 0.28);
 }
 
 .entry-main {
@@ -1357,6 +1633,24 @@ export default {
     font-size: 1rem;
     font-weight: 700;
     line-height: 1.35;
+}
+
+.entry-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.entry-category-chip {
+    font-weight: 600;
+}
+
+.entry-category-evaluation-chip {
+    margin-left: auto;
+    font-weight: 700;
+    font-size: 0.95rem;
+    min-height: 32px;
+    padding-inline: 14px;
 }
 
 .entry-description {
@@ -1933,7 +2227,11 @@ export default {
         align-items: flex-start;
     }
 
-    .entries-toolbar > .v-btn {
+    .entries-toolbar-actions {
+        width: 100%;
+    }
+
+    .entries-toolbar-actions > .v-btn {
         width: 100%;
     }
 

@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Models\Import116;
 use App\Models\TeachingCourseBehaviourEntry;
+use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
@@ -146,10 +147,16 @@ class TeachingController extends Controller
             'teaching_schemas.*.grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
             'teaching_schemas.*.grading.semester_2_weight' => 'nullable|integer|min:0|max:100',
             'teaching_schemas.*.grading.use_semester_grade_only' => 'nullable|boolean',
+            'teaching_schemas.*.grading.category_evaluation_values' => 'nullable|array',
+            'teaching_schemas.*.grading.category_evaluation_values.*' => 'required|array',
+            'teaching_schemas.*.grading.category_evaluation_values.*.value' => 'required|string|max:50',
+            'teaching_schemas.*.grading.category_evaluation_values.*.color' => ['nullable', 'string', 'regex:/^#(?:[0-9a-fA-F]{6})$/'],
+            'teaching_schemas.*.grading.default_category_evaluation_value' => 'nullable|string|max:50',
             'teaching_schemas.*.grading.categories' => 'nullable|array',
             'teaching_schemas.*.grading.categories.*.name' => 'required|string|max:100',
             'teaching_schemas.*.grading.categories.*.weight' => 'required|integer|min:0|max:100',
             'teaching_schemas.*.grading.categories.*.require_all_entries' => 'nullable|boolean',
+            'teaching_schemas.*.grading.categories.*.category_evaluation_enabled' => 'nullable|boolean',
             'teaching_schemas.*.grading.categories.*.works' => 'nullable|array',
             'teaching_schemas.*.grading.categories.*.works.*.short_name' => 'required|string|max:10',
             'teaching_schemas.*.grading.categories.*.works.*.factor' => 'required|integer|min:0|max:100',
@@ -176,6 +183,12 @@ class TeachingController extends Controller
 
             $teachingService->saveSchemas($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
             $this->syncSchemaWorkItemsForSchool(
+                $auth_user,
+                $auth_user->schoolyear_id,
+                $previousTeachingSchemas,
+                collect($validated['teaching_schemas'])
+            );
+            $this->syncSchemaCategoryEvaluationNamesForSchool(
                 $auth_user,
                 $auth_user->schoolyear_id,
                 $previousTeachingSchemas,
@@ -335,6 +348,24 @@ class TeachingController extends Controller
             ->update(['type' => $newType]);
     }
 
+    private function syncSchemaCategoryEvaluationNamesForSchool(
+        User $authUser,
+        ?int $schoolyearId,
+        Collection $previousSchemas,
+        Collection $currentSchemas
+    ): void {
+        $renames = $this->resolveSchemaCategoryEvaluationRenames($previousSchemas, $currentSchemas);
+
+        foreach ($renames as $schemaId => $categoryRenames) {
+            foreach ($categoryRenames as $oldName => $newName) {
+                TeachingCourseStudentCategoryEvaluation::query()
+                    ->where('category_name', $oldName)
+                    ->where($this->scopeQueryToSchemaCourses($authUser, $schoolyearId, (string) $schemaId))
+                    ->update(['category_name' => $newName]);
+            }
+        }
+    }
+
     private function resolveSchemaWorkChanges(Collection $previousSchemas, Collection $currentSchemas): array
     {
         $changes = [];
@@ -401,6 +432,60 @@ class TeachingController extends Controller
         }
 
         return $changes;
+    }
+
+    private function resolveSchemaCategoryEvaluationRenames(Collection $previousSchemas, Collection $currentSchemas): array
+    {
+        $renames = [];
+
+        $previousById = $previousSchemas
+            ->filter(fn ($schema): bool => is_array($schema))
+            ->keyBy(fn (array $schema): string => (string) ($schema['id'] ?? ''))
+            ->filter(fn (array $schema, string $schemaId): bool => $schemaId !== '');
+
+        $currentById = $currentSchemas
+            ->filter(fn ($schema): bool => is_array($schema))
+            ->keyBy(fn (array $schema): string => (string) ($schema['id'] ?? ''))
+            ->filter(fn (array $schema, string $schemaId): bool => $schemaId !== '');
+
+        foreach ($previousById as $schemaId => $previousSchema) {
+            if (! $currentById->has($schemaId)) {
+                continue;
+            }
+
+            $previousCategories = collect((array) data_get($previousSchema, 'grading.categories', []))
+                ->filter(fn ($category): bool => is_array($category))
+                ->values();
+            $currentCategories = collect((array) data_get($currentById->get($schemaId), 'grading.categories', []))
+                ->filter(fn ($category): bool => is_array($category))
+                ->values();
+
+            $schemaRenames = [];
+            $count = min($previousCategories->count(), $currentCategories->count());
+
+            for ($index = 0; $index < $count; $index++) {
+                $oldCategory = (array) $previousCategories[$index];
+                $newCategory = (array) $currentCategories[$index];
+                $oldName = trim((string) ($oldCategory['name'] ?? ''));
+                $newName = trim((string) ($newCategory['name'] ?? ''));
+
+                if ($oldName === '' || $newName === '' || $oldName === $newName) {
+                    continue;
+                }
+
+                if (! ((bool) ($oldCategory['category_evaluation_enabled'] ?? false) || (bool) ($newCategory['category_evaluation_enabled'] ?? false))) {
+                    continue;
+                }
+
+                $schemaRenames[$oldName] = $newName;
+            }
+
+            if ($schemaRenames !== []) {
+                $renames[$schemaId] = $schemaRenames;
+            }
+        }
+
+        return $renames;
     }
 
     private function scopeQueryToSchemaCourses(

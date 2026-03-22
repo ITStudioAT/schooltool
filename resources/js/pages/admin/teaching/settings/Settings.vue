@@ -106,6 +106,13 @@
                                             prepend-icon="mdi-calculator-variant-outline">
                                             Benotung
                                         </v-btn>
+                                        <v-btn
+                                            rounded="pill"
+                                            class="teaching-settings-toolbar-btn"
+                                            value="category_evaluation"
+                                            prepend-icon="mdi-format-list-bulleted-square">
+                                            Kategoriebewertung
+                                        </v-btn>
                                     </v-btn-toggle>
 
                                     <v-row class="w-100 ma-0 mt-2" dense>
@@ -114,6 +121,9 @@
                                         </v-col>
                                         <v-col cols="12" v-if="isSchemaPanelActive('grading')">
                                             <Grading :schema-id="selected_schema_id" />
+                                        </v-col>
+                                        <v-col cols="12" v-if="isSchemaPanelActive('category_evaluation')">
+                                            <CategoryEvaluation :schema-id="selected_schema_id" />
                                         </v-col>
                                     </v-row>
                                 </template>
@@ -147,6 +157,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import WorksAndGrades from './components/WorksAndGrades.vue'
 import Grading from './components/Grading.vue'
+import CategoryEvaluation from './components/CategoryEvaluation.vue'
 import BasicSettings from './components/BasicSettings.vue'
 import Behaviour from './components/Behaviour.vue'
 import Notifications from './components/Notifications.vue'
@@ -154,7 +165,7 @@ import MyHolidays from './components/MyHolidays.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
-    components: { WorksAndGrades, Grading, BasicSettings, Behaviour, Notifications, MyHolidays, ItsGridBox },
+    components: { WorksAndGrades, Grading, CategoryEvaluation, BasicSettings, Behaviour, Notifications, MyHolidays, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()

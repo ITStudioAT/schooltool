@@ -43,7 +43,18 @@ describe('TeachingStore', () => {
         axiosMock.get.mockResolvedValue({
             data: {
                 settings: {
-                    teaching_schemas: [{ id: 'schema-1', works: [{ short_name: 'MA' }], grading: { semester_count: 2 } }],
+                    teaching_schemas: [{
+                        id: 'schema-1',
+                        works: [{ short_name: 'MA' }],
+                        grading: {
+                            semester_count: 2,
+                            category_evaluation_values: [
+                                { value: 'Offen', color: '#fb8c00' },
+                                { value: 'Bestanden', color: '#43a047' },
+                            ],
+                            default_category_evaluation_value: 'Bestanden',
+                        },
+                    }],
                     teaching_behaviour: [{ short_name: 'BZ' }],
                     teaching_notifications: [{ short_name: 'INF' }],
                 },
@@ -57,7 +68,21 @@ describe('TeachingStore', () => {
         expect(store.schemas).toHaveLength(1)
         expect(store.schemaById('schema-1')?.id).toBe('schema-1')
         expect(store.worksForSchema('schema-1')).toEqual([{ short_name: 'MA' }])
-        expect(store.gradingForSchema('schema-1')).toEqual({ semester_count: 2 })
+        expect(store.gradingForSchema('schema-1')).toEqual({
+            semester_count: 2,
+            category_evaluation_values: [
+                { value: 'Offen', color: '#fb8c00' },
+                { value: 'Bestanden', color: '#43a047' },
+            ],
+            default_category_evaluation_value: 'Bestanden',
+        })
+        expect(store.categoryEvaluationValueItemsForSchema('schema-1')).toEqual([
+            { value: 'Offen', color: '#fb8c00' },
+            { value: 'Bestanden', color: '#43a047' },
+        ])
+        expect(store.categoryEvaluationValuesForSchema('schema-1')).toEqual(['Offen', 'Bestanden'])
+        expect(store.categoryEvaluationValueColorForSchema('schema-1', 'Bestanden')).toBe('#43a047')
+        expect(store.defaultCategoryEvaluationValueForSchema('schema-1')).toBe('Bestanden')
         expect(store.hasTwoSemesters).toBe(true)
     })
 

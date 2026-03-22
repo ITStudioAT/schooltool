@@ -429,6 +429,48 @@ test('teacher can create and rename subject topic and unit in own taxonomy', fun
     ]);
 });
 
+test('teacher can insert a subject before the selected subject in own taxonomy', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $mathematikResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Mathematik',
+        ],
+    ])->assertStatus(200);
+    $mathematikId = (int) $mathematikResponse->json('data.id');
+
+    $biologieResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Biologie',
+        ],
+    ])->assertStatus(200);
+    $biologieId = (int) $biologieResponse->json('data.id');
+
+    $physikResponse = $this->postJson('/api/admin/materials/subjects', [
+        'data' => [
+            'name' => 'Physik',
+            'before_subject_id' => $biologieId,
+        ],
+    ])->assertStatus(200)
+        ->assertJsonPath('data.name', 'Physik');
+
+    $physikId = (int) $physikResponse->json('data.id');
+
+    $orderedSubjectIds = MaterialSubject::query()
+        ->where('user_id', (int) $this->teacher->id)
+        ->orderBy('sort_order')
+        ->orderBy('id')
+        ->pluck('id')
+        ->map(fn ($id) => (int) $id)
+        ->all();
+
+    expect($orderedSubjectIds)->toBe([
+        $mathematikId,
+        $physikId,
+        $biologieId,
+    ]);
+});
+
 test('teacher can create duplicate unit names when allow_duplicate is true', function () {
     $this->actingAs($this->teacher, 'sanctum');
 

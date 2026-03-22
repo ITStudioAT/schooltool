@@ -34,8 +34,11 @@ use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\School;
 use App\Models\SchoolTool;
+use App\Models\Teacher;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Models\UserGroupMember;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
 use App\Services\Materials\MaterialWorkspaceService;
@@ -4099,7 +4102,7 @@ class MaterialShareController extends Controller
         $type = (string) $request->query('type', '');
         $category = (string) $request->query('category', '');
         $validCategoriesByType = [
-            UserGroup::TYPE_SCHOOL => ['classes', 'teachers', 'parents', 'own'],
+            UserGroup::TYPE_SCHOOL => ['classes', 'teachers', 'parents', 'school_members', 'other'],
             UserGroup::TYPE_MATERIALS => [],
             UserGroup::TYPE_OWN => ['course_groups', 'course_parent_groups', 'own'],
         ];
@@ -4121,7 +4124,7 @@ class MaterialShareController extends Controller
             ->where('school_id', $schoolId)
             ->where('type', $type)
             ->when($type === UserGroup::TYPE_OWN, fn ($query) => $query->where('created_by_user_id', (int) $authUser->id))
-            ->withCount('members')
+            ->withCount(['members', 'groupMembers'])
             ->orderBy('name')
             ->get(['id', 'school_id', 'type', 'name', 'description', 'created_by_user_id', 'teaching_course_id', 'teaching_course_group_type']);
 
@@ -4129,23 +4132,82 @@ class MaterialShareController extends Controller
             ->filter(fn (UserGroup $group) => $this->matchesLookupGroupCategory($group, $category, $schoolId))
             ->values();
 
+        $schoolGroupSourceCounts = $this->schoolGroupSourceUserCounts($schoolId);
+        $schoolGroupRegisteredCounts = $this->schoolGroupRegisteredUserCounts($schoolId);
+        $parentGroupContacts = $this->parentContactsForSchoolGroups($schoolId);
+        $ownCourseSourceCounts = $this->ownCourseSourceUserCounts($groups);
+        $ownCourseParentContacts = $this->parentContactsForAutomaticOwnCourseGroups($groups, $schoolId);
+
         return response()->json([
-            'data' => $groups->map(fn (UserGroup $group) => [
-                'id' => (int) $group->id,
-                'type' => (string) $group->type,
-                'type_label' => $this->groupTypeLabel((string) $group->type),
-                'name' => (string) $group->name,
-                'description' => (string) ($group->description ?? ''),
-                'members_count' => (int) ($group->members_count ?? 0),
-                'label' => (string) $group->name,
-                'is_system_default' => $this->isSystemDefaultSchoolGroup($group, $schoolId),
-                'is_parent_group' => $this->isParentSchoolGroup($group) || $this->isSystemManagedCourseParentGroup($group),
-                'is_all_school_members_group' => $this->isAllSchoolMembersGroup($group),
-                'teaching_course_id' => $group->teaching_course_id ? (int) $group->teaching_course_id : null,
-                'teaching_course_group_type' => $this->isSystemManagedCourseGroup($group)
-                    ? $this->teachingCourseGroupType($group)
-                    : null,
-            ])->values(),
+            'data' => $groups->map(function (UserGroup $group) use ($ownCourseParentContacts, $ownCourseSourceCounts, $parentGroupContacts, $schoolGroupRegisteredCounts, $schoolGroupSourceCounts, $schoolId) {
+                $counts = $this->lookupGroupCounts(
+                    $group,
+                    $schoolId,
+                    $schoolGroupSourceCounts,
+                    $schoolGroupRegisteredCounts,
+                    $ownCourseSourceCounts,
+                    $parentGroupContacts,
+                    $ownCourseParentContacts,
+                );
+
+                return [
+                    'id' => (int) $group->id,
+                    'type' => (string) $group->type,
+                    'type_label' => $this->groupTypeLabel((string) $group->type),
+                    'name' => (string) $group->name,
+                    'description' => (string) ($group->description ?? ''),
+                    'members_count' => $counts['members_count'],
+                    'source_users_count' => $counts['source_users_count'],
+                    'label' => (string) $group->name,
+                    'is_system_default' => $this->isSystemDefaultSchoolGroup($group, $schoolId),
+                    'is_parent_group' => $this->isParentSchoolGroup($group) || $this->isSystemManagedCourseParentGroup($group),
+                    'is_all_school_members_group' => $this->isAllSchoolMembersGroup($group),
+                    'teaching_course_id' => $group->teaching_course_id ? (int) $group->teaching_course_id : null,
+                    'teaching_course_group_type' => $this->isSystemManagedCourseGroup($group)
+                        ? $this->teachingCourseGroupType($group)
+                        : null,
+                ];
+            })
+                ->filter(fn (array $row) => $this->shouldIncludeLookupGroupRow($row, $schoolId))
+                ->values(),
+        ]);
+    }
+
+    public function lookupGroupMembers(Request $request)
+    {
+        $authUser = $this->materialsShareUser();
+
+        $data = $request->validate([
+            'user_group_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $groupId = (int) ($data['user_group_id'] ?? 0);
+        $schoolId = (int) $authUser->school_id;
+
+        $group = UserGroup::query()
+            ->whereKey($groupId)
+            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($authUser) {
+                $query
+                    ->where('type', '!=', UserGroup::TYPE_OWN)
+                    ->orWhere('created_by_user_id', (int) $authUser->id);
+            })
+            ->first(['id', 'school_id', 'type', 'name', 'created_by_user_id', 'teaching_course_id', 'teaching_course_group_type']);
+
+        if (! $group) {
+            abort(404, 'Gruppe wurde nicht gefunden.');
+        }
+
+        $members = $this->lookupGroupMemberRows($group, $schoolId);
+
+        return response()->json([
+            'data' => [
+                'group' => [
+                    'id' => (int) $group->id,
+                    'label' => (string) ($group->name ?? 'Gruppe'),
+                ],
+                'members' => $members->values(),
+            ],
         ]);
     }
 
@@ -4737,6 +4799,144 @@ class MaterialShareController extends Controller
         };
     }
 
+    /**
+     * @param  array<string, int>  $schoolGroupSourceCounts
+     * @param  array<string, int>  $schoolGroupRegisteredCounts
+     * @param  array<int, int>  $ownCourseSourceCounts
+     * @param  array{registered: array<string, Collection>, all: array<string, Collection>}  $parentGroupContacts
+     * @param  array{registered: array<int, Collection>, all: array<int, Collection>}  $ownCourseParentContacts
+     * @return array{members_count:int,source_users_count:int|null}
+     */
+    private function lookupGroupCounts(
+        UserGroup $group,
+        int $schoolId,
+        array $schoolGroupSourceCounts,
+        array $schoolGroupRegisteredCounts,
+        array $ownCourseSourceCounts,
+        array $parentGroupContacts,
+        array $ownCourseParentContacts,
+    ): array {
+        $storedMembersCount = (int) ($group->group_members_count ?? 0);
+        $linkedMembersCount = (int) ($group->members_count ?? 0);
+        $membersCount = $storedMembersCount > 0 ? $storedMembersCount : $linkedMembersCount;
+        $sourceUsersCount = null;
+
+        if ((string) $group->type === UserGroup::TYPE_SCHOOL && $this->isSystemDefaultSchoolGroup($group, $schoolId)) {
+            $normalizedName = $this->normalizeGroupName((string) $group->name);
+
+            if ($this->isParentSchoolGroup($group)) {
+                $allContacts = $parentGroupContacts['all'][$normalizedName] ?? collect();
+                $membersCount = $this->linkedParentContactsCount($schoolId, $allContacts);
+                $sourceUsersCount = (int) $allContacts->count();
+            } elseif ($this->isTeacherGroupName($normalizedName)) {
+                $membersCount = (int) ($schoolGroupRegisteredCounts[$this->normalizeGroupName($this->defaultTeacherGroupName())] ?? 0);
+                $sourceUsersCount = (int) ($schoolGroupSourceCounts[$this->normalizeGroupName($this->defaultTeacherGroupName())] ?? 0);
+            } elseif (! $this->isAllSchoolMembersGroup($group)) {
+                $membersCount = (int) ($schoolGroupRegisteredCounts[$normalizedName] ?? 0);
+                $sourceUsersCount = (int) ($schoolGroupSourceCounts[$normalizedName] ?? 0);
+            }
+        } elseif ($this->isSystemManagedCourseGroup($group) && $group->teaching_course_id) {
+            $courseId = (int) $group->teaching_course_id;
+            if ($this->isSystemManagedCourseParentGroup($group)) {
+                $allContacts = $ownCourseParentContacts['all'][$courseId] ?? collect();
+                $membersCount = $this->linkedParentContactsCount($schoolId, $allContacts);
+                $sourceUsersCount = (int) $allContacts->count();
+            } else {
+                $sourceMemberRows = $this->sourceMembersForAutomaticCourseGroup($group, $schoolId);
+                $membersCount = $sourceMemberRows->where('has_user_account', true)->count();
+                $sourceUsersCount = (int) ($ownCourseSourceCounts[$courseId] ?? $sourceMemberRows->count());
+            }
+        }
+
+        return [
+            'members_count' => $membersCount,
+            'source_users_count' => $sourceUsersCount,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function shouldIncludeLookupGroupRow(array $row, int $schoolId): bool
+    {
+        if ((string) ($row['type'] ?? '') !== UserGroup::TYPE_SCHOOL) {
+            return true;
+        }
+
+        if (($row['is_all_school_members_group'] ?? false) === true) {
+            return $this->schoolHasAnyShareableMembers($schoolId);
+        }
+
+        $membersCount = (int) ($row['members_count'] ?? 0);
+        $sourceUsersCount = $row['source_users_count'] === null
+            ? null
+            : (int) $row['source_users_count'];
+
+        return $membersCount > 0 || ($sourceUsersCount !== null && $sourceUsersCount > 0);
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function lookupGroupMemberRows(UserGroup $group, int $schoolId): Collection
+    {
+        $normalizedGroupName = $this->normalizeGroupName((string) $group->name);
+
+        if ((string) $group->type === UserGroup::TYPE_SCHOOL && $this->isSystemDefaultSchoolGroup($group, $schoolId)) {
+            if ($this->isTeacherGroupName($normalizedGroupName)) {
+                return $this->teacherSourceMembers($schoolId);
+            }
+
+            if ($this->isParentSchoolGroup($group)) {
+                return $this->parentContactsForGroup($schoolId, $group, false)
+                    ->map(fn (array $contact) => $this->lookupMemberRowForParentContact($schoolId, $contact))
+                    ->values();
+            }
+
+            $importIds = $this->importIdsForSchoolGroup($schoolId, $group);
+            if (! empty($importIds)) {
+                $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+                    ->whereIn('id', $importIds)
+                    ->orderByRaw('LOWER(class)')
+                    ->orderBy('last_name')
+                    ->orderBy('first_name')
+                    ->orderBy('email')
+                    ->get([
+                        'id',
+                        'school_id',
+                        'schoolyear_id',
+                        'class',
+                        'user_id',
+                        'last_name',
+                        'first_name',
+                        'email',
+                    ]);
+
+                return $importRows
+                    ->map(fn (Import116 $import) => $this->lookupMemberRowForImportStudent($schoolId, $import))
+                    ->values();
+            }
+        }
+
+        if ($this->isSystemManagedCourseParentGroup($group)) {
+            return $this->parentContactsForAutomaticOwnCourseGroup($schoolId, $group, false)
+                ->map(fn (array $contact) => $this->lookupMemberRowForParentContact($schoolId, $contact))
+                ->values();
+        }
+
+        if ($this->isSystemManagedCourseGroup($group)) {
+            return $this->sourceMembersForAutomaticCourseGroup($group, $schoolId);
+        }
+
+        return $group->groupMembers()
+            ->with('linkedUser:id,first_name,last_name,short,email,schoolclass')
+            ->orderByRaw('LOWER(display_name)')
+            ->orderByRaw('LOWER(display_email)')
+            ->get()
+            ->map(fn (UserGroupMember $member) => $this->lookupMemberRowForStoredMember($member))
+            ->values();
+    }
+
     private function matchesLookupGroupCategory(UserGroup $group, string $category, int $schoolId): bool
     {
         if ($category === '') {
@@ -4753,7 +4953,9 @@ class MaterialShareController extends Controller
                     && $this->isTeacherGroupName($this->normalizeGroupName((string) $group->name)),
                 'parents' => $this->isSystemDefaultSchoolGroup($group, $schoolId)
                     && $this->isParentSchoolGroup($group),
-                'own' => ! $this->isSystemDefaultSchoolGroup($group, $schoolId),
+                'school_members' => $this->isSystemDefaultSchoolGroup($group, $schoolId)
+                    && $this->isAllSchoolMembersGroup($group),
+                'other' => ! $this->isSystemDefaultSchoolGroup($group, $schoolId),
                 default => false,
             },
             UserGroup::TYPE_OWN => match ($category) {
@@ -4814,6 +5016,727 @@ class MaterialShareController extends Controller
         return collect($normalizedMap)
             ->sortBy(fn (string $name) => $this->normalizeGroupName($name))
             ->all();
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function schoolGroupSourceUserCounts(int $schoolId): array
+    {
+        $counts = [];
+
+        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        foreach ($classGroups['by_class'] as $normalizedClass => $classData) {
+            $counts[$normalizedClass] = count($classData['import_ids']);
+        }
+        foreach ($classGroups['by_family'] as $normalizedFamily => $familyData) {
+            $counts[$normalizedFamily] = count($familyData['import_ids']);
+        }
+
+        $counts[$this->normalizeGroupName($this->defaultTeacherGroupName())] = $this->teacherSourceUsersCount($schoolId);
+
+        return $counts;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function schoolGroupRegisteredUserCounts(int $schoolId): array
+    {
+        $counts = [];
+        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $allMappings = collect($classGroups['by_class'])
+            ->merge($classGroups['by_family']);
+
+        if ($allMappings->isNotEmpty()) {
+            $importIds = $allMappings
+                ->pluck('import_ids')
+                ->flatten()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+
+            $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+                ->whereIn('id', $importIds->all())
+                ->get(['id', 'user_id'])
+                ->keyBy(fn (Import116 $row) => (int) $row->id);
+
+            $usersByImportId = User::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('import116_id')
+                ->whereIn('import116_id', $importIds->all())
+                ->get(['id', 'import116_id'])
+                ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+            foreach ($allMappings as $normalizedGroupName => $mapping) {
+                $counts[$normalizedGroupName] = collect($mapping['import_ids'])
+                    ->map(fn ($id) => $importRows->get((int) $id))
+                    ->filter()
+                    ->filter(fn (Import116 $row) => (int) ($row->user_id ?? 0) > 0 || $usersByImportId->has((int) $row->id))
+                    ->count();
+            }
+        }
+
+        $counts[$this->normalizeGroupName($this->defaultTeacherGroupName())] = $this->teacherSourceMembers($schoolId)
+            ->where('has_user_account', true)
+            ->count();
+
+        return $counts;
+    }
+
+    private function schoolHasAnyShareableMembers(int $schoolId): bool
+    {
+        if (User::query()->where('school_id', $schoolId)->exists()) {
+            return true;
+        }
+
+        if (Schema::hasTable('import116') && $this->import116QueryForActiveSchoolyear($schoolId)->exists()) {
+            return true;
+        }
+
+        return Schema::hasTable('teachers')
+            && Teacher::query()->where('school_id', $schoolId)->exists();
+    }
+
+    private function teacherSourceUsersCount(int $schoolId): int
+    {
+        return $this->teacherSourceMembers($schoolId)->count();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function teacherSourceMembers(int $schoolId): Collection
+    {
+        $teacherRowsByEmail = collect();
+        if (Schema::hasTable('teachers')) {
+            $teacherRowsByEmail = Teacher::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('email')
+                ->whereRaw('TRIM(email) <> ?', [''])
+                ->orderBy('last_name')
+                ->orderBy('first_name')
+                ->orderBy('email')
+                ->get(['id', 'last_name', 'first_name', 'email', 'short'])
+                ->mapWithKeys(function (Teacher $teacher) {
+                    $normalizedEmail = $this->normalizeEmail((string) ($teacher->email ?? ''));
+
+                    return $normalizedEmail !== '' ? [$normalizedEmail => $teacher] : [];
+                });
+        }
+
+        $matchedUsersByEmail = $teacherRowsByEmail->isEmpty()
+            ? collect()
+            : User::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('email')
+                ->whereRaw('TRIM(email) <> ?', [''])
+                ->whereIn(DB::raw('LOWER(TRIM(email))'), $teacherRowsByEmail->keys()->all())
+                ->get(['id', 'last_name', 'first_name', 'short', 'email', 'schoolclass'])
+                ->keyBy(fn (User $user) => $this->normalizeEmail((string) ($user->email ?? '')));
+
+        $entries = collect($teacherRowsByEmail->all())
+            ->map(function (Teacher $teacher, string $normalizedEmail) use ($matchedUsersByEmail) {
+                /** @var User|null $linkedUser */
+                $linkedUser = $matchedUsersByEmail->get($normalizedEmail);
+                $teacherName = trim((string) (($teacher->last_name ?? '').' '.($teacher->first_name ?? '')));
+                $userName = $linkedUser
+                    ? trim((string) (($linkedUser->last_name ?? '').' '.($linkedUser->first_name ?? '')))
+                    : '';
+
+                return $this->buildLookupMemberRow(
+                    'teacher-email:'.$normalizedEmail,
+                    $teacherName !== '' ? $teacherName : ($userName !== '' ? $userName : ((string) ($teacher->email ?? 'Lehrer:in'))),
+                    $teacher->email ?: ($linkedUser?->email),
+                    $linkedUser?->short ?: (string) ($teacher->short ?? ''),
+                    $linkedUser?->schoolclass,
+                    $linkedUser !== null,
+                    $linkedUser?->id,
+                );
+            })
+            ->values();
+
+        $roleEntries = User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', fn ($query) => $query->where('name', 'teacher'))
+            ->get(['id', 'last_name', 'first_name', 'short', 'email', 'schoolclass'])
+            ->reject(function (User $user) use ($teacherRowsByEmail) {
+                $normalizedEmail = $this->normalizeEmail((string) ($user->email ?? ''));
+
+                return $normalizedEmail !== '' && $teacherRowsByEmail->has($normalizedEmail);
+            })
+            ->map(fn (User $user) => $this->buildLookupMemberRowForUser($user, 'teacher-role:'.(int) $user->id))
+            ->values();
+
+        return $entries
+            ->merge($roleEntries)
+            ->sortBy([
+                fn (array $entry) => mb_strtolower(trim((string) ($entry['label'] ?? ''))),
+                fn (array $entry) => mb_strtolower(trim((string) ($entry['email'] ?? ''))),
+            ])
+            ->values();
+    }
+
+    /**
+     * @return array{registered: array<string, Collection>, all: array<string, Collection>}
+     */
+    private function parentContactsForSchoolGroups(int $schoolId): array
+    {
+        $result = [
+            'registered' => [],
+            'all' => [],
+        ];
+
+        if (! Schema::hasTable('import116')) {
+            return $result;
+        }
+
+        $classGroups = $this->buildImportClassGroupMappings($schoolId);
+        $allMappings = collect($classGroups['by_class'])
+            ->merge($classGroups['by_family']);
+
+        if ($allMappings->isEmpty()) {
+            return $result;
+        }
+
+        $importIds = $allMappings
+            ->pluck('import_ids')
+            ->flatten()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($importIds->isEmpty()) {
+            return $result;
+        }
+
+        $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->whereIn('id', $importIds->all())
+            ->get([
+                'id',
+                'class',
+                'user_id',
+                'last_name',
+                'first_name',
+                'mother_name',
+                'mother_email',
+                'mother_phone_1',
+                'mother_phone_2',
+                'father_name',
+                'father_email',
+                'father_phone_1',
+                'father_phone_2',
+            ])
+            ->keyBy(fn (Import116 $row) => (int) $row->id);
+
+        $usersByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('import116_id')
+            ->whereIn('import116_id', $importIds->all())
+            ->get(['id', 'import116_id'])
+            ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+        foreach ($allMappings as $mapping) {
+            $groupName = $this->parentGroupName((string) $mapping['name']);
+            $normalizedGroupName = $this->normalizeGroupName($groupName);
+            $rows = collect($mapping['import_ids'])
+                ->map(fn ($id) => $importRows->get((int) $id))
+                ->filter();
+
+            $result['registered'][$normalizedGroupName] = $this->buildParentContacts($rows, $usersByImportId, true);
+            $result['all'][$normalizedGroupName] = $this->buildParentContacts($rows, $usersByImportId, false);
+        }
+
+        return $result;
+    }
+
+    private function parentContactsForGroup(int $schoolId, UserGroup $group, bool $registeredStudentsOnly): Collection
+    {
+        if (! $this->isParentSchoolGroup($group)) {
+            return collect();
+        }
+
+        $allContacts = $this->parentContactsForSchoolGroups($schoolId);
+        $normalizedGroupName = $this->normalizeGroupName((string) $group->name);
+        $bucket = $registeredStudentsOnly ? 'registered' : 'all';
+
+        return $allContacts[$bucket][$normalizedGroupName] ?? collect();
+    }
+
+    /**
+     * @param  Collection<int, Import116>  $rows
+     * @param  Collection<int, User>  $usersByImportId
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function buildParentContacts(Collection $rows, Collection $usersByImportId, bool $registeredStudentsOnly): Collection
+    {
+        $contacts = [];
+
+        foreach ($rows as $row) {
+            $hasRegisteredStudent = (int) ($row->user_id ?? 0) > 0 || $usersByImportId->has((int) $row->id);
+            if ($registeredStudentsOnly && ! $hasRegisteredStudent) {
+                continue;
+            }
+
+            $studentName = trim((string) (($row->last_name ?? '').' '.($row->first_name ?? '')));
+            $schoolclass = trim((string) ($row->class ?? ''));
+
+            foreach ($this->parentContactsFromImportRow($row) as $contact) {
+                $key = $this->parentContactKey($contact);
+                if (! isset($contacts[$key])) {
+                    $contacts[$key] = [
+                        'id' => $key,
+                        'name' => $contact['name'],
+                        'email' => $contact['email'],
+                        'schoolclass' => $schoolclass,
+                        'phone' => $contact['phone'],
+                        'children' => [],
+                        'classes' => [],
+                    ];
+                }
+
+                if ($studentName !== '') {
+                    $contacts[$key]['children'][$studentName] = $studentName;
+                }
+                if ($schoolclass !== '') {
+                    $contacts[$key]['classes'][$schoolclass] = $schoolclass;
+                }
+            }
+        }
+
+        return collect($contacts)
+            ->map(function (array $contact) {
+                $children = array_values($contact['children']);
+                sort($children, SORT_NATURAL | SORT_FLAG_CASE);
+                $classes = array_values($contact['classes']);
+                sort($classes, SORT_NATURAL | SORT_FLAG_CASE);
+
+                $contact['children_label'] = implode(', ', $children);
+                $contact['schoolclass'] = implode(', ', $classes);
+                unset($contact['children'], $contact['classes']);
+
+                return $contact;
+            })
+            ->sortBy([
+                fn (array $contact) => mb_strtolower(trim((string) ($contact['name'] ?? ''))),
+                fn (array $contact) => mb_strtolower(trim((string) ($contact['email'] ?? ''))),
+            ])
+            ->values();
+    }
+
+    /**
+     * @return array<int, array{name: string, email: string, phone: string}>
+     */
+    private function parentContactsFromImportRow(Import116 $row): array
+    {
+        $contacts = [];
+
+        foreach (['mother', 'father'] as $prefix) {
+            $name = trim((string) ($row->{$prefix.'_name'} ?? ''));
+            $email = trim((string) ($row->{$prefix.'_email'} ?? ''));
+            $phones = collect([
+                trim((string) ($row->{$prefix.'_phone_1'} ?? '')),
+                trim((string) ($row->{$prefix.'_phone_2'} ?? '')),
+            ])->filter(fn (string $value) => $value !== '')->unique()->values()->all();
+
+            if ($name === '' && $email === '' && empty($phones)) {
+                continue;
+            }
+
+            $contacts[] = [
+                'name' => $name !== '' ? $name : ($email !== '' ? $email : 'Erziehungsberechtigte:r'),
+                'email' => $email,
+                'phone' => implode(' / ', $phones),
+            ];
+        }
+
+        return $contacts;
+    }
+
+    /**
+     * @param  array{name: string, email: string, phone: string}  $contact
+     */
+    private function parentContactKey(array $contact): string
+    {
+        $email = $this->normalizeEmail((string) ($contact['email'] ?? ''));
+        if ($email !== '') {
+            return 'email:'.$email;
+        }
+
+        return 'fallback:'.md5(implode('|', [
+            mb_strtolower(trim((string) ($contact['name'] ?? ''))),
+            mb_strtolower(trim((string) ($contact['phone'] ?? ''))),
+        ]));
+    }
+
+    /**
+     * @param  Collection<int, UserGroup>  $groups
+     * @return array<int, int>
+     */
+    private function ownCourseSourceUserCounts(Collection $groups): array
+    {
+        if (! Schema::hasTable('teaching_courses') || ! Schema::hasTable('teaching_course_students')) {
+            return [];
+        }
+
+        $courseIds = $groups
+            ->filter(fn (UserGroup $group) => $this->isSystemManagedCourseGroup($group) && ! $this->isSystemManagedCourseParentGroup($group) && ! empty($group->teaching_course_id))
+            ->pluck('teaching_course_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($courseIds->isEmpty()) {
+            return [];
+        }
+
+        return TeachingCourse::query()
+            ->whereIn('id', $courseIds->all())
+            ->with([
+                'teachingCourseStudents:id,teaching_course_id,user_id,import116_id',
+                'teachingCourseStudents.user:id,school_id,import116_id,last_name,first_name,short,email,schoolclass',
+                'teachingCourseStudents.import116:id,school_id,schoolyear_id,class,user_id,last_name,first_name,email',
+            ])
+            ->get(['id', 'school_id'])
+            ->mapWithKeys(fn (TeachingCourse $course) => [
+                (int) $course->id => $this->automaticCourseStudentMemberRows($course, (int) $course->school_id)->count(),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, UserGroup>  $groups
+     * @return array{registered: array<int, Collection>, all: array<int, Collection>}
+     */
+    private function parentContactsForAutomaticOwnCourseGroups(Collection $groups, int $schoolId): array
+    {
+        $result = [
+            'registered' => [],
+            'all' => [],
+        ];
+
+        if (! Schema::hasTable('teaching_courses') || ! Schema::hasTable('teaching_course_students') || ! Schema::hasTable('import116')) {
+            return $result;
+        }
+
+        $courseIds = $groups
+            ->filter(fn (UserGroup $group) => $this->isSystemManagedCourseParentGroup($group) && ! empty($group->teaching_course_id))
+            ->pluck('teaching_course_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($courseIds->isEmpty()) {
+            return $result;
+        }
+
+        $courses = TeachingCourse::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('id', $courseIds->all())
+            ->with([
+                'teachingCourseStudents:id,teaching_course_id,user_id,import116_id',
+                'teachingCourseStudents.user:id,import116_id',
+            ])
+            ->get(['id']);
+
+        if ($courses->isEmpty()) {
+            return $result;
+        }
+
+        $importIds = $courses
+            ->flatMap(fn (TeachingCourse $course) => $course->teachingCourseStudents->map(function ($courseStudent) {
+                if ($courseStudent->import116_id) {
+                    return (int) $courseStudent->import116_id;
+                }
+
+                if ($courseStudent->user?->import116_id) {
+                    return (int) $courseStudent->user->import116_id;
+                }
+
+                return null;
+            }))
+            ->filter(fn ($id) => ! empty($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($importIds->isEmpty()) {
+            foreach ($courses as $course) {
+                $result['registered'][(int) $course->id] = collect();
+                $result['all'][(int) $course->id] = collect();
+            }
+
+            return $result;
+        }
+
+        $importRows = $this->import116QueryForActiveSchoolyear($schoolId)
+            ->whereIn('id', $importIds->all())
+            ->get([
+                'id',
+                'class',
+                'user_id',
+                'last_name',
+                'first_name',
+                'mother_name',
+                'mother_email',
+                'mother_phone_1',
+                'mother_phone_2',
+                'father_name',
+                'father_email',
+                'father_phone_1',
+                'father_phone_2',
+            ])
+            ->keyBy(fn (Import116 $row) => (int) $row->id);
+
+        $usersByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('import116_id')
+            ->whereIn('import116_id', $importIds->all())
+            ->get(['id', 'import116_id'])
+            ->keyBy(fn (User $user) => (int) $user->import116_id);
+
+        foreach ($courses as $course) {
+            $rows = $course->teachingCourseStudents
+                ->map(function ($courseStudent) use ($importRows) {
+                    $importId = $courseStudent->import116_id ?: $courseStudent->user?->import116_id;
+
+                    return $importId ? $importRows->get((int) $importId) : null;
+                })
+                ->filter()
+                ->unique(fn (Import116 $row) => (int) $row->id)
+                ->values();
+
+            $result['registered'][(int) $course->id] = $this->buildParentContacts($rows, $usersByImportId, true);
+            $result['all'][(int) $course->id] = $this->buildParentContacts($rows, $usersByImportId, false);
+        }
+
+        return $result;
+    }
+
+    private function parentContactsForAutomaticOwnCourseGroup(int $schoolId, UserGroup $group, bool $registeredStudentsOnly): Collection
+    {
+        if (! $this->isSystemManagedCourseParentGroup($group) || ! $group->teaching_course_id) {
+            return collect();
+        }
+
+        $contacts = $this->parentContactsForAutomaticOwnCourseGroups(collect([$group]), $schoolId);
+        $bucket = $registeredStudentsOnly ? 'registered' : 'all';
+
+        return $contacts[$bucket][(int) $group->teaching_course_id] ?? collect();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $contacts
+     */
+    private function linkedParentContactsCount(int $schoolId, Collection $contacts): int
+    {
+        return $contacts
+            ->filter(fn (array $contact) => $this->linkedUserByEmail($schoolId, $contact['email'] ?? null) !== null)
+            ->count();
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function sourceMembersForAutomaticCourseGroup(UserGroup $group, int $schoolId): Collection
+    {
+        if (! $group->teaching_course_id || ! Schema::hasTable('teaching_courses') || ! Schema::hasTable('teaching_course_students')) {
+            return collect();
+        }
+
+        $course = TeachingCourse::query()
+            ->where('id', (int) $group->teaching_course_id)
+            ->where('school_id', $schoolId)
+            ->with([
+                'teachingCourseStudents:id,teaching_course_id,user_id,import116_id',
+                'teachingCourseStudents.user:id,last_name,first_name,short,email,schoolclass,import116_id',
+                'teachingCourseStudents.import116:id,school_id,schoolyear_id,class,user_id,last_name,first_name,email',
+            ])
+            ->first();
+
+        if (! $course) {
+            return collect();
+        }
+
+        return $this->automaticCourseStudentMemberRows($course, $schoolId);
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function automaticCourseStudentMemberRows(TeachingCourse $course, int $schoolId): Collection
+    {
+        return $course->teachingCourseStudents
+            ->map(function ($courseStudent) use ($schoolId) {
+                if ($courseStudent->import116) {
+                    return $this->lookupMemberRowForImportStudent($schoolId, $courseStudent->import116, $courseStudent->user);
+                }
+
+                if ($courseStudent->user) {
+                    return $this->buildLookupMemberRowForUser($courseStudent->user, 'user:'.(int) $courseStudent->user->id);
+                }
+
+                return null;
+            })
+            ->filter()
+            ->unique(fn (array $row) => $this->lookupMemberDeduplicationKey($row))
+            ->sortBy([
+                fn (array $row) => mb_strtolower(trim((string) ($row['label'] ?? ''))),
+                fn (array $row) => mb_strtolower(trim((string) ($row['email'] ?? ''))),
+            ])
+            ->values();
+    }
+
+    private function normalizeEmail(?string $value): string
+    {
+        return mb_strtolower(trim((string) ($value ?? '')));
+    }
+
+    private function linkedUserByEmail(int $schoolId, ?string $email): ?User
+    {
+        $normalizedEmail = $this->normalizeEmail($email);
+        if ($normalizedEmail === '') {
+            return null;
+        }
+
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('email')
+            ->whereRaw('LOWER(TRIM(email)) = ?', [$normalizedEmail])
+            ->orderBy('id')
+            ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'short', 'email', 'schoolclass']);
+    }
+
+    private function linkedUserForImportStudent(int $schoolId, Import116 $import): ?User
+    {
+        $directUserId = (int) ($import->user_id ?? 0);
+        if ($directUserId > 0) {
+            $directUser = User::query()
+                ->where('school_id', $schoolId)
+                ->where('id', $directUserId)
+                ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'short', 'email', 'schoolclass']);
+            if ($directUser) {
+                return $directUser;
+            }
+        }
+
+        $linkedByImportId = User::query()
+            ->where('school_id', $schoolId)
+            ->where('import116_id', (int) $import->id)
+            ->orderBy('id')
+            ->first(['id', 'school_id', 'import116_id', 'last_name', 'first_name', 'short', 'email', 'schoolclass']);
+        if ($linkedByImportId) {
+            return $linkedByImportId;
+        }
+
+        return $this->linkedUserByEmail($schoolId, $import->email);
+    }
+
+    private function lookupMemberRowForImportStudent(int $schoolId, Import116 $import, ?User $linkedUser = null): array
+    {
+        $linkedUser = $linkedUser ?: $this->linkedUserForImportStudent($schoolId, $import);
+        $linkedUserName = $linkedUser
+            ? trim((string) (($linkedUser->last_name ?? '').' '.($linkedUser->first_name ?? '')))
+            : '';
+        $importName = trim((string) (($import->last_name ?? '').' '.($import->first_name ?? '')));
+
+        return $this->buildLookupMemberRow(
+            'import116.student:'.(int) $import->id,
+            $linkedUserName !== '' ? $linkedUserName : ($importName !== '' ? $importName : ((string) ($linkedUser?->email ?: $import->email ?: 'Schüler:in'))),
+            $linkedUser?->email ?: $import->email,
+            $linkedUser?->short,
+            $linkedUser?->schoolclass ?: $import->class,
+            $linkedUser !== null,
+            $linkedUser?->id,
+        );
+    }
+
+    /**
+     * @param  array{name?: string, email?: string, schoolclass?: string, phone?: string, id?: string}  $contact
+     */
+    private function lookupMemberRowForParentContact(int $schoolId, array $contact): array
+    {
+        $linkedUser = $this->linkedUserByEmail($schoolId, $contact['email'] ?? null);
+        $id = (string) ($contact['id'] ?? $this->parentContactKey([
+            'name' => (string) ($contact['name'] ?? ''),
+            'email' => (string) ($contact['email'] ?? ''),
+            'phone' => (string) ($contact['phone'] ?? ''),
+        ]));
+
+        return $this->buildLookupMemberRow(
+            'import116.parent_contact:'.$id,
+            trim((string) ($contact['name'] ?? '')) !== '' ? (string) $contact['name'] : ((string) ($contact['email'] ?? 'Erziehungsberechtigte:r')),
+            $linkedUser?->email ?: ($contact['email'] ?? null),
+            $linkedUser?->short,
+            trim((string) ($contact['schoolclass'] ?? '')) !== '' ? (string) $contact['schoolclass'] : $linkedUser?->schoolclass,
+            $linkedUser !== null,
+            $linkedUser?->id,
+            $contact['children_label'] ?? null,
+        );
+    }
+
+    private function lookupMemberRowForStoredMember(UserGroupMember $member): array
+    {
+        $linkedUser = $member->linkedUser;
+        $linkedUserName = $linkedUser
+            ? trim((string) (($linkedUser->last_name ?? '').' '.($linkedUser->first_name ?? '')))
+            : '';
+
+        return $this->buildLookupMemberRow(
+            (string) ($member->member_ref ?: $member->id),
+            trim((string) ($member->display_name ?? '')) !== '' ? (string) $member->display_name : ($linkedUserName !== '' ? $linkedUserName : ((string) ($member->display_email ?: ($linkedUser?->email ?: 'Mitglied')))),
+            $member->display_email ?: ($linkedUser?->email),
+            $linkedUser?->short,
+            $member->display_schoolclass ?: ($linkedUser?->schoolclass),
+            (int) ($member->linked_user_id ?? 0) > 0 || (string) $member->linked_user_status === UserGroupMember::LINKED_USER_STATUS_LINKED,
+            $linkedUser?->id ?: ($member->linked_user_id ? (int) $member->linked_user_id : null),
+            $member->display_children_label,
+        );
+    }
+
+    private function buildLookupMemberRowForUser(User $user, string $id): array
+    {
+        $name = trim((string) (($user->last_name ?? '').' '.($user->first_name ?? '')));
+
+        return $this->buildLookupMemberRow(
+            $id,
+            $name !== '' ? $name : ($user->email ?: 'Benutzer'),
+            $user->email,
+            $user->short,
+            $user->schoolclass,
+            true,
+            (int) $user->id,
+        );
+    }
+
+    private function buildLookupMemberRow(string $id, string $label, ?string $email, ?string $short, ?string $schoolclass, bool $hasUserAccount, ?int $userId = null, ?string $childrenLabel = null): array
+    {
+        return [
+            'id' => $id,
+            'label' => trim($label) !== '' ? trim($label) : 'Mitglied',
+            'email' => trim((string) ($email ?? '')),
+            'short' => trim((string) ($short ?? '')),
+            'schoolclass' => trim((string) ($schoolclass ?? '')),
+            'children_label' => trim((string) ($childrenLabel ?? '')),
+            'user_id' => $userId,
+            'has_user_account' => $hasUserAccount,
+            'is_registered' => $hasUserAccount,
+        ];
+    }
+
+    private function lookupMemberDeduplicationKey(array $row): string
+    {
+        $userId = (int) ($row['user_id'] ?? 0);
+        if ($userId > 0) {
+            return 'user:'.$userId;
+        }
+
+        $email = $this->normalizeEmail((string) ($row['email'] ?? ''));
+        if ($email !== '') {
+            return 'email:'.$email;
+        }
+
+        return 'id:'.(string) ($row['id'] ?? '');
     }
 
     /**
@@ -4937,6 +5860,33 @@ class MaterialShareController extends Controller
         }
 
         return mb_strtoupper($base);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function importIdsForSchoolGroup(int $schoolId, UserGroup $group): array
+    {
+        if ((string) $group->type !== UserGroup::TYPE_SCHOOL) {
+            return [];
+        }
+
+        $normalizedGroupName = $this->normalizeGroupName((string) $group->name);
+        if ($this->isTeacherGroupName($normalizedGroupName)) {
+            return [];
+        }
+
+        $classGroupMappings = $this->buildImportClassGroupMappings($schoolId);
+        $importIds = $classGroupMappings['by_family'][$normalizedGroupName]['import_ids']
+            ?? $classGroupMappings['by_class'][$normalizedGroupName]['import_ids']
+            ?? [];
+
+        return collect($importIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function import116QueryForActiveSchoolyear(int $schoolId)

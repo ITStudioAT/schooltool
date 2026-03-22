@@ -71,7 +71,8 @@ describe('MaterialShareDraftDialog', () => {
             { value: 'classes', label: 'Klassen' },
             { value: 'teachers', label: 'Lehrer' },
             { value: 'parents', label: 'Eltern' },
-            { value: 'own', label: 'Eigene Gruppen' },
+            { value: 'school_members', label: 'Gesamtgruppen' },
+            { value: 'other', label: 'Weitere Gruppen' },
         ])
         expect(ctx.ownGroupCategoryOptions).toEqual([
             { value: 'course_groups', label: 'Kursgruppen' },
@@ -102,8 +103,8 @@ describe('MaterialShareDraftDialog', () => {
             params: { type: 'materials' },
         })
         expect(ctx.materialsGroupOptions).toEqual([
-            { id: 7, label: 'Materialgruppe A', typeLabel: 'Materialgruppe' },
-            { id: 9, label: 'Materialgruppe B', typeLabel: 'Materialgruppe' },
+            { id: 7, label: 'Materialgruppe A', typeLabel: 'Materialgruppe', membersCount: null, sourceUsersCount: null },
+            { id: 9, label: 'Materialgruppe B', typeLabel: 'Materialgruppe', membersCount: null, sourceUsersCount: null },
         ])
         expect(ctx.materialsGroupsLoaded).toBe(true)
 
@@ -117,7 +118,7 @@ describe('MaterialShareDraftDialog', () => {
         axiosMock.get.mockResolvedValueOnce({
             data: {
                 data: [
-                    { id: 12, label: '1A' },
+                    { id: 12, label: '1A', members_count: 14, source_users_count: 26 },
                     { id: 13, name: '1B' },
                 ],
             },
@@ -135,12 +136,12 @@ describe('MaterialShareDraftDialog', () => {
             },
         })
         expect(ctx.schoolGroupOptions).toEqual([
-            { id: 12, label: '1A', typeLabel: 'Gruppe' },
-            { id: 13, label: '1B', typeLabel: 'Gruppe' },
+            { id: 12, label: '1A', typeLabel: 'Gruppe', membersCount: 14, sourceUsersCount: 26 },
+            { id: 13, label: '1B', typeLabel: 'Gruppe', membersCount: null, sourceUsersCount: null },
         ])
     })
 
-    it('treats a selected group as the active recipient', async () => {
+    it('treats a selected group as the active recipient and exposes the member count', async () => {
         const ctx = createDialogCtx({
             recipientMode: 'group',
         })
@@ -148,7 +149,7 @@ describe('MaterialShareDraftDialog', () => {
         axiosMock.get.mockResolvedValueOnce({
             data: {
                 data: [
-                    { id: 12, label: '1A', type_label: 'Schulgruppe' },
+                    { id: 12, label: '1A', type_label: 'Schulgruppe', members_count: 14, source_users_count: 26 },
                 ],
             },
         })
@@ -162,6 +163,7 @@ describe('MaterialShareDraftDialog', () => {
             type: 'group',
             typeLabel: 'Schulgruppe',
             label: '1A',
+            countLabel: '26/14',
             payload: {
                 target_type: 'group',
                 user_group_id: 12,
@@ -193,8 +195,8 @@ describe('MaterialShareDraftDialog', () => {
             },
         })
         expect(ctx.ownGroupOptions).toEqual([
-            { id: 21, label: 'Informatik 1', typeLabel: 'Gruppe' },
-            { id: 22, label: 'Mathematik 2', typeLabel: 'Gruppe' },
+            { id: 21, label: 'Informatik 1', typeLabel: 'Gruppe', membersCount: null, sourceUsersCount: null },
+            { id: 22, label: 'Mathematik 2', typeLabel: 'Gruppe', membersCount: null, sourceUsersCount: null },
         ])
     })
 
@@ -305,5 +307,47 @@ describe('MaterialShareDraftDialog', () => {
             target_type: 'group',
             user_group_id: 18,
         })
+    })
+
+    it('loads and toggles selected group members from the counter action', async () => {
+        const ctx = createDialogCtx({
+            recipientMode: 'group',
+            selectedGroupOption: {
+                id: 18,
+                label: 'Projektgruppe',
+                typeLabel: 'Schulgruppe',
+                membersCount: 2,
+                sourceUsersCount: 4,
+            },
+        })
+
+        axiosMock.get.mockResolvedValueOnce({
+            data: {
+                data: {
+                    members: [
+                        { id: 'import116.student:41', label: 'Muster Anna', short: 'ANM', schoolclass: '1A', email: 'anna@test.local', has_user_account: true, user_id: 41 },
+                        { id: 'import116.parent_contact:42', label: 'Beispiel Berta', short: '', schoolclass: '1B', email: 'berta@test.local', children_label: 'Kind Eins, Kind Zwei', has_user_account: false, user_id: null },
+                    ],
+                },
+            },
+        })
+
+        await ctx.toggleSelectedGroupMembers()
+
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/materials/shares/lookup-group-members', {
+            params: {
+                user_group_id: 18,
+            },
+        })
+        expect(ctx.showSelectedGroupMembers).toBe(true)
+        expect(ctx.selectedGroupMembersGroupId).toBe(18)
+        expect(ctx.selectedGroupMembers).toEqual([
+            { id: 'import116.student:41', label: 'Muster Anna', short: 'ANM', schoolclass: '1A', email: 'anna@test.local', childrenLabel: '', userId: 41, isRegistered: true },
+            { id: 'import116.parent_contact:42', label: 'Beispiel Berta', short: '', schoolclass: '1B', email: 'berta@test.local', childrenLabel: 'Kind Eins, Kind Zwei', userId: null, isRegistered: false },
+        ])
+
+        await ctx.toggleSelectedGroupMembers()
+
+        expect(ctx.showSelectedGroupMembers).toBe(false)
     })
 })

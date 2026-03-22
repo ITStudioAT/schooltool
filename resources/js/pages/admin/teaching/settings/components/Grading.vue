@@ -104,52 +104,61 @@
                         class="mb-3 pa-3 rounded"
                         style="background-color: rgba(var(--v-theme-primary), 0.05);">
                         <!-- KATEGORIE HEADER -->
-                        <div class="d-flex align-center ga-2">
+                        <div class="grading-category-header">
                             <!-- ANZEIGE MODUS -->
                             <template v-if="edit_index !== index">
-                                <v-btn
-                                    :icon="expanded_index === index ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                    size="x-small"
-                                    variant="text"
-                                    @click="expanded_index = expanded_index === index ? null : index" />
-                                <v-icon size="small" color="primary">mdi-folder-outline</v-icon>
-                                <span class="text-body-1 flex-grow-1">{{ category.name }}</span>
-                                <v-chip size="small" color="primary" variant="outlined">{{ category.weight }}%</v-chip>
-                                <v-chip v-if="category.require_all_entries" size="x-small" color="primary" variant="tonal">
-                                    Alle erforderlich
+                                <div class="grading-category-main">
+                                    <v-btn
+                                        :icon="expanded_index === index ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                                        size="x-small"
+                                        variant="text"
+                                        @click="expanded_index = expanded_index === index ? null : index" />
+                                    <v-icon size="small" color="primary">mdi-folder-outline</v-icon>
+                                    <span class="text-body-1 grading-category-title">{{ category.name }}</span>
+                                </div>
+                                <div class="grading-category-meta">
+                                    <v-chip size="small" color="primary" variant="outlined">{{ category.weight }}%</v-chip>
+                                    <v-chip v-if="category.require_all_entries" size="x-small" color="primary" variant="tonal">
+                                        Alle erforderlich
+                                    </v-chip>
+                                <v-chip v-if="category.category_evaluation_enabled" size="x-small" color="info" variant="flat">
+                                    Kategoriebewertung
                                 </v-chip>
-                                <v-chip v-if="category.works?.length" size="x-small" color="success" variant="tonal">
-                                    {{ category.works.length }} Arbeit(en)
-                                </v-chip>
+                                    <v-chip v-if="category.works?.length" size="x-small" color="success" variant="tonal">
+                                        {{ category.works.length }} Arbeit(en)
+                                    </v-chip>
+                                </div>
                                 <template v-if="is_editing">
-                                    <v-btn
-                                        v-if="delete_index !== index"
-                                        icon="mdi-pencil"
-                                        size="x-small"
-                                        color="primary"
-                                        variant="text"
-                                        @click="startEditCategory(index)" />
-                                    <v-btn
-                                        v-if="delete_index !== index"
-                                        icon="mdi-delete"
-                                        size="x-small"
-                                        color="error"
-                                        variant="text"
-                                        @click="delete_index = index" />
-                                    <v-btn
-                                        v-if="delete_index === index"
-                                        icon="mdi-delete-off"
-                                        size="x-small"
-                                        color="success"
-                                        variant="text"
-                                        @click="delete_index = null" />
-                                    <v-btn
-                                        v-if="delete_index === index"
-                                        icon="mdi-delete"
-                                        size="x-small"
-                                        color="error"
-                                        variant="flat"
-                                        @click="removeCategory(index)" />
+                                    <div class="grading-category-actions">
+                                        <v-btn
+                                            v-if="delete_index !== index"
+                                            icon="mdi-pencil"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="text"
+                                            @click="startEditCategory(index)" />
+                                        <v-btn
+                                            v-if="delete_index !== index"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="error"
+                                            variant="text"
+                                            @click="delete_index = index" />
+                                        <v-btn
+                                            v-if="delete_index === index"
+                                            icon="mdi-delete-off"
+                                            size="x-small"
+                                            color="success"
+                                            variant="text"
+                                            @click="delete_index = null" />
+                                        <v-btn
+                                            v-if="delete_index === index"
+                                            icon="mdi-delete"
+                                            size="x-small"
+                                            color="error"
+                                            variant="flat"
+                                            @click="removeCategory(index)" />
+                                    </div>
                                 </template>
                             </template>
                             <!-- BEARBEITEN MODUS -->
@@ -173,6 +182,12 @@
                                     hide-details
                                     color="warning"
                                     label="Pflicht alle" />
+                                <v-checkbox
+                                    v-model="edit_category.category_evaluation_enabled"
+                                    density="compact"
+                                    hide-details
+                                    color="secondary"
+                                    label="Kategoriebewertung" />
                                 <v-btn
                                     icon="mdi-check"
                                     size="x-small"
@@ -269,6 +284,12 @@
                         hide-details
                         color="warning"
                         label="Pflicht alle" />
+                    <v-checkbox
+                        v-model="new_category.category_evaluation_enabled"
+                        density="compact"
+                        hide-details
+                        color="secondary"
+                        label="Kategoriebewertung" />
                     <v-btn
                         icon="mdi-plus"
                         size="small"
@@ -368,8 +389,8 @@ export default {
                 use_semester_grade_only: false,
                 categories: [],
             },
-            new_category: { name: '', weight: '', require_all_entries: false },
-            edit_category: { name: '', weight: '', require_all_entries: false },
+            new_category: { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false },
+            edit_category: { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false },
             edit_index: null,
             delete_index: null,
             expanded_index: null,
@@ -428,7 +449,7 @@ export default {
             this.is_editing = false
             this.delete_index = null
             this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false }
+            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
         },
 
         initData() {
@@ -443,6 +464,7 @@ export default {
                 categories: (grading.categories || []).map((c) => ({
                     ...c,
                     works: this.normalizeWorks(c.works).filter((w) => validShortNames.includes(w.short_name)),
+                    category_evaluation_enabled: Boolean(c.category_evaluation_enabled),
                     require_all_entries: Object.prototype.hasOwnProperty.call(c || {}, 'require_all_entries')
                         ? Boolean(c.require_all_entries)
                         : this.inferCategoryRequireAllEntries(c?.works),
@@ -484,10 +506,11 @@ export default {
                 name: this.new_category.name.trim(),
                 weight: parseInt(this.new_category.weight) || 0,
                 require_all_entries: Boolean(this.new_category.require_all_entries),
+                category_evaluation_enabled: Boolean(this.new_category.category_evaluation_enabled),
                 works: [],
                 calculation: 'mean',
             })
-            this.new_category = { name: '', weight: '', require_all_entries: false }
+            this.new_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
         },
 
         removeCategory(index) {
@@ -497,7 +520,12 @@ export default {
 
         startEditCategory(index) {
             const category = this.data.categories[index]
-            this.edit_category = { name: category.name, weight: category.weight, require_all_entries: Boolean(category.require_all_entries) }
+            this.edit_category = {
+                name: category.name,
+                weight: category.weight,
+                require_all_entries: Boolean(category.require_all_entries),
+                category_evaluation_enabled: Boolean(category.category_evaluation_enabled),
+            }
             this.edit_index = index
         },
 
@@ -510,16 +538,17 @@ export default {
                         name: this.edit_category.name.trim(),
                         weight: parseInt(this.edit_category.weight) || 0,
                         require_all_entries: Boolean(this.edit_category.require_all_entries),
+                        category_evaluation_enabled: Boolean(this.edit_category.category_evaluation_enabled),
                     }
                     : cat
             )
             this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false }
+            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
         },
 
         cancelEditCategory() {
             this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false }
+            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
         },
 
         isWorkAssigned(categoryIndex, shortName) {
@@ -593,5 +622,40 @@ export default {
 <style scoped>
 .cursor-pointer {
     cursor: pointer;
+}
+
+.grading-category-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.grading-category-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 220px;
+}
+
+.grading-category-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.grading-category-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1 1 100%;
+}
+
+.grading-category-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
 }
 </style>

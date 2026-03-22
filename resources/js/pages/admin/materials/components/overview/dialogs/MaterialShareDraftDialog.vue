@@ -84,7 +84,7 @@
                                     size="small"
                                     variant="outlined"
                                     color="primary"
-                                    :class="{ 'share-draft-master-btn--active': selectedGroupMaster === groupMaster.value }"
+                                    :class="['share-draft-group-btn', { 'share-draft-master-btn--active': selectedGroupMaster === groupMaster.value }]"
                                     @click="selectGroupMaster(groupMaster.value)">
                                     {{ groupMaster.label }}
                                 </v-btn>
@@ -98,7 +98,7 @@
                                         size="small"
                                         variant="outlined"
                                         color="primary"
-                                        :class="{ 'share-draft-master-btn--active': selectedSchoolGroupCategory === category.value }"
+                                        :class="['share-draft-group-btn', { 'share-draft-master-btn--active': selectedSchoolGroupCategory === category.value }]"
                                         @click="selectSchoolGroupCategory(category.value)">
                                         {{ category.label }}
                                     </v-btn>
@@ -118,7 +118,7 @@
                                         size="small"
                                         variant="outlined"
                                         color="primary"
-                                        :class="{ 'share-draft-master-btn--active': isSelectedGroupOption(group) }"
+                                        :class="['share-draft-group-btn', { 'share-draft-master-btn--active': isSelectedGroupOption(group) }]"
                                         @click="selectGroupOption(group)">
                                         {{ group.label }}
                                     </v-btn>
@@ -144,7 +144,7 @@
                                         size="small"
                                         variant="outlined"
                                         color="primary"
-                                        :class="{ 'share-draft-master-btn--active': isSelectedGroupOption(group) }"
+                                        :class="['share-draft-group-btn', { 'share-draft-master-btn--active': isSelectedGroupOption(group) }]"
                                         @click="selectGroupOption(group)">
                                         {{ group.label }}
                                     </v-btn>
@@ -162,7 +162,7 @@
                                         size="small"
                                         variant="outlined"
                                         color="primary"
-                                        :class="{ 'share-draft-master-btn--active': selectedOwnGroupCategory === category.value }"
+                                        :class="['share-draft-group-btn', { 'share-draft-master-btn--active': selectedOwnGroupCategory === category.value }]"
                                         @click="selectOwnGroupCategory(category.value)">
                                         {{ category.label }}
                                     </v-btn>
@@ -182,7 +182,7 @@
                                         size="small"
                                         variant="outlined"
                                         color="primary"
-                                        :class="{ 'share-draft-master-btn--active': isSelectedGroupOption(group) }"
+                                        :class="['share-draft-group-btn', { 'share-draft-master-btn--active': isSelectedGroupOption(group) }]"
                                         @click="selectGroupOption(group)">
                                         {{ group.label }}
                                     </v-btn>
@@ -239,6 +239,53 @@
                         <div class="mt-3">
                             <v-chip v-if="selectedRecipient" size="small" color="primary" variant="flat">{{ selectedRecipient.label }}</v-chip>
                             <v-chip v-if="selectedRecipient?.metaLabel" size="small" color="secondary" variant="tonal" class="ml-2">{{ selectedRecipient.metaLabel }}</v-chip>
+                            <v-btn
+                                v-if="selectedRecipient?.countLabel && selectedRecipient?.type === 'group'"
+                                size="small"
+                                color="secondary"
+                                variant="outlined"
+                                class="ml-2"
+                                prepend-icon="mdi-account-multiple-outline"
+                                :loading="groupMembersLoading"
+                                @click="toggleSelectedGroupMembers">
+                                {{ selectedRecipient.countLabel }}
+                            </v-btn>
+                        </div>
+                        <div v-if="shouldShowSelectedGroupMembers" class="share-draft-group-members mt-3">
+                            <div v-if="groupMembersError" class="mb-2">
+                                <v-alert type="warning" variant="tonal" density="compact" class="mb-0">
+                                    {{ groupMembersError }}
+                                </v-alert>
+                            </div>
+                            <div v-else-if="groupMembersLoading" class="text-body-2 text-medium-emphasis">
+                                Mitglieder werden geladen ...
+                            </div>
+                            <div v-else-if="selectedGroupMembers.length" class="share-draft-member-list">
+                                <div
+                                    v-for="member in selectedGroupMembers"
+                                    :key="`share-draft-group-member-${member.id}`"
+                                    class="share-draft-member-row">
+                                    <div class="d-flex align-center ga-2">
+                                        <div class="font-weight-medium">{{ member.label }}</div>
+                                        <v-icon
+                                            v-if="member.isRegistered"
+                                            size="16"
+                                            color="success"
+                                            title="Registriert">
+                                            mdi-check-circle
+                                        </v-icon>
+                                    </div>
+                                    <div class="text-caption text-medium-emphasis">
+                                        {{ [member.short, member.schoolclass, member.email].filter((entry) => String(entry || '').trim() !== '').join(' · ') || '-' }}
+                                    </div>
+                                    <div v-if="member.childrenLabel" class="text-caption text-medium-emphasis">
+                                        Kinder: {{ member.childrenLabel }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="text-body-2 text-medium-emphasis">
+                                Keine Mitglieder gefunden.
+                            </div>
                         </div>
                     </section>
 
@@ -261,6 +308,7 @@
                             <div><strong>Empfänger:</strong> {{ selectedRecipient?.label || '-' }}</div>
                             <div><strong>Typ:</strong> {{ selectedRecipient?.typeLabel || '-' }}</div>
                             <div v-if="selectedRecipient?.type === 'external_person'"><strong>Schule:</strong> {{ selectedRecipient?.metaLabel || '-' }}</div>
+                            <div v-if="selectedRecipient?.countLabel"><strong>Anzahl:</strong> {{ selectedRecipient.countLabel }}</div>
                             <div><strong>Berechtigung:</strong> {{ shareModeLabel(shareMode) }}</div>
                         </div>
                         <v-alert v-if="saveError" type="warning" variant="tonal" density="compact" class="mt-3 mb-0">
@@ -341,6 +389,11 @@ export default {
             externalUserLookupLoading: false,
             externalUserLookupError: '',
             externalLookupResult: null,
+            selectedGroupMembers: [],
+            selectedGroupMembersGroupId: null,
+            groupMembersLoading: false,
+            groupMembersError: '',
+            showSelectedGroupMembers: false,
         }
     },
     computed: {
@@ -365,12 +418,17 @@ export default {
             }
 
             const typeLabel = String(this.selectedGroupOption?.typeLabel || '').trim() || 'Gruppe'
+            const countLabel = this.groupCountLabel(
+                this.selectedGroupOption?.sourceUsersCount,
+                this.selectedGroupOption?.membersCount,
+            )
 
             return {
                 type: 'group',
                 typeLabel,
                 label: String(this.selectedGroupOption?.label || '').trim() || 'Gruppe',
                 metaLabel: '',
+                countLabel,
                 payload: {
                     target_type: 'group',
                     user_group_id: groupId,
@@ -405,7 +463,8 @@ export default {
                 { value: 'classes', label: 'Klassen' },
                 { value: 'teachers', label: 'Lehrer' },
                 { value: 'parents', label: 'Eltern' },
-                { value: 'own', label: 'Eigene Gruppen' },
+                { value: 'school_members', label: 'Gesamtgruppen' },
+                { value: 'other', label: 'Weitere Gruppen' },
             ]
         },
         ownGroupCategoryOptions() {
@@ -470,6 +529,17 @@ export default {
         hasRecipientSelection() {
             return this.selectedRecipient !== null
         },
+        shouldShowSelectedGroupMembers() {
+            if (!this.showSelectedGroupMembers) {
+                return false
+            }
+
+            if (this.selectedRecipient?.type !== 'group') {
+                return false
+            }
+
+            return Number(this.selectedGroupMembersGroupId || 0) === Number(this.selectedGroupOption?.id || 0)
+        },
     },
     watch: {
         modelValue(isOpen) {
@@ -514,6 +584,7 @@ export default {
             this.externalUserEmail = ''
             this.externalUserLookupError = ''
             this.externalLookupResult = null
+            this.resetSelectedGroupMembers()
 
             if (!this.externalSchoolsLoaded) {
                 this.loadExternalSchools()
@@ -521,6 +592,28 @@ export default {
         },
         shareModeLabel(mode) {
             return ({ read_only: 'NUR LESEN', read_append: 'LESEN/HINZUFÜGEN', read_write: 'LESEN/SCHREIBEN', full_access: 'VOLLZUGRIFF' })[String(mode || '').trim()] || 'NUR LESEN'
+        },
+        groupCountLabel(sourceUsersCount, membersCount) {
+            const normalizedMembersCount = Number(membersCount)
+            const normalizedSourceUsersCount = Number(sourceUsersCount)
+
+            if (Number.isFinite(normalizedSourceUsersCount) && normalizedSourceUsersCount >= 0 && Number.isFinite(normalizedMembersCount) && normalizedMembersCount >= 0) {
+                return `${normalizedSourceUsersCount}/${normalizedMembersCount}`
+            }
+
+            if (Number.isFinite(normalizedMembersCount) && normalizedMembersCount >= 0) {
+                return String(normalizedMembersCount)
+            }
+
+            return ''
+        },
+        memberHasUserAccount(member) {
+            return !!(
+                Number(member?.user_id || member?.linked_user_id || 0) > 0
+                || member?.has_user_account === true
+                || member?.is_registered === true
+                || member?.isRegistered === true
+            )
         },
         clearSameSchoolSearch() {
             this.sameSchoolSearch = ''
@@ -535,10 +628,12 @@ export default {
             }
 
             this.selectedSameSchoolUserId = userId
+            this.resetSelectedGroupMembers()
             this.saveError = ''
         },
         clearSelectedGroupOption() {
             this.selectedGroupOption = null
+            this.resetSelectedGroupMembers()
         },
         isSelectedGroupOption(group) {
             return Number(this.selectedGroupOption?.id || 0) === Number(group?.id || 0)
@@ -549,11 +644,15 @@ export default {
                 return
             }
 
+            const membersCount = Number(group?.membersCount)
             this.selectedGroupOption = {
                 id: groupId,
                 label: String(group?.label || '').trim() || 'Gruppe',
                 typeLabel: String(group?.typeLabel || '').trim() || 'Gruppe',
+                membersCount: Number.isFinite(membersCount) && membersCount >= 0 ? membersCount : null,
+                sourceUsersCount: Number.isFinite(Number(group?.sourceUsersCount)) && Number(group?.sourceUsersCount) >= 0 ? Number(group.sourceUsersCount) : null,
             }
+            this.resetSelectedGroupMembers()
             this.saveError = ''
         },
         async selectGroupMaster(value) {
@@ -631,6 +730,8 @@ export default {
                 id: Number(row?.id || 0),
                 label: String(row?.label || row?.name || '').trim() || fallbackLabel,
                 typeLabel: String(row?.type_label || '').trim() || fallbackLabel,
+                membersCount: Number.isFinite(Number(row?.members_count)) ? Number(row.members_count) : null,
+                sourceUsersCount: Number.isFinite(Number(row?.source_users_count)) ? Number(row.source_users_count) : null,
             })).filter((row) => row.id > 0)
         },
         async loadGroupOptions(type, category, errorMessage) {
@@ -758,6 +859,62 @@ export default {
                 this.externalUserLookupLoading = false
             }
         },
+        resetSelectedGroupMembers() {
+            this.selectedGroupMembers = []
+            this.selectedGroupMembersGroupId = null
+            this.groupMembersLoading = false
+            this.groupMembersError = ''
+            this.showSelectedGroupMembers = false
+        },
+        async toggleSelectedGroupMembers() {
+            const groupId = Number(this.selectedGroupOption?.id || 0)
+            if (groupId <= 0) {
+                return
+            }
+
+            if (this.showSelectedGroupMembers && this.selectedGroupMembersGroupId === groupId) {
+                this.showSelectedGroupMembers = false
+                return
+            }
+
+            if (this.selectedGroupMembersGroupId === groupId && this.selectedGroupMembers.length > 0) {
+                this.groupMembersError = ''
+                this.showSelectedGroupMembers = true
+                return
+            }
+
+            this.groupMembersLoading = true
+            this.groupMembersError = ''
+            this.selectedGroupMembers = []
+
+            try {
+                const response = await axios.get('/api/admin/materials/shares/lookup-group-members', {
+                    params: {
+                        user_group_id: groupId,
+                    },
+                })
+                const rows = Array.isArray(response?.data?.data?.members) ? response.data.data.members : []
+                this.selectedGroupMembers = rows.map((row) => ({
+                    id: String(row?.id || '').trim(),
+                    label: String(row?.label || '').trim() || 'Mitglied',
+                    short: String(row?.short || '').trim(),
+                    schoolclass: String(row?.schoolclass || '').trim(),
+                    email: String(row?.email || '').trim(),
+                    childrenLabel: String(row?.children_label || '').trim(),
+                    userId: Number(row?.user_id || row?.linked_user_id || 0) || null,
+                    isRegistered: this.memberHasUserAccount(row),
+                })).filter((row) => row.id !== '')
+                this.selectedGroupMembersGroupId = groupId
+                this.showSelectedGroupMembers = true
+            } catch (error) {
+                this.selectedGroupMembers = []
+                this.selectedGroupMembersGroupId = groupId
+                this.groupMembersError = error?.response?.data?.message || 'Mitglieder konnten nicht geladen werden.'
+                this.showSelectedGroupMembers = true
+            } finally {
+                this.groupMembersLoading = false
+            }
+        },
         async applySelection() {
             if (!this.hasRecipientSelection) {
                 return
@@ -810,6 +967,34 @@ export default {
 .share-draft-mode-toggle :deep(.v-btn),
 .share-draft-permission-toggle :deep(.v-btn) { min-width: 0; }
 .share-draft-mode-btn { text-transform: none; }
+.share-draft-group-btn {
+    text-transform: none;
+}
+:deep(.share-draft-group-btn .v-btn__content) {
+    font-weight: 600;
+}
+:deep(.share-draft-group-btn.share-draft-master-btn--active) {
+    background: rgb(25, 118, 210) !important;
+    border-color: rgb(25, 118, 210) !important;
+    color: rgb(255, 255, 255) !important;
+    font-weight: 700;
+}
+.share-draft-permission-toggle :deep(.v-btn) {
+    background: rgba(25, 118, 210, 0.12);
+    border-color: rgba(25, 118, 210, 0.36);
+    color: rgb(13, 71, 161);
+    font-weight: 700;
+}
+.share-draft-permission-toggle :deep(.v-btn--active) {
+    background: rgb(25, 118, 210);
+    border-color: rgb(25, 118, 210);
+    color: rgb(255, 255, 255);
+}
+.share-draft-permission-toggle :deep(.v-btn.v-btn--disabled) {
+    background: rgba(25, 118, 210, 0.08);
+    border-color: rgba(25, 118, 210, 0.2);
+    color: rgba(13, 71, 161, 0.5);
+}
 .share-draft-result-list { display: grid; gap: 8px; }
 .share-draft-result-row {
     border: 1px solid rgba(35, 61, 76, 0.12);
@@ -820,6 +1005,22 @@ export default {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+}
+.share-draft-group-members {
+    border: 1px solid rgba(35, 61, 76, 0.12);
+    background: rgba(255, 255, 255, 0.68);
+    border-radius: 10px;
+    padding: 10px;
+}
+.share-draft-member-list {
+    display: grid;
+    gap: 8px;
+}
+.share-draft-member-row {
+    border: 1px solid rgba(35, 61, 76, 0.08);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.72);
 }
 @media (max-width: 640px) {
     .share-draft-result-row {

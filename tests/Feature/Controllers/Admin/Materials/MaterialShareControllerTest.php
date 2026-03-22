@@ -21,6 +21,7 @@ use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
@@ -4834,17 +4835,86 @@ test('lookup groups validates type and returns category-filtered group lists', f
         'active_schoolyear_id' => $this->schoolyear->id,
     ]);
 
+    $classImportLinked = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+        'last_name' => 'Anker',
+        'first_name' => 'Alma',
+        'email' => 'alma.anker@test.local',
+        'mother_name' => 'Mutter Alma',
+        'mother_email' => 'mutter.alma@test.local',
+        'father_name' => 'Vater Alma',
+        'father_email' => 'vater.alma@test.local',
+        'import_user_id' => $this->materialsAdmin->id,
+    ]);
     Import116::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'class' => '1A',
+        'last_name' => 'Bach',
+        'first_name' => 'Berta',
+        'email' => 'berta.bach@test.local',
+        'mother_name' => null,
+        'mother_email' => null,
+        'mother_phone_1' => null,
+        'mother_phone_2' => null,
+        'father_name' => null,
+        'father_email' => null,
+        'father_phone_1' => null,
+        'father_phone_2' => null,
         'import_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'import116_id' => $classImportLinked->id,
+        'first_name' => 'Alma',
+        'last_name' => 'Anker',
+        'email' => 'alma.anker@test.local',
+    ]);
+
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Mutter',
+        'last_name' => 'Alma',
+        'email' => 'mutter.alma@test.local',
+    ]);
+
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Tina',
+        'last_name' => 'Teach',
+        'email' => 'teacher.linked@test.local',
+    ]);
+
+    Teacher::query()->create([
+        'school_id' => $this->school->id,
+        'first_name' => 'Tina',
+        'last_name' => 'Teach',
+        'short' => 'TT',
+        'email' => 'teacher.linked@test.local',
+    ]);
+    Teacher::query()->create([
+        'school_id' => $this->school->id,
+        'first_name' => 'Gregor',
+        'last_name' => 'Ghost',
+        'short' => 'GG',
+        'email' => 'teacher.ghost@test.local',
     ]);
 
     $schoolClassGroup = UserGroup::query()->create([
         'school_id' => $this->school->id,
         'type' => UserGroup::TYPE_SCHOOL,
         'name' => '1A',
+    ]);
+    UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1B',
     ]);
     $schoolTeacherGroup = UserGroup::query()->create([
         'school_id' => $this->school->id,
@@ -4856,10 +4926,21 @@ test('lookup groups validates type and returns category-filtered group lists', f
         'type' => UserGroup::TYPE_SCHOOL,
         'name' => '1A Eltern',
     ]);
+    $allSchoolMembersGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Alle Schulmitglieder',
+    ]);
     $customSchoolGroup = UserGroup::query()->create([
         'school_id' => $this->school->id,
         'type' => UserGroup::TYPE_SCHOOL,
         'name' => 'Projektgruppe',
+        'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
+    UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => 'Leergruppe',
         'created_by_user_id' => $this->materialsAdmin->id,
     ]);
 
@@ -4907,6 +4988,8 @@ test('lookup groups validates type and returns category-filtered group lists', f
         'created_by_user_id' => $this->materialsModerator->id,
     ]);
 
+    $customSchoolGroup->members()->attach($this->regularUser->id);
+
     $this->getJson('/api/admin/materials/shares/lookup-groups?type=invalid')
         ->assertStatus(422);
 
@@ -4916,24 +4999,38 @@ test('lookup groups validates type and returns category-filtered group lists', f
 
     expect((int) $schoolClassesResponse->json('data.0.id'))->toBe((int) $schoolClassGroup->id);
     expect((string) $schoolClassesResponse->json('data.0.type'))->toBe(UserGroup::TYPE_SCHOOL);
+    expect((int) $schoolClassesResponse->json('data.0.members_count'))->toBe(1);
+    expect((int) $schoolClassesResponse->json('data.0.source_users_count'))->toBe(2);
+    expect(collect($schoolClassesResponse->json('data'))->pluck('name')->all())->not->toContain('1B');
 
     $schoolTeachersResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=teachers')
         ->assertStatus(200)
         ->assertJsonCount(1, 'data');
 
     expect((int) $schoolTeachersResponse->json('data.0.id'))->toBe((int) $schoolTeacherGroup->id);
+    expect((int) $schoolTeachersResponse->json('data.0.members_count'))->toBe(1);
+    expect((int) $schoolTeachersResponse->json('data.0.source_users_count'))->toBe(2);
 
     $schoolParentsResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=parents')
         ->assertStatus(200)
         ->assertJsonCount(1, 'data');
 
     expect((int) $schoolParentsResponse->json('data.0.id'))->toBe((int) $schoolParentGroup->id);
+    expect((int) $schoolParentsResponse->json('data.0.members_count'))->toBe(1);
+    expect((int) $schoolParentsResponse->json('data.0.source_users_count'))->toBe(2);
 
-    $schoolOwnResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=own')
+    $schoolMembersResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=school_members')
         ->assertStatus(200)
         ->assertJsonCount(1, 'data');
 
-    expect((int) $schoolOwnResponse->json('data.0.id'))->toBe((int) $customSchoolGroup->id);
+    expect((int) $schoolMembersResponse->json('data.0.id'))->toBe((int) $allSchoolMembersGroup->id);
+
+    $schoolOtherResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=school&category=other')
+        ->assertStatus(200)
+        ->assertJsonCount(1, 'data');
+
+    expect((int) $schoolOtherResponse->json('data.0.id'))->toBe((int) $customSchoolGroup->id);
+    expect(collect($schoolOtherResponse->json('data'))->pluck('name')->all())->not->toContain('Leergruppe');
 
     $ownResponse = $this->getJson('/api/admin/materials/shares/lookup-groups?type=own')
         ->assertStatus(200)
@@ -4968,6 +5065,116 @@ test('lookup groups validates type and returns category-filtered group lists', f
 
     expect((int) $materialsResponse->json('data.0.id'))->toBe((int) $materialsGroup->id);
     expect((string) $materialsResponse->json('data.0.type'))->toBe(UserGroup::TYPE_MATERIALS);
+});
+
+test('lookup group members returns source members and marks linked user accounts for accessible automatic groups', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $group = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A',
+        'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    $linkedImport = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+        'last_name' => 'Linked',
+        'first_name' => 'Lara',
+        'email' => 'lara.linked@test.local',
+        'import_user_id' => $this->materialsAdmin->id,
+    ]);
+    $importOnly = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+        'last_name' => 'Only',
+        'first_name' => 'Otto',
+        'email' => 'otto.only@test.local',
+        'import_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'import116_id' => $linkedImport->id,
+        'first_name' => 'Lara',
+        'last_name' => 'Linked',
+        'short' => 'LLI',
+        'email' => 'lara.linked@test.local',
+        'schoolclass' => '1A',
+    ]);
+
+    $response = $this->getJson('/api/admin/materials/shares/lookup-group-members?user_group_id='.$group->id)
+        ->assertStatus(200)
+        ->assertJsonCount(2, 'data.members');
+
+    expect((int) $response->json('data.group.id'))->toBe((int) $group->id);
+    expect((string) $response->json('data.group.label'))->toBe('1A');
+
+    $members = collect($response->json('data.members'));
+    $linkedMember = $members->firstWhere('email', 'lara.linked@test.local');
+    $importOnlyMember = $members->firstWhere('email', 'otto.only@test.local');
+
+    expect($linkedMember)->not->toBeNull();
+    expect((string) ($linkedMember['label'] ?? ''))->toBe('Linked Lara');
+    expect((string) ($linkedMember['short'] ?? ''))->toBe('LLI');
+    expect((string) ($linkedMember['schoolclass'] ?? ''))->toBe('1A');
+    expect((bool) ($linkedMember['has_user_account'] ?? false))->toBeTrue();
+    expect((bool) ($linkedMember['is_registered'] ?? false))->toBeTrue();
+
+    expect($importOnlyMember)->not->toBeNull();
+    expect((string) ($importOnlyMember['label'] ?? ''))->toBe('Only Otto');
+    expect((string) ($importOnlyMember['short'] ?? ''))->toBe('');
+    expect((bool) ($importOnlyMember['has_user_account'] ?? true))->toBeFalse();
+    expect((bool) ($importOnlyMember['is_registered'] ?? true))->toBeFalse();
+});
+
+test('lookup group members includes children labels for accessible parent groups', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $group = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_SCHOOL,
+        'name' => '1A Eltern',
+        'created_by_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '1A',
+        'last_name' => 'Kind',
+        'first_name' => 'Kuno',
+        'mother_name' => 'Mutter Kuno',
+        'mother_email' => 'mutter.kuno@test.local',
+        'father_name' => 'Vater Kuno',
+        'father_email' => 'vater.kuno@test.local',
+        'import_user_id' => $this->materialsAdmin->id,
+    ]);
+
+    $response = $this->getJson('/api/admin/materials/shares/lookup-group-members?user_group_id='.$group->id)
+        ->assertStatus(200)
+        ->assertJsonCount(2, 'data.members');
+
+    $mother = collect($response->json('data.members'))->firstWhere('email', 'mutter.kuno@test.local');
+
+    expect($mother)->not->toBeNull();
+    expect((string) ($mother['label'] ?? ''))->toBe('Mutter Kuno');
+    expect((string) ($mother['children_label'] ?? ''))->toBe('Kind Kuno');
+    expect((string) ($mother['schoolclass'] ?? ''))->toBe('1A');
 });
 
 test('lookup schools excludes own school and includes other schools regardless of selectable flag', function () {

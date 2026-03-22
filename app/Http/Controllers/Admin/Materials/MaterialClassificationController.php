@@ -21,10 +21,16 @@ class MaterialClassificationController extends Controller
     {
         $authUser = $this->authorizeForClassificationManagement();
         $validated = $request->validated()['data'];
+        $beforeSubjectId = (int) ($validated['before_subject_id'] ?? 0);
+        if ($beforeSubjectId <= 0) {
+            $beforeSubjectId = null;
+        }
 
         $subject = $service->createSubject(
             $authUser,
-            (string) ($validated['name'] ?? '')
+            (string) ($validated['name'] ?? ''),
+            null,
+            $beforeSubjectId,
         );
 
         return response()->json([

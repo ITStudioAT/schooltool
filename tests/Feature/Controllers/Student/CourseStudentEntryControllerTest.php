@@ -5,6 +5,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
@@ -216,6 +217,65 @@ test('index marks entry as required when type belongs to require-all category', 
     $response->assertOk()
         ->assertJsonPath('entries.0.type', 'TW')
         ->assertJsonPath('entries.0.is_required_entry', true);
+});
+
+test('index returns category evaluations for the enrolled student', function () {
+    TeachingSchema::query()
+        ->where('user_id', $this->teacher->id)
+        ->where('schoolyear_id', $this->schoolyear->id)
+        ->update([
+            'works' => [
+                ['short_name' => 'TW', 'name' => 'Testarbeit'],
+            ],
+            'grading' => [
+                'category_evaluation_values' => [
+                    ['value' => 'Offen', 'color' => '#fb8c00'],
+                    ['value' => 'Bestanden', 'color' => '#43a047'],
+                ],
+                'default_category_evaluation_value' => 'Offen',
+                'categories' => [
+                    [
+                        'name' => 'Schriftlich',
+                        'weight' => 100,
+                        'category_evaluation_enabled' => true,
+                        'works' => [
+                            ['short_name' => 'TW', 'factor' => 100],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+    TeachingCourseStudentCategoryEvaluation::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'user_id' => $this->student->id,
+        'semester' => 2,
+        'category_name' => 'Schriftlich',
+        'value' => 'Bestanden',
+    ]);
+
+    TeachingCourseStudentCategoryEvaluation::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'user_id' => $this->peer->id,
+        'semester' => 2,
+        'category_name' => 'Schriftlich',
+        'value' => 'Offen',
+    ]);
+
+    $response = $this->actingAs($this->student)
+        ->getJson("/api/homepage/student/courses/{$this->course->id}/entries");
+
+    $response->assertOk()
+        ->assertJsonPath('grading_categories.0.name', 'Schriftlich')
+        ->assertJsonPath('grading_categories.0.category_evaluation_enabled', true)
+        ->assertJsonPath('grading_categories.0.works.0', 'TW')
+        ->assertJsonPath('category_evaluation_values.0.value', 'Offen')
+        ->assertJsonPath('category_evaluation_values.0.color', '#fb8c00')
+        ->assertJsonPath('category_evaluation_default_value', 'Offen')
+        ->assertJsonPath('category_evaluations.0.semester', 2)
+        ->assertJsonPath('category_evaluations.0.category_name', 'Schriftlich')
+        ->assertJsonPath('category_evaluations.0.value', 'Bestanden')
+        ->assertJsonCount(1, 'category_evaluations');
 });
 
 test('index returns 403 for non student role', function () {

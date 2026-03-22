@@ -230,11 +230,14 @@ class TeachingService
                 'semester_count' => 2,
                 'semester_1_weight' => 40,
                 'semester_2_weight' => 60,
+                'category_evaluation_values' => self::defaultCategoryEvaluationValues(),
+                'default_category_evaluation_value' => self::defaultCategoryEvaluationDefaultValue(),
                 'categories' => [
                     [
                         'name' => 'Schularbeiten',
                         'weight' => 50,
                         'require_all_entries' => true,
+                        'category_evaluation_enabled' => false,
                         'calculation' => 'mean',
                         'works' => [['short_name' => 'SA', 'factor' => 100]],
                     ],
@@ -242,12 +245,33 @@ class TeachingService
                         'name' => 'Mitarbeit',
                         'weight' => 50,
                         'require_all_entries' => true,
+                        'category_evaluation_enabled' => false,
                         'calculation' => 'mean',
                         'works' => [['short_name' => 'MA', 'factor' => 100]],
                     ],
                 ],
             ],
         ];
+    }
+
+    public static function defaultCategoryEvaluationValues(): array
+    {
+        return [
+            ['value' => 'Keine Bewertung', 'color' => '#b0bec5'],
+            ['value' => 'Offen', 'color' => '#fb8c00'],
+            ['value' => 'Bestanden', 'color' => '#43a047'],
+            ['value' => '1', 'color' => '#2e7d32'],
+            ['value' => '2', 'color' => '#7cb342'],
+            ['value' => '3', 'color' => '#f9a825'],
+            ['value' => '4', 'color' => '#ef6c00'],
+            ['value' => '5', 'color' => '#e53935'],
+            ['value' => 'Nicht bestanden', 'color' => '#c62828'],
+        ];
+    }
+
+    public static function defaultCategoryEvaluationDefaultValue(): string
+    {
+        return (string) (self::defaultCategoryEvaluationValues()[0]['value'] ?? 'Keine Bewertung');
     }
 
     private function resolveSchoolyearId(User $user, ?int $schoolyearId = null): ?int
@@ -271,6 +295,16 @@ class TeachingService
 
     private function normalizeGrading(array $grading, array $works): array
     {
+        $grading['category_evaluation_values'] = $this->normalizeCategoryEvaluationValues(
+            is_array($grading['category_evaluation_values'] ?? null)
+                ? $grading['category_evaluation_values']
+                : null
+        );
+        $grading['default_category_evaluation_value'] = $this->normalizeDefaultCategoryEvaluationValue(
+            $grading['default_category_evaluation_value'] ?? null,
+            $grading['category_evaluation_values']
+        );
+
         $categories = is_array($grading['categories'] ?? null) ? $grading['categories'] : [];
         $grading['categories'] = collect($categories)
             ->filter(fn ($category) => is_array($category))
@@ -279,6 +313,7 @@ class TeachingService
                 $hasOwnRequireAll = array_key_exists('require_all_entries', $category);
 
                 $category['works'] = $normalizedWorks;
+                $category['category_evaluation_enabled'] = (bool) ($category['category_evaluation_enabled'] ?? false);
                 $category['require_all_entries'] = $hasOwnRequireAll
                     ? (bool) ($category['require_all_entries'] ?? false)
                     : $this->inferCategoryRequireAllEntriesFromWorks($normalizedWorks, $works);
@@ -316,6 +351,117 @@ class TeachingService
                 return ['short_name' => $shortName, 'factor' => $factor];
             })
             ->filter(fn ($work) => is_array($work))
+            ->values()
+            ->all();
+    }
+
+    private function normalizeCategoryEvaluationValues(?array $values): array
+    {
+        $defaultColorMap = $this->defaultCategoryEvaluationColorMap();
+
+        $normalizedValues = collect($values ?? self::defaultCategoryEvaluationValues())
+            ->map(function ($value) use ($defaultColorMap): ?array {
+                if (is_array($value)) {
+                    $label = trim((string) ($value['value'] ?? ''));
+                    if ($label === '') {
+                        return null;
+                    }
+
+                    return [
+                        'value' => $label,
+                        'color' => $this->normalizeCategoryEvaluationColor(
+                            $value['color'] ?? null,
+                            $defaultColorMap[$label] ?? '#4f6fb3'
+                        ),
+                    ];
+                }
+
+                if (! is_scalar($value)) {
+                    return null;
+                }
+
+                $label = trim((string) $value);
+                if ($label === '') {
+                    return null;
+                }
+
+                return [
+                    'value' => $label,
+                    'color' => $defaultColorMap[$label] ?? '#4f6fb3',
+                ];
+            })
+            ->filter(fn (?array $value): bool => is_array($value) && ($value['value'] ?? '') !== '')
+            ->unique(fn (array $value): string => Str::lower((string) ($value['value'] ?? '')))
+            ->values()
+            ->all();
+
+        if ($normalizedValues === []) {
+            return self::defaultCategoryEvaluationValues();
+        }
+
+        return $normalizedValues;
+    }
+
+    private function normalizeDefaultCategoryEvaluationValue(mixed $value, array $availableValues): string
+    {
+        $normalizedValue = trim((string) ($value ?? ''));
+        $availableValueLabels = $this->categoryEvaluationValueLabels($availableValues);
+
+        if ($normalizedValue !== '' && in_array($normalizedValue, $availableValueLabels, true)) {
+            return $normalizedValue;
+        }
+
+        return $availableValueLabels[0] ?? self::defaultCategoryEvaluationDefaultValue();
+    }
+
+    private function normalizeCategoryEvaluationColor(mixed $color, string $fallback): string
+    {
+        $raw = trim((string) ($color ?? ''));
+        if ($raw === '') {
+            return $fallback;
+        }
+
+        $normalized = Str::startsWith($raw, '#') ? $raw : '#'.$raw;
+
+        if (! preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $normalized)) {
+            return $fallback;
+        }
+
+        if (strlen($normalized) === 4) {
+            return Str::lower(sprintf(
+                '#%1$s%1$s%2$s%2$s%3$s%3$s',
+                $normalized[1],
+                $normalized[2],
+                $normalized[3]
+            ));
+        }
+
+        return Str::lower($normalized);
+    }
+
+    private function defaultCategoryEvaluationColorMap(): array
+    {
+        return collect(self::defaultCategoryEvaluationValues())
+            ->filter(fn ($value): bool => is_array($value))
+            ->mapWithKeys(function (array $value): array {
+                $label = trim((string) ($value['value'] ?? ''));
+                $color = trim((string) ($value['color'] ?? ''));
+
+                if ($label === '' || $color === '') {
+                    return [];
+                }
+
+                return [$label => $color];
+            })
+            ->all();
+    }
+
+    private function categoryEvaluationValueLabels(array $values): array
+    {
+        return collect($values)
+            ->filter(fn ($value): bool => is_array($value))
+            ->map(fn (array $value): string => trim((string) ($value['value'] ?? '')))
+            ->filter(fn (string $value): bool => $value !== '')
             ->values()
             ->all();
     }

@@ -92,6 +92,17 @@ describe('Teaching settings page', () => {
         expect((Settings as any).methods.isSchemaPanelActive.call(ctx, 'works')).toBe(false)
     })
 
+    it('supports the category evaluation schema sub-panel', () => {
+        const ctx = {
+            active_schema_panel: 'works',
+        }
+
+        ;(Settings as any).methods.activateSchemaPanel.call(ctx, 'category_evaluation')
+
+        expect((Settings as any).methods.isSchemaPanelActive.call(ctx, 'category_evaluation')).toBe(true)
+        expect((Settings as any).methods.isSchemaPanelActive.call(ctx, 'grading')).toBe(false)
+    })
+
     it('falls back to behaviour when own-holidays permission is removed', () => {
         const ctx = {
             active_panel: 'my_holidays',

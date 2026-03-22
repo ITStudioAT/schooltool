@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Student;
 use App\Http\Controllers\Controller;
 use App\Models\SchoolTool;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\User;
 use App\Services\TeachingService;
@@ -188,6 +189,60 @@ class CourseStudentEntryController extends Controller
         }
 
         $requiredTypeSet = $this->buildRequireAllCategoryTypeSet($schemaForCourse);
+        $gradingCategories = collect(is_array($schemaForCourse['grading']['categories'] ?? null) ? $schemaForCourse['grading']['categories'] : [])
+            ->map(function ($category): ?array {
+                if (! is_array($category)) {
+                    return null;
+                }
+
+                $name = trim((string) ($category['name'] ?? ''));
+                if ($name === '') {
+                    return null;
+                }
+
+                $works = collect(is_array($category['works'] ?? null) ? $category['works'] : [])
+                    ->map(function ($workItem): ?string {
+                        $shortName = is_string($workItem)
+                            ? $workItem
+                            : (is_array($workItem) ? ($workItem['short_name'] ?? null) : null);
+
+                        $normalized = trim((string) $shortName);
+
+                        return $normalized !== '' ? $normalized : null;
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                return [
+                    'name' => $name,
+                    'category_evaluation_enabled' => (bool) ($category['category_evaluation_enabled'] ?? false),
+                    'works' => $works,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $categoryEvaluationValues = collect(is_array($schemaForCourse['grading']['category_evaluation_values'] ?? null) ? $schemaForCourse['grading']['category_evaluation_values'] : [])
+            ->map(function ($value): ?array {
+                if (! is_array($value)) {
+                    return null;
+                }
+
+                $label = trim((string) ($value['value'] ?? ''));
+                if ($label === '') {
+                    return null;
+                }
+
+                return [
+                    'value' => $label,
+                    'color' => trim((string) ($value['color'] ?? '')),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $categoryEvaluationDefaultValue = trim((string) ($schemaForCourse['grading']['default_category_evaluation_value'] ?? ''));
 
         $formattedEntries = $formattedEntries->map(function (array $entry) use ($defaultGradesByType, $requiredTypeSet) {
             $raw = trim((string) ($entry['grade'] ?? ''));
@@ -204,8 +259,27 @@ class CourseStudentEntryController extends Controller
             return $entry;
         });
 
+        $categoryEvaluations = TeachingCourseStudentCategoryEvaluation::query()
+            ->where('teaching_course_id', $course->id)
+            ->where('user_id', $auth_user->id)
+            ->orderBy('semester')
+            ->orderBy('category_name')
+            ->get()
+            ->map(function (TeachingCourseStudentCategoryEvaluation $evaluation): array {
+                return [
+                    'semester' => (int) $evaluation->semester,
+                    'category_name' => $evaluation->category_name,
+                    'value' => $evaluation->value,
+                ];
+            })
+            ->values();
+
         return response()->json([
             'entries' => $formattedEntries,
+            'category_evaluations' => $categoryEvaluations,
+            'grading_categories' => $gradingCategories,
+            'category_evaluation_values' => $categoryEvaluationValues,
+            'category_evaluation_default_value' => $categoryEvaluationDefaultValue !== '' ? $categoryEvaluationDefaultValue : null,
             'type_labels' => $typeLabels,
         ], 200);
     }

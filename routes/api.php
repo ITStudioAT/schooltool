@@ -38,6 +38,7 @@ use App\Http\Controllers\Admin\TeacherController;
 use App\Http\Controllers\Admin\TeachersListController;
 use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
+use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationController;
 use App\Http\Controllers\Admin\Teaching\CourseWorkController;
 use App\Http\Controllers\Admin\Teaching\FileUploadController;
 use App\Http\Controllers\Admin\Teaching\HolidayController;
@@ -328,6 +329,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/teaching/import116/runs/{import116_run}', [Import116Controller::class, 'destroyRun']);
         Route::apiResource('/admin/teaching/course_works', CourseWorkController::class);
         Route::apiResource('/admin/teaching/course_student_entries', App\Http\Controllers\Admin\Teaching\CourseStudentEntryController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
     });
 
@@ -387,6 +389,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/shares/targets/{material_share_target}', [MaterialShareController::class, 'destroyTarget']);
         Route::get('/admin/materials/shares/lookup-users', [MaterialShareController::class, 'lookupUsers']);
         Route::get('/admin/materials/shares/lookup-groups', [MaterialShareController::class, 'lookupGroups']);
+        Route::get('/admin/materials/shares/lookup-group-members', [MaterialShareController::class, 'lookupGroupMembers']);
         Route::get('/admin/materials/shares/lookup-schools', [MaterialShareController::class, 'lookupSchools']);
         Route::get('/admin/materials/shares/lookup-external-user', [MaterialShareController::class, 'lookupExternalUser']);
         Route::get('/admin/materials/shares/inbox-users', [MaterialShareController::class, 'inboxUsers']);

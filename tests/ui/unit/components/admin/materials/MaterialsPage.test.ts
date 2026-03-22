@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Materials from '@/pages/admin/materials/Materials.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
+import { shallowMount } from '@vue/test-utils'
 
 vi.mock('@/stores/admin/AdminStore', () => ({
     useAdminStore: vi.fn(),
@@ -140,5 +141,63 @@ describe('Materials page navigation', () => {
         method.call(ctx, 'overview')
 
         expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('does not render the workspace rename button when a workspace exists', async () => {
+        vi.mocked(useAdminStore).mockReturnValue({
+            is_navigation_locked: false,
+            is_struktur_modus: false,
+        } as never)
+        vi.mocked(useMaterialCardStore).mockReturnValue({
+            config: {
+                workspace: {
+                    id: 7,
+                    name: 'Mein Workspace',
+                },
+            },
+            loadConfig: vi.fn(async () => true),
+            createWorkspace: vi.fn(),
+            renameWorkspace: vi.fn(),
+        } as never)
+
+        const wrapper = shallowMount(Materials, {
+            global: {
+                mocks: {
+                    $route: {
+                        path: '/admin/materials',
+                        query: {
+                            main_action: 'overview',
+                        },
+                    },
+                    $router: {
+                        replace: vi.fn(async () => undefined),
+                    },
+                },
+                stubs: {
+                    'v-container': { template: '<div><slot /></div>' },
+                    'v-row': { template: '<div><slot /></div>' },
+                    'v-col': { template: '<div><slot /></div>' },
+                    'v-card': { template: '<div><slot /></div>' },
+                    'v-btn': { template: '<button><slot /></button>' },
+                    'v-dialog': { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    'v-text-field': { template: '<input />' },
+                    'v-spacer': { template: '<div />' },
+                    'v-skeleton-loader': { template: '<div />' },
+                    MaterialsMenu: { template: '<div />' },
+                    MaterialsOverviewView: { template: '<div />' },
+                    MaterialsFreigabeView: { template: '<div />' },
+                    MaterialsNewView: { template: '<div />' },
+                    MaterialsSettingsView: { template: '<div />' },
+                },
+            },
+        })
+
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.text()).toContain('Workspace: Mein Workspace')
+        expect(wrapper.text()).not.toContain('Workspace umbenennen')
     })
 })

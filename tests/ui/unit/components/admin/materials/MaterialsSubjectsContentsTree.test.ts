@@ -836,6 +836,56 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getAllByTitle('Fach hinzufügen')).toHaveLength(1)
     })
 
+    it('sends workspace subject creation with insert target when Fach button above a subject is used', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 61,
+                    name: 'Biologie',
+                },
+            },
+        })
+
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+            {
+                id: 2,
+                name: 'Biologie Alt',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        await openWorkspace()
+        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[0])
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Biologie')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledTimes(1)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/subjects', {
+            data: {
+                name: 'Biologie',
+                before_subject_id: 1,
+            },
+        })
+
+        const createdEvents = emitted('workspace-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('subject')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(61)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Biologie')
+    })
+
     it('shows shared objects when Für mich geteilt is expanded', async () => {
         const { container } = renderTree([
             {

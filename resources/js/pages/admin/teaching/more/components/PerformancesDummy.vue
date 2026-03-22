@@ -20,7 +20,7 @@
                     <thead>
                         <tr>
                             <th>Schüler:in</th>
-                            <th v-for="column in typeColumns" :key="`performance-head-${column.type}`">
+                            <th v-for="column in typeColumns" :key="`performance-head-${column.key}`">
                                 {{ column.label }}
                             </th>
                         </tr>
@@ -28,13 +28,36 @@
                     <tbody>
                         <tr v-for="row in rows" :key="`performance-row-${row.student_id}`" :class="{ 'performance-row--canceled': row.is_canceled }">
                             <td class="student-cell" :class="{ 'student-cell--canceled': row.is_canceled }">{{ row.student_label }}</td>
-                            <td v-for="column in typeColumns" :key="`performance-cell-${row.student_id}-${column.type}`">
+                            <td v-for="column in typeColumns" :key="`performance-cell-${row.student_id}-${column.key}`">
                                 <div v-if="row.byType[column.type]?.length" class="performance-items">
                                     <div v-for="(item, index) in row.byType[column.type]" :key="`item-${row.student_id}-${column.type}-${index}`" class="performance-item">
                                         {{ item }}
                                     </div>
                                 </div>
-                                <span v-else class="text-medium-emphasis">–</span>
+                                <div v-if="categoryEvaluationCategoriesForType(column.type).length" class="performance-category-evaluations">
+                                    <div
+                                        v-for="category in categoryEvaluationCategoriesForType(column.type)"
+                                        :key="`category-evaluation-${row.student_id}-${column.type}-${category.name}`"
+                                        class="performance-category-evaluation">
+                                        <div class="performance-category-label">
+                                            {{ category.name }}
+                                        </div>
+                                        <div class="performance-category-options">
+                                            <v-chip
+                                                v-for="valueItem in categoryEvaluationValueItems"
+                                                :key="`category-evaluation-option-${row.student_id}-${category.name}-${valueItem.value}`"
+                                                size="small"
+                                                :color="categoryEvaluationValueColor(valueItem.value)"
+                                                :variant="categoryEvaluationValue(row.student_id, category.name) === valueItem.value ? 'flat' : 'outlined'"
+                                                class="performance-category-chip"
+                                                :disabled="categoryEvaluationSaving(row.student_id, category.name)"
+                                                @click="saveCategoryEvaluation(row.student_id, category.name, valueItem.value)">
+                                                {{ valueItem.value }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
+                                <span v-if="!row.byType[column.type]?.length && !categoryEvaluationCategoriesForType(column.type).length" class="text-medium-emphasis">–</span>
                             </td>
                         </tr>
                         <tr v-if="!filteredEntries.length">
@@ -52,8 +75,14 @@
 <script>
 import { parseLocalDate } from '@/helpers/date'
 import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseStudentCategoryEvaluationStore } from '@/stores/admin/teaching/CourseStudentCategoryEvaluationStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import {
+    normalizeTeachingCategoryEvaluationValueItems,
+    teachingCategoryEvaluationColorForValue,
+    teachingCategoryEvaluationValueLabels,
+} from '@/helpers/teachingCategoryEvaluation'
 
 export default {
     props: {
@@ -77,13 +106,17 @@ export default {
     data() {
         return {
             entryStore: null,
+            categoryEvaluationStore: null,
             courseWorkStore: null,
             teachingStore: null,
             sortMode: 'last_name_first_name',
+            localCategoryEvaluationValues: {},
+            savingCategoryEvaluationKeys: {},
         }
     },
     async beforeMount() {
         this.entryStore = useCourseStudentEntryStore()
+        this.categoryEvaluationStore = useCourseStudentCategoryEvaluationStore()
         this.courseWorkStore = useCourseWorkStore()
         this.teachingStore = useTeachingStore()
 
@@ -159,6 +192,37 @@ export default {
 
             return columnsFromCategories.filter((item) => !!item)
         },
+        gradingConfig() {
+            const schemaId = this.selectedCourse?.teaching_schema_id
+            return schemaId ? this.teachingStore?.gradingForSchema(schemaId) || {} : {}
+        },
+        enabledCategoryEvaluationCategories() {
+            const categories = Array.isArray(this.gradingConfig?.categories) ? this.gradingConfig.categories : []
+            return categories
+                .filter((category) => !!category?.category_evaluation_enabled && String(category?.name || '').trim() !== '')
+                .map((category) => ({
+                    name: String(category.name).trim(),
+                    works: Array.isArray(category?.works) ? category.works : [],
+                }))
+        },
+        categoryEvaluationValueItems() {
+            if (!this.selectedCourse?.teaching_schema_id) {
+                return []
+            }
+
+            return normalizeTeachingCategoryEvaluationValueItems(this.gradingConfig?.category_evaluation_values)
+        },
+        categoryEvaluationValues() {
+            return teachingCategoryEvaluationValueLabels(this.categoryEvaluationValueItems)
+        },
+        defaultCategoryEvaluationValue() {
+            const defaultValue = String(this.gradingConfig?.default_category_evaluation_value || '').trim()
+            if (defaultValue && this.categoryEvaluationValues.includes(defaultValue)) {
+                return defaultValue
+            }
+
+            return this.categoryEvaluationValues[0] || ''
+        },
         schemaCategoryTypes() {
             const schemaId = this.selectedCourse?.teaching_schema_id
             const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) || {} : {}
@@ -212,10 +276,16 @@ export default {
                 columns.push({
                     type: '__none__',
                     label: 'Leistungen',
+                    key: 'type-__none__',
+                    kind: 'type',
                 })
             }
 
-            return columns
+            return columns.map((column) => ({
+                ...column,
+                key: column.key || `type-${column.type}`,
+                kind: 'type',
+            }))
         },
         courseWorksById() {
             const works = Array.isArray(this.courseWorkStore?.courseWorks) ? this.courseWorkStore.courseWorks : []
@@ -289,6 +359,9 @@ export default {
             },
             deep: false,
         },
+        activeSemester() {
+            this.loadCategoryEvaluationsForSelectedCourse()
+        },
     },
     methods: {
         isStudentCanceled(student) {
@@ -313,13 +386,49 @@ export default {
             return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
         },
         async loadDataForSelectedCourse() {
-            if (!this.selectedCourse?.id || !this.entryStore || !this.courseWorkStore) {
+            if (!this.selectedCourse?.id || !this.entryStore || !this.courseWorkStore || !this.categoryEvaluationStore) {
                 return
             }
             await Promise.allSettled([
                 this.entryStore.indexByCourse(this.selectedCourse.id),
                 this.courseWorkStore.index(this.selectedCourse.id),
+                this.loadCategoryEvaluationsForSelectedCourse(),
             ])
+        },
+        async loadCategoryEvaluationsForSelectedCourse() {
+            this.localCategoryEvaluationValues = {}
+
+            if (!this.selectedCourse?.id || !this.categoryEvaluationStore || !this.enabledCategoryEvaluationCategories.length) {
+                if (this.categoryEvaluationStore) {
+                    this.categoryEvaluationStore.evaluations = []
+                }
+                return
+            }
+
+            await this.categoryEvaluationStore.indexByCourse(this.selectedCourse.id, this.activeEvaluationSemester())
+        },
+        activeEvaluationSemester() {
+            if (this.semesterCount === 2) {
+                return Number(this.activeSemester) || 1
+            }
+
+            return 1
+        },
+        categoryEvaluationCategoriesForType(type) {
+            const normalizedType = String(type || '').trim()
+            if (!normalizedType) {
+                return []
+            }
+
+            return this.enabledCategoryEvaluationCategories.filter((category) => {
+                return category.works.some((work) => {
+                    if (typeof work === 'string') {
+                        return String(work).trim() === normalizedType
+                    }
+
+                    return String(work?.short_name || '').trim() === normalizedType
+                })
+            })
         },
         normalizeDateKey(date) {
             if (!date) {
@@ -403,6 +512,87 @@ export default {
             }
             return `${shortType} - ${name}`
         },
+        categoryEvaluationKey(studentId, categoryName) {
+            return `${studentId}|${this.activeEvaluationSemester()}|${categoryName}`
+        },
+        storedCategoryEvaluationValue(studentId, categoryName) {
+            const found = (this.categoryEvaluationStore?.evaluations || []).find((item) =>
+                String(item.user_id) === String(studentId)
+                && String(item.semester) === String(this.activeEvaluationSemester())
+                && String(item.category_name) === String(categoryName)
+            )
+
+            return found?.value || ''
+        },
+        categoryEvaluationValue(studentId, categoryName) {
+            const key = this.categoryEvaluationKey(studentId, categoryName)
+            if (Object.prototype.hasOwnProperty.call(this.localCategoryEvaluationValues, key)) {
+                return this.localCategoryEvaluationValues[key]
+            }
+
+            return this.storedCategoryEvaluationValue(studentId, categoryName) || this.defaultCategoryEvaluationValue
+        },
+        categoryEvaluationSaving(studentId, categoryName) {
+            return Boolean(this.savingCategoryEvaluationKeys[this.categoryEvaluationKey(studentId, categoryName)])
+        },
+        categoryEvaluationValueColor(value) {
+            return teachingCategoryEvaluationColorForValue(this.categoryEvaluationValueItems, value, '#4f6fb3')
+        },
+        async saveCategoryEvaluation(studentId, categoryName, value) {
+            if (!value || !this.selectedCourse?.id || !this.categoryEvaluationStore) {
+                return
+            }
+
+            if (this.categoryEvaluationSaving(studentId, categoryName)) {
+                return
+            }
+
+            if (this.categoryEvaluationValue(studentId, categoryName) === value) {
+                return
+            }
+
+            const key = this.categoryEvaluationKey(studentId, categoryName)
+            const hadLocalValue = Object.prototype.hasOwnProperty.call(this.localCategoryEvaluationValues, key)
+            const previousLocalValue = this.localCategoryEvaluationValues[key]
+
+            this.localCategoryEvaluationValues = {
+                ...this.localCategoryEvaluationValues,
+                [key]: value,
+            }
+            this.savingCategoryEvaluationKeys = {
+                ...this.savingCategoryEvaluationKeys,
+                [key]: true,
+            }
+
+            const result = await this.categoryEvaluationStore.store({
+                teaching_course_id: this.selectedCourse.id,
+                user_id: studentId,
+                semester: this.activeEvaluationSemester(),
+                category_name: categoryName,
+                value,
+            })
+
+            this.savingCategoryEvaluationKeys = Object.fromEntries(
+                Object.entries(this.savingCategoryEvaluationKeys).filter(([entryKey]) => entryKey !== key)
+            )
+
+            if (result) {
+                return
+            }
+
+            if (hadLocalValue) {
+                this.localCategoryEvaluationValues = {
+                    ...this.localCategoryEvaluationValues,
+                    [key]: previousLocalValue,
+                }
+
+                return
+            }
+
+            this.localCategoryEvaluationValues = Object.fromEntries(
+                Object.entries(this.localCategoryEvaluationValues).filter(([entryKey]) => entryKey !== key)
+            )
+        },
     },
 }
 </script>
@@ -454,6 +644,42 @@ export default {
 .performance-item {
     white-space: normal;
     word-break: break-word;
+}
+
+.performance-category-evaluations {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(16, 38, 58, 0.12);
+}
+
+.performance-category-evaluation {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.performance-category-label {
+    font-size: 0.75rem;
+    line-height: 1.2;
+    font-weight: 600;
+    color: rgba(16, 38, 58, 0.72);
+}
+
+.performance-category-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.performance-category-chip {
+    cursor: pointer;
+}
+
+.performance-category-chip.v-chip--disabled {
+    cursor: default;
 }
 
 .student-cell--canceled {

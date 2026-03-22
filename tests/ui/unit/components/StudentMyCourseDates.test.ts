@@ -11,8 +11,9 @@ describe('Student MyCourse date status display', () => {
     it('returns green icon color for entfaellt status', () => {
         const ctx = {
             hasFreeStatus: (MyCourse as any).methods.hasFreeStatus,
+            isDatePast: () => false,
         }
-        const color = (MyCourse as any).methods.getDateIconColor.call(ctx, ['entfaellt'])
+        const color = (MyCourse as any).methods.getDateIconColor.call(ctx, '2099-03-01', ['entfaellt'])
 
         expect(color).toBe('#4caf50')
     })
@@ -48,5 +49,38 @@ describe('Student MyCourse date status display', () => {
         const isToday = methods.isDateToday.call(ctx, yesterdayKey)
 
         expect(isToday).toBe(false)
+    })
+
+    it('recognizes past date entries', () => {
+        const methods = (MyCourse as any).methods
+        const ctx = {
+            normalizeDateKey: methods.normalizeDateKey,
+        }
+        const yesterday = new Date()
+        yesterday.setDate(yesterday.getDate() - 1)
+        const yesterdayKey = methods.normalizeDateKey.call(ctx, yesterday)
+
+        const isPast = methods.isDatePast.call(ctx, yesterdayKey)
+
+        expect(isPast).toBe(true)
+    })
+
+    it('uses a checked icon for past date entries', () => {
+        const methods = (MyCourse as any).methods
+        const icon = methods.getDateLeadingIcon.call({
+            isDatePast: () => true,
+        }, '2026-03-01')
+
+        expect(icon).toBe('mdi-check-circle')
+    })
+
+    it('uses green icon color for past date entries', () => {
+        const methods = (MyCourse as any).methods
+        const color = methods.getDateIconColor.call({
+            isDatePast: () => true,
+            hasFreeStatus: methods.hasFreeStatus,
+        }, '2026-03-01', ['pruefung'])
+
+        expect(color).toBe('#4caf50')
     })
 })
