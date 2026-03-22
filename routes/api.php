@@ -31,6 +31,7 @@ use App\Http\Controllers\Admin\RegisterUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
 use App\Http\Controllers\Admin\RoleController;
@@ -258,6 +259,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);
         Route::apiResource('/admin/restaurant/foods', RestaurantFoodController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('/admin/restaurant/menus', RestaurantMenuController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
     });

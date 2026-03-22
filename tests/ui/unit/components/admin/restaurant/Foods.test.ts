@@ -316,6 +316,62 @@ describe('Restaurant foods component', () => {
         expect((wrapper.vm as any).paginationDialog).toBe(false)
     })
 
+    it('filters foods live by selected category chip and search field', async () => {
+        const { wrapper } = mountFoods({
+            foods: [
+                {
+                    id: 1,
+                    title: 'Tomatensuppe',
+                    description: 'Mit Basilikum',
+                    price: '',
+                    food_image_url: null,
+                    category: { id: 1, title: 'Hauptspeise' },
+                    allergens: [],
+                    ingredient_icons: [],
+                },
+                {
+                    id: 2,
+                    title: 'Apfelstrudel',
+                    description: 'Mit Vanillesauce',
+                    price: '',
+                    food_image_url: null,
+                    category: { id: 2, title: 'Dessert' },
+                    allergens: [],
+                    ingredient_icons: [],
+                },
+                {
+                    id: 3,
+                    title: 'Pasta al Forno',
+                    description: 'Tomatensauce',
+                    price: '',
+                    food_image_url: null,
+                    category: { id: 1, title: 'Hauptspeise' },
+                    allergens: [],
+                    ingredient_icons: [],
+                },
+            ],
+        })
+
+        expect((wrapper.vm as any).filteredFoods.map((food: { id: number }) => food.id)).toEqual([1, 2, 3])
+
+        ;(wrapper.vm as any).selectCategoryFilter(1)
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).filteredFoods.map((food: { id: number }) => food.id)).toEqual([1, 3])
+
+        ;(wrapper.vm as any).foodSearchQuery = 'pasta'
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).filteredFoods.map((food: { id: number }) => food.id)).toEqual([3])
+        expect((wrapper.vm as any).paginationSummary).toBe('1 - 1 von 1')
+
+        ;(wrapper.vm as any).selectCategoryFilter('all')
+        ;(wrapper.vm as any).foodSearchQuery = 'vanille'
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).filteredFoods.map((food: { id: number }) => food.id)).toEqual([2])
+    })
+
     it('switches to a compact card view with title and category only', async () => {
         const { wrapper } = mountFoods({
             foods: [
@@ -347,7 +403,9 @@ describe('Restaurant foods component', () => {
         expect(wrapper.text()).not.toContain('Mit Vanillesauce')
         expect(wrapper.find('.food-card__inline-image').exists()).toBe(false)
         expect(wrapper.find('.food-card--compact').exists()).toBe(true)
-        expect(wrapper.find('.food-card__actions--compact').exists()).toBe(true)
+        expect(wrapper.find('.food-card__summary-actions').exists()).toBe(true)
+        expect(wrapper.find('button[icon="mdi-pencil"]').exists()).toBe(true)
+        expect(wrapper.find('button[icon="mdi-delete"]').exists()).toBe(true)
     })
 
     it('renders allergen and ingredient icon selector chips in wrapping rows', () => {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Restaurant from '@/pages/admin/restaurant/Restaurant.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
+import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
 vi.mock('@/stores/admin/AdminStore', () => ({
@@ -12,6 +13,10 @@ vi.mock('@/stores/admin/restaurant/FoodStore', () => ({
     useFoodStore: vi.fn(),
 }))
 
+vi.mock('@/stores/admin/restaurant/MenuStore', () => ({
+    useMenuStore: vi.fn(),
+}))
+
 vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
     useRestaurantStore: vi.fn(),
 }))
@@ -20,16 +25,19 @@ describe('Restaurant page navigation', () => {
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
         vi.mocked(useFoodStore).mockReset()
+        vi.mocked(useMenuStore).mockReset()
         vi.mocked(useRestaurantStore).mockReset()
     })
 
-    it('loads settings and foods on beforeMount', async () => {
+    it('loads settings, foods, and menus on beforeMount', async () => {
         const adminStoreMock = { config: {} }
         const foodStoreMock = { index: vi.fn().mockResolvedValue(true) }
+        const menuStoreMock = { index: vi.fn().mockResolvedValue(true) }
         const restaurantStoreMock = { loadSettings: vi.fn().mockResolvedValue(true) }
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
         vi.mocked(useFoodStore).mockReturnValue(foodStoreMock as never)
+        vi.mocked(useMenuStore).mockReturnValue(menuStoreMock as never)
         vi.mocked(useRestaurantStore).mockReturnValue(restaurantStoreMock as never)
 
         const ctx: Record<string, unknown> = {}
@@ -37,13 +45,14 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.adminStore).toBe(adminStoreMock)
         expect(foodStoreMock.index).toHaveBeenCalledTimes(1)
+        expect(menuStoreMock.index).toHaveBeenCalledTimes(1)
         expect(restaurantStoreMock.loadSettings).toHaveBeenCalledTimes(1)
     })
 
-    it('builds the three navigation items', () => {
+    it('builds the four navigation items', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'settings'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'settings'])
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -75,6 +84,23 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.main_action).toBe('foods')
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/foods' })
+    })
+
+    it('switches to the menus section when unlocked', () => {
+        const routerReplace = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'overview',
+            $router: { replace: routerReplace },
+            navigateTo(section: string) {
+                return (Restaurant as any).methods.navigateTo.call(this, section)
+            },
+        }
+
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'menus')
+
+        expect(ctx.main_action).toBe('menus')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/menus' })
     })
 
     it('does not switch sections when locked', () => {

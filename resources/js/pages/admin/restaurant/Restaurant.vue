@@ -35,6 +35,7 @@
             <v-row class="w-100 ma-0" dense>
                 <Overview v-if="main_action === 'overview'" />
                 <Foods v-if="main_action === 'foods'" />
+                <Menus v-if="main_action === 'menus'" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
@@ -45,22 +46,25 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
+import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Overview from './components/Overview.vue'
 import Foods from './components/Foods.vue'
+import Menus from './components/Menus.vue'
 import Settings from './components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.restaurantStore = useRestaurantStore()
         this.foodStore = useFoodStore()
+        this.menuStore = useMenuStore()
         this.action = ''
         this.action_2 = ''
-        await Promise.all([this.restaurantStore.loadSettings(), this.foodStore.index()])
+        await Promise.all([this.restaurantStore.loadSettings(), this.foodStore.index(), this.menuStore.index()])
     },
 
     data() {
@@ -68,6 +72,7 @@ export default {
             adminStore: null,
             restaurantStore: null,
             foodStore: null,
+            menuStore: null,
             main_action: this.$route.params.section || 'overview',
         }
     },
@@ -114,6 +119,11 @@ export default {
                     icon: 'mdi-silverware-variant',
                     note: 'Alle Gerichte pflegen, anlegen und bearbeiten.',
                 },
+                menus: {
+                    label: 'Menüs',
+                    icon: 'mdi-food-takeout-box-outline',
+                    note: 'Menüs mit mehreren Gängen zusammenstellen und pflegen.',
+                },
                 settings: {
                     label: 'Einstellungen',
                     icon: 'mdi-cog-outline',
@@ -134,8 +144,14 @@ export default {
                 {
                     key: 'foods',
                     label: 'Speisen',
-                    meta: 'Menüs pflegen',
+                    meta: 'Gerichte verwalten',
                     icon: 'mdi-silverware-variant',
+                },
+                {
+                    key: 'menus',
+                    label: 'Menüs',
+                    meta: 'Menüfolgen pflegen',
+                    icon: 'mdi-food-takeout-box-outline',
                 },
                 {
                     key: 'settings',

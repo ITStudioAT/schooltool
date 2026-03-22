@@ -23,6 +23,13 @@
             </v-col>
 
             <v-col cols="12" md="6" xl="3">
+                <ItsGridBox variant="overview" color="primary" title="Menüs" icon="mdi-food-takeout-box-outline">
+                    <div class="restaurant-overview-stat">{{ stats.menus_count || 0 }}</div>
+                    <div class="restaurant-overview-copy">Zusammengestellte Menüfolgen mit mehreren Gängen</div>
+                </ItsGridBox>
+            </v-col>
+
+            <v-col cols="12" md="6" xl="3">
                 <ItsGridBox variant="overview" color="primary" title="Ohne Preis" icon="mdi-cash-remove">
                     <div class="restaurant-overview-stat">{{ stats.foods_without_price_count || 0 }}</div>
                     <div class="restaurant-overview-copy">Speisen, die noch keinen Preis eingetragen haben</div>

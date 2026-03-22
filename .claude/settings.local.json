@@ -58,7 +58,9 @@
       "Bash(./vendor/bin/pint app/Services/AbaPandocAstNormalizerService.php tests/Unit/ABA/AbaPandocAstNormalizerServiceTest.php --format agent)",
       "Bash(./vendor/bin/pint app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaLocalDocumentStructureExtractor.php tests/Unit/ABA/AbaLocalDocumentStructureExtractorBoldMarkerTest.php --format agent)",
       "Bash(find c:laravelschooltoolresources -type f \\\\\\(-name *.css -o -name *.scss \\\\\\))",
-      "Bash(./vendor/bin/pint --dirty --format agent app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaPandocReviewBuilderService.php app/Http/Controllers/Admin/ABA/AbaAnalysisRunController.php)"
+      "Bash(./vendor/bin/pint --dirty --format agent app/Services/AbaLocalDocumentTextExtractor.php app/Services/AbaPandocReviewBuilderService.php app/Http/Controllers/Admin/ABA/AbaAnalysisRunController.php)",
+      "Skill(update-config)",
+      "Skill(update-config:*)"
     ],
     "deny": [],
     "ask": []

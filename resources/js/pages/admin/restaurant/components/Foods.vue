@@ -30,8 +30,43 @@
                 </div>
             </template>
 
+            <div v-if="foods.length || categories.length" class="food-search-panel mb-4">
+                <div class="food-search-panel__chips d-flex flex-wrap ga-2">
+                    <v-chip
+                        class="food-filter-chip"
+                        :class="{ 'food-filter-chip--selected': selectedCategoryFilter === 'all' }"
+                        variant="outlined"
+                        @click="selectCategoryFilter('all')">
+                        Alle
+                    </v-chip>
+
+                    <v-chip
+                        v-for="category in categories"
+                        :key="`food-filter-category-${category.id}`"
+                        class="food-filter-chip"
+                        :class="{ 'food-filter-chip--selected': Number(selectedCategoryFilter) === Number(category.id) }"
+                        variant="outlined"
+                        @click="selectCategoryFilter(category.id)">
+                        {{ category.title }}
+                    </v-chip>
+                </div>
+
+                <v-text-field
+                    v-model="foodSearchQuery"
+                    label="Speise suchen"
+                    prepend-inner-icon="mdi-magnify"
+                    variant="outlined"
+                    density="comfortable"
+                    clearable
+                    hide-details
+                    class="food-search-panel__field mt-3" />
+            </div>
+
             <v-alert v-if="!foods.length" type="info" variant="tonal" class="mb-3">
                 Noch keine Speisen vorhanden. Lege die erste Speise an und erweitere Kategorien direkt beim Speichern.
+            </v-alert>
+            <v-alert v-else-if="!filteredFoods.length" type="info" variant="tonal" class="mb-3">
+                Keine Speise passt zur aktuellen Suche oder Kategorie.
             </v-alert>
 
             <v-row v-else dense>
@@ -42,10 +77,25 @@
 
                             <div
                                 class="d-flex ga-3 mt-1"
-                                :class="isCompactView ? 'align-center' : 'align-start justify-space-between'">
+                                :class="isCompactView ? 'food-card__summary align-center justify-space-between' : 'align-start justify-space-between'">
                                 <div class="text-body-2 text-medium-emphasis">{{ food.category?.title || 'Keine Kategorie' }}</div>
 
-                                <v-chip v-if="!isCompactView && hasPrice(food.price)" color="primary" variant="flat">
+                                <div v-if="isCompactView" class="food-card__summary-actions d-flex align-center justify-end ga-1">
+                                    <v-btn
+                                        size="x-small"
+                                        color="primary"
+                                        variant="text"
+                                        icon="mdi-pencil"
+                                        @click="openEditDialog(food)" />
+                                    <v-btn
+                                        size="x-small"
+                                        color="error"
+                                        variant="text"
+                                        icon="mdi-delete"
+                                        @click="requestDeleteFood(food)" />
+                                </div>
+
+                                <v-chip v-else-if="hasPrice(food.price)" color="primary" variant="flat">
                                     {{ formatCardPrice(food.price) }}
                                 </v-chip>
                             </div>
@@ -94,15 +144,15 @@
                             </div>
                         </v-card-text>
 
-                        <v-card-actions class="px-4 pb-4 pt-0" :class="{ 'food-card__actions--compact': isCompactView }">
+                        <v-card-actions v-if="!isCompactView" class="px-4 pb-4 pt-0">
                             <v-spacer />
                             <v-btn
                                 size="small"
                                 color="primary"
-                                :variant="isCompactView ? 'text' : 'tonal'"
+                                variant="tonal"
                                 prepend-icon="mdi-pencil"
                                 @click="openEditDialog(food)">
-                                {{ isCompactView ? '' : 'Bearbeiten' }}
+                                Bearbeiten
                             </v-btn>
                             <v-btn
                                 size="small"
@@ -110,14 +160,14 @@
                                 variant="text"
                                 prepend-icon="mdi-delete"
                                 @click="requestDeleteFood(food)">
-                                {{ isCompactView ? '' : 'Löschen' }}
+                                Löschen
                             </v-btn>
                         </v-card-actions>
                     </v-card>
                 </v-col>
             </v-row>
 
-            <div v-if="foods.length" class="food-pagination d-flex flex-wrap align-center justify-space-between ga-3 mt-4">
+            <div v-if="filteredFoods.length" class="food-pagination d-flex flex-wrap align-center justify-space-between ga-3 mt-4">
                 <div class="d-flex flex-wrap align-center ga-3">
                     <div class="food-pagination__selector">
                         <div class="food-pagination__label">Pro Seite:</div>
@@ -387,6 +437,8 @@ export default {
             isCompactView: false,
             currentPage: 1,
             paginationDialogValue: '12',
+            foodSearchQuery: '',
+            selectedCategoryFilter: 'all',
             editingFoodId: null,
             pendingDeleteFood: null,
             form: emptyForm(),
@@ -403,24 +455,43 @@ export default {
 
             return Number.isFinite(value) && value > 0 ? Math.min(200, Math.round(value)) : 12
         },
+        filteredFoods() {
+            const normalizedSearch = this.normalizeSearchValue(this.foodSearchQuery)
+
+            return this.foods.filter((food) => {
+                if (this.selectedCategoryFilter !== 'all' && Number(food.category?.id || 0) !== Number(this.selectedCategoryFilter)) {
+                    return false
+                }
+
+                if (normalizedSearch === '') {
+                    return true
+                }
+
+                return [
+                    food.title,
+                    food.description,
+                    food.category?.title,
+                ].some((value) => this.normalizeSearchValue(value).includes(normalizedSearch))
+            })
+        },
         pageCount() {
-            return Math.max(1, Math.ceil(this.foods.length / this.currentPaginationNumber))
+            return Math.max(1, Math.ceil(this.filteredFoods.length / this.currentPaginationNumber))
         },
         paginatedFoods() {
             const start = (this.currentPage - 1) * this.currentPaginationNumber
             const end = start + this.currentPaginationNumber
 
-            return this.foods.slice(start, end)
+            return this.filteredFoods.slice(start, end)
         },
         paginationSummary() {
-            if (! this.foods.length) {
+            if (! this.filteredFoods.length) {
                 return '0 - 0 von 0'
             }
 
             const from = (this.currentPage - 1) * this.currentPaginationNumber + 1
-            const to = Math.min(this.currentPage * this.currentPaginationNumber, this.foods.length)
+            const to = Math.min(this.currentPage * this.currentPaginationNumber, this.filteredFoods.length)
 
-            return `${from} - ${to} von ${this.foods.length}`
+            return `${from} - ${to} von ${this.filteredFoods.length}`
         },
         foodImagePreview() {
             if (! this.form.foodImage) {
@@ -445,11 +516,23 @@ export default {
         foods() {
             this.clampCurrentPage()
         },
+        foodSearchQuery() {
+            this.currentPage = 1
+        },
+        selectedCategoryFilter() {
+            this.currentPage = 1
+        },
     },
 
     methods: {
+        normalizeSearchValue(value) {
+            return String(value || '').trim().toLocaleLowerCase('de')
+        },
         clampCurrentPage() {
             this.currentPage = Math.min(Math.max(1, this.currentPage), this.pageCount)
+        },
+        selectCategoryFilter(categoryId) {
+            this.selectedCategoryFilter = categoryId === 'all' ? 'all' : Number(categoryId)
         },
         normalizePaginationNumber(value) {
             const normalized = Math.max(1, Math.min(200, Math.round(Number(value))))
@@ -699,14 +782,14 @@ export default {
     margin-top: auto;
 }
 
-.food-card__actions--compact {
-    min-height: 0;
-    padding-top: 0;
+.food-card__summary-actions {
+    margin-left: auto;
 }
 
-.food-card__actions--compact :deep(button) {
+.food-card__summary-actions :deep(button) {
     min-width: 0;
-    padding-inline: 0.25rem;
+    width: 1.9rem;
+    height: 1.9rem;
 }
 
 .food-card__inline-image {
@@ -749,6 +832,43 @@ export default {
 .food-pagination__counter {
     min-width: 3.2rem;
     font-weight: 700;
+}
+
+.food-search-panel {
+    padding: 1rem 1.05rem;
+    border: 1px solid rgba(14, 116, 144, 0.12);
+    border-radius: 1.1rem;
+    background:
+        radial-gradient(circle at top left, rgba(224, 242, 254, 0.78), transparent 36%),
+        linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+    box-shadow: 0 16px 32px -28px rgba(15, 23, 42, 0.42);
+}
+
+.food-search-panel__field {
+    max-width: 28rem;
+}
+
+.food-filter-chip {
+    border-radius: 999px;
+    border: 1px solid rgba(14, 116, 144, 0.16);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.38);
+    color: rgb(15, 23, 42);
+    font-weight: 600;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+
+.food-filter-chip:hover {
+    transform: translateY(-1px);
+    border-color: rgba(8, 145, 178, 0.34);
+    box-shadow: 0 16px 28px -22px rgba(14, 116, 144, 0.34);
+}
+
+.food-filter-chip--selected {
+    border-color: rgba(14, 116, 144, 0.88);
+    background: linear-gradient(135deg, rgb(8, 145, 178), rgb(14, 116, 144));
+    color: rgb(255, 255, 255);
+    box-shadow: 0 18px 32px -22px rgba(14, 116, 144, 0.52);
 }
 
 .category-selector {

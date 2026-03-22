@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
+use App\Models\RestaurantMenu;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
@@ -35,6 +36,9 @@ class RestaurantService
             ->withCount('foods')
             ->orderBy('title')
             ->get();
+        $menusCount = RestaurantMenu::query()
+            ->where('school_id', $authUser->school_id)
+            ->count();
 
         $foods = $this->foodsForUser($authUser);
 
@@ -49,6 +53,7 @@ class RestaurantService
                 'foods_count' => $foods->count(),
                 'categories_count' => $categories->count(),
                 'ingredient_icons_count' => $ingredientIcons->count(),
+                'menus_count' => $menusCount,
                 'foods_with_image_count' => $foods->filter(fn (RestaurantFood $food): bool => filled($food->food_image_path))->count(),
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
             ],
@@ -95,7 +100,6 @@ class RestaurantService
             $category = $this->resolveCategory($authUser, $validated);
             $food = RestaurantFood::query()->create([
                 'school_id' => $authUser->school_id,
-                'user_id' => $authUser->id,
                 'restaurant_category_id' => $category->id,
                 'title' => trim((string) $validated['title']),
                 'description' => $this->normalizeNullableString($validated['description'] ?? null),
@@ -156,6 +160,56 @@ class RestaurantService
 
             $food->ingredientIcons()->detach();
             $food->delete();
+        });
+    }
+
+    public function menusForUser(User $authUser): Collection
+    {
+        return RestaurantMenu::query()
+            ->where('school_id', $authUser->school_id)
+            ->with(['foods.category'])
+            ->orderBy('title')
+            ->get();
+    }
+
+    public function createMenuForUser(User $authUser, array $validated): RestaurantMenu
+    {
+        return DB::transaction(function () use ($authUser, $validated): RestaurantMenu {
+            $menu = RestaurantMenu::query()->create([
+                'school_id' => $authUser->school_id,
+                'title' => trim((string) $validated['title']),
+                'price' => $this->normalizePrice($validated['price'] ?? null),
+            ]);
+
+            $this->syncMenuFoods($authUser, $menu, $validated['food_ids'] ?? []);
+
+            return $menu->load(['foods.category']);
+        });
+    }
+
+    public function updateMenuForUser(User $authUser, RestaurantMenu $menu, array $validated): RestaurantMenu
+    {
+        $this->ensureMenuBelongsToSchool($authUser, $menu);
+
+        return DB::transaction(function () use ($authUser, $menu, $validated): RestaurantMenu {
+            $menu->update([
+                'title' => trim((string) $validated['title']),
+                'price' => $this->normalizePrice($validated['price'] ?? null),
+            ]);
+
+            $this->syncMenuFoods($authUser, $menu, $validated['food_ids'] ?? []);
+
+            return $menu->load(['foods.category']);
+        });
+    }
+
+    public function deleteMenuForUser(User $authUser, RestaurantMenu $menu): void
+    {
+        $this->ensureMenuBelongsToSchool($authUser, $menu);
+
+        DB::transaction(function () use ($menu): void {
+            $menu->foods()->detach();
+            $menu->delete();
         });
     }
 
@@ -351,6 +405,46 @@ class RestaurantService
         $food->ingredientIcons()->sync($validIconIds->all());
     }
 
+    private function syncMenuFoods(User $authUser, RestaurantMenu $menu, array $foodIds): void
+    {
+        $normalizedFoodIds = collect($foodIds)
+            ->filter(fn ($id): bool => is_numeric($id))
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($normalizedFoodIds->isEmpty()) {
+            $menu->foods()->detach();
+
+            return;
+        }
+
+        $validFoods = RestaurantFood::query()
+            ->where('school_id', $authUser->school_id)
+            ->whereIn('id', $normalizedFoodIds)
+            ->orderBy('id')
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values();
+
+        if ($validFoods->count() !== $normalizedFoodIds->count()) {
+            abort(422, 'Mindestens eine Speise ist für diese Schule nicht gültig.');
+        }
+
+        $syncPayload = $normalizedFoodIds
+            ->values()
+            ->mapWithKeys(function (int $foodId, int $index): array {
+                return [
+                    $foodId => [
+                        'course_number' => $index + 1,
+                    ],
+                ];
+            })
+            ->all();
+
+        $menu->foods()->sync($syncPayload);
+    }
+
     private function extractAllergenSuggestions(Collection $foods): array
     {
         return $foods
@@ -490,6 +584,13 @@ class RestaurantService
     private function ensureIngredientIconBelongsToSchool(User $authUser, RestaurantIngredientIcon $ingredientIcon): void
     {
         if ((int) $ingredientIcon->school_id !== (int) $authUser->school_id) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+    }
+
+    private function ensureMenuBelongsToSchool(User $authUser, RestaurantMenu $menu): void
+    {
+        if ((int) $menu->school_id !== (int) $authUser->school_id) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
     }

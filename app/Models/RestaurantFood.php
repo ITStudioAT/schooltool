@@ -17,7 +17,7 @@ class RestaurantFood extends Model
 
     protected $fillable = [
         'school_id',
-        'user_id',
+        'legacy_food_id',
         'restaurant_category_id',
         'title',
         'description',
@@ -39,11 +39,6 @@ class RestaurantFood extends Model
         return $this->belongsTo(School::class);
     }
 
-    public function user(): BelongsTo
-    {
-        return $this->belongsTo(User::class);
-    }
-
     public function category(): BelongsTo
     {
         return $this->belongsTo(RestaurantCategory::class, 'restaurant_category_id');
@@ -55,5 +50,13 @@ class RestaurantFood extends Model
             RestaurantIngredientIcon::class,
             'restaurant_food_restaurant_ingredient_icon'
         );
+    }
+
+    public function menus(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            RestaurantMenu::class,
+            'restaurant_food_restaurant_menu'
+        )->withPivot('course_number')->withTimestamps();
     }
 }

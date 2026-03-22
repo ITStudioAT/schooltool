@@ -22,12 +22,6 @@ class RestaurantFoodFactory extends Factory
     {
         return [
             'school_id' => School::factory(),
-            'user_id' => function (array $attributes) {
-                return User::factory()->create([
-                    'school_id' => $attributes['school_id'],
-                    'schoolyear_id' => null,
-                ])->id;
-            },
             'restaurant_category_id' => function (array $attributes) {
                 return RestaurantCategory::factory()->create([
                     'school_id' => $attributes['school_id'],
@@ -52,7 +46,6 @@ class RestaurantFoodFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'school_id' => $user->school_id,
-            'user_id' => $user->id,
         ]);
     }
 
