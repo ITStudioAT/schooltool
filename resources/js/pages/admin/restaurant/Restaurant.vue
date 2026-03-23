@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <v-container fluid class="restaurant-page ma-0 w-100 pa-2">
         <AdminSectionHero
             class="mb-3"
@@ -36,6 +36,7 @@
                 <Overview v-if="main_action === 'overview'" />
                 <Foods v-if="main_action === 'foods'" />
                 <Menus v-if="main_action === 'menus'" />
+                <MenuPlans v-if="main_action === 'menu-plans'" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
@@ -52,10 +53,11 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Overview from './components/Overview.vue'
 import Foods from './components/Foods.vue'
 import Menus from './components/Menus.vue'
+import MenuPlans from './components/MenuPlans.vue'
 import Settings from './components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -83,11 +85,11 @@ export default {
             return this.action !== '' || this.action_2 !== ''
         },
         selectedSchoolLabel() {
-            return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gewählt'
+            return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gew\u00e4hlt'
         },
         selectedRoleLabel() {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
-            if (! roles.length) {
+            if (!roles.length) {
                 return 'Keine Rolle'
             }
 
@@ -110,7 +112,7 @@ export default {
         activeSection() {
             const sections = {
                 overview: {
-                    label: 'Überblick',
+                    label: '\u00dcberblick',
                     icon: 'mdi-view-dashboard-outline',
                     note: 'Schneller Einstieg in die Restaurant-Verwaltung.',
                 },
@@ -120,9 +122,14 @@ export default {
                     note: 'Alle Gerichte pflegen, anlegen und bearbeiten.',
                 },
                 menus: {
-                    label: 'Menüs',
+                    label: 'Men\u00fcs',
                     icon: 'mdi-food-takeout-box-outline',
-                    note: 'Menüs mit mehreren Gängen zusammenstellen und pflegen.',
+                    note: 'Men\u00fcs mit mehreren G\u00e4ngen zusammenstellen und pflegen.',
+                },
+                'menu-plans': {
+                    label: 'Men\u00fcpl\u00e4ne',
+                    icon: 'mdi-calendar-text-outline',
+                    note: 'Platzhalter f\u00fcr geplante Wochen- und Zeitraumansichten.',
                 },
                 settings: {
                     label: 'Einstellungen',
@@ -137,7 +144,7 @@ export default {
             return [
                 {
                     key: 'overview',
-                    label: 'Überblick',
+                    label: '\u00dcberblick',
                     meta: 'Startseite',
                     icon: 'mdi-view-dashboard-outline',
                 },
@@ -149,9 +156,15 @@ export default {
                 },
                 {
                     key: 'menus',
-                    label: 'Menüs',
-                    meta: 'Menüfolgen pflegen',
+                    label: 'Men\u00fcs',
+                    meta: 'Men\u00fcfolgen pflegen',
                     icon: 'mdi-food-takeout-box-outline',
+                },
+                {
+                    key: 'menu-plans',
+                    label: 'Men\u00fcpl\u00e4ne',
+                    meta: 'Pl\u00e4ne vorbereiten',
+                    icon: 'mdi-calendar-text-outline',
                 },
                 {
                     key: 'settings',
@@ -244,3 +257,4 @@ export default {
     }
 }
 </style>
+

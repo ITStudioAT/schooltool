@@ -23,6 +23,7 @@ const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const Groups = () => import('@/pages/admin/groups/Groups.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
+const MenuPlans = () => import('@/pages/admin/menuPlans/MenuPlans.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
 const AbaAiSettings = () => import('@/pages/admin/aba/AbaAiSettings.vue')
@@ -50,6 +51,7 @@ const routes = [
     { path: '/admin/groups', component: Groups },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
     { path: '/admin/restaurant/:section?', component: Restaurant },
+    { path: '/admin/menu-plans', component: MenuPlans },
     { path: '/admin/aba', component: Aba },
     { path: '/admin/aba/results/:abaId', component: AbaResults },
     { path: '/admin/aba/ai-settings', component: AbaAiSettings },
@@ -64,7 +66,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-    // /application wird nicht wieter geprüft
+    // /application wird nicht weiter geprüft
     if (to.path.startsWith('/application')) {
         next()
         return
