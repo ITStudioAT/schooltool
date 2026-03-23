@@ -57,7 +57,7 @@ This project has domain-specific skills available. You MUST activate the relevan
 ## Replies
 
 - Be concise in your explanations - focus on what's important rather than explaining obvious details.
-- When a coding task is finished, emit an audible beep before the final user-facing completion message.
+- When a coding task is finished, play the completion sound before the final user-facing completion message by running: `powershell -c "(New-Object Media.SoundPlayer 'C:\Windows\Media\Ring08.wav').PlaySync()"`.
 
 === boost rules ===
 
