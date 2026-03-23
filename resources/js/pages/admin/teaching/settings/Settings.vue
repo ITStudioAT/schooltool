@@ -5,7 +5,8 @@
                 v-model="mirroredPanelSelection"
                 mandatory
                 class="teaching-settings-panel-switcher-secondary"
-                color="primary">
+                color="primary"
+                :disabled="isLocked">
                 <v-btn
                     v-for="panel in availablePanels"
                     :key="`mirror-${panel.id}`"
@@ -57,15 +58,16 @@
                                         :key="schema.id"
                                         :color="selected_schema_id === schema.id ? 'primary' : 'secondary'"
                                         variant="flat"
-                                        class="cursor-pointer"
+                                        :disabled="isLocked"
+                                        :class="isLocked ? '' : 'cursor-pointer'"
                                         @click="selectSchema(schema.id)">
                                         {{ schema.name }}
                                     </v-chip>
-                                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newSchema" />
+                                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" :disabled="isLocked" @click="newSchema" />
                                 </div>
 
                                 <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-3 ga-2 flex-wrap">
-                                    <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="startRename">Umbenennen</v-btn>
+                                    <v-btn v-if="!is_renaming && !selectedSchemaIsStandard" flat tile size="small" color="primary" prepend-icon="mdi-pencil" :disabled="isLocked" @click="startRename">Umbenennen</v-btn>
                                     <v-btn
                                         v-if="!is_renaming && !is_deleting && !selectedSchemaIsStandard && !selectedSchemaInUse"
                                         flat
@@ -73,14 +75,15 @@
                                         size="small"
                                         color="warning"
                                         prepend-icon="mdi-delete"
+                                        :disabled="isLocked"
                                         @click="is_deleting = true">
                                         Löschen
                                     </v-btn>
-                                    <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" @click="is_deleting = false">Abbruch</v-btn>
-                                    <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" @click="deleteSchema">Endgültig löschen</v-btn>
+                                    <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" :disabled="isLocked" @click="is_deleting = false">Abbruch</v-btn>
+                                    <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" :disabled="isLocked" @click="deleteSchema">Endgültig löschen</v-btn>
                                     <v-spacer />
-                                    <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveRename" />
-                                    <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_renaming = false" />
+                                    <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="isLocked" @click="saveRename" />
+                                    <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isLocked" @click="is_renaming = false" />
                                 </div>
 
                                 <v-text-field v-if="is_renaming" v-model="rename_value" label="Name" density="compact" hide-details autofocus class="mt-2" @keyup.enter="saveRename" />
@@ -91,7 +94,8 @@
                                         mandatory
                                         color="primary"
                                         divided
-                                        class="settings-schema-panel-toggles mt-4">
+                                        class="settings-schema-panel-toggles mt-4"
+                                        :disabled="isLocked">
                                         <v-btn
                                             rounded="pill"
                                             class="teaching-settings-toolbar-btn"
@@ -183,7 +187,7 @@ export default {
             teachingStore: null,
             courseStore: null,
             selected_schema_id: null,
-            active_panel: 'behaviour',
+            active_panel: this.$route?.query?.panel || 'behaviour',
             active_schema_panel: 'works',
             is_renaming: false,
             rename_value: '',
@@ -192,7 +196,10 @@ export default {
     },
 
     computed: {
-        ...mapWritableState(useAdminStore, ['config']),
+        ...mapWritableState(useAdminStore, ['config', 'action']),
+        isLocked() {
+            return this.action === 'teaching_work_new_or_edit'
+        },
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
         schemas() {
@@ -244,6 +251,11 @@ export default {
     },
 
     watch: {
+        active_panel(newPanel) {
+            if (this.$route?.query?.panel !== newPanel) {
+                this.$router.replace({ path: this.$route.path, query: { panel: newPanel } }).catch(() => {})
+            }
+        },
         canManageOwnHolidays(newValue) {
             if (!newValue && this.active_panel === 'my_holidays') {
                 this.active_panel = this.showBehaviourEnabled ? 'behaviour' : 'basic'
