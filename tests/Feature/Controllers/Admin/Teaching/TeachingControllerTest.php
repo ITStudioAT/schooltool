@@ -792,6 +792,44 @@ describe('settings and semester endpoints', function () {
             ->toBeTrue();
     });
 
+    test('save_settings persists points note enabled flag on schema works', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-points-note');
+        $payload['teaching_schemas'][0]['works'][0]['calculation'] = 'points';
+        $payload['teaching_schemas'][0]['works'][0]['points_note_enabled'] = true;
+        $payload['teaching_schemas'][0]['works'][0]['points_table'] = [
+            ['grade' => '1', 'min_points' => 3],
+        ];
+        $payload['teaching_schemas'][0]['works'][0]['points_sonst_grade'] = '2';
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.points_note_enabled', true)
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.points_table.0.grade', '1')
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.points_sonst_grade', '2');
+
+        expect(TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('schema_id', 'schema-points-note')
+            ->first()?->works[0]['points_note_enabled'] ?? null)
+            ->toBeTrue()
+            ->and(TeachingSchema::query()
+                ->where('user_id', $this->admin->id)
+                ->where('schoolyear_id', $this->schoolyear->id)
+                ->where('schema_id', 'schema-points-note')
+                ->first()?->works[0]['points_table'][0]['grade'] ?? null)
+            ->toBe('1')
+            ->and(TeachingSchema::query()
+                ->where('user_id', $this->admin->id)
+                ->where('schoolyear_id', $this->schoolyear->id)
+                ->where('schema_id', 'schema-points-note')
+                ->first()?->works[0]['points_sonst_grade'] ?? null)
+            ->toBe('2');
+    });
+
     test('save_settings renames behaviour type in course entries for all students of the school', function () {
         $this->actingAs($this->admin, 'sanctum');
 

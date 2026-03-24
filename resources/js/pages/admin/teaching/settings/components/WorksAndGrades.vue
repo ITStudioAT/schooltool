@@ -6,12 +6,17 @@
             <v-card-text>
                 <v-text-field v-model="grade_dialog_data.grade" label="Note *" autofocus class="mt-1" />
                 <v-text-field v-model="grade_dialog_data.name" label="Bezeichnung" />
-                <v-text-field v-model="grade_dialog_data.value" label="Wert" hide-details />
+                <v-text-field
+                    :model-value="grade_dialog_data.value"
+                    label="Wert"
+                    hide-details="auto"
+                    :error-messages="gradeDialogValueError"
+                    @update:model-value="updateGradeDialogValue" />
             </v-card-text>
             <v-card-actions>
                 <v-spacer />
                 <v-btn color="secondary" variant="text" @click="grade_dialog = false">Abbrechen</v-btn>
-                <v-btn color="primary" variant="flat" :disabled="!grade_dialog_data.grade" @click="saveGradeDialog">Speichern</v-btn>
+                <v-btn color="primary" variant="flat" :disabled="!grade_dialog_data.grade || !!gradeDialogValueError" @click="saveGradeDialog">Speichern</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -77,7 +82,7 @@
                 <v-form ref="form" v-model="is_valid" @submit.prevent="save" class="mb-4">
                     <div class="text-caption text-text">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <div class="form-group-box mt-3">
-                        <v-text-field autofocus v-model="data.short_name" label="Kurzzeichen (z. B. SA für Schularbeit)*" :rules="[required(), maxLength(10)]" />
+                        <v-text-field autofocus v-model="data.short_name" label="Kurzzeichen (z. B. SA für Schularbeit)*" :rules="[required(), maxLength(10), shortNameUniqueRule]" />
                         <v-text-field v-model="data.name" label="Bezeichnung *" :rules="[required(), maxLength(255)]" hide-details />
                     </div>
 
@@ -85,7 +90,10 @@
                     <div class="form-group-box mt-4">
                         <div class="d-flex flex-row align-center justify-space-between mb-1">
                             <div class="text-caption text-text">Noten</div>
-                            <v-btn icon="mdi-plus" size="x-small" color="primary" variant="tonal" :disabled="any_dialog_open" @click="openAddGradeDialog" />
+                            <div class="d-flex flex-row align-center ga-1">
+                                <v-btn size="x-small" color="secondary" variant="tonal" :disabled="any_dialog_open" @click="useDefaultGrades">Standardnoten</v-btn>
+                                <v-btn icon="mdi-plus" size="x-small" color="primary" variant="tonal" :disabled="any_dialog_open" @click="openAddGradeDialog" />
+                            </div>
                         </div>
                         <v-list density="compact" class="bg-transparent pa-0">
                             <v-list-item v-for="(grade, idx) in sortedGrades(data.grades)" :key="`${idx}-${grade.grade}`" class="px-0">
@@ -113,80 +121,66 @@
                         </v-list>
                     </div>
 
-                    <!-- Berechnungsmethode -->
-                    <v-divider class="my-4" />
-                    <div class="text-caption text-text">Berechnungsmethode</div>
-                    <v-btn-toggle v-model="data.calculation" mandatory color="primary" class="mt-2">
-                        <v-btn value="average" size="small">
-                            <v-icon start>mdi-calculator</v-icon>
-                            Durchschnitt
-                        </v-btn>
-                        <v-btn value="points" size="small">
-                            <v-icon start>mdi-sigma</v-icon>
-                            Punkte-Tabelle
-                        </v-btn>
-                    </v-btn-toggle>
+                    <!-- Berechnung der Semesternote -->
+                    <div class="form-group-box mt-4">
+                        <div class="d-flex align-center ga-1">
+                            <v-checkbox v-model="data.calculation_enabled" hide-details density="compact" class="flex-grow-0" />
+                            <div class="text-caption text-text">Berechnung der Semesternote (optional)</div>
+                        </div>
+                        <v-btn-toggle v-if="data.calculation_enabled" v-model="data.calculation" mandatory color="primary" class="mt-2">
+                            <v-btn value="average" size="small">
+                                <v-icon start>mdi-calculator</v-icon>
+                                Durchschnitt
+                            </v-btn>
+                            <v-btn value="points" size="small">
+                                <v-icon start>mdi-sigma</v-icon>
+                                Punkte
+                            </v-btn>
+                        </v-btn-toggle>
 
-                    <!-- Erklärung -->
-                    <v-alert v-if="data.calculation === 'average'" color="teal" density="compact" variant="tonal" class="mt-3">
-                        <strong>Durchschnitt:</strong> Der Mittelwert aller Noten-Werte ergibt die Note.
-                        <br><span class="text-caption">z.B. Werte 3, 4, 5 → Durchschnitt 4.0 → Note 4</span>
-                    </v-alert>
-                    <v-alert v-if="data.calculation === 'points'" color="primary" density="compact" variant="tonal" class="mt-3">
-                        <strong>Punkte-Tabelle:</strong> Die Punkte werden summiert und über eine Tabelle in eine Note umgewandelt.
-                        <br><span class="text-caption">z.B. +1, +1, 0, -1 → Summe 1 → Note laut Tabelle</span>
-                    </v-alert>
+                        <!-- Erklärung -->
+                        <v-alert v-if="data.calculation_enabled && data.calculation === 'average'" color="teal" density="compact" variant="tonal" class="mt-3">
+                            <strong>Durchschnitt:</strong> Es wird der Mittelwert all dieser Leistungen ermittelt.
+                        </v-alert>
+                        <v-alert v-if="data.calculation_enabled && data.calculation === 'points'" color="primary" density="compact" variant="tonal" class="mt-3">
+                            <strong>Punkte:</strong> Die Punkte werden über das Semester summiert und ergeben eine Note.
+                        </v-alert>
 
-                    <!-- Punkte-Tabelle Konfiguration -->
-                    <div v-if="data.calculation === 'points'" class="mt-4">
-                        <div class="text-caption text-text mb-2">Punkte-Tabelle (von hoch nach niedrig)</div>
+                    </div>
 
-                        <!-- Bestehende Einträge -->
-                        <div v-for="(pt, idx) in sortedPointsTable" :key="idx" class="d-flex align-center ga-2 mb-2">
-                            <v-text-field
-                                :model-value="pt.min_points"
-                                @update:model-value="updatePointsTableEntry(idx, 'min_points', $event)"
-                                label="Ab Punkte ≥"
-                                density="compact"
-                                hide-details
-                                type="number"
-                                style="max-width: 120px" />
-                            <v-icon>mdi-arrow-right</v-icon>
-                            <v-text-field
-                                :model-value="pt.grade"
-                                @update:model-value="updatePointsTableEntry(idx, 'grade', $event)"
-                                label="Note"
-                                density="compact"
-                                hide-details
-                                style="max-width: 80px" />
-                            <v-btn icon="mdi-delete" size="x-small" color="error" variant="text" :disabled="any_dialog_open" @click="removePointsTableEntry(idx)" />
+                    <!-- Punkte-Note -->
+                    <div class="form-group-box mt-4 points-note-box">
+                        <div class="d-flex align-center ga-1">
+                            <v-checkbox v-model="data.points_note_enabled" hide-details density="compact" class="flex-grow-0" />
+                            <div class="text-caption text-text">Punkte-Note (optional)</div>
                         </div>
 
-                        <!-- Neuer Eintrag -->
-                        <div class="d-flex align-center ga-2">
-                            <v-text-field
-                                v-model="new_points_entry.min_points"
-                                label="Ab Punkte ≥"
-                                density="compact"
-                                hide-details
-                                type="number"
-                                style="max-width: 120px" />
-                            <v-icon>mdi-arrow-right</v-icon>
-                            <v-text-field
-                                v-model="new_points_entry.grade"
-                                label="Note"
-                                density="compact"
-                                hide-details
-                                style="max-width: 80px"
-                                @keyup.enter="addPointsTableEntry" />
-                            <v-btn icon="mdi-plus" size="small" color="primary" @click="addPointsTableEntry" :disabled="any_dialog_open || new_points_entry.min_points === '' || !new_points_entry.grade" />
-                        </div>
+                        <div v-if="data.points_note_enabled" class="mt-3">
+                            <div class="d-flex flex-wrap align-start justify-space-between ga-2 mb-3">
+                                <div class="text-body-2 text-medium-emphasis">
+                                    Für jede Note gibt es ein Feld für "ab Punkte". Bei der letzten Note kann dieses Feld leer bleiben.
+                                </div>
+                                <v-btn variant="outlined" size="small" color="primary" :disabled="any_dialog_open" @click="useDefaultPointsTable">
+                                    <v-icon start>mdi-table-plus</v-icon>
+                                    Standardwerte
+                                </v-btn>
+                            </div>
 
-                        <!-- Standard-Tabelle vorschlagen -->
-                        <v-btn v-if="!data.points_table?.length" variant="outlined" size="small" color="primary" class="mt-3" :disabled="any_dialog_open" @click="useDefaultPointsTable">
-                            <v-icon start>mdi-table-plus</v-icon>
-                            Standard-Tabelle verwenden
-                        </v-btn>
+                            <div class="points-note-list">
+                                <div v-for="(grade, index) in pointsNoteGrades" :key="grade" class="points-note-row">
+                                    <div class="points-note-label">Note {{ grade }}</div>
+                                    <v-text-field
+                                        :model-value="pointsThresholdValue(grade)"
+                                        :label="index === pointsNoteGrades.length - 1 ? 'Ab Punkte (optional)' : 'Ab Punkte'"
+                                        density="compact"
+                                        hide-details
+                                        type="text"
+                                        inputmode="decimal"
+                                        style="max-width: 180px"
+                                        @update:model-value="updatePointsThreshold(grade, index, $event)" />
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                 </v-form>
@@ -238,10 +232,12 @@ export default {
                 name: '',
                 grades: [],
                 calculation: 'average',
+                calculation_enabled: false,
+                points_note_enabled: false,
                 points_table: [],
+                points_sonst_grade: '',
                 default_grade: '',
             },
-            new_points_entry: { min_points: '', grade: '' },
             edit_index: null,
             delete_dialog: false,
             delete_dialog_index: null,
@@ -266,13 +262,17 @@ export default {
         any_dialog_open() {
             return this.delete_dialog || this.grade_dialog || this.grade_delete_dialog
         },
-        sortedPointsTable() {
-            if (!this.data.points_table?.length) return []
-            return [...this.data.points_table].sort((a, b) => {
-                const valA = parseFloat(a.min_points) || 0
-                const valB = parseFloat(b.min_points) || 0
-                return valB - valA // Sort descending (highest first)
-            })
+        pointsNoteGrades() {
+            return this.pointsNoteGradesFor(this.data.grades || [])
+        },
+        shortNameUniqueRule() {
+            const existing = this.teaching_works
+                .filter((_, i) => i !== this.edit_index)
+                .map((w) => (w.short_name || '').toUpperCase())
+            return (v) => !existing.includes((v || '').toUpperCase()) || 'Kurzzeichen bereits vorhanden'
+        },
+        gradeDialogValueError() {
+            return this.isNumericGradeValue(this.grade_dialog_data.value) ? '' : 'Wert muss numerisch sein, z. B. 1,2'
         },
     },
 
@@ -282,9 +282,140 @@ export default {
                 this.data.short_name = val.toUpperCase()
             }
         },
+        'grade_dialog_data.value'(value) {
+            const normalizedValue = this.normalizeNumericInput(value)
+            if (value !== normalizedValue) {
+                this.grade_dialog_data.value = normalizedValue
+            }
+        },
     },
 
     methods: {
+        normalizeNumericInput(value) {
+            const sanitized = String(value ?? '')
+                .replace('.', ',')
+                .replace(/\s+/g, '')
+
+            let normalized = ''
+            let hasDecimalSeparator = false
+
+            for (let index = 0; index < sanitized.length; index += 1) {
+                const char = sanitized[index]
+
+                if (char >= '0' && char <= '9') {
+                    normalized += char
+                    continue
+                }
+
+                if (char === '-' && normalized === '') {
+                    normalized += char
+                    continue
+                }
+
+                if (char === ',' && !hasDecimalSeparator) {
+                    normalized += char
+                    hasDecimalSeparator = true
+                }
+            }
+
+            return normalized
+        },
+
+        isNumericGradeValue(value) {
+            if (value == null || value === '') {
+                return true
+            }
+
+            return /^-?\d+(,\d+)?$/.test(String(value))
+        },
+
+        normalizeGradeValue(value) {
+            const normalized = this.normalizeNumericInput(value)
+
+            if (!this.isNumericGradeValue(normalized)) {
+                return null
+            }
+
+            return normalized.replace(',', '.')
+        },
+
+        updateGradeDialogValue(value) {
+            this.grade_dialog_data.value = this.normalizeNumericInput(value)
+        },
+
+        displayGradeValue(value) {
+            return this.normalizeNumericInput(value)
+        },
+
+        pointsNoteGradesFor(grades) {
+            const seen = new Set()
+
+            return this.sortedGrades(grades || [])
+                .filter((grade) => {
+                    const normalizedValue = this.normalizeGradeValue(grade?.value ?? '')
+                    return normalizedValue !== null && normalizedValue !== ''
+                })
+                .map((grade) => String(grade?.grade || '').trim())
+                .filter((grade) => {
+                    const normalizedGrade = this.normalizeGradeKey(grade)
+                    if (!normalizedGrade || seen.has(normalizedGrade)) {
+                        return false
+                    }
+
+                    seen.add(normalizedGrade)
+                    return true
+                })
+        },
+
+        syncPointsNoteConfiguration(targetWork = this.data) {
+            if (!targetWork) return targetWork
+
+            const availableGrades = this.pointsNoteGradesFor(targetWork.grades || [])
+            const allowedGrades = new Set(availableGrades.map((grade) => this.normalizeGradeKey(grade)))
+            const fallbackGrade = availableGrades[availableGrades.length - 1] || ''
+            const hasPointsConfiguration = !!(targetWork.points_note_enabled || (targetWork.points_table || []).length || targetWork.points_sonst_grade)
+
+            targetWork.points_table = (targetWork.points_table || []).filter((entry) => {
+                const normalizedGrade = this.normalizeGradeKey(entry?.grade)
+                return normalizedGrade && allowedGrades.has(normalizedGrade)
+            })
+
+            if (!hasPointsConfiguration) {
+                targetWork.points_sonst_grade = ''
+                return targetWork
+            }
+
+            const currentFallback = this.normalizeGradeKey(targetWork.points_sonst_grade)
+            targetWork.points_sonst_grade = currentFallback && allowedGrades.has(currentFallback)
+                ? availableGrades.find((grade) => this.normalizeGradeKey(grade) === currentFallback) || ''
+                : fallbackGrade
+
+            targetWork.points_table = targetWork.points_table.filter((entry) => {
+                return this.normalizeGradeKey(entry?.grade) !== this.normalizeGradeKey(targetWork.points_sonst_grade)
+            })
+
+            return targetWork
+        },
+
+        normalizedGradesForSave(grades) {
+            const normalizedGrades = []
+
+            for (const grade of grades || []) {
+                const normalizedValue = this.normalizeGradeValue(grade?.value ?? '')
+
+                if (normalizedValue === null) {
+                    return null
+                }
+
+                normalizedGrades.push({
+                    ...grade,
+                    value: normalizedValue,
+                })
+            }
+
+            return normalizedGrades
+        },
+
         sortedGrades(grades) {
             if (!grades?.length) return []
             return [...grades].sort((a, b) => {
@@ -298,23 +429,28 @@ export default {
         },
 
         newWork() {
-            this.data = { short_name: '', name: '', grades: [], calculation: 'average', points_table: [], default_grade: '' }
-            this.new_points_entry = { min_points: '', grade: '' }
+            this.data = { short_name: '', name: '', grades: [], calculation: 'average', calculation_enabled: false, points_note_enabled: false, points_table: [], points_sonst_grade: '', default_grade: '' }
             this.edit_index = null
             this.action = 'teaching_work_new_or_edit'
         },
 
         editWork(index) {
             const work = this.teaching_works[index]
-            this.data = {
+            this.data = this.normalizePointsConfiguration({
                 ...work,
-                grades: (work.grades || []).map((g) => ({ ...g })),
+                grades: (work.grades || []).map((g) => ({
+                    ...g,
+                    value: this.displayGradeValue(g?.value ?? ''),
+                })),
                 calculation: work.calculation || 'average',
+                calculation_enabled: !!(work.calculation),
+                points_note_enabled: work.points_note_enabled ?? !!((work.points_table || []).length || work.points_sonst_grade),
                 points_table: (work.points_table || []).map((pt) => ({ ...pt })),
+                points_sonst_grade: work.points_sonst_grade || '',
                 default_grade: (work.default_grade || '').toString(),
-            }
+            })
+            this.syncPointsNoteConfiguration(this.data)
             this.ensureValidDefaultGrade(this.data)
-            this.new_points_entry = { min_points: '', grade: '' }
             this.edit_index = index
             this.action = 'teaching_work_new_or_edit'
         },
@@ -329,18 +465,23 @@ export default {
         openEditGradeDialog(sortedIdx) {
             const grade = this.sortedGrades(this.data.grades)[sortedIdx]
             this.grade_dialog_mode = 'edit'
-            this.grade_dialog_data = { ...grade }
+            this.grade_dialog_data = {
+                ...grade,
+                value: this.displayGradeValue(grade?.value ?? ''),
+            }
             this.grade_dialog_original_grade = grade.grade
             this.grade_dialog = true
         },
 
         saveGradeDialog() {
             if (!this.grade_dialog_data.grade) return
+            const normalizedValue = this.normalizeGradeValue(this.grade_dialog_data.value)
+            if (normalizedValue === null) return
             const newGrades = [...(this.data.grades || [])]
             const entry = {
                 grade: this.grade_dialog_data.grade.trim(),
                 name: this.grade_dialog_data.name?.trim() || '',
-                value: this.grade_dialog_data.value?.trim() || '',
+                value: this.displayGradeValue(normalizedValue),
             }
             if (this.grade_dialog_mode === 'edit') {
                 const idx = newGrades.findIndex((g) => g.grade === this.grade_dialog_original_grade)
@@ -351,6 +492,7 @@ export default {
                 newGrades.push(entry)
             }
             this.data.grades = newGrades
+            this.syncPointsNoteConfiguration(this.data)
             this.ensureValidDefaultGrade(this.data)
             this.grade_dialog = false
         },
@@ -366,58 +508,124 @@ export default {
                 const newGrades = [...this.data.grades]
                 newGrades.splice(idx, 1)
                 this.data.grades = newGrades
+                this.syncPointsNoteConfiguration(this.data)
                 this.ensureValidDefaultGrade(this.data)
             }
             this.grade_delete_dialog = false
             this.grade_delete_item = null
         },
 
-        addPointsTableEntry() {
-            if (this.new_points_entry.min_points === '' || !this.new_points_entry.grade) return
-            if (!this.data.points_table) this.data.points_table = []
-            this.data.points_table.push({
-                min_points: parseFloat(this.new_points_entry.min_points) || 0,
-                grade: this.new_points_entry.grade.trim(),
-            })
-            this.new_points_entry = { min_points: '', grade: '' }
-        },
+        normalizePointsConfiguration(work) {
+            if (!work) return work
 
-        removePointsTableEntry(index) {
-            // Find the actual index in the unsorted array
-            const sortedEntry = this.sortedPointsTable[index]
-            const actualIndex = this.data.points_table.findIndex(
-                (pt) => pt.min_points === sortedEntry.min_points && pt.grade === sortedEntry.grade
-            )
-            if (actualIndex >= 0) {
-                const newTable = [...this.data.points_table]
-                newTable.splice(actualIndex, 1)
-                this.data = { ...this.data, points_table: newTable }
-            }
-        },
+            const pointsNoteGrades = this.pointsNoteGradesFor(work.grades || [])
+            const fallbackGrade = pointsNoteGrades[pointsNoteGrades.length - 1] || ''
+            const pointsTable = Array.isArray(work.points_table) ? work.points_table.map((entry) => ({ ...entry })) : []
+            let pointsSonstGrade = work.points_sonst_grade || ''
 
-        updatePointsTableEntry(sortedIndex, field, value) {
-            const sortedEntry = this.sortedPointsTable[sortedIndex]
-            const actualIndex = this.data.points_table.findIndex(
-                (pt) => pt.min_points === sortedEntry.min_points && pt.grade === sortedEntry.grade
-            )
-            if (actualIndex >= 0) {
-                const newTable = [...this.data.points_table]
-                newTable[actualIndex] = {
-                    ...newTable[actualIndex],
-                    [field]: field === 'min_points' ? (parseFloat(value) || 0) : value,
+            if (!pointsSonstGrade) {
+                const fallbackIndex = pointsTable.findIndex((entry) => {
+                    return this.normalizeGradeKey(entry?.grade) === this.normalizeGradeKey(fallbackGrade) && Number(entry?.min_points) <= -999
+                })
+
+                if (fallbackIndex >= 0) {
+                    pointsSonstGrade = pointsTable[fallbackIndex].grade
+                    pointsTable.splice(fallbackIndex, 1)
                 }
-                this.data = { ...this.data, points_table: newTable }
             }
+
+            return {
+                ...work,
+                points_table: pointsTable,
+                points_sonst_grade: pointsSonstGrade,
+            }
+        },
+
+        pointsThresholdValue(grade) {
+            const pointsEntry = (this.data.points_table || []).find((entry) => this.normalizeGradeKey(entry?.grade) === this.normalizeGradeKey(grade))
+            if (!pointsEntry) return ''
+            return pointsEntry.min_points
+        },
+
+        updatePointsThreshold(grade, index, value) {
+            const normalizedGrade = String(grade || '').trim()
+            const stringValue = String(value ?? '').trim()
+            const pointsTable = [...(this.data.points_table || [])]
+            const entryIndex = pointsTable.findIndex((entry) => this.normalizeGradeKey(entry?.grade) === this.normalizeGradeKey(normalizedGrade))
+
+            if (stringValue === '') {
+                if (entryIndex >= 0) {
+                    pointsTable.splice(entryIndex, 1)
+                }
+
+                this.data = {
+                    ...this.data,
+                    points_table: pointsTable,
+                    points_sonst_grade: this.isLastPointsNote(index) ? normalizedGrade : this.data.points_sonst_grade,
+                }
+                return
+            }
+
+            const numericValue = parseFloat(stringValue.replace(',', '.'))
+            const nextEntry = {
+                grade: normalizedGrade,
+                min_points: Number.isNaN(numericValue) ? 0 : numericValue,
+            }
+
+            if (entryIndex >= 0) {
+                pointsTable[entryIndex] = nextEntry
+            } else {
+                pointsTable.push(nextEntry)
+            }
+
+            this.data = {
+                ...this.data,
+                points_table: pointsTable,
+                points_sonst_grade: this.normalizeGradeKey(this.data.points_sonst_grade) === this.normalizeGradeKey(normalizedGrade) ? '' : this.data.points_sonst_grade,
+            }
+        },
+
+        isLastPointsNote(index) {
+            return index === this.pointsNoteGrades.length - 1
+        },
+
+        normalizedPointsTableForSave() {
+            const fallbackGrade = this.normalizeGradeKey(this.data.points_sonst_grade)
+
+            return (this.data.points_table || [])
+                .map((entry) => ({
+                    grade: String(entry?.grade || '').trim(),
+                    min_points: typeof entry?.min_points === 'number'
+                        ? entry.min_points
+                        : parseFloat(String(entry?.min_points ?? '').replace(',', '.')),
+                }))
+                .filter((entry) => entry.grade && !Number.isNaN(entry.min_points))
+                .filter((entry) => this.normalizeGradeKey(entry.grade) !== fallbackGrade)
+                .sort((a, b) => b.min_points - a.min_points)
+        },
+
+        useDefaultGrades() {
+            this.data.grades = [
+                { grade: '1', name: 'Sehr gut', value: '1' },
+                { grade: '2', name: 'Gut', value: '2' },
+                { grade: '3', name: 'Befriedigend', value: '3' },
+                { grade: '4', name: 'Genügend', value: '4' },
+                { grade: '5', name: 'Nicht genügend', value: '5' },
+            ]
+            this.syncPointsNoteConfiguration(this.data)
+            this.ensureValidDefaultGrade(this.data)
         },
 
         useDefaultPointsTable() {
-            this.data.points_table = [
-                { min_points: 5, grade: '1' },
-                { min_points: 3, grade: '2' },
-                { min_points: 1, grade: '3' },
-                { min_points: 0, grade: '4' },
-                { min_points: -999, grade: '5' },
-            ]
+            const defaultMinPoints = [5, 3, 1, 0]
+            const pointsNoteGrades = this.pointsNoteGrades
+
+            this.data.points_note_enabled = true
+            this.data.points_table = pointsNoteGrades.slice(0, -1).map((grade, index) => ({
+                grade,
+                min_points: defaultMinPoints[index] ?? (defaultMinPoints[defaultMinPoints.length - 1] - (index - defaultMinPoints.length + 1)),
+            }))
+            this.data.points_sonst_grade = pointsNoteGrades[pointsNoteGrades.length - 1] || ''
         },
 
         abortNewWork() {
@@ -442,9 +650,23 @@ export default {
             const schemas = [...(this.settings?.teaching_schemas || [])]
             const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
             if (schemaIndex === -1) return
+            const normalizedGrades = this.normalizedGradesForSave(this.data.grades || [])
+            if (normalizedGrades === null) return
+            const pointsNoteEnabled = !!this.data.points_note_enabled
 
             const works = [...this.teaching_works]
-            const workData = { ...this.data, grades: [...(this.data.grades || [])] }
+            const { calculation_enabled, points_note_enabled, ...dataWithoutFlag } = this.data
+            const workData = {
+                ...dataWithoutFlag,
+                grades: normalizedGrades,
+                calculation: calculation_enabled ? (this.data.calculation || 'average') : null,
+                points_note_enabled: !!this.data.points_note_enabled,
+                points_table: pointsNoteEnabled ? this.normalizedPointsTableForSave() : [],
+                points_sonst_grade: pointsNoteEnabled ? (this.data.points_sonst_grade || '') : '',
+            }
+            if (pointsNoteEnabled) {
+                this.syncPointsNoteConfiguration(workData)
+            }
             const sortedGrades = this.sortedGrades(workData.grades || [])
             workData.grades = sortedGrades
             this.ensureValidDefaultGrade(workData)
@@ -498,5 +720,27 @@ export default {
     border-radius: 10px;
     background: rgba(99, 102, 241, 0.05);
     padding: 12px 14px 4px;
+}
+
+.points-note-box {
+    padding-bottom: 14px;
+}
+
+.points-note-list {
+    display: grid;
+    gap: 10px;
+}
+
+.points-note-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.points-note-label {
+    min-width: 80px;
+    font-size: 0.95rem;
+    font-weight: 600;
 }
 </style>

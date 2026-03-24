@@ -138,6 +138,7 @@ export default {
             schoolHourStore: null,
             teachingStore: null,
             activeSemester: 1,
+            _urlPanelRestored: false,
         }
     },
 
@@ -242,27 +243,36 @@ export default {
                     this.action_2 = ''
                     this.selected_course_student = null
                 }
+                if (value && this.$route && this.$router) {
+                    this.$router.replace({ path: this.$route.path, query: { ...this.$route.query, panel: value } }).catch(() => {})
+                }
             },
         },
     },
 
     watch: {
         selected_course(newCourse) {
-            if (newCourse) {
-                this.show_students = true
-                this.show_infos = false
-                this.show_works = false
-                this.show_dates = false
-                this.show_attendance = false
-                this.show_performances = false
-            } else {
-                this.show_students = true
-                this.show_infos = false
-                this.show_works = false
-                this.show_dates = false
-                this.show_attendance = false
-                this.show_performances = false
+            if (newCourse && !this._urlPanelRestored) {
+                const urlPanel = this.$route?.query?.panel
+                const validPanels = ['students', 'infos', 'works', 'dates', 'attendance', 'performances']
+                this._urlPanelRestored = true
+                if (urlPanel && validPanels.includes(urlPanel)) {
+                    this.show_students = urlPanel === 'students'
+                    this.show_infos = urlPanel === 'infos'
+                    this.show_works = urlPanel === 'works'
+                    this.show_dates = urlPanel === 'dates'
+                    this.show_attendance = urlPanel === 'attendance'
+                    this.show_performances = urlPanel === 'performances'
+                    return
+                }
             }
+            this._urlPanelRestored = true
+            this.show_students = true
+            this.show_infos = false
+            this.show_works = false
+            this.show_dates = false
+            this.show_attendance = false
+            this.show_performances = false
         },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {

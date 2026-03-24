@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class TeachingService
@@ -57,6 +60,8 @@ class TeachingService
             return;
         }
 
+        $oldSchemaRows = $this->schemaRows($user, $schoolyearId)->keyBy('schema_id');
+
         $rows = collect($schemas)
             ->filter(fn ($schema) => is_array($schema))
             ->map(function (array $schema) use ($user, $schoolyearId) {
@@ -95,6 +100,12 @@ class TeachingService
         }
 
         foreach ($rows as $row) {
+            $oldSchema = $oldSchemaRows->get($row['schema_id']);
+            if ($oldSchema) {
+                $oldWorks = is_array($oldSchema->works) ? $oldSchema->works : [];
+                $this->cascadeWorkChanges($user, $schoolyearId, $row['schema_id'], $oldWorks, $row['works']);
+            }
+
             TeachingSchema::updateOrCreate(
                 [
                     'user_id' => $user->id,
@@ -109,6 +120,264 @@ class TeachingService
                 ]
             );
         }
+    }
+
+    /**
+     * Cascade work definition changes (short_name renames, grade key renames/removals)
+     * to all courses, course works, and student entries that use the given schema.
+     *
+     * @param  array<int, array<string, mixed>>  $oldWorks
+     * @param  array<int, array<string, mixed>>  $newWorks
+     */
+    private function cascadeWorkChanges(User $user, int $schoolyearId, string $schemaId, array $oldWorks, array $newWorks): void
+    {
+        $courseIds = TeachingCourse::where('user_id', $user->id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('teaching_schema_id', $schemaId)
+            ->pluck('id');
+
+        if ($courseIds->isEmpty()) {
+            return;
+        }
+
+        $oldByShortName = collect($oldWorks)->keyBy('short_name');
+        $newByShortName = collect($newWorks)->keyBy('short_name');
+
+        // Detect short_name renames: disappeared from old, appeared in new, same display name
+        $oldOnlyKeys = $oldByShortName->keys()->diff($newByShortName->keys());
+        $newOnlyKeys = $newByShortName->keys()->diff($oldByShortName->keys());
+
+        /** @var array<string, string> $shortNameRenames old => new */
+        $shortNameRenames = [];
+        foreach ($oldOnlyKeys as $oldKey) {
+            // Match by stable work_id first (handles simultaneous short_name + name changes)
+            $oldWorkId = $oldByShortName->get($oldKey)['work_id'] ?? null;
+            if ($oldWorkId) {
+                foreach ($newOnlyKeys as $newKey) {
+                    if (($newByShortName->get($newKey)['work_id'] ?? null) === $oldWorkId) {
+                        $shortNameRenames[$oldKey] = $newKey;
+                        break;
+                    }
+                }
+                if (isset($shortNameRenames[$oldKey])) {
+                    continue;
+                }
+            }
+
+            // Fall back to matching by display name
+            $oldName = (string) ($oldByShortName->get($oldKey)['name'] ?? '');
+            if ($oldName === '') {
+                continue;
+            }
+            foreach ($newOnlyKeys as $newKey) {
+                if ((string) ($newByShortName->get($newKey)['name'] ?? '') === $oldName) {
+                    $shortNameRenames[$oldKey] = $newKey;
+                    break;
+                }
+            }
+        }
+
+        DB::transaction(function () use ($courseIds, $shortNameRenames, $oldByShortName, $newByShortName) {
+            // Apply short_name renames
+            foreach ($shortNameRenames as $oldShortName => $newShortName) {
+                TeachingCourseWork::whereIn('teaching_course_id', $courseIds)
+                    ->where('type', $oldShortName)
+                    ->update(['type' => $newShortName]);
+
+                TeachingCourseStudentEntry::whereIn('teaching_course_id', $courseIds)
+                    ->where('type', $oldShortName)
+                    ->update(['type' => $newShortName]);
+            }
+
+            // For each work present in both old and new, cascade grade key changes
+            foreach ($oldByShortName->keys() as $oldShortName) {
+                $currentShortName = $shortNameRenames[$oldShortName] ?? $oldShortName;
+                if (! $newByShortName->has($currentShortName)) {
+                    continue; // work was removed entirely
+                }
+
+                $oldGrades = collect($oldByShortName->get($oldShortName)['grades'] ?? [])->keyBy('grade');
+                $newGrades = collect($newByShortName->get($currentShortName)['grades'] ?? [])->keyBy('grade');
+
+                $oldOnlyGrades = $oldGrades->keys()->diff($newGrades->keys());
+                $newOnlyGrades = $newGrades->keys()->diff($oldGrades->keys());
+
+                // Match renames: same non-empty value field
+                /** @var array<string, string> $gradeRenames old_key => new_key */
+                $gradeRenames = [];
+                foreach ($oldOnlyGrades as $oldGradeKey) {
+                    $oldValue = (string) ($oldGrades->get($oldGradeKey)['value'] ?? '');
+                    if ($oldValue === '') {
+                        continue;
+                    }
+                    foreach ($newOnlyGrades as $newGradeKey) {
+                        if ((string) ($newGrades->get($newGradeKey)['value'] ?? '') === $oldValue) {
+                            $gradeRenames[$oldGradeKey] = $newGradeKey;
+                            break;
+                        }
+                    }
+                }
+
+                // Cast keys to string to prevent PHP's int-key coercion (e.g. '2' → 2)
+                // from producing numeric bindings in SQL WHERE clauses.
+                $gradeRenamesStr = [];
+                foreach ($gradeRenames as $k => $v) {
+                    $gradeRenamesStr[(string) $k] = (string) $v;
+                }
+                $gradeRenames = $gradeRenamesStr;
+
+                $removedGrades = $oldOnlyGrades->diff(array_keys($gradeRenames))->map(fn ($k) => (string) $k)->values();
+                $newDefault = $newByShortName->get($currentShortName)['default_grade'] ?? null;
+                $newDefault = ($newDefault !== '' && $newDefault !== null) ? (string) $newDefault : null;
+
+                // Update student entries
+                foreach ($gradeRenames as $oldKey => $newKey) {
+                    TeachingCourseStudentEntry::whereIn('teaching_course_id', $courseIds)
+                        ->where('type', $currentShortName)
+                        ->where('grade', (string) $oldKey)
+                        ->update(['grade' => (string) $newKey]);
+                }
+
+                foreach ($removedGrades as $removedKey) {
+                    TeachingCourseStudentEntry::whereIn('teaching_course_id', $courseIds)
+                        ->where('type', $currentShortName)
+                        ->where('grade', (string) $removedKey)
+                        ->update(['grade' => $newDefault]);
+                }
+
+                // Update grade keys inside the groups JSON of each affected course work
+                if (! empty($gradeRenames) || $removedGrades->isNotEmpty()) {
+                    TeachingCourseWork::whereIn('teaching_course_id', $courseIds)
+                        ->where('type', $currentShortName)
+                        ->get()
+                        ->each(function (TeachingCourseWork $courseWork) use ($gradeRenames, $removedGrades, $newDefault): void {
+                            $groups = is_array($courseWork->groups) ? $courseWork->groups : [];
+                            $changed = false;
+
+                            foreach ($groups as &$group) {
+                                if (! is_array($group)) {
+                                    continue;
+                                }
+
+                                // Group-level grade (used by group works)
+                                $g = isset($group['grade']) ? (string) $group['grade'] : null;
+                                if ($g !== null && $g !== '') {
+                                    if (isset($gradeRenames[$g])) {
+                                        $group['grade'] = $gradeRenames[$g];
+                                        $changed = true;
+                                    } elseif ($removedGrades->contains($g)) {
+                                        $group['grade'] = $newDefault;
+                                        $changed = true;
+                                    }
+                                }
+
+                                // Per-student grades array — must use a variable (not ??)
+                                // so that foreach-by-reference modifies the original array.
+                                if (isset($group['grades']) && is_array($group['grades'])) {
+                                    foreach ($group['grades'] as &$gradeItem) {
+                                        if (! is_array($gradeItem)) {
+                                            continue;
+                                        }
+                                        $gv = isset($gradeItem['grade']) ? (string) $gradeItem['grade'] : null;
+                                        if ($gv === null || $gv === '') {
+                                            continue;
+                                        }
+                                        if (isset($gradeRenames[$gv])) {
+                                            $gradeItem['grade'] = $gradeRenames[$gv];
+                                            $changed = true;
+                                        } elseif ($removedGrades->contains($gv)) {
+                                            $gradeItem['grade'] = $newDefault ?? '';
+                                            $changed = true;
+                                        }
+                                    }
+                                    unset($gradeItem);
+                                }
+                            }
+                            unset($group);
+
+                            if ($changed) {
+                                $courseWork->groups = $groups;
+                                $courseWork->save();
+                            }
+                        });
+                }
+            }
+        });
+    }
+
+    /**
+     * Check if any works being removed from schemas are still referenced in course works.
+     * Returns display names of blocked works ("SA – Schularbeit"), or an empty collection.
+     *
+     * @param  array<int, array<string, mixed>>  $newSchemas
+     */
+    public function worksRemovedButInUse(User $user, array $newSchemas, ?int $schoolyearId = null): Collection
+    {
+        $schoolyearId = $this->resolveSchoolyearId($user, $schoolyearId);
+        if (! $schoolyearId) {
+            return collect();
+        }
+
+        $oldSchemas = $this->schemasForUser($user, $schoolyearId);
+        $newSchemasCollection = collect($newSchemas)->keyBy('id');
+        $blockedNames = collect();
+
+        foreach ($oldSchemas as $oldSchema) {
+            $schemaId = (string) ($oldSchema['id'] ?? '');
+            if (! $newSchemasCollection->has($schemaId)) {
+                continue; // Schema itself is being deleted — handled by hasDependencies
+            }
+
+            $newSchema = $newSchemasCollection->get($schemaId);
+            $oldWorks = collect(is_array($oldSchema['works'] ?? null) ? $oldSchema['works'] : []);
+            $newWorks = collect(is_array($newSchema['works'] ?? null) ? $newSchema['works'] : []);
+
+            $newWorkIds = $newWorks->pluck('work_id')->filter()->values();
+            $newShortNames = $newWorks->pluck('short_name')->filter()->values();
+
+            $removedShortNames = $oldWorks->filter(function (array $work) use ($newWorkIds, $newShortNames): bool {
+                // If short_name is still present in new works, it was not removed
+                if ($newShortNames->contains($work['short_name'] ?? '')) {
+                    return false;
+                }
+
+                // Short_name is gone — check if it was renamed via a stable work_id
+                $workId = $work['work_id'] ?? null;
+                if ($workId && $newWorkIds->contains($workId)) {
+                    return false;
+                }
+
+                return true;
+            })->pluck('short_name')->filter()->values();
+
+            if ($removedShortNames->isEmpty()) {
+                continue;
+            }
+
+            $courseIds = TeachingCourse::where('user_id', $user->id)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('teaching_schema_id', $schemaId)
+                ->pluck('id');
+
+            if ($courseIds->isEmpty()) {
+                continue;
+            }
+
+            $usedShortNames = TeachingCourseWork::whereIn('teaching_course_id', $courseIds)
+                ->whereIn('type', $removedShortNames->all())
+                ->pluck('type')
+                ->unique();
+
+            foreach ($usedShortNames as $usedShortName) {
+                $work = $oldWorks->firstWhere('short_name', $usedShortName);
+                $displayName = isset($work['name']) && $work['name'] !== ''
+                    ? "{$usedShortName} – {$work['name']}"
+                    : $usedShortName;
+                $blockedNames->push($displayName);
+            }
+        }
+
+        return $blockedNames;
     }
 
     /**
@@ -561,6 +830,10 @@ class TeachingService
         return collect($works)
             ->filter(fn ($work) => is_array($work))
             ->map(function (array $work) {
+                if (empty($work['work_id'])) {
+                    $work['work_id'] = (string) Str::uuid();
+                }
+
                 $work['require_all_entries'] = (bool) ($work['require_all_entries'] ?? false);
 
                 $grades = is_array($work['grades'] ?? null) ? $work['grades'] : [];

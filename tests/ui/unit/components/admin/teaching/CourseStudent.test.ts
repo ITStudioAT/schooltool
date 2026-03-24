@@ -125,6 +125,26 @@ describe('CourseStudent auswertung labels', () => {
     })
 })
 
+describe('CourseStudent points grade fallback', () => {
+    it('returns the fallback points grade when no minimum threshold matches', () => {
+        const methods = (CourseStudent as any).methods
+        const work = {
+            calculation: 'points',
+            points_table: [
+                { grade: '1', min_points: 5 },
+                { grade: '2', min_points: 3 },
+                { grade: '3', min_points: 1 },
+                { grade: '4', min_points: 0 },
+            ],
+            points_sonst_grade: '5',
+        }
+
+        const result = methods.pointsGradeForWork.call({}, work, -2)
+
+        expect(result).toBe('5')
+    })
+})
+
 describe('CourseStudent entry title rendering', () => {
     it('renders work title as text line instead of chip in entries list', () => {
         const componentPath = resolve(

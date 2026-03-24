@@ -130,6 +130,7 @@ class TeachingController extends Controller
             'teaching_schemas.*.id' => 'required|string|max:36',
             'teaching_schemas.*.name' => 'required|string|max:255',
             'teaching_schemas.*.works' => 'nullable|array',
+            'teaching_schemas.*.works.*.work_id' => 'nullable|string|uuid',
             'teaching_schemas.*.works.*.short_name' => 'required|string|max:10',
             'teaching_schemas.*.works.*.name' => 'required|string|max:255',
             'teaching_schemas.*.works.*.grades' => 'nullable|array',
@@ -139,9 +140,11 @@ class TeachingController extends Controller
             'teaching_schemas.*.works.*.calculation' => 'nullable|string|in:average,points',
             'teaching_schemas.*.works.*.require_all_entries' => 'nullable|boolean',
             'teaching_schemas.*.works.*.default_grade' => 'nullable|string|max:10',
+            'teaching_schemas.*.works.*.points_note_enabled' => 'nullable|boolean',
             'teaching_schemas.*.works.*.points_table' => 'nullable|array',
             'teaching_schemas.*.works.*.points_table.*.min_points' => 'required|numeric',
             'teaching_schemas.*.works.*.points_table.*.grade' => 'required|string|max:10',
+            'teaching_schemas.*.works.*.points_sonst_grade' => 'nullable|string|max:10',
             'teaching_schemas.*.grading' => 'nullable|array',
             'teaching_schemas.*.grading.semester_count' => 'nullable|integer|min:1|max:2',
             'teaching_schemas.*.grading.semester_1_weight' => 'nullable|integer|min:0|max:100',
@@ -175,6 +178,12 @@ class TeachingController extends Controller
 
             if ($usedNames->isNotEmpty()) {
                 abort(409, "Schema wird in Fächern verwendet und kann nicht gelöscht werden: {$usedNames->implode(', ')}");
+            }
+
+            $blockedWorks = $teachingService->worksRemovedButInUse($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id);
+
+            if ($blockedWorks->isNotEmpty()) {
+                abort(409, "Arbeit wird in Kursen verwendet und kann nicht gelöscht werden: {$blockedWorks->implode(', ')}");
             }
 
             if ($teachingService->standardSchemaRenamed($auth_user, $validated['teaching_schemas'], $auth_user->schoolyear_id)) {

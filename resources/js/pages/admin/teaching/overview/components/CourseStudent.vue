@@ -1867,7 +1867,7 @@ export default {
         workTypeLabel(type) {
             if (!type) return ''
             const found = this.teachingWorks.find((w) => w.short_name === type)
-            if (!found) return type
+            if (!found) return 'Unbekannter Typ'
             return `${found.short_name} - ${found.name}`
         },
         workConfigForType(type) {
@@ -1949,10 +1949,11 @@ export default {
         pointsGradeForWork(work, points) {
             if (!work || work.calculation !== 'points') return null
             const table = work.points_table || []
-            if (!table.length) return null
+            const fallbackGrade = (work.points_sonst_grade || '').toString().trim()
+            if (!table.length) return fallbackGrade || null
             const sorted = [...table].sort((a, b) => (b.min_points ?? 0) - (a.min_points ?? 0))
             const found = sorted.find((row) => points >= (row.min_points ?? 0))
-            return found?.grade || null
+            return found?.grade || fallbackGrade || null
         },
         formatTwoDecimals(value) {
             if (value == null || value === '') return ''
@@ -2543,4 +2544,3 @@ export default {
     }
 }
 </style>
-

@@ -911,6 +911,11 @@ export default {
                 ...this.emptyWorkForm(),
                 ...work,
             }
+            // Clear the type if it is no longer a valid short_name in the current schema
+            // (e.g. orphaned UUID from a deleted schema). Forces the user to pick a valid type.
+            if (this.work_form.type && !this.teachingWorks.some((w) => w.short_name === this.work_form.type)) {
+                this.work_form.type = ''
+            }
             // Normalize the main date (server may return ISO format)
             this.work_form.date_for_all_groups = this.normalizeDateString(this.work_form.date_for_all_groups)
             this.work_form.groups = (this.work_form.groups || []).map((group) => {
@@ -1375,7 +1380,7 @@ export default {
         workTypeLabel(type) {
             if (!type) return ''
             const found = this.teachingWorks.find((w) => w.short_name === type)
-            if (!found) return type
+            if (!found) return 'Unbekannter Typ'
             return `${found.short_name} - ${found.name}`
         },
         toDateString(date) {
