@@ -5,6 +5,7 @@ import Settings from '@/pages/admin/restaurant/components/Settings.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
 const componentStubs = {
+    FreeDays: { template: '<div class="free-days-stub">Freie Tage Inhalt</div>' },
     ItsGridBox: { props: ['title'], template: '<div><div class="grid-title">{{ title }}</div><slot name="header-actions" /><slot /></div>' },
     'v-col': { template: '<div><slot /></div>' },
     'v-row': { template: '<div><slot /></div>' },
@@ -31,8 +32,14 @@ const componentStubs = {
     'v-img': { template: '<img />' },
 }
 
-function mountSettings(initialState = {}) {
-    return mount(Settings, {
+function mountSettings(options: { initialState?: Record<string, unknown>, routeQuery?: Record<string, string>, routerReplace?: ReturnType<typeof vi.fn> } = {}) {
+    const {
+        initialState = {},
+        routeQuery = {},
+        routerReplace = vi.fn(() => Promise.resolve()),
+    } = options
+
+    const wrapper = mount(Settings, {
         global: {
             plugins: [
                 createTestingPinia({
@@ -50,13 +57,23 @@ function mountSettings(initialState = {}) {
                 }),
             ],
             stubs: componentStubs,
+            mocks: {
+                $route: { query: routeQuery },
+                $router: { replace: routerReplace },
+            },
         },
     })
+
+    return {
+        wrapper,
+        routerReplace,
+        routeQuery,
+    }
 }
 
 describe('Restaurant settings component', () => {
     it('shows the category dialog as a persistent modal with validated fields', async () => {
-        const wrapper = mountSettings()
+        const { wrapper } = mountSettings()
 
         expect(wrapper.text()).toContain('Kategorien')
         expect(wrapper.text()).toContain('Zutaten-Symbole')
@@ -84,9 +101,39 @@ describe('Restaurant settings component', () => {
         expect(wrapper.findAll('input[data-label="Reihenfolge"]')).toHaveLength(0)
     })
 
+    it('restores the selected panel from the route query and syncs changes back into the url', async () => {
+        const { wrapper, routerReplace, routeQuery } = mountSettings({
+            routeQuery: { panel: 'free-days', foo: 'bar' },
+        })
+
+        expect((wrapper.vm as any).selectedPanel).toBe('free-days')
+        expect(wrapper.find('.free-days-stub').exists()).toBe(true)
+
+        ;(wrapper.vm as any).activatePanel('ingredient-icons')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).selectedPanel).toBe('ingredient-icons')
+        expect(routerReplace).toHaveBeenCalledWith({
+            query: {
+                ...routeQuery,
+                panel: 'ingredient-icons',
+            },
+        })
+    })
+
+    it('falls back to categories for invalid route query panels', () => {
+        const { wrapper } = mountSettings({
+            routeQuery: { panel: 'unknown' },
+        })
+
+        expect((wrapper.vm as any).selectedPanel).toBe('categories')
+    })
+
     it('opens ingredient icons in a persistent create or edit dialog', async () => {
-        const wrapper = mountSettings({
-            ingredient_icons: [{ id: 2, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: '/icon.png' }],
+        const { wrapper } = mountSettings({
+            initialState: {
+                ingredient_icons: [{ id: 2, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: '/icon.png' }],
+            },
         })
 
         ;(wrapper.vm as any).activatePanel('ingredient-icons')
@@ -110,9 +157,11 @@ describe('Restaurant settings component', () => {
     })
 
     it('validates the category form before saving and closes the dialog after success', async () => {
-        const wrapper = mountSettings({
-            categories: [{ id: 7, title: 'Dessert', sort_order: 30, foods_count: 1 }],
-            ingredient_icons: [],
+        const { wrapper } = mountSettings({
+            initialState: {
+                categories: [{ id: 7, title: 'Dessert', sort_order: 30, foods_count: 1 }],
+                ingredient_icons: [],
+            },
         })
 
         const store = useRestaurantStore()
@@ -152,9 +201,11 @@ describe('Restaurant settings component', () => {
     })
 
     it('confirms category deletion with a persistent dialog', async () => {
-        const wrapper = mountSettings({
-            categories: [{ id: 7, title: 'Dessert', sort_order: 30, foods_count: 1 }],
-            ingredient_icons: [],
+        const { wrapper } = mountSettings({
+            initialState: {
+                categories: [{ id: 7, title: 'Dessert', sort_order: 30, foods_count: 1 }],
+                ingredient_icons: [],
+            },
         })
 
         const store = useRestaurantStore()
@@ -177,8 +228,10 @@ describe('Restaurant settings component', () => {
     })
 
     it('validates the ingredient icon form before saving and closes the dialog after success', async () => {
-        const wrapper = mountSettings({
-            ingredient_icons: [],
+        const { wrapper } = mountSettings({
+            initialState: {
+                ingredient_icons: [],
+            },
         })
 
         const store = useRestaurantStore()
@@ -221,8 +274,10 @@ describe('Restaurant settings component', () => {
     })
 
     it('confirms ingredient icon deletion with a persistent dialog', async () => {
-        const wrapper = mountSettings({
-            ingredient_icons: [{ id: 9, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: null }],
+        const { wrapper } = mountSettings({
+            initialState: {
+                ingredient_icons: [{ id: 9, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: null }],
+            },
         })
 
         const store = useRestaurantStore()

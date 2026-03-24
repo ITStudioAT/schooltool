@@ -30,6 +30,7 @@ use App\Http\Controllers\Admin\RegisterPrintController;
 use App\Http\Controllers\Admin\RegisterUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantFreeDayController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
@@ -258,6 +259,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,lunch_admin'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);
+        Route::get('/admin/restaurant/free-days', [RestaurantFreeDayController::class, 'index']);
+        Route::post('/admin/restaurant/free-days', [RestaurantFreeDayController::class, 'store']);
         Route::apiResource('/admin/restaurant/foods', RestaurantFoodController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/menus', RestaurantMenuController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);

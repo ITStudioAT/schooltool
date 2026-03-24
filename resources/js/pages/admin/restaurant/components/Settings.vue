@@ -22,6 +22,15 @@
                             @click="activatePanel('ingredient-icons')">
                             Zutaten-Symbole
                         </v-btn>
+                        <v-btn
+                            rounded="xl"
+                            :color="selectedPanel === 'free-days' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'free-days' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'free-days' }"
+                            @click="activatePanel('free-days')">
+                            Freie Tage
+                        </v-btn>
                     </div>
                 </v-sheet>
             </v-col>
@@ -95,6 +104,8 @@
                     </v-row>
                 </ItsGridBox>
             </v-col>
+
+            <FreeDays v-if="selectedPanel === 'free-days'" />
         </v-row>
 
         <v-dialog v-model="categoryDialog" max-width="520" persistent>
@@ -244,6 +255,7 @@
 <script>
 import { mapState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
+import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
@@ -270,12 +282,14 @@ function emptyIngredientIconForm() {
     }
 }
 
+const validPanels = ['categories', 'ingredient-icons', 'free-days']
+
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { FilePond, ItsGridBox },
+    components: { FilePond, FreeDays, ItsGridBox },
 
     data() {
         return {
@@ -309,9 +323,33 @@ export default {
         },
     },
 
+    created() {
+        this.syncPanelFromRoute()
+    },
+
+    watch: {
+        '$route.query.panel'() {
+            this.syncPanelFromRoute()
+        },
+    },
+
     methods: {
         activatePanel(panel) {
-            this.selectedPanel = panel
+            const normalizedPanel = this.normalizePanel(panel)
+
+            this.selectedPanel = normalizedPanel
+            this.$router.replace({
+                query: {
+                    ...(this.$route?.query || {}),
+                    panel: normalizedPanel,
+                },
+            }).catch(() => {})
+        },
+        normalizePanel(panel) {
+            return validPanels.includes(panel) ? panel : 'categories'
+        },
+        syncPanelFromRoute() {
+            this.selectedPanel = this.normalizePanel(this.$route?.query?.panel)
         },
         shortLabel(title) {
             return String(title || '').slice(0, 2).toUpperCase()

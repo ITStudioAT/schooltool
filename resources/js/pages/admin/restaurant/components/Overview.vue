@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <v-col cols="12">
         <v-row dense>
             <v-col cols="12" md="6" xl="3">
@@ -9,66 +9,9 @@
             </v-col>
 
             <v-col cols="12" md="6" xl="3">
-                <ItsGridBox variant="overview" color="primary" title="Kategorien" icon="mdi-shape-outline">
-                    <div class="restaurant-overview-stat">{{ stats.categories_count || 0 }}</div>
-                    <div class="restaurant-overview-copy">Vorspeise, Hauptspeise, Nachspeise und Erweiterungen</div>
-                </ItsGridBox>
-            </v-col>
-
-            <v-col cols="12" md="6" xl="3">
-                <ItsGridBox variant="overview" color="primary" title="Zutaten-Symbole" icon="mdi-image-outline">
-                    <div class="restaurant-overview-stat">{{ stats.ingredient_icons_count || 0 }}</div>
-                    <div class="restaurant-overview-copy">Kleine Bilder für Schwein, Rind, Fisch und mehr</div>
-                </ItsGridBox>
-            </v-col>
-
-            <v-col cols="12" md="6" xl="3">
-                <ItsGridBox variant="overview" color="primary" title="Menüs" icon="mdi-food-takeout-box-outline">
+                <ItsGridBox variant="overview" color="primary" title="Men&uuml;s" icon="mdi-food-takeout-box-outline">
                     <div class="restaurant-overview-stat">{{ stats.menus_count || 0 }}</div>
-                    <div class="restaurant-overview-copy">Zusammengestellte Menüfolgen mit mehreren Gängen</div>
-                </ItsGridBox>
-            </v-col>
-
-            <v-col cols="12" md="6" xl="3">
-                <ItsGridBox variant="overview" color="primary" title="Ohne Preis" icon="mdi-cash-remove">
-                    <div class="restaurant-overview-stat">{{ stats.foods_without_price_count || 0 }}</div>
-                    <div class="restaurant-overview-copy">Speisen, die noch keinen Preis eingetragen haben</div>
-                </ItsGridBox>
-            </v-col>
-
-            <v-col cols="12" lg="7">
-                <ItsGridBox variant="overview" color="primary" title="Kategorien schnell erweitern" icon="mdi-shape-plus-outline">
-                    <v-alert type="info" variant="tonal" class="mb-3">
-                        Neue Kategorien können direkt beim Anlegen einer Speise eingetippt oder unter Einstellungen sauber verwaltet werden.
-                    </v-alert>
-
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            v-for="category in categories"
-                            :key="category.id"
-                            color="primary"
-                            variant="tonal">
-                            {{ category.title }}
-                        </v-chip>
-                    </div>
-                </ItsGridBox>
-            </v-col>
-
-            <v-col cols="12" lg="5">
-                <ItsGridBox variant="overview" color="primary" title="Allergene im Umlauf" icon="mdi-alert-circle-outline">
-                    <v-alert v-if="!allergenSuggestions.length" type="warning" variant="tonal">
-                        Noch keine Allergene hinterlegt. Diese erscheinen automatisch, sobald Speisen gepflegt werden.
-                    </v-alert>
-
-                    <div v-else class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            v-for="allergen in allergenSuggestions"
-                            :key="allergen"
-                            color="secondary"
-                            variant="tonal">
-                            {{ allergen }}
-                        </v-chip>
-                    </div>
+                    <div class="restaurant-overview-copy">Zusammengestellte Men&uuml;folgen mit mehreren G&auml;ngen</div>
                 </ItsGridBox>
             </v-col>
         </v-row>
@@ -84,7 +27,7 @@ export default {
     components: { ItsGridBox },
 
     computed: {
-        ...mapState(useRestaurantStore, ['categories', 'allergenSuggestions', 'stats']),
+        ...mapState(useRestaurantStore, ['stats']),
     },
 }
 </script>

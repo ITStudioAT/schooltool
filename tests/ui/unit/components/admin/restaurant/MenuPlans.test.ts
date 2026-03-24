@@ -2,12 +2,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import MenuPlans from '@/pages/admin/restaurant/components/MenuPlans.vue'
 
-function mountMenuPlans() {
+function mountMenuPlans(routeQuery: Record<string, string> = {}) {
     const routerPush = vi.fn()
 
     return mount(MenuPlans, {
         global: {
             mocks: {
+                $route: {
+                    query: routeQuery,
+                },
                 $router: {
                     push: routerPush,
                 },
@@ -25,6 +28,12 @@ function mountMenuPlans() {
 }
 
 describe('Restaurant menu plans component', () => {
+    it('restores the requested week from the route query', () => {
+        const wrapper = mountMenuPlans({ week: '2026-04-15' })
+
+        expect((wrapper.vm as any).currentWeekStartIso).toBe('2026-04-13')
+    })
+
     it('starts each displayed week on monday', () => {
         const wrapper = mountMenuPlans()
 
@@ -98,6 +107,8 @@ describe('Restaurant menu plans component', () => {
                 mode: 'create',
                 start: '2026-04-01',
                 end: '2026-04-03',
+                return_to: '/admin/restaurant/menu-plans',
+                return_week: (wrapper.vm as any).currentWeekStartIso,
             },
         })
     })
@@ -116,6 +127,8 @@ describe('Restaurant menu plans component', () => {
                 plan_id: 'mp-2026-03-23',
                 start: '2026-03-23',
                 end: '2026-03-27',
+                return_to: '/admin/restaurant/menu-plans',
+                return_week: (wrapper.vm as any).currentWeekStartIso,
             },
         })
     })

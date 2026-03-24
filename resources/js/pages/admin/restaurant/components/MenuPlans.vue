@@ -1,89 +1,128 @@
-﻿<template>
+<template>
     <v-col cols="12">
-        <div class="menu-plans-root">
+        <div class="mp-root">
             <v-row dense class="ma-0">
-                <v-col cols="12" lg="8" class="pa-0 pr-lg-2">
-                    <v-sheet rounded="xl" class="menu-plans-calendar pa-4" data-testid="menu-plans-calendar">
-                        <div class="menu-plans-calendar__header">
+                <v-col cols="12" lg="8" class="pa-0 pr-lg-3">
+                    <v-sheet rounded="xl" elevation="0" class="mp-calendar pa-5" data-testid="menu-plans-calendar">
+
+                        <div class="mp-cal-header">
                             <div>
-                                <h3 class="menu-plans-calendar__title">Kalenderwoche</h3>
-                                <div class="menu-plans-calendar__range">{{ currentWeekRangeLabel }}</div>
+                                <div class="mp-eyebrow">Kalenderansicht</div>
+                                <h3 class="mp-cal-title">{{ currentWeekRangeLabel }}</h3>
                             </div>
-                            <div class="menu-plans-calendar__nav">
-                                <v-btn size="small" variant="tonal" color="secondary" rounded="lg" @click="goToPreviousWeek">
-                                    <v-icon icon="mdi-chevron-left" size="14" class="mr-1" />
-                                    Vorwoche
+                            <div class="mp-cal-nav">
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToPreviousWeek">
+                                    <v-icon icon="mdi-chevron-left" size="18" />
                                 </v-btn>
-                                <v-btn size="small" variant="tonal" color="secondary" rounded="lg" @click="goToCurrentWeek">Heute</v-btn>
-                                <v-btn size="small" variant="tonal" color="secondary" rounded="lg" @click="goToNextWeek">
-                                    N&auml;chste Woche
-                                    <v-icon icon="mdi-chevron-right" size="14" class="ml-1" />
+                                <v-btn size="small" variant="tonal" color="warning" rounded="lg" @click="goToCurrentWeek">Heute</v-btn>
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToNextWeek">
+                                    <v-icon icon="mdi-chevron-right" size="18" />
                                 </v-btn>
                             </div>
                         </div>
 
-                        <div class="menu-plans-calendar__weeks" role="list" aria-label="Wochentage">
+                        <div class="mp-weekday-row">
+                            <div v-for="label in weekDayLabels" :key="label" class="mp-weekday-label">{{ label }}</div>
+                        </div>
+
+                        <div class="mp-weeks" role="list" aria-label="Wochentage">
                             <div
                                 v-for="(week, weekIndex) in calendarWeeks"
                                 :key="`week-${weekIndex}`"
-                                class="menu-plans-calendar__week"
+                                class="mp-week"
                                 :data-testid="`menu-week-${weekIndex + 1}`">
                                 <button
                                     v-for="day in week"
                                     :key="day.iso"
                                     type="button"
-                                    class="menu-day"
+                                    class="mp-day"
                                     :class="dayCellClasses(day.iso)"
                                     :data-testid="`menu-day-${day.iso}`"
                                     @click="selectDay(day.iso)">
-                                    <span class="menu-day__weekday">{{ day.labelShort }}</span>
-                                    <span class="menu-day__number">{{ day.dayNumber }}</span>
-                                    <span class="menu-day__month">{{ day.monthShort }}</span>
-                                    <span v-if="day.hasPlan" class="menu-day__badge">{{ day.planCount }} Plan{{ day.planCount > 1 ? 'e' : '' }}</span>
+                                    <span class="mp-day__num">{{ day.dayNumber }}</span>
+                                    <span class="mp-day__mon">{{ day.monthShort }}</span>
+                                    <span v-if="day.hasPlan" class="mp-day__dot" aria-hidden="true" />
                                 </button>
                             </div>
                         </div>
 
-                        <div class="menu-plans-calendar__legend">
-                            <span class="legend-item"><i class="legend-dot legend-dot--plan" /> Bereits geplanter Zeitraum</span>
-                            <span class="legend-item"><i class="legend-dot legend-dot--selection" /> Deine Auswahl</span>
+                        <div class="mp-legend">
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-swatch mp-legend-swatch--plan" />
+                                Geplanter Zeitraum
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-swatch mp-legend-swatch--today" />
+                                Heute
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-swatch mp-legend-swatch--select" />
+                                Deine Auswahl
+                            </span>
                         </div>
+
                     </v-sheet>
                 </v-col>
 
-                <v-col cols="12" lg="4" class="pa-0 pl-lg-2 mt-2 mt-lg-0">
-                    <v-sheet rounded="xl" class="menu-plans-side pa-4" data-testid="menu-plans-selection">
-                        <h3 class="menu-plans-side__title">Neuen Zeitraum w&auml;hlen</h3>
-                        <p class="menu-plans-side__hint">Starttag klicken, Endtag klicken, danach Erstellen.</p>
+                <v-col cols="12" lg="4" class="pa-0 pl-lg-3 mt-3 mt-lg-0">
+                    <v-sheet rounded="xl" elevation="0" class="mp-side pa-5" data-testid="menu-plans-selection">
+                        <h3 class="mp-side__title">Zeitraum w&auml;hlen</h3>
+                        <p class="mp-side__hint">Klicke im Kalender erst auf den Starttag, dann auf den Endtag.</p>
 
-                        <div class="selection-grid">
-                            <div class="selection-card">
-                                <div class="selection-card__label">Start</div>
-                                <div class="selection-card__value">{{ selectedStartIso ? formatDate(selectedStartIso) : 'Nicht gew&auml;hlt' }}</div>
+                        <div class="mp-steps">
+                            <div class="mp-step" :class="stepClass(1, !!selectedStartIso)">
+                                <div class="mp-step__indicator">
+                                    <v-icon v-if="selectedStartIso" icon="mdi-check" size="14" />
+                                    <span v-else>1</span>
+                                </div>
+                                <div class="mp-step__body">
+                                    <div class="mp-step__label">Starttag</div>
+                                    <div class="mp-step__value">{{ selectedStartIso ? formatDate(selectedStartIso) : 'Noch nicht gew&auml;hlt' }}</div>
+                                </div>
                             </div>
-                            <div class="selection-card">
-                                <div class="selection-card__label">Ende</div>
-                                <div class="selection-card__value">{{ selectedEndIso ? formatDate(selectedEndIso) : 'Nicht gew&auml;hlt' }}</div>
+
+                            <div class="mp-step" :class="stepClass(2, !!selectedEndIso)">
+                                <div class="mp-step__indicator">
+                                    <v-icon v-if="selectedEndIso" icon="mdi-check" size="14" />
+                                    <span v-else>2</span>
+                                </div>
+                                <div class="mp-step__body">
+                                    <div class="mp-step__label">Endtag</div>
+                                    <div class="mp-step__value">{{ selectedEndIso ? formatDate(selectedEndIso) : 'Noch nicht gew&auml;hlt' }}</div>
+                                </div>
+                            </div>
+
+                            <div class="mp-step" :class="{ 'is-active': canCreatePreview || isExistingPlanSelection }">
+                                <div class="mp-step__indicator">3</div>
+                                <div class="mp-step__body">
+                                    <div class="mp-step__label">{{ isExistingPlanSelection ? 'Plan bearbeiten' : 'Plan erstellen' }}</div>
+                                    <div class="mp-step__value mp-step__value--note">{{ selectionSummary }}</div>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="menu-plans-side__summary">
-                            {{ selectionSummary }}
-                        </div>
-
-                        <div class="menu-plans-side__actions">
+                        <div class="mp-side-actions">
                             <v-btn
                                 v-if="isExistingPlanSelection"
                                 color="warning"
                                 rounded="xl"
+                                block
+                                prepend-icon="mdi-pencil-outline"
                                 :disabled="!selectedExistingPlan"
                                 @click="editSelectedPlan">
                                 Bearbeiten
                             </v-btn>
-                            <v-btn v-else color="primary" rounded="xl" :disabled="!canCreatePreview" @click="createPreview">
+                            <v-btn
+                                v-else
+                                color="primary"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-plus"
+                                :disabled="!canCreatePreview"
+                                @click="createPreview">
                                 Erstellen
                             </v-btn>
-                            <v-btn variant="text" color="secondary" rounded="xl" @click="resetSelection">
+                            <v-btn variant="text" color="secondary" rounded="xl" block @click="resetSelection">
                                 Zur&uuml;cksetzen
                             </v-btn>
                         </div>
@@ -100,19 +139,23 @@
                     </v-sheet>
                 </v-col>
             </v-row>
-
         </div>
     </v-col>
 </template>
 
 <script>
+function isValidIsoDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+}
+
 export default {
     data() {
         const todayIso = this.toIso(new Date())
+        const routeWeek = this.$route?.query?.week
 
         return {
             todayIso,
-            currentWeekStartIso: this.startOfWeekIso(todayIso),
+            currentWeekStartIso: this.resolveWeekStartIso(routeWeek, todayIso),
             selectedStartIso: '',
             selectedEndIso: '',
             previewMessage: '',
@@ -141,6 +184,16 @@ export default {
             ],
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
         }
+    },
+
+    watch: {
+        '$route.query.week'(week) {
+            if (! isValidIsoDate(week)) {
+                return
+            }
+
+            this.currentWeekStartIso = this.startOfWeekIso(week)
+        },
     },
 
     computed: {
@@ -190,6 +243,13 @@ export default {
     },
 
     methods: {
+        resolveWeekStartIso(week, fallbackIso) {
+            if (! isValidIsoDate(week)) {
+                return this.startOfWeekIso(fallbackIso)
+            }
+
+            return this.startOfWeekIso(String(week))
+        },
         buildWeekDays(weekStartIso) {
             return Array.from({ length: 7 }, (_, index) => {
                 const iso = this.addDaysIso(weekStartIso, index)
@@ -313,18 +373,30 @@ export default {
 
             this.selectedEndIso = isoString
         },
+        selectPlanRange(plan) {
+            this.selectedStartIso = plan.start_iso
+            this.selectedEndIso = plan.end_iso
+        },
+        stepClass(stepNum, isDone) {
+            let isActive = false
+
+            if (stepNum === 1) {
+                isActive = !this.selectedStartIso
+            } else if (stepNum === 2) {
+                isActive = !!this.selectedStartIso && !this.selectedEndIso
+            }
+
+            return { 'is-done': isDone, 'is-active': isActive && !isDone }
+        },
         createPreview() {
             if (!this.canCreatePreview) {
                 return
             }
 
-            this.$router.push({
-                path: '/admin/menu-plans',
-                query: {
-                    mode: 'create',
-                    start: this.selectedStartIso,
-                    end: this.selectedEndIso,
-                },
+            this.navigateToEditor({
+                mode: 'create',
+                start: this.selectedStartIso,
+                end: this.selectedEndIso,
             })
         },
         editSelectedPlan() {
@@ -332,13 +404,20 @@ export default {
                 return
             }
 
+            this.navigateToEditor({
+                mode: 'edit',
+                plan_id: this.selectedExistingPlan.id,
+                start: this.selectedExistingPlan.start_iso,
+                end: this.selectedExistingPlan.end_iso,
+            })
+        },
+        navigateToEditor(query) {
             this.$router.push({
                 path: '/admin/menu-plans',
                 query: {
-                    mode: 'edit',
-                    plan_id: this.selectedExistingPlan.id,
-                    start: this.selectedExistingPlan.start_iso,
-                    end: this.selectedExistingPlan.end_iso,
+                    ...query,
+                    return_to: '/admin/restaurant/menu-plans',
+                    return_week: this.currentWeekStartIso,
                 },
             })
         },
@@ -361,235 +440,341 @@ export default {
 </script>
 
 <style scoped>
-.menu-plans-root {
-    --menu-plans-bg: #061425;
-    --menu-plans-panel: linear-gradient(155deg, rgba(12, 29, 48, 0.96), rgba(7, 22, 38, 0.93));
-    --menu-plans-line: rgba(125, 211, 252, 0.19);
-    --menu-plans-copy: #c7d2fe;
-    --menu-plans-title: #f8fafc;
-    --menu-plans-accent: #f59e0b;
-    --menu-plans-good: #22d3ee;
-    --menu-plans-selected: #f97316;
+/* ---- Calendar Panel ---- */
+
+.mp-calendar,
+.mp-side {
+    border: 1px solid rgba(180, 83, 9, 0.13);
+    background: #ffffff;
+    box-shadow: 0 4px 24px rgba(15, 23, 42, 0.07);
 }
 
-.menu-plans-hero,
-.menu-plans-calendar,
-.menu-plans-side {
-    border: 1px solid var(--menu-plans-line);
-    background: var(--menu-plans-panel);
-    box-shadow: 0 22px 40px rgba(2, 6, 23, 0.45);
-    color: var(--menu-plans-title);
-}
-
-.menu-plans-calendar__header {
+.mp-cal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 12px;
+    margin-bottom: 18px;
 }
 
-.menu-plans-calendar__nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.menu-plans-calendar__title,
-.menu-plans-side__title {
-    font-size: 1.08rem;
+.mp-eyebrow {
+    font-size: 0.71rem;
     font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #b45309;
+    margin-bottom: 3px;
 }
 
-.menu-plans-calendar__range,
-.menu-plans-side__hint,
-.menu-plans-side__summary {
-    color: var(--menu-plans-copy);
+.mp-cal-title {
+    font-size: 1.08rem;
+    font-weight: 800;
+    color: #1f2937;
 }
 
-.menu-plans-calendar__weeks {
-    display: grid;
+.mp-cal-nav {
+    display: flex;
+    align-items: center;
     gap: 6px;
 }
 
-.menu-plans-calendar__week {
+/* ---- Weekday Header Row ---- */
+
+.mp-weekday-row {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    margin-bottom: 6px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #f3f4f6;
+}
+
+.mp-weekday-label {
+    text-align: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #9ca3af;
+}
+
+/* ---- Weeks Grid ---- */
+
+.mp-weeks {
+    display: grid;
+    gap: 4px;
+}
+
+.mp-week {
     display: grid;
     grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0;
 }
 
-.menu-day {
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    border-radius: 10px;
-    padding: 7px 6px;
-    background: rgba(15, 23, 42, 0.6);
-    color: #e2e8f0;
+/* ---- Day Cell ---- */
+
+.mp-day {
+    position: relative;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
     gap: 2px;
-    text-align: left;
-    transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+    padding: 10px 4px;
+    min-height: 70px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #374151;
+    cursor: pointer;
+    transition: background-color 0.14s ease, border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+    text-align: center;
 }
 
-.menu-day:hover {
-    transform: translateY(-1px);
-    border-color: rgba(125, 211, 252, 0.6);
+.mp-day:hover {
+    background: #fefce8;
+    border-color: #fbbf24;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.18);
+    z-index: 2;
 }
 
-.menu-day__weekday {
-    font-size: 0.68rem;
-    color: #94a3b8;
+.mp-day__num {
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #1f2937;
 }
 
-.menu-day__number {
-    font-size: 0.94rem;
-    font-weight: 700;
-    line-height: 1.15;
-}
-
-.menu-day__month {
-    font-size: 0.66rem;
-    color: #cbd5e1;
-}
-
-.menu-day__badge {
-    margin-top: 3px;
+.mp-day__mon {
     font-size: 0.62rem;
-    color: #082f49;
-    background: #a5f3fc;
-    border-radius: 999px;
-    padding: 1px 6px;
-    align-self: flex-start;
-    font-weight: 700;
+    color: #9ca3af;
+    text-transform: capitalize;
 }
 
-.menu-day.has-plan {
-    position: relative;
-    border-color: rgba(34, 211, 238, 0.55);
-    background: rgba(34, 211, 238, 0.16);
+.mp-day__dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #f59e0b;
+    margin-top: 3px;
+}
+
+/* ---- Plan State ---- */
+
+.mp-day.has-plan {
+    background: linear-gradient(160deg, #fffbeb 0%, #fef3c7 100%);
+    border-color: rgba(245, 158, 11, 0.5);
     z-index: 1;
 }
 
-.menu-day.has-plan-start,
-.menu-day.has-plan-middle,
-.menu-day.has-plan-end {
+.mp-day.has-plan .mp-day__num { color: #78350f; }
+.mp-day.has-plan .mp-day__mon { color: #b45309; }
+
+.mp-day.has-plan-start,
+.mp-day.has-plan-middle,
+.mp-day.has-plan-end {
     border-radius: 0;
 }
 
-.menu-day.has-plan-start,
-.menu-day.has-plan-middle {
+.mp-day.has-plan-start,
+.mp-day.has-plan-middle {
     border-right-color: transparent;
 }
 
-.menu-day.has-plan-middle,
-.menu-day.has-plan-end {
+.mp-day.has-plan-middle,
+.mp-day.has-plan-end {
     border-left-color: transparent;
 }
 
-.menu-day.has-plan-start {
+.mp-day.has-plan-start {
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
 }
 
-.menu-day.has-plan-end {
+.mp-day.has-plan-end {
     border-top-right-radius: 10px;
     border-bottom-right-radius: 10px;
 }
 
-.menu-day.is-selected-range {
-    background: rgba(249, 115, 22, 0.22);
-    border-color: rgba(251, 146, 60, 0.8);
+/* ---- Selection State ---- */
+
+.mp-day.is-selected-range {
+    background: linear-gradient(160deg, #fff7ed 0%, #ffedd5 100%);
+    border-color: rgba(251, 146, 60, 0.65);
 }
 
-.menu-day.is-range-start,
-.menu-day.is-range-end {
+.mp-day.is-selected-range .mp-day__num { color: #9a3412; }
+
+.mp-day.is-range-start,
+.mp-day.is-range-end {
+    background: linear-gradient(160deg, #fed7aa 0%, #fdba74 100%);
+    border-color: #ea580c;
     border-width: 2px;
-    border-color: #fdba74;
-    background: rgba(249, 115, 22, 0.34);
 }
 
-.menu-day.is-today {
-    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.75);
+.mp-day.is-range-start .mp-day__num,
+.mp-day.is-range-end .mp-day__num {
+    color: #7c2d12;
+    font-weight: 900;
 }
 
-.menu-plans-calendar__legend {
-    margin-top: 12px;
+/* ---- Today ---- */
+
+.mp-day.is-today {
+    box-shadow: inset 0 0 0 2px #1e293b;
+}
+
+.mp-day.is-today .mp-day__num { color: #1e293b; }
+
+/* ---- Legend ---- */
+
+.mp-legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    color: var(--menu-plans-copy);
-    font-size: 0.78rem;
+    gap: 16px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #f3f4f6;
+    font-size: 0.77rem;
+    color: #6b7280;
 }
 
-.legend-item {
+.mp-legend-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
 }
 
-.legend-dot {
+.mp-legend-swatch {
     width: 10px;
     height: 10px;
-    border-radius: 50%;
     display: inline-block;
+    flex-shrink: 0;
 }
 
-.legend-dot--plan {
-    background: var(--menu-plans-good);
+.mp-legend-swatch--plan { background: #f59e0b; border-radius: 3px; }
+.mp-legend-swatch--today { border-radius: 50%; box-shadow: inset 0 0 0 2px #1e293b; }
+.mp-legend-swatch--select { background: #ea580c; border-radius: 3px; }
+
+/* ---- Sidebar ---- */
+
+.mp-side {
+    height: 100%;
 }
 
-.legend-dot--selection {
-    background: var(--menu-plans-selected);
+.mp-side__title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: #1f2937;
+    margin-bottom: 4px;
 }
 
-.selection-grid {
+.mp-side__hint {
+    font-size: 0.85rem;
+    color: #6b7280;
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+/* ---- Steps ---- */
+
+.mp-steps {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 10px;
+    gap: 10px;
+    margin-bottom: 22px;
 }
 
-.selection-card {
-    border: 1px solid rgba(125, 211, 252, 0.26);
-    border-radius: 12px;
-    padding: 10px;
-    background: rgba(15, 23, 42, 0.6);
+.mp-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 13px 14px;
+    border-radius: 14px;
+    border: 1px solid #f3f4f6;
+    background: #fafafa;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.selection-card__label {
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: 0.7rem;
-    color: #93c5fd;
+.mp-step.is-active {
+    background: linear-gradient(145deg, #fffdf5, #fef3c7);
+    border-color: rgba(245, 158, 11, 0.4);
 }
 
-.selection-card__value {
-    margin-top: 6px;
-    font-size: 0.88rem;
+.mp-step.is-done {
+    background: linear-gradient(145deg, #f0fdf4, #dcfce7);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.mp-step__indicator {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 0.85rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    background: #e5e7eb;
+    color: #9ca3af;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.mp-step.is-active .mp-step__indicator {
+    background: #f59e0b;
+    color: #ffffff;
+    box-shadow: 0 3px 10px rgba(245, 158, 11, 0.4);
+}
+
+.mp-step.is-done .mp-step__indicator {
+    background: #22c55e;
+    color: #ffffff;
+}
+
+.mp-step__body { flex: 1; min-width: 0; }
+
+.mp-step__label {
+    font-size: 0.74rem;
     font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #9ca3af;
+    margin-bottom: 3px;
 }
 
-.menu-plans-side__summary {
-    margin-top: 14px;
-    font-size: 0.93rem;
+.mp-step.is-active .mp-step__label { color: #b45309; }
+.mp-step.is-done .mp-step__label { color: #16a34a; }
+
+.mp-step__value {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.35;
+}
+
+.mp-step__value--note {
+    font-weight: 400;
+    font-size: 0.83rem;
+    color: #6b7280;
     line-height: 1.45;
 }
 
-.menu-plans-side__actions {
-    margin-top: 14px;
-    display: flex;
-    flex-wrap: wrap;
+/* ---- Sidebar Actions ---- */
+
+.mp-side-actions {
+    display: grid;
     gap: 8px;
 }
 
-@media (max-width: 960px) {
-    .menu-plans-calendar__week {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+/* ---- Responsive ---- */
 
-    .selection-grid {
-        grid-template-columns: 1fr;
-    }
+@media (max-width: 960px) {
+    .mp-week { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .mp-weekday-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+    .mp-week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .mp-weekday-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
