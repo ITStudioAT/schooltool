@@ -47,4 +47,50 @@ describe('Grading settings required entries chip', () => {
         expect(source).toContain('flex-wrap: wrap;')
         expect(source).toContain('.grading-category-meta {')
     })
+
+    it('shows semester weighting graphically in view mode when two semesters are configured', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/settings/components/Grading.vue',
+        )
+
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="semester-weight-visual"')
+        expect(source).toContain('class="semester-weight-legend"')
+        expect(source).toContain('aria-label="Gewichtung der Semester"')
+        expect(source).toContain('semester-weight-bar__segment semester-weight-bar__segment--first')
+        expect(source).toContain('semester-weight-bar__segment semester-weight-bar__segment--second')
+        expect(source).toContain('.semester-weight-bar {')
+        expect(source).not.toContain('<div class="text-body-1">1. Semester: {{ data.semester_1_weight }}%</div>')
+        expect(source).not.toContain('<div class="text-body-1">2. Semester: {{ data.semester_2_weight }}%</div>')
+    })
+
+    it('renders semester count, semester weighting, and first semester calculation as separate areas', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/settings/components/Grading.vue',
+        )
+
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<div class="grading-config-box mb-4">')
+        expect(source).toContain('Anzahl der Semester')
+        expect(source).toContain('Gewichtung der Semester')
+        expect(source).toContain('Berechnung des 1. Semesters für die Jahresnote')
+        expect(source).toContain('.grading-config-box {')
+    })
+
+    it('places the edit pencil in the Benotung header actions', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/settings/components/Grading.vue',
+        )
+
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<template #header-actions>')
+        expect(source).toContain('v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true"')
+        expect(source).not.toContain('<div class="d-flex flex-row align-center justify-end mt-2 ga-2">')
+    })
 })

@@ -152,7 +152,7 @@
                     <div class="form-group-box mt-4 points-note-box">
                         <div class="d-flex align-center ga-1">
                             <v-checkbox v-model="data.points_note_enabled" hide-details density="compact" class="flex-grow-0" />
-                            <div class="text-caption text-text">Punkte-Note (optional)</div>
+                            <div class="text-caption text-text">Punkte-Note-Tabelle pro Arbeit (optional)</div>
                         </div>
 
                         <div v-if="data.points_note_enabled" class="mt-3">

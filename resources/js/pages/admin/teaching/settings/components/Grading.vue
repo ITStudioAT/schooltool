@@ -1,24 +1,27 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
-        <!-- HEADER ACTIONS -->
-        <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
-            <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isValid" @click="save" />
-            <v-btn v-if="is_editing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
-        </div>
+        <template #header-actions>
+            <div class="d-flex flex-row align-center ga-2">
+                <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
+                <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isValid" @click="save" />
+                <v-btn v-if="is_editing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
+            </div>
+        </template>
 
         <v-card tile flat color="transparent" class="mt-4">
             <v-card-text>
                 <!-- SEMESTER ANZAHL -->
-                <div class="text-caption text-medium-emphasis mb-2">Anzahl der Semester</div>
-                <v-btn-toggle v-if="is_editing" v-model="data.semester_count" mandatory color="primary" class="mb-4">
-                    <v-btn :value="1" size="small">1 Semester</v-btn>
-                    <v-btn :value="2" size="small">2 Semester</v-btn>
-                </v-btn-toggle>
-                <div v-else class="text-body-1 mb-4">{{ data.semester_count }} Semester</div>
+                <div class="grading-config-box mb-4">
+                    <div class="text-caption text-medium-emphasis mb-2">Anzahl der Semester</div>
+                    <v-btn-toggle v-if="is_editing" v-model="data.semester_count" mandatory color="primary">
+                        <v-btn :value="1" size="small">1 Semester</v-btn>
+                        <v-btn :value="2" size="small">2 Semester</v-btn>
+                    </v-btn-toggle>
+                    <div v-else class="text-body-1">{{ data.semester_count }} Semester</div>
+                </div>
 
                 <!-- GEWICHTUNG BEI 2 SEMESTERN -->
-                <div v-if="data.semester_count === 2" class="mt-4">
+                <div v-if="data.semester_count === 2" class="grading-config-box mb-4">
                     <div class="text-caption text-medium-emphasis mb-2">Gewichtung der Semester</div>
 
                     <!-- EDIT MODE: SLIDERS -->
@@ -50,41 +53,57 @@
                             <div class="text-center text-h6 mt-1">{{ data.semester_2_weight }}%</div>
                         </div>
                     </div>
-                    <!-- VIEW MODE: DISPLAY ONLY -->
-                    <div v-else class="d-flex flex-row align-center ga-4">
-                        <div class="text-body-1">1. Semester: {{ data.semester_1_weight }}%</div>
-                        <div class="text-body-1">2. Semester: {{ data.semester_2_weight }}%</div>
+                    <!-- VIEW MODE: GRAPHICAL DISPLAY -->
+                    <div v-else class="semester-weight-visual">
+                        <div class="semester-weight-legend">
+                            <div class="semester-weight-legend-item">
+                                <v-chip size="small" color="primary" variant="flat">1. Semester</v-chip>
+                                <span class="text-body-2 font-weight-medium">{{ data.semester_1_weight }}%</span>
+                            </div>
+                            <div class="semester-weight-legend-item">
+                                <v-chip size="small" color="error" variant="flat">2. Semester</v-chip>
+                                <span class="text-body-2 font-weight-medium">{{ data.semester_2_weight }}%</span>
+                            </div>
+                        </div>
+                        <div class="semester-weight-bar" aria-label="Gewichtung der Semester">
+                            <div
+                                class="semester-weight-bar__segment semester-weight-bar__segment--first"
+                                :style="{ width: `${data.semester_1_weight}%` }" />
+                            <div
+                                class="semester-weight-bar__segment semester-weight-bar__segment--second"
+                                :style="{ width: `${data.semester_2_weight}%` }" />
+                        </div>
                     </div>
 
                     <!-- WARNUNG WENN NICHT 100% -->
                     <v-alert v-if="is_editing && totalSemesterWeight !== 100" type="warning" density="compact" class="mt-4">
                         Die Summe der Semester-Gewichtungen muss 100% ergeben (aktuell: {{ totalSemesterWeight }}%)
                     </v-alert>
+                </div>
 
-                    <!-- BERECHNUNG DES 1. SEMESTERS FÜR JAHRESNOTE -->
-                    <div class="mt-4">
-                        <div class="text-caption text-medium-emphasis mb-2">Berechnung des 1. Semesters für die Jahresnote</div>
-                        <v-radio-group v-if="is_editing" v-model="data.use_semester_grade_only" hide-details class="mt-2">
-                            <v-radio :value="false" color="primary">
-                                <template v-slot:label>
-                                    <div class="text-body-2">
-                                        <strong>Alle Werte aus dem 1. Semester</strong>
-                                        <div class="text-caption text-medium-emphasis">Alle Kategorien und Arbeiten werden neu berechnet</div>
-                                    </div>
-                                </template>
-                            </v-radio>
-                            <v-radio :value="true" color="primary" class="mt-2">
-                                <template v-slot:label>
-                                    <div class="text-body-2">
-                                        <strong>Nur die Semesternote</strong>
-                                        <div class="text-caption text-medium-emphasis">Die bereits berechnete Note des 1. Semesters wird verwendet</div>
-                                    </div>
-                                </template>
-                            </v-radio>
-                        </v-radio-group>
-                        <div v-else class="text-body-1">
-                            {{ data.use_semester_grade_only ? 'Nur die Semesternote' : 'Alle Werte aus dem 1. Semester' }}
-                        </div>
+                <!-- BERECHNUNG DES 1. SEMESTERS FÜR JAHRESNOTE -->
+                <div v-if="data.semester_count === 2" class="grading-config-box mb-4">
+                    <div class="text-caption text-medium-emphasis mb-2">Berechnung des 1. Semesters für die Jahresnote</div>
+                    <v-radio-group v-if="is_editing" v-model="data.use_semester_grade_only" hide-details class="mt-2">
+                        <v-radio :value="false" color="primary">
+                            <template v-slot:label>
+                                <div class="text-body-2">
+                                    <strong>Alle Werte aus dem 1. Semester</strong>
+                                    <div class="text-caption text-medium-emphasis">Alle Kategorien und Arbeiten werden neu berechnet</div>
+                                </div>
+                            </template>
+                        </v-radio>
+                        <v-radio :value="true" color="primary" class="mt-2">
+                            <template v-slot:label>
+                                <div class="text-body-2">
+                                    <strong>Nur die Semesternote</strong>
+                                    <div class="text-caption text-medium-emphasis">Die bereits berechnete Note des 1. Semesters wird verwendet</div>
+                                </div>
+                            </template>
+                        </v-radio>
+                    </v-radio-group>
+                    <div v-else class="text-body-1">
+                        {{ data.use_semester_grade_only ? 'Nur die Semesternote' : 'Alle Werte aus dem 1. Semester' }}
                     </div>
                 </div>
 
@@ -624,6 +643,13 @@ export default {
     cursor: pointer;
 }
 
+.grading-config-box {
+    border: 1px solid rgba(var(--v-theme-primary), 0.2);
+    border-radius: 12px;
+    background: rgba(var(--v-theme-primary), 0.04);
+    padding: 14px 16px;
+}
+
 .grading-category-header {
     display: flex;
     flex-wrap: wrap;
@@ -657,5 +683,45 @@ export default {
     align-items: center;
     gap: 4px;
     margin-left: auto;
+}
+
+.semester-weight-visual {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.semester-weight-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.semester-weight-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.semester-weight-bar {
+    display: flex;
+    width: 100%;
+    min-height: 16px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.semester-weight-bar__segment {
+    min-width: 0;
+    transition: width 0.2s ease;
+}
+
+.semester-weight-bar__segment--first {
+    background: rgb(var(--v-theme-primary));
+}
+
+.semester-weight-bar__segment--second {
+    background: rgb(var(--v-theme-error));
 }
 </style>

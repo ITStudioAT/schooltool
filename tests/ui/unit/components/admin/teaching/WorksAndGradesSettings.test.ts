@@ -14,7 +14,7 @@ describe('Works and grades settings edit flow', () => {
 
         expect(source).toContain('\n                                Punkte\n')
         expect(source).toContain('Berechnung der Semesternote (optional)')
-        expect(source).toContain('Punkte-Note (optional)')
+        expect(source).toContain('Punkte-Note-Tabelle pro Arbeit (optional)')
         expect(source).toContain('<div class="form-group-box mt-4 points-note-box">')
         expect(source).toContain('v-model="data.points_note_enabled"')
         expect(source).toContain('v-for="(grade, index) in pointsNoteGrades"')
