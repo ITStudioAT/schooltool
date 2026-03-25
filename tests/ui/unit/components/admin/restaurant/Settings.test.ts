@@ -122,6 +122,10 @@ describe('Restaurant settings component', () => {
         expect(wrapper.text()).toContain('Bestellzeitraum')
         expect(wrapper.text()).toContain('Live-Vorschau')
         expect(wrapper.text()).toContain('Bestellzeitraum für Menüpläne')
+        expect(wrapper.text()).toContain('Sobald verfügbar')
+        expect(wrapper.text()).toContain('Fester Tag')
+        expect(wrapper.findAll('button').some((button) => button.text() === 'Sobald verfügbar')).toBe(true)
+        expect(wrapper.findAll('button').some((button) => button.text() === 'Fester Tag')).toBe(true)
 
         ;(wrapper.vm as any).activatePanel('ingredient-icons')
         await wrapper.vm.$nextTick()

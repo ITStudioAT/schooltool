@@ -16,37 +16,11 @@
                 </div>
             </div>
 
-            <div class="online-settings__calendar-note">
-                Wochen werden hier von Montag bis Sonntag gedacht. Sonntag ist also immer der letzte Tag der Vorwoche.
-            </div>
-
             <div v-if="!canManageOnlineSettings" class="online-settings__message online-settings__message--warning">
                 Diese Einstellungen sind erst nach der aktuellen Migration verfügbar.
             </div>
 
             <template v-else>
-                <div class="online-settings__mode-grid">
-                    <button
-                        type="button"
-                        class="online-settings__mode-card"
-                        :class="{ 'is-active': form.order_start_mode === 'when_available' }"
-                        @click="setStartMode('when_available')">
-                        <span class="online-settings__mode-kicker">Einfach</span>
-                        <strong>Sobald verfügbar und vollständig</strong>
-                        <span>Der Bestellstart erfolgt automatisch, sobald der Menüplan bereit ist.</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        class="online-settings__mode-card"
-                        :class="{ 'is-active': form.order_start_mode === 'scheduled' }"
-                        @click="setStartMode('scheduled')">
-                        <span class="online-settings__mode-kicker">Planbar</span>
-                        <strong>An einem festen Tag mit Uhrzeit</strong>
-                        <span>Perfekt, wenn die Bestellung immer nach einem klaren Rhythmus starten soll.</span>
-                    </button>
-                </div>
-
                 <div class="online-settings__configuration-grid">
                     <section class="online-settings__panel">
                         <div class="online-settings__panel-header">
@@ -57,31 +31,64 @@
                             <span class="online-settings__panel-status">{{ startStatusLabel }}</span>
                         </div>
 
-                        <div v-if="form.order_start_mode === 'scheduled'" class="online-settings__field-grid">
-                            <label class="online-settings__field">
-                                <span>Woche</span>
-                                <select v-model.number="form.order_start_week_offset">
-                                    <option v-for="week in weekOptions" :key="`start-week-${week.value}`" :value="week.value">
-                                        {{ week.label }}
-                                    </option>
-                                </select>
-                            </label>
-
-                            <label class="online-settings__field">
-                                <span>Tag</span>
-                                <select v-model.number="form.order_start_day_of_week">
-                                    <option v-for="day in dayOptions" :key="`start-day-${day.value}`" :value="day.value">
-                                        {{ day.label }}
-                                    </option>
-                                </select>
-                            </label>
-
-                            <label class="online-settings__field">
-                                <span>Uhrzeit</span>
-                                <input v-model="form.order_start_time" type="time">
-                            </label>
+                        <div class="online-settings__field online-settings__field--stacked">
+                            <span>Bestellstart</span>
+                            <div class="online-settings__mode-toggle">
+                                <button
+                                    type="button"
+                                    class="online-settings__mode-option"
+                                    :class="{ 'is-active': form.order_start_mode === 'when_available' }"
+                                    @click="setStartMode('when_available')">
+                                    Sobald verfügbar
+                                </button>
+                                <button
+                                    type="button"
+                                    class="online-settings__mode-option"
+                                    :class="{ 'is-active': form.order_start_mode === 'scheduled' }"
+                                    @click="setStartMode('scheduled')">
+                                    Fester Tag
+                                </button>
+                            </div>
                         </div>
 
+                        <div v-if="form.order_start_mode === 'scheduled'" class="online-settings__field-grid online-settings__field-grid--timeline">
+                            <div class="online-settings__field">
+                                <span>Woche</span>
+                                <div class="online-settings__choice-row">
+                                    <button
+                                        v-for="week in weekOptions"
+                                        :key="`start-week-${week.value}`"
+                                        type="button"
+                                        class="online-settings__choice-chip"
+                                        :class="{ 'is-active': form.order_start_week_offset === week.value }"
+                                        @click="form.order_start_week_offset = week.value">
+                                        {{ week.label }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="online-settings__field-grid online-settings__field-grid--daytime">
+                                <div class="online-settings__field">
+                                    <span>Tag</span>
+                                    <div class="online-settings__choice-row">
+                                        <button
+                                            v-for="day in dayOptions"
+                                            :key="`start-day-${day.value}`"
+                                            type="button"
+                                            class="online-settings__choice-chip"
+                                            :class="{ 'is-active': form.order_start_day_of_week === day.value }"
+                                            @click="form.order_start_day_of_week = day.value">
+                                            {{ day.short }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <label class="online-settings__field">
+                                    <span>Uhrzeit</span>
+                                    <input v-model="form.order_start_time" type="time">
+                                </label>
+                            </div>
+                        </div>
                         <div v-else class="online-settings__message">
                             Bestellstart automatisch, sobald der Menüplan verfügbar und vollständig ist.
                         </div>
@@ -96,29 +103,43 @@
                             <span class="online-settings__panel-status">{{ endStatusLabel }}</span>
                         </div>
 
-                        <div class="online-settings__field-grid">
-                            <label class="online-settings__field">
+                        <div class="online-settings__field-grid online-settings__field-grid--timeline">
+                            <div class="online-settings__field">
                                 <span>Woche</span>
-                                <select v-model.number="form.order_end_week_offset">
-                                    <option v-for="week in weekOptions" :key="`end-week-${week.value}`" :value="week.value">
+                                <div class="online-settings__choice-row">
+                                    <button
+                                        v-for="week in weekOptions"
+                                        :key="`end-week-${week.value}`"
+                                        type="button"
+                                        class="online-settings__choice-chip"
+                                        :class="{ 'is-active': form.order_end_week_offset === week.value }"
+                                        @click="form.order_end_week_offset = week.value">
                                         {{ week.label }}
-                                    </option>
-                                </select>
-                            </label>
+                                    </button>
+                                </div>
+                            </div>
 
-                            <label class="online-settings__field">
-                                <span>Tag</span>
-                                <select v-model.number="form.order_end_day_of_week">
-                                    <option v-for="day in dayOptions" :key="`end-day-${day.value}`" :value="day.value">
-                                        {{ day.label }}
-                                    </option>
-                                </select>
-                            </label>
+                            <div class="online-settings__field-grid online-settings__field-grid--daytime">
+                                <div class="online-settings__field">
+                                    <span>Tag</span>
+                                    <div class="online-settings__choice-row">
+                                        <button
+                                            v-for="day in dayOptions"
+                                            :key="`end-day-${day.value}`"
+                                            type="button"
+                                            class="online-settings__choice-chip"
+                                            :class="{ 'is-active': form.order_end_day_of_week === day.value }"
+                                            @click="form.order_end_day_of_week = day.value">
+                                            {{ day.short }}
+                                        </button>
+                                    </div>
+                                </div>
 
-                            <label class="online-settings__field">
-                                <span>Uhrzeit</span>
-                                <input v-model="form.order_end_time" type="time">
-                            </label>
+                                <label class="online-settings__field">
+                                    <span>Uhrzeit</span>
+                                    <input v-model="form.order_end_time" type="time">
+                                </label>
+                            </div>
                         </div>
                     </section>
                 </div>
@@ -138,14 +159,14 @@
                         {{ previewText }}
                     </div>
 
-                    <div class="online-settings__week-strip">
-                        <section
+                    <div class="online-settings__timeline">
+                        <div
                             v-for="week in scheduleWeeks"
-                            :key="week.value"
-                            class="online-settings__week-card">
-                            <div class="online-settings__week-title">{{ week.label }}</div>
+                            :key="`week-${week.value}`"
+                            class="online-settings__timeline-week-card">
+                            <div class="online-settings__timeline-week-label">{{ week.label }}</div>
 
-                            <div class="online-settings__day-grid">
+                            <div class="online-settings__timeline-week-days">
                                 <div
                                     v-for="day in week.days"
                                     :key="`${week.value}-${day.value}`"
@@ -164,7 +185,7 @@
                                     </span>
                                 </div>
                             </div>
-                        </section>
+                        </div>
                     </div>
 
                     <div v-if="form.order_start_mode === 'when_available'" class="online-settings__auto-start-note">
@@ -269,6 +290,7 @@ export default {
 
                         return {
                             ...day,
+                            weekValue: week.value,
                             hasStart,
                             hasEnd,
                             hasMarker: hasStart || hasEnd,
@@ -382,17 +404,10 @@ export default {
 
 .online-settings__copy,
 .online-settings__preview-copy,
-.online-settings__mode-card span:last-child,
 .online-settings__message,
-.online-settings__calendar-note {
+.online-settings__field--stacked span,
+.online-settings__field--stacked select {
     color: rgba(67, 20, 7, 0.84);
-}
-
-.online-settings__calendar-note {
-    margin-top: 16px;
-    border-left: 4px solid rgba(217, 119, 6, 0.45);
-    padding-left: 12px;
-    font-size: 0.92rem;
 }
 
 .online-settings__intro-badges {
@@ -419,52 +434,22 @@ export default {
     color: rgba(67, 20, 7, 0.78);
 }
 
-.online-settings__mode-grid,
 .online-settings__configuration-grid,
-.online-settings__week-strip {
+.online-settings__timeline {
     display: grid;
     gap: 16px;
     margin-top: 22px;
 }
 
-.online-settings__mode-grid,
 .online-settings__configuration-grid {
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
-.online-settings__mode-card,
 .online-settings__panel,
-.online-settings__week-card,
 .online-settings__preview {
     border: 1px solid rgba(180, 83, 9, 0.14);
     border-radius: 22px;
     background: rgba(255, 255, 255, 0.72);
-}
-
-.online-settings__mode-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 18px;
-    text-align: left;
-    cursor: pointer;
-    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-}
-
-.online-settings__mode-card:hover,
-.online-settings__mode-card.is-active {
-    transform: translateY(-1px);
-    border-color: rgba(180, 83, 9, 0.4);
-    box-shadow: 0 16px 32px rgba(120, 53, 15, 0.12);
-}
-
-.online-settings__mode-kicker {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: rgb(180, 83, 9);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
 }
 
 .online-settings__panel,
@@ -484,12 +469,87 @@ export default {
     margin-top: 16px;
 }
 
+.online-settings__field-grid--timeline {
+    grid-template-columns: 1fr;
+    align-items: start;
+}
+
+.online-settings__field-grid--daytime {
+    grid-template-columns: minmax(320px, 1fr) minmax(140px, 0.45fr);
+    align-items: start;
+    margin-top: 0;
+}
+
 .online-settings__field {
     display: flex;
     flex-direction: column;
     gap: 7px;
     font-size: 0.9rem;
     font-weight: 600;
+}
+
+.online-settings__field--stacked {
+    margin-top: 16px;
+}
+
+.online-settings__mode-toggle {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.online-settings__choice-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.online-settings__mode-option {
+    border-radius: 999px;
+    border: 1px solid rgba(180, 83, 9, 0.18);
+    background: rgba(255, 255, 255, 0.92);
+    padding: 10px 14px;
+    color: rgb(120, 53, 15);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.online-settings__mode-option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(180, 83, 9, 0.36);
+}
+
+.online-settings__mode-option.is-active {
+    border-color: rgba(180, 83, 9, 0.44);
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.2), rgba(249, 115, 22, 0.16));
+    color: rgb(154, 52, 18);
+}
+
+.online-settings__choice-chip {
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(255, 255, 255, 0.92);
+    padding: 9px 12px;
+    color: rgb(67, 20, 7);
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.online-settings__choice-chip:hover {
+    transform: translateY(-1px);
+    border-color: rgba(180, 83, 9, 0.32);
+}
+
+.online-settings__choice-chip.is-active {
+    border-color: rgba(180, 83, 9, 0.44);
+    background: rgba(255, 237, 213, 0.92);
+    color: rgb(154, 52, 18);
+    font-weight: 700;
 }
 
 .online-settings__field select,
@@ -525,35 +585,46 @@ export default {
     font-weight: 700;
 }
 
-.online-settings__week-strip {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.online-settings__timeline {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(360px, 1fr));
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    align-items: start;
 }
 
-.online-settings__week-card {
-    padding: 16px;
+.online-settings__timeline-week-card {
+    border: 1px solid rgba(180, 83, 9, 0.16);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.78);
+    padding: 12px;
+    min-width: 360px;
 }
 
-.online-settings__week-title {
-    margin-bottom: 12px;
-    font-size: 0.92rem;
+.online-settings__timeline-week-label {
+    font-size: 0.78rem;
     font-weight: 700;
     color: rgb(120, 53, 15);
+    text-align: center;
+    padding: 0 0 10px;
 }
 
-.online-settings__day-grid {
+.online-settings__timeline-week-days {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(7, minmax(44px, 1fr));
+    gap: 8px;
 }
 
 .online-settings__day-chip {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    min-height: 58px;
+    min-height: 68px;
+    min-width: 54px;
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.82);
-    padding: 10px 12px;
+    padding: 8px 8px 10px;
 }
 
 .online-settings__day-chip.is-highlighted {
@@ -569,8 +640,9 @@ export default {
 }
 
 .online-settings__day-label {
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 700;
+    text-align: center;
 }
 
 .online-settings__marker {
@@ -643,6 +715,22 @@ export default {
 
     .online-settings__save-button {
         width: 100%;
+    }
+
+    .online-settings__field-grid--timeline {
+        grid-template-columns: 1fr;
+    }
+
+    .online-settings__field-grid--daytime {
+        grid-template-columns: 1fr;
+    }
+
+    .online-settings__timeline {
+        grid-template-columns: repeat(3, minmax(340px, 1fr));
+    }
+
+    .online-settings__timeline-week-card {
+        min-width: 340px;
     }
 }
 </style>
