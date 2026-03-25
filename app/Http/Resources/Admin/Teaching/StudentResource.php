@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Admin\Teaching;
 
 use App\Jobs\Teaching\Import116Job;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -25,6 +26,7 @@ class StudentResource extends JsonResource
             'schoolclass' => $this->schoolclass,
             'email' => $isPlaceholder ? null : $this->email,
             'email_is_placeholder' => $isPlaceholder,
+            'login_at' => $this->login_at ? Carbon::parse($this->login_at)->format('d.m.Y  H:i') : null,
             'phone' => $this->phone,
         ];
     }

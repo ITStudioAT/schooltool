@@ -70,6 +70,15 @@ describe('CourseStudents sorting', () => {
         expect(activeClass).toBe('')
     })
 
+    it('builds secondary student detail lines for email and last login', () => {
+        const methods = (CourseStudents as any).methods
+
+        expect(methods.studentEmailText.call({}, { email: 'student@example.test' })).toBe('student@example.test')
+        expect(methods.studentEmailText.call({}, { email: '   ' })).toBe('')
+        expect(methods.studentLastLoginText.call({}, { login_at: '24.03.2026  08:15' })).toBe('24.03.2026  08:15')
+        expect(methods.studentLastLoginText.call({}, { login_at: null })).toBe('')
+    })
+
     it('does not render the old per-student pdf button anymore', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
@@ -77,6 +86,8 @@ describe('CourseStudents sorting', () => {
 
         expect(source).not.toContain('mdi-file-pdf-box')
         expect(source).not.toContain('studentPerformancePdfUrl')
+        expect(source).toContain('studentEmailText(student)')
+        expect(source).toContain('studentLastLoginText(student)')
     })
 })
 

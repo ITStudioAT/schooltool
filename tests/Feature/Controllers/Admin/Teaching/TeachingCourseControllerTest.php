@@ -339,6 +339,42 @@ describe('index', function () {
             ->and($blockedPayload['remove_block_reason'])->not->toBeNull()
             ->and($blockedPayload['canceled_at'])->not->toBeNull();
     });
+
+    test('includes student email and formatted last login for course students', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Kontakte',
+            'classes' => ['1A'],
+        ]);
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'student.contact@course.test',
+            'login_at' => '2026-03-24 08:15:00',
+        ]);
+
+        $course->teachingCourseStudents()->create([
+            'user_id' => $student->id,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/courses');
+
+        $response->assertSuccessful();
+
+        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+        expect($courseData)->not->toBeNull();
+
+        $studentPayload = collect($courseData['students'] ?? [])->firstWhere('id', $student->id);
+
+        expect($studentPayload)->not->toBeNull()
+            ->and($studentPayload['email'])->toBe('student.contact@course.test')
+            ->and($studentPayload['login_at'])->toBe('24.03.2026  08:15');
+    });
 });
 
 describe('student performances pdf', function () {

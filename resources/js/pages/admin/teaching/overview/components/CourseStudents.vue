@@ -149,10 +149,17 @@
                                         {{ student.schoolclass || student.class }}
                                     </v-chip>
                                     <div
-                                        class="student-name text-body-2"
+                                        class="student-name"
                                         :class="[show_bulk_entry ? '' : 'cursor-pointer', studentNameClass(student)]"
                                         @click="show_bulk_entry ? null : openStudent(student)">
-                                        {{ student.last_name }}, {{ student.first_name }}
+                                        <div class="text-body-2">
+                                            {{ student.last_name }}, {{ student.first_name }}
+                                        </div>
+                                        <div v-if="studentEmailText(student) || studentLastLoginText(student)" class="student-meta text-caption text-medium-emphasis">
+                                            <span v-if="studentEmailText(student)">{{ studentEmailText(student) }}</span>
+                                            <span v-if="studentEmailText(student) && studentLastLoginText(student)" class="student-meta-separator">•</span>
+                                            <span v-if="studentLastLoginText(student)">{{ studentLastLoginText(student) }}</span>
+                                        </div>
                                     </div>
                                     <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
                                         Storniert{{ student.canceled_at ? `: ${formatCanceledAt(student.canceled_at)}` : '' }}
@@ -838,6 +845,14 @@ export default {
         studentNameClass(student) {
             return this.isStudentCanceled(student) ? 'student-name--canceled' : ''
         },
+        studentEmailText(student) {
+            return typeof student?.email === 'string' && student.email.trim() !== '' ? student.email.trim() : ''
+        },
+        studentLastLoginText(student) {
+            return typeof student?.login_at === 'string' && student.login_at.trim() !== ''
+                ? student.login_at.trim()
+                : ''
+        },
         getWeekday(date) {
             if (!date) return ''
             const d = parseLocalDate(date)
@@ -1392,6 +1407,17 @@ export default {
     flex: 0 1 auto;
     max-width: 60%;
     word-break: break-word;
+}
+
+.student-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.student-meta-separator {
+    opacity: 0.7;
 }
 
 .student-metrics {
