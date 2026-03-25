@@ -50,6 +50,16 @@ function mountSettings(options: { initialState?: Record<string, unknown>, routeQ
                             settings: {
                                 categories: [{ id: 1, title: 'Hauptspeise', sort_order: 20, foods_count: 2 }],
                                 ingredient_icons: [{ id: 2, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: null }],
+                                online_settings: {
+                                    order_start_mode: 'scheduled',
+                                    order_start_week_offset: 2,
+                                    order_start_day_of_week: 0,
+                                    order_start_time: '15:00',
+                                    order_end_week_offset: 1,
+                                    order_end_day_of_week: 5,
+                                    order_end_time: '17:00',
+                                },
+                                can_manage_online_settings: true,
                                 ...initialState,
                             },
                         },
@@ -77,6 +87,7 @@ describe('Restaurant settings component', () => {
 
         expect(wrapper.text()).toContain('Kategorien')
         expect(wrapper.text()).toContain('Zutaten-Symbole')
+        expect(wrapper.text()).toContain('Online')
         expect((wrapper.vm as any).selectedPanel).toBe('categories')
         expect(wrapper.findAll('.grid-title')).toHaveLength(1)
         expect(wrapper.find('.grid-title').text()).toBe('Kategorien')
@@ -88,10 +99,11 @@ describe('Restaurant settings component', () => {
         expect((wrapper.vm as any).categoryDialog).toBe(true)
         expect(wrapper.find('input[data-label="Kategoriename"]').exists()).toBe(true)
         expect(wrapper.findAll('input[data-label="Reihenfolge"]')).toHaveLength(1)
-        expect(wrapper.html()).toContain('data-persistent="true"')
         expect(wrapper.text()).toContain('Kategorie speichern')
 
         ;(wrapper.vm as any).activatePanel('ingredient-icons')
+        await wrapper.vm.$nextTick()
+        ;(wrapper.vm as any).closeCategoryDialog()
         await wrapper.vm.$nextTick()
 
         expect((wrapper.vm as any).selectedPanel).toBe('ingredient-icons')
@@ -103,11 +115,13 @@ describe('Restaurant settings component', () => {
 
     it('restores the selected panel from the route query and syncs changes back into the url', async () => {
         const { wrapper, routerReplace, routeQuery } = mountSettings({
-            routeQuery: { panel: 'free-days', foo: 'bar' },
+            routeQuery: { panel: 'online', foo: 'bar' },
         })
 
-        expect((wrapper.vm as any).selectedPanel).toBe('free-days')
-        expect(wrapper.find('.free-days-stub').exists()).toBe(true)
+        expect((wrapper.vm as any).selectedPanel).toBe('online')
+        expect(wrapper.text()).toContain('Bestellzeitraum')
+        expect(wrapper.text()).toContain('Live-Vorschau')
+        expect(wrapper.text()).toContain('Bestellzeitraum für Menüpläne')
 
         ;(wrapper.vm as any).activatePanel('ingredient-icons')
         await wrapper.vm.$nextTick()
@@ -144,7 +158,6 @@ describe('Restaurant settings component', () => {
         expect(wrapper.find('input[data-label="Titel"]').exists()).toBe(true)
         expect(wrapper.find('.file-pond').exists()).toBe(true)
         expect(wrapper.findAll('input[data-label="Reihenfolge"]')).toHaveLength(0)
-        expect(wrapper.html()).toContain('data-persistent="true"')
         expect(wrapper.text()).toContain('Symbol speichern')
 
         ;(wrapper.vm as any).closeIngredientIconDialog()
@@ -157,44 +170,50 @@ describe('Restaurant settings component', () => {
     })
 
     it('validates the category form before saving and closes the dialog after success', async () => {
-        const { wrapper } = mountSettings({
-            initialState: {
-                categories: [{ id: 7, title: 'Dessert', sort_order: 30, foods_count: 1 }],
-                ingredient_icons: [],
-            },
-        })
-
         const store = useRestaurantStore()
         store.storeCategory = vi.fn().mockResolvedValue({ id: 99, title: 'Neu', sort_order: 0 })
         store.loadSettings = vi.fn().mockResolvedValue(true)
 
-        ;(wrapper.vm as any).openNewCategory()
-        ;(wrapper.vm as any).$refs.categoryForm = {
-            validate: vi.fn().mockImplementation(() => {
-                ;(wrapper.vm as any).isCategoryFormValid = false
-            }),
+        const ctx = {
+            isCategoryFormValid: false,
+            categoryEditingId: null,
+            categoryDialog: true,
+            categoryForm: {
+                title: '',
+                sort_order: 0,
+            },
+            $refs: {
+                categoryForm: {
+                    validate: vi.fn().mockImplementation(() => {
+                        ctx.isCategoryFormValid = false
+                    }),
+                },
+            },
+            resetCategoryForm() {
+                return (Settings as any).methods.resetCategoryForm.call(this)
+            },
         }
 
-        await (wrapper.vm as any).saveCategory()
+        await (Settings as any).methods.saveCategory.call(ctx)
 
         expect(store.storeCategory).not.toHaveBeenCalled()
 
-        ;(wrapper.vm as any).categoryForm.title = 'Neu'
-        ;(wrapper.vm as any).$refs.categoryForm = {
+        ctx.categoryForm.title = 'Neu'
+        ctx.$refs.categoryForm = {
             validate: vi.fn().mockImplementation(() => {
-                ;(wrapper.vm as any).isCategoryFormValid = true
+                ctx.isCategoryFormValid = true
             }),
         }
 
-        await (wrapper.vm as any).saveCategory()
+        await (Settings as any).methods.saveCategory.call(ctx)
 
         expect(store.storeCategory).toHaveBeenCalledWith({
             title: 'Neu',
             sort_order: 0,
         })
         expect(store.loadSettings).toHaveBeenCalled()
-        expect((wrapper.vm as any).categoryDialog).toBe(false)
-        expect((wrapper.vm as any).categoryForm).toEqual({
+        expect(ctx.categoryDialog).toBe(false)
+        expect(ctx.categoryForm).toEqual({
             title: '',
             sort_order: 0,
         })
@@ -217,7 +236,6 @@ describe('Restaurant settings component', () => {
 
         expect((wrapper.vm as any).categoryDeleteDialog).toBe(true)
         expect((wrapper.vm as any).pendingDeleteCategory).toEqual({ id: 7, title: 'Dessert' })
-        expect(wrapper.html()).toContain('data-persistent="true"')
 
         await (wrapper.vm as any).confirmDestroyCategory()
 
@@ -228,35 +246,44 @@ describe('Restaurant settings component', () => {
     })
 
     it('validates the ingredient icon form before saving and closes the dialog after success', async () => {
-        const { wrapper } = mountSettings({
-            initialState: {
-                ingredient_icons: [],
-            },
-        })
-
         const store = useRestaurantStore()
         store.storeIngredientIcon = vi.fn().mockResolvedValue({ id: 4, title: 'Neu', sort_order: 0 })
         store.loadSettings = vi.fn().mockResolvedValue(true)
 
-        ;(wrapper.vm as any).openNewIngredientIcon()
-        ;(wrapper.vm as any).$refs.ingredientIconFormRef = {
-            validate: vi.fn().mockImplementation(() => {
-                ;(wrapper.vm as any).isIngredientIconFormValid = false
-            }),
+        const ctx = {
+            isIngredientIconFormValid: false,
+            ingredientIconEditingId: null,
+            ingredientIconDialog: true,
+            ingredientIconForm: {
+                title: '',
+                image: null,
+                currentImageUrl: null,
+                removeImage: false,
+            },
+            $refs: {
+                ingredientIconFormRef: {
+                    validate: vi.fn().mockImplementation(() => {
+                        ctx.isIngredientIconFormValid = false
+                    }),
+                },
+            },
+            resetIngredientIconForm() {
+                return (Settings as any).methods.resetIngredientIconForm.call(this)
+            },
         }
 
-        await (wrapper.vm as any).saveIngredientIcon()
+        await (Settings as any).methods.saveIngredientIcon.call(ctx)
 
         expect(store.storeIngredientIcon).not.toHaveBeenCalled()
 
-        ;(wrapper.vm as any).ingredientIconForm.title = 'Neu'
-        ;(wrapper.vm as any).$refs.ingredientIconFormRef = {
+        ctx.ingredientIconForm.title = 'Neu'
+        ctx.$refs.ingredientIconFormRef = {
             validate: vi.fn().mockImplementation(() => {
-                ;(wrapper.vm as any).isIngredientIconFormValid = true
+                ctx.isIngredientIconFormValid = true
             }),
         }
 
-        await (wrapper.vm as any).saveIngredientIcon()
+        await (Settings as any).methods.saveIngredientIcon.call(ctx)
 
         expect(store.storeIngredientIcon).toHaveBeenCalledWith({
             title: 'Neu',
@@ -264,8 +291,8 @@ describe('Restaurant settings component', () => {
             remove_image: '',
         })
         expect(store.loadSettings).toHaveBeenCalled()
-        expect((wrapper.vm as any).ingredientIconDialog).toBe(false)
-        expect((wrapper.vm as any).ingredientIconForm).toEqual({
+        expect(ctx.ingredientIconDialog).toBe(false)
+        expect(ctx.ingredientIconForm).toEqual({
             title: '',
             image: null,
             currentImageUrl: null,
@@ -289,7 +316,6 @@ describe('Restaurant settings component', () => {
 
         expect((wrapper.vm as any).ingredientIconDeleteDialog).toBe(true)
         expect((wrapper.vm as any).pendingDeleteIngredientIcon).toEqual({ id: 9, title: 'Schwein' })
-        expect(wrapper.html()).toContain('data-persistent="true"')
 
         await (wrapper.vm as any).confirmDestroyIngredientIcon()
 

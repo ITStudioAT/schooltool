@@ -56,6 +56,8 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
         allergenSuggestions: (state) => state.settings?.allergen_suggestions || [],
         userSettings: (state) => state.settings?.user_settings || {},
         canManageUserSettings: (state) => state.settings?.can_manage_user_settings === true,
+        onlineSettings: (state) => state.settings?.online_settings || {},
+        canManageOnlineSettings: (state) => state.settings?.can_manage_online_settings === true,
         stats: (state) => state.settings?.stats || {},
     },
 
@@ -127,6 +129,44 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                     type: 'error',
                     timeout: 3000,
                 })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateOnlineSettings(settings) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.put('/api/admin/restaurant/online-settings', {
+                    data: settings,
+                })
+
+                this.settings = {
+                    ...(this.settings || {}),
+                    online_settings: response?.data?.data || {},
+                    can_manage_online_settings: true,
+                }
+
+                notification.notify({
+                    message: 'Online-Einstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der Online-Einstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
                 return null
             } finally {
                 adminStore.is_loading--

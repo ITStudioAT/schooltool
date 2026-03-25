@@ -40,6 +40,15 @@
                             @click="activatePanel('eating-times')">
                             Speisezeiten
                         </v-btn>
+                        <v-btn
+                            rounded="xl"
+                            :color="selectedPanel === 'online' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'online' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'online' }"
+                            @click="activatePanel('online')">
+                            Online
+                        </v-btn>
                     </div>
                 </v-sheet>
             </v-col>
@@ -116,6 +125,7 @@
 
             <FreeDays v-if="selectedPanel === 'free-days'" />
             <EatingTimes v-if="selectedPanel === 'eating-times'" />
+            <OnlineSettings v-if="selectedPanel === 'online'" />
         </v-row>
 
         <v-dialog v-model="categoryDialog" max-width="520" persistent>
@@ -268,6 +278,7 @@ import { useValidationRulesSetup } from '@/helpers/rules'
 import EatingTimes from '@/pages/admin/restaurant/components/EatingTimes.vue'
 import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
+import OnlineSettings from '@/pages/admin/restaurant/components/OnlineSettings.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
@@ -293,14 +304,14 @@ function emptyIngredientIconForm() {
     }
 }
 
-const validPanels = ['categories', 'ingredient-icons', 'free-days', 'eating-times']
+const validPanels = ['categories', 'ingredient-icons', 'free-days', 'eating-times', 'online']
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { EatingTimes, FilePond, FreeDays, ItsGridBox },
+    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, OnlineSettings },
 
     data() {
         return {

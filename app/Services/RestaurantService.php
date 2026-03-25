@@ -6,6 +6,7 @@ use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
+use App\Models\SchoolTool;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
@@ -18,6 +19,16 @@ use Illuminate\Support\Str;
 class RestaurantService
 {
     private const DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER = 12;
+
+    private const DEFAULT_ONLINE_SETTINGS = [
+        'order_start_mode' => 'when_available',
+        'order_start_week_offset' => 2,
+        'order_start_day_of_week' => 0,
+        'order_start_time' => '15:00',
+        'order_end_week_offset' => 1,
+        'order_end_day_of_week' => 5,
+        'order_end_time' => '17:00',
+    ];
 
     public function settingsForUser(User $authUser): array
     {
@@ -49,6 +60,8 @@ class RestaurantService
             'allergen_suggestions' => $this->extractAllergenSuggestions($foods),
             'user_settings' => $this->userSettingsForUser($authUser),
             'can_manage_user_settings' => $this->supportsRestaurantFoodsPaginationSettings(),
+            'online_settings' => $this->onlineSettingsForUser($authUser),
+            'can_manage_online_settings' => $this->supportsRestaurantOnlineSettings(),
             'stats' => [
                 'foods_count' => $foods->count(),
                 'categories_count' => $categories->count(),
@@ -78,6 +91,49 @@ class RestaurantService
         $user->save();
 
         return $this->userSettingsForUser($user->fresh());
+    }
+
+    public function onlineSettingsForUser(User $user): array
+    {
+        if (! $this->supportsRestaurantOnlineSettings()) {
+            return self::DEFAULT_ONLINE_SETTINGS;
+        }
+
+        $schoolTool = $this->schoolToolForUser($user);
+
+        return $this->normalizeOnlineSettings($schoolTool);
+    }
+
+    public function updateOnlineSettings(User $user, array $settings): array
+    {
+        if (! $this->supportsRestaurantOnlineSettings()) {
+            abort(500, 'Online-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
+        }
+
+        $normalized = [
+            'order_start_mode' => ($settings['order_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_mode']) === 'scheduled'
+                ? 'scheduled'
+                : 'when_available',
+            'order_start_week_offset' => $this->normalizeWeekOffset($settings['order_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset']),
+            'order_start_day_of_week' => $this->normalizeDayOfWeek($settings['order_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week']),
+            'order_start_time' => $this->normalizeTimeString($settings['order_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_time']),
+            'order_end_week_offset' => $this->normalizeWeekOffset($settings['order_end_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset']),
+            'order_end_day_of_week' => $this->normalizeDayOfWeek($settings['order_end_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week']),
+            'order_end_time' => $this->normalizeTimeString($settings['order_end_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time']),
+        ];
+
+        $schoolTool = $this->schoolToolForUser($user);
+        $schoolTool->fill([
+            'restaurant_menu_order_start_mode' => $normalized['order_start_mode'],
+            'restaurant_menu_order_start_week_offset' => $normalized['order_start_week_offset'],
+            'restaurant_menu_order_start_day_of_week' => $normalized['order_start_day_of_week'],
+            'restaurant_menu_order_start_time' => $normalized['order_start_time'],
+            'restaurant_menu_order_end_week_offset' => $normalized['order_end_week_offset'],
+            'restaurant_menu_order_end_day_of_week' => $normalized['order_end_day_of_week'],
+            'restaurant_menu_order_end_time' => $normalized['order_end_time'],
+        ])->save();
+
+        return $this->normalizeOnlineSettings($schoolTool->fresh());
     }
 
     public function foodsForUser(User $authUser): Collection
@@ -556,6 +612,80 @@ class RestaurantService
         $value = (int) ($user->restaurant_foods_pagination_number ?? 0);
 
         return $value > 0 ? min(200, $value) : $fallback;
+    }
+
+    private function supportsRestaurantOnlineSettings(): bool
+    {
+        if (! Schema::hasTable('school_tools')) {
+            return false;
+        }
+
+        return collect([
+            'restaurant_menu_order_start_mode',
+            'restaurant_menu_order_start_week_offset',
+            'restaurant_menu_order_start_day_of_week',
+            'restaurant_menu_order_start_time',
+            'restaurant_menu_order_end_week_offset',
+            'restaurant_menu_order_end_day_of_week',
+            'restaurant_menu_order_end_time',
+        ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
+    }
+
+    private function schoolToolForUser(User $user): SchoolTool
+    {
+        return SchoolTool::query()->firstOrCreate(
+            ['school_id' => $user->school_id],
+            [
+                'tutoring_student_must_be_confirmed' => false,
+                'tutoring_confirmer_email' => null,
+                'tutoring_max_offers_per_student' => 0,
+                'restaurant_menu_order_start_mode' => self::DEFAULT_ONLINE_SETTINGS['order_start_mode'],
+                'restaurant_menu_order_start_week_offset' => self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset'],
+                'restaurant_menu_order_start_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week'],
+                'restaurant_menu_order_start_time' => self::DEFAULT_ONLINE_SETTINGS['order_start_time'],
+                'restaurant_menu_order_end_week_offset' => self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset'],
+                'restaurant_menu_order_end_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week'],
+                'restaurant_menu_order_end_time' => self::DEFAULT_ONLINE_SETTINGS['order_end_time'],
+            ]
+        );
+    }
+
+    private function normalizeOnlineSettings(?SchoolTool $schoolTool): array
+    {
+        if (! $schoolTool) {
+            return self::DEFAULT_ONLINE_SETTINGS;
+        }
+
+        return [
+            'order_start_mode' => $schoolTool->restaurant_menu_order_start_mode === 'scheduled' ? 'scheduled' : 'when_available',
+            'order_start_week_offset' => $this->normalizeWeekOffset($schoolTool->restaurant_menu_order_start_week_offset ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset']),
+            'order_start_day_of_week' => $this->normalizeDayOfWeek($schoolTool->restaurant_menu_order_start_day_of_week ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week']),
+            'order_start_time' => $this->normalizeTimeString($schoolTool->restaurant_menu_order_start_time ?? self::DEFAULT_ONLINE_SETTINGS['order_start_time']),
+            'order_end_week_offset' => $this->normalizeWeekOffset($schoolTool->restaurant_menu_order_end_week_offset ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset']),
+            'order_end_day_of_week' => $this->normalizeDayOfWeek($schoolTool->restaurant_menu_order_end_day_of_week ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week']),
+            'order_end_time' => $this->normalizeTimeString($schoolTool->restaurant_menu_order_end_time ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time']),
+        ];
+    }
+
+    private function normalizeWeekOffset(mixed $value): int
+    {
+        return max(0, min(2, (int) $value));
+    }
+
+    private function normalizeDayOfWeek(mixed $value): int
+    {
+        return max(0, min(6, (int) $value));
+    }
+
+    private function normalizeTimeString(mixed $value): string
+    {
+        $normalized = trim((string) $value);
+
+        if (preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $normalized) !== 1) {
+            return '00:00';
+        }
+
+        return substr($normalized, 0, 5);
     }
 
     private function storeImage(mixed $file, string $directory): ?string

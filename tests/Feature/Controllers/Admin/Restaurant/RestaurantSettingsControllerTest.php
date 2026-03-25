@@ -48,6 +48,14 @@ test('settings creates default categories for empty school', function () {
         ->toBe((int) config('schooltool.pagination'))
         ->and($response->json('can_manage_user_settings'))
         ->toBeTrue()
+        ->and($response->json('can_manage_online_settings'))
+        ->toBeTrue()
+        ->and($response->json('online_settings.order_start_mode'))
+        ->toBe('when_available')
+        ->and($response->json('online_settings.order_start_week_offset'))
+        ->toBe(2)
+        ->and($response->json('online_settings.order_end_day_of_week'))
+        ->toBe(5)
         ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
         ->toEqual(['Fisch', 'Schwein'])
         ->and($response->json('ingredient_icons.0.image_url'))
@@ -65,6 +73,52 @@ test('restaurant user can update own foods pagination setting', function () {
         ->assertJsonPath('data.restaurant_foods_pagination_number', 18);
 
     expect((int) $this->admin->fresh()->restaurant_foods_pagination_number)->toBe(18);
+});
+
+test('restaurant admin can update school wide online ordering settings', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/online-settings', [
+        'data' => [
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 2,
+            'order_start_day_of_week' => 0,
+            'order_start_time' => '15:00',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.order_start_mode', 'scheduled')
+        ->assertJsonPath('data.order_end_time', '17:00');
+
+    $this->assertDatabaseHas('school_tools', [
+        'school_id' => $this->school->id,
+        'restaurant_menu_order_start_mode' => 'scheduled',
+        'restaurant_menu_order_start_week_offset' => 2,
+        'restaurant_menu_order_start_day_of_week' => 0,
+        'restaurant_menu_order_start_time' => '15:00:00',
+        'restaurant_menu_order_end_week_offset' => 1,
+        'restaurant_menu_order_end_day_of_week' => 5,
+        'restaurant_menu_order_end_time' => '17:00:00',
+    ]);
+});
+
+test('restaurant online settings validate the required end time', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/online-settings', [
+        'data' => [
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 2,
+            'order_start_day_of_week' => 0,
+            'order_start_time' => '15:00',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '',
+        ],
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['data.order_end_time']);
 });
 
 test('category CRUD works for restaurant settings', function () {

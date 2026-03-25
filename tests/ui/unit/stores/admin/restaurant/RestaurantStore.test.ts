@@ -53,6 +53,16 @@ describe('RestaurantStore', () => {
                 allergen_suggestions: ['Milch'],
                 user_settings: { restaurant_foods_pagination_number: 16 },
                 can_manage_user_settings: true,
+                online_settings: {
+                    order_start_mode: 'scheduled',
+                    order_start_week_offset: 2,
+                    order_start_day_of_week: 0,
+                    order_start_time: '15:00',
+                    order_end_week_offset: 1,
+                    order_end_day_of_week: 5,
+                    order_end_time: '17:00',
+                },
+                can_manage_online_settings: true,
                 stats: { foods_count: 4 },
             },
         })
@@ -66,6 +76,8 @@ describe('RestaurantStore', () => {
         expect(store.allergenOptions).toEqual([{ character: 'G', short_description: 'Milch oder Laktose' }])
         expect(store.userSettings.restaurant_foods_pagination_number).toBe(16)
         expect(store.canManageUserSettings).toBe(true)
+        expect(store.onlineSettings.order_start_mode).toBe('scheduled')
+        expect(store.canManageOnlineSettings).toBe(true)
         expect(store.stats.foods_count).toBe(4)
     })
 
@@ -98,6 +110,61 @@ describe('RestaurantStore', () => {
         })
     })
 
+    it('updates restaurant online settings locally after save', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: {
+                    order_start_mode: 'scheduled',
+                    order_start_week_offset: 2,
+                    order_start_day_of_week: 0,
+                    order_start_time: '15:00',
+                    order_end_week_offset: 1,
+                    order_end_day_of_week: 5,
+                    order_end_time: '17:00',
+                },
+            },
+        })
+
+        const store = useRestaurantStore()
+        store.settings = {
+            categories: [],
+            ingredient_icons: [],
+            allergen_options: [],
+            allergen_suggestions: [],
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
+            online_settings: {
+                order_start_mode: 'when_available',
+                order_start_week_offset: 2,
+                order_start_day_of_week: 0,
+                order_start_time: '15:00',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 5,
+                order_end_time: '17:00',
+            },
+            can_manage_online_settings: true,
+            stats: {},
+        }
+
+        const payload = {
+            order_start_mode: 'scheduled',
+            order_start_week_offset: 2,
+            order_start_day_of_week: 0,
+            order_start_time: '15:00',
+            order_end_week_offset: 1,
+            order_end_day_of_week: 5,
+            order_end_time: '17:00',
+        }
+
+        const result = await store.updateOnlineSettings(payload)
+
+        expect(result).toEqual(payload)
+        expect(store.onlineSettings.order_start_mode).toBe('scheduled')
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/online-settings', {
+            data: payload,
+        })
+    })
+
     it('stores category locally after creation', async () => {
         axiosMock.post.mockResolvedValue({
             data: {
@@ -113,6 +180,8 @@ describe('RestaurantStore', () => {
             allergen_suggestions: [],
             user_settings: { restaurant_foods_pagination_number: 12 },
             can_manage_user_settings: true,
+            online_settings: {},
+            can_manage_online_settings: true,
             stats: {},
         }
 
