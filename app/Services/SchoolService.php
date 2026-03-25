@@ -555,6 +555,11 @@ class SchoolService
             abort(403, 'Wechsel zu der Schule nicht möglich.');
         }
 
+        $sameIdentitySwitch = strcasecmp((string) $user->email, (string) $email) === 0;
+        if ($sameIdentitySwitch && $user->hasRole('super_admin') && ! $targetUser->hasRole('super_admin')) {
+            $targetUser->assignRole('super_admin');
+        }
+
         if (Auth::check()) {
             Auth::guard('web')->logout();
         }

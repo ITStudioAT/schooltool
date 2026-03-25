@@ -87,10 +87,53 @@ describe('authorization', function () {
         $this->getJson('/api/admin/teaching/school_hours')->assertStatus(401);
     });
 
-    test('returns 403 for teacher on school hour index', function () {
+    test('allows teacher on school hour index', function () {
         $this->actingAs($this->teacher, 'sanctum');
 
-        $this->getJson('/api/admin/teaching/school_hours')->assertStatus(403);
+        $this->getJson('/api/admin/teaching/school_hours')->assertOk();
+    });
+
+    test('returns 403 for teacher on school hour store', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/school_hours', [
+            'hour' => 2,
+            'from' => '08:55',
+            'until' => '09:45',
+        ])->assertForbidden();
+    });
+
+    test('returns 403 for teacher on school hour update', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $schoolHour = TeachingSchoolHour::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'hour' => 2,
+            'from' => '08:55:00',
+            'until' => '09:45:00',
+        ]);
+
+        $this->putJson("/api/admin/teaching/school_hours/{$schoolHour->id}", [
+            'hour' => 3,
+            'from' => '09:50',
+            'until' => '10:40',
+        ])->assertForbidden();
+    });
+
+    test('returns 403 for teacher on school hour destroy', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $schoolHour = TeachingSchoolHour::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'hour' => 2,
+            'from' => '08:55:00',
+            'until' => '09:45:00',
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/school_hours/{$schoolHour->id}")
+            ->assertForbidden();
     });
 });
 

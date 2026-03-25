@@ -13,7 +13,7 @@ class SchoolHourController extends Controller
 {
     public function index(SchoolHourService $service)
     {
-        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

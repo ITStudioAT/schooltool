@@ -17,10 +17,14 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseStudent;
+use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingSchema;
 use App\Models\User;
+use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -33,7 +37,7 @@ beforeEach(function () {
         'teaching_admin',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -282,6 +286,296 @@ describe('index', function () {
             ->and($blockedPayload['is_removable'])->toBeFalse()
             ->and($blockedPayload['remove_block_reason'])->not->toBeNull()
             ->and($blockedPayload['canceled_at'])->not->toBeNull();
+    });
+});
+
+describe('student performances pdf', function () {
+    test('returns a combined pdf download for all course students', function () {
+        Pdf::fake();
+
+        $studentA = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+        $studentB = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+
+        TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schema_id', $this->schemaId)
+            ->update([
+                'works' => [
+                    ['short_name' => 'MA', 'name' => 'Mitarbeit'],
+                ],
+                'grading' => [
+                    'semester_count' => 2,
+                    'category_evaluation_values' => ['Erreicht', 'Offen'],
+                ],
+            ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $studentA->id,
+            'sem_grade' => '2',
+        ]);
+        TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $studentB->id,
+            'sem_grade' => '1',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(fn () => true);
+    });
+
+    test('returns a pdf download for one selected course student via the course print endpoint', function () {
+        Pdf::fake();
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'sem_grade' => '1',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf?course_student_id={$courseStudent->id}")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(fn () => true);
+    });
+
+    test('forbids selecting a mismatched course student on the course print endpoint', function () {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $this->teacher->id,
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/performances_pdf?course_student_id={$courseStudent->id}")
+            ->assertForbidden();
+    });
+
+    test('returns a pdf download for the selected course student', function () {
+        Pdf::fake();
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+
+        TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schema_id', $this->schemaId)
+            ->update([
+                'works' => [
+                    ['short_name' => 'MA', 'name' => 'Mitarbeit'],
+                ],
+                'grading' => [
+                    'semester_count' => 2,
+                    'category_evaluation_values' => ['Erreicht', 'Offen'],
+                ],
+            ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Mathematik',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'sem_1_grade' => '2',
+            'sem_2_grade' => '1',
+            'sem_grade' => '1',
+            'comment' => 'Starke Entwicklung',
+        ]);
+
+        TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'date' => '2026-01-20',
+            'type' => 'MA',
+            'grade' => '2',
+            'description' => 'Mündliche Mitarbeit',
+        ]);
+
+        TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Mitarbeit',
+            'value' => 'Erreicht',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/students/{$courseStudent->id}/performances_pdf")
+            ->assertSuccessful();
+
+        Pdf::assertRespondedWithPdf(fn () => true);
+    });
+
+    test('formats performance dates in the pdf data without the year', function () {
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+
+        TeachingSchema::query()
+            ->where('user_id', $this->admin->id)
+            ->where('schema_id', $this->schemaId)
+            ->update([
+                'works' => [
+                    ['short_name' => 'AK', 'name' => 'Auftrag, klein'],
+                ],
+                'grading' => [
+                    'semester_count' => 2,
+                ],
+            ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Office',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+        ]);
+
+        TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'date' => '2026-02-25',
+            'type' => 'AK',
+            'grade' => '+',
+            'description' => 'Excel',
+        ]);
+
+        $service = app(TeachingStudentPerformancePdfService::class);
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('reportsForCourse');
+        $method->setAccessible(true);
+
+        $reports = $method->invoke($service, $course, $courseStudent);
+        $firstEntry = $reports[0]['entries_by_semester']->get(1)->first();
+
+        expect($firstEntry['date'])->toBe('25.02.');
+    });
+
+    test('uses only the semester number in the pdf data', function () {
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'schoolclass' => '2A',
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'title' => 'Office',
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+        ]);
+
+        TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'date' => '2026-02-25',
+            'type' => 'AK',
+            'grade' => '+',
+            'description' => 'Excel',
+        ]);
+
+        $source = file_get_contents(resource_path('views/pdfs/teachingStudentPerformances.blade.php'));
+
+        expect($source)->toContain("['semester_label' => (string) \$semester]")
+            ->and($source)->not->toContain("['semester_label' => 'Semester '.\$semester]");
+    });
+
+    test('forbids a course student pdf download for a mismatched course', function () {
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $courseStudent = TeachingCourseStudent::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $this->teacher->id,
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->get("/api/admin/teaching/courses/{$course->id}/students/{$courseStudent->id}/performances_pdf")
+            ->assertForbidden();
     });
 });
 

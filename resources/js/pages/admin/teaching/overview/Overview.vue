@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12" class="pb-1">
-        <div class="teaching-overview-toolbar-width" :class="toolbarWidthClass">
+        <div class="teaching-overview-toolbar-width">
             <section class="teaching-overview-toolbar" :class="{ 'is-locked': isControlLocked }">
                 <v-btn-toggle
                     v-model="functionalPanelSelection"
@@ -42,7 +42,7 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_infos || show_dates || show_works) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_infos || show_dates || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
@@ -58,6 +58,12 @@
         <v-row v-if="show_dates" class="mt-n6">
             <v-col>
                 <CourseDates />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="show_print" class="mt-n6">
+            <v-col>
+                <CoursePrint />
             </v-col>
         </v-row>
     </v-col>
@@ -108,12 +114,13 @@ import CourseStudent from './components/CourseStudent.vue'
 import CourseInfos from './components/CourseInfos.vue'
 import CourseDates from './components/CourseDates.vue'
 import CourseWorks from './components/CourseWorks.vue'
+import CoursePrint from './components/CoursePrint.vue'
 import MyTimetable from './components/MyTimetable.vue'
 import AttendanceMatrix from '../more/components/AttendanceMatrix.vue'
 import PerformancesDummy from '../more/components/PerformancesDummy.vue'
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, MyTimetable, AttendanceMatrix, PerformancesDummy },
+    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -152,6 +159,7 @@ export default {
             'show_infos',
             'show_works',
             'show_dates',
+            'show_print',
             'show_attendance',
             'show_performances',
             'selected_course_student',
@@ -161,39 +169,6 @@ export default {
         },
         contentLockStyle() {
             return this.action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''
-        },
-        hasLeftOverviewColumn() {
-            return this.show_students || (this.show_timetable && !this.selected_course)
-        },
-        hasMiddleOverviewColumn() {
-            return false
-        },
-        hasRightOverviewColumn() {
-            return (this.show_infos || this.show_dates || this.show_works) && this.action != 'teaching_course_new_or_edit'
-        },
-        toolbarWidthClass() {
-            if (this.hasLeftOverviewColumn && this.hasMiddleOverviewColumn && this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-12'
-            }
-            if (this.hasLeftOverviewColumn && this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-8'
-            }
-            if (this.hasLeftOverviewColumn && this.hasMiddleOverviewColumn) {
-                return 'toolbar-width-xl-7'
-            }
-            if (this.hasMiddleOverviewColumn && this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-8'
-            }
-            if (this.hasLeftOverviewColumn) {
-                return 'toolbar-width-xl-4'
-            }
-            if (this.hasRightOverviewColumn) {
-                return 'toolbar-width-xl-4'
-            }
-            if (this.hasMiddleOverviewColumn) {
-                return 'toolbar-width-xl-3'
-            }
-            return 'toolbar-width-xl-12'
         },
         teachingSchemas() {
             return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []
@@ -218,6 +193,7 @@ export default {
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
+                panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
             }
             return panels
         },
@@ -227,6 +203,7 @@ export default {
                 if (this.show_students) return 'students'
                 if (this.show_infos) return 'infos'
                 if (this.show_works) return 'works'
+                if (this.show_print) return 'print'
                 if (this.show_dates) return 'dates'
                 if (this.show_attendance) return 'attendance'
                 if (this.show_performances) return 'performances'
@@ -236,6 +213,7 @@ export default {
                 this.show_students = value === 'students'
                 this.show_infos = value === 'infos'
                 this.show_works = value === 'works'
+                this.show_print = value === 'print'
                 this.show_dates = value === 'dates'
                 this.show_attendance = value === 'attendance'
                 this.show_performances = value === 'performances'
@@ -254,12 +232,13 @@ export default {
         selected_course(newCourse) {
             if (newCourse && !this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
-                const validPanels = ['students', 'infos', 'works', 'dates', 'attendance', 'performances']
+                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']
                 this._urlPanelRestored = true
                 if (urlPanel && validPanels.includes(urlPanel)) {
                     this.show_students = urlPanel === 'students'
                     this.show_infos = urlPanel === 'infos'
                     this.show_works = urlPanel === 'works'
+                    this.show_print = urlPanel === 'print'
                     this.show_dates = urlPanel === 'dates'
                     this.show_attendance = urlPanel === 'attendance'
                     this.show_performances = urlPanel === 'performances'
@@ -270,6 +249,7 @@ export default {
             this.show_students = true
             this.show_infos = false
             this.show_works = false
+            this.show_print = false
             this.show_dates = false
             this.show_attendance = false
             this.show_performances = false
@@ -324,29 +304,5 @@ export default {
 
 .teaching-overview-toolbar-width {
     width: 100%;
-}
-
-@media (min-width: 1920px) {
-    .teaching-overview-toolbar-width.toolbar-width-xl-12 {
-        width: 100%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-9 {
-        width: 75%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-8 {
-        width: 66.667%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-7 {
-        width: 58.333%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-5 {
-        width: 41.667%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-4 {
-        width: 33.333%;
-    }
-    .teaching-overview-toolbar-width.toolbar-width-xl-3 {
-        width: 25%;
-    }
 }
 </style>

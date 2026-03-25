@@ -20,6 +20,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             show_students: true,
             show_infos: true,
             show_works: true,
+            show_print: false,
             show_dates: true,
             show_attendance: false,
             show_performances: false,

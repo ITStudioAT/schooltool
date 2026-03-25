@@ -1,22 +1,20 @@
 <?php
 
 use App\Models\Licence;
+use App\Models\Register;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Models\Register;
 use App\Services\SchoolService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new SchoolService();
+    $this->service = new SchoolService;
 
     // Create roles
     Role::firstOrCreate(['name' => 'super_admin']);
@@ -88,7 +86,7 @@ describe('create', function () {
             'short_name' => 'TS',
             'long_name' => 'Test School',
             'is_selectable' => true,
-            'upload_file' => '/storage/' . $tempPath,
+            'upload_file' => '/storage/'.$tempPath,
         ];
 
         File::shouldReceive('ensureDirectoryExists')->once();
@@ -125,7 +123,7 @@ describe('update', function () {
 
     it('updates school and moves logo when upload_file is provided', function () {
         $school = School::factory()->create();
-        
+
         Storage::fake('public');
         $tempPath = 'temp/1/updated-logo.jpg';
         Storage::disk('public')->put($tempPath, 'test image content');
@@ -135,7 +133,7 @@ describe('update', function () {
 
         $data = [
             'short_name' => 'UPDATED',
-            'upload_file' => '/storage/' . $tempPath,
+            'upload_file' => '/storage/'.$tempPath,
         ];
 
         $updatedSchool = $this->service->update($school, $data);
@@ -373,7 +371,7 @@ describe('schoolInfos', function () {
     it('returns licences and admins for a school', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         // Create licences manually since no factory exists
         $licence1 = Licence::create([
             'name' => 'Licence A',
@@ -491,11 +489,65 @@ describe('switchSchool', function () {
 
         // Act as the user for actual authentication
         $this->actingAs($user1);
-        
+
         $result = $this->service->switchSchool($user1, $school2->id);
 
         expect($result->id)->toBe($user2->id)
             ->and($result->school_id)->toBe($school2->id);
+    });
+
+    it('preserves super admin role for same email switches', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+        $schoolyear1 = Schoolyear::factory()->create(['school_id' => $school1->id]);
+        $schoolyear2 = Schoolyear::factory()->create(['school_id' => $school2->id]);
+
+        $user1 = User::factory()->create([
+            'email' => 'super@example.com',
+            'school_id' => $school1->id,
+            'schoolyear_id' => $schoolyear1->id,
+        ]);
+        $user1->assignRole('super_admin');
+
+        $user2 = User::factory()->create([
+            'email' => 'super@example.com',
+            'school_id' => $school2->id,
+            'schoolyear_id' => $schoolyear2->id,
+        ]);
+
+        $this->actingAs($user1);
+
+        $result = $this->service->switchSchool($user1, $school2->id);
+
+        expect($result->id)->toBe($user2->id)
+            ->and($result->fresh()->hasRole('super_admin'))->toBeTrue();
+    });
+
+    it('does not assign super admin role for explicit other-email switches', function () {
+        $school1 = School::factory()->create();
+        $school2 = School::factory()->create();
+        $schoolyear1 = Schoolyear::factory()->create(['school_id' => $school1->id]);
+        $schoolyear2 = Schoolyear::factory()->create(['school_id' => $school2->id]);
+
+        $user1 = User::factory()->create([
+            'email' => 'super@example.com',
+            'school_id' => $school1->id,
+            'schoolyear_id' => $schoolyear1->id,
+        ]);
+        $user1->assignRole('super_admin');
+
+        $targetUser = User::factory()->create([
+            'email' => 'other@example.com',
+            'school_id' => $school2->id,
+            'schoolyear_id' => $schoolyear2->id,
+        ]);
+
+        $this->actingAs($user1);
+
+        $result = $this->service->switchSchool($user1, $school2->id, 'other@example.com');
+
+        expect($result->id)->toBe($targetUser->id)
+            ->and($result->fresh()->hasRole('super_admin'))->toBeFalse();
     });
 
     it('throws exception when user does not exist in target school', function () {
@@ -602,7 +654,7 @@ describe('deleteAdmin', function () {
     it('removes admin roles from user without complete deletion', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -621,7 +673,7 @@ describe('deleteAdmin', function () {
     it('completely deletes user when no bookings exist', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -635,4 +687,3 @@ describe('deleteAdmin', function () {
         expect(User::find($userId))->toBeNull();
     });
 });
-

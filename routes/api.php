@@ -319,6 +319,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/reset_schema', [TeachingController::class, 'resetSchema']);
         Route::post('/admin/teaching/save_active_semester', [TeachingController::class, 'saveActiveSemester']);
         Route::post('/admin/teaching/save_semester_2_date', [TeachingController::class, 'saveSemester2Date']);
+        Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
+        Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);

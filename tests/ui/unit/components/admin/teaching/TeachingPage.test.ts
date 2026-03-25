@@ -184,4 +184,34 @@ describe('Teaching page navigation', () => {
         expect(ctx.settings_view_key).toBe(0)
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/search', query: {} })
     })
+
+    it('keeps the print overview panel as the rightmost item', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
+        )
+
+        expect(source).toContain("panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })")
+        expect(source).toContain("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })")
+        expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
+        expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
+        expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })")
+        expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
+        expect(source).toContain("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })")
+        expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
+        expect(source).toContain("<CoursePrint />")
+        expect(source).toContain("const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']")
+        expect(source).toContain('v-if="(show_infos || show_dates || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
+    })
+
+    it('keeps the overview panel menu at full width', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
+        )
+
+        expect(source).toContain('<div class="teaching-overview-toolbar-width">')
+        expect(source).toContain('.teaching-overview-toolbar-width {\n    width: 100%;\n}')
+        expect(source).not.toContain('toolbarWidthClass')
+        expect(source).not.toContain('toolbar-width-xl-')
+    })
 })

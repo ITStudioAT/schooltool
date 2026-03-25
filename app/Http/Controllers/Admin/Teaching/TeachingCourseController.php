@@ -12,6 +12,8 @@ use App\Models\User;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
+use App\Services\TeachingStudentPerformancePdfService;
+use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
@@ -102,6 +104,53 @@ class TeachingCourseController extends Controller
             'data' => CourseResource::collection($courses),
             'classes' => $classes,
         ]);
+    }
+
+    public function studentPerformancesPdf(
+        TeachingCourse $course,
+        TeachingCourseStudent $course_student,
+        TeachingStudentPerformancePdfService $service
+    ): Responsable {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        if ((int) $course_student->teaching_course_id !== (int) $course->id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $service->download($course, $course_student);
+    }
+
+    public function coursePerformancesPdf(
+        Request $request,
+        TeachingCourse $course,
+        TeachingStudentPerformancePdfService $service
+    ): Responsable {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $validated = $request->validate([
+            'course_student_id' => ['nullable', 'integer'],
+        ]);
+
+        $courseStudent = null;
+        if (! empty($validated['course_student_id'])) {
+            $courseStudent = TeachingCourseStudent::query()->findOrFail($validated['course_student_id']);
+
+            if ((int) $courseStudent->teaching_course_id !== (int) $course->id) {
+                abort(403, 'Sie haben keine Berechtigung');
+            }
+        } elseif (! $course->teachingCourseStudents()->exists()) {
+            abort(422, 'Keine Schüler:innen für den Druck vorhanden.');
+        }
+
+        return $service->downloadCourse($course, $courseStudent);
     }
 
     /**
@@ -310,6 +359,7 @@ class TeachingCourseController extends Controller
         }
 
         $payload['id'] = $resolvedId;
+        $payload['course_student_id'] = $courseStudent->id;
         $payload['user_id'] = $courseStudent->user_id;
         $payload['import116_id'] = $courseStudent->import116_id;
         $payload['comment'] = $courseStudent->comment;

@@ -69,6 +69,15 @@ describe('CourseStudents sorting', () => {
         expect(canceledClass).toBe('student-name--canceled')
         expect(activeClass).toBe('')
     })
+
+    it('does not render the old per-student pdf button anymore', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+
+        expect(source).not.toContain('mdi-file-pdf-box')
+        expect(source).not.toContain('studentPerformancePdfUrl')
+    })
 })
 
 describe('CourseStudents selected date label', () => {

@@ -2,6 +2,12 @@
 
 return [
     /*
+     * The default driver to use for PDF generation.
+     * Supported: "browsershot", "cloudflare", "dompdf", "gotenberg", "weasyprint"
+     */
+    'driver' => env('LARAVEL_PDF_DRIVER', 'dompdf'),
+
+    /*
      * Here you can configure default Browsershot settings that will be applied
      * to all PDF generation. These settings can still be overridden using the
      * withBrowsershot() method on individual PDF instances.
@@ -24,5 +30,13 @@ return [
          */
         'write_options_to_file' => env('LARAVEL_PDF_WRITE_OPTIONS_TO_FILE', false),
         'no_sandbox' => env('LARAVEL_PDF_NO_SANDBOX', false),
+    ],
+
+    /*
+     * DOMPDF driver configuration.
+     */
+    'dompdf' => [
+        'is_remote_enabled' => env('LARAVEL_PDF_DOMPDF_REMOTE_ENABLED', false),
+        'chroot' => env('LARAVEL_PDF_DOMPDF_CHROOT'),
     ],
 ];
