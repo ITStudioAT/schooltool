@@ -422,6 +422,10 @@ describe('show update destroy', function () {
                     'student_id' => $studentA->id,
                     'grade' => '2',
                 ]],
+                'points' => [[
+                    'student_id' => $studentA->id,
+                    'points' => 37.5,
+                ]],
                 'comments' => [[
                     'student_id' => $studentA->id,
                     'comment' => 'already graded',
@@ -459,6 +463,7 @@ describe('show update destroy', function () {
 
         expect($groupForStudentA)->not->toBeNull()
             ->and($groupForStudentA['grades'][0]['grade'] ?? null)->toBe('2')
+            ->and($groupForStudentA['points'][0]['points'] ?? null)->toBe(37.5)
             ->and($groupForStudentA['comments'][0]['comment'] ?? null)->toBe('already graded');
 
         $this->assertDatabaseHas('teaching_course_student_entries', [

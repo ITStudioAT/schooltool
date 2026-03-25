@@ -52,3 +52,89 @@ describe('CourseWorks course-specific schema', () => {
         expect(computed.semesterCount.call(ctx)).toBe(2)
     })
 })
+
+describe('CourseWorks points mode', () => {
+    it('shows the Punkte action only for non-group work types with points-note configuration', () => {
+        const computed = (CourseWorks as any).computed
+        const ctx: Record<string, unknown> = {
+            work_form: { type: 'SA', is_group_work: false },
+            teachingWorks: [
+                {
+                    short_name: 'SA',
+                    name: 'Schularbeit',
+                    points_note_enabled: true,
+                    points_table: [{ grade: '1', min_points: 40 }],
+                    points_sonst_grade: '5',
+                },
+            ],
+            workConfigForType(type: string) {
+                return (this.teachingWorks as Array<Record<string, unknown>>).find((work) => work.short_name === type) ?? null
+            },
+            workSupportsPoints: (work: Record<string, unknown>) => Boolean(work?.points_note_enabled),
+        }
+
+        ctx.selectedTypeWork = computed.selectedTypeWork.call(ctx)
+
+        expect(computed.selectedTypeSupportsPoints.call(ctx)).toBe(true)
+        expect(computed.selectedTypeSupportsPoints.call({
+            ...ctx,
+            work_form: { type: 'SA', is_group_work: true },
+        })).toBe(false)
+    })
+
+    it('derives the grade from entered points for per-work points tables', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: {
+                groups: [{
+                    student_ids: [11],
+                    grades: {},
+                    comments: {},
+                    points: {},
+                }],
+            },
+            selectedTypeWork: {
+                short_name: 'SA',
+                points_note_enabled: true,
+                points_table: [
+                    { grade: '1', min_points: 40 },
+                    { grade: '2', min_points: 35 },
+                    { grade: '3', min_points: 30 },
+                    { grade: '4', min_points: 25 },
+                ],
+                points_sonst_grade: '5',
+            },
+            normalizeNumericInput: methods.normalizeNumericInput,
+            normalizePointsNumber: methods.normalizePointsNumber,
+            workSupportsPoints: methods.workSupportsPoints,
+            gradeFromPointsForWork: methods.gradeFromPointsForWork,
+        }
+
+        methods.setStudentPoints.call(ctx, 0, 11, '37,5')
+
+        expect(ctx.work_form.groups[0].points[11]).toBe('37,5')
+        expect(ctx.work_form.groups[0].grades[11]).toBe('2')
+    })
+
+    it('serializes numeric points with student ids for saving', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            normalizeNumericInput: methods.normalizeNumericInput,
+            normalizePointsNumber: methods.normalizePointsNumber,
+        }
+
+        const result = methods.serializeGroupPoints.call(ctx, {
+            student_ids: [11, 12, 13],
+            points: {
+                11: '42',
+                12: '37,5',
+                13: '',
+            },
+        })
+
+        expect(result).toEqual([
+            { student_id: 11, points: 42 },
+            { student_id: 12, points: 37.5 },
+        ])
+    })
+})

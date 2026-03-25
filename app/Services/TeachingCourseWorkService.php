@@ -44,7 +44,7 @@ class TeachingCourseWorkService
     }
 
     /**
-     * Normalize all student_ids, grades, and comments within each work group
+     * Normalize all student_ids, grades, points, and comments within each work group
      * by resolving import/numeric IDs to real user IDs within the school.
      *
      * @return array<int, array>
@@ -97,13 +97,35 @@ class TeachingCourseWorkService
                 ];
             }
 
+            $points = [];
+            foreach (($group['points'] ?? []) as $pointsItem) {
+                if (! is_array($pointsItem)) {
+                    continue;
+                }
+                $resolvedId = $this->courseService->resolveStudentIdFromNumeric((int) ($pointsItem['student_id'] ?? 0), $schoolId);
+                if (! $resolvedId) {
+                    continue;
+                }
+
+                $rawPoints = $pointsItem['points'] ?? null;
+                if ($rawPoints === null || $rawPoints === '') {
+                    continue;
+                }
+
+                $points[] = [
+                    'student_id' => $resolvedId,
+                    'points' => (float) $rawPoints,
+                ];
+            }
+
             // Defensive cleanup:
             // If primary student_ids are empty, salvage ids from resolved grades/comments.
             // If still empty, drop the group entirely to avoid persisting blank student rows.
             if (empty($studentIds)) {
                 $studentIds = array_values(array_unique(array_merge(
                     array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $grades),
-                    array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $comments)
+                    array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $comments),
+                    array_map(fn (array $item) => (int) ($item['student_id'] ?? 0), $points)
                 )));
                 $studentIds = array_values(array_filter($studentIds, fn (int $id) => $id > 0));
             }
@@ -115,6 +137,7 @@ class TeachingCourseWorkService
             $normalized[] = array_merge($group, [
                 'student_ids' => $studentIds,
                 'grades' => $grades,
+                'points' => $points,
                 'comments' => $comments,
             ]);
         }

@@ -92,9 +92,10 @@ class TeachingCourseWorkEntrySyncService
             return $this->buildRowsFromGroups($work, $groups);
         }
 
-        // Build lookup maps from the stored groups so existing grades/comments are preserved.
+        // Build lookup maps from the stored groups so existing grades, points, and comments are preserved.
         $gradesByStudentId = [];
         $commentsByStudentId = [];
+        $pointsByStudentId = [];
         $dateByStudentId = [];
 
         foreach ($groups as $group) {
@@ -139,9 +140,30 @@ class TeachingCourseWorkEntrySyncService
                 $commentsMap[$sid] = $this->toNullableString($commentItem['comment'] ?? null);
             }
 
+            $pointsMap = [];
+            foreach ((array) ($group['points'] ?? []) as $pointsItem) {
+                if (! is_array($pointsItem)) {
+                    continue;
+                }
+                $sid = (int) ($pointsItem['student_id'] ?? 0);
+                if ($sid <= 0) {
+                    continue;
+                }
+
+                $rawPoints = $pointsItem['points'] ?? null;
+                if ($rawPoints === null || $rawPoints === '') {
+                    continue;
+                }
+
+                $pointsMap[$sid] = (float) $rawPoints;
+            }
+
             foreach ($studentIds as $studentId) {
                 $gradesByStudentId[$studentId] = $gradesMap[$studentId] ?? $groupGrade;
                 $commentsByStudentId[$studentId] = $commentsMap[$studentId] ?? $groupComment;
+                if (array_key_exists($studentId, $pointsMap)) {
+                    $pointsByStudentId[$studentId] = $pointsMap[$studentId];
+                }
                 if ($groupDate) {
                     $dateByStudentId[$studentId] = date('Y-m-d', strtotime((string) $groupDate));
                 }
@@ -198,6 +220,7 @@ class TeachingCourseWorkEntrySyncService
         $normalizedGroups = $this->buildNormalizedGroupsForNonGroupWork(
             $byUserId,
             $gradesByStudentId,
+            $pointsByStudentId,
             $commentsByStudentId,
             $dateByStudentId,
             $defaultDate
@@ -209,6 +232,7 @@ class TeachingCourseWorkEntrySyncService
     /**
      * @param  array<int, array<string, mixed>>  $rowsByUserId
      * @param  array<int, ?string>  $gradesByStudentId
+     * @param  array<int, float|int>  $pointsByStudentId
      * @param  array<int, ?string>  $commentsByStudentId
      * @param  array<int, string>  $dateByStudentId
      * @return array<int, array<string, mixed>>
@@ -216,6 +240,7 @@ class TeachingCourseWorkEntrySyncService
     private function buildNormalizedGroupsForNonGroupWork(
         array $rowsByUserId,
         array $gradesByStudentId,
+        array $pointsByStudentId,
         array $commentsByStudentId,
         array $dateByStudentId,
         ?string $defaultDate
@@ -240,6 +265,10 @@ class TeachingCourseWorkEntrySyncService
                     'student_id' => $resolvedStudentId,
                     'grade' => $grade ?? '',
                 ]],
+                'points' => array_key_exists($resolvedStudentId, $pointsByStudentId) ? [[
+                    'student_id' => $resolvedStudentId,
+                    'points' => $pointsByStudentId[$resolvedStudentId],
+                ]] : [],
                 'comments' => [[
                     'student_id' => $resolvedStudentId,
                     'comment' => $comment ?? '',

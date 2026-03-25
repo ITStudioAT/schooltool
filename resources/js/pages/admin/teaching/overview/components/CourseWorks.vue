@@ -255,8 +255,16 @@
                                         size="x-small"
                                         :variant="show_chip_grading_view ? 'flat' : 'outlined'"
                                         :color="show_chip_grading_view ? 'secondary' : 'primary'"
-                                        @click="show_chip_grading_view = !show_chip_grading_view">
+                                        @click="toggleChipGradingView">
                                         {{ show_chip_grading_view ? 'Chip-Ansicht schließen' : 'Chip-Ansicht' }}
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="selectedTypeSupportsPoints"
+                                        size="x-small"
+                                        :variant="show_points_grading_view ? 'flat' : 'outlined'"
+                                        :color="show_points_grading_view ? 'success' : 'primary'"
+                                        @click="togglePointsGradingView">
+                                        {{ show_points_grading_view ? 'Punkte schließen' : 'Punkte' }}
                                     </v-btn>
                                 </div>
                                 <v-btn size="x-small" variant="tonal" color="primary" @click="toggleAllSinglePanels">
@@ -299,8 +307,51 @@
                                     </div>
                                 </div>
                             </v-card>
+                            <div v-if="show_points_grading_view" class="mt-3 d-flex flex-column ga-2">
+                                <v-card
+                                    v-for="row in pointsViewRows"
+                                    :key="`points-${row.groupIndex}-${row.studentId}`"
+                                    variant="outlined"
+                                    class="pa-3">
+                                    <div class="d-flex align-center ga-2 flex-wrap">
+                                        <v-chip v-if="row.classLabel" size="x-small" variant="tonal" color="primary">
+                                            {{ row.classLabel }}
+                                        </v-chip>
+                                        <div class="text-body-2 font-weight-medium">
+                                            {{ row.studentLabel }}
+                                        </div>
+                                        <v-spacer />
+                                        <v-chip
+                                            size="x-small"
+                                            :color="row.gradeValue ? 'success' : 'default'"
+                                            :variant="row.gradeValue ? 'flat' : 'outlined'">
+                                            {{ row.gradeValue || 'Keine Note' }}
+                                        </v-chip>
+                                    </div>
+                                    <div class="d-flex flex-wrap align-start ga-3 mt-3">
+                                        <v-text-field
+                                            :model-value="row.pointsValue"
+                                            label="Punkte"
+                                            density="compact"
+                                            hide-details
+                                            inputmode="decimal"
+                                            style="width: 160px; flex: 0 0 160px"
+                                            @update:model-value="setStudentPoints(row.groupIndex, row.studentId, $event)" />
+                                        <v-textarea
+                                            :model-value="row.commentValue"
+                                            label="Kommentar"
+                                            density="compact"
+                                            hide-details
+                                            rows="2"
+                                            auto-grow
+                                            :maxlength="1024"
+                                            style="min-width: 240px; flex: 1 1 240px"
+                                            @update:model-value="setStudentComment(row.groupIndex, row.studentId, $event)" />
+                                    </div>
+                                </v-card>
+                            </div>
                             <!-- Chip grading view -->
-                            <div v-if="show_chip_grading_view" class="mt-3 d-flex flex-column ga-2">
+                            <div v-else-if="show_chip_grading_view" class="mt-3 d-flex flex-column ga-2">
                                 <v-card
                                     v-for="row in chipViewRows"
                                     :key="`chip-${row.groupIndex}-${row.studentId}`"
@@ -520,6 +571,7 @@ export default {
             selected_student_ids: [],
             students_sort_mode: 'last_name_first_name',
             show_chip_grading_view: false,
+            show_points_grading_view: false,
             comment_dialog_open: false,
             comment_dialog_group_index: null,
             comment_dialog_student_id: null,
@@ -603,6 +655,13 @@ export default {
                 value: grade.grade,
             }))
         },
+        selectedTypeWork() {
+            return this.workConfigForType(this.work_form.type)
+        },
+        selectedTypeSupportsPoints() {
+            if (this.work_form.is_group_work) return false
+            return this.workSupportsPoints(this.selectedTypeWork)
+        },
         studentItems() {
             return this.activeCourseStudents
                 .map((student) => ({
@@ -654,6 +713,30 @@ export default {
                         gradeValue,
                         commentValue,
                         commentPreview,
+                    })
+                })
+            })
+
+            return rows.sort((a, b) => this.compareStudentsBySelectedSort(a.student, b.student))
+        },
+        pointsViewRows() {
+            if (this.work_form.is_group_work || !this.selectedTypeSupportsPoints) return []
+            const byId = new Map(this.activeCourseStudents.map((student) => [String(student.id), student]))
+            const rows = []
+
+            ;(this.work_form.groups || []).forEach((group, groupIndex) => {
+                this.sortedGroupStudentIds(group).forEach((studentId) => {
+                    const student = byId.get(String(studentId))
+                    if (!student) return
+                    rows.push({
+                        groupIndex,
+                        studentId,
+                        student,
+                        classLabel: this.studentClassValue(student),
+                        studentLabel: this.studentLabel(student),
+                        pointsValue: this.getGroupStudentPoints(group, studentId),
+                        commentValue: this.getGroupStudentComment(group, studentId),
+                        gradeValue: this.getGroupStudentGrade(group, studentId),
                     })
                 })
             })
@@ -730,6 +813,11 @@ export default {
                 }
             }
         },
+        'work_form.type'() {
+            if (!this.selectedTypeSupportsPoints) {
+                this.show_points_grading_view = false
+            }
+        },
         students_sort_mode() {
             if (this.work_form?.is_group_work) return
             this.work_form.groups = this.sortGroupsByStudent(this.work_form.groups || [])
@@ -740,9 +828,72 @@ export default {
         isStudentInactive(student) {
             return !!student?.canceled_at || !!student?.deleted_at
         },
+        normalizeNumericInput(value) {
+            const sanitized = String(value ?? '')
+                .replace('.', ',')
+                .replace(/\s+/g, '')
+
+            let normalized = ''
+            let hasDecimalSeparator = false
+
+            for (let index = 0; index < sanitized.length; index += 1) {
+                const char = sanitized[index]
+
+                if (char >= '0' && char <= '9') {
+                    normalized += char
+                    continue
+                }
+
+                if (char === '-' && normalized === '') {
+                    normalized += char
+                    continue
+                }
+
+                if (char === ',' && !hasDecimalSeparator) {
+                    normalized += char
+                    hasDecimalSeparator = true
+                }
+            }
+
+            return normalized
+        },
+        normalizePointsNumber(value) {
+            const normalized = this.normalizeNumericInput(value)
+            if (normalized === '' || normalized === '-') return null
+
+            const parsed = parseFloat(normalized.replace(',', '.'))
+            return Number.isNaN(parsed) ? null : parsed
+        },
+        displayPointsValue(value) {
+            return this.normalizeNumericInput(value)
+        },
         workConfigForType(type) {
             if (!type) return null
             return this.teachingWorks.find((work) => work.short_name === type) || null
+        },
+        workSupportsPoints(work) {
+            if (!work) return false
+
+            return Boolean(
+                work.points_note_enabled
+                || (Array.isArray(work.points_table) && work.points_table.length > 0)
+                || String(work.points_sonst_grade || '').trim() !== ''
+            )
+        },
+        gradeFromPointsForWork(work, points) {
+            if (!this.workSupportsPoints(work) || points == null) return ''
+
+            const table = Array.isArray(work.points_table) ? work.points_table : []
+            const fallbackGrade = String(work.points_sonst_grade || '').trim()
+
+            if (!table.length) {
+                return fallbackGrade
+            }
+
+            const sorted = [...table].sort((left, right) => (right.min_points ?? 0) - (left.min_points ?? 0))
+            const found = sorted.find((row) => points >= (row.min_points ?? 0))
+
+            return String(found?.grade || fallbackGrade || '').trim()
         },
         effectiveGradeForType(type, rawGrade) {
             const direct = (rawGrade || '').toString().trim()
@@ -764,6 +915,11 @@ export default {
             if (!group || typeof group !== 'object') return ''
             return group.comments?.[studentId] ?? group.comments?.[String(studentId)] ?? ''
         },
+        getGroupStudentPoints(group, studentId) {
+            if (!group || typeof group !== 'object') return ''
+            const raw = group.points?.[studentId] ?? group.points?.[String(studentId)] ?? ''
+            return this.displayPointsValue(raw)
+        },
         setStudentGrade(groupIndex, studentId, value) {
             const group = this.work_form.groups?.[groupIndex]
             if (!group) return
@@ -771,6 +927,30 @@ export default {
                 group.grades = {}
             }
             group.grades[studentId] = value ?? ''
+        },
+        setStudentComment(groupIndex, studentId, value) {
+            const group = this.work_form.groups?.[groupIndex]
+            if (!group) return
+            if (!group.comments || typeof group.comments !== 'object') {
+                group.comments = {}
+            }
+            group.comments[studentId] = (value || '').toString()
+        },
+        setStudentPoints(groupIndex, studentId, value) {
+            const group = this.work_form.groups?.[groupIndex]
+            if (!group) return
+            if (!group.points || typeof group.points !== 'object') {
+                group.points = {}
+            }
+            if (!group.grades || typeof group.grades !== 'object') {
+                group.grades = {}
+            }
+
+            const normalizedPoints = this.normalizeNumericInput(value)
+            group.points[studentId] = normalizedPoints
+
+            const numericPoints = this.normalizePointsNumber(normalizedPoints)
+            group.grades[studentId] = this.gradeFromPointsForWork(this.selectedTypeWork, numericPoints)
         },
         openCommentDialog(groupIndex, studentId) {
             const group = this.work_form.groups?.[groupIndex]
@@ -803,6 +983,34 @@ export default {
             }
             group.comments[studentId] = (this.comment_dialog_value || '').toString()
             this.closeCommentDialog()
+        },
+        serializeGroupPoints(group) {
+            return (group.student_ids || [])
+                .map((id) => {
+                    const numericPoints = this.normalizePointsNumber(group.points?.[id] ?? group.points?.[String(id)] ?? '')
+
+                    if (numericPoints == null) {
+                        return null
+                    }
+
+                    return {
+                        student_id: id,
+                        points: numericPoints,
+                    }
+                })
+                .filter(Boolean)
+        },
+        toggleChipGradingView() {
+            this.show_points_grading_view = false
+            this.show_chip_grading_view = !this.show_chip_grading_view
+        },
+        togglePointsGradingView() {
+            if (!this.selectedTypeSupportsPoints) return
+
+            this.show_bulk_action = false
+            this.selected_student_ids = []
+            this.show_chip_grading_view = false
+            this.show_points_grading_view = !this.show_points_grading_view
         },
         setGroupWork(value) {
             const nextVal = !!value
@@ -852,11 +1060,13 @@ export default {
                 const hasStudents = Array.isArray(group?.student_ids) && group.student_ids.length > 0
                 const gradeVals = group?.grades ? Object.values(group.grades) : []
                 const commentVals = group?.comments ? Object.values(group.comments) : []
+                const pointsVals = group?.points ? Object.values(group.points) : []
                 const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
                 const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasPoints = pointsVals.some((v) => (v ?? '').toString().trim() !== '')
                 const groupGrade = (group?.grade ?? '').toString().trim() !== ''
                 const groupComment = (group?.comment ?? '').toString().trim() !== ''
-                return hasStudents || hasGrade || hasComment || groupGrade || groupComment
+                return hasStudents || hasGrade || hasComment || hasPoints || groupGrade || groupComment
             })
         },
         hasIndividualEntries() {
@@ -864,11 +1074,13 @@ export default {
             return groups.some((group) => {
                 const gradeVals = group?.grades ? Object.values(group.grades) : []
                 const commentVals = group?.comments ? Object.values(group.comments) : []
+                const pointsVals = group?.points ? Object.values(group.points) : []
                 const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
                 const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasPoints = pointsVals.some((v) => (v ?? '').toString().trim() !== '')
                 const groupGrade = (group?.grade ?? '').toString().trim() !== ''
                 const groupComment = (group?.comment ?? '').toString().trim() !== ''
-                return hasGrade || hasComment || groupGrade || groupComment
+                return hasGrade || hasComment || hasPoints || groupGrade || groupComment
             })
         },
         emptyWorkForm() {
@@ -904,6 +1116,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.show_points_grading_view = false
             this.closeCommentDialog()
             this.action = 'new_course_work'
             this.$nextTick(() => {
@@ -935,6 +1148,11 @@ export default {
                     if (item?.student_id) acc[item.student_id] = item.comment ?? ''
                     return acc
                 }, {})
+                const pointsArray = Array.isArray(group.points) ? group.points : []
+                const points = pointsArray.reduce((acc, item) => {
+                    if (item?.student_id) acc[item.student_id] = this.displayPointsValue(item.points ?? '')
+                    return acc
+                }, {})
                 const studentIds = Array.isArray(group?.student_ids)
                     ? group.student_ids.filter((id) => activeStudentIdSet.has(String(id)))
                     : []
@@ -944,6 +1162,9 @@ export default {
                 const filteredComments = Object.fromEntries(
                     Object.entries(comments).filter(([id]) => activeStudentIdSet.has(String(id)))
                 )
+                const filteredPoints = Object.fromEntries(
+                    Object.entries(points).filter(([id]) => activeStudentIdSet.has(String(id)))
+                )
                 return {
                     ...group,
                     student_ids: studentIds,
@@ -951,6 +1172,7 @@ export default {
                     date: this.normalizeDateString(group.date),
                     grades: filteredGrades,
                     comments: filteredComments,
+                    points: filteredPoints,
                     use_individual_grades: Object.keys(filteredGrades).length > 0,
                 }
             })
@@ -970,6 +1192,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.show_points_grading_view = false
             this.closeCommentDialog()
             this.action = 'edit_course_work'
             this.$nextTick(() => {
@@ -985,6 +1208,7 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.show_points_grading_view = false
             this.closeCommentDialog()
 
             // If we came from student detail, return to it
@@ -1024,7 +1248,7 @@ export default {
                     // Convert date to YYYY-MM-DD string format
                     const date = this.normalizeDateString(group.date)
                     if (!group.use_individual_grades) {
-                        return { ...group, date: date || null, grades: [], comments: [] }
+                        return { ...group, date: date || null, grades: [], points: [], comments: [] }
                     }
                     const grades = (group.student_ids || []).map((id) => ({
                         student_id: id,
@@ -1034,7 +1258,8 @@ export default {
                         student_id: id,
                         comment: group.comments?.[id] ?? '',
                     }))
-                    return { ...group, date: date || null, grade: '', comment: '', grades, comments }
+                    const points = this.serializeGroupPoints(group)
+                    return { ...group, date: date || null, grade: '', comment: '', grades, comments, points }
                 })
 
                 // Convert date_for_all_groups to YYYY-MM-DD string format
@@ -1102,6 +1327,7 @@ export default {
                 grade: '',
                 grades: { [student.id]: '' },
                 comments: { [student.id]: '' },
+                points: {},
                 use_individual_grades: true,
             }))
         },
@@ -1114,6 +1340,7 @@ export default {
                 grade: '',
                 grades: {},
                 comments: {},
+                points: {},
                 use_individual_grades: false,
             })
         },
@@ -1164,6 +1391,7 @@ export default {
                 grade: '',
                 grades: {},
                 comments: {},
+                points: {},
                 use_individual_grades: false,
             }))
             this.work_form.is_random_groups = false
@@ -1230,6 +1458,8 @@ export default {
                 this.selected_student_ids = []
                 return
             }
+            this.show_points_grading_view = false
+            this.show_chip_grading_view = false
             if (!this.allSinglePanelsOpen) {
                 this.singlePanels = this.work_form.groups.map((_, idx) => idx)
             }
