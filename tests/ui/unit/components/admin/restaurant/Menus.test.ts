@@ -1,6 +1,7 @@
 import { createTestingPinia } from '@pinia/testing'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import Menus from '@/pages/admin/restaurant/components/Menus.vue'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
@@ -73,6 +74,10 @@ function mountMenus(options: {
 }
 
 describe('Restaurant menus component', () => {
+    it('uses the shared new-menu label for create actions', () => {
+        expect((Menus as any).computed.newMenuLabel()).toBe(NEW_MENU_LABEL)
+    })
+
     it('builds a menu course by course with category first and food second', () => {
         const ctx = {
             form: {

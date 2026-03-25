@@ -31,6 +31,15 @@
                             @click="activatePanel('free-days')">
                             Freie Tage
                         </v-btn>
+                        <v-btn
+                            rounded="xl"
+                            :color="selectedPanel === 'eating-times' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'eating-times' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'eating-times' }"
+                            @click="activatePanel('eating-times')">
+                            Speisezeiten
+                        </v-btn>
                     </div>
                 </v-sheet>
             </v-col>
@@ -106,6 +115,7 @@
             </v-col>
 
             <FreeDays v-if="selectedPanel === 'free-days'" />
+            <EatingTimes v-if="selectedPanel === 'eating-times'" />
         </v-row>
 
         <v-dialog v-model="categoryDialog" max-width="520" persistent>
@@ -255,6 +265,7 @@
 <script>
 import { mapState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
+import EatingTimes from '@/pages/admin/restaurant/components/EatingTimes.vue'
 import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
@@ -282,14 +293,14 @@ function emptyIngredientIconForm() {
     }
 }
 
-const validPanels = ['categories', 'ingredient-icons', 'free-days']
+const validPanels = ['categories', 'ingredient-icons', 'free-days', 'eating-times']
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { FilePond, FreeDays, ItsGridBox },
+    components: { EatingTimes, FilePond, FreeDays, ItsGridBox },
 
     data() {
         return {

@@ -2,6 +2,7 @@
 
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
+use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use App\Models\School;
 use App\Models\User;
@@ -74,8 +75,15 @@ test('index returns only menus from current school', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     $this->foodOne->update([
+        'description' => 'Mit Schnittlauch',
+        'allergens' => ['A', 'G'],
         'food_image_path' => 'restaurant/foods/suppe.jpg',
     ]);
+    $icon = RestaurantIngredientIcon::factory()->forSchool($this->school)->create([
+        'title' => 'Fisch',
+        'image_path' => 'restaurant/ingredient-icons/fisch.svg',
+    ]);
+    $this->foodOne->ingredientIcons()->sync([$icon->id]);
 
     $menu = RestaurantMenu::factory()->forUser($this->admin)->create(['title' => 'Mittagsmenü']);
     $menu->foods()->sync([
@@ -93,6 +101,9 @@ test('index returns only menus from current school', function () {
     expect($response->json('data'))->toHaveCount(1)
         ->and($response->json('data.0.title'))->toBe('Mittagsmenü')
         ->and($response->json('data.0.foods.0.title'))->toBe('Suppe')
+        ->and($response->json('data.0.foods.0.description'))->toBe('Mit Schnittlauch')
+        ->and($response->json('data.0.foods.0.allergens'))->toBe(['A', 'G'])
+        ->and($response->json('data.0.foods.0.ingredient_icons.0.title'))->toBe('Fisch')
         ->and($response->json('data.0.foods.0.course_number'))->toBe(1)
         ->and($response->json('data.0.foods.0.food_image_url'))->toContain('/storage/restaurant/foods/suppe.jpg');
 });

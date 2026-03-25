@@ -144,6 +144,8 @@
 </template>
 
 <script>
+import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
+
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
 }
@@ -159,30 +161,15 @@ export default {
             selectedStartIso: '',
             selectedEndIso: '',
             previewMessage: '',
-            menuPlans: [
-                {
-                    id: 'mp-2026-03-23',
-                    title: 'Fr\u00fchlingswoche',
-                    start_iso: '2026-03-23',
-                    end_iso: '2026-03-27',
-                    days: 5,
-                },
-                {
-                    id: 'mp-2026-03-30',
-                    title: 'Projektwoche Spezial',
-                    start_iso: '2026-03-30',
-                    end_iso: '2026-04-03',
-                    days: 5,
-                },
-                {
-                    id: 'mp-2026-04-13',
-                    title: 'Bio-Themenwoche',
-                    start_iso: '2026-04-13',
-                    end_iso: '2026-04-24',
-                    days: 12,
-                },
-            ],
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
+        }
+    },
+
+    created() {
+        const store = useMenuPlanStore()
+
+        if (! store.isLoaded) {
+            store.load()
         }
     },
 
@@ -220,7 +207,9 @@ export default {
                 return null
             }
 
-            return this.menuPlans.find((plan) => plan.start_iso === this.selectedStartIso && plan.end_iso === this.selectedEndIso) || null
+            const store = useMenuPlanStore()
+
+            return store.plans.find((plan) => plan.start_date === this.selectedStartIso && plan.end_date === this.selectedEndIso) || null
         },
         isExistingPlanSelection() {
             return this.selectedExistingPlan !== null
@@ -304,14 +293,14 @@ export default {
             return targetIso >= startIso && targetIso <= endIso
         },
         planCountForDay(isoString) {
-            return this.menuPlans.filter((plan) => this.isWithinRange(isoString, plan.start_iso, plan.end_iso)).length
+            return useMenuPlanStore().planCountForDay(isoString)
         },
         findPlanForDay(isoString) {
-            return this.menuPlans.find((plan) => this.isWithinRange(isoString, plan.start_iso, plan.end_iso)) || null
+            return useMenuPlanStore().findPlanForDay(isoString)
         },
         planIdsForDay(isoString) {
-            return this.menuPlans
-                .filter((plan) => this.isWithinRange(isoString, plan.start_iso, plan.end_iso))
+            return useMenuPlanStore().plans
+                .filter((plan) => this.isWithinRange(isoString, plan.start_date, plan.end_date))
                 .map((plan) => plan.id)
         },
         sharesPlan(isoString, comparisonIso) {
@@ -351,8 +340,8 @@ export default {
             const clickedPlan = this.findPlanForDay(isoString)
 
             if (clickedPlan) {
-                this.selectedStartIso = clickedPlan.start_iso
-                this.selectedEndIso = clickedPlan.end_iso
+                this.selectedStartIso = clickedPlan.start_date
+                this.selectedEndIso = clickedPlan.end_date
 
                 return
             }
@@ -374,8 +363,8 @@ export default {
             this.selectedEndIso = isoString
         },
         selectPlanRange(plan) {
-            this.selectedStartIso = plan.start_iso
-            this.selectedEndIso = plan.end_iso
+            this.selectedStartIso = plan.start_date
+            this.selectedEndIso = plan.end_date
         },
         stepClass(stepNum, isDone) {
             let isActive = false
@@ -407,8 +396,8 @@ export default {
             this.navigateToEditor({
                 mode: 'edit',
                 plan_id: this.selectedExistingPlan.id,
-                start: this.selectedExistingPlan.start_iso,
-                end: this.selectedExistingPlan.end_iso,
+                start: this.selectedExistingPlan.start_date,
+                end: this.selectedExistingPlan.end_date,
             })
         },
         navigateToEditor(query) {

@@ -4,7 +4,7 @@
             <AdminSectionHero
                 class="mb-3"
                 eyebrow="Restaurant"
-                title="Men&uuml;pl&auml;ne"
+                title="Menüpläne"
                 :active-section="headerActiveSection"
                 :chips="headerChips"
                 :show-current-user-chip="true"
@@ -31,14 +31,34 @@
                                     <span>fertig</span>
                                 </div>
                                 <v-btn
+                                    color="primary"
+                                    rounded="xl"
+                                    variant="flat"
+                                    prepend-icon="mdi-content-save-outline"
+                                    :loading="isSaving"
+                                    @click="savePlan">
+                                    Speichern
+                                </v-btn>
+                                <v-btn
                                     color="white"
                                     rounded="xl"
                                     variant="tonal"
                                     prepend-icon="mdi-arrow-left"
                                     :to="backTarget">
-                                    {{ backButtonLabel }}
+                                    Zurück
                                 </v-btn>
                             </div>
+                        </div>
+
+                        <!-- Plan title -->
+                        <div class="mpe-plan-title-row">
+                            <v-text-field
+                                v-model="planTitle"
+                                label="Planbezeichnung (optional)"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details
+                                placeholder="z. B. Frühlingswoche" />
                         </div>
 
                         <!-- Summary stats strip -->
@@ -50,8 +70,8 @@
                             </div>
                             <div class="mpe-stat">
                                 <v-icon icon="mdi-silverware" size="15" class="mpe-stat__icon" />
-                                <span class="mpe-stat__label">Mit Men&uuml;</span>
-                                <strong class="mpe-stat__value">{{ selectedMenuCount }}</strong>
+                                <span class="mpe-stat__label">Mit Menü</span>
+                                <strong class="mpe-stat__value">{{ filledDayCount }}</strong>
                             </div>
                             <div class="mpe-stat">
                                 <v-icon icon="mdi-clock-outline" size="15" class="mpe-stat__icon" />
@@ -71,7 +91,7 @@
                                 v-for="day in planDays"
                                 :key="day.iso"
                                 class="mpe-day"
-                                :class="day.isFreeDay ? 'mpe-day--free' : day.menu ? 'mpe-day--filled' : 'mpe-day--empty'"
+                                :class="day.isFreeDay ? 'mpe-day--free' : dayEntries(day.iso).length ? 'mpe-day--filled' : 'mpe-day--empty'"
                                 :data-testid="`plan-day-${day.iso}`">
 
                                 <header class="mpe-day__header">
@@ -81,43 +101,166 @@
                                     </div>
                                     <div
                                         class="mpe-day__status"
-                                        :class="day.isFreeDay ? 'is-free' : day.menu ? 'is-filled' : 'is-empty'">
+                                        :class="day.isFreeDay ? 'is-free' : dayEntries(day.iso).length ? 'is-filled' : 'is-empty'">
                                         <v-icon
-                                            :icon="day.isFreeDay ? 'mdi-leaf' : day.menu ? 'mdi-check' : 'mdi-clock-outline'"
+                                            :icon="day.isFreeDay ? 'mdi-leaf' : dayEntries(day.iso).length ? 'mdi-check' : 'mdi-clock-outline'"
                                             size="11"
                                             class="mr-1" />
-                                        {{ day.isFreeDay ? 'Frei' : day.menu ? 'Belegt' : 'Offen' }}
+                                        {{ day.isFreeDay ? 'Frei' : dayEntries(day.iso).length ? `${dayEntries(day.iso).length} Menü(s)` : 'Offen' }}
                                     </div>
                                 </header>
 
-                                <div v-if="day.isFreeDay" class="mpe-free-card" :data-testid="`free-day-${day.iso}`">
+                                <!-- Free day -->
+                                <div v-if="day.isFreeDay" class="mpe-free-card">
                                     <v-icon icon="mdi-calendar-remove-outline" size="36" class="mpe-free-card__icon" />
                                     <p class="mpe-free-card__text">Freier Tag</p>
                                 </div>
 
-                                <div v-else-if="day.menu" class="mpe-menu-card" :data-testid="`selected-menu-${day.iso}`">
-                                    <div class="mpe-menu-card__icon">
-                                        <v-icon icon="mdi-silverware" size="20" />
-                                    </div>
-                                    <div class="mpe-menu-card__body">
-                                        <div class="mpe-menu-card__type">Men&uuml;</div>
-                                        <div class="mpe-menu-card__title">{{ day.menu.title }}</div>
-                                        <div v-if="day.menu.note" class="mpe-menu-card__note">{{ day.menu.note }}</div>
-                                    </div>
-                                </div>
+                                <!-- Assigned menus + add button -->
+                                <div v-else class="mpe-day__body">
+                                    <!-- Each assigned menu entry -->
+                                    <div
+                                        v-for="(entry, entryIndex) in dayEntries(day.iso)"
+                                        :key="entry._key"
+                                        class="mpe-entry-card">
+                                        <div class="mpe-entry-card__header">
+                                            <div class="mpe-entry-card__title">{{ entry.menu.title }}</div>
+                                        </div>
+                                        <div class="mpe-entry-card__actions">
+                                            <v-btn
+                                                icon="mdi-arrow-up"
+                                                size="x-small"
+                                                variant="text"
+                                                :disabled="entryIndex === 0"
+                                                @click="moveEntry(day.iso, entryIndex, -1)" />
+                                            <v-btn
+                                                icon="mdi-arrow-down"
+                                                size="x-small"
+                                                variant="text"
+                                                :disabled="entryIndex === dayEntries(day.iso).length - 1"
+                                                @click="moveEntry(day.iso, entryIndex, 1)" />
+                                            <v-btn
+                                                icon="mdi-eye-outline"
+                                                size="x-small"
+                                                variant="text"
+                                                color="secondary"
+                                                :data-testid="`preview-menu-${day.iso}-${entry._key}`"
+                                                @click="openEntryPreviewDialog(day.iso, entry._key)" />
+                                            <v-btn
+                                                icon="mdi-pencil"
+                                                size="x-small"
+                                                variant="text"
+                                                color="primary"
+                                                @click="openEditEntryDialog(day.iso, entry._key)" />
+                                            <v-btn
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                variant="text"
+                                                color="warning"
+                                                @click="requestDeleteEntry(day.iso, entry._key)" />
+                                        </div>
+                                        <div v-if="entry.menu.foods && entry.menu.foods.length" class="mpe-entry-card__foods">
+                                            <span
+                                                v-for="food in sortedFoods(entry.menu.foods)"
+                                                :key="food.id"
+                                                class="mpe-entry-card__food">
+                                                {{ food.title }}
+                                            </span>
+                                        </div>
+                                        <div v-if="entryEffectivePrice(entry) != null" class="mpe-entry-card__base-price">
+                                            Preis: {{ formatPrice(entryEffectivePrice(entry)) }}
+                                        </div>
+                                        <div v-if="entryHasPriceOverride(entry) && entry.menu.price != null" class="mpe-entry-card__price-note">
+                                            Basispreis: {{ formatPrice(entry.menu.price) }}
+                                        </div>
 
-                                <div v-else class="mpe-empty-card">
-                                    <v-icon icon="mdi-plus-circle-outline" size="36" class="mpe-empty-card__icon" />
-                                    <p class="mpe-empty-card__text">Noch kein Men&uuml; f&uuml;r diesen Tag.</p>
+                                        <!-- Eating time toggles -->
+                                        <div v-if="eatingTimes.length" class="mpe-eating-times mt-2">
+                                            <div class="mpe-eating-times__label">Speisezeiten:</div>
+                                            <div class="d-flex flex-wrap ga-1 mt-1">
+                                                <v-chip
+                                                    v-for="et in eatingTimes"
+                                                    :key="et.id"
+                                                    size="small"
+                                                    :color="isTimeActive(entry, et.id) ? 'primary' : undefined"
+                                                    :variant="isTimeActive(entry, et.id) ? 'flat' : 'outlined'"
+                                                    class="mpe-time-chip"
+                                                    @click="toggleTime(entry, et.id)">
+                                                    {{ et.eating_time }} Uhr
+                                                </v-chip>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Inline search panel -->
+                                    <div v-if="searchOpen(day.iso)" class="mpe-search-panel">
+                                        <div class="d-flex gap-2 mb-2">
+                                            <v-btn
+                                                size="small"
+                                                color="primary"
+                                                variant="tonal"
+                                                prepend-icon="mdi-plus"
+                                                @click="openCreateMenuDialog(day.iso)">
+                                                {{ newMenuLabel }}
+                                            </v-btn>
+                                            <v-btn
+                                                size="small"
+                                                variant="text"
+                                                color="secondary"
+                                                @click="closeSearch(day.iso)">
+                                                Abbrechen
+                                            </v-btn>
+                                        </div>
+                                        <v-text-field
+                                            :ref="`search-${day.iso}`"
+                                            v-model="searchQueryFor(day.iso).query"
+                                            label="Menü suchen"
+                                            prepend-inner-icon="mdi-magnify"
+                                            variant="outlined"
+                                            density="compact"
+                                            hide-details
+                                            clearable
+                                            autofocus
+                                            class="mb-2"
+                                            @keydown.esc="closeSearch(day.iso)" />
+
+                                        <div v-if="filteredMenusFor(day.iso).length" class="mpe-search-results">
+                                            <button
+                                                v-for="menu in filteredMenusFor(day.iso)"
+                                                :key="menu.id"
+                                                type="button"
+                                                class="mpe-search-result"
+                                                @click="addEntryForDay(day.iso, menu)">
+                                                <div class="mpe-search-result__top">
+                                                    <div class="mpe-search-result__title">{{ menu.title }}</div>
+                                                    <div v-if="menu.price != null" class="mpe-search-result__price">{{ formatPrice(menu.price) }}</div>
+                                                </div>
+                                                <div v-if="menu.foods && menu.foods.length" class="mpe-search-result__foods">
+                                                    <span
+                                                        v-for="food in sortedFoods(menu.foods)"
+                                                        :key="food.id"
+                                                        class="mpe-search-result__food">
+                                                        {{ food.title }}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        </div>
+                                        <div v-else class="mpe-search-empty">
+                                            <span>Kein passendes Menü gefunden.</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Add menu button -->
                                     <v-btn
+                                        v-if="!searchOpen(day.iso)"
                                         size="small"
                                         color="primary"
                                         rounded="xl"
                                         variant="tonal"
                                         prepend-icon="mdi-plus"
-                                        :data-testid="`add-menu-${day.iso}`"
-                                        @click="assignDummyMenu(day.iso)">
-                                        Menu hinzufuegen
+                                        class="mpe-add-btn"
+                                        @click="openSearch(day.iso)">
+                                        Menü hinzufügen
                                     </v-btn>
                                 </div>
                             </article>
@@ -125,71 +268,515 @@
 
                         <section v-else class="mpe-no-range" data-testid="plan-days-empty">
                             <v-icon icon="mdi-calendar-question" size="44" color="grey-lighten-1" />
-                            <strong>Kein g&uuml;ltiger Zeitraum</strong>
-                            <span>Diese Ansicht ben&ouml;tigt Start- und Enddatum.</span>
+                            <strong>Kein gültiger Zeitraum</strong>
+                            <span>Diese Ansicht benötigt Start- und Enddatum.</span>
                         </section>
                     </v-sheet>
                 </v-col>
-
             </v-row>
         </v-container>
+
+        <!-- Create new menu dialog -->
+        <v-dialog v-model="createMenuDialog" max-width="820" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="d-flex align-center">
+                    <span>{{ newMenuLabel }}</span>
+                    <v-spacer />
+                    <v-btn icon="mdi-close" variant="text" @click="closeCreateMenuDialog" />
+                </v-card-title>
+
+                <v-card-text>
+                    <v-form ref="createMenuForm" v-model="isCreateMenuFormValid" @submit.prevent="saveNewMenu">
+                        <v-row dense>
+                            <v-col cols="12" md="8">
+                                <v-text-field
+                                    v-model="newMenuForm.title"
+                                    label="Titel"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    :rules="[required()]"
+                                    autofocus />
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <v-text-field
+                                    v-model="newMenuForm.price"
+                                    label="Preis"
+                                    type="text"
+                                    inputmode="decimal"
+                                    placeholder="z. B. 9,5"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    @blur="normalizeNewMenuPrice" />
+                            </v-col>
+
+                            <v-col cols="12">
+                                <div class="menu-course-builder">
+                                    <div class="menu-course-builder__header">
+                                        <div>
+                                            <div class="text-subtitle-1 font-weight-bold">Gang {{ currentNewMenuCourseNumber }}</div>
+                                            <div class="text-body-2 text-medium-emphasis">
+                                                Lege jeden Gang nacheinander an: zuerst Kategorie, dann Speise.
+                                            </div>
+                                        </div>
+
+                                        <v-chip color="secondary" variant="tonal">
+                                            {{ newMenuForm.foodIds.length }} gewählt
+                                        </v-chip>
+                                    </div>
+
+                                    <div class="text-subtitle-2 mb-2">1. Kategorie wählen</div>
+                                    <div v-if="categories.length" class="d-flex flex-wrap ga-2 menu-category-chip-list">
+                                        <v-chip
+                                            v-for="category in categories"
+                                            :key="`new-menu-category-${category.id}`"
+                                            class="menu-category-chip"
+                                            :class="{ 'menu-category-chip--selected': isNewMenuDraftCategorySelected(category.id) }"
+                                            variant="outlined"
+                                            @click="selectNewMenuDraftCategory(category.id)">
+                                            {{ category.title }}
+                                        </v-chip>
+                                    </div>
+                                    <v-alert v-else type="warning" variant="tonal">
+                                        Bitte zuerst unter Einstellungen Kategorien anlegen.
+                                    </v-alert>
+
+                                    <div class="text-subtitle-2 mb-2 mt-4">2. Speise wählen</div>
+                                    <div v-if="!newMenuForm.courseDraft.categoryId" class="text-body-2 text-medium-emphasis">
+                                        Wähle zuerst eine Kategorie für Gang {{ currentNewMenuCourseNumber }}.
+                                    </div>
+                                    <div v-else-if="availableFoodsForNewMenu.length">
+                                        <v-text-field
+                                            v-model="newMenuFoodSearch"
+                                            label="Speise suchen"
+                                            prepend-inner-icon="mdi-magnify"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            clearable
+                                            class="mb-3" />
+
+                                        <div v-if="filteredFoodsForNewMenu.length" class="menu-food-chip-list">
+                                            <div class="menu-food-chip-scroll">
+                                                <div class="d-flex flex-wrap ga-2">
+                                                    <v-chip
+                                                        v-for="food in filteredFoodsForNewMenu"
+                                                        :key="`new-menu-food-option-${food.id}`"
+                                                        class="menu-food-chip"
+                                                        :class="{
+                                                            'menu-food-chip--selected': isNewMenuDraftFoodSelected(food.id),
+                                                            'menu-food-chip--disabled': isNewMenuFoodAlreadyAssigned(food.id),
+                                                        }"
+                                                        variant="outlined"
+                                                        :disabled="isNewMenuFoodAlreadyAssigned(food.id)"
+                                                        @click="selectNewMenuDraftFood(food.id)">
+                                                        {{ food.title }}
+                                                    </v-chip>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <v-alert v-else type="info" variant="tonal">
+                                            Keine Speise passt zur aktuellen Suche.
+                                        </v-alert>
+                                    </div>
+                                    <v-alert v-else type="info" variant="tonal">
+                                        In dieser Kategorie gibt es aktuell keine verfügbare Speise.
+                                    </v-alert>
+
+                                    <div class="d-flex justify-end mt-4">
+                                        <v-btn
+                                            color="primary"
+                                            variant="flat"
+                                            prepend-icon="mdi-plus"
+                                            :disabled="!canAddNewMenuDraftCourse"
+                                            @click="appendNewMenuDraftCourse">
+                                            Gang {{ currentNewMenuCourseNumber }} hinzufügen
+                                        </v-btn>
+                                    </div>
+                                </div>
+                            </v-col>
+
+                            <v-col cols="12">
+                                <div class="text-subtitle-2 mb-2">Menüfolge</div>
+                                <v-alert v-if="!newMenuForm.foodIds.length" type="info" variant="tonal">
+                                    Noch kein Gang angelegt. Beginne mit Gang 1.
+                                </v-alert>
+
+                                <div v-else class="d-flex flex-column ga-2">
+                                    <div
+                                        v-for="(foodId, index) in newMenuForm.foodIds"
+                                        :key="`selected-new-menu-food-${foodId}`"
+                                        class="menu-selected-course">
+                                        <div class="d-flex align-center ga-2">
+                                            <v-chip size="small" color="primary" variant="flat">
+                                                Gang {{ index + 1 }}
+                                            </v-chip>
+                                            <div>
+                                                <div class="font-weight-medium">{{ selectedNewMenuFoodTitle(foodId) }}</div>
+                                                <div v-if="selectedNewMenuFoodCategoryTitle(foodId)" class="text-caption text-medium-emphasis">
+                                                    {{ selectedNewMenuFoodCategoryTitle(foodId) }}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex align-center ga-1">
+                                            <v-btn
+                                                icon="mdi-arrow-up"
+                                                size="x-small"
+                                                variant="text"
+                                                :disabled="index === 0"
+                                                @click="moveNewMenuSelectedFood(index, -1)" />
+                                            <v-btn
+                                                icon="mdi-arrow-down"
+                                                size="x-small"
+                                                variant="text"
+                                                :disabled="index === newMenuForm.foodIds.length - 1"
+                                                @click="moveNewMenuSelectedFood(index, 1)" />
+                                            <v-btn
+                                                icon="mdi-delete-outline"
+                                                size="x-small"
+                                                variant="text"
+                                                color="error"
+                                                @click="removeNewMenuSelectedFood(foodId)" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </v-col>
+                        </v-row>
+                    </v-form>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeCreateMenuDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" :loading="isCreatingMenu" @click="saveNewMenu">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="entryEditDialog" max-width="520" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="d-flex align-center">
+                    <span>Eintrag bearbeiten</span>
+                    <v-spacer />
+                    <v-btn icon="mdi-close" variant="text" @click="closeEditEntryDialog" />
+                </v-card-title>
+
+                <v-card-text>
+                    <v-text-field
+                        :model-value="entryEditMenuTitle()"
+                        label="Menü"
+                        variant="outlined"
+                        density="comfortable"
+                        readonly
+                        class="mb-3" />
+
+                    <v-text-field
+                        v-model="entryEditForm.priceOverride"
+                        label="Preis im Menüplan"
+                        type="text"
+                        inputmode="decimal"
+                        placeholder="Leer lassen, um Menüpreis zu übernehmen"
+                        variant="outlined"
+                        density="comfortable"
+                        clearable
+                        @blur="normalizeEntryEditPriceField" />
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeEditEntryDialog">Abbrechen</v-btn>
+                    <v-btn color="primary" variant="flat" @click="saveEntryEdit">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="entryPreviewDialog" max-width="960" persistent data-testid="entry-preview-dialog">
+            <v-card rounded="xl">
+                <v-card-title class="d-flex align-center">
+                    <div>
+                        <div class="text-overline">Menue-Details</div>
+                        <div>{{ entryPreviewEntry?.menu?.title || 'Menue' }}</div>
+                    </div>
+                    <v-spacer />
+                    <v-btn icon="mdi-close" variant="text" @click="closeEntryPreviewDialog" />
+                </v-card-title>
+
+                <v-card-text v-if="entryPreviewEntry" class="mpe-preview">
+                    <div class="mpe-preview__meta">
+                        <div class="mpe-preview__meta-item">
+                            <span class="mpe-preview__meta-label">Tag</span>
+                            <strong>{{ formatDate(entryPreviewTarget.iso) }}</strong>
+                        </div>
+                        <div class="mpe-preview__meta-item" v-if="entryEffectivePrice(entryPreviewEntry) != null">
+                            <span class="mpe-preview__meta-label">Preis im Plan</span>
+                            <strong>{{ formatPrice(entryEffectivePrice(entryPreviewEntry)) }}</strong>
+                        </div>
+                        <div class="mpe-preview__meta-item" v-if="entryHasPriceOverride(entryPreviewEntry) && entryPreviewEntry.menu?.price != null">
+                            <span class="mpe-preview__meta-label">Basispreis</span>
+                            <strong>{{ formatPrice(entryPreviewEntry.menu.price) }}</strong>
+                        </div>
+                        <div class="mpe-preview__meta-item">
+                            <span class="mpe-preview__meta-label">Gaenge</span>
+                            <strong>{{ sortedFoods(entryPreviewEntry.menu?.foods || []).length }}</strong>
+                        </div>
+                    </div>
+
+                    <div v-if="sortedFoods(entryPreviewEntry.menu?.foods || []).length" class="mpe-preview__foods">
+                        <article
+                            v-for="food in sortedFoods(entryPreviewEntry.menu?.foods || [])"
+                            :key="food.id"
+                            class="mpe-preview-food"
+                            :class="{ 'mpe-preview-food--no-media': !food.food_image_url }"
+                            :data-testid="`preview-food-${food.id}`">
+                            <div class="mpe-preview-food__media" v-if="food.food_image_url">
+                                <v-img :src="food.food_image_url" cover height="140" />
+                            </div>
+
+                            <div class="mpe-preview-food__body">
+                                <div class="mpe-preview-food__course-row">
+                                    <div class="mpe-preview-food__course">Gang {{ food.course_number || '-' }}</div>
+                                </div>
+
+                                <div class="mpe-preview-food__head">
+                                    <h3 class="mpe-preview-food__title">{{ food.title }}</h3>
+                                    <v-chip v-if="food.category?.title" size="small" variant="tonal" color="secondary">
+                                        {{ food.category.title }}
+                                    </v-chip>
+                                </div>
+
+                                <div class="mpe-preview-food__price" v-if="food.price != null">
+                                    Einzelpreis: {{ formatPrice(food.price) }}
+                                </div>
+
+                                <div class="mpe-preview-food__description" v-if="food.description">
+                                    {{ food.description }}
+                                </div>
+
+                                <div v-if="food.allergens?.length" class="mpe-preview-food__section">
+                                    <div class="mpe-preview-food__label">Allergene</div>
+                                    <div class="mpe-preview-food__chips">
+                                        <v-chip
+                                            v-for="allergen in food.allergens"
+                                            :key="`${food.id}-allergen-${allergen}`"
+                                            size="small"
+                                            variant="outlined">
+                                            {{ allergenLabel(allergen) }}
+                                        </v-chip>
+                                    </div>
+                                </div>
+
+                                <div v-if="food.ingredient_icons?.length" class="mpe-preview-food__section">
+                                    <div class="mpe-preview-food__label">Symbole</div>
+                                    <div class="mpe-preview-food__icon-list">
+                                        <div
+                                            v-for="icon in food.ingredient_icons"
+                                            :key="`${food.id}-icon-${icon.id}`"
+                                            class="mpe-preview-food__icon">
+                                            <v-avatar size="28" class="mpe-preview-food__icon-avatar">
+                                                <v-img v-if="icon.image_url" :src="icon.image_url" />
+                                                <span v-else>{{ shortLabel(icon.title) }}</span>
+                                            </v-avatar>
+                                            <span>{{ icon.title }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+
+                    <v-alert v-else type="info" variant="tonal">
+                        Fuer dieses Menue wurden noch keine Speisen hinterlegt.
+                    </v-alert>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" @click="closeEntryPreviewDialog">
+                        Schliessen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="deleteEntryDialog" max-width="460" persistent>
+            <v-card rounded="xl">
+                <v-card-title>Eintrag löschen</v-card-title>
+
+                <v-card-text>
+                    <div class="text-body-1">
+                        Soll <strong>{{ deleteEntryMenuTitle() || 'dieser Menüeintrag' }}</strong> wirklich aus dem Menüplan entfernt werden?
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="cancelDeleteEntry">Abbrechen</v-btn>
+                    <v-btn color="warning" variant="flat" @click="confirmDeleteEntry">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
 <script>
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import { mapState } from 'pinia'
+import { useValidationRulesSetup } from '@/helpers/rules'
+import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useFreeDayStore } from '@/stores/admin/restaurant/FreeDayStore'
+import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
+import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
+import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
+import { useEatingTimeStore } from '@/stores/admin/restaurant/EatingTimeStore'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
 }
 
+function emptyNewMenuForm() {
+    return {
+        title: '',
+        foodIds: [],
+        price: '',
+        courseDraft: {
+            categoryId: null,
+            foodId: null,
+        },
+    }
+}
+
+let keyCounter = 0
+
+function newEntryKey() {
+    return `entry-${++keyCounter}`
+}
+
 export default {
+    setup() {
+        return useValidationRulesSetup()
+    },
+
     components: { AdminSectionHero },
 
     data() {
         return {
-            menuSelectionsByDate: {},
-            dummyMenus: [
-                { title: 'Pasta Napoli', note: 'Dummy-Menue mit Tomatensauce' },
-                { title: 'Gemuese Curry', note: 'Dummy-Menue mit Reis' },
-                { title: 'Kartoffel Gratin', note: 'Dummy-Menue aus dem Ofen' },
-                { title: 'Falafel Teller', note: 'Dummy-Menue mit Joghurt Dip' },
-            ],
+            newMenuLabel: NEW_MENU_LABEL,
+            planTitle: '',
+            entriesByDate: {},   // { iso: [{ _key, menu, priceOverride, eatingTimeIds }] }
+            searchStates: {},    // { iso: { open: bool, query: '' } }
+            isSaving: false,
+            createMenuDialog: false,
+            createMenuForDate: null,
+            editingMenuId: null,
+            isCreateMenuFormValid: false,
+            isCreatingMenu: false,
+            entryEditDialog: false,
+            entryPreviewDialog: false,
+            deleteEntryDialog: false,
+            entryPreviewTarget: {
+                iso: '',
+                key: '',
+            },
+            entryEditTarget: {
+                iso: '',
+                key: '',
+            },
+            deleteEntryTarget: {
+                iso: '',
+                key: '',
+            },
+            entryEditForm: {
+                priceOverride: '',
+            },
+            newMenuFoodSearch: '',
+            newMenuForm: emptyNewMenuForm(),
         }
     },
 
     created() {
-        this.syncSelectionsFromRoute()
-        this.loadFreeDays()
+        this.loadInitialData()
     },
 
     watch: {
-        '$route.query.mode': 'syncSelectionsFromRoute',
-        '$route.query.plan_id': 'syncSelectionsFromRoute',
-        '$route.query.start': 'syncSelectionsFromRoute',
-        '$route.query.end': 'syncSelectionsFromRoute',
+        '$route.query.mode': 'loadInitialData',
+        '$route.query.plan_id': 'loadInitialData',
+        '$route.query.start': 'loadInitialData',
+        '$route.query.end': 'loadInitialData',
     },
 
     computed: {
         ...mapState(useAdminStore, ['config']),
+        ...mapState(useFoodStore, ['foods']),
         ...mapState(useFreeDayStore, ['freeDaysByDate']),
+        ...mapState(useRestaurantStore, ['categories', 'allergenOptions']),
+
+        menus() {
+            return useMenuStore().menus
+        },
+
+        eatingTimes() {
+            return useEatingTimeStore().sortedEatingTimes
+        },
+
+        newMenuFoodOptions() {
+            return [...this.foods].sort((left, right) => String(left.title || '').localeCompare(String(right.title || ''), 'de'))
+        },
+
+        currentNewMenuCourseNumber() {
+            return this.newMenuForm.foodIds.length + 1
+        },
+
+        availableFoodsForNewMenu() {
+            const selectedCategoryId = Number(this.newMenuForm.courseDraft.categoryId || 0)
+
+            return this.newMenuFoodOptions.filter((food) => {
+                return Number(food.category?.id || 0) === selectedCategoryId
+            })
+        },
+
+        filteredFoodsForNewMenu() {
+            const normalizedSearch = String(this.newMenuFoodSearch || '').trim().toLocaleLowerCase('de')
+
+            if (normalizedSearch === '') {
+                return this.availableFoodsForNewMenu
+            }
+
+            return this.availableFoodsForNewMenu.filter((food) => {
+                return String(food.title || '').toLocaleLowerCase('de').includes(normalizedSearch)
+            })
+        },
+
+        canAddNewMenuDraftCourse() {
+            return Number(this.newMenuForm.courseDraft.categoryId) > 0 && Number(this.newMenuForm.courseDraft.foodId) > 0
+        },
+
         entryMode() {
             const mode = String(this.$route?.query?.mode || '')
 
             return ['create', 'edit'].includes(mode) ? mode : ''
         },
+
         entryModeLabel() {
             return this.entryMode === 'edit' ? 'Plan bearbeiten' : 'Neuer Plan'
         },
+
         entryHeadline() {
-            return this.entryMode === 'edit' ? 'Wochenboard' : 'Menues planen'
+            return this.entryMode === 'edit' ? 'Wochenboard' : 'Menüs planen'
         },
-        planIdentifier() {
-            return String(this.$route?.query?.plan_id || 'Dummy')
+
+        planId() {
+            const id = parseInt(this.$route?.query?.plan_id, 10)
+
+            return isNaN(id) ? null : id
         },
+
         rangeBounds() {
             const start = String(this.$route?.query?.start || '')
             const end = String(this.$route?.query?.end || '')
@@ -200,6 +787,7 @@ export default {
 
             return start <= end ? { start, end } : { start: end, end: start }
         },
+
         planDays() {
             if (!this.rangeBounds) {
                 return []
@@ -213,7 +801,6 @@ export default {
                     iso: cursor,
                     weekdayLabel: this.toDate(cursor).toLocaleDateString('de-AT', { weekday: 'long' }),
                     dateLabel: this.toDate(cursor).toLocaleDateString('de-AT', { day: '2-digit', month: 'long' }),
-                    menu: this.menuSelectionsByDate[cursor] || null,
                     isFreeDay: !!this.freeDaysByDate[cursor],
                 })
                 cursor = this.addDaysIso(cursor, 1)
@@ -221,84 +808,54 @@ export default {
 
             return days
         },
-        selectedMenuCount() {
-            return this.planDays.filter((day) => day.menu !== null && !day.isFreeDay).length
+
+        filledDayCount() {
+            return this.planDays.filter((day) => !day.isFreeDay && this.dayEntries(day.iso).length > 0).length
         },
+
         freeDayCount() {
             return this.planDays.filter((day) => day.isFreeDay).length
         },
+
         openDayCount() {
-            return this.planDays.filter((day) => !day.menu && !day.isFreeDay).length
+            return this.planDays.filter((day) => !day.isFreeDay && this.dayEntries(day.iso).length === 0).length
         },
+
         coveragePercent() {
             const assignable = this.planDays.filter((day) => !day.isFreeDay).length
 
-            return assignable ? Math.round((this.selectedMenuCount / assignable) * 100) : 0
+            return assignable ? Math.round((this.filledDayCount / assignable) * 100) : 0
         },
-        firstOpenDay() {
-            return this.planDays.find((day) => !day.menu && !day.isFreeDay) || null
-        },
-        firstOpenDayLabel() {
-            return this.firstOpenDay ? this.formatDate(this.firstOpenDay.iso) : 'Alle belegt'
-        },
-        nextActionTitle() {
-            if (!this.planDays.length) {
-                return 'Zeitraum fehlt'
-            }
 
-            return this.firstOpenDay ? 'Offenen Tag fuellen' : 'Plan pruefen'
-        },
-        nextActionCopy() {
-            if (!this.planDays.length) {
-                return 'Bitte zuerst einen gueltigen Zeitraum uebergeben.'
-            }
-
-            return this.firstOpenDay
-                ? `${this.formatDate(this.firstOpenDay.iso)} als naechstes belegen.`
-                : 'Alle Tage sind aktuell mit einem Menue versehen.'
-        },
-        progressMessage() {
-            if (!this.planDays.length) {
-                return 'Noch keine Planung verfuegbar.'
-            }
-
-            return this.openDayCount === 0
-                ? 'Die Woche ist komplett gefuellt.'
-                : `${this.openDayCount} Tage sind noch offen.`
-        },
-        ringStyle() {
-            return {
-                background: `conic-gradient(#b45309 0 ${this.coveragePercent}%, rgba(180, 83, 9, 0.12) ${this.coveragePercent}% 100%)`,
-            }
-        },
         returnWeek() {
             const returnWeek = String(this.$route?.query?.return_week || '')
 
             return isValidIsoDate(returnWeek) ? returnWeek : ''
         },
+
         backTarget() {
             const path = String(this.$route?.query?.return_to || '/admin/restaurant/menu-plans')
             const query = this.returnWeek ? { week: this.returnWeek } : {}
 
             return { path, query }
         },
-        backButtonLabel() {
-            return this.entryMode === 'edit' ? 'Zurueck zum Plan' : 'Zurueck zur Auswahl'
-        },
+
         rangeLabel() {
             if (!this.rangeBounds) {
                 return 'Kein Zeitraum'
             }
 
-            return `${this.formatDate(this.rangeBounds.start)} - ${this.formatDate(this.rangeBounds.end)}`
+            return `${this.formatDate(this.rangeBounds.start)} – ${this.formatDate(this.rangeBounds.end)}`
         },
+
         headerActiveSection() {
             return {
                 icon: 'mdi-calendar-text-outline',
-                label: 'Men\u00fcpl\u00e4ne',
+                label: 'Menüpläne',
                 note: this.entryMode === 'edit' ? 'Bearbeiten aktiv' : 'Erstellen aktiv',
             }
         },
+
         headerChips() {
             return [
                 {
@@ -307,81 +864,628 @@ export default {
                     color: 'white',
                 },
                 {
-                    text: this.returnWeek ? `Rueckkehr zur Woche ${this.returnWeek}` : this.rangeLabel,
+                    text: this.rangeLabel,
                     icon: 'mdi-link-variant',
                     color: 'white',
                 },
             ]
         },
+        entryPreviewEntry() {
+            if (! this.entryPreviewTarget.iso || ! this.entryPreviewTarget.key) {
+                return null
+            }
+
+            return this.dayEntries(this.entryPreviewTarget.iso).find((item) => item?._key === this.entryPreviewTarget.key) || null
+        },
     },
 
     methods: {
-        syncSelectionsFromRoute() {
-            const nextSelections = {}
+        // ── Data loading ─────────────────────────────────────────────────
 
-            if (this.entryMode === 'edit') {
-                this.buildSeededSelections().forEach((selection) => {
-                    nextSelections[selection.iso] = selection.menu
-                })
-            }
+        async loadInitialData() {
+            const freeDayStore = useFreeDayStore()
+            const foodStore = useFoodStore()
+            const menuStore = useMenuStore()
+            const restaurantStore = useRestaurantStore()
+            const eatingTimeStore = useEatingTimeStore()
 
-            this.menuSelectionsByDate = nextSelections
-        },
-        buildSeededSelections() {
-            return this.basePlanDays()
-                .filter((day, index) => index % 2 === 0)
-                .map((day, index) => ({ iso: day.iso, menu: this.dummyMenus[index % this.dummyMenus.length] }))
-        },
-        basePlanDays() {
-            if (!this.rangeBounds) {
-                return []
-            }
-
-            const days = []
-            let cursor = this.rangeBounds.start
-
-            while (cursor <= this.rangeBounds.end) {
-                days.push({ iso: cursor })
-                cursor = this.addDaysIso(cursor, 1)
-            }
-
-            return days
-        },
-        loadFreeDays() {
-            const store = useFreeDayStore()
             const year = this.rangeBounds ? parseInt(this.rangeBounds.start.substring(0, 4), 10) : new Date().getFullYear()
-            store.loadYear(year)
+            freeDayStore.loadYear(year)
+
+            if (! foodStore.foods.length) {
+                foodStore.index()
+            }
+
+            if (! menuStore.menus.length) {
+                menuStore.index()
+            }
+
+            if (! restaurantStore.settings) {
+                restaurantStore.loadSettings()
+            }
+
+            if (! eatingTimeStore.isLoaded) {
+                eatingTimeStore.load()
+            }
+
+            if (this.entryMode === 'edit' && this.planId) {
+                await this.loadExistingPlan(this.planId)
+            } else {
+                this.entriesByDate = {}
+                this.planTitle = ''
+            }
         },
-        assignDummyMenu(isoString) {
-            if (!isValidIsoDate(isoString) || this.menuSelectionsByDate[isoString]) {
+
+        async loadExistingPlan(id) {
+            const plan = await useMenuPlanStore().show(id)
+
+            if (! plan) {
                 return
             }
 
-            if (this.freeDaysByDate[isoString]) {
+            this.planTitle = plan.title || ''
+
+            const next = {}
+
+            ;(plan.entries || []).forEach((entry) => {
+                const iso = entry.plan_date
+                const menu = entry.menu || { id: entry.menu_id, title: '?', price: null }
+
+                if (! next[iso]) {
+                    next[iso] = []
+                }
+
+                next[iso].push({
+                    _key: newEntryKey(),
+                    menu,
+                    priceOverride: entry.price_override != null ? String(entry.price_override) : '',
+                    eatingTimeIds: entry.eating_time_ids || [],
+                })
+            })
+
+            this.entriesByDate = next
+        },
+
+        // ── Entry management ─────────────────────────────────────────────
+
+        dayEntries(iso) {
+            return this.entriesByDate[iso] || []
+        },
+
+        entryEffectivePrice(entry) {
+            if (entry?.priceOverride !== '') {
+                return entry?.priceOverride ?? null
+            }
+
+            return entry?.menu?.price ?? null
+        },
+
+        entryHasPriceOverride(entry) {
+            return entry?.priceOverride !== ''
+        },
+
+        addEntryForDay(iso, menu) {
+            if (! this.entriesByDate[iso]) {
+                this.entriesByDate = { ...this.entriesByDate, [iso]: [] }
+            }
+
+            this.entriesByDate[iso] = [
+                ...this.entriesByDate[iso],
+                {
+                    _key: newEntryKey(),
+                    menu,
+                    priceOverride: '',
+                    eatingTimeIds: this.eatingTimes.map((et) => et.id),
+                },
+            ]
+
+            this.closeSearch(iso)
+        },
+
+        removeEntry(iso, key) {
+            if (! this.entriesByDate[iso]) {
                 return
             }
 
-            this.menuSelectionsByDate = {
-                ...this.menuSelectionsByDate,
-                [isoString]: this.buildDummyMenuForDate(isoString),
+            this.entriesByDate[iso] = this.entriesByDate[iso].filter((e) => e._key !== key)
+        },
+
+        moveEntry(iso, index, direction) {
+            const entries = this.entriesByDate[iso]
+
+            if (! Array.isArray(entries)) {
+                return
+            }
+
+            const targetIndex = index + direction
+
+            if (targetIndex < 0 || targetIndex >= entries.length) {
+                return
+            }
+
+            const reorderedEntries = [...entries]
+            const [movedEntry] = reorderedEntries.splice(index, 1)
+            reorderedEntries.splice(targetIndex, 0, movedEntry)
+            this.entriesByDate[iso] = reorderedEntries
+        },
+
+        isTimeActive(entry, timeId) {
+            return entry.eatingTimeIds.includes(timeId)
+        },
+
+        toggleTime(entry, timeId) {
+            if (entry.eatingTimeIds.includes(timeId)) {
+                entry.eatingTimeIds = entry.eatingTimeIds.filter((id) => id !== timeId)
+            } else {
+                entry.eatingTimeIds = [...entry.eatingTimeIds, timeId]
             }
         },
-        buildDummyMenuForDate(isoString) {
-            const dayIndex = this.basePlanDays().findIndex((day) => day.iso === isoString)
 
-            return this.dummyMenus[dayIndex < 0 ? 0 : dayIndex % this.dummyMenus.length]
+        // ── Search ───────────────────────────────────────────────────────
+
+        searchOpen(iso) {
+            return this.searchStates[iso]?.open === true
         },
+
+        searchQueryFor(iso) {
+            if (! this.searchStates[iso]) {
+                this.searchStates = { ...this.searchStates, [iso]: { open: false, query: '' } }
+            }
+
+            return this.searchStates[iso]
+        },
+
+        openSearch(iso) {
+            this.searchStates = {
+                ...this.searchStates,
+                [iso]: { open: true, query: '' },
+            }
+        },
+
+        closeSearch(iso) {
+            if (this.searchStates[iso]) {
+                this.searchStates[iso].open = false
+                this.searchStates[iso].query = ''
+            }
+        },
+
+        filteredMenusFor(iso) {
+            const query = (this.searchStates[iso]?.query || '').toLowerCase().trim()
+            const assignedIds = new Set(this.dayEntries(iso).map((e) => e.menu.id))
+
+            return this.menus.filter((menu) => {
+                if (assignedIds.has(menu.id)) {
+                    return false
+                }
+
+                if (! query) {
+                    return true
+                }
+
+                return String(menu.title || '').toLowerCase().includes(query)
+            })
+        },
+
+        // ── Create new menu dialog ────────────────────────────────────────
+
+        openCreateMenuDialog(iso) {
+            this.createMenuForDate = iso
+            this.editingMenuId = null
+            this.newMenuForm = emptyNewMenuForm()
+            this.newMenuFoodSearch = ''
+            this.isCreateMenuFormValid = false
+            this.createMenuDialog = true
+        },
+
+        openEditMenuDialog(menu) {
+            this.createMenuForDate = null
+            this.editingMenuId = menu?.id ?? null
+            this.newMenuForm = {
+                title: menu?.title || '',
+                foodIds: this.sortedFoods(menu?.foods || []).map((food) => food.id),
+                price: this.normalizeNewMenuPriceInput(menu?.price),
+                courseDraft: {
+                    categoryId: null,
+                    foodId: null,
+                },
+            }
+            this.newMenuFoodSearch = ''
+            this.isCreateMenuFormValid = false
+            this.createMenuDialog = true
+        },
+
+        openEntryPreviewDialog(iso, key) {
+            const entry = this.dayEntries(iso).find((item) => item?._key === key)
+
+            if (! entry) {
+                return
+            }
+
+            this.entryPreviewTarget = { iso, key }
+            this.entryPreviewDialog = true
+        },
+
+        openEditEntryDialog(iso, key) {
+            const entry = this.dayEntries(iso).find((item) => item?._key === key)
+
+            if (! entry) {
+                return
+            }
+
+            this.entryEditTarget = { iso, key }
+            this.entryEditForm = {
+                priceOverride: this.normalizeNewMenuPriceInput(entry.priceOverride),
+            }
+            this.entryEditDialog = true
+        },
+
+        requestDeleteEntry(iso, key) {
+            const entry = this.dayEntries(iso).find((item) => item?._key === key)
+
+            if (! entry) {
+                return
+            }
+
+            this.deleteEntryTarget = { iso, key }
+            this.deleteEntryDialog = true
+        },
+
+        closeEditEntryDialog() {
+            this.entryEditDialog = false
+            this.entryEditTarget = {
+                iso: '',
+                key: '',
+            }
+            this.entryEditForm = {
+                priceOverride: '',
+            }
+        },
+
+        closeEntryPreviewDialog() {
+            this.entryPreviewDialog = false
+            this.entryPreviewTarget = {
+                iso: '',
+                key: '',
+            }
+        },
+
+        cancelDeleteEntry() {
+            this.deleteEntryDialog = false
+            this.deleteEntryTarget = {
+                iso: '',
+                key: '',
+            }
+        },
+
+        confirmDeleteEntry() {
+            this.removeEntry(this.deleteEntryTarget.iso, this.deleteEntryTarget.key)
+            this.cancelDeleteEntry()
+        },
+
+        closeCreateMenuDialog() {
+            this.createMenuDialog = false
+            this.createMenuForDate = null
+            this.editingMenuId = null
+            this.isCreateMenuFormValid = false
+            this.newMenuFoodSearch = ''
+            this.newMenuForm = emptyNewMenuForm()
+        },
+
+        normalizeNewMenuPriceInput(value) {
+            const rawValue = String(value ?? '').trim()
+
+            if (rawValue === '') {
+                return ''
+            }
+
+            const normalizedValue = rawValue.replace(',', '.')
+            const numericPrice = Number(normalizedValue)
+
+            if (Number.isNaN(numericPrice)) {
+                return rawValue
+            }
+
+            const roundedPrice = Math.round(numericPrice * 10) / 10
+
+            return roundedPrice.toFixed(1).replace('.', ',')
+        },
+
+        normalizeNewMenuPricePayload(value) {
+            const normalizedPrice = this.normalizeNewMenuPriceInput(value)
+
+            return normalizedPrice === '' ? '' : normalizedPrice.replace(',', '.')
+        },
+
+        normalizeNewMenuPrice() {
+            this.newMenuForm.price = this.normalizeNewMenuPriceInput(this.newMenuForm.price)
+        },
+
+        normalizeEntryEditPriceField() {
+            this.entryEditForm.priceOverride = this.normalizeNewMenuPriceInput(this.entryEditForm.priceOverride)
+        },
+
+        isNewMenuDraftCategorySelected(categoryId) {
+            return Number(this.newMenuForm.courseDraft.categoryId) === Number(categoryId)
+        },
+
+        selectNewMenuDraftCategory(categoryId) {
+            const normalizedCategoryId = Number(categoryId)
+
+            if (! Number.isFinite(normalizedCategoryId) || normalizedCategoryId <= 0) {
+                this.resetNewMenuCourseDraft()
+                return
+            }
+
+            if (this.isNewMenuDraftCategorySelected(normalizedCategoryId)) {
+                this.resetNewMenuCourseDraft()
+                return
+            }
+
+            this.newMenuForm.courseDraft = {
+                categoryId: normalizedCategoryId,
+                foodId: null,
+            }
+            this.newMenuFoodSearch = ''
+        },
+
+        isNewMenuDraftFoodSelected(foodId) {
+            return Number(this.newMenuForm.courseDraft.foodId) === Number(foodId)
+        },
+
+        isNewMenuFoodAlreadyAssigned(foodId) {
+            return this.newMenuForm.foodIds.some((value) => Number(value) === Number(foodId))
+        },
+
+        selectNewMenuDraftFood(foodId) {
+            const normalizedFoodId = Number(foodId)
+
+            if (! Number.isFinite(normalizedFoodId) || normalizedFoodId <= 0 || this.isNewMenuFoodAlreadyAssigned(normalizedFoodId)) {
+                return
+            }
+
+            if (this.isNewMenuDraftFoodSelected(normalizedFoodId)) {
+                this.newMenuForm.courseDraft.foodId = null
+                return
+            }
+
+            this.newMenuForm.courseDraft.foodId = normalizedFoodId
+        },
+
+        appendNewMenuDraftCourse() {
+            if (! this.canAddNewMenuDraftCourse || this.isNewMenuFoodAlreadyAssigned(this.newMenuForm.courseDraft.foodId)) {
+                return
+            }
+
+            this.newMenuForm.foodIds = [...this.newMenuForm.foodIds, this.newMenuForm.courseDraft.foodId]
+            this.resetNewMenuCourseDraft()
+        },
+
+        resetNewMenuCourseDraft() {
+            this.newMenuForm.courseDraft = {
+                categoryId: null,
+                foodId: null,
+            }
+            this.newMenuFoodSearch = ''
+        },
+
+        removeNewMenuSelectedFood(foodId) {
+            this.newMenuForm.foodIds = this.newMenuForm.foodIds.filter((value) => Number(value) !== Number(foodId))
+        },
+
+        moveNewMenuSelectedFood(index, direction) {
+            const targetIndex = index + direction
+            if (targetIndex < 0 || targetIndex >= this.newMenuForm.foodIds.length) {
+                return
+            }
+
+            const reorderedFoodIds = [...this.newMenuForm.foodIds]
+            const [movedFoodId] = reorderedFoodIds.splice(index, 1)
+            reorderedFoodIds.splice(targetIndex, 0, movedFoodId)
+            this.newMenuForm.foodIds = reorderedFoodIds
+        },
+
+        selectedNewMenuFoodTitle(foodId) {
+            return this.newMenuFoodOptions.find((food) => Number(food.id) === Number(foodId))?.title || `Speise #${foodId}`
+        },
+
+        selectedNewMenuFoodCategoryTitle(foodId) {
+            return this.newMenuFoodOptions.find((food) => Number(food.id) === Number(foodId))?.category?.title || ''
+        },
+
+        entryEditMenuTitle() {
+            const entry = this.dayEntries(this.entryEditTarget.iso).find((item) => item?._key === this.entryEditTarget.key)
+
+            if (! entry?.menu?.title) {
+                return ''
+            }
+
+            return entry.menu.title
+        },
+
+        deleteEntryMenuTitle() {
+            const entry = this.dayEntries(this.deleteEntryTarget.iso).find((item) => item?._key === this.deleteEntryTarget.key)
+
+            if (! entry?.menu?.title) {
+                return ''
+            }
+
+            return entry.menu.title
+        },
+
+        applyEditedMenuToEntries(updatedMenu) {
+            if (! updatedMenu?.id) {
+                return
+            }
+
+            const nextEntriesByDate = {}
+
+            Object.entries(this.entriesByDate).forEach(([iso, entries]) => {
+                nextEntriesByDate[iso] = (entries || []).map((entry) => {
+                    if (Number(entry?.menu?.id) !== Number(updatedMenu.id)) {
+                        return entry
+                    }
+
+                    return {
+                        ...entry,
+                        menu: updatedMenu,
+                    }
+                })
+            })
+
+            this.entriesByDate = nextEntriesByDate
+        },
+
+        saveEntryEdit() {
+            const entries = this.entriesByDate[this.entryEditTarget.iso]
+
+            if (! Array.isArray(entries)) {
+                return
+            }
+
+            const nextPriceOverride = this.normalizeNewMenuPricePayload(this.entryEditForm.priceOverride)
+
+            this.entriesByDate[this.entryEditTarget.iso] = entries.map((entry) => {
+                if (entry?._key !== this.entryEditTarget.key) {
+                    return entry
+                }
+
+                return {
+                    ...entry,
+                    priceOverride: nextPriceOverride,
+                }
+            })
+
+            this.closeEditEntryDialog()
+        },
+
+        async saveNewMenu() {
+            this.isCreateMenuFormValid = false
+            await this.$refs.createMenuForm?.validate()
+
+            if (! this.isCreateMenuFormValid) {
+                return
+            }
+
+            this.isCreatingMenu = true
+
+            try {
+                const menuStore = useMenuStore()
+                const saved = await menuStore.store({
+                    title: this.newMenuForm.title,
+                    price: this.normalizeNewMenuPricePayload(this.newMenuForm.price),
+                    food_ids: this.newMenuForm.foodIds,
+                })
+
+                if (saved && this.createMenuForDate) {
+                    this.addEntryForDay(this.createMenuForDate, saved)
+                    this.closeSearch(this.createMenuForDate)
+                }
+
+                this.closeCreateMenuDialog()
+            } finally {
+                this.isCreatingMenu = false
+            }
+        },
+
+        // ── Save plan ────────────────────────────────────────────────────
+
+        buildPayload() {
+            const entries = []
+
+            Object.entries(this.entriesByDate).forEach(([iso, dayEntries]) => {
+                dayEntries.forEach((entry) => {
+                    entries.push({
+                        plan_date: iso,
+                        menu_id: entry.menu.id,
+                        price_override: entry.priceOverride !== '' ? entry.priceOverride : null,
+                        eating_time_ids: entry.eatingTimeIds,
+                    })
+                })
+            })
+
+            return {
+                title: this.planTitle || null,
+                start_date: this.rangeBounds?.start,
+                end_date: this.rangeBounds?.end,
+                entries,
+            }
+        },
+
+        async savePlan() {
+            if (! this.rangeBounds) {
+                return
+            }
+
+            this.isSaving = true
+
+            try {
+                const store = useMenuPlanStore()
+                const payload = this.buildPayload()
+                let result
+
+                if (this.planId) {
+                    result = await store.update(this.planId, payload)
+                } else {
+                    result = await store.store(payload)
+
+                    if (result && result.id) {
+                        // Update URL to edit mode so further saves become updates
+                        this.$router.replace({
+                            query: {
+                                ...this.$route.query,
+                                mode: 'edit',
+                                plan_id: result.id,
+                            },
+                        }).catch(() => {})
+                    }
+                }
+            } finally {
+                this.isSaving = false
+            }
+        },
+
+        // ── Helpers ──────────────────────────────────────────────────────
+
+        formatPrice(price) {
+            if (price == null) {
+                return ''
+            }
+
+            return parseFloat(price).toFixed(2).replace('.', ',') + ' €'
+        },
+
         toDate(isoString) {
             return new Date(`${isoString}T00:00:00`)
         },
+
         addDaysIso(isoString, days) {
             const date = this.toDate(isoString)
             date.setDate(date.getDate() + days)
 
             return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
         },
+
         formatDate(isoString) {
             return this.toDate(isoString).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
+
+        allergenLabel(value) {
+            const normalizedValue = String(value || '').trim().toUpperCase()
+            const allergenOption = this.allergenOptions.find((option) => option.character === normalizedValue)
+
+            if (! allergenOption) {
+                return String(value || '')
+            }
+
+            return `${allergenOption.character} - ${allergenOption.short_description}`
+        },
+
+        shortLabel(value) {
+            return String(value || '').trim().slice(0, 2).toUpperCase()
+        },
+
+        sortedFoods(foods) {
+            return [...(foods || [])].sort((a, b) => (a.course_number ?? 99) - (b.course_number ?? 99))
         },
     },
 }
@@ -395,10 +1499,9 @@ export default {
     background: linear-gradient(160deg, #fafaf8 0%, #f5ede0 100%);
 }
 
-/* ---- Stage & Sidebar Panels ---- */
+/* ---- Stage ---- */
 
-.mpe-stage,
-.mpe-sidebar {
+.mpe-stage {
     height: 100%;
     border: 1px solid rgba(180, 83, 9, 0.1);
     background: rgba(255, 255, 255, 0.96);
@@ -473,6 +1576,12 @@ export default {
     color: rgba(248, 250, 252, 0.6);
 }
 
+/* ---- Plan title row ---- */
+
+.mpe-plan-title-row {
+    margin-bottom: 18px;
+}
+
 /* ---- Summary Strip ---- */
 
 .mpe-summary {
@@ -513,7 +1622,7 @@ export default {
 
 .mpe-board {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 14px;
 }
 
@@ -524,7 +1633,6 @@ export default {
     flex-direction: column;
     border-radius: 20px;
     overflow: hidden;
-    min-height: 280px;
     border: 1px solid #e5e7eb;
     transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -583,66 +1691,411 @@ export default {
     white-space: nowrap;
 }
 
-.mpe-day__status.is-filled {
-    background: rgba(245, 158, 11, 0.14);
+.mpe-day__status.is-filled { background: rgba(245, 158, 11, 0.14); color: #92400e; }
+.mpe-day__status.is-empty { background: rgba(100, 116, 139, 0.1); color: #475569; }
+.mpe-day__status.is-free { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+
+.mpe-day__body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    flex: 1;
+}
+
+/* ---- Entry Card (assigned menu) ---- */
+
+.mpe-entry-card {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: linear-gradient(160deg, #fffcf0, #fef3c7);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.mpe-entry-card__header {
+    margin-bottom: 6px;
+}
+
+.mpe-entry-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-bottom: 6px;
+}
+
+.mpe-entry-card__title {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.mpe-entry-card__price :deep(.v-field) {
+    font-size: 0.82rem;
+}
+
+.mpe-entry-card__foods {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    padding-left: 2px;
+}
+
+.mpe-entry-card__food {
+    font-size: 0.78rem;
+    color: #374151;
+    line-height: 1.4;
+}
+
+.mpe-entry-card__food::before {
+    content: '·\00a0';
+    color: #b45309;
+}
+
+.mpe-entry-card__base-price {
+    font-size: 0.75rem;
+    color: #b45309;
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+.mpe-entry-card__price-note {
+    font-size: 0.72rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.mpe-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.mpe-preview__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.mpe-preview__meta-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #fffdf5, #fef3c7);
+    border: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+.mpe-preview__meta-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: #92400e;
 }
 
-.mpe-day__status.is-empty {
-    background: rgba(100, 116, 139, 0.1);
-    color: #475569;
-}
-
-.mpe-day__status.is-free {
-    background: rgba(34, 197, 94, 0.12);
-    color: #15803d;
-}
-
-/* ---- Menu Card (filled state) ---- */
-
-.mpe-menu-card {
-    display: flex;
-    gap: 13px;
-    align-items: flex-start;
-    flex: 1;
-    padding: 16px;
-    background: linear-gradient(160deg, #fffcf0, #fef3c7);
-}
-
-.mpe-menu-card__icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 13px;
-    background: rgba(245, 158, 11, 0.12);
+.mpe-preview__foods {
     display: grid;
-    place-items: center;
-    color: #b45309;
-    flex-shrink: 0;
+    gap: 14px;
 }
 
-.mpe-menu-card__body { flex: 1; min-width: 0; }
+.mpe-preview-food {
+    display: grid;
+    grid-template-columns: minmax(0, 180px) minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+}
 
-.mpe-menu-card__type {
-    font-size: 0.67rem;
+.mpe-preview-food--no-media {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.mpe-preview-food__media {
+    overflow: hidden;
+    border-radius: 14px;
+    background: #f8fafc;
+}
+
+.mpe-preview-food__body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.mpe-preview-food__course-row {
+    width: 100%;
+}
+
+.mpe-preview-food__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+}
+
+.mpe-preview-food__course {
+    display: block;
+    width: 100%;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.14);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #b45309;
+}
+
+.mpe-preview-food__title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 800;
+    color: #111827;
+    flex: 1;
+}
+
+.mpe-preview-food__price {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #b45309;
+}
+
+.mpe-preview-food__description {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: #374151;
+    white-space: pre-line;
+}
+
+.mpe-preview-food__section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mpe-preview-food__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7280;
+}
+
+.mpe-preview-food__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mpe-preview-food__icon-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.mpe-preview-food__icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    font-size: 0.82rem;
+    color: #374151;
+}
+
+.mpe-preview-food__icon-avatar {
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* ---- Eating time chips ---- */
+
+.mpe-eating-times__label {
+    font-size: 0.69rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.09em;
+    letter-spacing: 0.07em;
     color: #b45309;
-    margin-bottom: 3px;
 }
 
-.mpe-menu-card__title {
-    font-size: 0.93rem;
-    font-weight: 800;
+.mpe-time-chip {
+    cursor: pointer;
+}
+
+/* ---- Search panel ---- */
+
+.mpe-search-panel {
+    padding: 10px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.mpe-search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 800px;
+    overflow-y: auto;
+    margin-bottom: 4px;
+}
+
+.mpe-search-result {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.12s ease;
+}
+
+.mpe-search-result:hover {
+    background: #fef3c7;
+    border-color: rgba(245, 158, 11, 0.4);
+}
+
+.mpe-search-result__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.mpe-search-result__title {
+    font-size: 0.85rem;
+    font-weight: 600;
     color: #1f2937;
-    line-height: 1.35;
 }
 
-.mpe-menu-card__note {
-    margin-top: 5px;
-    font-size: 0.8rem;
+.mpe-search-result__price {
+    font-size: 0.78rem;
+    color: #b45309;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.mpe-search-result__foods {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.mpe-search-result__food {
+    font-size: 0.75rem;
     color: #6b7280;
-    line-height: 1.45;
+    line-height: 1.3;
+}
+
+.mpe-search-result__food::before {
+    content: '·\00a0';
+    color: #b45309;
+}
+
+.mpe-search-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 8px 4px;
+    font-size: 0.84rem;
+    color: #6b7280;
+}
+
+/* ---- Add button ---- */
+
+.mpe-add-btn {
+    align-self: flex-start;
+}
+
+.menu-course-builder {
+    padding: 1rem 1.05rem 1.05rem;
+    border: 1px solid rgba(14, 116, 144, 0.14);
+    border-radius: 1.1rem;
+    background:
+        radial-gradient(circle at top left, rgba(224, 242, 254, 0.9), transparent 38%),
+        linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+    box-shadow: 0 16px 34px -28px rgba(15, 23, 42, 0.5);
+}
+
+.menu-course-builder__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.menu-category-chip-list,
+.menu-food-chip-list {
+    width: 100%;
+}
+
+.menu-category-chip {
+    border-radius: 999px;
+    border: 1px solid rgba(14, 116, 144, 0.16);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+    box-shadow: 0 12px 26px -22px rgba(15, 23, 42, 0.42);
+    color: rgb(15, 23, 42);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding-inline: 0.7rem;
+}
+
+.menu-category-chip--selected {
+    border-color: rgba(14, 116, 144, 0.88);
+    background: linear-gradient(135deg, rgb(8, 145, 178), rgb(14, 116, 144));
+    color: rgb(255, 255, 255);
+    box-shadow: 0 18px 32px -22px rgba(14, 116, 144, 0.52);
+}
+
+.menu-food-chip {
+    border-radius: 999px;
+    border-color: rgba(15, 23, 42, 0.16);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 10px 24px -18px rgba(15, 23, 42, 0.3);
+}
+
+.menu-food-chip-scroll {
+    max-height: 14.5rem;
+    overflow-y: auto;
+    padding: 0.15rem 0.1rem 0.35rem;
+}
+
+.menu-food-chip--selected {
+    border-color: rgba(180, 83, 9, 0.8);
+    background: rgba(255, 237, 213, 0.96);
+}
+
+.menu-food-chip--disabled {
+    opacity: 0.5;
+    box-shadow: none;
+}
+
+.menu-selected-course {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 1rem;
+    background: rgba(248, 250, 252, 0.84);
 }
 
 /* ---- Free Day Card ---- */
@@ -674,29 +2127,6 @@ export default {
 .mpe-stat--free .mpe-stat__icon { color: #15803d; }
 .mpe-stat--free .mpe-stat__label { color: #15803d; }
 .mpe-stat--free { background: linear-gradient(160deg, #f0fdf4, #dcfce7); border-color: rgba(34, 197, 94, 0.2); }
-
-/* ---- Empty Card (empty state inside tile) ---- */
-
-.mpe-empty-card {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 13px;
-    padding: 20px 16px;
-    text-align: center;
-}
-
-.mpe-empty-card__icon { color: #d1d5db; }
-
-.mpe-empty-card__text {
-    font-size: 0.84rem;
-    color: #9ca3af;
-    line-height: 1.5;
-    max-width: 13rem;
-    margin: 0;
-}
 
 /* ---- No-range Empty State ---- */
 
@@ -732,5 +2162,6 @@ export default {
 @media (max-width: 640px) {
     .mpe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .mpe-board { grid-template-columns: 1fr; }
+    .mpe-preview-food { grid-template-columns: 1fr; }
 }
 </style>

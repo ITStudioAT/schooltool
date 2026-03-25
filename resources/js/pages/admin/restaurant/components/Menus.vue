@@ -41,7 +41,7 @@
                         variant="flat"
                         prepend-icon="mdi-plus"
                         @click="openCreateDialog">
-                        Neues Menü
+                        {{ newMenuLabel }}
                     </v-btn>
                 </div>
             </template>
@@ -164,7 +164,7 @@
         <v-dialog v-model="dialog" max-width="820" persistent>
             <v-card rounded="xl">
                 <v-card-title class="d-flex align-center">
-                    <span>{{ editingMenuId ? 'Menü bearbeiten' : 'Neues Menü' }}</span>
+                    <span>{{ editingMenuId ? 'Menü bearbeiten' : newMenuLabel }}</span>
                     <v-spacer />
                     <v-btn icon="mdi-close" variant="text" @click="closeDialog" />
                 </v-card-title>
@@ -375,6 +375,7 @@
 <script>
 import { mapState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
+import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useFoodStore } from '@/stores/admin/restaurant/FoodStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
@@ -464,6 +465,9 @@ export default {
             const value = Number(this.userSettings?.restaurant_foods_pagination_number || 0)
 
             return Number.isFinite(value) && value > 0 ? Math.min(200, Math.round(value)) : 12
+        },
+        newMenuLabel() {
+            return NEW_MENU_LABEL
         },
         filteredMenus() {
             const normalizedSearch = this.normalizeSearchValue(this.menuSearchQuery)

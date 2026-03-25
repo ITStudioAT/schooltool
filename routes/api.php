@@ -29,10 +29,12 @@ use App\Http\Controllers\Admin\RegisterDateController;
 use App\Http\Controllers\Admin\RegisterPrintController;
 use App\Http\Controllers\Admin\RegisterUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantEatingTimeController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFreeDayController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
 use App\Http\Controllers\Admin\RoleController;
@@ -265,6 +267,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/restaurant/menus', RestaurantMenuController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('/admin/restaurant/eating-times', RestaurantEatingTimeController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });
 
     /* SANCTUM - tutoring_user */

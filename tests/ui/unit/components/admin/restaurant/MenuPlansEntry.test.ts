@@ -1,6 +1,7 @@
 import { createTestingPinia } from '@pinia/testing'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import MenuPlansEntry from '@/pages/admin/restaurant/components/MenuPlansEntry.vue'
 
 function mountMenuPlansEntry(query: Record<string, string> = {}, freeDays: { free_date: string }[] = []) {
@@ -46,6 +47,208 @@ function mountMenuPlansEntry(query: Record<string, string> = {}, freeDays: { fre
 }
 
 describe('MenuPlans entry page', () => {
+    it('uses the shared new-menu label for menu creation', () => {
+        expect((MenuPlansEntry as any).data().newMenuLabel).toBe(NEW_MENU_LABEL)
+    })
+
+    it('builds a new menu draft course by course with category first and food second', () => {
+        const ctx = {
+            newMenuFoodSearch: '',
+            newMenuForm: {
+                foodIds: [],
+                courseDraft: {
+                    categoryId: null,
+                    foodId: null,
+                },
+            },
+        }
+
+        ctx.resetNewMenuCourseDraft = () => (MenuPlansEntry as any).methods.resetNewMenuCourseDraft.call(ctx)
+        ctx.isNewMenuDraftCategorySelected = (categoryId: number) => (MenuPlansEntry as any).methods.isNewMenuDraftCategorySelected.call(ctx, categoryId)
+        ctx.isNewMenuDraftFoodSelected = (foodId: number) => (MenuPlansEntry as any).methods.isNewMenuDraftFoodSelected.call(ctx, foodId)
+        ctx.isNewMenuFoodAlreadyAssigned = (foodId: number) => (MenuPlansEntry as any).methods.isNewMenuFoodAlreadyAssigned.call(ctx, foodId)
+
+        ;(MenuPlansEntry as any).methods.selectNewMenuDraftCategory.call(ctx, 2)
+        expect(ctx.newMenuForm.courseDraft.categoryId).toBe(2)
+        expect(ctx.newMenuForm.courseDraft.foodId).toBe(null)
+
+        ;(MenuPlansEntry as any).methods.selectNewMenuDraftFood.call(ctx, 7)
+        expect(ctx.newMenuForm.courseDraft.foodId).toBe(7)
+
+        ctx.canAddNewMenuDraftCourse = true
+        ;(MenuPlansEntry as any).methods.appendNewMenuDraftCourse.call(ctx)
+        expect(ctx.newMenuForm.foodIds).toEqual([7])
+        expect(ctx.newMenuForm.courseDraft).toEqual({ categoryId: null, foodId: null })
+    })
+
+    it('filters foods for the selected new-menu category by the dialog search field', () => {
+        const ctx = {
+            newMenuFoodSearch: 'sup',
+            newMenuFoodOptions: [
+                { id: 1, title: 'Suppe', category: { id: 1 } },
+                { id: 2, title: 'Tomatensuppe', category: { id: 1 } },
+                { id: 3, title: 'Pasta', category: { id: 2 } },
+            ],
+            newMenuForm: {
+                courseDraft: {
+                    categoryId: 1,
+                },
+            },
+        }
+
+        const availableFoodsForNewMenu = (MenuPlansEntry as any).computed.availableFoodsForNewMenu.call(ctx)
+        const filteredFoodsForNewMenu = (MenuPlansEntry as any).computed.filteredFoodsForNewMenu.call({
+            ...ctx,
+            availableFoodsForNewMenu,
+        })
+
+        expect(availableFoodsForNewMenu.map((food: { id: number }) => food.id)).toEqual([1, 2])
+        expect(filteredFoodsForNewMenu.map((food: { id: number }) => food.id)).toEqual([1, 2])
+    })
+
+    it('moves menus within the same day up and down', () => {
+        const ctx = {
+            entriesByDate: {
+                '2026-03-24': [
+                    { _key: 'entry-1', menu: { title: 'Suppe' } },
+                    { _key: 'entry-2', menu: { title: 'Pasta' } },
+                    { _key: 'entry-3', menu: { title: 'Dessert' } },
+                ],
+            },
+        }
+
+        ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 0, 1)
+        expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
+            'entry-2',
+            'entry-1',
+            'entry-3',
+        ])
+
+        ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 2, -1)
+        expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
+            'entry-2',
+            'entry-3',
+            'entry-1',
+        ])
+    })
+
+    it('opens edit mode for an assigned menu with the dialog prefilled', () => {
+        const ctx = {
+            createMenuForDate: '2026-03-24',
+            editingMenuId: null,
+            newMenuFoodSearch: 'old',
+            isCreateMenuFormValid: true,
+            createMenuDialog: false,
+            sortedFoods: (foods: any[]) => (MenuPlansEntry as any).methods.sortedFoods.call(ctx, foods),
+            normalizeNewMenuPriceInput: (value: string) => (MenuPlansEntry as any).methods.normalizeNewMenuPriceInput.call(ctx, value),
+        }
+
+        ;(MenuPlansEntry as any).methods.openEditMenuDialog.call(ctx, {
+            id: 17,
+            title: 'Wochenmenü',
+            price: '9.5',
+            foods: [
+                { id: 4, title: 'Dessert', course_number: 2 },
+                { id: 1, title: 'Suppe', course_number: 1 },
+            ],
+        })
+
+        expect(ctx.createMenuForDate).toBe(null)
+        expect(ctx.editingMenuId).toBe(17)
+        expect(ctx.newMenuForm.title).toBe('Wochenmenü')
+        expect(ctx.newMenuForm.foodIds).toEqual([1, 4])
+        expect(ctx.newMenuForm.price).toBe('9,5')
+        expect(ctx.newMenuForm.courseDraft).toEqual({ categoryId: null, foodId: null })
+        expect(ctx.newMenuFoodSearch).toBe('')
+        expect(ctx.isCreateMenuFormValid).toBe(false)
+        expect(ctx.createMenuDialog).toBe(true)
+    })
+
+    it('opens a preview dialog for an assigned menu', () => {
+        const ctx = {
+            entriesByDate: {
+                '2026-03-24': [
+                    {
+                        _key: 'entry-1',
+                        menu: {
+                            id: 17,
+                            title: 'Wochenmenue',
+                            foods: [{ id: 1, title: 'Suppe', course_number: 1 }],
+                        },
+                    },
+                ],
+            },
+            entryPreviewDialog: false,
+            entryPreviewTarget: {
+                iso: '',
+                key: '',
+            },
+            dayEntries: (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso),
+        }
+
+        ;(MenuPlansEntry as any).methods.openEntryPreviewDialog.call(ctx, '2026-03-24', 'entry-1')
+
+        expect(ctx.entryPreviewDialog).toBe(true)
+        expect(ctx.entryPreviewTarget).toEqual({
+            iso: '2026-03-24',
+            key: 'entry-1',
+        })
+        expect((MenuPlansEntry as any).computed.entryPreviewEntry.call(ctx)?.menu?.title).toBe('Wochenmenue')
+    })
+
+    it('closes the preview dialog and clears the selected entry', () => {
+        const ctx = {
+            entryPreviewDialog: true,
+            entryPreviewTarget: {
+                iso: '2026-03-24',
+                key: 'entry-1',
+            },
+        }
+
+        ;(MenuPlansEntry as any).methods.closeEntryPreviewDialog.call(ctx)
+
+        expect(ctx.entryPreviewDialog).toBe(false)
+        expect(ctx.entryPreviewTarget).toEqual({
+            iso: '',
+            key: '',
+        })
+    })
+
+    it('applies an edited menu to all matching entries in the plan', () => {
+        const ctx = {
+            entriesByDate: {
+                '2026-03-24': [
+                    { _key: 'entry-1', menu: { id: 7, title: 'Alt A' } },
+                    { _key: 'entry-2', menu: { id: 8, title: 'Alt B' } },
+                ],
+                '2026-03-25': [
+                    { _key: 'entry-3', menu: { id: 7, title: 'Alt A' } },
+                ],
+            },
+        }
+
+        ;(MenuPlansEntry as any).methods.applyEditedMenuToEntries.call(ctx, {
+            id: 7,
+            title: 'Neu A',
+            foods: [],
+        })
+
+        expect(ctx.entriesByDate['2026-03-24'][0].menu.title).toBe('Neu A')
+        expect(ctx.entriesByDate['2026-03-24'][1].menu.title).toBe('Alt B')
+        expect(ctx.entriesByDate['2026-03-25'][0].menu.title).toBe('Neu A')
+    })
+
+    it('formats allergen labels from restaurant settings and falls back for unknown values', () => {
+        const ctx = {
+            allergenOptions: [
+                { character: 'A', short_description: 'Gluten' },
+            ],
+        }
+
+        expect((MenuPlansEntry as any).methods.allergenLabel.call(ctx, 'a')).toBe('A - Gluten')
+        expect((MenuPlansEntry as any).methods.allergenLabel.call(ctx, 'X')).toBe('X')
+    })
+
     it('builds the restaurant back target with remembered week', () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'edit',

@@ -19,12 +19,18 @@ class RestaurantMenuResource extends JsonResource
                         'id' => $food->id,
                         'title' => (string) $food->title,
                         'course_number' => (int) ($food->pivot->course_number ?? 0),
+                        'description' => $food->description,
+                        'allergens' => array_values(is_array($food->allergens) ? $food->allergens : []),
                         'category' => $food->category ? [
                             'id' => $food->category->id,
                             'title' => (string) $food->category->title,
                         ] : null,
                         'price' => $food->price !== null ? (string) $food->price : null,
+                        'ingredient_icons' => $food->relationLoaded('ingredientIcons')
+                            ? RestaurantIngredientIconResource::collection($food->ingredientIcons)
+                            : [],
                         'food_image_url' => $food->food_image_path ? Storage::disk('public')->url($food->food_image_path) : null,
+                        'food_image_path' => $food->food_image_path,
                     ];
                 })
                 ->all();

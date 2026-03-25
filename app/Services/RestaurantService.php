@@ -167,7 +167,7 @@ class RestaurantService
     {
         return RestaurantMenu::query()
             ->where('school_id', $authUser->school_id)
-            ->with(['foods.category'])
+            ->with(['foods.category', 'foods.ingredientIcons'])
             ->orderBy('title')
             ->get();
     }
@@ -183,7 +183,7 @@ class RestaurantService
 
             $this->syncMenuFoods($authUser, $menu, $validated['food_ids'] ?? []);
 
-            return $menu->load(['foods.category']);
+            return $menu->load(['foods.category', 'foods.ingredientIcons']);
         });
     }
 
@@ -199,7 +199,7 @@ class RestaurantService
 
             $this->syncMenuFoods($authUser, $menu, $validated['food_ids'] ?? []);
 
-            return $menu->load(['foods.category']);
+            return $menu->load(['foods.category', 'foods.ingredientIcons']);
         });
     }
 
