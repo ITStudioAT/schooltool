@@ -3,10 +3,12 @@
 namespace Database\Factories;
 
 use App\Models\School;
+use App\Models\Schoolyear;
+use App\Models\TeachingSchoolHour;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\TeachingSchoolHour>
+ * @extends Factory<TeachingSchoolHour>
  */
 class TeachingSchoolHourFactory extends Factory
 {
@@ -21,6 +23,11 @@ class TeachingSchoolHourFactory extends Factory
 
         return [
             'school_id' => School::factory(),
+            'schoolyear_id' => function (array $attributes) {
+                return Schoolyear::factory()->create([
+                    'school_id' => $attributes['school_id'],
+                ])->id;
+            },
             'hour' => $hour,
             'from' => sprintf('%02d:00:00', 7 + $hour),
             'until' => sprintf('%02d:50:00', 7 + $hour),

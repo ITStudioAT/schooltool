@@ -184,6 +184,27 @@ describe('index', function () {
         $this->getJson('/api/admin/teaching/course_works?course_id='.$this->otherCourse->id)
             ->assertStatus(403);
     });
+
+    test('teacher cannot access another teachers course or another schoolyear', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $sameSchoolOtherYear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $otherYearCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $sameSchoolOtherYear->id,
+            'user_id' => $this->teacher->id,
+            'teaching_schema_id' => $this->schemaId,
+            'classes' => ['2B'],
+        ]);
+
+        $this->getJson('/api/admin/teaching/course_works?course_id='.$this->course->id)
+            ->assertStatus(403);
+
+        $this->getJson('/api/admin/teaching/course_works?course_id='.$otherYearCourse->id)
+            ->assertStatus(403);
+    });
 });
 
 describe('store', function () {
@@ -236,14 +257,49 @@ describe('store', function () {
         ])->assertStatus(422)->assertJsonValidationErrors(['type']);
     });
 
-    test('returns 409 when trying to store on course of other school', function () {
+    test('returns 403 when trying to store on course of other school', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $this->postJson('/api/admin/teaching/course_works', [
             'teaching_course_id' => $this->otherCourse->id,
             'type' => 'MA',
             'groups' => [],
-        ])->assertStatus(409);
+        ])->assertStatus(403);
+    });
+
+    test('store uses the course owner schema definitions for admins', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        TeachingSchema::query()
+            ->where('user_id', $this->teacher->id)
+            ->where('schoolyear_id', $this->schoolyear->id)
+            ->where('schema_id', $this->schemaId)
+            ->update([
+                'works' => [[
+                    'short_name' => 'TE',
+                    'name' => 'Teacher Work',
+                    'calculation' => 'average',
+                    'grades' => [
+                        ['grade' => '1', 'value' => '1'],
+                        ['grade' => '2', 'value' => '2'],
+                    ],
+                    'default_grade' => null,
+                ]],
+            ]);
+
+        $teacherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'teaching_schema_id' => $this->schemaId,
+            'classes' => ['2A'],
+        ]);
+
+        $this->postJson('/api/admin/teaching/course_works', [
+            'teaching_course_id' => $teacherCourse->id,
+            'type' => 'TE',
+            'groups' => [],
+        ])->assertCreated()->assertJsonPath('data.type', 'TE');
     });
 });
 

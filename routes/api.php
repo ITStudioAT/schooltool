@@ -311,6 +311,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/search116', [TeachingController::class, 'search116']);
         Route::get('/admin/teaching/load_settings', [TeachingController::class, 'loadSettings']);
         Route::post('/admin/teaching/save_settings', [TeachingController::class, 'saveSettings']);
+        Route::post('/admin/teaching/import_behaviour', [TeachingController::class, 'importBehaviour']);
+        Route::post('/admin/teaching/reset_behaviour', [TeachingController::class, 'resetBehaviour']);
+        Route::post('/admin/teaching/import_notifications', [TeachingController::class, 'importNotifications']);
+        Route::post('/admin/teaching/reset_notifications', [TeachingController::class, 'resetNotifications']);
+        Route::post('/admin/teaching/import_schema', [TeachingController::class, 'importSchema']);
+        Route::post('/admin/teaching/reset_schema', [TeachingController::class, 'resetSchema']);
         Route::post('/admin/teaching/save_active_semester', [TeachingController::class, 'saveActiveSemester']);
         Route::post('/admin/teaching/save_semester_2_date', [TeachingController::class, 'saveSemester2Date']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);

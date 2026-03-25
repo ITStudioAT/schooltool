@@ -112,7 +112,7 @@ export default {
             return Number(grading.semester_count) || 1
         },
         sem2StartDate() {
-            return this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+            return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
         },
         isWideLayoutSelected() {
             return this.active_menu === 'dummy_1' || this.active_menu === 'dummy_2'

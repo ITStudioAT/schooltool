@@ -13,7 +13,10 @@
                     class="teaching-settings-toolbar-btn-secondary"
                     :value="panel.id"
                     :prepend-icon="panel.icon">
-                    {{ panel.label }}
+                    <span class="teaching-settings-toolbar-btn-copy">
+                        <span>{{ panel.label }}</span>
+                        <span class="teaching-settings-toolbar-btn-meta">{{ activeSchoolyearLabel }}</span>
+                    </span>
                 </v-btn>
             </v-btn-toggle>
         </section>
@@ -52,6 +55,29 @@
                     <v-row class="w-100 ma-0" dense>
                         <v-col cols="12" class="teaching-settings-panel-col">
                             <ItsGridBox variant="overview" color="primary" title="Benotungsschemas" icon="mdi-book-cog-outline" class="w-100">
+                                <template #header-actions>
+                                    <div class="d-flex align-center ga-1">
+                                        <v-btn
+                                            size="small"
+                                            color="warning"
+                                            variant="text"
+                                            prepend-icon="mdi-restore"
+                                            :disabled="isLocked || !selected_schema_id"
+                                            @click="openSchemaResetDialog">
+                                            Reset
+                                        </v-btn>
+                                        <v-btn
+                                            size="small"
+                                            color="primary"
+                                            variant="text"
+                                            prepend-icon="mdi-import"
+                                            :disabled="isLocked || !selected_schema_id"
+                                            @click="openSchemaImportDialog">
+                                            Import
+                                        </v-btn>
+                                    </div>
+                                </template>
+
                                 <div class="d-flex flex-wrap align-center ga-2 mt-2">
                                     <v-chip
                                         v-for="schema in schemas"
@@ -121,13 +147,13 @@
 
                                     <v-row class="w-100 ma-0 mt-2" dense>
                                         <v-col cols="12" v-if="isSchemaPanelActive('works')">
-                                            <WorksAndGrades :schema-id="selected_schema_id" />
+                                            <WorksAndGrades :key="`works-${selected_schema_id}-${schema_panel_revision}`" :schema-id="selected_schema_id" />
                                         </v-col>
                                         <v-col cols="12" v-if="isSchemaPanelActive('grading')">
-                                            <Grading :schema-id="selected_schema_id" />
+                                            <Grading :key="`grading-${selected_schema_id}-${schema_panel_revision}`" :schema-id="selected_schema_id" />
                                         </v-col>
                                         <v-col cols="12" v-if="isSchemaPanelActive('category_evaluation')">
-                                            <CategoryEvaluation :schema-id="selected_schema_id" />
+                                            <CategoryEvaluation :key="`category-evaluation-${selected_schema_id}-${schema_panel_revision}`" :schema-id="selected_schema_id" />
                                         </v-col>
                                     </v-row>
                                 </template>
@@ -137,6 +163,97 @@
                                         Noch kein Benotungsschema vorhanden. Erstellen Sie ein neues Schema, um Arbeiten und Benotung zu konfigurieren.
                                     </v-alert>
                                 </v-col>
+
+                                <v-dialog v-model="schema_import_dialog_open" persistent max-width="560">
+                                    <v-card>
+                                        <v-card-title class="d-flex align-center justify-space-between">
+                                            <span>Benotungsschema importieren</span>
+                                            <v-btn icon="mdi-close" variant="text" @click="closeSchemaImportDialog" />
+                                        </v-card-title>
+                                        <v-card-text>
+                                            <v-alert
+                                                v-if="selectedSchemaUsageWarningVisible"
+                                                type="warning"
+                                                variant="tonal"
+                                                class="mb-4">
+                                                <div class="font-weight-medium mb-2">
+                                                    Dieses Benotungsschema wird bereits verwendet.
+                                                </div>
+                                                <div class="d-flex flex-wrap ga-2">
+                                                    <v-chip
+                                                        v-for="item in selectedSchemaUsageItems"
+                                                        :key="item.label"
+                                                        color="warning"
+                                                        variant="flat"
+                                                        size="small">
+                                                        {{ item.count }} {{ item.label }}
+                                                    </v-chip>
+                                                </div>
+                                            </v-alert>
+                                            <div class="text-body-2 text-medium-emphasis">
+                                                <strong>Wenn Sie ein Benotungsschema importieren, werden alle bisherigen Benotungen gelöscht!</strong>
+                                            </div>
+                                            <div class="text-body-2 mt-3">
+                                                <strong>{{ schoolyearImportLabel }}</strong>
+                                            </div>
+                                        </v-card-text>
+                                        <v-card-actions class="justify-end">
+                                            <v-btn
+                                                color="primary"
+                                                variant="flat"
+                                                :disabled="!selected_schema_id || !previousSchoolyear"
+                                                :loading="schema_import_loading"
+                                                @click="importSchema">
+                                                Importieren
+                                            </v-btn>
+                                            <v-btn color="primary" variant="text" @click="closeSchemaImportDialog">Schliessen</v-btn>
+                                        </v-card-actions>
+                                    </v-card>
+                                </v-dialog>
+
+                                <v-dialog v-model="schema_reset_dialog_open" persistent max-width="560">
+                                    <v-card>
+                                        <v-card-title class="d-flex align-center justify-space-between">
+                                            <span>Benotungsschema zurücksetzen</span>
+                                            <v-btn icon="mdi-close" variant="text" @click="closeSchemaResetDialog" />
+                                        </v-card-title>
+                                        <v-card-text>
+                                            <v-alert
+                                                v-if="selectedSchemaUsageWarningVisible"
+                                                type="warning"
+                                                variant="tonal"
+                                                class="mb-4">
+                                                <div class="font-weight-medium mb-2">
+                                                    Dieses Benotungsschema wird bereits verwendet.
+                                                </div>
+                                                <div class="d-flex flex-wrap ga-2">
+                                                    <v-chip
+                                                        v-for="item in selectedSchemaUsageItems"
+                                                        :key="`reset-${item.label}`"
+                                                        color="warning"
+                                                        variant="flat"
+                                                        size="small">
+                                                        {{ item.count }} {{ item.label }}
+                                                    </v-chip>
+                                                </div>
+                                            </v-alert>
+                                            <div class="text-body-2 text-medium-emphasis">
+                                                <strong>Wenn Sie das Benotungsschema resetten, werden alle Schüler:innen-Benotungen gelöscht!</strong>
+                                            </div>
+                                        </v-card-text>
+                                        <v-card-actions class="justify-end">
+                                            <v-btn
+                                                color="error"
+                                                variant="flat"
+                                                :disabled="!selected_schema_id"
+                                                :loading="schema_reset_loading"
+                                                @click="resetSchema">
+                                                Reset
+                                            </v-btn>
+                                            <v-btn color="primary" variant="text" @click="closeSchemaResetDialog">Schliessen</v-btn>
+                                        </v-card-actions>
+                                    </v-card>
+                                </v-dialog>
                             </ItsGridBox>
                         </v-col>
                     </v-row>
@@ -159,6 +276,7 @@ import { mapWritableState } from 'pinia'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import WorksAndGrades from './components/WorksAndGrades.vue'
 import Grading from './components/Grading.vue'
 import CategoryEvaluation from './components/CategoryEvaluation.vue'
@@ -175,7 +293,8 @@ export default {
         this.adminStore = useAdminStore()
         this.teachingStore = useTeachingStore()
         this.courseStore = useCourseStore()
-        await Promise.all([this.teachingStore.loadSettings(), this.courseStore.index()])
+        this.schoolyearStore = useSchoolyearStore()
+        await Promise.all([this.teachingStore.loadSettings(), this.courseStore.index(), this.schoolyearStore.index()])
         if (this.schemas.length) {
             this.selected_schema_id = this.schemas[0].id
         }
@@ -186,12 +305,18 @@ export default {
             adminStore: null,
             teachingStore: null,
             courseStore: null,
+            schoolyearStore: null,
             selected_schema_id: null,
             active_panel: this.$route?.query?.panel || 'behaviour',
             active_schema_panel: 'works',
             is_renaming: false,
             rename_value: '',
             is_deleting: false,
+            schema_import_dialog_open: false,
+            schema_reset_dialog_open: false,
+            schema_import_loading: false,
+            schema_reset_loading: false,
+            schema_panel_revision: 0,
         }
     },
 
@@ -202,11 +327,62 @@ export default {
         },
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
+        ...mapWritableState(useSchoolyearStore, ['schoolyears']),
         schemas() {
             return this.settings?.teaching_schemas || []
         },
+        activeSchoolyearConcern() {
+            return this.normalizeSchoolyearConcern(this.config?.selected_schoolyear?.concerns)
+        },
+        previousSchoolyearConcern() {
+            const parsedConcern = this.parseSchoolyearConcern(this.activeSchoolyearConcern)
+
+            if (!parsedConcern) {
+                return null
+            }
+
+            return `${parsedConcern.startYear - 1}/${String(parsedConcern.endYear - 1).slice(-2)}`
+        },
+        previousSchoolyear() {
+            const previousConcern = this.previousSchoolyearConcern
+
+            if (!previousConcern) {
+                return null
+            }
+
+            return (this.schoolyears || []).find((schoolyear) => this.normalizeSchoolyearConcern(schoolyear?.concerns) === previousConcern) || null
+        },
+        schoolyearImportLabel() {
+            if (!this.previousSchoolyear) {
+                return 'Import nicht möglich!'
+            }
+
+            return `Import vom Schuljahr: ${this.previousSchoolyear.concerns}`
+        },
+        selectedSchema() {
+            return this.schemas.find((schema) => schema.id === this.selected_schema_id) || null
+        },
         selectedSchemaInUse() {
             return (this.courses || []).some((c) => c.teaching_schema_id === this.selected_schema_id)
+        },
+        selectedSchemaCourseUsageCount() {
+            return (this.courses || []).filter((course) => course.teaching_schema_id === this.selected_schema_id).length
+        },
+        selectedSchemaWorkCount() {
+            return this.selectedSchema?.works?.length || 0
+        },
+        selectedSchemaCategoryCount() {
+            return this.selectedSchema?.grading?.categories?.length || 0
+        },
+        selectedSchemaUsageItems() {
+            return [
+                { count: this.selectedSchemaCourseUsageCount, label: 'Kurse' },
+                { count: this.selectedSchemaWorkCount, label: 'Arbeiten' },
+                { count: this.selectedSchemaCategoryCount, label: 'Kategorien' },
+            ].filter((item) => item.count > 0)
+        },
+        selectedSchemaUsageWarningVisible() {
+            return this.selectedSchemaUsageItems.length > 0
         },
         selectedSchemaIsStandard() {
             const schema = this.schemas.find((s) => s.id === this.selected_schema_id)
@@ -215,6 +391,9 @@ export default {
         canManageOwnHolidays() {
             const roles = this.config?.roles || []
             return roles.includes('teacher') || roles.includes('admin') || roles.includes('super_admin')
+        },
+        activeSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.name || this.config?.selected_schoolyear?.concerns || 'Kein Schuljahr gewählt'
         },
         showBehaviourEnabled() {
             return this.settings?.teaching_show_behaviour !== false
@@ -285,6 +464,75 @@ export default {
         activateSchemaPanel(panel) {
             this.active_schema_panel = panel
         },
+        normalizeSchoolyearConcern(value) {
+            if (typeof value !== 'string') {
+                return ''
+            }
+
+            const match = value.match(/(\d{4})\/(\d{2}|\d{4})/)
+
+            return match ? `${match[1]}/${match[2].slice(-2)}` : ''
+        },
+        parseSchoolyearConcern(value) {
+            const normalizedValue = this.normalizeSchoolyearConcern(value)
+            const match = normalizedValue.match(/^(\d{4})\/(\d{2})$/)
+
+            if (!match) {
+                return null
+            }
+
+            const startYear = Number(match[1])
+            const endYear = Number(`${String(startYear).slice(0, 2)}${match[2]}`)
+
+            if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) {
+                return null
+            }
+
+            return { startYear, endYear }
+        },
+        openSchemaImportDialog() {
+            this.schema_import_dialog_open = true
+        },
+        closeSchemaImportDialog() {
+            this.schema_import_dialog_open = false
+        },
+        openSchemaResetDialog() {
+            this.schema_reset_dialog_open = true
+        },
+        closeSchemaResetDialog() {
+            this.schema_reset_dialog_open = false
+        },
+        async importSchema() {
+            this.schema_import_loading = true
+
+            try {
+                const imported = await this.teachingStore.importSchema(this.selected_schema_id)
+
+                if (imported) {
+                    this.refreshSelectedSchemaPanels()
+                    this.closeSchemaImportDialog()
+                }
+            } finally {
+                this.schema_import_loading = false
+            }
+        },
+        async resetSchema() {
+            this.schema_reset_loading = true
+
+            try {
+                const reset = await this.teachingStore.resetSchema(this.selected_schema_id)
+
+                if (reset) {
+                    this.refreshSelectedSchemaPanels()
+                    this.closeSchemaResetDialog()
+                }
+            } finally {
+                this.schema_reset_loading = false
+            }
+        },
+        refreshSelectedSchemaPanels() {
+            this.schema_panel_revision += 1
+        },
         selectSchema(id) {
             this.selected_schema_id = id
             this.is_renaming = false
@@ -334,6 +582,7 @@ export default {
 .teaching-settings-toolbar-secondary {
     width: 100%;
     display: flex;
+    flex-direction: column;
     justify-content: flex-start;
     gap: 8px;
     border-radius: 16px;
@@ -359,7 +608,26 @@ export default {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 650;
-    height: 40px !important;
+    height: auto !important;
+    min-height: 56px !important;
+}
+
+.teaching-settings-toolbar-btn-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.15;
+    gap: 4px;
+}
+
+.teaching-settings-toolbar-btn-meta {
+    color: rgba(255, 255, 255, 0.98);
+    font-size: 0.76rem;
+    font-weight: 700;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    padding: 2px 8px;
 }
 
 .teaching-settings-content-shell {

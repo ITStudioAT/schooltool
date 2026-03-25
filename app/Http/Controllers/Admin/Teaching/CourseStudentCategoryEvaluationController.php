@@ -25,9 +25,7 @@ class CourseStudentCategoryEvaluationController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
-        if ($course->school_id !== $authUser->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $authUser);
 
         $query = TeachingCourseStudentCategoryEvaluation::query()
             ->where('teaching_course_id', $course->id);
@@ -63,9 +61,7 @@ class CourseStudentCategoryEvaluationController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($baseValidated['teaching_course_id']);
-        if ($course->school_id !== $authUser->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $authUser);
 
         $student = User::findOrFail($baseValidated['user_id']);
         if ($student->school_id !== $authUser->school_id) {

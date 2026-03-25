@@ -26,10 +26,7 @@ class CourseWorkController extends Controller
         }
 
         $course = TeachingCourse::findOrFail($courseId);
-
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $works = $course->teachingCourseWorks()
             ->orderBy('date_for_all_groups', 'desc')
@@ -49,21 +46,19 @@ class CourseWorkController extends Controller
         }
 
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $allowedTypes = $entryService->allowedTypesForSchema(
+            $this->teachingCourseActor($auth_user, $course),
+            $course->teaching_schema_id,
+            $course->schoolyear_id
+        );
         $typeRules = ['nullable', 'string', 'max:255'];
         if (! empty($allowedTypes)) {
             $typeRules[] = Rule::in($allowedTypes);
         }
 
         $validated = $request->validate($this->workValidationRules($typeRules, true));
-
-        if ($auth_user->school_id != $course->school_id) {
-            abort(409, 'Kein Zugriff auf diese Schule');
-        }
-
-        if ($auth_user->schoolyear_id != $course->schoolyear_id) {
-            abort(409, 'Kein Zugriff auf dieses Schuljahr');
-        }
 
         $validated = $workService->prepareWorkData($validated, $course, (int) $auth_user->school_id);
 
@@ -80,10 +75,11 @@ class CourseWorkController extends Controller
         }
 
         $course = $course_work->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         return response()->json(['data' => $course_work]);
     }
@@ -100,12 +96,17 @@ class CourseWorkController extends Controller
         }
 
         $course = $course_work->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $allowedTypes = $entryService->allowedTypesForSchema(
+            $this->teachingCourseActor($auth_user, $course),
+            $course->teaching_schema_id,
+            $course->schoolyear_id
+        );
         $typeRules = ['nullable', 'string', 'max:255'];
         if (! empty($allowedTypes)) {
             $typeRules[] = Rule::in($allowedTypes);
@@ -128,10 +129,11 @@ class CourseWorkController extends Controller
         }
 
         $course = $course_work->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $entrySyncService->deleteForWork($course_work);
         $course_work->delete();

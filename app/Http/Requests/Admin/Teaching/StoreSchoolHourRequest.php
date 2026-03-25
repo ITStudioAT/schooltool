@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin\Teaching;
 
+use App\Models\SchoolTool;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -29,6 +30,7 @@ class StoreSchoolHourRequest extends FormRequest
     public function rules(): array
     {
         $schoolId = Auth::user()?->school_id;
+        $schoolyearId = $this->resolveSchoolyearId();
 
         return [
             'entries' => ['required', 'array', 'min:1', 'max:10'],
@@ -38,7 +40,9 @@ class StoreSchoolHourRequest extends FormRequest
                 'min:1',
                 'max:20',
                 'distinct:strict',
-                Rule::unique('teaching_school_hours', 'hour')->where(fn ($query) => $query->where('school_id', $schoolId)),
+                Rule::unique('teaching_school_hours', 'hour')->where(fn ($query) => $query
+                    ->where('school_id', $schoolId)
+                    ->where('schoolyear_id', $schoolyearId)),
             ],
             'entries.*.from' => ['required', 'date_format:H:i'],
             'entries.*.until' => ['required', 'date_format:H:i'],
@@ -74,11 +78,21 @@ class StoreSchoolHourRequest extends FormRequest
             'entries.*.hour.min' => 'Die Stunde muss mindestens 1 sein.',
             'entries.*.hour.max' => 'Die Stunde darf maximal 20 sein.',
             'entries.*.hour.distinct' => 'Die Stunden innerhalb der Liste müssen eindeutig sein.',
-            'entries.*.hour.unique' => 'Diese Stunde ist für die Schule bereits vorhanden.',
+            'entries.*.hour.unique' => 'Diese Stunde ist für das Schuljahr bereits vorhanden.',
             'entries.*.from.required' => 'Die Von-Uhrzeit ist erforderlich.',
             'entries.*.from.date_format' => 'Die Von-Uhrzeit muss im Format HH:MM sein.',
             'entries.*.until.required' => 'Die Bis-Uhrzeit ist erforderlich.',
             'entries.*.until.date_format' => 'Die Bis-Uhrzeit muss im Format HH:MM sein.',
         ];
+    }
+
+    private function resolveSchoolyearId(): ?int
+    {
+        $user = Auth::user();
+
+        return $user?->schoolyear_id
+            ?? SchoolTool::query()
+                ->where('school_id', $user?->school_id)
+                ->value('active_schoolyear_id');
     }
 }

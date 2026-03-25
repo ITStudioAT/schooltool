@@ -16,7 +16,10 @@ describe('TeachingStore', () => {
     const notifyMock = vi.fn()
     const adminStoreMock = {
         is_loading: 0,
-        config: { user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null } },
+        config: {
+            user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null },
+            selected_schoolyear: { sem_2_start: '2026-02-10' },
+        },
     }
     const notificationStoreMock = { notify: notifyMock }
     const axiosMock = {
@@ -31,6 +34,7 @@ describe('TeachingStore', () => {
         adminStoreMock.is_loading = 0
         adminStoreMock.config.user.teaching_active_semester = 1
         adminStoreMock.config.user.teaching_count_for_semester_2_date = null
+        adminStoreMock.config.selected_schoolyear.sem_2_start = '2026-02-10'
         axiosMock.get.mockReset()
         axiosMock.post.mockReset()
 
@@ -84,6 +88,33 @@ describe('TeachingStore', () => {
         expect(store.categoryEvaluationValueColorForSchema('schema-1', 'Bestanden')).toBe('#43a047')
         expect(store.defaultCategoryEvaluationValueForSchema('schema-1')).toBe('Bestanden')
         expect(store.hasTwoSemesters).toBe(true)
+    })
+
+    it('does not fall back to default category evaluation values when a schema is empty', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                settings: {
+                    teaching_schemas: [{
+                        id: 'schema-empty',
+                        works: [],
+                        grading: {
+                            semester_count: 1,
+                            category_evaluation_values: [],
+                            default_category_evaluation_value: '',
+                        },
+                    }],
+                    teaching_behaviour: [],
+                    teaching_notifications: [],
+                },
+            },
+        })
+
+        const store = useTeachingStore()
+        await store.loadSettings()
+
+        expect(store.categoryEvaluationValueItemsForSchema('schema-empty')).toEqual([])
+        expect(store.categoryEvaluationValuesForSchema('schema-empty')).toEqual([])
+        expect(store.defaultCategoryEvaluationValueForSchema('schema-empty')).toBeNull()
     })
 
     it('loadSettings returns false, notifies, and resets loading when request fails', async () => {
@@ -181,6 +212,7 @@ describe('TeachingStore', () => {
         axiosMock.post.mockResolvedValue({
             data: {
                 teaching_count_for_semester_2_date: '2026-02-15',
+                schoolyear_sem_2_start: '2026-02-15',
             },
         })
 
@@ -191,6 +223,7 @@ describe('TeachingStore', () => {
             teaching_count_for_semester_2_date: '2026-02-15',
         })
         expect(adminStoreMock.config.user.teaching_count_for_semester_2_date).toBe('2026-02-15')
+        expect(adminStoreMock.config.selected_schoolyear.sem_2_start).toBe('2026-02-15')
         expect(notifyMock).toHaveBeenCalledWith({
             message: 'Datum gespeichert.',
             type: 'success',
@@ -208,10 +241,12 @@ describe('TeachingStore', () => {
 
         const store = useTeachingStore()
         adminStoreMock.config.user.teaching_count_for_semester_2_date = '2026-02-10'
+        adminStoreMock.config.selected_schoolyear.sem_2_start = '2026-02-10'
 
         await store.saveSemester2Date('2026-03-10')
 
         expect(adminStoreMock.config.user.teaching_count_for_semester_2_date).toBe('2026-02-10')
+        expect(adminStoreMock.config.selected_schoolyear.sem_2_start).toBe('2026-02-10')
         expect(notifyMock).toHaveBeenCalledWith({
             status: 409,
             message: 'Datum nicht erlaubt.',
@@ -280,6 +315,176 @@ describe('TeachingStore', () => {
             message: 'Fehler passiert.',
             type: 'error',
             timeout: 3000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('importBehaviour updates settings and notifies on success', async () => {
+        const importedSettings = {
+            teaching_schemas: [],
+            teaching_behaviour: [{ short_name: 'BZ', name: 'Benehmen' }],
+            teaching_behaviour_usage_count: 0,
+            teaching_notifications: [],
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: importedSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.importBehaviour()
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/import_behaviour')
+        expect(store.settings).toEqual(importedSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Verhalten importiert.',
+            type: 'success',
+            timeout: 2000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('resetBehaviour updates settings and notifies on success', async () => {
+        const resetSettings = {
+            teaching_schemas: [],
+            teaching_behaviour: [],
+            teaching_behaviour_usage_count: 0,
+            teaching_notifications: [],
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: resetSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.resetBehaviour()
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/reset_behaviour')
+        expect(store.settings).toEqual(resetSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Verhalten zurückgesetzt.',
+            type: 'success',
+            timeout: 2000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('importNotifications updates settings and notifies on success', async () => {
+        const importedSettings = {
+            teaching_schemas: [],
+            teaching_behaviour: [],
+            teaching_notifications: [{ short_name: 'INF', name: 'Info' }],
+            teaching_notifications_usage_count: 0,
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: importedSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.importNotifications()
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/import_notifications')
+        expect(store.settings).toEqual(importedSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Verständigungen importiert.',
+            type: 'success',
+            timeout: 2000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('resetNotifications updates settings and notifies on success', async () => {
+        const resetSettings = {
+            teaching_schemas: [],
+            teaching_behaviour: [],
+            teaching_notifications: [],
+            teaching_notifications_usage_count: 0,
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: resetSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.resetNotifications()
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/reset_notifications')
+        expect(store.settings).toEqual(resetSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Verständigungen zurückgesetzt.',
+            type: 'success',
+            timeout: 2000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('importSchema updates settings and notifies on success', async () => {
+        const importedSettings = {
+            teaching_schemas: [{ id: 'schema-1', name: 'Standard Plus', works: [], grading: {} }],
+            teaching_behaviour: [],
+            teaching_notifications: [],
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: importedSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.importSchema('schema-1')
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/import_schema', {
+            selected_schema_id: 'schema-1',
+        })
+        expect(store.settings).toEqual(importedSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Benotungsschema importiert.',
+            type: 'success',
+            timeout: 2000,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('resetSchema updates settings and notifies on success', async () => {
+        const resetSettings = {
+            teaching_schemas: [{ id: 'schema-1', name: 'Standard', works: [], grading: {} }],
+            teaching_behaviour: [],
+            teaching_notifications: [],
+        }
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                settings: resetSettings,
+            },
+        })
+
+        const store = useTeachingStore()
+        const result = await store.resetSchema('schema-1')
+
+        expect(result).toBe(true)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/reset_schema', {
+            selected_schema_id: 'schema-1',
+        })
+        expect(store.settings).toEqual(resetSettings)
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Benotungsschema zurückgesetzt.',
+            type: 'success',
+            timeout: 2000,
         })
         expect(adminStoreMock.is_loading).toBe(0)
     })

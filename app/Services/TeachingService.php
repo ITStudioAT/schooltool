@@ -565,7 +565,7 @@ class TeachingService
     private function normalizeGrading(array $grading, array $works): array
     {
         $grading['category_evaluation_values'] = $this->normalizeCategoryEvaluationValues(
-            is_array($grading['category_evaluation_values'] ?? null)
+            array_key_exists('category_evaluation_values', $grading) && is_array($grading['category_evaluation_values'])
                 ? $grading['category_evaluation_values']
                 : null
         );
@@ -626,9 +626,13 @@ class TeachingService
 
     private function normalizeCategoryEvaluationValues(?array $values): array
     {
+        if ($values === null) {
+            return self::defaultCategoryEvaluationValues();
+        }
+
         $defaultColorMap = $this->defaultCategoryEvaluationColorMap();
 
-        $normalizedValues = collect($values ?? self::defaultCategoryEvaluationValues())
+        $normalizedValues = collect($values)
             ->map(function ($value) use ($defaultColorMap): ?array {
                 if (is_array($value)) {
                     $label = trim((string) ($value['value'] ?? ''));
@@ -664,10 +668,6 @@ class TeachingService
             ->values()
             ->all();
 
-        if ($normalizedValues === []) {
-            return self::defaultCategoryEvaluationValues();
-        }
-
         return $normalizedValues;
     }
 
@@ -676,11 +676,15 @@ class TeachingService
         $normalizedValue = trim((string) ($value ?? ''));
         $availableValueLabels = $this->categoryEvaluationValueLabels($availableValues);
 
+        if ($availableValueLabels === []) {
+            return '';
+        }
+
         if ($normalizedValue !== '' && in_array($normalizedValue, $availableValueLabels, true)) {
             return $normalizedValue;
         }
 
-        return $availableValueLabels[0] ?? self::defaultCategoryEvaluationDefaultValue();
+        return $availableValueLabels[0] ?? '';
     }
 
     private function normalizeCategoryEvaluationColor(mixed $color, string $fallback): string

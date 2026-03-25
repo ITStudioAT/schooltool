@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\Teaching\Import116Resource;
 use App\Models\Import116;
+use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
@@ -66,15 +68,8 @@ class TeachingController extends Controller
         $teachingService = new TeachingService;
         $teachingService->ensureDefaultSchema($auth_user, $auth_user->schoolyear_id);
 
-        $settings = [
-            'teaching_schemas' => $teachingService->schemasForUser($auth_user, $auth_user->schoolyear_id)->all(),
-            'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
-            'teaching_notifications' => $auth_user->teaching_notifications ?? [],
-            'teaching_show_behaviour' => $auth_user->teaching_show_behaviour ?? true,
-        ];
-
         return response()->json([
-            'settings' => $settings,
+            'settings' => $this->settingsPayloadForUser($auth_user, $teachingService),
         ]);
     }
 
@@ -106,11 +101,20 @@ class TeachingController extends Controller
             'teaching_count_for_semester_2_date' => 'nullable|date',
         ]);
 
-        $auth_user->teaching_count_for_semester_2_date = $validated['teaching_count_for_semester_2_date'];
+        $semester2Date = $validated['teaching_count_for_semester_2_date'];
+        $schoolyear = $auth_user->selectedSchoolyear;
+
+        if ($schoolyear) {
+            $schoolyear->sem_2_start = $semester2Date;
+            $schoolyear->save();
+        }
+
+        $auth_user->teaching_count_for_semester_2_date = $semester2Date;
         $auth_user->save();
 
         return response()->json([
             'teaching_count_for_semester_2_date' => $auth_user->teaching_count_for_semester_2_date,
+            'schoolyear_sem_2_start' => $schoolyear?->sem_2_start,
         ]);
     }
 
@@ -122,8 +126,8 @@ class TeachingController extends Controller
 
         $teachingService = new TeachingService;
         $previousTeachingSchemas = $teachingService->schemasForUser($auth_user, $auth_user->schoolyear_id);
-        $previousTeachingBehaviour = collect($auth_user->teaching_behaviour ?? []);
-        $previousTeachingNotifications = collect($auth_user->teaching_notifications ?? []);
+        $previousTeachingBehaviour = collect($this->teachingBehaviourForSchoolyear($auth_user, $auth_user->schoolyear_id));
+        $previousTeachingNotifications = collect($this->teachingNotificationsForSchoolyear($auth_user, $auth_user->schoolyear_id));
 
         $validated = $request->validate([
             'teaching_schemas' => 'nullable|array',
@@ -208,40 +212,266 @@ class TeachingController extends Controller
             $this->syncCourseBehaviourEntryTypesForSchool(
                 $auth_user,
                 'behaviour',
+                $auth_user->schoolyear_id,
                 $previousTeachingBehaviour,
                 $validated['teaching_behaviour']
             );
-            $auth_user->teaching_behaviour = $validated['teaching_behaviour'];
+            $this->storeTeachingBehaviourForSchoolyear($auth_user, $auth_user->schoolyear_id, $validated['teaching_behaviour']);
         }
         if (isset($validated['teaching_notifications'])) {
             $this->syncCourseBehaviourEntryTypesForSchool(
                 $auth_user,
                 'notification',
+                $auth_user->schoolyear_id,
                 $previousTeachingNotifications,
                 $validated['teaching_notifications']
             );
-            $auth_user->teaching_notifications = $validated['teaching_notifications'];
+            $this->storeTeachingNotificationsForSchoolyear($auth_user, $auth_user->schoolyear_id, $validated['teaching_notifications']);
         }
         if (array_key_exists('teaching_show_behaviour', $validated)) {
             $auth_user->teaching_show_behaviour = (bool) $validated['teaching_show_behaviour'];
         }
         $auth_user->save();
 
-        $settings = [
-            'teaching_schemas' => $teachingService->schemasForUser($auth_user, $auth_user->schoolyear_id)->all(),
-            'teaching_behaviour' => $auth_user->teaching_behaviour ?? [],
-            'teaching_notifications' => $auth_user->teaching_notifications ?? [],
-            'teaching_show_behaviour' => $auth_user->teaching_show_behaviour ?? true,
-        ];
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user, $teachingService),
+        ]);
+    }
+
+    public function importBehaviour(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $currentSchoolyear = $auth_user->selectedSchoolyear;
+        $previousSchoolyear = $this->previousSchoolyearForImport($currentSchoolyear);
+
+        if (! $currentSchoolyear || ! $previousSchoolyear) {
+            abort(422, 'Import nicht möglich.');
+        }
+
+        $entriesToImport = $this->teachingBehaviourForSchoolyear($auth_user, $previousSchoolyear->id);
+
+        TeachingCourseBehaviourEntry::query()
+            ->where('kind', 'behaviour')
+            ->whereHas('teachingCourse', function (Builder $query) use ($auth_user): void {
+                $query->where('school_id', $auth_user->school_id)
+                    ->where('schoolyear_id', $auth_user->schoolyear_id)
+                    ->where('user_id', $auth_user->id);
+            })
+            ->delete();
+
+        $this->storeTeachingBehaviourForSchoolyear($auth_user, $currentSchoolyear->id, $entriesToImport);
+        $auth_user->save();
 
         return response()->json([
-            'settings' => $settings,
+            'settings' => $this->settingsPayloadForUser($auth_user, new TeachingService),
+        ]);
+    }
+
+    public function resetBehaviour(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        TeachingCourseBehaviourEntry::query()
+            ->where('kind', 'behaviour')
+            ->whereHas('teachingCourse', function (Builder $query) use ($auth_user): void {
+                $query->where('school_id', $auth_user->school_id)
+                    ->where('schoolyear_id', $auth_user->schoolyear_id)
+                    ->where('user_id', $auth_user->id);
+            })
+            ->delete();
+
+        $this->storeTeachingBehaviourForSchoolyear($auth_user, $auth_user->schoolyear_id, []);
+        $auth_user->save();
+
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user, new TeachingService),
+        ]);
+    }
+
+    public function importNotifications(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $currentSchoolyear = $auth_user->selectedSchoolyear;
+        $previousSchoolyear = $this->previousSchoolyearForImport($currentSchoolyear);
+
+        if (! $currentSchoolyear || ! $previousSchoolyear) {
+            abort(422, 'Import nicht möglich.');
+        }
+
+        $entriesToImport = $this->teachingNotificationsForSchoolyear($auth_user, $previousSchoolyear->id);
+
+        TeachingCourseBehaviourEntry::query()
+            ->where('kind', 'notification')
+            ->whereHas('teachingCourse', function (Builder $query) use ($auth_user): void {
+                $query->where('school_id', $auth_user->school_id)
+                    ->where('schoolyear_id', $auth_user->schoolyear_id)
+                    ->where('user_id', $auth_user->id);
+            })
+            ->delete();
+
+        $this->storeTeachingNotificationsForSchoolyear($auth_user, $currentSchoolyear->id, $entriesToImport);
+        $auth_user->save();
+
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user, new TeachingService),
+        ]);
+    }
+
+    public function resetNotifications(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        TeachingCourseBehaviourEntry::query()
+            ->where('kind', 'notification')
+            ->whereHas('teachingCourse', function (Builder $query) use ($auth_user): void {
+                $query->where('school_id', $auth_user->school_id)
+                    ->where('schoolyear_id', $auth_user->schoolyear_id)
+                    ->where('user_id', $auth_user->id);
+            })
+            ->delete();
+
+        $this->storeTeachingNotificationsForSchoolyear($auth_user, $auth_user->schoolyear_id, []);
+        $auth_user->save();
+
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user, new TeachingService),
+        ]);
+    }
+
+    public function importSchema(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'selected_schema_id' => 'required|string|max:36',
+        ]);
+
+        $teachingService = new TeachingService;
+        $currentSchoolyear = $auth_user->selectedSchoolyear;
+        $previousSchoolyear = $this->previousSchoolyearForImport($currentSchoolyear);
+
+        if (! $currentSchoolyear || ! $previousSchoolyear) {
+            abort(422, 'Import nicht möglich.');
+        }
+
+        $currentSchemas = $teachingService->schemasForUser($auth_user, $currentSchoolyear->id);
+        if (! is_array($currentSchemas->firstWhere('id', (string) $validated['selected_schema_id']))) {
+            abort(404, 'Benotungsschema nicht gefunden.');
+        }
+
+        $previousSchemas = $teachingService->schemasForUser($auth_user, $previousSchoolyear->id)
+            ->filter(fn ($schema) => is_array($schema))
+            ->values();
+
+        if ($previousSchemas->isEmpty()) {
+            abort(422, 'Import nicht möglich.');
+        }
+
+        $currentSchemaIds = $currentSchemas
+            ->filter(fn ($schema) => is_array($schema))
+            ->pluck('id')
+            ->filter(fn ($schemaId) => is_scalar($schemaId) && (string) $schemaId !== '')
+            ->map(fn ($schemaId) => (string) $schemaId)
+            ->all();
+
+        foreach ($currentSchemaIds as $schemaId) {
+            $this->clearSchemaDataForCourses($auth_user, $schemaId, $currentSchoolyear->id);
+        }
+
+        $currentSchemasByName = $currentSchemas
+            ->filter(fn ($schema) => is_array($schema))
+            ->keyBy(fn (array $schema): string => (string) ($schema['name'] ?? ''));
+
+        $importedSchemaNames = $previousSchemas
+            ->map(fn (array $schema): string => (string) ($schema['name'] ?? ''))
+            ->filter(fn (string $name): bool => $name !== '');
+
+        $replacementSchemas = $previousSchemas
+            ->map(function (array $previousSchema) use ($currentSchemasByName): array {
+                $schemaName = (string) ($previousSchema['name'] ?? 'Standard');
+                $matchingCurrentSchema = $currentSchemasByName->get($schemaName);
+
+                return [
+                    'id' => (string) ($matchingCurrentSchema['id'] ?? $previousSchema['id'] ?? ''),
+                    'name' => $schemaName,
+                    'works' => is_array($previousSchema['works'] ?? null) ? $previousSchema['works'] : [],
+                    'grading' => is_array($previousSchema['grading'] ?? null) ? $previousSchema['grading'] : [],
+                ];
+            })
+            ->merge(
+                $currentSchemas
+                    ->filter(fn ($schema) => is_array($schema))
+                    ->reject(function (array $schema) use ($importedSchemaNames): bool {
+                        return $importedSchemaNames->contains((string) ($schema['name'] ?? ''));
+                    })
+            )
+            ->values()
+            ->all();
+
+        $teachingService->saveSchemas(
+            $auth_user,
+            $replacementSchemas,
+            $currentSchoolyear->id
+        );
+
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user->fresh(), $teachingService),
+        ]);
+    }
+
+    public function resetSchema(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'selected_schema_id' => 'required|string|max:36',
+        ]);
+
+        $teachingService = new TeachingService;
+        $currentSchoolyearId = $auth_user->schoolyear_id;
+        $currentSchemas = $teachingService->schemasForUser($auth_user, $currentSchoolyearId);
+        $currentSchema = $currentSchemas->firstWhere('id', (string) $validated['selected_schema_id']);
+
+        if (! is_array($currentSchema)) {
+            abort(404, 'Benotungsschema nicht gefunden.');
+        }
+
+        $schemaId = (string) $currentSchema['id'];
+
+        $this->clearSchemaDataForCourses($auth_user, $schemaId, $currentSchoolyearId);
+        $teachingService->saveSchemas(
+            $auth_user,
+            $this->replaceCurrentSchemaDefinition(
+                $currentSchemas,
+                $schemaId,
+                $this->resetSchemaPayload($currentSchema)
+            ),
+            $currentSchoolyearId
+        );
+
+        return response()->json([
+            'settings' => $this->settingsPayloadForUser($auth_user->fresh(), $teachingService),
         ]);
     }
 
     private function syncCourseBehaviourEntryTypesForSchool(
         User $authUser,
         string $kind,
+        ?int $schoolyearId,
         Collection $previousEntries,
         array $currentEntries
     ): void {
@@ -256,11 +486,316 @@ class TeachingController extends Controller
             TeachingCourseBehaviourEntry::query()
                 ->where('kind', $kind)
                 ->where('type', $oldType)
-                ->whereHas('teachingCourse', function ($query) use ($authUser) {
+                ->whereHas('teachingCourse', function ($query) use ($authUser, $schoolyearId) {
                     $query->where('school_id', $authUser->school_id);
+                    if ($schoolyearId !== null) {
+                        $query->where('schoolyear_id', $schoolyearId);
+                    }
                 })
                 ->update(['type' => $newType]);
         }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingBehaviourForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_behaviour_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $entries
+     */
+    private function storeTeachingBehaviourForSchoolyear(User $user, ?int $schoolyearId, array $entries): void
+    {
+        $bySchoolyear = is_array($user->teaching_behaviour_by_schoolyear) ? $user->teaching_behaviour_by_schoolyear : [];
+
+        if ($schoolyearId !== null) {
+            $bySchoolyear[(string) $schoolyearId] = array_values($entries);
+            $user->teaching_behaviour_by_schoolyear = $bySchoolyear;
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingNotificationsForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_notifications_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $entries
+     */
+    private function storeTeachingNotificationsForSchoolyear(User $user, ?int $schoolyearId, array $entries): void
+    {
+        $bySchoolyear = is_array($user->teaching_notifications_by_schoolyear) ? $user->teaching_notifications_by_schoolyear : [];
+
+        if ($schoolyearId !== null) {
+            $bySchoolyear[(string) $schoolyearId] = array_values($entries);
+            $user->teaching_notifications_by_schoolyear = $bySchoolyear;
+        }
+    }
+
+    private function teachingCourseBehaviourEntryCountForKind(User $user, ?int $schoolyearId, string $kind): int
+    {
+        return TeachingCourseBehaviourEntry::query()
+            ->where('kind', $kind)
+            ->whereHas('teachingCourse', function (Builder $query) use ($user, $schoolyearId): void {
+                $query->where('school_id', $user->school_id)
+                    ->where('user_id', $user->id);
+
+                if ($schoolyearId !== null) {
+                    $query->where('schoolyear_id', $schoolyearId);
+                }
+            })
+            ->count();
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function teachingCourseBehaviourEntryCountsByTypeForKind(User $user, ?int $schoolyearId, string $kind): array
+    {
+        return TeachingCourseBehaviourEntry::query()
+            ->selectRaw('type, COUNT(*) as aggregate')
+            ->where('kind', $kind)
+            ->whereHas('teachingCourse', function (Builder $query) use ($user, $schoolyearId): void {
+                $query->where('school_id', $user->school_id)
+                    ->where('user_id', $user->id);
+
+                if ($schoolyearId !== null) {
+                    $query->where('schoolyear_id', $schoolyearId);
+                }
+            })
+            ->groupBy('type')
+            ->pluck('aggregate', 'type')
+            ->map(fn ($count): int => (int) $count)
+            ->all();
+    }
+
+    private function settingsPayloadForUser(User $user, TeachingService $teachingService): array
+    {
+        $schemas = $teachingService->schemasForUser($user, $user->schoolyear_id);
+        $categoryEvaluationUsageCounts = $this->categoryEvaluationUsageCountsBySchema($user, $user->schoolyear_id);
+
+        return [
+            'teaching_schemas' => $schemas
+                ->map(function ($schema) use ($categoryEvaluationUsageCounts) {
+                    if (! is_array($schema)) {
+                        return $schema;
+                    }
+
+                    $schemaId = (string) ($schema['id'] ?? '');
+                    $grading = is_array($schema['grading'] ?? null) ? $schema['grading'] : [];
+                    $grading['category_evaluation_usage_counts'] = $categoryEvaluationUsageCounts[$schemaId] ?? [];
+                    $schema['grading'] = $grading;
+
+                    return $schema;
+                })
+                ->all(),
+            'teaching_behaviour' => $this->teachingBehaviourForSchoolyear($user, $user->schoolyear_id),
+            'teaching_behaviour_usage_count' => $this->teachingCourseBehaviourEntryCountForKind($user, $user->schoolyear_id, 'behaviour'),
+            'teaching_behaviour_usage_counts' => $this->teachingCourseBehaviourEntryCountsByTypeForKind($user, $user->schoolyear_id, 'behaviour'),
+            'teaching_notifications' => $this->teachingNotificationsForSchoolyear($user, $user->schoolyear_id),
+            'teaching_notifications_usage_count' => $this->teachingCourseBehaviourEntryCountForKind($user, $user->schoolyear_id, 'notification'),
+            'teaching_notifications_usage_counts' => $this->teachingCourseBehaviourEntryCountsByTypeForKind($user, $user->schoolyear_id, 'notification'),
+            'teaching_show_behaviour' => $user->teaching_show_behaviour ?? true,
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, int>>
+     */
+    private function categoryEvaluationUsageCountsBySchema(User $user, ?int $schoolyearId): array
+    {
+        $courses = TeachingCourse::query()
+            ->where('school_id', $user->school_id)
+            ->where('user_id', $user->id)
+            ->when($schoolyearId !== null, fn (Builder $query) => $query->where('schoolyear_id', $schoolyearId))
+            ->whereNotNull('teaching_schema_id')
+            ->get(['id', 'teaching_schema_id']);
+
+        if ($courses->isEmpty()) {
+            return [];
+        }
+
+        $schemaIdsByCourseId = $courses
+            ->pluck('teaching_schema_id', 'id')
+            ->map(fn ($schemaId): string => (string) $schemaId);
+
+        $counts = [];
+
+        TeachingCourseStudentCategoryEvaluation::query()
+            ->whereIn('teaching_course_id', $courses->pluck('id'))
+            ->get(['teaching_course_id', 'value'])
+            ->each(function (TeachingCourseStudentCategoryEvaluation $evaluation) use (&$counts, $schemaIdsByCourseId): void {
+                $schemaId = $schemaIdsByCourseId->get($evaluation->teaching_course_id);
+                $value = trim((string) $evaluation->value);
+
+                if ($schemaId === null || $value === '') {
+                    return;
+                }
+
+                $counts[$schemaId] ??= [];
+                $counts[$schemaId][$value] = (int) (($counts[$schemaId][$value] ?? 0) + 1);
+            });
+
+        return $counts;
+    }
+
+    private function previousSchoolyearForImport(?Schoolyear $schoolyear): ?Schoolyear
+    {
+        if (! $schoolyear) {
+            return null;
+        }
+
+        $previousConcern = $this->previousSchoolyearConcern($schoolyear->concerns);
+
+        if ($previousConcern === null) {
+            return null;
+        }
+
+        return Schoolyear::query()
+            ->where('school_id', $schoolyear->school_id)
+            ->get()
+            ->first(function (Schoolyear $candidate) use ($previousConcern): bool {
+                return $this->normalizeSchoolyearConcern($candidate->concerns) === $previousConcern;
+            });
+    }
+
+    private function matchingPreviousSchemaForImport(
+        TeachingService $teachingService,
+        User $user,
+        int $schoolyearId,
+        string $schemaName
+    ): ?array {
+        $schema = $teachingService->schemasForUser($user, $schoolyearId)
+            ->first(function ($candidate) use ($schemaName): bool {
+                return is_array($candidate)
+                    && (string) ($candidate['name'] ?? '') === $schemaName;
+            });
+
+        return is_array($schema) ? $schema : null;
+    }
+
+    private function clearSchemaDataForCourses(User $user, string $schemaId, ?int $schoolyearId): void
+    {
+        $courseIds = TeachingCourse::query()
+            ->where('school_id', $user->school_id)
+            ->where('user_id', $user->id)
+            ->where('teaching_schema_id', $schemaId)
+            ->when($schoolyearId !== null, fn (Builder $query) => $query->where('schoolyear_id', $schoolyearId))
+            ->pluck('id');
+
+        if ($courseIds->isEmpty()) {
+            return;
+        }
+
+        TeachingCourseStudentCategoryEvaluation::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->delete();
+
+        TeachingCourseStudentEntry::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->delete();
+
+        TeachingCourseWork::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->delete();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $schemas
+     * @return array<int, array<string, mixed>>
+     */
+    private function replaceCurrentSchemaDefinition(Collection $schemas, string $schemaId, array $replacementSchema): array
+    {
+        return $schemas
+            ->map(function ($schema) use ($schemaId, $replacementSchema) {
+                if (! is_array($schema)) {
+                    return $schema;
+                }
+
+                return (string) ($schema['id'] ?? '') === $schemaId
+                    ? $replacementSchema
+                    : $schema;
+            })
+            ->filter(fn ($schema) => is_array($schema))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $currentSchema
+     * @return array<string, mixed>
+     */
+    private function resetSchemaPayload(array $currentSchema): array
+    {
+        return [
+            'id' => (string) ($currentSchema['id'] ?? ''),
+            'name' => (string) ($currentSchema['name'] ?? 'Standard'),
+            'works' => [],
+            'grading' => [
+                'semester_count' => 1,
+                'semester_1_weight' => 100,
+                'semester_2_weight' => 0,
+                'use_semester_grade_only' => false,
+                'category_evaluation_values' => [],
+                'default_category_evaluation_value' => '',
+                'categories' => [],
+            ],
+        ];
+    }
+
+    private function previousSchoolyearConcern(?string $value): ?string
+    {
+        $normalizedValue = $this->normalizeSchoolyearConcern($value);
+
+        if (! preg_match('/^(\d{4})\/(\d{2})$/', $normalizedValue, $matches)) {
+            return null;
+        }
+
+        $startYear = (int) $matches[1];
+        $endYear = (int) substr((string) ($startYear + 1), -2);
+
+        return sprintf('%d/%02d', $startYear - 1, $endYear - 1);
+    }
+
+    private function normalizeSchoolyearConcern(?string $value): string
+    {
+        if (! is_string($value)) {
+            return '';
+        }
+
+        preg_match('/(\d{4})\/(\d{2}|\d{4})/', $value, $matches);
+
+        if ($matches === []) {
+            return '';
+        }
+
+        return sprintf('%s/%s', $matches[1], substr($matches[2], -2));
     }
 
     private function syncSchemaWorkItemsForSchool(

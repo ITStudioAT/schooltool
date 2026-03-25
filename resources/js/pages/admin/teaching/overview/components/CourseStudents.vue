@@ -397,7 +397,7 @@ export default {
             return this.config?.selected_schoolyear?.sem_2_start || null
         },
         countSem2StartDate() {
-            return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
+            return this.schoolSem2StartDate || this.config?.user?.teaching_count_for_semester_2_date || null
         },
         studentBehaviourCounts() {
             let entries = (this.behaviourEntryStore?.courseEntries || []).filter((entry) => (entry.kind || 'behaviour') === 'behaviour')

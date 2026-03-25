@@ -220,6 +220,105 @@ describe('CourseStudent auswertung trigger placement', () => {
     })
 })
 
+describe('CourseStudent auswertung semester cards', () => {
+    it('wraps semester sections in bordered background cards', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="auswertung-semester-card auswertung-semester-card--semester-1"')
+        expect(source).toContain('class="auswertung-semester-card auswertung-semester-card--semester-2"')
+        expect(source).toContain('.auswertung-semester-card {')
+        expect(source).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.18);')
+        expect(source).toContain('background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-surface), 0.96) 100%);')
+        expect(source).toContain('.auswertung-semester-card--semester-2 {')
+    })
+})
+
+describe('CourseStudent auswertung category cards', () => {
+    it('wraps each category within a semester in its own bordered card', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<div class="auswertung-category-card">')
+        expect(source).toContain('.auswertung-category-card {')
+        expect(source).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.12);')
+        expect(source).toContain('background: rgba(var(--v-theme-surface), 0.92);')
+        expect(source).toContain('0 8px 18px rgba(var(--v-theme-primary), 0.08),')
+    })
+})
+
+describe('CourseStudent auswertung sum chip order', () => {
+    it('renders the sum chip before the grade chip in semester rows', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const sumIndex = source.indexOf('v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>')
+        const gradeIndex = source.indexOf('v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? \'error\' : \'primary\'">{{ row.grade }}</v-chip>')
+
+        expect(sumIndex).toBeGreaterThan(-1)
+        expect(gradeIndex).toBeGreaterThan(sumIndex)
+    })
+})
+
+describe('CourseStudent auswertung total cards', () => {
+    it('renders semester calculation rows inside highlighted bordered cards', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="auswertung-total-card"')
+        expect(source).toContain('class="auswertung-total-card auswertung-total-card--semester-2"')
+        expect(source).toContain("class=\"text-subtitle-1 font-weight-bold\">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>")
+        expect(source).toContain('class="text-subtitle-1 font-weight-bold">Berechnung Sem 2</v-list-item-title>')
+        expect(source).toContain('.auswertung-total-card {')
+        expect(source).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.28);')
+        expect(source).toContain('background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.18) 0%, rgba(var(--v-theme-primary), 0.08) 100%);')
+    })
+})
+
+describe('CourseStudent auswertung sum card', () => {
+    it('renders the weighted semester sum inside its own highlighted bordered card', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="w-100 auswertung-sum-card"')
+        expect(source).toContain('.auswertung-sum-card {')
+        expect(source).toContain('border: 1px solid rgba(var(--v-theme-secondary), 0.32);')
+        expect(source).toContain('background: linear-gradient(135deg, rgba(var(--v-theme-secondary), 0.18) 0%, rgba(var(--v-theme-secondary), 0.08) 100%);')
+        expect(source).toContain('<span>GESAMT</span>')
+        expect(source).not.toContain('Berechnung: {{ formatEvaluationValue(semesterWeightedGrade.value) }}')
+        expect(source).toContain('<div class="auswertung-section-header">')
+        expect(source).not.toContain('<div class="auswertung-section-header auswertung-section-header--sum">')
+        expect(source).toContain('class="sum-formula-columns" :class="{ \'sum-formula-columns--stacked\': semesterCount !== 2 }"')
+        expect(source).toContain('class="sum-formula-column"')
+        expect(source).toContain('class="sum-formula-column-label">Semester 1</div>')
+        expect(source).toContain('class="sum-formula-column-label">Semester 2</div>')
+        expect(source).toContain('class="sum-formula-column-share">{{ semesterWeightedGrade.sem1Weight }}%</div>')
+        expect(source).toContain('class="sum-formula-column-share">{{ semesterWeightedGrade.sem2Weight }}%</div>')
+        expect(source).toContain('class="sum-formula-column-grade">{{ formatEvaluationValue(semesterWeightedGrade.sem1Value) }}</div>')
+        expect(source).toContain('class="sum-formula-column-grade">{{ formatEvaluationValue(semesterWeightedGrade.sem2Value) }}</div>')
+        expect(source).toContain('.sum-formula-columns {')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.sum-formula-column-share {')
+        expect(source).toContain('class="sum-formula-result-card"')
+        expect(source).toContain('class="sum-formula-result-value" :class="isNaGradeKey(semesterWeightedGrade.value) ? \'text-error\' : \'text-primary\'"')
+        expect(source).not.toContain("{{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem1SharePercent) }}% +")
+    })
+})
+
 describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
     const methods = (CourseStudent as any).methods
 
@@ -287,6 +386,35 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         const groups = methods.buildCategoryGroups.call(ctx, entries)
 
         expect(groups[0].isNa).toBe(false)
+    })
+
+    it('uses NA as display value when a work entry has no grade', () => {
+        const work = {
+            short_name: 'PÜ',
+            calculation: 'grade',
+            grades: [{ grade: '1', value: 1 }, { grade: '2', value: 2 }],
+            default_grade: '',
+        }
+        const ctx = makeCtx({
+            teachingWorks: [work],
+            selectedSchema: {
+                grading: {
+                    categories: [
+                        { name: 'Praktische Übungen', weight: 100, require_all_entries: false, works: [{ short_name: 'PÜ', factor: 100 }] },
+                    ],
+                },
+            },
+        })
+
+        const entries = [
+            { id: 1, type: 'PÜ', grade: '', effective_grade: '', teaching_course_work_id: 10, date: '2026-04-13' },
+        ]
+
+        const groups = methods.buildCategoryGroups.call(ctx, entries)
+
+        expect(groups).toHaveLength(1)
+        expect(groups[0].rows).toHaveLength(1)
+        expect(groups[0].rows[0].value).toBe('NA')
     })
 
     it('totalFromCategoryGroups returns NA when any category isNa', () => {

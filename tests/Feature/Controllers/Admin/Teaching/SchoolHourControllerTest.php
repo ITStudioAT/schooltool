@@ -2,6 +2,8 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,6 +26,23 @@ beforeEach(function () {
 
     $this->school = School::factory()->create();
     $otherSchool = School::factory()->create();
+    $this->schoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+    $this->otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+    ]);
+    SchoolTool::factory()->create([
+        'school_id' => $otherSchool->id,
+        'active_schoolyear_id' => $otherSchoolyear->id,
+    ]);
 
     $teachingLicence = Licence::firstOrCreate(
         ['name' => 'Lehrertool'],
@@ -38,24 +57,25 @@ beforeEach(function () {
 
     $this->admin = User::factory()->create([
         'school_id' => $this->school->id,
-        'schoolyear_id' => null,
+        'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->admin->assignRole('admin');
 
     $this->teachingAdmin = User::factory()->create([
         'school_id' => $this->school->id,
-        'schoolyear_id' => null,
+        'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->teachingAdmin->assignRole('teaching_admin');
 
     $this->teacher = User::factory()->create([
         'school_id' => $this->school->id,
-        'schoolyear_id' => null,
+        'schoolyear_id' => $this->schoolyear->id,
     ]);
     $this->teacher->assignRole('teacher');
 
     $this->otherSchoolHour = TeachingSchoolHour::query()->create([
         'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
         'hour' => 1,
         'from' => '08:00:00',
         'until' => '08:50:00',
@@ -74,20 +94,29 @@ describe('authorization', function () {
     });
 });
 
-test('index returns only school hours of current school sorted by hour', function () {
+test('index returns only school hours of current schoolyear sorted by hour', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     TeachingSchoolHour::query()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 3,
         'from' => '09:50:00',
         'until' => '10:40:00',
     ]);
     TeachingSchoolHour::query()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 1,
         'from' => '08:00:00',
         'until' => '08:50:00',
+    ]);
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 2,
+        'from' => '11:00:00',
+        'until' => '11:50:00',
     ]);
 
     $response = $this->getJson('/api/admin/teaching/school_hours');
@@ -115,6 +144,7 @@ test('store creates school hour for current school', function () {
 
     $this->assertDatabaseHas('teaching_school_hours', [
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 2,
         'from' => '08:55:00',
         'until' => '09:45:00',
@@ -138,29 +168,33 @@ test('store creates multiple school hours at once', function () {
 
     $this->assertDatabaseHas('teaching_school_hours', [
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 1,
         'from' => '08:00:00',
         'until' => '08:50:00',
     ]);
     $this->assertDatabaseHas('teaching_school_hours', [
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 2,
         'from' => '08:55:00',
         'until' => '09:45:00',
     ]);
     $this->assertDatabaseHas('teaching_school_hours', [
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 3,
         'from' => '09:50:00',
         'until' => '10:40:00',
     ]);
 });
 
-test('store validates unique hour per school', function () {
+test('store validates unique hour per schoolyear', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     TeachingSchoolHour::query()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 4,
         'from' => '10:45:00',
         'until' => '11:35:00',
@@ -172,6 +206,20 @@ test('store validates unique hour per school', function () {
         ],
     ])->assertStatus(422)
         ->assertJsonValidationErrors(['entries.0.hour']);
+
+    TeachingSchoolHour::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'hour' => 5,
+        'from' => '12:00:00',
+        'until' => '12:50:00',
+    ]);
+
+    $this->postJson('/api/admin/teaching/school_hours', [
+        'entries' => [
+            ['hour' => 5, 'from' => '12:00', 'until' => '12:50'],
+        ],
+    ])->assertCreated();
 });
 
 test('update edits school hour', function () {
@@ -179,6 +227,7 @@ test('update edits school hour', function () {
 
     $schoolHour = TeachingSchoolHour::query()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 5,
         'from' => '11:40:00',
         'until' => '12:30:00',
@@ -208,6 +257,7 @@ test('destroy deletes school hour', function () {
 
     $schoolHour = TeachingSchoolHour::query()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
         'hour' => 7,
         'from' => '13:30:00',
         'until' => '14:20:00',

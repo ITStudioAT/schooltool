@@ -1,6 +1,12 @@
 <template>
     <v-col cols="12" class="teaching-admin-school-hours-col">
-        <ItsGridBox variant="overview" color="primary" title="Schulstunden" subtitle="Stundenzeiten pro Schule verwalten" icon="mdi-clock-time-four-outline" class="w-100">
+        <ItsGridBox variant="overview" color="primary" title="Schulstunden" subtitle="Stundenzeiten pro Schuljahr verwalten" icon="mdi-clock-time-four-outline" class="w-100">
+            <div class="d-flex flex-wrap align-center ga-2 mb-3">
+                <span class="text-body-2 text-medium-emphasis">Aktives Schuljahr</span>
+                <v-chip size="small" color="primary" variant="tonal">
+                    {{ activeSchoolyearLabel }}
+                </v-chip>
+            </div>
             <div class="d-flex align-center justify-space-between ga-2">
                 <div class="text-subtitle-2">Schulstunden erstellen</div>
                 <v-btn
@@ -62,9 +68,8 @@
                             </v-row>
                         </div>
 
-                        <div class="d-flex flex-row align-center justify-space-between mt-3">
-                            <v-btn color="warning" flat tile @click="resetCreateForm">Zurücksetzen</v-btn>
-                            <v-btn color="success" flat tile type="submit">Schulstunden erstellen</v-btn>
+                        <div class="d-flex flex-row align-center justify-end mt-3">
+                            <v-btn color="success" flat tile type="submit" :disabled="!isCreateFormValid">Schulstunde erstellen</v-btn>
                         </div>
                     </v-form>
                 </div>
@@ -122,9 +127,9 @@
                             <v-btn
                                 icon="mdi-delete"
                                 size="x-small"
-                                color="error"
+                                color="warning"
                                 variant="tonal"
-                                @click="deleteSchoolHour(schoolHour.id)" />
+                                @click="promptDeleteSchoolHour(schoolHour.id)" />
                         </div>
                     </div>
                 </v-list-item>
@@ -133,12 +138,30 @@
                     <v-list-item-title class="text-caption text-medium-emphasis text-start">Keine Schulstunden erfasst.</v-list-item-title>
                 </v-list-item>
             </v-list>
+
+            <v-dialog v-model="delete_dialog_open" persistent max-width="420">
+                <v-card rounded="xl">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                        Schulstunde löschen
+                    </v-card-title>
+                    <v-card-text class="px-4">
+                        Soll diese Schulstunde wirklich gelöscht werden?
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-btn variant="tonal" @click="cancelDeleteSchoolHour">Abbrechen</v-btn>
+                        <v-spacer />
+                        <v-btn color="error" variant="flat" @click="confirmDeleteSchoolHour">Löschen</v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
         </ItsGridBox>
     </v-col>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
@@ -146,15 +169,19 @@ export default {
     components: { ItsGridBox },
 
     async beforeMount() {
+        this.adminStore = useAdminStore()
         this.schoolHourStore = useSchoolHourStore()
         await this.schoolHourStore.index()
     },
 
     data() {
         return {
+            adminStore: null,
             schoolHourStore: null,
             show_create_form: false,
             editing_id: null,
+            delete_dialog_open: false,
+            delete_id: null,
             create_entries: [this.emptyCreateEntry(1)],
             edit_data: {
                 hour: null,
@@ -165,7 +192,14 @@ export default {
     },
 
     computed: {
+        ...mapWritableState(useAdminStore, ['config']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
+        activeSchoolyearLabel() {
+            return this.config?.selected_schoolyear?.name || this.config?.selected_schoolyear?.concerns || 'Kein Schuljahr gewählt'
+        },
+        isCreateFormValid() {
+            return this.create_entries.every((entry) => this.isCreateEntryValid(entry))
+        },
     },
 
     methods: {
@@ -196,6 +230,21 @@ export default {
             }
             return String(value).slice(0, 5)
         },
+        isCreateEntryValid(entry) {
+            const hour = Number(entry?.hour)
+            const from = String(entry?.from || '')
+            const until = String(entry?.until || '')
+
+            if (!Number.isInteger(hour) || hour < 1 || hour > 20) {
+                return false
+            }
+
+            if (!/^\d{2}:\d{2}$/.test(from) || !/^\d{2}:\d{2}$/.test(until)) {
+                return false
+            }
+
+            return until > from
+        },
         resetCreateForm() {
             this.create_entries = [this.emptyCreateEntry(this.nextSuggestedHour())]
         },
@@ -218,6 +267,10 @@ export default {
             }
         },
         async createSchoolHour() {
+            if (!this.isCreateFormValid) {
+                return
+            }
+
             const payload = {
                 entries: this.create_entries.map((entry) => ({
                     hour: Number(entry.hour),
@@ -241,6 +294,14 @@ export default {
                 from: this.formatTime(schoolHour.from),
                 until: this.formatTime(schoolHour.until),
             }
+        },
+        promptDeleteSchoolHour(id) {
+            this.delete_id = id
+            this.delete_dialog_open = true
+        },
+        cancelDeleteSchoolHour() {
+            this.delete_dialog_open = false
+            this.delete_id = null
         },
         cancelEdit() {
             this.editing_id = null
@@ -268,15 +329,22 @@ export default {
             await this.schoolHourStore.index()
             this.cancelEdit()
         },
-        async deleteSchoolHour(id) {
+        async confirmDeleteSchoolHour() {
+            const id = this.delete_id
+            if (!id) {
+                return
+            }
+
             const deleted = await this.schoolHourStore.destroy(id)
             if (!deleted) {
                 return
             }
+
             await this.schoolHourStore.index()
             if (this.editing_id === id) {
                 this.cancelEdit()
             }
+            this.cancelDeleteSchoolHour()
         },
     },
 }

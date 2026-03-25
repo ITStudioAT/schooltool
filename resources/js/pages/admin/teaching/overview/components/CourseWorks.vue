@@ -566,7 +566,7 @@ export default {
             return grading?.semester_count || 1
         },
         sem2StartDate() {
-            const raw = this.config?.user?.teaching_count_for_semester_2_date || this.config?.selected_schoolyear?.sem_2_start || null
+            const raw = this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
             return this.normalizeDateString(raw) || null
         },
         filteredCourseWorks() {

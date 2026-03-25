@@ -2,6 +2,37 @@ import { describe, expect, it, vi } from 'vitest'
 import SchoolHours from '@/pages/admin/teaching/admin/schoolhours/SchoolHours.vue'
 
 describe('Teaching school hours page', () => {
+    it('shows the active schoolyear label', () => {
+        const ctx = {
+            config: {
+                selected_schoolyear: {
+                    name: 'Schuljahr 2026/27',
+                },
+            },
+        }
+
+        expect((SchoolHours as any).computed.activeSchoolyearLabel.call(ctx)).toBe('Schuljahr 2026/27')
+    })
+
+    it('validates create entries before enabling submit', () => {
+        const methods = (SchoolHours as any).methods
+        const computed = (SchoolHours as any).computed
+
+        const invalidCtx = {
+            create_entries: [{ hour: 1, from: '08:00', until: '' }],
+            isCreateEntryValid: methods.isCreateEntryValid,
+        }
+
+        expect(computed.isCreateFormValid.call(invalidCtx)).toBe(false)
+
+        const validCtx = {
+            create_entries: [{ hour: 1, from: '08:00', until: '08:50' }],
+            isCreateEntryValid: methods.isCreateEntryValid,
+        }
+
+        expect(computed.isCreateFormValid.call(validCtx)).toBe(true)
+    })
+
     it('resets create form to exactly one entry with next suggested hour', () => {
         const methods = (SchoolHours as any).methods
         const ctx: Record<string, unknown> = {
@@ -48,6 +79,7 @@ describe('Teaching school hours page', () => {
                 { hour: 1, from: '08:00', until: '08:50' },
                 { hour: 2, from: '08:55', until: '09:45' },
             ],
+            isCreateFormValid: true,
             schoolHourStore: {
                 store,
                 index,
@@ -67,5 +99,38 @@ describe('Teaching school hours page', () => {
         expect(index).toHaveBeenCalledTimes(1)
         expect(ctx.show_create_form).toBe(false)
         expect(resetCreateForm).toHaveBeenCalledTimes(1)
+    })
+
+    it('confirms deletion in a persistent dialog before removing a school hour', async () => {
+        const methods = (SchoolHours as any).methods
+        const destroy = vi.fn().mockResolvedValue(true)
+        const index = vi.fn().mockResolvedValue(true)
+        const cancelEdit = vi.fn()
+        const cancelDeleteSchoolHour = methods.cancelDeleteSchoolHour
+
+        const ctx: Record<string, unknown> = {
+            delete_dialog_open: false,
+            delete_id: null,
+            editing_id: 4,
+            schoolHourStore: {
+                destroy,
+                index,
+            },
+            cancelEdit,
+            cancelDeleteSchoolHour,
+        }
+
+        methods.promptDeleteSchoolHour.call(ctx, 4)
+
+        expect(ctx.delete_dialog_open).toBe(true)
+        expect(ctx.delete_id).toBe(4)
+
+        await methods.confirmDeleteSchoolHour.call(ctx)
+
+        expect(destroy).toHaveBeenCalledWith(4)
+        expect(index).toHaveBeenCalledTimes(1)
+        expect(cancelEdit).toHaveBeenCalledTimes(1)
+        expect(ctx.delete_dialog_open).toBe(false)
+        expect(ctx.delete_id).toBeNull()
     })
 })

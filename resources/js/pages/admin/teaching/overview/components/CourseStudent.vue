@@ -54,193 +54,203 @@
                     <v-card-text class="py-2">
                         <v-list density="compact">
                             <template v-if="showSemester1Auswertung">
-                                <v-list-item>
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <div class="auswertung-section-header">
-                                            <v-icon size="16">{{ semesterCount === 2 ? 'mdi-numeric-1-circle' : 'mdi-chart-box' }}</v-icon>
-                                            <span>{{ semesterCount === 2 ? 'Semester 1' : 'Auswertung' }}</span>
-                                        </div>
-                                        <v-spacer />
-                                        <v-chip size="small" variant="tonal" color="success">
-                                            Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}
-                                        </v-chip>
-                                    </div>
-                                </v-list-item>
-                                <template v-for="cat in semester1Groups" :key="`sem1-cat-${cat.name}`">
+                                <div class="auswertung-semester-card auswertung-semester-card--semester-1">
                                     <v-list-item>
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
-                                            {{ cat.name }}
-                                        </v-list-item-title>
-                                        <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
-                                        <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
-                                            Alle erforderlich
-                                        </v-chip>
-                                        <v-spacer />
-                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
-                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
-                                        </div>
-                                    </div>
-                                    </v-list-item>
-                                    <v-list-item v-if="categoryCalculationLine(cat)">
-                                        <div class="text-caption text-medium-emphasis w-100">
-                                            {{ categoryCalculationLine(cat) }}
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <div class="auswertung-section-header">
+                                                <v-icon size="16">{{ semesterCount === 2 ? 'mdi-numeric-1-circle' : 'mdi-chart-box' }}</v-icon>
+                                                <span>{{ semesterCount === 2 ? 'Semester 1' : 'Auswertung' }}</span>
+                                            </div>
+                                            <v-spacer />
+                                            <v-chip size="small" variant="tonal" color="success">
+                                                Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}
+                                            </v-chip>
                                         </div>
                                     </v-list-item>
-                                    <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
-                                        <div class="w-100">
-                                            <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
-                                                <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
-                                                    {{ workTypeLabel(row.type) }}
-                                                </div>
+                                    <template v-for="cat in semester1Groups" :key="`sem1-cat-${cat.name}`">
+                                        <div class="auswertung-category-card">
+                                            <v-list-item>
+                                            <div class="d-flex align-center ga-2 w-100">
+                                                <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
+                                                    {{ cat.name }}
+                                                </v-list-item-title>
+                                                <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                                <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
+                                                    Alle erforderlich
+                                                </v-chip>
                                                 <v-spacer />
-                                                <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
-                                                    {{ formatDate(row.date) }}
-                                                </v-chip>
-                                                <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
-                                                    {{ row.value }}
-                                                </v-chip>
-                                                <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
-                                                <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                                <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
-                                                    NB
-                                                </v-chip>
+                                                <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
+                                                    Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
+                                                </div>
                                             </div>
-                                            <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
-                                                {{ row.workTitle }}
+                                            </v-list-item>
+                                            <v-list-item v-if="categoryCalculationLine(cat)">
+                                                <div class="text-caption text-medium-emphasis w-100">
+                                                    {{ categoryCalculationLine(cat) }}
+                                                </div>
+                                            </v-list-item>
+                                            <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
+                                                <div class="w-100">
+                                                    <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
+                                                        <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
+                                                            {{ workTypeLabel(row.type) }}
+                                                        </div>
+                                                        <v-spacer />
+                                                        <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                            {{ formatDate(row.date) }}
+                                                        </v-chip>
+                                                    <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                                    <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
+                                                        {{ row.value }}
+                                                    </v-chip>
+                                                    <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
+                                                    <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
+                                                        NB
+                                                    </v-chip>
+                                                    </div>
+                                                    <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
+                                                        {{ row.workTitle }}
+                                                    </div>
+                                                </div>
+                                            </v-list-item>
+                                        </div>
+                                    </template>
+                                    <div v-if="semester1Total != null" class="auswertung-total-card">
+                                        <v-list-item>
+                                            <div class="d-flex align-center ga-2 w-100">
+                                                <v-list-item-title class="text-subtitle-1 font-weight-bold">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>
+                                                <v-spacer />
+                                                <div class="text-subtitle-1 font-weight-bold" :class="isNaGradeKey(semester1Total) ? 'text-error' : semester1HasMissingCategory ? 'text-warning' : 'text-primary'">
+                                                    Bewertung: {{ formatEvaluationValue(semester1Total) }}
+                                                </div>
                                             </div>
-                                        </div>
-                                    </v-list-item>
-                                </template>
-                                <v-list-item v-if="semester1Total != null">
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>
-                                        <v-spacer />
-                                        <div class="text-subtitle-2" :class="isNaGradeKey(semester1Total) ? 'text-error' : semester1HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
-                                            Bewertung: {{ formatEvaluationValue(semester1Total) }}
-                                        </div>
+                                        </v-list-item>
                                     </div>
-                                </v-list-item>
+                                </div>
                             </template>
 
                             <template v-if="showSemester2Auswertung">
-                                <v-list-item>
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <div class="auswertung-section-header">
-                                            <v-icon size="16">mdi-numeric-2-circle</v-icon>
-                                            <span>Semester 2</span>
-                                        </div>
-                                        <v-spacer />
-                                        <v-chip size="small" variant="tonal" color="success">
-                                            Note: {{ selected_course_student?.sem_2_grade || '–' }}
-                                        </v-chip>
-                                    </div>
-                                </v-list-item>
-                                <template v-for="cat in semester2Groups" :key="`sem2-cat-${cat.name}`">
+                                <div class="auswertung-semester-card auswertung-semester-card--semester-2">
                                     <v-list-item>
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
-                                            {{ cat.name }}
-                                        </v-list-item-title>
-                                        <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
-                                        <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
-                                            Alle erforderlich
-                                        </v-chip>
-                                        <v-spacer />
-                                        <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
-                                            Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
-                                        </div>
+                                        <div class="d-flex align-center ga-2 w-100">
+                                            <div class="auswertung-section-header">
+                                                <v-icon size="16">mdi-numeric-2-circle</v-icon>
+                                                <span>Semester 2</span>
+                                            </div>
+                                            <v-spacer />
+                                            <v-chip size="small" variant="tonal" color="success">
+                                                Note: {{ selected_course_student?.sem_2_grade || '–' }}
+                                            </v-chip>
                                         </div>
                                     </v-list-item>
-                                    <v-list-item v-if="categoryCalculationLine(cat)">
-                                        <div class="text-caption text-medium-emphasis w-100">
-                                            {{ categoryCalculationLine(cat) }}
-                                        </div>
-                                    </v-list-item>
-                                    <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
-                                        <div class="w-100">
-                                            <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
-                                                <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
-                                                    {{ workTypeLabel(row.type) }}
-                                                </div>
+                                    <template v-for="cat in semester2Groups" :key="`sem2-cat-${cat.name}`">
+                                        <div class="auswertung-category-card">
+                                            <v-list-item>
+                                            <div class="d-flex align-center ga-2 w-100">
+                                                <v-list-item-title class="text-subtitle-2" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : (!cat.rows.length ? 'text-warning' : ''))">
+                                                    {{ cat.name }}
+                                                </v-list-item-title>
+                                                <v-chip size="x-small" variant="outlined">{{ cat.weight }}%</v-chip>
+                                                <v-chip v-if="cat.requireAllEntries" size="x-small" variant="tonal" color="primary">
+                                                    Alle erforderlich
+                                                </v-chip>
                                                 <v-spacer />
-                                                <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
-                                                    {{ formatDate(row.date) }}
-                                                </v-chip>
-                                                <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
-                                                    {{ row.value }}
-                                                </v-chip>
-                                                <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
-                                                <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
-                                                <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
-                                                    NB
-                                                </v-chip>
+                                                <div class="text-caption" :class="cat.isNa ? 'text-error' : (categoryHasBewertung(cat) ? 'text-success' : 'text-warning')">
+                                                    Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
+                                                </div>
                                             </div>
-                                            <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
-                                                {{ row.workTitle }}
+                                            </v-list-item>
+                                            <v-list-item v-if="categoryCalculationLine(cat)">
+                                                <div class="text-caption text-medium-emphasis w-100">
+                                                    {{ categoryCalculationLine(cat) }}
+                                                </div>
+                                            </v-list-item>
+                                            <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
+                                                <div class="w-100">
+                                                    <div class="d-flex align-center ga-2 w-100 auswertung-entry-main-row">
+                                                        <div v-if="row.type" class="text-caption text-medium-emphasis auswertung-entry-title">
+                                                            {{ workTypeLabel(row.type) }}
+                                                        </div>
+                                                        <v-spacer />
+                                                        <v-chip v-if="row.date" size="x-small" variant="tonal" color="primary">
+                                                            {{ formatDate(row.date) }}
+                                                        </v-chip>
+                                                        <v-chip v-if="row.sum != null" size="x-small" variant="tonal" color="primary">Σ {{ row.sum }}</v-chip>
+                                                        <v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? 'error' : 'primary'">
+                                                            {{ row.value }}
+                                                        </v-chip>
+                                                        <v-chip v-if="row.grade" size="x-small" variant="tonal" :color="isNaGradeKey(row.grade) ? 'error' : 'primary'">{{ row.grade }}</v-chip>
+                                                        <v-chip v-if="row.requireAllEntriesIncomplete" size="x-small" variant="tonal" color="warning">
+                                                            NB
+                                                        </v-chip>
+                                                    </div>
+                                                    <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
+                                                        {{ row.workTitle }}
+                                                    </div>
+                                                </div>
+                                            </v-list-item>
+                                        </div>
+                                    </template>
+                                    <div v-if="semester2Total != null" class="auswertung-total-card auswertung-total-card--semester-2">
+                                        <v-list-item>
+                                            <div class="d-flex align-center ga-2 w-100">
+                                                <v-list-item-title class="text-subtitle-1 font-weight-bold">Berechnung Sem 2</v-list-item-title>
+                                                <v-spacer />
+                                                <div class="text-subtitle-1 font-weight-bold" :class="isNaGradeKey(semester2Total) ? 'text-error' : semester2HasMissingCategory ? 'text-warning' : 'text-secondary'">
+                                                    Bewertung: {{ formatEvaluationValue(semester2Total) }}
+                                                </div>
                                             </div>
-                                        </div>
-                                    </v-list-item>
-                                </template>
-                                <v-list-item v-if="semester2Total != null">
-                                    <div class="d-flex align-center ga-2 w-100">
-                                        <v-list-item-title class="text-subtitle-2">Berechnung Sem 2</v-list-item-title>
-                                        <v-spacer />
-                                        <div class="text-subtitle-2" :class="isNaGradeKey(semester2Total) ? 'text-error' : semester2HasMissingCategory ? 'text-warning' : 'text-medium-emphasis'">
-                                            Bewertung: {{ formatEvaluationValue(semester2Total) }}
-                                        </div>
+                                        </v-list-item>
                                     </div>
-                                </v-list-item>
+                                </div>
                             </template>
 
                             <v-list-item v-if="semesterWeightedGrade">
-                                <div class="w-100">
+                                <div class="w-100 auswertung-sum-card">
                                     <div class="d-flex align-center ga-2 w-100">
-                                        <div class="auswertung-section-header auswertung-section-header--sum">
+                                        <div class="auswertung-section-header">
                                             <v-icon size="16">mdi-calculator-variant</v-icon>
-                                            <span>Summe Semester 1+2</span>
+                                            <span>GESAMT</span>
                                         </div>
-                                        <v-spacer />
-                                        <v-chip size="small" :color="isNaGradeKey(semesterWeightedGrade.value) ? 'error' : 'secondary'" variant="flat">
-                                            Berechnung: {{ formatEvaluationValue(semesterWeightedGrade.value) }}
-                                        </v-chip>
                                     </div>
                                     <div v-if="semesterWeightedGrade.isNb" class="text-caption mt-2" :class="isNaGradeKey(semesterWeightedGrade.value) ? 'text-error' : 'text-warning'">
                                         {{ semesterWeightedGrade.nbReason || 'NB: Pflichtkategorie "Alle erforderlich" ist nicht vollständig beurteilt.' }}
                                     </div>
                                     <div v-else class="sum-formula mt-2">
-                                        <div class="sum-formula-line">
-                                            <v-chip size="small" variant="tonal" color="primary">Sem 1 {{ semesterWeightedGrade.sem1Weight }}%</v-chip>
-                                            <span>{{ formatEvaluationValue(semesterWeightedGrade.sem1Value) }}</span>
+                                        <div class="sum-formula-columns" :class="{ 'sum-formula-columns--stacked': semesterCount !== 2 }">
+                                            <div class="sum-formula-column">
+                                                <div class="sum-formula-column-label">Semester 1</div>
+                                                <div class="sum-formula-column-share">{{ semesterWeightedGrade.sem1Weight }}%</div>
+                                                <div class="sum-formula-column-grade">{{ formatEvaluationValue(semesterWeightedGrade.sem1Value) }}</div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    <span v-if="semesterWeightedGrade.sem1Source === 'semester_grade'">
+                                                        Basis Sem 1: Semesternote ({{ selected_course_student?.sem_1_grade || '–' }}) laut Einstellung "Nur die Semesternote".
+                                                    </span>
+                                                    <span v-else>
+                                                        Basis Sem 1: Berechnung Sem 1 ({{ formatEvaluationValue(semesterWeightedGrade.sem1CalculatedValue) }}).
+                                                    </span>
+                                                </div>
+                                                <div v-if="semesterWeightedGrade.sem1Source === 'calculated' && semesterWeightedGrade.sem1CalculatedFormula" class="text-caption text-medium-emphasis">
+                                                    {{ semesterWeightedGrade.sem1CalculatedFormula }}
+                                                </div>
+                                            </div>
+                                            <div class="sum-formula-column">
+                                                <div class="sum-formula-column-label">Semester 2</div>
+                                                <div class="sum-formula-column-share">{{ semesterWeightedGrade.sem2Weight }}%</div>
+                                                <div class="sum-formula-column-grade">{{ formatEvaluationValue(semesterWeightedGrade.sem2Value) }}</div>
+                                                <div class="text-caption text-medium-emphasis">
+                                                    Basis Sem 2: Berechnung Sem 2 ({{ formatEvaluationValue(semesterWeightedGrade.sem2CalculatedValue) }}).
+                                                </div>
+                                                <div v-if="semesterWeightedGrade.sem2CalculatedFormula" class="text-caption text-medium-emphasis">
+                                                    {{ semesterWeightedGrade.sem2CalculatedFormula }}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div class="text-caption text-medium-emphasis">
-                                            <span v-if="semesterWeightedGrade.sem1Source === 'semester_grade'">
-                                                Basis Sem 1: Semesternote ({{ selected_course_student?.sem_1_grade || '–' }}) laut Einstellung "Nur die Semesternote".
-                                            </span>
-                                            <span v-else>
-                                                Basis Sem 1: Berechnung Sem 1 ({{ formatEvaluationValue(semesterWeightedGrade.sem1CalculatedValue) }}).
-                                            </span>
-                                        </div>
-                                        <div v-if="semesterWeightedGrade.sem1Source === 'calculated' && semesterWeightedGrade.sem1CalculatedFormula" class="text-caption text-medium-emphasis">
-                                            {{ semesterWeightedGrade.sem1CalculatedFormula }}
-                                        </div>
-                                        <div class="sum-formula-line">
-                                            <v-chip size="small" variant="tonal" color="primary">Sem 2 {{ semesterWeightedGrade.sem2Weight }}%</v-chip>
-                                            <span>{{ formatEvaluationValue(semesterWeightedGrade.sem2Value) }}</span>
-                                        </div>
-                                        <div class="text-caption text-medium-emphasis">
-                                            Basis Sem 2: Berechnung Sem 2 ({{ formatEvaluationValue(semesterWeightedGrade.sem2CalculatedValue) }}).
-                                        </div>
-                                        <div v-if="semesterWeightedGrade.sem2CalculatedFormula" class="text-caption text-medium-emphasis">
-                                            {{ semesterWeightedGrade.sem2CalculatedFormula }}
-                                        </div>
-                                        <div class="sum-formula-line text-medium-emphasis">
-                                            <span>
-                                                {{ formatTwoDecimals(semesterWeightedGrade.sem1Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem1SharePercent) }}% +
-                                                {{ formatTwoDecimals(semesterWeightedGrade.sem2Value) }} * {{ formatTwoDecimals(semesterWeightedGrade.sem2SharePercent) }}%
-                                            </span>
-                                            <span>=</span>
-                                            <strong>{{ formatEvaluationValue(semesterWeightedGrade.value) }}</strong>
+                                        <div class="sum-formula-result-card">
+                                            <div class="sum-formula-result-label text-medium-emphasis">Gesamtbewertung</div>
+                                            <div class="sum-formula-result-value" :class="isNaGradeKey(semesterWeightedGrade.value) ? 'text-error' : 'text-primary'">
+                                                {{ formatEvaluationValue(semesterWeightedGrade.value) }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>                                
@@ -995,7 +1005,7 @@ export default {
             return this.config?.selected_schoolyear?.sem_2_start || null
         },
         countSem2StartDate() {
-            return this.config?.user?.teaching_count_for_semester_2_date || this.schoolSem2StartDate || null
+            return this.schoolSem2StartDate || this.config?.user?.teaching_count_for_semester_2_date || null
         },
         nextCourseLessonDate() {
             const dates = this.selected_course?.course_dates || []
@@ -2167,12 +2177,13 @@ export default {
                     })
 
                     workEntries.forEach((entry) => {
-                        const value = this.gradeValueForWork(work, this.effectiveGradeKeyForEntry(entry, work))
+                        const effectiveGrade = this.effectiveGradeKeyForEntry(entry, work)
+                        const value = this.gradeValueForWork(work, effectiveGrade)
                         rows.push({
                             key: `entry-${entry.id}`,
                             type,
                             workTitle: this.entryWorkTitle(entry),
-                            value: value !== null ? value : this.effectiveGradeKeyForEntry(entry, work),
+                            value: value !== null ? value : (effectiveGrade || 'NA'),
                             date: entry.date || null,
                             requireAllEntries,
                             requireAllEntriesIncomplete,
@@ -2243,7 +2254,7 @@ export default {
                     key: `entry-${entry.id}`,
                     type: entry.type,
                     workTitle: this.entryWorkTitle(entry),
-                    value: value !== null ? value : effectiveGrade,
+                    value: value !== null ? value : (effectiveGrade || 'NA'),
                     date: entry.date || null,
                     requireAllEntries,
                     requireAllEntriesIncomplete,
@@ -2401,10 +2412,122 @@ export default {
     box-shadow: 0 4px 14px rgba(var(--v-theme-secondary), 0.24);
 }
 
+.auswertung-semester-card {
+    margin-bottom: 16px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-surface), 0.96) 100%);
+    overflow: hidden;
+}
+
+.auswertung-semester-card--semester-2 {
+    border-color: rgba(var(--v-theme-secondary), 0.2);
+    background: linear-gradient(180deg, rgba(var(--v-theme-secondary), 0.08) 0%, rgba(var(--v-theme-surface), 0.96) 100%);
+}
+
+.auswertung-category-card {
+    margin: 8px 12px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.12);
+    border-radius: 12px;
+    background: rgba(var(--v-theme-surface), 0.92);
+    box-shadow:
+        0 8px 18px rgba(var(--v-theme-primary), 0.08),
+        inset 0 1px 0 rgba(var(--v-theme-primary), 0.04);
+}
+
+.auswertung-total-card {
+    margin: 12px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.28);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.18) 0%, rgba(var(--v-theme-primary), 0.08) 100%);
+    box-shadow: 0 10px 24px rgba(var(--v-theme-primary), 0.12);
+}
+
+.auswertung-total-card--semester-2 {
+    border-color: rgba(var(--v-theme-secondary), 0.3);
+    background: linear-gradient(135deg, rgba(var(--v-theme-secondary), 0.18) 0%, rgba(var(--v-theme-secondary), 0.08) 100%);
+    box-shadow: 0 10px 24px rgba(var(--v-theme-secondary), 0.12);
+}
+
+.auswertung-sum-card {
+    padding: 14px 16px;
+    border: 1px solid rgba(var(--v-theme-secondary), 0.32);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(var(--v-theme-secondary), 0.18) 0%, rgba(var(--v-theme-secondary), 0.08) 100%);
+    box-shadow: 0 12px 28px rgba(var(--v-theme-secondary), 0.12);
+}
+
 .sum-formula {
     display: flex;
     flex-direction: column;
+    gap: 10px;
+}
+
+.sum-formula-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.sum-formula-columns--stacked {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sum-formula-column {
+    display: flex;
+    flex-direction: column;
     gap: 6px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.sum-formula-column-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.sum-formula-column-share {
+    font-size: 2rem;
+    line-height: 1;
+    font-weight: 800;
+    color: rgb(var(--v-theme-primary));
+}
+
+.sum-formula-column-grade {
+    font-size: 1.15rem;
+    line-height: 1.2;
+    font-weight: 700;
+    color: rgba(var(--v-theme-on-surface), 0.88);
+}
+
+.sum-formula-result-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px 18px;
+    border: 1px solid rgba(var(--v-theme-secondary), 0.28);
+    border-radius: 14px;
+    background: rgba(var(--v-theme-surface), 0.82);
+    text-align: center;
+}
+
+.sum-formula-result-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.sum-formula-result-value {
+    font-size: 2rem;
+    line-height: 1;
+    font-weight: 800;
 }
 
 .sum-formula-line {
@@ -2541,6 +2664,10 @@ export default {
 
     .entry-work-title-line {
         width: 100%;
+    }
+
+    .sum-formula-columns {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 </style>

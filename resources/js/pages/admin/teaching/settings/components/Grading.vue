@@ -2,9 +2,8 @@
     <ItsGridBox variant="overview" color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
         <template #header-actions>
             <div class="d-flex flex-row align-center ga-2">
-                <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="is_editing = true" />
-                <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isValid" @click="save" />
-                <v-btn v-if="is_editing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
+                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isCurrentEditValid" @click="save" />
+                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
             </div>
         </template>
 
@@ -12,8 +11,34 @@
             <v-card-text>
                 <!-- SEMESTER ANZAHL -->
                 <div class="grading-config-box mb-4">
-                    <div class="text-caption text-medium-emphasis mb-2">Anzahl der Semester</div>
-                    <v-btn-toggle v-if="is_editing" v-model="data.semester_count" mandatory color="primary">
+                    <div class="grading-section-heading mb-2">
+                        <div class="text-caption text-medium-emphasis">Anzahl der Semester</div>
+                        <div class="d-flex align-center ga-2">
+                            <v-btn
+                                v-if="isLocalSemesterCountEditing"
+                                icon="mdi-check"
+                                size="x-small"
+                                color="success"
+                                variant="flat"
+                                :disabled="!isCurrentEditValid"
+                                @click="save" />
+                            <v-btn
+                                v-if="isLocalSemesterCountEditing"
+                                icon="mdi-close"
+                                size="x-small"
+                                color="warning"
+                                variant="flat"
+                                @click="exitEditMode" />
+                            <v-btn
+                                v-if="!is_editing"
+                                icon="mdi-pencil"
+                                size="x-small"
+                                color="primary"
+                                variant="text"
+                                @click="startSemesterCountEdit" />
+                        </div>
+                    </div>
+                    <v-btn-toggle v-if="isSemesterCountEditing" v-model="data.semester_count" mandatory color="primary">
                         <v-btn :value="1" size="small">1 Semester</v-btn>
                         <v-btn :value="2" size="small">2 Semester</v-btn>
                     </v-btn-toggle>
@@ -22,10 +47,36 @@
 
                 <!-- GEWICHTUNG BEI 2 SEMESTERN -->
                 <div v-if="data.semester_count === 2" class="grading-config-box mb-4">
-                    <div class="text-caption text-medium-emphasis mb-2">Gewichtung der Semester</div>
+                    <div class="grading-section-heading mb-2">
+                        <div class="text-caption text-medium-emphasis">Gewichtung der Semester</div>
+                        <div class="d-flex align-center ga-2">
+                            <v-btn
+                                v-if="isLocalSemesterWeightEditing"
+                                icon="mdi-check"
+                                size="x-small"
+                                color="success"
+                                variant="flat"
+                                :disabled="!isCurrentEditValid"
+                                @click="save" />
+                            <v-btn
+                                v-if="isLocalSemesterWeightEditing"
+                                icon="mdi-close"
+                                size="x-small"
+                                color="warning"
+                                variant="flat"
+                                @click="exitEditMode" />
+                            <v-btn
+                                v-if="!is_editing"
+                                icon="mdi-pencil"
+                                size="x-small"
+                                color="primary"
+                                variant="text"
+                                @click="startSemesterWeightEdit" />
+                        </div>
+                    </div>
 
                     <!-- EDIT MODE: SLIDERS -->
-                    <div v-if="is_editing" class="d-flex flex-row align-center ga-4">
+                    <div v-if="isSemesterWeightEditing" class="d-flex flex-row align-center ga-4">
                         <div class="flex-grow-1">
                             <div class="text-body-2 mb-1">1. Semester</div>
                             <v-slider
@@ -60,9 +111,9 @@
                                 <v-chip size="small" color="primary" variant="flat">1. Semester</v-chip>
                                 <span class="text-body-2 font-weight-medium">{{ data.semester_1_weight }}%</span>
                             </div>
-                            <div class="semester-weight-legend-item">
-                                <v-chip size="small" color="error" variant="flat">2. Semester</v-chip>
+                            <div class="semester-weight-legend-item semester-weight-legend-item--align-end">
                                 <span class="text-body-2 font-weight-medium">{{ data.semester_2_weight }}%</span>
+                                <v-chip size="small" color="error" variant="flat">2. Semester</v-chip>
                             </div>
                         </div>
                         <div class="semester-weight-bar" aria-label="Gewichtung der Semester">
@@ -76,15 +127,41 @@
                     </div>
 
                     <!-- WARNUNG WENN NICHT 100% -->
-                    <v-alert v-if="is_editing && totalSemesterWeight !== 100" type="warning" density="compact" class="mt-4">
+                    <v-alert v-if="isSemesterWeightEditing && totalSemesterWeight !== 100" type="warning" density="compact" class="mt-4">
                         Die Summe der Semester-Gewichtungen muss 100% ergeben (aktuell: {{ totalSemesterWeight }}%)
                     </v-alert>
                 </div>
 
                 <!-- BERECHNUNG DES 1. SEMESTERS FÜR JAHRESNOTE -->
                 <div v-if="data.semester_count === 2" class="grading-config-box mb-4">
-                    <div class="text-caption text-medium-emphasis mb-2">Berechnung des 1. Semesters für die Jahresnote</div>
-                    <v-radio-group v-if="is_editing" v-model="data.use_semester_grade_only" hide-details class="mt-2">
+                    <div class="grading-section-heading mb-2">
+                        <div class="text-caption text-medium-emphasis">Einbeziehung des 1. Semesters für die Jahresnote</div>
+                        <div class="d-flex align-center ga-2">
+                            <v-btn
+                                v-if="isLocalSemesterInclusionEditing"
+                                icon="mdi-check"
+                                size="x-small"
+                                color="success"
+                                variant="flat"
+                                :disabled="!isCurrentEditValid"
+                                @click="save" />
+                            <v-btn
+                                v-if="isLocalSemesterInclusionEditing"
+                                icon="mdi-close"
+                                size="x-small"
+                                color="warning"
+                                variant="flat"
+                                @click="exitEditMode" />
+                            <v-btn
+                                v-if="!is_editing"
+                                icon="mdi-pencil"
+                                size="x-small"
+                                color="primary"
+                                variant="text"
+                                @click="startSemesterInclusionEdit" />
+                        </div>
+                    </div>
+                    <v-radio-group v-if="isSemesterInclusionEditing" v-model="data.use_semester_grade_only" hide-details class="mt-2">
                         <v-radio :value="false" color="primary">
                             <template v-slot:label>
                                 <div class="text-body-2">
@@ -109,53 +186,55 @@
 
                 <v-divider class="my-6" />
 
-                <!-- KATEGORIEN PRO SEMESTER -->
-                <div class="text-caption text-medium-emphasis mb-2">Kategorien pro Semester</div>
-                <div class="text-body-2 text-medium-emphasis mb-4">
-                    Definieren Sie die Kategorien und weisen Sie Arbeiten zu.
-                </div>
+                <div class="grading-categories-section mb-4">
+                    <!-- KATEGORIEN PRO SEMESTER -->
+                    <div class="grading-categories-heading mb-4">
+                        <div class="text-caption text-medium-emphasis">Kategorien pro Semester</div>
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="text"
+                            prepend-icon="mdi-plus"
+                            @click="startAddCategory">
+                            Kategorie
+                        </v-btn>
+                    </div>
 
-                <!-- KATEGORIEN LISTE -->
-                <div v-if="data.categories?.length" class="mb-4">
-                    <div
-                        v-for="(category, index) in data.categories"
-                        :key="index"
-                        class="mb-3 pa-3 rounded"
-                        style="background-color: rgba(var(--v-theme-primary), 0.05);">
-                        <!-- KATEGORIE HEADER -->
-                        <div class="grading-category-header">
-                            <!-- ANZEIGE MODUS -->
-                            <template v-if="edit_index !== index">
+                    <!-- KATEGORIEN LISTE -->
+                    <div v-if="data.categories?.length" class="mb-4">
+                        <div
+                            v-for="(category, index) in data.categories"
+                            :key="index"
+                            class="grading-category-item mb-3 pa-3 rounded"
+                            style="background-color: rgba(var(--v-theme-primary), 0.05);">
+                            <!-- KATEGORIE HEADER -->
+                            <div class="grading-category-header">
+                                <div class="grading-category-weight">
+                                    <span :class="{ 'grading-category-weight--invalid': totalCategoryWeight !== 100 }">
+                                        {{ category.weight }}%
+                                    </span>
+                                </div>
                                 <div class="grading-category-main">
-                                    <v-btn
-                                        :icon="expanded_index === index ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                                        size="x-small"
-                                        variant="text"
-                                        @click="expanded_index = expanded_index === index ? null : index" />
                                     <v-icon size="small" color="primary">mdi-folder-outline</v-icon>
                                     <span class="text-body-1 grading-category-title">{{ category.name }}</span>
                                 </div>
                                 <div class="grading-category-meta">
-                                    <v-chip size="small" color="primary" variant="outlined">{{ category.weight }}%</v-chip>
                                     <v-chip v-if="category.require_all_entries" size="x-small" color="primary" variant="tonal">
-                                        Alle erforderlich
+                                        Jede Arbeit in dieser Kategorie ist verpflichtend
                                     </v-chip>
-                                <v-chip v-if="category.category_evaluation_enabled" size="x-small" color="info" variant="flat">
-                                    Kategoriebewertung
-                                </v-chip>
-                                    <v-chip v-if="category.works?.length" size="x-small" color="success" variant="tonal">
-                                        {{ category.works.length }} Arbeit(en)
+                                    <v-chip v-if="category.category_evaluation_enabled" size="x-small" color="info" variant="flat">
+                                        Anzeige der Bewertung der Kategorie
                                     </v-chip>
                                 </div>
-                                <template v-if="is_editing">
-                                    <div class="grading-category-actions">
-                                        <v-btn
-                                            v-if="delete_index !== index"
-                                            icon="mdi-pencil"
-                                            size="x-small"
-                                            color="primary"
-                                            variant="text"
-                                            @click="startEditCategory(index)" />
+                                <div class="grading-category-actions">
+                                    <v-btn
+                                        v-if="delete_index !== index"
+                                        icon="mdi-pencil"
+                                        size="x-small"
+                                        color="primary"
+                                        variant="text"
+                                        @click="startEditCategory(index)" />
+                                    <template v-if="isCategoryEditing">
                                         <v-btn
                                             v-if="delete_index !== index"
                                             icon="mdi-delete"
@@ -177,196 +256,123 @@
                                             color="error"
                                             variant="flat"
                                             @click="removeCategory(index)" />
-                                    </div>
-                                </template>
-                            </template>
-                            <!-- BEARBEITEN MODUS -->
-                            <template v-else>
-                                <v-text-field
-                                    v-model="edit_category.name"
-                                    density="compact"
-                                    hide-details
-                                    class="flex-grow-1" />
-                                <v-text-field
-                                    v-model="edit_category.weight"
-                                    density="compact"
-                                    hide-details
-                                    type="number"
-                                    step="5"
-                                    style="max-width: 110px"
-                                    @keyup.enter="saveEditCategory" />
-                                <v-checkbox
-                                    v-model="edit_category.require_all_entries"
-                                    density="compact"
-                                    hide-details
-                                    color="warning"
-                                    label="Pflicht alle" />
-                                <v-checkbox
-                                    v-model="edit_category.category_evaluation_enabled"
-                                    density="compact"
-                                    hide-details
-                                    color="secondary"
-                                    label="Kategoriebewertung" />
-                                <v-btn
-                                    icon="mdi-check"
-                                    size="x-small"
-                                    color="success"
-                                    variant="flat"
-                                    :disabled="!edit_category.name || !edit_category.weight"
-                                    @click="saveEditCategory" />
-                                <v-btn
-                                    icon="mdi-close"
-                                    size="x-small"
-                                    color="warning"
-                                    variant="flat"
-                                    @click="cancelEditCategory" />
-                            </template>
-                        </div>
-
-                        <!-- ARBEITEN ZUWEISUNG (EXPANDIERT) -->
-                        <div v-if="expanded_index === index" class="mt-3 pt-3" style="border-top: 1px solid rgba(var(--v-theme-primary), 0.1);">
-                            <div class="text-caption text-medium-emphasis mb-2">Zugewiesene Arbeiten (Mittelwert wird berechnet)</div>
-
-                            <!-- VERFÜGBARE ARBEITEN -->
-                            <div v-if="teaching_works?.length" class="d-flex flex-wrap ga-2">
-                                <v-chip
-                                    v-for="work in teaching_works"
-                                    :key="work.short_name"
-                                    :color="isWorkAssigned(index, work.short_name) ? 'success' : 'default'"
-                                    :variant="isWorkAssigned(index, work.short_name) ? 'flat' : 'outlined'"
-                                    size="small"
-                                    :class="is_editing ? 'cursor-pointer' : ''"
-                                    @click="is_editing && toggleWork(index, work.short_name)">
-                                    <v-icon v-if="isWorkAssigned(index, work.short_name)" start size="small">mdi-check</v-icon>
-                                    {{ work.short_name }} - {{ work.name }}
-                                    <span v-if="isWorkAssigned(index, work.short_name)" class="ml-1">
-                                        ({{ getWorkFactor(index, work.short_name) }}%)
-                                    </span>
-                                </v-chip>
-                            </div>
-                            <div v-else class="text-body-2 text-medium-emphasis">
-                                Keine Arbeiten definiert. Bitte zuerst unter "Arbeiten und Bewertungen" anlegen.
+                                    </template>
+                                </div>
                             </div>
 
-                            <!-- ZUGEWIESENE ARBEITEN MIT FAKTOR -->
-                            <div v-if="getValidWorks(category.works)?.length" class="mt-4">
-                                <div class="text-caption text-medium-emphasis mb-2">Gewichtung der Arbeiten</div>
-                                <div class="d-flex flex-column ga-2">
-                                    <div
-                                        v-for="workItem in getValidWorks(category.works)"
-                                        :key="workItem.short_name"
-                                        class="d-flex align-center ga-2 pa-2 rounded"
-                                        style="background-color: rgba(var(--v-theme-success), 0.1);">
-                                        <span class="text-body-2 flex-grow-1">
-                                            {{ workItem.short_name }} - {{ getWorkName(workItem.short_name) }}
-                                        </span>
-                                        <v-btn-toggle
-                                            v-if="is_editing"
-                                            :model-value="workItem.factor"
-                                            mandatory
-                                            density="compact"
-                                            color="success"
-                                            @update:model-value="(val) => setWorkFactor(index, workItem.short_name, val)">
-                                            <v-btn :value="25" size="x-small">25%</v-btn>
-                                            <v-btn :value="50" size="x-small">50%</v-btn>
-                                            <v-btn :value="75" size="x-small">75%</v-btn>
-                                            <v-btn :value="100" size="x-small">100%</v-btn>
-                                        </v-btn-toggle>
-                                        <v-chip v-else size="small" color="success" variant="outlined">{{ workItem.factor }}%</v-chip>
+                            <div class="grading-category-details mt-3 pt-3">
+                                <!-- ZUGEWIESENE ARBEITEN MIT FAKTOR -->
+                                <div v-if="getValidWorks(category.works)?.length">
+                                    <div class="text-caption text-medium-emphasis mb-2">Wert der Arbeiten</div>
+                                    <div class="d-flex flex-column ga-2">
+                                        <div
+                                            v-for="workItem in getValidWorks(category.works)"
+                                            :key="workItem.short_name"
+                                            class="d-flex align-center ga-2 pa-2 rounded"
+                                            style="background-color: rgba(var(--v-theme-success), 0.1);">
+                                            <span class="text-body-2 flex-grow-1">
+                                                {{ workItem.short_name }} - {{ getWorkName(workItem.short_name) }}
+                                            </span>
+                                            <v-chip size="small" color="success" variant="outlined">{{ workItem.factor }}%</v-chip>
+                                        </div>
                                     </div>
+                                </div>
+                                <div v-else class="text-body-2 text-medium-emphasis">
+                                    Keine Arbeiten definiert. Bitte zuerst unter "Arbeiten und Bewertungen" anlegen.
                                 </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- WARNUNG WENN KATEGORIEN NICHT 100% -->
+                    <v-alert v-if="isCategoryEditing && data.categories?.length && totalCategoryWeight !== 100" type="warning" density="compact" class="mt-4">
+                        Die Summe der Kategorie-Gewichtungen muss 100% ergeben (aktuell: {{ totalCategoryWeight }}%)
+                    </v-alert>
                 </div>
 
-                <!-- NEUE KATEGORIE HINZUFÜGEN -->
-                <div v-if="is_editing" class="d-flex align-center ga-2">
-                    <v-text-field
-                        v-model="new_category.name"
-                        label="Kategorie (z.B. Schularbeit)"
-                        density="compact"
-                        hide-details
-                        class="flex-grow-1" />
-                    <v-text-field
-                        v-model="new_category.weight"
-                        label="Gewicht %"
-                        density="compact"
-                        hide-details
-                        type="number"
-                        step="5"
-                        style="max-width: 130px"
-                        @keyup.enter="addCategory" />
-                    <v-checkbox
-                        v-model="new_category.require_all_entries"
-                        density="compact"
-                        hide-details
-                        color="warning"
-                        label="Pflicht alle" />
-                    <v-checkbox
-                        v-model="new_category.category_evaluation_enabled"
-                        density="compact"
-                        hide-details
-                        color="secondary"
-                        label="Kategoriebewertung" />
-                    <v-btn
-                        icon="mdi-plus"
-                        size="small"
-                        color="primary"
-                        :disabled="!new_category.name || !new_category.weight"
-                        @click="addCategory" />
-                </div>
-
-                <!-- WARNUNG WENN KATEGORIEN NICHT 100% -->
-                <v-alert v-if="is_editing && data.categories?.length && totalCategoryWeight !== 100" type="warning" density="compact" class="mt-4">
-                    Die Summe der Kategorie-Gewichtungen muss 100% ergeben (aktuell: {{ totalCategoryWeight }}%)
-                </v-alert>
-
-                <!-- VORSCHAU -->
-                <v-card flat class="mt-6 pa-4 rounded-lg" style="background-color: rgba(var(--v-theme-primary), 0.08);">
-                    <div class="text-caption text-medium-emphasis mb-3">Vorschau: So wird die Semesternote berechnet</div>
-
-                    <!-- KATEGORIEN VORSCHAU -->
-                    <div v-if="data.categories?.length" class="d-flex align-center ga-2 flex-wrap justify-center mb-4">
-                        <template v-for="(category, index) in data.categories" :key="index">
-                            <v-chip color="primary" variant="outlined" size="small">
-                                {{ category.name }} × {{ category.weight }}%
-                            </v-chip>
-                            <v-icon v-if="index < data.categories.length - 1" size="small">mdi-plus</v-icon>
-                        </template>
-                        <v-icon size="small">mdi-equal</v-icon>
-                        <v-chip color="primary" size="small">Semesternote</v-chip>
-                    </div>
-
-                    <v-divider v-if="data.categories?.length && data.semester_count === 2" class="my-3" />
-
-                    <!-- SEMESTER VORSCHAU -->
-                    <div class="text-caption text-medium-emphasis mb-3" v-if="data.semester_count === 2">Jahresnote</div>
-                    <div v-if="data.semester_count === 1" class="d-flex align-center justify-center">
-                        <v-chip color="success" size="large" class="px-6">
-                            <v-icon start>mdi-school</v-icon>
-                            Jahresnote = Semesternote
-                        </v-chip>
-                    </div>
-                    <div v-else class="d-flex flex-column align-center">
-                        <div class="d-flex align-center ga-2 flex-wrap justify-center">
-                            <v-chip color="primary" variant="outlined">
-                                <v-icon start size="small">mdi-numeric-1-circle</v-icon>
-                                1. Sem × {{ data.semester_1_weight }}%
-                            </v-chip>
-                            <v-icon>mdi-plus</v-icon>
-                            <v-chip color="error" variant="outlined">
-                                <v-icon start size="small">mdi-numeric-2-circle</v-icon>
-                                2. Sem × {{ data.semester_2_weight }}%
-                            </v-chip>
-                            <v-icon>mdi-equal</v-icon>
-                            <v-chip color="success">
-                                <v-icon start>mdi-school</v-icon>
-                                Jahresnote
-                            </v-chip>
-                        </div>
-                    </div>
-                </v-card>
+                <v-dialog v-model="category_dialog_open" persistent max-width="760">
+                    <v-card>
+                        <v-card-title class="d-flex align-center justify-space-between">
+                            <span>{{ category_dialog_mode === 'create' ? 'Kategorie erstellen' : 'Kategorie bearbeiten' }}</span>
+                            <v-btn icon="mdi-close" variant="text" @click="cancelCategoryDialog" />
+                        </v-card-title>
+                        <v-card-text>
+                            <div class="d-flex flex-column ga-4">
+                                <v-text-field
+                                    v-model="category_form.name"
+                                    label="Kategorie (z.B. Schularbeit)"
+                                    density="comfortable"
+                                    hide-details />
+                                <div>
+                                    <div class="text-caption text-medium-emphasis mb-2">Gewicht %</div>
+                                    <v-slider
+                                        v-model="category_form.weight"
+                                        :min="0"
+                                        :max="100"
+                                        :step="1"
+                                        color="primary"
+                                        thumb-label />
+                                    <div class="text-center text-h6">{{ category_form.weight }}%</div>
+                                </div>
+                                <v-checkbox
+                                    v-model="category_form.require_all_entries"
+                                    density="comfortable"
+                                    hide-details
+                                    color="warning"
+                                    label="Jede Arbeit in dieser Kategorie ist verpflichtend" />
+                                <v-checkbox
+                                    v-model="category_form.category_evaluation_enabled"
+                                    density="comfortable"
+                                    hide-details
+                                    color="secondary"
+                                    label="Anzeige der Bewertung der Kategorie" />
+                                <div>
+                                    <div class="text-caption text-medium-emphasis mb-2">Arbeiten in dieser Kategorie</div>
+                                    <div v-if="teaching_works?.length" class="d-flex flex-column ga-2">
+                                        <div
+                                            v-for="work in teaching_works"
+                                            :key="work.short_name"
+                                            class="grading-dialog-work-item pa-3 rounded">
+                                            <div class="d-flex flex-wrap align-center ga-3">
+                                                <v-checkbox
+                                                    :model-value="isDialogWorkSelected(work.short_name)"
+                                                    hide-details
+                                                    density="compact"
+                                                    color="primary"
+                                                    :label="`${work.short_name} - ${work.name}`"
+                                                    @update:model-value="(value) => updateDialogWorkSelection(work.short_name, value)" />
+                                                <v-btn-toggle
+                                                    :model-value="getDialogWorkFactor(work.short_name)"
+                                                    mandatory
+                                                density="compact"
+                                                color="success"
+                                                :disabled="!isDialogWorkSelected(work.short_name)"
+                                                @update:model-value="(value) => setDialogWorkFactor(work.short_name, value)">
+                                                    <v-btn :value="0" size="x-small">0%</v-btn>
+                                                    <v-btn :value="25" size="x-small">25%</v-btn>
+                                                    <v-btn :value="33" size="x-small">33%</v-btn>
+                                                    <v-btn :value="50" size="x-small">50%</v-btn>
+                                                    <v-btn :value="66" size="x-small">66%</v-btn>
+                                                    <v-btn :value="75" size="x-small">75%</v-btn>
+                                                    <v-btn :value="100" size="x-small">100%</v-btn>
+                                                </v-btn-toggle>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-else class="text-body-2 text-medium-emphasis">
+                                        Keine Arbeiten definiert. Bitte zuerst unter "Arbeiten und Bewertungen" anlegen.
+                                    </div>
+                                </div>
+                            </div>
+                        </v-card-text>
+                        <v-card-actions class="justify-end">
+                            <v-btn color="warning" variant="text" @click="cancelCategoryDialog">Abbrechen</v-btn>
+                            <v-btn color="success" variant="flat" :disabled="!isCategoryDialogValid" @click="saveCategoryDialog">
+                                Speichern
+                            </v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
 
             </v-card-text>
         </v-card>
@@ -408,11 +414,12 @@ export default {
                 use_semester_grade_only: false,
                 categories: [],
             },
-            new_category: { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false },
-            edit_category: { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false },
             edit_index: null,
             delete_index: null,
-            expanded_index: null,
+            editing_section: null,
+            category_dialog_open: false,
+            category_dialog_mode: 'create',
+            category_form: { name: '', weight: 0, require_all_entries: false, category_evaluation_enabled: false, works: [] },
         }
     },
 
@@ -426,10 +433,44 @@ export default {
             if (!this.data.categories?.length) return 0
             return this.data.categories.reduce((sum, cat) => sum + (parseInt(cat.weight) || 0), 0)
         },
+        isGlobalEditing() {
+            return this.is_editing && this.editing_section === 'global'
+        },
+        isSemesterCountEditing() {
+            return this.is_editing && ['global', 'semester_count'].includes(this.editing_section)
+        },
+        isLocalSemesterCountEditing() {
+            return this.is_editing && this.editing_section === 'semester_count'
+        },
+        isSemesterWeightEditing() {
+            return this.is_editing && ['global', 'semester_weight'].includes(this.editing_section)
+        },
+        isLocalSemesterWeightEditing() {
+            return this.is_editing && this.editing_section === 'semester_weight'
+        },
+        isSemesterInclusionEditing() {
+            return this.is_editing && ['global', 'semester_inclusion'].includes(this.editing_section)
+        },
+        isLocalSemesterInclusionEditing() {
+            return this.is_editing && this.editing_section === 'semester_inclusion'
+        },
+        isCategoryEditing() {
+            return this.is_editing && ['global', 'category'].includes(this.editing_section)
+        },
         isValid() {
             if (this.data.semester_count === 2 && this.totalSemesterWeight !== 100) return false
             if (this.data.categories?.length && this.totalCategoryWeight !== 100) return false
             return true
+        },
+        isCurrentEditValid() {
+            if (this.editing_section === 'semester_weight') return this.totalSemesterWeight === 100
+            if (this.editing_section === 'category') {
+                return !this.data.categories?.length || this.totalCategoryWeight === 100
+            }
+            return this.isValid
+        },
+        isCategoryDialogValid() {
+            return Boolean(this.category_form.name.trim() && this.category_form.weight > 0)
         },
         teaching_works() {
             const schema = (this.settings?.teaching_schemas || []).find((s) => s.id === this.schemaId)
@@ -468,7 +509,10 @@ export default {
             this.is_editing = false
             this.delete_index = null
             this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
+            this.editing_section = null
+            this.category_dialog_open = false
+            this.category_dialog_mode = 'create'
+            this.category_form = this.emptyCategoryForm()
         },
 
         initData() {
@@ -519,55 +563,99 @@ export default {
             this.data.semester_1_weight = 100 - val
         },
 
-        addCategory() {
-            if (!this.new_category.name || !this.new_category.weight) return
-            this.data.categories.push({
-                name: this.new_category.name.trim(),
-                weight: parseInt(this.new_category.weight) || 0,
-                require_all_entries: Boolean(this.new_category.require_all_entries),
-                category_evaluation_enabled: Boolean(this.new_category.category_evaluation_enabled),
-                works: [],
-                calculation: 'mean',
-            })
-            this.new_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
-        },
-
         removeCategory(index) {
             this.data.categories = this.data.categories.filter((_, i) => i !== index)
             this.delete_index = null
         },
 
+        emptyCategoryForm() {
+            return { name: '', weight: 0, require_all_entries: false, category_evaluation_enabled: false, works: [] }
+        },
+
+        startSemesterCountEdit() {
+            this.is_editing = true
+            this.editing_section = 'semester_count'
+            this.delete_index = null
+        },
+
+        startSemesterWeightEdit() {
+            this.is_editing = true
+            this.editing_section = 'semester_weight'
+            this.delete_index = null
+        },
+
+        startSemesterInclusionEdit() {
+            this.is_editing = true
+            this.editing_section = 'semester_inclusion'
+            this.delete_index = null
+        },
+
+        startAddCategory() {
+            this.is_editing = true
+            this.editing_section = 'category'
+            this.edit_index = null
+            this.delete_index = null
+            this.category_dialog_mode = 'create'
+            this.category_form = this.emptyCategoryForm()
+            this.category_dialog_open = true
+        },
+
         startEditCategory(index) {
             const category = this.data.categories[index]
-            this.edit_category = {
+            this.is_editing = true
+            this.editing_section = 'category'
+            this.delete_index = null
+            this.category_dialog_mode = 'edit'
+            this.category_form = {
                 name: category.name,
                 weight: category.weight,
                 require_all_entries: Boolean(category.require_all_entries),
                 category_evaluation_enabled: Boolean(category.category_evaluation_enabled),
+                works: this.getValidWorks(this.normalizeWorks(category.works)).map((work) => ({ ...work })),
             }
             this.edit_index = index
+            this.category_dialog_open = true
         },
 
-        saveEditCategory() {
-            if (!this.edit_category.name || !this.edit_category.weight) return
-            this.data.categories = this.data.categories.map((cat, i) =>
-                i === this.edit_index
-                    ? {
-                        ...cat,
-                        name: this.edit_category.name.trim(),
-                        weight: parseInt(this.edit_category.weight) || 0,
-                        require_all_entries: Boolean(this.edit_category.require_all_entries),
-                        category_evaluation_enabled: Boolean(this.edit_category.category_evaluation_enabled),
-                    }
-                    : cat
-            )
+        cancelCategoryDialog() {
+            this.category_dialog_open = false
+            this.category_dialog_mode = 'create'
+            this.category_form = this.emptyCategoryForm()
             this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
         },
 
-        cancelEditCategory() {
-            this.edit_index = null
-            this.edit_category = { name: '', weight: '', require_all_entries: false, category_evaluation_enabled: false }
+        saveCategoryDialog() {
+            if (!this.isCategoryDialogValid) return
+
+            const categoryPayload = {
+                name: this.category_form.name.trim(),
+                weight: parseInt(this.category_form.weight) || 0,
+                require_all_entries: Boolean(this.category_form.require_all_entries),
+                category_evaluation_enabled: Boolean(this.category_form.category_evaluation_enabled),
+                works: this.getValidWorks(this.category_form.works).map((work) => ({
+                    short_name: work.short_name,
+                    factor: work.factor ?? 100,
+                })),
+            }
+
+            if (this.category_dialog_mode === 'create') {
+                this.data.categories.push({
+                    ...categoryPayload,
+                    works: [],
+                    calculation: 'mean',
+                })
+            } else if (this.edit_index !== null) {
+                this.data.categories = this.data.categories.map((cat, index) =>
+                    index === this.edit_index
+                        ? {
+                            ...cat,
+                            ...categoryPayload,
+                        }
+                        : cat
+                )
+            }
+
+            this.cancelCategoryDialog()
         },
 
         isWorkAssigned(categoryIndex, shortName) {
@@ -592,22 +680,34 @@ export default {
             return works.filter((w) => this.teaching_works.some((tw) => tw.short_name === w.short_name))
         },
 
-        toggleWork(categoryIndex, shortName) {
-            const category = this.data.categories[categoryIndex]
-            if (!category.works) category.works = []
-
-            const existingIndex = category.works.findIndex((w) => w.short_name === shortName)
-            if (existingIndex >= 0) {
-                category.works = category.works.filter((w) => w.short_name !== shortName)
-            } else {
-                category.works = [...category.works, { short_name: shortName, factor: 100 }]
-            }
+        isDialogWorkSelected(shortName) {
+            return this.category_form.works?.some((work) => work.short_name === shortName) || false
         },
 
-        setWorkFactor(categoryIndex, shortName, factor) {
-            const category = this.data.categories[categoryIndex]
-            category.works = category.works.map((w) =>
-                w.short_name === shortName ? { ...w, factor: factor } : w
+        getDialogWorkFactor(shortName) {
+            const work = this.category_form.works?.find((entry) => entry.short_name === shortName)
+            return work?.factor ?? 100
+        },
+
+        updateDialogWorkSelection(shortName, selected) {
+            if (!selected) {
+                this.category_form.works = (this.category_form.works || []).filter((work) => work.short_name !== shortName)
+                return
+            }
+
+            if (this.isDialogWorkSelected(shortName)) {
+                return
+            }
+
+            this.category_form.works = [
+                ...(this.category_form.works || []),
+                { short_name: shortName, factor: 100 },
+            ]
+        },
+
+        setDialogWorkFactor(shortName, factor) {
+            this.category_form.works = (this.category_form.works || []).map((work) =>
+                work.short_name === shortName ? { ...work, factor: factor } : work
             )
         },
 
@@ -650,12 +750,50 @@ export default {
     padding: 14px 16px;
 }
 
+.grading-categories-section {
+    border: 1px solid rgba(var(--v-theme-primary), 0.2);
+    border-radius: 16px;
+    background: rgba(var(--v-theme-primary), 0.05);
+    padding: 18px 16px;
+}
+
+.grading-categories-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.grading-section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .grading-category-header {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     width: 100%;
+}
+
+.grading-category-item {
+    border: 1px solid rgba(var(--v-theme-primary), 0.12);
+}
+
+.grading-category-weight {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    color: rgb(var(--v-theme-primary));
+    flex: 0 0 auto;
+    min-width: 84px;
+}
+
+.grading-category-weight--invalid {
+    color: rgb(var(--v-theme-error));
 }
 
 .grading-category-main {
@@ -663,19 +801,20 @@ export default {
     align-items: center;
     gap: 8px;
     min-width: 0;
-    flex: 1 1 220px;
+    flex: 1 1 200px;
 }
 
 .grading-category-title {
     min-width: 0;
     overflow-wrap: anywhere;
+    font-weight: 600;
 }
 
 .grading-category-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    flex: 1 1 100%;
+    flex: 1 1 auto;
 }
 
 .grading-category-actions {
@@ -683,6 +822,15 @@ export default {
     align-items: center;
     gap: 4px;
     margin-left: auto;
+}
+
+.grading-category-details {
+    border-top: 1px solid rgba(var(--v-theme-primary), 0.1);
+}
+
+.grading-dialog-work-item {
+    border: 1px solid rgba(var(--v-theme-primary), 0.12);
+    background: rgba(var(--v-theme-primary), 0.04);
 }
 
 .semester-weight-visual {
@@ -701,6 +849,10 @@ export default {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.semester-weight-legend-item--align-end {
+    margin-left: auto;
 }
 
 .semester-weight-bar {

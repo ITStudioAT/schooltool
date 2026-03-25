@@ -16,6 +16,7 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
+use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\TeachingSchema;
@@ -612,6 +613,46 @@ describe('settings and semester endpoints', function () {
     test('load_settings returns settings and creates default schema when none exists', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $this->admin->forceFill([
+            'teaching_behaviour' => [
+                ['short_name' => 'ALT', 'name' => 'Alt'],
+            ],
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKT', 'name' => 'Aktives Schuljahr'],
+                ],
+            ],
+            'teaching_notifications' => [
+                ['short_name' => 'ALTN', 'name' => 'Alt Notification'],
+            ],
+            'teaching_notifications_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKTN', 'name' => 'Aktive Notification'],
+                ],
+            ],
+        ])->save();
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $this->admin->id,
+            'kind' => 'behaviour',
+            'type' => 'AKT',
+            'date' => '2026-03-01',
+        ]);
+        TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $this->admin->id,
+            'kind' => 'notification',
+            'type' => 'AKTN',
+            'date' => '2026-03-02',
+        ]);
+
         expect(TeachingSchema::query()->count())->toBe(0);
 
         $response = $this->getJson('/api/admin/teaching/load_settings');
@@ -632,13 +673,762 @@ describe('settings and semester endpoints', function () {
             ->and($schemas[0]['name'])->toBe('Standard')
             ->and($schemas[0]['grading']['category_evaluation_values'] ?? null)->toMatchArray(TeachingService::defaultCategoryEvaluationValues())
             ->and($schemas[0]['grading']['default_category_evaluation_value'] ?? null)->toBe(TeachingService::defaultCategoryEvaluationDefaultValue());
-        expect($response->json('settings.teaching_show_behaviour'))->toBeTrue();
+        expect($response->json('settings.teaching_behaviour.0.short_name'))->toBe('AKT')
+            ->and($response->json('settings.teaching_behaviour_usage_count'))->toBe(1)
+            ->and($response->json('settings.teaching_behaviour_usage_counts.AKT'))->toBe(1)
+            ->and($response->json('settings.teaching_notifications.0.short_name'))->toBe('AKTN')
+            ->and($response->json('settings.teaching_notifications_usage_count'))->toBe(1)
+            ->and($response->json('settings.teaching_notifications_usage_counts.AKTN'))->toBe(1)
+            ->and($response->json('settings.teaching_show_behaviour'))->toBeTrue();
 
         $this->assertDatabaseCount('teaching_schemas', 1);
         $this->assertDatabaseHas('teaching_schemas', [
             'user_id' => $this->admin->id,
             'schoolyear_id' => $this->schoolyear->id,
             'name' => 'Standard',
+        ]);
+    });
+
+    test('load_settings ignores legacy teaching definitions without schoolyear scoped values', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->admin->forceFill([
+            'teaching_behaviour' => [
+                ['short_name' => 'ALT', 'name' => 'Alt'],
+            ],
+            'teaching_behaviour_by_schoolyear' => null,
+            'teaching_notifications' => [
+                ['short_name' => 'ALTN', 'name' => 'Alt Notification'],
+            ],
+            'teaching_notifications_by_schoolyear' => null,
+        ])->save();
+
+        $this->getJson('/api/admin/teaching/load_settings')
+            ->assertOk()
+            ->assertJsonCount(0, 'settings.teaching_behaviour')
+            ->assertJsonCount(0, 'settings.teaching_notifications');
+    });
+
+    test('load_settings returns category evaluation usage counts per schema value', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $schema = TeachingService::defaultSchema();
+        $schema['id'] = 'schema-current';
+        $schema['name'] = 'Standard';
+        $schema['grading']['category_evaluation_values'] = [
+            ['value' => 'Offen', 'color' => '#fb8c00'],
+            ['value' => 'Bestanden', 'color' => '#43a047'],
+        ];
+        $schema['grading']['default_category_evaluation_value'] = 'Offen';
+        (new TeachingService)->saveSchemas($this->admin, [$schema], $this->schoolyear->id);
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => 'schema-current',
+            'classes' => ['1A'],
+        ]);
+
+        TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Mitarbeit',
+            'value' => 'Offen',
+        ]);
+        TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 2,
+            'category_name' => 'Mitarbeit',
+            'value' => 'Offen',
+        ]);
+        TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Schularbeiten',
+            'value' => 'Bestanden',
+        ]);
+
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => 'schema-other',
+            'classes' => ['2A'],
+        ]);
+
+        TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Andere',
+            'value' => 'Offen',
+        ]);
+
+        $this->getJson('/api/admin/teaching/load_settings')
+            ->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_usage_counts.Offen', 2)
+            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_usage_counts.Bestanden', 1);
+    });
+
+    test('import_behaviour deletes current schoolyear behaviour entries for own courses and imports previous schoolyear settings', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'concerns' => '2025/26',
+        ]);
+
+        $this->admin->forceFill([
+            'schoolyear_id' => $this->schoolyear->id,
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $previousSchoolyear->id => [
+                    ['short_name' => 'ALT', 'name' => 'Altverhalten'],
+                ],
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKT', 'name' => 'Aktuell'],
+                ],
+            ],
+        ])->save();
+
+        $currentStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $currentCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $currentBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'AKT',
+            'date' => '2026-03-01',
+        ]);
+        $currentNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'INFO',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['2A'],
+        ]);
+        $otherBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'AKT',
+            'date' => '2026-03-02',
+        ]);
+
+        $previousCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $previousBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $previousCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'ALT',
+            'date' => '2025-03-01',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/import_behaviour');
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_behaviour.0.short_name', 'ALT')
+            ->assertJsonPath('settings.teaching_behaviour_usage_count', 0);
+
+        $this->assertDatabaseMissing('teaching_course_behaviour_entries', [
+            'id' => $currentBehaviourEntry->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $currentNotificationEntry->id,
+            'kind' => 'notification',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherBehaviourEntry->id,
+            'kind' => 'behaviour',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $previousBehaviourEntry->id,
+            'kind' => 'behaviour',
+        ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_behaviour_by_schoolyear[(string) $this->schoolyear->id][0]['short_name'] ?? null)
+            ->toBe('ALT');
+    });
+
+    test('import_behaviour fails when no previous schoolyear exists', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/import_behaviour')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Import nicht möglich.');
+    });
+
+    test('reset_behaviour deletes current schoolyear behaviour entries for own courses and clears current behaviour settings', function () {
+        $this->admin->forceFill([
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKT', 'name' => 'Aktuell'],
+                ],
+            ],
+        ])->save();
+
+        $currentStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $currentCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $currentBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'AKT',
+            'date' => '2026-03-01',
+        ]);
+        $currentNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'INFO',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['2A'],
+        ]);
+        $otherBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'AKT',
+            'date' => '2026-03-02',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/reset_behaviour');
+
+        $response->assertOk()
+            ->assertJsonCount(0, 'settings.teaching_behaviour')
+            ->assertJsonPath('settings.teaching_behaviour_usage_count', 0);
+
+        $this->assertDatabaseMissing('teaching_course_behaviour_entries', [
+            'id' => $currentBehaviourEntry->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $currentNotificationEntry->id,
+            'kind' => 'notification',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherBehaviourEntry->id,
+            'kind' => 'behaviour',
+        ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_behaviour_by_schoolyear[(string) $this->schoolyear->id] ?? null)
+            ->toBe([]);
+    });
+
+    test('import_notifications deletes current schoolyear notification entries for own courses and imports previous schoolyear settings', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'concerns' => '2025/26',
+        ]);
+
+        $this->admin->forceFill([
+            'schoolyear_id' => $this->schoolyear->id,
+            'teaching_notifications_by_schoolyear' => [
+                (string) $previousSchoolyear->id => [
+                    ['short_name' => 'ALTN', 'name' => 'Altverständigung'],
+                ],
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKTN', 'name' => 'Aktuell'],
+                ],
+            ],
+        ])->save();
+
+        $currentStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $currentCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $currentNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'AKTN',
+            'date' => '2026-03-01',
+        ]);
+        $currentBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'BZ',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['2A'],
+        ]);
+        $otherNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'AKTN',
+            'date' => '2026-03-02',
+        ]);
+
+        $previousCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $previousSchoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $previousNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $previousCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'ALTN',
+            'date' => '2025-03-01',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/import_notifications');
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_notifications.0.short_name', 'ALTN')
+            ->assertJsonPath('settings.teaching_notifications_usage_count', 0);
+
+        $this->assertDatabaseMissing('teaching_course_behaviour_entries', [
+            'id' => $currentNotificationEntry->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $currentBehaviourEntry->id,
+            'kind' => 'behaviour',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherNotificationEntry->id,
+            'kind' => 'notification',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $previousNotificationEntry->id,
+            'kind' => 'notification',
+        ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_notifications_by_schoolyear[(string) $this->schoolyear->id][0]['short_name'] ?? null)
+            ->toBe('ALTN');
+    });
+
+    test('import_notifications fails when no previous schoolyear exists', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/import_notifications')
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Import nicht möglich.');
+    });
+
+    test('reset_notifications deletes current schoolyear notification entries for own courses and clears current notification settings', function () {
+        $this->admin->forceFill([
+            'teaching_notifications_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'AKTN', 'name' => 'Aktuell'],
+                ],
+            ],
+        ])->save();
+
+        $currentStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $currentCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'classes' => ['1A'],
+        ]);
+        $currentNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'AKTN',
+            'date' => '2026-03-01',
+        ]);
+        $currentBehaviourEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $currentCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'behaviour',
+            'type' => 'BZ',
+            'date' => '2026-03-01',
+        ]);
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['2A'],
+        ]);
+        $otherNotificationEntry = TeachingCourseBehaviourEntry::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $currentStudent->id,
+            'kind' => 'notification',
+            'type' => 'AKTN',
+            'date' => '2026-03-02',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/reset_notifications');
+
+        $response->assertOk()
+            ->assertJsonCount(0, 'settings.teaching_notifications')
+            ->assertJsonPath('settings.teaching_notifications_usage_count', 0);
+
+        $this->assertDatabaseMissing('teaching_course_behaviour_entries', [
+            'id' => $currentNotificationEntry->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $currentBehaviourEntry->id,
+            'kind' => 'behaviour',
+        ]);
+        $this->assertDatabaseHas('teaching_course_behaviour_entries', [
+            'id' => $otherNotificationEntry->id,
+            'kind' => 'notification',
+        ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_notifications_by_schoolyear[(string) $this->schoolyear->id] ?? null)
+            ->toBe([]);
+    });
+
+    test('import_schema clears current schema course data and imports all schemas from the previous schoolyear', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+        $previousSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'concerns' => '2025/26',
+        ]);
+
+        $currentSchema = TeachingService::defaultSchema();
+        $currentSchema['id'] = 'schema-current';
+        $currentSchema['name'] = 'Standard';
+        $currentSchema['works'] = [
+            ['short_name' => 'ALT', 'name' => 'Alte Arbeit', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $currentSchema['grading']['categories'] = [
+            ['name' => 'Alt', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'ALT', 'factor' => 100]]],
+        ];
+
+        $currentUpperSchema = TeachingService::defaultSchema();
+        $currentUpperSchema['id'] = 'schema-upper-current';
+        $currentUpperSchema['name'] = 'Oberstufe';
+        $currentUpperSchema['works'] = [
+            ['short_name' => 'OBALT', 'name' => 'Obere Alt', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $currentUpperSchema['grading']['categories'] = [
+            ['name' => 'Oben Alt', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'OBALT', 'factor' => 100]]],
+        ];
+
+        $currentExtraSchema = TeachingService::defaultSchema();
+        $currentExtraSchema['id'] = 'schema-extra-current';
+        $currentExtraSchema['name'] = 'Zusatz';
+
+        $previousSchema = TeachingService::defaultSchema();
+        $previousSchema['id'] = 'schema-previous';
+        $previousSchema['name'] = 'Standard';
+        $previousSchema['works'] = [
+            ['short_name' => 'NEU', 'name' => 'Neue Arbeit', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $previousSchema['grading']['categories'] = [
+            ['name' => 'Neu', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'NEU', 'factor' => 100]]],
+        ];
+
+        $previousUpperSchema = TeachingService::defaultSchema();
+        $previousUpperSchema['id'] = 'schema-upper-previous';
+        $previousUpperSchema['name'] = 'Oberstufe';
+        $previousUpperSchema['works'] = [
+            ['short_name' => 'OBNEU', 'name' => 'Obere Neu', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $previousUpperSchema['grading']['categories'] = [
+            ['name' => 'Oben Neu', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'OBNEU', 'factor' => 100]]],
+        ];
+
+        $previousElectiveSchema = TeachingService::defaultSchema();
+        $previousElectiveSchema['id'] = 'schema-elective-previous';
+        $previousElectiveSchema['name'] = 'Wahlpflichtfächer';
+        $previousElectiveSchema['works'] = [
+            ['short_name' => 'WPF', 'name' => 'Wahlpflicht', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $previousElectiveSchema['grading']['categories'] = [
+            ['name' => 'WPF Neu', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'WPF', 'factor' => 100]]],
+        ];
+
+        (new TeachingService)->saveSchemas($this->admin, [$currentSchema, $currentUpperSchema, $currentExtraSchema], $this->schoolyear->id);
+        (new TeachingService)->saveSchemas($this->admin, [$previousSchema, $previousUpperSchema, $previousElectiveSchema], $previousSchoolyear->id);
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => 'schema-current',
+            'classes' => ['1A'],
+        ]);
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $course->id,
+            'type' => 'ALT',
+            'title' => 'Alte Arbeit',
+        ]);
+        $entry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'teaching_course_work_id' => $work->id,
+            'type' => 'ALT',
+            'grade' => '1',
+            'date' => '2026-03-01',
+        ]);
+        $evaluation = TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Alt',
+            'value' => 'Bestanden',
+        ]);
+
+        $otherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => 'schema-other',
+            'classes' => ['2A'],
+        ]);
+        $otherWork = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'type' => 'OTH',
+            'title' => 'Andere Arbeit',
+        ]);
+        $otherEntry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $student->id,
+            'teaching_course_work_id' => $otherWork->id,
+            'type' => 'OTH',
+            'grade' => '2',
+            'date' => '2026-03-02',
+        ]);
+        $otherEvaluation = TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $otherCourse->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Andere',
+            'value' => 'Offen',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/import_schema', [
+            'selected_schema_id' => 'schema-current',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonCount(4, 'settings.teaching_schemas');
+
+        $importedSchemas = collect($response->json('settings.teaching_schemas'))->keyBy('name');
+
+        expect($importedSchemas->get('Standard'))->toMatchArray([
+            'id' => 'schema-current',
+        ])
+            ->and(data_get($importedSchemas->get('Standard'), 'works.0.short_name'))->toBe('NEU')
+            ->and(data_get($importedSchemas->get('Standard'), 'grading.categories.0.name'))->toBe('Neu')
+            ->and($importedSchemas->get('Oberstufe'))->toMatchArray([
+                'id' => 'schema-upper-current',
+            ])
+            ->and(data_get($importedSchemas->get('Oberstufe'), 'works.0.short_name'))->toBe('OBNEU')
+            ->and(data_get($importedSchemas->get('Oberstufe'), 'grading.categories.0.name'))->toBe('Oben Neu')
+            ->and($importedSchemas->get('Wahlpflichtfächer'))->toMatchArray([
+                'id' => 'schema-elective-previous',
+            ])
+            ->and($importedSchemas->get('Zusatz'))->toMatchArray([
+                'id' => 'schema-extra-current',
+            ]);
+
+        $this->assertDatabaseMissing('teaching_course_student_entries', [
+            'id' => $entry->id,
+        ]);
+        $this->assertDatabaseMissing('teaching_course_works', [
+            'id' => $work->id,
+        ]);
+        $this->assertDatabaseMissing('teaching_course_student_category_evaluations', [
+            'id' => $evaluation->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_entries', [
+            'id' => $otherEntry->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_works', [
+            'id' => $otherWork->id,
+        ]);
+        $this->assertDatabaseHas('teaching_course_student_category_evaluations', [
+            'id' => $otherEvaluation->id,
+        ]);
+    });
+
+    test('import_schema fails when no previous schoolyear schemas exist', function () {
+        $this->schoolyear->update(['concerns' => '2026/27']);
+        Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+            'concerns' => '2025/26',
+        ]);
+
+        $currentSchema = TeachingService::defaultSchema();
+        $currentSchema['id'] = 'schema-current';
+        $currentSchema['name'] = 'Schema Ohne Vorjahr';
+        (new TeachingService)->saveSchemas($this->admin, [$currentSchema], $this->schoolyear->id);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->postJson('/api/admin/teaching/import_schema', [
+            'selected_schema_id' => 'schema-current',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Import nicht möglich.');
+    });
+
+    test('reset_schema clears current schema course data and empties the selected schema definition', function () {
+        $currentSchema = TeachingService::defaultSchema();
+        $currentSchema['id'] = 'schema-current';
+        $currentSchema['name'] = 'Benutzerdefiniert';
+        $currentSchema['works'] = [
+            ['short_name' => 'ALT', 'name' => 'Alte Arbeit', 'grades' => [['grade' => '1', 'name' => 'Sehr gut', 'value' => '1']]],
+        ];
+        $currentSchema['grading']['categories'] = [
+            ['name' => 'Alt', 'weight' => 100, 'require_all_entries' => false, 'category_evaluation_enabled' => false, 'calculation' => 'mean', 'works' => [['short_name' => 'ALT', 'factor' => 100]]],
+        ];
+        $currentSchema['grading']['category_evaluation_values'] = [
+            ['value' => 'Bestanden', 'color' => '#43a047'],
+        ];
+        $currentSchema['grading']['default_category_evaluation_value'] = 'Bestanden';
+        (new TeachingService)->saveSchemas($this->admin, [$currentSchema], $this->schoolyear->id);
+
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'teaching_schema_id' => 'schema-current',
+            'classes' => ['1A'],
+        ]);
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $course->id,
+            'type' => 'ALT',
+            'title' => 'Alte Arbeit',
+        ]);
+        $entry = TeachingCourseStudentEntry::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'teaching_course_work_id' => $work->id,
+            'type' => 'ALT',
+            'grade' => '1',
+            'date' => '2026-03-01',
+        ]);
+        $evaluation = TeachingCourseStudentCategoryEvaluation::query()->create([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'semester' => 1,
+            'category_name' => 'Alt',
+            'value' => 'Bestanden',
+        ]);
+
+        $this->actingAs($this->admin, 'sanctum');
+
+        $response = $this->postJson('/api/admin/teaching/reset_schema', [
+            'selected_schema_id' => 'schema-current',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_schemas.0.id', 'schema-current')
+            ->assertJsonPath('settings.teaching_schemas.0.name', 'Benutzerdefiniert')
+            ->assertJsonPath('settings.teaching_schemas.0.works', [])
+            ->assertJsonPath('settings.teaching_schemas.0.grading.semester_count', 1)
+            ->assertJsonPath('settings.teaching_schemas.0.grading.semester_1_weight', 100)
+            ->assertJsonPath('settings.teaching_schemas.0.grading.semester_2_weight', 0)
+            ->assertJsonPath('settings.teaching_schemas.0.grading.categories', [])
+            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_values', [])
+            ->assertJsonPath('settings.teaching_schemas.0.grading.default_category_evaluation_value', '');
+
+        $this->assertDatabaseMissing('teaching_course_student_entries', [
+            'id' => $entry->id,
+        ]);
+        $this->assertDatabaseMissing('teaching_course_works', [
+            'id' => $work->id,
+        ]);
+        $this->assertDatabaseMissing('teaching_course_student_category_evaluations', [
+            'id' => $evaluation->id,
         ]);
     });
 
@@ -680,7 +1470,7 @@ describe('settings and semester endpoints', function () {
             ->assertJsonValidationErrors(['teaching_count_for_semester_2_date']);
     });
 
-    test('save_semester_2_date persists date and allows clearing it with null', function () {
+    test('save_semester_2_date persists date for the user and active schoolyear and allows clearing it with null', function () {
         $this->actingAs($this->admin, 'sanctum');
 
         $saveResponse = $this->postJson('/api/admin/teaching/save_semester_2_date', [
@@ -688,11 +1478,16 @@ describe('settings and semester endpoints', function () {
         ]);
 
         $saveResponse->assertStatus(200)
-            ->assertJsonPath('teaching_count_for_semester_2_date', '2026-02-15');
+            ->assertJsonPath('teaching_count_for_semester_2_date', '2026-02-15')
+            ->assertJsonPath('schoolyear_sem_2_start', '2026-02-15');
 
         $this->assertDatabaseHas('users', [
             'id' => $this->admin->id,
             'teaching_count_for_semester_2_date' => '2026-02-15',
+        ]);
+        $this->assertDatabaseHas('schoolyears', [
+            'id' => $this->admin->schoolyear_id,
+            'sem_2_start' => '2026-02-15',
         ]);
 
         $clearResponse = $this->postJson('/api/admin/teaching/save_semester_2_date', [
@@ -700,11 +1495,16 @@ describe('settings and semester endpoints', function () {
         ]);
 
         $clearResponse->assertStatus(200)
-            ->assertJsonPath('teaching_count_for_semester_2_date', null);
+            ->assertJsonPath('teaching_count_for_semester_2_date', null)
+            ->assertJsonPath('schoolyear_sem_2_start', null);
 
         $this->assertDatabaseHas('users', [
             'id' => $this->admin->id,
             'teaching_count_for_semester_2_date' => null,
+        ]);
+        $this->assertDatabaseHas('schoolyears', [
+            'id' => $this->admin->schoolyear_id,
+            'sem_2_start' => null,
         ]);
     });
 
@@ -833,11 +1633,16 @@ describe('settings and semester endpoints', function () {
     test('save_settings renames behaviour type in course entries for all students of the school', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        $this->admin->update([
+        $this->admin->forceFill([
             'teaching_behaviour' => [
                 ['short_name' => 'M', 'name' => 'Mitarbeit'],
             ],
-        ]);
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'M', 'name' => 'Mitarbeit'],
+                ],
+            ],
+        ])->save();
 
         $sameSchoolStudent = User::factory()->create([
             'school_id' => $this->school->id,
@@ -916,16 +1721,25 @@ describe('settings and semester endpoints', function () {
             'kind' => 'behaviour',
             'type' => 'M',
         ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_behaviour_by_schoolyear[(string) $this->schoolyear->id][0]['short_name'] ?? null)
+            ->toBe('MI');
     });
 
     test('save_settings renames notification type in course entries for all students of the school', function () {
         $this->actingAs($this->admin, 'sanctum');
 
-        $this->admin->update([
+        $this->admin->forceFill([
             'teaching_notifications' => [
                 ['short_name' => 'I', 'name' => 'Info'],
             ],
-        ]);
+            'teaching_notifications_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'I', 'name' => 'Info'],
+                ],
+            ],
+        ])->save();
 
         $sameSchoolStudent = User::factory()->create([
             'school_id' => $this->school->id,
@@ -1003,6 +1817,10 @@ describe('settings and semester endpoints', function () {
             'kind' => 'notification',
             'type' => 'I',
         ]);
+
+        $this->admin->refresh();
+        expect($this->admin->teaching_notifications_by_schoolyear[(string) $this->schoolyear->id][0]['short_name'] ?? null)
+            ->toBe('IN');
     });
 
     test('save_settings renames schema work type and grades in works and student entries', function () {
@@ -1271,6 +2089,12 @@ describe('role matrix for teaching settings endpoints', function () {
     })->with([
         ['GET', '/api/admin/teaching/load_settings'],
         ['POST', '/api/admin/teaching/save_settings', []],
+        ['POST', '/api/admin/teaching/import_behaviour', []],
+        ['POST', '/api/admin/teaching/reset_behaviour', []],
+        ['POST', '/api/admin/teaching/import_notifications', []],
+        ['POST', '/api/admin/teaching/reset_notifications', []],
+        ['POST', '/api/admin/teaching/import_schema', ['selected_schema_id' => 'schema-current']],
+        ['POST', '/api/admin/teaching/reset_schema', ['selected_schema_id' => 'schema-current']],
         ['POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
         ['POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
     ]);
@@ -1287,6 +2111,12 @@ describe('role matrix for teaching settings endpoints', function () {
     })->with([
         ['GET', '/api/admin/teaching/load_settings'],
         ['POST', '/api/admin/teaching/save_settings', []],
+        ['POST', '/api/admin/teaching/import_behaviour', []],
+        ['POST', '/api/admin/teaching/reset_behaviour', []],
+        ['POST', '/api/admin/teaching/import_notifications', []],
+        ['POST', '/api/admin/teaching/reset_notifications', []],
+        ['POST', '/api/admin/teaching/import_schema', ['selected_schema_id' => 'schema-current']],
+        ['POST', '/api/admin/teaching/reset_schema', ['selected_schema_id' => 'schema-current']],
         ['POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
         ['POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
     ]);
@@ -1297,6 +2127,33 @@ describe('role matrix for teaching settings endpoints', function () {
             'teaching_admin' => $this->teachingAdmin,
             'teacher' => $this->teacher,
         };
+
+        if (in_array($uri, ['/api/admin/teaching/import_behaviour', '/api/admin/teaching/import_notifications'], true)) {
+            $actingUser->selectedSchoolyear?->update(['concerns' => '2026/27']);
+            Schoolyear::factory()->create([
+                'school_id' => $actingUser->school_id,
+                'concerns' => '2025/26',
+            ]);
+        }
+
+        if (in_array($uri, ['/api/admin/teaching/import_schema', '/api/admin/teaching/reset_schema'], true)) {
+            $schema = TeachingService::defaultSchema();
+            $schema['id'] = 'schema-current';
+            $schema['name'] = 'Standard';
+            (new TeachingService)->saveSchemas($actingUser, [$schema], $actingUser->schoolyear_id);
+        }
+
+        if ($uri === '/api/admin/teaching/import_schema') {
+            $actingUser->selectedSchoolyear?->update(['concerns' => '2026/27']);
+            $previousSchoolyear = Schoolyear::factory()->create([
+                'school_id' => $actingUser->school_id,
+                'concerns' => '2025/26',
+            ]);
+            $schema = TeachingService::defaultSchema();
+            $schema['id'] = 'schema-previous';
+            $schema['name'] = 'Standard';
+            (new TeachingService)->saveSchemas($actingUser, [$schema], $previousSchoolyear->id);
+        }
 
         $this->actingAs($actingUser, 'sanctum');
 
@@ -1310,18 +2167,36 @@ describe('role matrix for teaching settings endpoints', function () {
         // admin
         ['admin', 'GET', '/api/admin/teaching/load_settings'],
         ['admin', 'POST', '/api/admin/teaching/save_settings', []],
+        ['admin', 'POST', '/api/admin/teaching/import_behaviour', []],
+        ['admin', 'POST', '/api/admin/teaching/reset_behaviour', []],
+        ['admin', 'POST', '/api/admin/teaching/import_notifications', []],
+        ['admin', 'POST', '/api/admin/teaching/reset_notifications', []],
+        ['admin', 'POST', '/api/admin/teaching/import_schema', ['selected_schema_id' => 'schema-current']],
+        ['admin', 'POST', '/api/admin/teaching/reset_schema', ['selected_schema_id' => 'schema-current']],
         ['admin', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
         ['admin', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
 
         // teaching_admin
         ['teaching_admin', 'GET', '/api/admin/teaching/load_settings'],
         ['teaching_admin', 'POST', '/api/admin/teaching/save_settings', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/import_behaviour', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/reset_behaviour', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/import_notifications', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/reset_notifications', []],
+        ['teaching_admin', 'POST', '/api/admin/teaching/import_schema', ['selected_schema_id' => 'schema-current']],
+        ['teaching_admin', 'POST', '/api/admin/teaching/reset_schema', ['selected_schema_id' => 'schema-current']],
         ['teaching_admin', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
         ['teaching_admin', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
 
         // teacher
         ['teacher', 'GET', '/api/admin/teaching/load_settings'],
         ['teacher', 'POST', '/api/admin/teaching/save_settings', []],
+        ['teacher', 'POST', '/api/admin/teaching/import_behaviour', []],
+        ['teacher', 'POST', '/api/admin/teaching/reset_behaviour', []],
+        ['teacher', 'POST', '/api/admin/teaching/import_notifications', []],
+        ['teacher', 'POST', '/api/admin/teaching/reset_notifications', []],
+        ['teacher', 'POST', '/api/admin/teaching/import_schema', ['selected_schema_id' => 'schema-current']],
+        ['teacher', 'POST', '/api/admin/teaching/reset_schema', ['selected_schema_id' => 'schema-current']],
         ['teacher', 'POST', '/api/admin/teaching/save_active_semester', ['teaching_active_semester' => 1]],
         ['teacher', 'POST', '/api/admin/teaching/save_semester_2_date', ['teaching_count_for_semester_2_date' => '2026-02-01']],
     ]);

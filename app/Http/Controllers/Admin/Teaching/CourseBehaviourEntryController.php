@@ -23,9 +23,7 @@ class CourseBehaviourEntryController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $query = TeachingCourseBehaviourEntry::where('teaching_course_id', $course->id);
 
@@ -50,17 +48,6 @@ class CourseBehaviourEntryController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedBehaviourTypes = collect($auth_user->teaching_behaviour ?? [])
-            ->pluck('short_name')
-            ->filter()
-            ->values()
-            ->all();
-        $allowedNotificationTypes = collect($auth_user->teaching_notifications ?? [])
-            ->pluck('short_name')
-            ->filter()
-            ->values()
-            ->all();
-
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
             'user_id' => 'required|integer|exists:users,id',
@@ -74,6 +61,22 @@ class CourseBehaviourEntryController extends Controller
             'description' => 'nullable|string|max:1024',
         ]);
 
+        $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $courseActor = $this->teachingCourseActor($auth_user, $course);
+
+        $allowedBehaviourTypes = collect($this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id))
+            ->pluck('short_name')
+            ->filter()
+            ->values()
+            ->all();
+        $allowedNotificationTypes = collect($this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id))
+            ->pluck('short_name')
+            ->filter()
+            ->values()
+            ->all();
+
         $kind = $validated['kind'] ?? 'behaviour';
         $allowedTypes = $kind === 'notification' ? $allowedNotificationTypes : $allowedBehaviourTypes;
         if (! in_array($validated['type'], $allowedTypes, true)) {
@@ -84,11 +87,6 @@ class CourseBehaviourEntryController extends Controller
         }
         if (($validated['is_due'] ?? false) && ($validated['is_done'] ?? false) && empty($validated['done_date'])) {
             abort(422, 'Bitte ein Erledigt-Datum angeben.');
-        }
-
-        $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
         }
 
         $student = User::findOrFail($validated['user_id']);
@@ -119,16 +117,20 @@ class CourseBehaviourEntryController extends Controller
         }
 
         $course = $course_behaviour_entry->teachingCourse;
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedBehaviourTypes = collect($auth_user->teaching_behaviour ?? [])
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $courseActor = $this->teachingCourseActor($auth_user, $course);
+
+        $allowedBehaviourTypes = collect($this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id))
             ->pluck('short_name')
             ->filter()
             ->values()
             ->all();
-        $allowedNotificationTypes = collect($auth_user->teaching_notifications ?? [])
+        $allowedNotificationTypes = collect($this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id))
             ->pluck('short_name')
             ->filter()
             ->values()
@@ -183,9 +185,11 @@ class CourseBehaviourEntryController extends Controller
         }
 
         $course = $course_behaviour_entry->teachingCourse;
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $student = $course_behaviour_entry->user;
         if (! $student || $student->school_id !== $auth_user->school_id) {
@@ -195,5 +199,41 @@ class CourseBehaviourEntryController extends Controller
         $course_behaviour_entry->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingBehaviourForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_behaviour_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingNotificationsForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_notifications_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
     }
 }

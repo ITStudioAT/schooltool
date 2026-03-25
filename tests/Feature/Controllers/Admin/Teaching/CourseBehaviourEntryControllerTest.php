@@ -44,12 +44,40 @@ beforeEach(function () {
             ['short_name' => 'BZ', 'name' => 'Verhalten'],
             ['short_name' => 'ST', 'name' => 'Störung'],
         ],
+        'teaching_behaviour_by_schoolyear' => [
+            (string) $this->schoolyear->id => [
+                ['short_name' => 'BZ', 'name' => 'Verhalten'],
+                ['short_name' => 'ST', 'name' => 'Störung'],
+            ],
+        ],
         'teaching_notifications' => [
             ['short_name' => 'INF', 'name' => 'Info'],
             ['short_name' => 'WARN', 'name' => 'Warnung'],
         ],
+        'teaching_notifications_by_schoolyear' => [
+            (string) $this->schoolyear->id => [
+                ['short_name' => 'INF', 'name' => 'Info'],
+                ['short_name' => 'WARN', 'name' => 'Warnung'],
+            ],
+        ],
     ]);
     $this->admin->assignRole('admin');
+
+    $this->teacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'teaching_behaviour_by_schoolyear' => [
+            (string) $this->schoolyear->id => [
+                ['short_name' => 'TEH', 'name' => 'Teacher Behaviour'],
+            ],
+        ],
+        'teaching_notifications_by_schoolyear' => [
+            (string) $this->schoolyear->id => [
+                ['short_name' => 'TEN', 'name' => 'Teacher Notification'],
+            ],
+        ],
+    ]);
+    $this->teacher->assignRole('teacher');
 
     $this->regularUser = User::factory()->create([
         'school_id' => $this->school->id,
@@ -137,6 +165,26 @@ describe('authorization and index', function () {
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.user_id', $this->student->id);
     });
+
+    test('teacher cannot access another teachers course or another schoolyear', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $sameSchoolOtherYear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $otherYearCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $sameSchoolOtherYear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['2B'],
+        ]);
+
+        $this->getJson('/api/admin/teaching/course_behaviour_entries?course_id='.$this->course->id)
+            ->assertStatus(403);
+
+        $this->getJson('/api/admin/teaching/course_behaviour_entries?course_id='.$otherYearCourse->id)
+            ->assertStatus(403);
+    });
 });
 
 describe('store update destroy', function () {
@@ -173,6 +221,17 @@ describe('store update destroy', function () {
     test('store supports notification kind and validates type by kind', function () {
         $this->actingAs($this->admin, 'sanctum');
 
+        $this->admin->forceFill([
+            'teaching_notifications' => [
+                ['short_name' => 'ALT', 'name' => 'Alt'],
+            ],
+            'teaching_notifications_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'INF', 'name' => 'Info'],
+                ],
+            ],
+        ])->save();
+
         $this->postJson('/api/admin/teaching/course_behaviour_entries', [
             'teaching_course_id' => $this->course->id,
             'user_id' => $this->student->id,
@@ -184,7 +243,83 @@ describe('store update destroy', function () {
             'teaching_course_id' => $this->course->id,
             'user_id' => $this->student->id,
             'kind' => 'notification',
-            'type' => 'BZ',
+            'type' => 'ALT',
+        ])->assertStatus(422);
+    });
+
+    test('store validates behaviour type against the course schoolyear behaviour definitions', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->admin->forceFill([
+            'teaching_behaviour' => [
+                ['short_name' => 'ALT', 'name' => 'Alt'],
+            ],
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'SY', 'name' => 'Schuljahr'],
+                ],
+            ],
+        ])->save();
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'behaviour',
+            'type' => 'SY',
+        ])->assertCreated()->assertJsonPath('data.type', 'SY');
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'behaviour',
+            'type' => 'ALT',
+        ])->assertStatus(422);
+    });
+
+    test('store uses the course owner schoolyear scoped definitions for admins', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $teacherCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['2A'],
+        ]);
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $teacherCourse->id,
+            'user_id' => $this->student->id,
+            'kind' => 'behaviour',
+            'type' => 'TEH',
+        ])->assertCreated()->assertJsonPath('data.type', 'TEH');
+    });
+
+    test('store ignores legacy-only definitions when no schoolyear scoped behaviour or notifications exist', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $this->admin->forceFill([
+            'teaching_behaviour' => [
+                ['short_name' => 'ALT', 'name' => 'Alt'],
+            ],
+            'teaching_behaviour_by_schoolyear' => null,
+            'teaching_notifications' => [
+                ['short_name' => 'INF', 'name' => 'Info'],
+            ],
+            'teaching_notifications_by_schoolyear' => null,
+        ])->save();
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'behaviour',
+            'type' => 'ALT',
+        ])->assertStatus(422);
+
+        $this->postJson('/api/admin/teaching/course_behaviour_entries', [
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+            'kind' => 'notification',
+            'type' => 'INF',
         ])->assertStatus(422);
     });
 

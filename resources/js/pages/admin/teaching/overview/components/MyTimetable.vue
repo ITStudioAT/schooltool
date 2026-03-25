@@ -288,7 +288,7 @@ export default {
             const schoolFrom = normalizeConfiguredDate(schoolyear?.from)
             const schoolUntil = normalizeConfiguredDate(schoolyear?.until)
             const sem2Start = normalizeConfiguredDate(
-                this.config?.user?.teaching_count_for_semester_2_date || schoolyear?.sem_2_start
+                schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date
             )
             const baseSemester = sem2Start && today >= sem2Start ? 2 : 1
 

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import Settings from '@/pages/admin/teaching/settings/Settings.vue'
 
 describe('Teaching settings page', () => {
@@ -41,6 +43,19 @@ describe('Teaching settings page', () => {
             'schemas',
             'my_holidays',
         ])
+    })
+
+    it('shows the active schoolyear label for the toolbar buttons', () => {
+        const ctx = {
+            config: {
+                selected_schoolyear: {
+                    name: 'Schuljahr 2025/26',
+                    concerns: '2025/26',
+                },
+            },
+        }
+
+        expect((Settings as any).computed.activeSchoolyearLabel.call(ctx)).toBe('Schuljahr 2025/26')
     })
 
     it('activates only allowed primary panels', () => {
@@ -165,5 +180,179 @@ describe('Teaching settings page', () => {
         expect(payload.teaching_schemas[1].grading.categories[0].name).toBe('Mitarbeit')
 
         randomUuidSpy.mockRestore()
+    })
+
+    it('builds schema usage warning counters for the import dialog', () => {
+        const ctx = {
+            courses: [
+                { teaching_schema_id: 'schema-1' },
+                { teaching_schema_id: 'schema-2' },
+                { teaching_schema_id: 'schema-1' },
+            ],
+            selected_schema_id: 'schema-1',
+            selectedSchema: {
+                works: [{ short_name: 'MA' }, { short_name: 'T' }],
+                grading: {
+                    categories: [{ name: 'Mitarbeit' }],
+                },
+            },
+        }
+
+        ctx.selectedSchemaCourseUsageCount = (Settings as any).computed.selectedSchemaCourseUsageCount.call(ctx)
+        ctx.selectedSchemaWorkCount = (Settings as any).computed.selectedSchemaWorkCount.call(ctx)
+        ctx.selectedSchemaCategoryCount = (Settings as any).computed.selectedSchemaCategoryCount.call(ctx)
+
+        expect(ctx.selectedSchemaCourseUsageCount).toBe(2)
+        expect(ctx.selectedSchemaWorkCount).toBe(2)
+        expect(ctx.selectedSchemaCategoryCount).toBe(1)
+        expect((Settings as any).computed.selectedSchemaUsageItems.call(ctx)).toEqual([
+            { count: 2, label: 'Kurse' },
+            { count: 2, label: 'Arbeiten' },
+            { count: 1, label: 'Kategorien' },
+        ])
+
+        ctx.selectedSchemaUsageItems = (Settings as any).computed.selectedSchemaUsageItems.call(ctx)
+        expect((Settings as any).computed.selectedSchemaUsageWarningVisible.call(ctx)).toBe(true)
+    })
+
+    it('derives the previous schoolyear import label from concerns', () => {
+        const methods = (Settings as any).methods
+        const ctx = {
+            config: {
+                selected_schoolyear: {
+                    concerns: '2025/26',
+                },
+            },
+            schoolyears: [
+                { id: 1, concerns: '2024/25' },
+                { id: 2, concerns: '2025/26' },
+            ],
+            normalizeSchoolyearConcern: methods.normalizeSchoolyearConcern,
+            parseSchoolyearConcern: methods.parseSchoolyearConcern,
+        }
+
+        ctx.activeSchoolyearConcern = (Settings as any).computed.activeSchoolyearConcern.call(ctx)
+        ctx.previousSchoolyearConcern = (Settings as any).computed.previousSchoolyearConcern.call(ctx)
+        ctx.previousSchoolyear = (Settings as any).computed.previousSchoolyear.call(ctx)
+
+        expect(ctx.activeSchoolyearConcern).toBe('2025/26')
+        expect(ctx.previousSchoolyearConcern).toBe('2024/25')
+        expect(ctx.previousSchoolyear).toEqual({ id: 1, concerns: '2024/25' })
+        expect((Settings as any).computed.schoolyearImportLabel.call(ctx)).toBe('Import vom Schuljahr: 2024/25')
+    })
+
+    it('shows that import is not possible when no previous schoolyear exists', () => {
+        const ctx = {
+            previousSchoolyear: null,
+        }
+
+        expect((Settings as any).computed.schoolyearImportLabel.call(ctx)).toBe('Import nicht möglich!')
+    })
+
+    it('imports the selected schema and closes the dialog on success', async () => {
+        const methods = (Settings as any).methods
+        const ctx: Record<string, unknown> = {
+            selected_schema_id: 'schema-1',
+            schema_import_loading: false,
+            schema_panel_revision: 0,
+            teachingStore: {
+                importSchema: async (selectedSchemaId: string) => selectedSchemaId === 'schema-1',
+            },
+            refreshSelectedSchemaPanels: () => {
+                ctx.schema_panel_revision = Number(ctx.schema_panel_revision) + 1
+            },
+            closeSchemaImportDialog: () => {
+                ctx.schema_import_dialog_open = false
+            },
+            schema_import_dialog_open: true,
+        }
+
+        await methods.importSchema.call(ctx)
+
+        expect(ctx.schema_import_loading).toBe(false)
+        expect(ctx.schema_panel_revision).toBe(1)
+        expect(ctx.schema_import_dialog_open).toBe(false)
+    })
+
+    it('resets the selected schema and closes the dialog on success', async () => {
+        const methods = (Settings as any).methods
+        const ctx: Record<string, unknown> = {
+            selected_schema_id: 'schema-1',
+            schema_reset_loading: false,
+            schema_panel_revision: 0,
+            teachingStore: {
+                resetSchema: async (selectedSchemaId: string) => selectedSchemaId === 'schema-1',
+            },
+            refreshSelectedSchemaPanels: () => {
+                ctx.schema_panel_revision = Number(ctx.schema_panel_revision) + 1
+            },
+            closeSchemaResetDialog: () => {
+                ctx.schema_reset_dialog_open = false
+            },
+            schema_reset_dialog_open: true,
+        }
+
+        await methods.resetSchema.call(ctx)
+
+        expect(ctx.schema_reset_loading).toBe(false)
+        expect(ctx.schema_panel_revision).toBe(1)
+        expect(ctx.schema_reset_dialog_open).toBe(false)
+    })
+
+    it('adds schema import and reset buttons in the Benotungsschemas header with persistent dialogs', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/settings/Settings.vue',
+        )
+
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<template #header-actions>')
+        expect(source).toContain('activeSchoolyearLabel() {')
+        expect(source).toContain('<span class="teaching-settings-toolbar-btn-copy">')
+        expect(source).toContain('<span class="teaching-settings-toolbar-btn-meta">{{ activeSchoolyearLabel }}</span>')
+        expect(source).toContain('background: rgba(15, 23, 42, 0.35);')
+        expect(source).toContain('border: 1px solid rgba(255, 255, 255, 0.18);')
+        expect(source).toContain('prepend-icon="mdi-restore"')
+        expect(source).toContain('@click="openSchemaResetDialog"')
+        expect(source).toContain('prepend-icon="mdi-import"')
+        expect(source).toContain('@click="openSchemaImportDialog"')
+        expect(source).toContain('<v-dialog v-model="schema_reset_dialog_open" persistent max-width="560">')
+        expect(source).toContain('Benotungsschema zurücksetzen')
+        expect(source).toContain(":key=\"`reset-${item.label}`\"")
+        expect(source).toContain('<strong>Wenn Sie das Benotungsschema resetten, werden alle Schüler:innen-Benotungen gelöscht!</strong>')
+        expect(source).toContain(':loading="schema_reset_loading"')
+        expect(source).toContain('@click="resetSchema"')
+        expect(source).toContain('<v-dialog v-model="schema_import_dialog_open" persistent max-width="560">')
+        expect(source).toContain('Benotungsschema importieren')
+        expect(source).toContain('v-if="selectedSchemaUsageWarningVisible"')
+        expect(source).toContain('Dieses Benotungsschema wird bereits verwendet.')
+        expect(source).toContain('{{ item.count }} {{ item.label }}')
+        expect(source).toContain('<strong>Wenn Sie ein Benotungsschema importieren, werden alle bisherigen Benotungen gelöscht!</strong>')
+        expect(source).toContain('<strong>{{ schoolyearImportLabel }}</strong>')
+        expect(source).toContain(':loading="schema_import_loading"')
+        expect(source).toContain('@click="importSchema"')
+        expect(source).toContain('Importieren')
+        expect(source).toContain('return `Import vom Schuljahr: ${this.previousSchoolyear.concerns}`')
+        expect(source).toContain("return 'Import nicht möglich!'")
+        expect(source).toContain(':key="`works-${selected_schema_id}-${schema_panel_revision}`"')
+        expect(source).toContain(':key="`grading-${selected_schema_id}-${schema_panel_revision}`"')
+        expect(source).toContain(':key="`category-evaluation-${selected_schema_id}-${schema_panel_revision}`"')
+        expect(source).toContain("label: 'Kurse'")
+        expect(source).toContain("label: 'Arbeiten'")
+        expect(source).toContain("label: 'Kategorien'")
+        expect(source).toContain('openSchemaImportDialog() {')
+        expect(source).toContain('closeSchemaImportDialog() {')
+        expect(source).toContain('openSchemaResetDialog() {')
+        expect(source).toContain('closeSchemaResetDialog() {')
+        expect(source).toContain('async importSchema() {')
+        expect(source).toContain('async resetSchema() {')
+        expect(source).toContain('refreshSelectedSchemaPanels() {')
+        expect(source).toContain('this.schema_panel_revision += 1')
+        expect(source).toContain('schema_import_dialog_open: false')
+        expect(source).toContain('schema_reset_dialog_open: false')
+        expect(source).toContain('schema_import_loading: false')
+        expect(source).toContain('schema_reset_loading: false')
+        expect(source).toContain('schema_panel_revision: 0')
     })
 })

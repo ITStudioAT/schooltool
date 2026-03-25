@@ -43,6 +43,12 @@ beforeEach(function () {
     ]);
     $this->admin->assignRole('admin');
 
+    $this->teacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->teacher->assignRole('teacher');
+
     $this->regularUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -307,4 +313,21 @@ it('forbids access for users without role and for other school course', function
 
     $this->actingAs($this->admin, 'sanctum');
     $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->otherCourse->id)->assertStatus(403);
+});
+
+it('teacher cannot access another teachers course or another schoolyear', function () {
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $sameSchoolOtherYear = Schoolyear::factory()->create([
+        'school_id' => $this->school->id,
+    ]);
+    $otherYearCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $sameSchoolOtherYear->id,
+        'user_id' => $this->teacher->id,
+        'classes' => ['3C'],
+    ]);
+
+    $this->getJson('/api/admin/teaching/course_dates?course_id='.$this->course->id)->assertStatus(403);
+    $this->getJson('/api/admin/teaching/course_dates?course_id='.$otherYearCourse->id)->assertStatus(403);
 });

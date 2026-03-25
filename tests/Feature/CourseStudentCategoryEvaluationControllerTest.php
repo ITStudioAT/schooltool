@@ -44,6 +44,12 @@ beforeEach(function () {
     ]);
     $this->admin->assignRole('admin');
 
+    $this->teacher = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $this->teacher->assignRole('teacher');
+
     $this->regularUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -149,6 +155,27 @@ describe('course student category evaluation controller', function () {
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.value', 'Bestanden');
+    });
+
+    test('teacher cannot access another teachers course or another schoolyear', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $sameSchoolOtherYear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+        $otherYearCourse = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $sameSchoolOtherYear->id,
+            'user_id' => $this->teacher->id,
+            'teaching_schema_id' => $this->schemaId,
+            'classes' => ['2B'],
+        ]);
+
+        $this->getJson('/api/admin/teaching/course_student_category_evaluations?course_id='.$this->course->id.'&semester=1')
+            ->assertStatus(403);
+
+        $this->getJson('/api/admin/teaching/course_student_category_evaluations?course_id='.$otherYearCourse->id.'&semester=1')
+            ->assertStatus(403);
     });
 
     test('store upserts a per student per category per semester evaluation', function () {

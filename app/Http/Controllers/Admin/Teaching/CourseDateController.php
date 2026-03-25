@@ -22,10 +22,7 @@ class CourseDateController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
-
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $dates = $course->teachingCourseDates()
             ->orderBy('date')
@@ -51,14 +48,7 @@ class CourseDateController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
-
-        if ($auth_user->school_id != $course->school_id) {
-            abort(409, 'Kein Zugriff auf diese Schule');
-        }
-
-        if ($auth_user->schoolyear_id != $course->schoolyear_id) {
-            abort(409, 'Kein Zugriff auf dieses Schuljahr');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $createdDates = $service->createDates(
             $course->id,
@@ -78,10 +68,11 @@ class CourseDateController extends Controller
         }
 
         $course = $course_date->teachingCourse;
-
-        if ($course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         return response()->json(new CourseDateResource($course_date));
     }
@@ -93,10 +84,11 @@ class CourseDateController extends Controller
         }
 
         $course = $course_date->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $validated = $request->validate([
             'date' => 'required|date',
@@ -121,10 +113,11 @@ class CourseDateController extends Controller
         }
 
         $course = $course_date->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $course_date->delete();
 
@@ -138,10 +131,11 @@ class CourseDateController extends Controller
         }
 
         $course = $course_date->teachingCourse;
-
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $validated = $request->validate([
             'status' => 'nullable|array',

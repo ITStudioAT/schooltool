@@ -87,15 +87,24 @@ test('index returns only enrolled courses from active schoolyear', function () {
 
     TeachingSchoolHour::factory()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
         'hour' => 1,
         'from' => '08:00:00',
         'until' => '08:50:00',
     ]);
     TeachingSchoolHour::factory()->create([
         'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
         'hour' => 2,
         'from' => '08:55:00',
         'until' => '09:45:00',
+    ]);
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->oldSchoolyear->id,
+        'hour' => 1,
+        'from' => '10:00:00',
+        'until' => '10:50:00',
     ]);
 
     TeachingCourseDate::create([
@@ -162,6 +171,7 @@ test('index returns active course end timestamp when course is currently running
 
         TeachingSchoolHour::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->activeSchoolyear->id,
             'hour' => 1,
             'from' => '09:00:00',
             'until' => '09:45:00',
@@ -294,6 +304,91 @@ test('show hides behaviour data when teacher disables behaviour visibility', fun
         ->assertJsonCount(1, 'course.notifications');
 });
 
+test('show returns schoolyear scoped teacher behaviour definitions for the active schoolyear course', function () {
+    $this->teacher->forceFill([
+        'teaching_behaviour' => [['short_name' => 'ALT', 'name' => 'Alt']],
+        'teaching_behaviour_by_schoolyear' => [
+            (string) $this->activeSchoolyear->id => [
+                ['short_name' => 'AKT', 'name' => 'Aktives Schuljahr'],
+            ],
+        ],
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonPath('course.teacher_teaching_behaviour.0.short_name', 'AKT')
+        ->assertJsonPath('course.teacher_teaching_behaviour.0.name', 'Aktives Schuljahr');
+});
+
+test('show returns schoolyear scoped teacher notification definitions for the active schoolyear course', function () {
+    $this->teacher->forceFill([
+        'teaching_notifications' => [['short_name' => 'ALT', 'name' => 'Alt']],
+        'teaching_notifications_by_schoolyear' => [
+            (string) $this->activeSchoolyear->id => [
+                ['short_name' => 'INFO', 'name' => 'Aktive Notification'],
+            ],
+        ],
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonPath('course.teacher_teaching_notifications.0.short_name', 'INFO')
+        ->assertJsonPath('course.teacher_teaching_notifications.0.name', 'Aktive Notification');
+});
+
+test('show ignores legacy-only teacher behaviour and notification definitions', function () {
+    $this->teacher->forceFill([
+        'teaching_behaviour' => [['short_name' => 'ALT', 'name' => 'Alt']],
+        'teaching_behaviour_by_schoolyear' => null,
+        'teaching_notifications' => [['short_name' => 'INF', 'name' => 'Info']],
+        'teaching_notifications_by_schoolyear' => null,
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonCount(0, 'course.teacher_teaching_behaviour')
+        ->assertJsonCount(0, 'course.teacher_teaching_notifications');
+});
+
 test('show returns active course end timestamp when selected course is currently running', function () {
     Carbon::setTestNow(Carbon::parse('2026-03-02 09:10:00'));
 
@@ -309,6 +404,7 @@ test('show returns active course end timestamp when selected course is currently
 
         TeachingSchoolHour::factory()->create([
             'school_id' => $this->school->id,
+            'schoolyear_id' => $this->activeSchoolyear->id,
             'hour' => 1,
             'from' => '09:00:00',
             'until' => '09:45:00',

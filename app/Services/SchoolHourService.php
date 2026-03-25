@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SchoolTool;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
@@ -11,20 +12,25 @@ class SchoolHourService
 {
     public function listForUser(User $authUser): Collection
     {
+        $schoolyearId = $this->resolveSchoolyearIdForUser($authUser);
+
         return TeachingSchoolHour::query()
             ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $schoolyearId)
             ->orderBy('hour')
             ->get();
     }
 
     public function createManyForUser(User $authUser, array $entries): Collection
     {
+        $schoolyearId = $this->resolveSchoolyearIdForUser($authUser);
         $createdIds = [];
 
-        DB::transaction(function () use ($authUser, $entries, &$createdIds) {
+        DB::transaction(function () use ($authUser, $schoolyearId, $entries, &$createdIds) {
             foreach ($entries as $entry) {
                 $schoolHour = TeachingSchoolHour::query()->create([
                     'school_id' => $authUser->school_id,
+                    'schoolyear_id' => $schoolyearId,
                     'hour' => (int) $entry['hour'],
                     'from' => $this->normalizeTime((string) $entry['from']),
                     'until' => $this->normalizeTime((string) $entry['until']),
@@ -41,7 +47,7 @@ class SchoolHourService
 
     public function updateForUser(User $authUser, TeachingSchoolHour $schoolHour, array $validated): TeachingSchoolHour
     {
-        $this->ensureOwnedBySchool($authUser, $schoolHour);
+        $this->ensureOwnedBySchoolAndSchoolyear($authUser, $schoolHour);
 
         $schoolHour->update([
             'hour' => (int) $validated['hour'],
@@ -54,15 +60,31 @@ class SchoolHourService
 
     public function deleteForUser(User $authUser, TeachingSchoolHour $schoolHour): void
     {
-        $this->ensureOwnedBySchool($authUser, $schoolHour);
+        $this->ensureOwnedBySchoolAndSchoolyear($authUser, $schoolHour);
         $schoolHour->delete();
     }
 
-    private function ensureOwnedBySchool(User $authUser, TeachingSchoolHour $schoolHour): void
+    private function ensureOwnedBySchoolAndSchoolyear(User $authUser, TeachingSchoolHour $schoolHour): void
     {
-        if ((int) $schoolHour->school_id !== (int) $authUser->school_id) {
+        $schoolyearId = $this->resolveSchoolyearIdForUser($authUser);
+
+        if ((int) $schoolHour->school_id !== (int) $authUser->school_id || (int) $schoolHour->schoolyear_id !== $schoolyearId) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+    }
+
+    private function resolveSchoolyearIdForUser(User $authUser): int
+    {
+        $schoolyearId = $authUser->schoolyear_id
+            ?? SchoolTool::query()
+                ->where('school_id', $authUser->school_id)
+                ->value('active_schoolyear_id');
+
+        if (! $schoolyearId) {
+            abort(422, 'Kein aktives Schuljahr gefunden.');
+        }
+
+        return (int) $schoolyearId;
     }
 
     private function normalizeTime(string $value): string

@@ -25,9 +25,7 @@ class CourseStudentEntryController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['course_id']);
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $query = TeachingCourseStudentEntry::where('teaching_course_id', $course->id);
 
@@ -59,7 +57,13 @@ class CourseStudentEntryController extends Controller
         }
 
         $course = TeachingCourse::findOrFail($request->input('teaching_course_id'));
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $allowedTypes = $entryService->allowedTypesForSchema(
+            $this->teachingCourseActor($auth_user, $course),
+            $course->teaching_schema_id,
+            $course->schoolyear_id
+        );
 
         $validated = $request->validate([
             'teaching_course_id' => 'required|integer|exists:teaching_courses,id',
@@ -73,9 +77,7 @@ class CourseStudentEntryController extends Controller
         ]);
 
         $course = TeachingCourse::findOrFail($validated['teaching_course_id']);
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $student = User::findOrFail($validated['user_id']);
         if ($student->school_id !== $auth_user->school_id) {
@@ -99,11 +101,17 @@ class CourseStudentEntryController extends Controller
         }
 
         $course = $course_student_entry->teachingCourse;
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $allowedTypes = $entryService->allowedTypesForSchema($auth_user, $course->teaching_schema_id, $course->schoolyear_id);
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $allowedTypes = $entryService->allowedTypesForSchema(
+            $this->teachingCourseActor($auth_user, $course),
+            $course->teaching_schema_id,
+            $course->schoolyear_id
+        );
 
         $validated = $request->validate([
             'type' => ['required', 'string', 'max:255', Rule::in($allowedTypes)],
@@ -136,9 +144,11 @@ class CourseStudentEntryController extends Controller
         }
 
         $course = $course_student_entry->teachingCourse;
-        if (! $course || $course->school_id !== $auth_user->school_id) {
+        if (! $course) {
             abort(403, 'Sie haben keine Berechtigung');
         }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $student = $course_student_entry->user;
         if (! $student || $student->school_id !== $auth_user->school_id) {

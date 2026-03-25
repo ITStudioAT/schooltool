@@ -1,10 +1,10 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Kategoriebewertung" icon="mdi-format-list-bulleted-square" class="w-100" :disabled="action != ''">
-        <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn v-if="!is_editing" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="startEdit" />
-            <v-btn v-if="is_editing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isValid" @click="save" />
-            <v-btn v-if="is_editing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="cancelEdit" />
-        </div>
+        <template #header-actions>
+            <v-btn size="small" color="primary" variant="text" prepend-icon="mdi-plus" @click="openCreateDialog">
+                Wert
+            </v-btn>
+        </template>
 
         <v-card tile flat color="transparent" class="mt-4">
             <v-card-text>
@@ -12,121 +12,136 @@
                     Diese Werte stehen später in der Auswertung zur manuellen Kategoriebewertung zur Verfügung.
                 </div>
 
-                <div v-if="!is_editing">
-                    <div v-if="defaultValue" class="mb-4">
-                        <v-chip :color="defaultValueColor" variant="flat">
-                            Standardwert: {{ defaultValue }}
-                        </v-chip>
-                    </div>
+                <v-list v-if="valueItems.length" density="comfortable" class="bg-transparent px-0">
+                    <v-list-item
+                        v-for="(item, index) in valueItems"
+                        :key="`${schemaId}-category-evaluation-${index}-${item.value}`"
+                        class="px-0 category-evaluation-list-item">
+                        <div class="d-flex align-center justify-space-between ga-3 w-100 flex-wrap">
+                            <div class="d-flex align-center ga-3 flex-wrap">
+                                <span class="color-dot" :style="colorPreviewStyle(item.color)" />
+                                <v-chip :color="item.color" :variant="item.value === defaultValue ? 'flat' : 'outlined'">
+                                    {{ item.value }}
+                                </v-chip>
+                                <span v-if="item.value === defaultValue" class="text-caption font-weight-medium text-warning">
+                                    Standardwert
+                                </span>
+                            </div>
 
-                    <div v-if="valueItems.length" class="d-flex flex-wrap ga-2">
-                        <v-chip
-                            v-for="(item, index) in valueItems"
-                            :key="`${schemaId}-category-evaluation-${index}-${item.value}`"
-                            :color="item.color"
-                            :variant="item.value === defaultValue ? 'flat' : 'outlined'">
-                            {{ index + 1 }}. {{ item.value }}
-                        </v-chip>
-                    </div>
-                    <v-alert v-else type="info" variant="tonal">
-                        Noch keine Werte vorhanden.
-                    </v-alert>
-                </div>
-
-                <div v-else>
-                    <div class="d-flex flex-column ga-3">
-                        <div class="category-evaluation-default-box mb-2">
-                            <div class="text-caption text-medium-emphasis mb-2">Standardwert</div>
-                            <v-select
-                                v-model="data.default_value"
-                                :items="cleanedItems"
-                                item-title="value"
-                                item-value="value"
-                                label="Standardwert"
-                                density="compact"
-                                hide-details>
-                                <template #selection="{ item }">
-                                    <v-chip size="small" :color="item.raw.color" variant="flat">
-                                        {{ item.raw.value }}
-                                    </v-chip>
-                                </template>
-                                <template #item="{ props, item }">
-                                    <v-list-item v-bind="props" :subtitle="item.raw.color">
-                                        <template #prepend>
-                                            <span class="color-dot mr-2" :style="colorPreviewStyle(item.raw.color)" />
-                                        </template>
-                                    </v-list-item>
-                                </template>
-                            </v-select>
+                            <div class="d-flex align-center ga-1">
+                                <v-btn
+                                    :icon="item.value === defaultValue ? 'mdi-star' : 'mdi-star-outline'"
+                                    size="x-small"
+                                    :color="item.value === defaultValue ? 'warning' : 'secondary'"
+                                    variant="text"
+                                    @click="setDefaultValue(item.value)" />
+                                <v-btn
+                                    icon="mdi-pencil"
+                                    size="x-small"
+                                    color="primary"
+                                    variant="text"
+                                    @click="openEditDialog(index)" />
+                                <v-btn
+                                    icon="mdi-delete"
+                                    size="x-small"
+                                    color="warning"
+                                    variant="text"
+                                    @click="openDeleteDialog(index)" />
+                            </div>
                         </div>
+                        <v-divider class="mt-3" />
+                    </v-list-item>
+                </v-list>
 
-                        <div v-for="(item, index) in data.items" :key="`${schemaId}-category-evaluation-edit-${index}`" class="d-flex flex-wrap align-center ga-2 category-evaluation-edit-row">
-                            <v-text-field
-                                v-model="data.items[index].value"
-                                :label="`Wert ${index + 1}`"
-                                density="compact"
-                                hide-details
-                                class="flex-grow-1"
-                                @keyup.enter="addValue" />
-                            <v-btn
-                                variant="outlined"
-                                class="color-picker-trigger"
-                                :title="data.items[index]?.color || 'Keine Farbe'"
-                                @click="openColorPicker(index)">
-                                <span class="color-dot" :style="colorPreviewStyle(data.items[index]?.color)" />
-                            </v-btn>
-                            <v-text-field
-                                v-model="data.items[index].color"
-                                label="HEX"
-                                placeholder="#1f77b4"
-                                density="compact"
-                                hide-details
-                                class="color-hex-field"
-                                @blur="normalizeColorField(index)"
-                                @keyup.enter="normalizeColorField(index)" />
-                            <v-chip size="small" :color="cleanedItemColor(index)" variant="flat">
-                                {{ cleanedItemValue(index) || 'Vorschau' }}
-                            </v-chip>
-                            <v-btn icon="mdi-delete" size="x-small" color="error" variant="text" @click="removeValue(index)" />
-                        </div>
-                    </div>
+                <v-alert v-else type="info" variant="tonal">
+                    Noch keine Werte vorhanden.
+                </v-alert>
+            </v-card-text>
+        </v-card>
+    </ItsGridBox>
 
-                    <v-divider class="my-4" />
+    <v-dialog v-model="item_dialog_open" persistent max-width="560">
+        <v-card>
+            <v-card-title class="d-flex align-center justify-space-between">
+                <span>{{ item_dialog_mode === 'create' ? 'Wert hinzufügen' : 'Wert bearbeiten' }}</span>
+                <v-btn icon="mdi-close" variant="text" @click="closeItemDialog" />
+            </v-card-title>
+            <v-card-text>
+                <div class="d-flex flex-column ga-4">
+                    <v-text-field
+                        v-model="dialog_form.value"
+                        label="Wert"
+                        density="compact"
+                        hide-details="auto"
+                        :error-messages="dialogValueError" />
 
                     <div class="d-flex flex-wrap align-center ga-2">
-                        <v-text-field
-                            v-model="new_value"
-                            label="Neuen Wert hinzufügen"
-                            density="compact"
-                            hide-details
-                            class="flex-grow-1"
-                            @keyup.enter="addValue" />
                         <v-btn
                             variant="outlined"
                             class="color-picker-trigger"
-                            :title="new_color || 'Keine Farbe'"
-                            @click="openColorPicker('new')">
-                            <span class="color-dot" :style="colorPreviewStyle(new_color)" />
+                            :title="dialog_form.color || 'Keine Farbe'"
+                            @click="openColorPicker('dialog')">
+                            <span class="color-dot" :style="colorPreviewStyle(dialog_form.color)" />
                         </v-btn>
                         <v-text-field
-                            v-model="new_color"
+                            v-model="dialog_form.color"
                             label="HEX"
                             placeholder="#1f77b4"
                             density="compact"
                             hide-details
                             class="color-hex-field"
-                            @blur="normalizeColorField('new')"
-                            @keyup.enter="normalizeColorField('new')" />
-                        <v-btn icon="mdi-plus" size="small" color="primary" :disabled="!new_value.trim()" @click="addValue" />
+                            @blur="normalizeDialogColor"
+                            @keyup.enter="normalizeDialogColor" />
+                        <v-chip size="small" :color="dialogPreviewColor" variant="flat">
+                            {{ dialog_form.value.trim() || 'Vorschau' }}
+                        </v-chip>
                     </div>
-
-                    <v-alert v-if="!isValid" type="warning" density="compact" variant="tonal" class="mt-4">
-                        Mindestens ein Bewertungswert ist erforderlich.
-                    </v-alert>
                 </div>
             </v-card-text>
+            <v-card-actions class="justify-end">
+                <v-btn color="primary" variant="flat" :disabled="!isDialogValid" @click="saveItem">Speichern</v-btn>
+                <v-btn color="primary" variant="text" @click="closeItemDialog">Abbrechen</v-btn>
+            </v-card-actions>
         </v-card>
-    </ItsGridBox>
+    </v-dialog>
+
+    <v-dialog v-model="delete_dialog_open" persistent max-width="520">
+        <v-card>
+            <v-card-title class="d-flex align-center justify-space-between">
+                <span>Wert löschen</span>
+                <v-btn icon="mdi-close" variant="text" @click="closeDeleteDialog" />
+            </v-card-title>
+            <v-card-text>
+                <v-alert
+                    :type="deleteUsageCount > 0 ? 'warning' : 'info'"
+                    variant="tonal"
+                    class="mb-4">
+                    <div class="font-weight-medium mb-2">
+                        {{
+                            deleteUsageCount > 0
+                                ? 'Dieser Wert wird bereits verwendet:'
+                                : 'Dieser Wert wird derzeit nicht verwendet.'
+                        }}
+                    </div>
+                    <div class="d-flex flex-wrap ga-2">
+                        <v-chip :color="deleteUsageCount > 0 ? 'warning' : 'info'" variant="flat" size="small">
+                            {{ deleteUsageCount }} Einträge
+                        </v-chip>
+                    </div>
+                </v-alert>
+                <div class="text-body-2 text-medium-emphasis">
+                    Möchten Sie diesen Wert der Kategoriebewertung wirklich löschen?
+                </div>
+                <div class="text-body-2 text-medium-emphasis mt-3">
+                    Beim Löschen werden auch alle betroffenen Einträge der Kategoriebewertung entfernt.
+                </div>
+            </v-card-text>
+            <v-card-actions class="justify-end">
+                <v-btn color="error" variant="flat" @click="confirmDelete">Löschen</v-btn>
+                <v-btn color="primary" variant="text" @click="closeDeleteDialog">Abbrechen</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 
     <input
         ref="colorInput"
@@ -143,7 +158,6 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import {
     normalizeTeachingCategoryEvaluationColor,
     normalizeTeachingCategoryEvaluationValueItems,
-    teachingCategoryEvaluationColorForValue,
     teachingCategoryEvaluationValueLabels,
 } from '@/helpers/teachingCategoryEvaluation'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
@@ -162,21 +176,22 @@ export default {
         this.adminStore = useAdminStore()
         this.teachingStore = useTeachingStore()
         await this.teachingStore.loadSettings()
-        this.initData()
     },
 
     data() {
         return {
             adminStore: null,
             teachingStore: null,
-            is_editing: false,
-            data: {
-                items: [],
-                default_value: '',
+            item_dialog_open: false,
+            item_dialog_mode: 'create',
+            delete_dialog_open: false,
+            edit_index: null,
+            delete_index: null,
+            dialog_form: {
+                value: '',
+                color: '',
             },
-            new_value: '',
-            new_color: '',
-            color_picker_target: 'new',
+            color_picker_target: 'dialog',
         }
     },
 
@@ -189,48 +204,64 @@ export default {
         defaultValue() {
             return this.teachingStore?.defaultCategoryEvaluationValueForSchema(this.schemaId) || ''
         },
-        defaultValueColor() {
-            return teachingCategoryEvaluationColorForValue(this.valueItems, this.defaultValue, '#43a047')
+        dialogPreviewColor() {
+            return normalizeTeachingCategoryEvaluationColor(this.dialog_form.color, '#4f6fb3')
         },
-        cleanedItems() {
-            return this.normalizeValueItems(this.data.items)
-        },
-        cleanedValues() {
-            return teachingCategoryEvaluationValueLabels(this.cleanedItems, { fallbackToDefaults: false })
-        },
-        pickerInputColor() {
-            if (this.color_picker_target === 'new') {
-                return normalizeTeachingCategoryEvaluationColor(this.new_color, '#4f6fb3')
+        dialogValueError() {
+            const trimmedValue = this.dialog_form.value.trim()
+
+            if (!trimmedValue) {
+                return 'Wert ist erforderlich.'
             }
 
-            return normalizeTeachingCategoryEvaluationColor(this.data.items?.[this.color_picker_target]?.color, '#4f6fb3')
+            if (this.hasDuplicateDialogValue(trimmedValue)) {
+                return 'Dieser Wert ist bereits vorhanden.'
+            }
+
+            return ''
         },
-        isValid() {
-            return this.cleanedItems.length > 0
+        isDialogValid() {
+            return this.dialogValueError === ''
+        },
+        pickerInputColor() {
+            return normalizeTeachingCategoryEvaluationColor(this.dialog_form.color, '#4f6fb3')
+        },
+        deleteEntryDefinition() {
+            if (this.delete_index === null) {
+                return null
+            }
+
+            return this.valueItems[this.delete_index] || null
+        },
+        categoryEvaluationUsageCounts() {
+            const schema = (this.settings?.teaching_schemas || []).find((entry) => entry.id === this.schemaId)
+            return schema?.grading?.category_evaluation_usage_counts || {}
+        },
+        deleteUsageCount() {
+            const value = this.deleteEntryDefinition?.value
+
+            if (!value) {
+                return 0
+            }
+
+            return Number(this.categoryEvaluationUsageCounts?.[value] || 0)
         },
     },
 
     watch: {
         schemaId() {
-            this.initData()
-            this.cancelEdit()
-        },
-        cleanedItems(newItems) {
-            const newValues = newItems.map((item) => item.value)
-            if (!newValues.length) {
-                this.data.default_value = ''
-                return
-            }
-
-            if (!newValues.includes(this.data.default_value)) {
-                this.data.default_value = newValues[0]
-            }
+            this.closeItemDialog()
+            this.closeDeleteDialog()
         },
     },
 
     methods: {
         normalizeValueItems(values) {
             return normalizeTeachingCategoryEvaluationValueItems(values, { fallbackToDefaults: false })
+        },
+
+        normalizeValueLabels(values) {
+            return teachingCategoryEvaluationValueLabels(values, { fallbackToDefaults: false })
         },
 
         colorPreviewStyle(value) {
@@ -245,22 +276,62 @@ export default {
             }
         },
 
-        normalizeColorField(target) {
-            if (target === 'new') {
-                this.new_color = normalizeTeachingCategoryEvaluationColor(this.new_color) || String(this.new_color || '').trim()
-                return
+        resetDialogForm(item = null) {
+            this.dialog_form = {
+                value: String(item?.value || ''),
+                color: normalizeTeachingCategoryEvaluationColor(item?.color, '#4f6fb3'),
             }
+        },
 
-            const index = Number(target)
-            if (!Number.isInteger(index) || index < 0 || !this.data.items[index]) {
-                return
-            }
+        openCreateDialog() {
+            this.item_dialog_mode = 'create'
+            this.edit_index = null
+            this.resetDialogForm()
+            this.item_dialog_open = true
+        },
 
-            this.data.items[index].color = normalizeTeachingCategoryEvaluationColor(this.data.items[index].color) || String(this.data.items[index].color || '').trim()
+        openEditDialog(index) {
+            this.item_dialog_mode = 'edit'
+            this.edit_index = index
+            this.resetDialogForm(this.valueItems[index])
+            this.item_dialog_open = true
+        },
+
+        closeItemDialog() {
+            this.item_dialog_open = false
+            this.item_dialog_mode = 'create'
+            this.edit_index = null
+            this.resetDialogForm()
+        },
+
+        openDeleteDialog(index) {
+            this.delete_index = index
+            this.delete_dialog_open = true
+        },
+
+        closeDeleteDialog() {
+            this.delete_dialog_open = false
+            this.delete_index = null
+        },
+
+        hasDuplicateDialogValue(candidateValue) {
+            const normalizedCandidate = String(candidateValue || '').trim().toLocaleLowerCase()
+
+            return this.valueItems.some((item, index) => {
+                if (this.item_dialog_mode === 'edit' && index === this.edit_index) {
+                    return false
+                }
+
+                return String(item?.value || '').trim().toLocaleLowerCase() === normalizedCandidate
+            })
+        },
+
+        normalizeDialogColor() {
+            this.dialog_form.color = normalizeTeachingCategoryEvaluationColor(this.dialog_form.color) || String(this.dialog_form.color || '').trim()
         },
 
         openColorPicker(target) {
-            this.color_picker_target = target === 'new' ? 'new' : Number(target)
+            this.color_picker_target = target
             this.$nextTick(() => {
                 const colorInput = this.$refs.colorInput
                 if (colorInput && typeof colorInput.click === 'function') {
@@ -275,119 +346,106 @@ export default {
                 return
             }
 
-            if (this.color_picker_target === 'new') {
-                this.new_color = color
-                return
+            if (this.color_picker_target === 'dialog') {
+                this.dialog_form.color = color
             }
-
-            const index = Number(this.color_picker_target)
-            if (!Number.isInteger(index) || index < 0 || !this.data.items[index]) {
-                return
-            }
-
-            this.data.items[index].color = color
         },
 
-        cleanedItemValue(index) {
-            const item = this.normalizeValueItems([this.data.items[index]])[0]
-            return item?.value || ''
-        },
-
-        cleanedItemColor(index) {
-            const item = this.normalizeValueItems([this.data.items[index]])[0]
-            return item?.color || '#4f6fb3'
-        },
-
-        initData() {
-            this.data = {
-                items: this.valueItems.map((item) => ({ ...item })),
-                default_value: this.defaultValue || this.valueItems[0]?.value || '',
-            }
-            this.new_value = ''
-            this.new_color = ''
-        },
-
-        startEdit() {
-            this.initData()
-            this.is_editing = true
-        },
-
-        cancelEdit() {
-            this.is_editing = false
-            this.initData()
-        },
-
-        addValue() {
-            const trimmedValue = this.new_value.trim()
-            if (!trimmedValue || this.cleanedValues.includes(trimmedValue)) {
-                this.new_value = ''
-                return
-            }
-
-            this.data.items = [
-                ...this.data.items,
-                {
-                    value: trimmedValue,
-                    color: normalizeTeachingCategoryEvaluationColor(this.new_color, '#4f6fb3'),
-                },
-            ]
-            this.new_value = ''
-            this.new_color = ''
-        },
-
-        removeValue(index) {
-            this.data.items = this.data.items.filter((_, currentIndex) => currentIndex !== index)
-        },
-
-        async save() {
-            if (!this.isValid) {
-                return
-            }
-
+        async persistCategoryEvaluation(items, defaultValue) {
             const schemas = [...(this.settings?.teaching_schemas || [])]
             const schemaIndex = schemas.findIndex((schema) => schema.id === this.schemaId)
 
             if (schemaIndex === -1) {
+                return false
+            }
+
+            const cleanedItems = this.normalizeValueItems(items)
+            const cleanedValues = this.normalizeValueLabels(cleanedItems)
+            const resolvedDefaultValue = cleanedValues.includes(defaultValue) ? defaultValue : (cleanedValues[0] || '')
+
+            const schema = schemas[schemaIndex]
+            schemas[schemaIndex] = {
+                ...schema,
+                grading: {
+                    ...(schema.grading || {}),
+                    category_evaluation_values: cleanedItems,
+                    default_category_evaluation_value: resolvedDefaultValue,
+                },
+            }
+
+            return await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+        },
+
+        async saveItem() {
+            if (!this.isDialogValid) {
                 return
             }
 
-            const schema = schemas[schemaIndex]
-            const grading = {
-                ...(schema.grading || {}),
-                category_evaluation_values: this.cleanedItems,
-                default_category_evaluation_value: this.cleanedValues.includes(this.data.default_value)
-                    ? this.data.default_value
-                    : (this.cleanedValues[0] || ''),
+            const trimmedValue = this.dialog_form.value.trim()
+            const updatedItem = {
+                value: trimmedValue,
+                color: normalizeTeachingCategoryEvaluationColor(this.dialog_form.color, '#4f6fb3'),
+            }
+            const items = this.valueItems.map((item) => ({ ...item }))
+
+            let nextDefaultValue = this.defaultValue
+
+            if (this.edit_index !== null) {
+                const previousValue = items[this.edit_index]?.value || ''
+                items[this.edit_index] = updatedItem
+
+                if (this.defaultValue === previousValue) {
+                    nextDefaultValue = trimmedValue
+                }
+            } else {
+                items.push(updatedItem)
+
+                if (!nextDefaultValue) {
+                    nextDefaultValue = trimmedValue
+                }
             }
 
-            schemas[schemaIndex] = {
-                ...schema,
-                grading,
-            }
-
-            const wasSaved = await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+            const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
 
             if (!wasSaved) {
                 return
             }
 
-            this.is_editing = false
-            this.initData()
+            this.closeItemDialog()
+        },
+
+        async setDefaultValue(value) {
+            if (!value || value === this.defaultValue) {
+                return
+            }
+
+            await this.persistCategoryEvaluation(this.valueItems, value)
+        },
+
+        async confirmDelete() {
+            if (this.delete_index === null) {
+                return
+            }
+
+            const deletedValue = this.deleteEntryDefinition?.value || ''
+            const items = this.valueItems.filter((_, index) => index !== this.delete_index)
+            const nextDefaultValue = this.defaultValue === deletedValue ? (items[0]?.value || '') : this.defaultValue
+
+            const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
+
+            if (!wasSaved) {
+                return
+            }
+
+            this.closeDeleteDialog()
         },
     },
 }
 </script>
 
 <style scoped>
-.category-evaluation-default-box {
-    border: 1px solid rgba(var(--v-theme-success), 0.35);
+.category-evaluation-list-item {
     border-radius: 12px;
-    background: rgba(var(--v-theme-success), 0.06);
-    padding: 12px;
-}
-
-.category-evaluation-edit-row {
-    width: 100%;
 }
 
 .color-picker-trigger {
