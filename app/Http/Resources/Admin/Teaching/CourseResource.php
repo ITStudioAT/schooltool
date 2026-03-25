@@ -18,6 +18,7 @@ class CourseResource extends JsonResource
         unset($data['teaching_course_dates']);
         unset($data['teaching_course_students']);
         unset($data['teaching_course_students_with_trashed']);
+        unset($data['user']);
 
         return array_merge($data, [
             'students' => $this->students ?? [],

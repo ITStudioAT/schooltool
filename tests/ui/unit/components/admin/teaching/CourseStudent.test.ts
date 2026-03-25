@@ -145,6 +145,42 @@ describe('CourseStudent points grade fallback', () => {
     })
 })
 
+describe('CourseStudent course-specific definitions', () => {
+    it('prefers the selected course schema, entry definitions, and behaviour visibility', () => {
+        const computed = (CourseStudent as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_schema_id: 'schema-teacher',
+                teacher_teaching_schema: {
+                    id: 'schema-teacher',
+                    works: [{ short_name: 'MA', name: 'Mitarbeit' }],
+                    grading: { semester_count: 2 },
+                },
+                teacher_teaching_behaviour: [{ short_name: 'BZ', name: 'Benehmen' }],
+                teacher_teaching_notifications: [{ short_name: 'INF', name: 'Info' }],
+                teacher_teaching_show_behaviour: false,
+            },
+            config: { user: { teaching_schemas: [{ id: 'schema-global', works: [], grading: { semester_count: 1 } }] } },
+            settings: {
+                teaching_behaviour: [{ short_name: 'ALT', name: 'Alt' }],
+                teaching_notifications: [{ short_name: 'ALTN', name: 'Alt Notification' }],
+                teaching_show_behaviour: true,
+                teaching_schemas: [{ id: 'schema-global', works: [], grading: { semester_count: 1 } }],
+            },
+        }
+
+        ctx.teachingSchemas = computed.teachingSchemas.call(ctx)
+        ctx.selectedSchema = computed.selectedSchema.call(ctx)
+
+        expect(ctx.teachingSchemas).toHaveLength(1)
+        expect((ctx.selectedSchema as any)?.id).toBe('schema-teacher')
+        expect(computed.semesterCount.call(ctx)).toBe(2)
+        expect(computed.teachingBehaviour.call(ctx)).toEqual([{ short_name: 'BZ', name: 'Benehmen' }])
+        expect(computed.teachingNotifications.call(ctx)).toEqual([{ short_name: 'INF', name: 'Info' }])
+        expect(computed.showBehaviourEnabled.call(ctx)).toBe(false)
+    })
+})
+
 describe('CourseStudent entry title rendering', () => {
     it('renders work title as text line instead of chip in entries list', () => {
         const componentPath = resolve(

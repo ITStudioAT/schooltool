@@ -15,6 +15,7 @@ use App\Services\TeachingService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
@@ -30,6 +31,7 @@ class TeachingCourseController extends Controller
         }
 
         $coursesQuery = TeachingCourse::with([
+            'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour',
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseStudents',
             'teachingCourseStudentsWithTrashed',
@@ -67,8 +69,13 @@ class TeachingCourseController extends Controller
             ? collect()
             : Import116::where('school_id', $auth_user->school_id)->whereIn('id', $importIds)->get()->keyBy('id');
 
-        $courses->each(function (TeachingCourse $course) use ($studentsById, $importsById, $request, $service) {
+        $teachingService = new TeachingService;
+        $schemaCache = [];
+
+        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $service, $teachingService, &$schemaCache) {
             $removalReasons = $service->removalReasonsForCourse($course);
+            $courseActor = $this->teachingCourseActor($auth_user, $course);
+            $courseSchema = $this->teachingSchemaForCourse($courseActor, $course, $teachingService, $schemaCache);
 
             $activeStudents = [];
             foreach ($course->teachingCourseStudents as $courseStudent) {
@@ -92,6 +99,10 @@ class TeachingCourseController extends Controller
 
             $course->setAttribute('students', $activeStudents);
             $course->setAttribute('students_deleted', $deletedStudents);
+            $course->setAttribute('teacher_teaching_schema', $courseSchema);
+            $course->setAttribute('teacher_teaching_behaviour', $this->teachingBehaviourForSchoolyear($courseActor, $course->schoolyear_id));
+            $course->setAttribute('teacher_teaching_notifications', $this->teachingNotificationsForSchoolyear($courseActor, $course->schoolyear_id));
+            $course->setAttribute('teacher_teaching_show_behaviour', (bool) ($courseActor->teaching_show_behaviour ?? true));
         });
 
         $classes = Import116::where('school_id', $auth_user->school_id)
@@ -238,16 +249,14 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $classes = Import116::where('school_id', $auth_user->school_id)
-            ->where('schoolyear_id', $auth_user->schoolyear_id)
+            ->where('schoolyear_id', $course->schoolyear_id)
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
-        $schemaIds = (new TeachingService)->schemaIdsForUser($auth_user, $course->schoolyear_id);
+        $schemaIds = (new TeachingService)->schemaIdsForUser($this->teachingCourseActor($auth_user, $course), $course->schoolyear_id);
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -309,9 +318,7 @@ class TeachingCourseController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($course->school_id !== $auth_user->school_id) {
-            abort(403, 'Sie haben keine Berechtigung');
-        }
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         if ($course->hasDependencies()) {
             abort(409, 'Der Kurs hat noch Abhängigkeiten und kann nicht gelöscht werden');
@@ -320,6 +327,71 @@ class TeachingCourseController extends Controller
         $course->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>|null>  $schemaCache
+     * @return array<string, mixed>|null
+     */
+    private function teachingSchemaForCourse(
+        User $courseActor,
+        TeachingCourse $course,
+        TeachingService $teachingService,
+        array &$schemaCache
+    ): ?array {
+        $schemaId = trim((string) ($course->teaching_schema_id ?? ''));
+        if ($schemaId === '') {
+            return null;
+        }
+
+        $cacheKey = implode(':', [
+            (string) $courseActor->id,
+            (string) $course->schoolyear_id,
+            $schemaId,
+        ]);
+
+        if (! array_key_exists($cacheKey, $schemaCache)) {
+            $schema = $teachingService->schemaById($courseActor, $schemaId, $course->schoolyear_id);
+            $schemaCache[$cacheKey] = is_array($schema) ? Arr::only($schema, ['id', 'name', 'works', 'grading']) : null;
+        }
+
+        return $schemaCache[$cacheKey];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingBehaviourForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_behaviour_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function teachingNotificationsForSchoolyear(User $user, ?int $schoolyearId): array
+    {
+        $bySchoolyear = $user->teaching_notifications_by_schoolyear;
+
+        if ($schoolyearId !== null && is_array($bySchoolyear)) {
+            $entries = $bySchoolyear[(string) $schoolyearId] ?? null;
+
+            if (is_array($entries)) {
+                return $entries;
+            }
+        }
+
+        return [];
     }
 
     private function serializeCourseStudent(

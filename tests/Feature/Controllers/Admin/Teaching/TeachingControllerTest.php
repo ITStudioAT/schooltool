@@ -1418,8 +1418,8 @@ describe('settings and semester endpoints', function () {
             ->assertJsonPath('settings.teaching_schemas.0.grading.semester_1_weight', 100)
             ->assertJsonPath('settings.teaching_schemas.0.grading.semester_2_weight', 0)
             ->assertJsonPath('settings.teaching_schemas.0.grading.categories', [])
-            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_values', [])
-            ->assertJsonPath('settings.teaching_schemas.0.grading.default_category_evaluation_value', '');
+            ->assertJsonPath('settings.teaching_schemas.0.grading.category_evaluation_values', TeachingService::defaultCategoryEvaluationValues())
+            ->assertJsonPath('settings.teaching_schemas.0.grading.default_category_evaluation_value', TeachingService::defaultCategoryEvaluationDefaultValue());
 
         $this->assertDatabaseMissing('teaching_course_student_entries', [
             'id' => $entry->id,

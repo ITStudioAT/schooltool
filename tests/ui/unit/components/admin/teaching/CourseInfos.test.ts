@@ -130,3 +130,28 @@ describe('CourseInfos representative countdowns', () => {
         expect(source).toContain('{{ representativeCountdownValue }}')
     })
 })
+
+describe('CourseInfos course-specific definitions', () => {
+    it('prefers the selected course schema and notification definitions', () => {
+        const computed = (CourseInfos as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_schema_id: 'schema-teacher',
+                teacher_teaching_schema: { id: 'schema-teacher', name: 'Lehrkraft-Schema' },
+                teacher_teaching_notifications: [{ short_name: 'INF', name: 'Info Lehrkraft' }],
+            },
+            teachingStore: {
+                schemaById: () => ({ id: 'schema-global', name: 'Global-Schema' }),
+                settings: { teaching_notifications: [{ short_name: 'INF', name: 'Info Global' }] },
+            },
+        }
+
+        ctx.selectedCourseSchema = computed.selectedCourseSchema.call(ctx)
+
+        expect((ctx.selectedCourseSchema as any)).toMatchObject({ id: 'schema-teacher', name: 'Lehrkraft-Schema' })
+        expect(computed.schemaName.call(ctx)).toBe('Schema: Lehrkraft-Schema')
+
+        const notificationTypes = computed.notificationTypesByShort.call(ctx)
+        expect(notificationTypes.get('INF')).toBe('Info Lehrkraft')
+    })
+})

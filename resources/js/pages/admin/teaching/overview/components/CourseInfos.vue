@@ -272,11 +272,17 @@ export default {
 
             return 'text-body-2 font-weight-medium'
         },
+        selectedCourseSchema() {
+            const courseSchema = this.selected_course?.teacher_teaching_schema
+            if (courseSchema?.id) {
+                return courseSchema
+            }
 
-        schemaName() {
             const schemaId = this.selected_course?.teaching_schema_id
-            if (!schemaId) return 'Kein Schema zugewiesen'
-            const schema = this.teachingStore?.schemaById(schemaId)
+            return schemaId ? this.teachingStore?.schemaById(schemaId) : null
+        },
+        schemaName() {
+            const schema = this.selectedCourseSchema
             return schema ? `Schema: ${schema.name}` : 'Kein Schema zugewiesen'
         },
         selectedCourseClasses() {
@@ -314,7 +320,7 @@ export default {
         },
         notificationTypesByShort() {
             const map = new Map()
-            const list = this.teachingStore?.settings?.teaching_notifications || []
+            const list = this.selected_course?.teacher_teaching_notifications || this.teachingStore?.settings?.teaching_notifications || []
             list.forEach((item) => {
                 if (item?.short_name) map.set(item.short_name, item.name || '')
             })

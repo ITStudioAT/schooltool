@@ -49,10 +49,9 @@
                 </div>
                 <v-btn
                     v-if="selected_course"
-                    size="small"
                     icon="mdi-close"
-                    variant="text"
-                    density="compact"
+                    variant="tonal"
+                    color="secondary"
                     title="Auswahl aufheben"
                     @click="handleCourseClear" />
                 <div class="teaching-subnav__actions ml-auto d-flex ga-2">
@@ -60,19 +59,20 @@
                         v-if="selected_course"
                         icon="mdi-pencil-outline"
                         variant="tonal"
-                        color="warning"
+                        color="primary"
                         title="Fach bearbeiten"
                         @click="handleEditCourse" />
                     <v-btn
                         v-if="selected_course"
                         icon="mdi-delete-outline"
                         variant="tonal"
-                        color="error"
+                        color="warning"
                         title="Fach löschen"
                         @click="show_delete_confirm = true" />
                     <v-btn
                         icon="mdi-plus"
                         variant="tonal"
+                        color="success"
                         title="Neues Fach anlegen"
                         class="teaching-subnav__add-btn"
                         @click="handleNewCourse" />
@@ -169,7 +169,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id', 'pending_new_course_token']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isNavigationLocked() {
@@ -508,6 +508,8 @@ export default {
             this.selected_course = null
             this.selected_course_id = null
             this.selected_course_student = null
+            this.pending_edit_course_id = null
+            this.pending_new_course_token = Number(this.pending_new_course_token || 0) + 1
             this.action_2 = ''
             this.navigateTo('overview')
             this.action = 'teaching_course_new_or_edit'

@@ -195,6 +195,58 @@ describe('index', function () {
             ->assertJsonPath('data.0.title', 'Mathematik');
     });
 
+    test('includes the course owners schoolyear scoped teaching definitions in the course payload', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $teacherSchemaId = 'schema-teacher-owner';
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'schema_id' => $teacherSchemaId,
+            'name' => 'Lehrkraft-Schema',
+            'works' => [
+                ['short_name' => 'MA', 'name' => 'Mitarbeit'],
+            ],
+            'grading' => [
+                'semester_count' => 2,
+            ],
+        ]);
+
+        $this->teacher->forceFill([
+            'teaching_behaviour_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'BZ', 'name' => 'Benehmen'],
+                ],
+            ],
+            'teaching_notifications_by_schoolyear' => [
+                (string) $this->schoolyear->id => [
+                    ['short_name' => 'INF', 'name' => 'Info'],
+                ],
+            ],
+            'teaching_show_behaviour' => false,
+        ])->save();
+
+        TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $teacherSchemaId,
+        ]);
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonPath('data.0.teacher_teaching_schema.id', $teacherSchemaId)
+            ->assertJsonPath('data.0.teacher_teaching_schema.name', 'Lehrkraft-Schema')
+            ->assertJsonPath('data.0.teacher_teaching_schema.works.0.short_name', 'MA')
+            ->assertJsonPath('data.0.teacher_teaching_schema.grading.semester_count', 2)
+            ->assertJsonPath('data.0.teacher_teaching_behaviour.0.short_name', 'BZ')
+            ->assertJsonPath('data.0.teacher_teaching_notifications.0.short_name', 'INF')
+            ->assertJsonPath('data.0.teacher_teaching_show_behaviour', false);
+    });
+
     test('returns available classes from Import116', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -887,6 +939,61 @@ describe('update', function () {
         $response->assertStatus(403);
     });
 
+    test('returns 403 when updating course from different schoolyear in the same school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => 'Should Not Update',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ])->assertForbidden();
+    });
+
+    test('returns 403 when teacher updates another teachers course', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherTeacher->assignRole('teacher');
+
+        TeachingSchema::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'schema_id' => $this->schemaId,
+            'name' => 'Standard',
+            'works' => [],
+            'grading' => [],
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => 'Should Not Update',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ])->assertForbidden();
+    });
+
     test('validates title is required on update', function () {
         $this->actingAs($this->admin, 'sanctum');
 
@@ -1252,6 +1359,48 @@ describe('destroy', function () {
         $response = $this->deleteJson("/api/admin/teaching/courses/{$course->id}");
 
         $response->assertStatus(403);
+        $this->assertDatabaseHas('teaching_courses', ['id' => $course->id]);
+    });
+
+    test('returns 403 when deleting course from different schoolyear in the same school', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $otherSchoolyear = Schoolyear::factory()->create([
+            'school_id' => $this->school->id,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'user_id' => $this->teacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('teaching_courses', ['id' => $course->id]);
+    });
+
+    test('returns 403 when teacher deletes another teachers course', function () {
+        $this->actingAs($this->teacher, 'sanctum');
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherTeacher->assignRole('teacher');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'classes' => ['1A'],
+        ]);
+
+        $this->deleteJson("/api/admin/teaching/courses/{$course->id}")
+            ->assertForbidden();
+
         $this->assertDatabaseHas('teaching_courses', ['id' => $course->id]);
     });
 

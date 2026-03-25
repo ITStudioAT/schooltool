@@ -540,10 +540,17 @@ export default {
             }
             return this.selected_course.classes.join(', ')
         },
-        teachingWorks() {
+        selectedCourseSchema() {
+            const courseSchema = this.selected_course?.teacher_teaching_schema
+            if (courseSchema?.id) {
+                return courseSchema
+            }
+
             const schemaId = this.selected_course?.teaching_schema_id
-            if (!schemaId) return []
-            return this.teachingStore.worksForSchema(schemaId)
+            return schemaId ? this.teachingStore?.schemaById(schemaId) : null
+        },
+        teachingWorks() {
+            return this.selectedCourseSchema?.works || []
         },
         activeCourseStudents() {
             const list = this.selected_course?.students_info || []
@@ -561,8 +568,7 @@ export default {
             return this.activeCourseStudents.length > 0
         },
         semesterCount() {
-            const schemaId = this.selected_course?.teaching_schema_id
-            const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) : {}
+            const grading = this.selectedCourseSchema?.grading || {}
             return grading?.semester_count || 1
         },
         sem2StartDate() {

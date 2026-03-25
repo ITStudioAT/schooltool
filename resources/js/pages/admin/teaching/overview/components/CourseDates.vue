@@ -328,9 +328,17 @@ export default {
             if (!classes?.length) return ''
             return classes.join(', ')
         },
-        semesterCount() {
+        selectedCourseSchema() {
+            const courseSchema = this.selected_course?.teacher_teaching_schema
+            if (courseSchema?.id) {
+                return courseSchema
+            }
+
             const schemaId = this.selected_course?.teaching_schema_id
-            const grading = schemaId ? this.teachingStore?.gradingForSchema(schemaId) : {}
+            return schemaId ? this.teachingStore?.schemaById(schemaId) : null
+        },
+        semesterCount() {
+            const grading = this.selectedCourseSchema?.grading || {}
             return grading?.semester_count || 1
         },
         sem2StartDate() {

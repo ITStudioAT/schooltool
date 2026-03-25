@@ -115,3 +115,28 @@ describe('CourseStudents selected date label', () => {
         expect(label).toBe('2. Std, 4.-5. Std')
     })
 })
+
+describe('CourseStudents course-specific schema', () => {
+    it('prefers the selected course schema snapshot for works and semester count', () => {
+        const computed = (CourseStudents as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_schema_id: 'schema-teacher',
+                teacher_teaching_schema: {
+                    id: 'schema-teacher',
+                    works: [{ short_name: 'MA', name: 'Mitarbeit' }],
+                    grading: { semester_count: 2 },
+                },
+            },
+            teachingStore: {
+                schemaById: () => ({ id: 'schema-global', works: [{ short_name: 'AK', name: 'Auftrag' }], grading: { semester_count: 1 } }),
+            },
+        }
+
+        ctx.selectedCourseSchema = computed.selectedCourseSchema.call(ctx)
+
+        expect((ctx.selectedCourseSchema as any).id).toBe('schema-teacher')
+        expect(computed.teachingWorks.call(ctx)).toEqual([{ short_name: 'MA', name: 'Mitarbeit' }])
+        expect(computed.semesterCount.call(ctx)).toBe(2)
+    })
+})

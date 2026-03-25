@@ -11,11 +11,6 @@
                 @click="toggleCoursesViewVariant" />
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_my_courses = false" />
         </template>
-        <!-- AKTIONS-LEISTE -->
-        <div class="d-flex justify-end w-100 mt-2" v-if="selected_course">
-            <v-btn size="small" variant="outlined" color="primary" prepend-icon="mdi-close" @click="clearSelectedCourse">Schließen</v-btn>
-        </div>
-
         <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
@@ -63,6 +58,7 @@
                         <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
                         <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
                         <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                        <v-btn size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" @click="clearSelectedCourse" />
                     </div>
                 </div>
             </v-card-text>
@@ -390,6 +386,10 @@ export default {
         selected_course_id(newId) {
             const course = this.courses.find((c) => c.id === newId) || null
             this.selectCourse(course)
+        },
+        'courseStore.pending_new_course_token'(token) {
+            if (!token) return
+            this.newCourse()
         },
         async 'courseStore.pending_edit_course_id'(id) {
             if (!id) return

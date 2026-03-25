@@ -668,7 +668,7 @@ class TeachingService
             ->values()
             ->all();
 
-        return $normalizedValues;
+        return $normalizedValues !== [] ? $normalizedValues : self::defaultCategoryEvaluationValues();
     }
 
     private function normalizeDefaultCategoryEvaluationValue(mixed $value, array $availableValues): string

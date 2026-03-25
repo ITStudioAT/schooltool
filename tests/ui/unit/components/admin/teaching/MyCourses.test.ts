@@ -87,4 +87,18 @@ describe('MyCourses counts', () => {
         ;(MyCourses as any).methods.toggleCoursesViewVariant.call(ctx)
         expect(ctx.courses_view_variant).toBe('v1')
     })
+
+    it('starts a fresh dialog when a pending new-course token is emitted', () => {
+        const newCourse = () => true
+        const ctx = {
+            newCourseCalled: 0,
+            newCourse() {
+                this.newCourseCalled++
+            },
+        }
+
+        ;(MyCourses as any).watch['courseStore.pending_new_course_token'].call(ctx, 4)
+
+        expect(ctx.newCourseCalled).toBe(1)
+    })
 })

@@ -928,12 +928,16 @@ export default {
             return result
         },
         teachingBehaviour() {
-            return this.settings?.teaching_behaviour || []
+            return this.selected_course?.teacher_teaching_behaviour || this.settings?.teaching_behaviour || []
         },
         teachingNotifications() {
-            return this.settings?.teaching_notifications || []
+            return this.selected_course?.teacher_teaching_notifications || this.settings?.teaching_notifications || []
         },
         showBehaviourEnabled() {
+            if (typeof this.selected_course?.teacher_teaching_show_behaviour === 'boolean') {
+                return this.selected_course.teacher_teaching_show_behaviour
+            }
+
             return this.settings?.teaching_show_behaviour !== false
         },
         behaviourTypeItems() {
@@ -990,6 +994,11 @@ export default {
                 .join('')
         },
         teachingSchemas() {
+            const courseSchema = this.selected_course?.teacher_teaching_schema
+            if (courseSchema?.id) {
+                return [courseSchema]
+            }
+
             return this.config?.user?.teaching_schemas || this.settings?.teaching_schemas || []
         },
         selectedSchema() {
