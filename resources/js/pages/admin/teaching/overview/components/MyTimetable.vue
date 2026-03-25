@@ -49,7 +49,7 @@
                     <v-card-text class="pa-0">
                         <v-list density="compact">
                             <v-list-item v-for="item in filteredItems" :key="item.key" class="cursor-pointer pa-0" @click="openCourse(item)">
-                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', getStatusClass(item), { 'timetable-item--today': isToday(item) }]" :style="getDateBackgroundStyle(item)">
+                                <div :class="['d-flex flex-column ga-2 w-100 pa-3', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]" :style="getDateBackgroundStyle(item)">
                                     <div class="d-flex flex-wrap align-center ga-2 w-100">
                                         <v-chip v-if="isToday(item)" size="x-small" color="warning" variant="flat">Heute</v-chip>
                                         <v-icon
@@ -118,7 +118,7 @@
                                             <div
                                                 v-for="item in getTableCellItems(day, hour)"
                                                 :key="item.key"
-                                                :class="['timetable-grid-item', getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
+                                                :class="['timetable-grid-item', ...getStatusClass(item), { 'timetable-item--today': isToday(item) }]"
                                                 @click="openCourse(item)">
                                                 <div class="timetable-grid-course">{{ item.courseTitle }}</div>
                                                 <div class="timetable-grid-class">{{ item.classLabel }}</div>
@@ -555,13 +555,14 @@ export default {
             this.offset = 0
         },
         getStatusClass(item) {
+            const classes = []
             if (this.hasExamStatus(item)) {
-                return 'timetable-item--exam'
+                classes.push('timetable-item--exam')
             }
             if (this.hasFreeStatus(item)) {
-                return 'timetable-item--free'
+                classes.push('timetable-item--free')
             }
-            return ''
+            return classes
         },
         getDateBackgroundStyle(item) {
             if (this.hasExamStatus(item) || this.hasFreeStatus(item)) return {}
@@ -649,6 +650,11 @@ export default {
         transparent calc(50% + 0.6px)
     );
     pointer-events: none;
+}
+
+.timetable-item--exam.timetable-item--free {
+    background-color: #ffebee !important;
+    border-left-color: #ff5722;
 }
 
 .timetable-item--today {
@@ -774,6 +780,11 @@ export default {
 .timetable-grid-item.timetable-item--free {
     background-color: #c8e6c9;
     border-left-color: #4caf50;
+}
+
+.timetable-grid-item.timetable-item--exam.timetable-item--free {
+    background-color: #ffebee;
+    border-left-color: #ff5722;
 }
 
 .timetable-grid-item.timetable-item--today {

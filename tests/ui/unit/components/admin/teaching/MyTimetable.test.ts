@@ -90,6 +90,27 @@ describe('MyTimetable time range labels', () => {
         }
         const rowClass = (MyTimetable as any).methods.getStatusClass.call(ctx, { status: ['entfaellt'] })
 
-        expect(rowClass).toBe('timetable-item--free')
+        expect(rowClass).toEqual(['timetable-item--free'])
+    })
+
+    it('keeps both exam and free classes when statuses overlap', () => {
+        const ctx = {
+            hasExamStatus: (MyTimetable as any).methods.hasExamStatus,
+            hasFreeStatus: (MyTimetable as any).methods.hasFreeStatus,
+        }
+        const rowClass = (MyTimetable as any).methods.getStatusClass.call(ctx, { status: ['pruefung', 'free'] })
+
+        expect(rowClass).toEqual(['timetable-item--exam', 'timetable-item--free'])
+    })
+
+    it('contains a combined exam and free style override in the source', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/MyTimetable.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('.timetable-item--exam.timetable-item--free')
+        expect(source).toContain('.timetable-grid-item.timetable-item--exam.timetable-item--free')
     })
 })
