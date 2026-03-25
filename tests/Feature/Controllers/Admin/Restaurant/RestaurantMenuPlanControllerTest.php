@@ -8,7 +8,9 @@ use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\User;
+use App\Services\RestaurantMenuPlanPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -77,7 +79,9 @@ test('store creates menu plan with entries and eating times', function () {
             [
                 'plan_date' => '2026-04-07',
                 'menu_id' => $this->menu->id,
-                'price_override' => '8.50',
+                'menu_title' => 'Montagsmenue',
+                'price' => '8.50',
+                'comments' => 'Ohne Sellerie servieren.',
                 'eating_time_ids' => [$this->eatingTime->id],
             ],
         ],
@@ -86,7 +90,10 @@ test('store creates menu plan with entries and eating times', function () {
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Testwoche')
         ->assertJsonPath('data.start_date', '2026-04-07')
-        ->assertJsonCount(1, 'data.entries');
+        ->assertJsonCount(1, 'data.entries')
+        ->assertJsonPath('data.entries.0.menu_title', 'Montagsmenue')
+        ->assertJsonPath('data.entries.0.price', '8.50')
+        ->assertJsonPath('data.entries.0.comments', 'Ohne Sellerie servieren.');
 
     expect(RestaurantMenuPlan::query()->where('school_id', $this->school->id)->count())->toBe(1);
     expect(RestaurantMenuPlanEntry::query()->count())->toBe(1);
@@ -98,6 +105,9 @@ test('show returns plan with entries and eating time ids', function () {
         'restaurant_menu_plan_id' => $plan->id,
         'plan_date' => '2026-04-07',
         'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Gemuesesuppe Spezial',
+        'price' => '7.80',
+        'comments' => 'Mit extra Brot.',
     ]);
     $entry->eatingTimes()->attach($this->eatingTime->id);
 
@@ -107,6 +117,9 @@ test('show returns plan with entries and eating time ids', function () {
         ->assertJsonPath('data.id', $plan->id)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.eating_time_ids.0', $this->eatingTime->id)
+        ->assertJsonPath('data.entries.0.menu_title', 'Gemuesesuppe Spezial')
+        ->assertJsonPath('data.entries.0.price', '7.80')
+        ->assertJsonPath('data.entries.0.comments', 'Mit extra Brot.')
         ->assertJsonPath('data.entries.0.menu.foods.0.title', 'Gemuesesuppe')
         ->assertJsonPath('data.entries.0.menu.foods.0.description', 'Mit Kraeutern')
         ->assertJsonPath('data.entries.0.menu.foods.0.allergens.0', 'A')
@@ -130,13 +143,23 @@ test('update replaces entries', function () {
             'start_date' => '2026-04-07',
             'end_date' => '2026-04-11',
             'entries' => [
-                ['plan_date' => '2026-04-08', 'menu_id' => $menu2->id, 'eating_time_ids' => []],
+                [
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $menu2->id,
+                    'menu_title' => 'Dienstagsmenue',
+                    'price' => '12.10',
+                    'comments' => 'Mit Salat.',
+                    'eating_time_ids' => [],
+                ],
             ],
         ])
         ->assertOk()
         ->assertJsonPath('data.title', 'Aktualisiert')
         ->assertJsonCount(1, 'data.entries')
-        ->assertJsonPath('data.entries.0.plan_date', '2026-04-08');
+        ->assertJsonPath('data.entries.0.plan_date', '2026-04-08')
+        ->assertJsonPath('data.entries.0.menu_title', 'Dienstagsmenue')
+        ->assertJsonPath('data.entries.0.price', '12.10')
+        ->assertJsonPath('data.entries.0.comments', 'Mit Salat.');
 
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
 });
@@ -157,10 +180,39 @@ test('destroy deletes plan and cascades entries', function () {
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(0);
 });
 
+test('print downloads menu plan pdf for current school', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
+    $tempPath = storage_path('framework/testing/menu-plan-test.pdf');
+
+    File::ensureDirectoryExists(dirname($tempPath));
+    File::put($tempPath, 'pdf-test');
+
+    $mock = Mockery::mock(RestaurantMenuPlanPdfService::class);
+    $mock->shouldReceive('createPdf')
+        ->once()
+        ->andReturn($tempPath);
+
+    $this->app->instance(RestaurantMenuPlanPdfService::class, $mock);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->get("/api/admin/restaurant/menu-plans/{$plan->id}/print")
+        ->assertSuccessful()
+        ->assertDownload('menu-plan-test.pdf')
+        ->assertHeader('content-type', 'application/pdf');
+});
+
 test('cannot access plan from another school', function () {
     $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
 
     $this->actingAs($this->admin, 'sanctum')
         ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")
+        ->assertNotFound();
+});
+
+test('cannot print plan from another school', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->get("/api/admin/restaurant/menu-plans/{$plan->id}/print")
         ->assertNotFound();
 });

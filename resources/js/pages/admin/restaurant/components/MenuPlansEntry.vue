@@ -30,23 +30,37 @@
                                     <strong>{{ coveragePercent }}%</strong>
                                     <span>fertig</span>
                                 </div>
-                                <v-btn
-                                    color="primary"
-                                    rounded="xl"
-                                    variant="flat"
-                                    prepend-icon="mdi-content-save-outline"
-                                    :loading="isSaving"
-                                    @click="savePlan">
-                                    Speichern
-                                </v-btn>
-                                <v-btn
-                                    color="white"
-                                    rounded="xl"
-                                    variant="tonal"
-                                    prepend-icon="mdi-arrow-left"
-                                    :to="backTarget">
-                                    Zurück
-                                </v-btn>
+                                <div class="mpe-header__actions">
+                                    <v-btn
+                                        color="primary"
+                                        rounded="xl"
+                                        variant="flat"
+                                        prepend-icon="mdi-content-save-outline"
+                                        :loading="isSaving"
+                                        @click="savePlan">
+                                        Speichern
+                                    </v-btn>
+                                    <v-btn
+                                        v-if="printHref"
+                                        color="white"
+                                        rounded="xl"
+                                        variant="tonal"
+                                        icon="mdi-printer-outline"
+                                        :loading="isPrinting"
+                                        :disabled="isPrinting"
+                                        aria-label="Menüplan als PDF drucken"
+                                        title="Menüplan als PDF drucken"
+                                        data-testid="print-menu-plan-button"
+                                        @click="downloadPlanPdf" />
+                                    <v-btn
+                                        color="white"
+                                        rounded="xl"
+                                        variant="tonal"
+                                        prepend-icon="mdi-arrow-left"
+                                        :to="backTarget">
+                                        Zurück
+                                    </v-btn>
+                                </div>
                             </div>
                         </div>
 
@@ -124,7 +138,7 @@
                                         :key="entry._key"
                                         class="mpe-entry-card">
                                         <div class="mpe-entry-card__header">
-                                            <div class="mpe-entry-card__title">{{ entry.menu.title }}</div>
+                                            <div class="mpe-entry-card__title">{{ entry.menuTitle || entry.menu.title }}</div>
                                         </div>
                                         <div class="mpe-entry-card__actions">
                                             <v-btn
@@ -140,12 +154,11 @@
                                                 :disabled="entryIndex === dayEntries(day.iso).length - 1"
                                                 @click="moveEntry(day.iso, entryIndex, 1)" />
                                             <v-btn
-                                                icon="mdi-eye-outline"
+                                                icon="mdi-delete"
                                                 size="x-small"
                                                 variant="text"
-                                                color="secondary"
-                                                :data-testid="`preview-menu-${day.iso}-${entry._key}`"
-                                                @click="openEntryPreviewDialog(day.iso, entry._key)" />
+                                                color="warning"
+                                                @click="requestDeleteEntry(day.iso, entry._key)" />
                                             <v-btn
                                                 icon="mdi-pencil"
                                                 size="x-small"
@@ -153,11 +166,12 @@
                                                 color="primary"
                                                 @click="openEditEntryDialog(day.iso, entry._key)" />
                                             <v-btn
-                                                icon="mdi-delete"
+                                                icon="mdi-eye-outline"
                                                 size="x-small"
                                                 variant="text"
-                                                color="warning"
-                                                @click="requestDeleteEntry(day.iso, entry._key)" />
+                                                color="primary"
+                                                :data-testid="`preview-menu-${day.iso}-${entry._key}`"
+                                                @click="openEntryPreviewDialog(day.iso, entry._key)" />
                                         </div>
                                         <div v-if="entry.menu.foods && entry.menu.foods.length" class="mpe-entry-card__foods">
                                             <span
@@ -464,15 +478,14 @@
 
                 <v-card-text>
                     <v-text-field
-                        :model-value="entryEditMenuTitle()"
+                        v-model="entryEditForm.menuTitle"
                         label="Menü"
                         variant="outlined"
                         density="comfortable"
-                        readonly
                         class="mb-3" />
 
                     <v-text-field
-                        v-model="entryEditForm.priceOverride"
+                        v-model="entryEditForm.price"
                         label="Preis im Menüplan"
                         type="text"
                         inputmode="decimal"
@@ -481,6 +494,15 @@
                         density="comfortable"
                         clearable
                         @blur="normalizeEntryEditPriceField" />
+
+                    <v-textarea
+                        v-model="entryEditForm.comments"
+                        label="Kommentare"
+                        variant="outlined"
+                        density="comfortable"
+                        rows="3"
+                        auto-grow
+                        class="mt-3" />
                 </v-card-text>
 
                 <v-card-actions class="px-6 pb-5">
@@ -497,8 +519,8 @@
             <v-card rounded="xl">
                 <v-card-title class="d-flex align-center">
                     <div>
-                        <div class="text-overline">Menue-Details</div>
-                        <div>{{ entryPreviewEntry?.menu?.title || 'Menue' }}</div>
+                        <div class="text-overline">Menü-Details</div>
+                        <div>{{ entryPreviewEntry?.menuTitle || entryPreviewEntry?.menu?.title || 'Menü' }}</div>
                     </div>
                     <v-spacer />
                     <v-btn icon="mdi-close" variant="text" @click="closeEntryPreviewDialog" />
@@ -519,7 +541,7 @@
                             <strong>{{ formatPrice(entryPreviewEntry.menu.price) }}</strong>
                         </div>
                         <div class="mpe-preview__meta-item">
-                            <span class="mpe-preview__meta-label">Gaenge</span>
+                            <span class="mpe-preview__meta-label">Gänge</span>
                             <strong>{{ sortedFoods(entryPreviewEntry.menu?.foods || []).length }}</strong>
                         </div>
                     </div>
@@ -587,15 +609,20 @@
                         </article>
                     </div>
 
-                    <v-alert v-else type="info" variant="tonal">
-                        Fuer dieses Menue wurden noch keine Speisen hinterlegt.
+                    <div v-if="entryPreviewEntry?.comments" class="mpe-preview-food__section">
+                        <div class="mpe-preview-food__label">Kommentar</div>
+                        <div class="mpe-preview-food__description">{{ entryPreviewEntry.comments }}</div>
+                    </div>
+
+                    <v-alert v-if="!sortedFoods(entryPreviewEntry.menu?.foods || []).length" type="info" variant="tonal">
+                        Für dieses Menü wurden noch keine Speisen hinterlegt.
                     </v-alert>
                 </v-card-text>
 
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
                     <v-btn color="primary" variant="flat" @click="closeEntryPreviewDialog">
-                        Schliessen
+                        Schließen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -635,6 +662,7 @@ import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
 import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import { useEatingTimeStore } from '@/stores/admin/restaurant/EatingTimeStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
@@ -669,9 +697,10 @@ export default {
         return {
             newMenuLabel: NEW_MENU_LABEL,
             planTitle: '',
-            entriesByDate: {},   // { iso: [{ _key, menu, priceOverride, eatingTimeIds }] }
+            entriesByDate: {},   // { iso: [{ _key, menu, menuTitle, price, comments, eatingTimeIds }] }
             searchStates: {},    // { iso: { open: bool, query: '' } }
             isSaving: false,
+            isPrinting: false,
             createMenuDialog: false,
             createMenuForDate: null,
             editingMenuId: null,
@@ -693,7 +722,9 @@ export default {
                 key: '',
             },
             entryEditForm: {
-                priceOverride: '',
+                menuTitle: '',
+                price: '',
+                comments: '',
             },
             newMenuFoodSearch: '',
             newMenuForm: emptyNewMenuForm(),
@@ -768,7 +799,7 @@ export default {
         },
 
         entryHeadline() {
-            return this.entryMode === 'edit' ? 'Wochenboard' : 'Menüs planen'
+            return this.entryMode === 'edit' ? 'Menüplan' : 'Menüplan erstellen'
         },
 
         planId() {
@@ -870,6 +901,13 @@ export default {
                 },
             ]
         },
+        printHref() {
+            if (! this.planId) {
+                return ''
+            }
+
+            return `/api/admin/restaurant/menu-plans/${this.planId}/print`
+        },
         entryPreviewEntry() {
             if (! this.entryPreviewTarget.iso || ! this.entryPreviewTarget.key) {
                 return null
@@ -938,7 +976,9 @@ export default {
                 next[iso].push({
                     _key: newEntryKey(),
                     menu,
-                    priceOverride: entry.price_override != null ? String(entry.price_override) : '',
+                    menuTitle: entry.menu_title || menu.title || '',
+                    price: entry.price != null ? String(entry.price) : (menu.price != null ? String(menu.price) : ''),
+                    comments: entry.comments || '',
                     eatingTimeIds: entry.eating_time_ids || [],
                 })
             })
@@ -953,15 +993,15 @@ export default {
         },
 
         entryEffectivePrice(entry) {
-            if (entry?.priceOverride !== '') {
-                return entry?.priceOverride ?? null
+            if (entry?.price !== '') {
+                return entry?.price ?? null
             }
 
             return entry?.menu?.price ?? null
         },
 
         entryHasPriceOverride(entry) {
-            return entry?.priceOverride !== ''
+            return entry?.price !== '' && String(entry?.price ?? '') !== String(entry?.menu?.price ?? '')
         },
 
         addEntryForDay(iso, menu) {
@@ -974,7 +1014,9 @@ export default {
                 {
                     _key: newEntryKey(),
                     menu,
-                    priceOverride: '',
+                    menuTitle: menu?.title || '',
+                    price: menu?.price != null ? String(menu.price) : '',
+                    comments: '',
                     eatingTimeIds: this.eatingTimes.map((et) => et.id),
                 },
             ]
@@ -1114,7 +1156,9 @@ export default {
 
             this.entryEditTarget = { iso, key }
             this.entryEditForm = {
-                priceOverride: this.normalizeNewMenuPriceInput(entry.priceOverride),
+                menuTitle: entry.menuTitle || entry.menu?.title || '',
+                price: this.normalizeNewMenuPriceInput(entry.price),
+                comments: entry.comments || '',
             }
             this.entryEditDialog = true
         },
@@ -1137,7 +1181,9 @@ export default {
                 key: '',
             }
             this.entryEditForm = {
-                priceOverride: '',
+                menuTitle: '',
+                price: '',
+                comments: '',
             }
         },
 
@@ -1201,7 +1247,7 @@ export default {
         },
 
         normalizeEntryEditPriceField() {
-            this.entryEditForm.priceOverride = this.normalizeNewMenuPriceInput(this.entryEditForm.priceOverride)
+            this.entryEditForm.price = this.normalizeNewMenuPriceInput(this.entryEditForm.price)
         },
 
         isNewMenuDraftCategorySelected(categoryId) {
@@ -1295,21 +1341,21 @@ export default {
         entryEditMenuTitle() {
             const entry = this.dayEntries(this.entryEditTarget.iso).find((item) => item?._key === this.entryEditTarget.key)
 
-            if (! entry?.menu?.title) {
+            if (! entry?.menuTitle && ! entry?.menu?.title) {
                 return ''
             }
 
-            return entry.menu.title
+            return entry.menuTitle || entry.menu.title
         },
 
         deleteEntryMenuTitle() {
             const entry = this.dayEntries(this.deleteEntryTarget.iso).find((item) => item?._key === this.deleteEntryTarget.key)
 
-            if (! entry?.menu?.title) {
+            if (! entry?.menuTitle && ! entry?.menu?.title) {
                 return ''
             }
 
-            return entry.menu.title
+            return entry.menuTitle || entry.menu.title
         },
 
         applyEditedMenuToEntries(updatedMenu) {
@@ -1342,7 +1388,7 @@ export default {
                 return
             }
 
-            const nextPriceOverride = this.normalizeNewMenuPricePayload(this.entryEditForm.priceOverride)
+            const nextPrice = this.normalizeNewMenuPricePayload(this.entryEditForm.price)
 
             this.entriesByDate[this.entryEditTarget.iso] = entries.map((entry) => {
                 if (entry?._key !== this.entryEditTarget.key) {
@@ -1351,7 +1397,9 @@ export default {
 
                 return {
                     ...entry,
-                    priceOverride: nextPriceOverride,
+                    menuTitle: String(this.entryEditForm.menuTitle || '').trim(),
+                    price: nextPrice,
+                    comments: String(this.entryEditForm.comments || '').trim(),
                 }
             })
 
@@ -1397,7 +1445,9 @@ export default {
                     entries.push({
                         plan_date: iso,
                         menu_id: entry.menu.id,
-                        price_override: entry.priceOverride !== '' ? entry.priceOverride : null,
+                        menu_title: entry.menuTitle !== '' ? entry.menuTitle : null,
+                        price: entry.price !== '' ? entry.price : null,
+                        comments: entry.comments !== '' ? entry.comments : null,
                         eating_time_ids: entry.eatingTimeIds,
                     })
                 })
@@ -1444,7 +1494,70 @@ export default {
             }
         },
 
+        async downloadPlanPdf() {
+            if (! this.printHref || this.isPrinting) {
+                return
+            }
+
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+
+            this.isPrinting = true
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.get(this.printHref, {
+                    responseType: 'blob',
+                })
+
+                const disposition = response?.headers?.['content-disposition']
+                const fileName = this.fileNameFromContentDisposition(disposition) || `menu-plan-${this.planId || 'export'}.pdf`
+                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data], { type: 'application/pdf' })
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+
+                link.href = objectUrl
+                link.download = fileName
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                notification.notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Menüplan-PDF konnte nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                adminStore.is_loading--
+                this.isPrinting = false
+            }
+        },
+
         // ── Helpers ──────────────────────────────────────────────────────
+
+        fileNameFromContentDisposition(headerValue) {
+            const normalizedHeader = String(headerValue || '').trim()
+
+            if (! normalizedHeader) {
+                return ''
+            }
+
+            const utf8Match = normalizedHeader.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).replace(/["']/g, '').trim()
+                } catch {
+                    return utf8Match[1].replace(/["']/g, '').trim()
+                }
+            }
+
+            const plainMatch = normalizedHeader.match(/filename\s*=\s*"?(?<file>[^";]+)"?/i)
+
+            return plainMatch?.groups?.file?.trim() || ''
+        },
 
         formatPrice(price) {
             if (price == null) {
@@ -1550,6 +1663,19 @@ export default {
     align-items: flex-end;
     gap: 10px;
     flex-shrink: 0;
+}
+
+.mpe-header__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.mpe-header__actions > * {
+    flex: 0 0 auto;
 }
 
 .mpe-badge {
@@ -1757,10 +1883,13 @@ export default {
 }
 
 .mpe-entry-card__base-price {
+    display: block;
+    width: 100%;
     font-size: 0.75rem;
     color: #b45309;
     font-weight: 600;
     margin-top: 4px;
+    text-align: right;
 }
 
 .mpe-entry-card__price-note {
@@ -2156,7 +2285,8 @@ export default {
 
 @media (max-width: 960px) {
     .mpe-header { flex-direction: column; }
-    .mpe-header__right { width: 100%; flex-direction: row; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .mpe-header__right { width: 100%; flex-direction: row; align-items: center; flex-wrap: nowrap; justify-content: space-between; }
+    .mpe-header__actions { max-width: 100%; overflow-x: auto; }
 }
 
 @media (max-width: 640px) {
@@ -2165,3 +2295,4 @@ export default {
     .mpe-preview-food { grid-template-columns: 1fr; }
 }
 </style>
+

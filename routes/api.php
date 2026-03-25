@@ -268,6 +268,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/eating-times', RestaurantEatingTimeController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });
 

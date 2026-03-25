@@ -19,10 +19,12 @@ class RestaurantMenuPlanResource extends JsonResource
                 'id' => $entry->id,
                 'plan_date' => $entry->plan_date?->format('Y-m-d'),
                 'menu_id' => $entry->restaurant_menu_id,
+                'menu_title' => $entry->menu_title,
+                'price' => $entry->price !== null ? (string) $entry->price : null,
+                'comments' => $entry->comments,
                 'menu' => $entry->relationLoaded('menu') && $entry->menu
                     ? (new RestaurantMenuResource($entry->menu))->resolve($request)
                     : null,
-                'price_override' => $entry->price_override,
                 'eating_time_ids' => $entry->relationLoaded('eatingTimes')
                     ? $entry->eatingTimes->pluck('id')->values()->all()
                     : [],

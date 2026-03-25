@@ -21,7 +21,9 @@ class StoreRestaurantMenuPlanRequest extends FormRequest
             'entries' => ['nullable', 'array'],
             'entries.*.plan_date' => ['required', 'date_format:Y-m-d'],
             'entries.*.menu_id' => ['required', 'integer', 'exists:restaurant_menus,id'],
-            'entries.*.price_override' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'entries.*.menu_title' => ['nullable', 'string', 'max:255'],
+            'entries.*.price' => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            'entries.*.comments' => ['nullable', 'string', 'max:5000'],
             'entries.*.eating_time_ids' => ['nullable', 'array'],
             'entries.*.eating_time_ids.*' => ['integer', 'exists:restaurant_eating_times,id'],
         ];

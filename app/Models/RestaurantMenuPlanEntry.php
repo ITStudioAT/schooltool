@@ -17,14 +17,16 @@ class RestaurantMenuPlanEntry extends Model
         'restaurant_menu_plan_id',
         'plan_date',
         'restaurant_menu_id',
-        'price_override',
+        'menu_title',
+        'price',
+        'comments',
     ];
 
     protected function casts(): array
     {
         return [
             'plan_date' => 'date',
-            'price_override' => 'decimal:2',
+            'price' => 'decimal:2',
         ];
     }
 

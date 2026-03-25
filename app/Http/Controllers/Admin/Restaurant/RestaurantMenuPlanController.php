@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Restaurant\StoreRestaurantMenuPlanRequest;
 use App\Http\Requests\Admin\Restaurant\UpdateRestaurantMenuPlanRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
+use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantMenuPlanService;
 use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantMenuPlanController extends Controller
 {
@@ -88,5 +90,28 @@ class RestaurantMenuPlanController extends Controller
         return response()->json([
             'message' => 'Menüplan wurde gelöscht.',
         ]);
+    }
+
+    public function print(int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $plan = $service->findForUser($authUser, $id);
+
+        if (! $plan) {
+            abort(404, 'Menüplan nicht gefunden.');
+        }
+
+        $path = $pdfService->createPdf($plan);
+
+        return response()
+            ->download($path, basename($path), [
+                'Content-Type' => 'application/pdf',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ])
+            ->deleteFileAfterSend(true);
     }
 }

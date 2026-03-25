@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\User;
@@ -21,7 +22,7 @@ class RestaurantMenuPlanService
     {
         return RestaurantMenuPlan::query()
             ->where('school_id', $authUser->school_id)
-            ->with(['entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
+            ->with(['school', 'entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
             ->find($id);
     }
 
@@ -74,10 +75,16 @@ class RestaurantMenuPlanService
         $plan->entries()->delete();
 
         foreach ($entries as $entry) {
+            $menu = RestaurantMenu::query()
+                ->where('school_id', $plan->school_id)
+                ->findOrFail($entry['menu_id']);
+
             $newEntry = $plan->entries()->create([
                 'plan_date' => $entry['plan_date'],
-                'restaurant_menu_id' => $entry['menu_id'],
-                'price_override' => isset($entry['price_override']) && $entry['price_override'] !== '' ? $entry['price_override'] : null,
+                'restaurant_menu_id' => $menu->id,
+                'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : (string) $menu->title,
+                'price' => isset($entry['price']) && $entry['price'] !== '' ? $entry['price'] : $menu->price,
+                'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
             ]);
 
             if (! empty($entry['eating_time_ids'])) {

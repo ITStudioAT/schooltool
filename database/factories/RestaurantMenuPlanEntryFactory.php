@@ -23,7 +23,9 @@ class RestaurantMenuPlanEntryFactory extends Factory
             'restaurant_menu_plan_id' => RestaurantMenuPlan::factory(),
             'plan_date' => $this->faker->dateTimeBetween('now', '+1 month')->format('Y-m-d'),
             'restaurant_menu_id' => RestaurantMenu::factory(),
-            'price_override' => null,
+            'menu_title' => $this->faker->words(2, true),
+            'price' => $this->faker->randomFloat(2, 5, 15),
+            'comments' => null,
         ];
     }
 }

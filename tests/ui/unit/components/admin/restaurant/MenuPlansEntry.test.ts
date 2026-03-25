@@ -51,6 +51,50 @@ describe('MenuPlans entry page', () => {
         expect((MenuPlansEntry as any).data().newMenuLabel).toBe(NEW_MENU_LABEL)
     })
 
+    it('uses Menüplan as the edit headline and exposes a print href for saved plans', () => {
+        const ctx = {
+            entryMode: 'edit',
+            planId: 17,
+        }
+
+        expect((MenuPlansEntry as any).computed.entryHeadline.call(ctx)).toBe('Menüplan')
+        expect((MenuPlansEntry as any).computed.printHref.call(ctx)).toBe('/api/admin/restaurant/menu-plans/17/print')
+    })
+
+    it('extracts a file name from the content-disposition header for pdf downloads', () => {
+        const fileName = (MenuPlansEntry as any).methods.fileNameFromContentDisposition(
+            'attachment; filename="menu-plan-test.pdf"',
+        )
+
+        expect(fileName).toBe('menu-plan-test.pdf')
+    })
+
+    it('renders the print button for saved plans', () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        expect(wrapper.find('[data-testid="print-menu-plan-button"]').exists()).toBe(true)
+    })
+
+    it('keeps save print and back together in the header action row', () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        const buttons = wrapper.findAll('.mpe-header__actions button')
+
+        expect(buttons).toHaveLength(3)
+        expect(buttons[0].text()).toContain('Speichern')
+        expect(buttons[2].text()).toContain('Zur\u00fcck')
+    })
+
     it('builds a new menu draft course by course with category first and food second', () => {
         const ctx = {
             newMenuFoodSearch: '',
