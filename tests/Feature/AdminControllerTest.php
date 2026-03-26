@@ -73,6 +73,7 @@ test('config returns json response with app configuration', function () {
             'selected_schoolyear',
             'selected_register',
             'menu',
+            'capabilities',
             'roles',
             'health',
         ]);
@@ -121,6 +122,20 @@ test('config returns empty menu for unauthenticated user', function () {
         ->assertJson([
             'menu' => [],
             'roles' => [],
+            'capabilities' => [
+                'home' => false,
+                'profile' => false,
+                'users' => false,
+                'user_roles' => false,
+                'super_admin' => false,
+                'register_system' => false,
+                'tutoring' => false,
+                'teaching' => false,
+                'materials' => false,
+                'groups' => false,
+                'restaurant' => false,
+                'aba' => false,
+            ],
         ]);
 });
 
@@ -504,4 +519,23 @@ test('authenticated user config includes navigation menu', function () {
     $data = $response->json();
 
     expect($data)->toHaveKey('menu');
+});
+
+test('authenticated admin config includes backend route capabilities', function () {
+    $this->actingAs($this->user);
+
+    $response = $this->getJson('/api/admin/config');
+
+    $response->assertStatus(200)
+        ->assertJsonPath('capabilities.home', true)
+        ->assertJsonPath('capabilities.profile', true)
+        ->assertJsonPath('capabilities.users', true)
+        ->assertJsonPath('capabilities.super_admin', true)
+        ->assertJsonPath('capabilities.register_system', false)
+        ->assertJsonPath('capabilities.tutoring', false)
+        ->assertJsonPath('capabilities.teaching', false)
+        ->assertJsonPath('capabilities.materials', false)
+        ->assertJsonPath('capabilities.groups', false)
+        ->assertJsonPath('capabilities.restaurant', true)
+        ->assertJsonPath('capabilities.aba', false);
 });

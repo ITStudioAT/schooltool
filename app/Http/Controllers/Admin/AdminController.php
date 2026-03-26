@@ -9,15 +9,9 @@ use App\Http\Requests\Admin\AdminPasswordUnknownStepPasswordRequest;
 use App\Http\Requests\Admin\AdminPasswordUnknownStepSchoolRequest;
 use App\Http\Requests\Admin\AdminPasswordUnknownStepToken2Request;
 use App\Http\Requests\Admin\AdminPasswordUnknownStepTokenRequest;
-use App\Http\Requests\Admin\AdminPasswordUnkownStepPasswordRequest;
-use App\Http\Requests\Admin\AdminPasswordUnkownStepTokenRequest;
 use App\Http\Requests\Admin\LoginStep2Request;
 use App\Http\Requests\Admin\LoginStep3Request;
 use App\Http\Requests\Admin\LoginStepEmailRequest;
-use App\Http\Requests\Admin\PasswordUnknownStep1Request;
-use App\Http\Requests\Admin\PasswordUnknownStep2Request;
-use App\Http\Requests\Admin\PasswordUnknownStep3Request;
-use App\Http\Requests\Admin\PasswordUnknownStep4Request;
 use App\Http\Requests\Admin\PasswordUnknownStepEmailRequest;
 use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
@@ -25,34 +19,25 @@ use App\Http\Requests\Admin\RegisterStep3Request;
 use App\Http\Resources\Admin\RegisterResource;
 use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\SchoolyearResource;
-use App\Http\Resources\Admin\UserResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
-use App\Models\QueueTest;
-use App\Models\Role;
 use App\Models\School;
-use App\Models\Teacher;
 use App\Models\SchoolTool;
+use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
-use App\Services\LicenceService;
 use App\Services\TeacherListService;
 use App\Traits\HasRoleTrait;
-use Barryvdh\Debugbar\Facades\Debugbar;
-use Composer\InstalledVersions;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Str;
 use Lab404\Impersonate\Services\ImpersonateManager;
 
 class AdminController extends Controller
 {
     use HasRoleTrait;
+
     public function config(Request $request)
     {
         // Laden aller auswählbaren Schulen
@@ -65,13 +50,11 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
-
-
     private function getConfigData()
     {
-        $navigationService = new AdminNavigationService();
+        $navigationService = new AdminNavigationService;
 
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = Auth::check() ? Auth::user() : null;
 
         /** @var ImpersonateManager $impersonateManager */
@@ -92,6 +75,9 @@ class AdminController extends Controller
             $lastImport116At = SchoolTool::where('school_id', $user->school_id)->value('import_166_at');
         }
 
+        $menu = $user ? $navigationService->dashboardMenu() : [];
+        $capabilities = $navigationService->routeCapabilities($user, $menu);
+
         $data = [
             'logo' => config('schooltool.logo', ''),
             'copyright' => config('schooltool.copyright', ''),
@@ -103,16 +89,17 @@ class AdminController extends Controller
             'licence_renewal_days' => (int) config('schooltool.licence_renewal_days', 30),
             'is_auth' => Auth::check(),
             'user' => $user ? new UserWithRoleResource($user) : null,
-            'selected_school' =>  $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
-            'selected_schoolyear' =>  $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
-            'selected_register' =>  $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister->loadCount([
+            'selected_school' => $user && $user->selectedSchool ? new SchoolResource($user->selectedSchool) : null,
+            'selected_schoolyear' => $user && $user->selectedSchoolyear ? new SchoolyearResource($user->selectedSchoolyear) : null,
+            'selected_register' => $user && $user->selectedRegister ? new RegisterResource($user->selectedRegister->loadCount([
                 'bookings',
                 'dates',
                 'dates as different_dates_count' => function ($q) {
                     $q->select(DB::raw('COUNT(DISTINCT date)'));
                 },
             ])) : null,
-            'menu' => $user ? $navigationService->dashboardMenu() : [],
+            'menu' => $menu,
+            'capabilities' => $capabilities,
             'roles' => $user ? $user->getRoleNames() : [],
             'impersonation' => [
                 'is_impersonating' => $isImpersonating,
@@ -135,11 +122,9 @@ class AdminController extends Controller
         return $data;
     }
 
-
-
     public function registerStep1(RegisterStep1Request $request)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $user = $adminService->checkRegister($validated['data']);
@@ -156,12 +141,14 @@ class AdminController extends Controller
 
     public function registerStep2(RegisterStep2Request $request)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $user = $adminService->checkRegister($validated['data']);
 
-        if (!$user) abort(401, 'Registrieren funktioniert mit dieser E-Mail-Adresse nicht.');
+        if (! $user) {
+            abort(401, 'Registrieren funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
 
         // E-Mail ist somit verifiziert!
         $user->email_verified_at = now();
@@ -174,7 +161,7 @@ class AdminController extends Controller
 
     public function registerStep3(RegisterStep3Request $request)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
 
         $validated = $request->validated();
 
@@ -188,7 +175,7 @@ class AdminController extends Controller
 
     public function passwordUnknownStepEmail(PasswordUnknownStepEmailRequest $request, AdminService $service)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $data = $adminService->checkEmail($validated['data']);
@@ -209,15 +196,14 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
-
     public function passwordUnknownStepSchool(AdminPasswordUnknownStepSchoolRequest $request, AdminService $service)
     {
         $validated = $request->validated();
         $data = $service->passwordUnkownSendToken($validated['data']);
         $data['step'] = 'PASSWORD_UNKNOWN_ENTER_TOKEN';
+
         return response()->json($data, 200);
     }
-
 
     public function passwordUnknownStepToken(AdminPasswordUnknownStepTokenRequest $request, AdminService $service)
     {
@@ -246,10 +232,9 @@ class AdminController extends Controller
         $data = $service->passwordUnkownCheckToken($data);
         $data = $service->passwordUnkownCheckToken2($data);
         $data['step'] = 'PASSWORD_UNKNOWN_ENTER_PASSWORD';
+
         return response()->json($data, 200);
     }
-
-
 
     public function passwordUnknownStepPassword(AdminPasswordUnknownStepPasswordRequest $request, AdminService $service)
     {
@@ -259,16 +244,21 @@ class AdminController extends Controller
         $data = $validated['data'];
         $data = $service->passwordUnkownCheckToken($data);
 
-        if (!$user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) abort(404, "Kein Benutzer gefunden");
-        if ($user->is_2fa) $data = $service->passwordUnkownCheckToken2($data);
+        if (! $user = User::where('email', $data['email'])->where('school_id', $data['school_id'])->first()) {
+            abort(404, 'Kein Benutzer gefunden');
+        }
+        if ($user->is_2fa) {
+            $data = $service->passwordUnkownCheckToken2($data);
+        }
         $data = $service->passwordUnkownSetPassword($data);
         $data['step'] = 'PASSWORD_UNKNOWN_FINISHED';
+
         return response()->json($data, 200);
     }
 
     public function loginStepEmail(LoginStepEmailRequest $request)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $data = $adminService->checkEmail($validated['data']);
@@ -280,13 +270,10 @@ class AdminController extends Controller
         return response()->json($data, 200);
     }
 
-
-
-
     public function loginStep2(LoginStep2Request $request)
-    // 
+    //
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $data = $adminService->checkLogin($validated['data']);
@@ -297,12 +284,13 @@ class AdminController extends Controller
             $user = $adminService->login($data);
             unset($data['password']);
         }
+
         return response()->json($data, 200);
     }
 
     public function loginStep3(LoginStep3Request $request)
     {
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $validated = $request->validated();
 
         $data = $adminService->checkLogin($validated['data']);
@@ -352,8 +340,12 @@ class AdminController extends Controller
         $data = $service->getAllTeachersNotInUsers($email);
 
         // EMail ist berechtigt, sich als Lehrer anzumelden
-        if ($data['step'] == 'NEW_TEACHER_NO_TEACHER') abort(404, "Eine Anmeldung als neue:r Lehrer:in ist mit dieser E-Mail nicht möglich");
-        if ($data['step'] == 'NEW_TEACHER_INPUT_CODE')  $service->sendCode($data['school']['id'], $data['email']);
+        if ($data['step'] == 'NEW_TEACHER_NO_TEACHER') {
+            abort(404, 'Eine Anmeldung als neue:r Lehrer:in ist mit dieser E-Mail nicht möglich');
+        }
+        if ($data['step'] == 'NEW_TEACHER_INPUT_CODE') {
+            $service->sendCode($data['school']['id'], $data['email']);
+        }
 
         return response()->json($data, 200);
     }
@@ -369,6 +361,7 @@ class AdminController extends Controller
         $service->sendCode($school_id, $email);
 
         $validated['step'] = 'NEW_TEACHER_INPUT_CODE';
+
         return response()->json($validated, 200);
     }
 
@@ -380,9 +373,11 @@ class AdminController extends Controller
         $school_id = $validated['school_id'];
         $code = $validated['token'];
 
-        if (!$teacher = Teacher::where('school_id', $school_id)->where('email', $email)->first()) abort(404, "Kein passender Lehrer in der Liste gefunden.");
+        if (! $teacher = Teacher::where('school_id', $school_id)->where('email', $email)->first()) {
+            abort(404, 'Kein passender Lehrer in der Liste gefunden.');
+        }
 
-        if (!$service->checkToken($teacher, $code)) {
+        if (! $service->checkToken($teacher, $code)) {
             // Token hat nicht gestimmt oder ist abgelaufen
             $validated['step'] = 'NEW_TEACHER_TOKEN_WRONG';
         } else {

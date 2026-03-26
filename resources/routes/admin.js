@@ -30,33 +30,66 @@ const AbaPandocDebug = () => import('@/pages/admin/aba/AbaPandocDebug.vue')
 const AbaSeedReport = () => import('@/pages/admin/aba/AbaSeedReport.vue')
 const AbaSeedReview = () => import('@/pages/admin/aba/AbaSeedReview.vue')
 
-const routes = [
-    { path: '/admin', component: Index },
-    { path: '/admin/login', component: Auth_Login },
-    { path: '/admin/unknown_password', component: Auth_UnknownPassword },
-    { path: '/admin/register', component: Auth_Register },
-    { path: '/admin/email_verification', component: Auth_EmailVerification },
-    { path: '/admin/profile', component: Profile },
-    { path: '/admin/users', component: Users },
-    { path: '/admin/users/all_users', component: Users_AllUsers },
-    { path: '/admin/users/roles', component: Users_Roles },
-    { path: '/admin/users/users_with_roles', component: Users_UsersWithRoles },
-    { path: '/admin/register_system', component: RegisterSystem },
-    { path: '/admin/register_system/details', component: RegisterSystem_Details },
-    { path: '/admin/super_admin', component: SuperAdmin },
-    { path: '/admin/tutoring', component: Tutoring },
-    { path: '/admin/teaching/:section?', component: Teaching },
-    { path: '/admin/materials', component: Materials },
-    { path: '/admin/groups', component: Groups },
-    { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview },
-    { path: '/admin/restaurant', component: Restaurant },
-    { path: '/admin/aba', component: Aba },
-    { path: '/admin/aba/results/:abaId', component: AbaResults },
-    { path: '/admin/aba/ai-settings', component: AbaAiSettings },
-    { path: '/admin/aba/ai-settings/pandoc-debug', component: AbaPandocDebug },
-    { path: '/admin/aba/ai-settings/seed-report', component: AbaSeedReport },
-    { path: '/admin/aba/ai-settings/seed-report/review', component: AbaSeedReview },
+export const routes = [
+    { path: '/admin', component: Index, meta: { capability: 'home' } },
+    { path: '/admin/login', component: Auth_Login, meta: { public: true } },
+    { path: '/admin/unknown_password', component: Auth_UnknownPassword, meta: { public: true } },
+    { path: '/admin/register', component: Auth_Register, meta: { public: true } },
+    { path: '/admin/email_verification', component: Auth_EmailVerification, meta: { public: true } },
+    { path: '/admin/profile', component: Profile, meta: { capability: 'profile' } },
+    { path: '/admin/users', component: Users, meta: { capability: 'users' } },
+    { path: '/admin/users/all_users', component: Users_AllUsers, meta: { capability: 'users' } },
+    { path: '/admin/users/roles', component: Users_Roles, meta: { capability: 'user_roles' } },
+    { path: '/admin/users/users_with_roles', component: Users_UsersWithRoles, meta: { capability: 'users' } },
+    { path: '/admin/register_system', component: RegisterSystem, meta: { capability: 'register_system' } },
+    { path: '/admin/register_system/details', component: RegisterSystem_Details, meta: { capability: 'register_system' } },
+    { path: '/admin/super_admin', component: SuperAdmin, meta: { capability: 'super_admin' } },
+    { path: '/admin/tutoring', component: Tutoring, meta: { capability: 'tutoring' } },
+    { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
+    { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
+    { path: '/admin/groups', component: Groups, meta: { capability: 'groups' } },
+    { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
+    { path: '/admin/restaurant', component: Restaurant, meta: { capability: 'restaurant' } },
+    { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },
+    { path: '/admin/aba/results/:abaId', component: AbaResults, meta: { capability: 'aba' } },
+    { path: '/admin/aba/ai-settings', component: AbaAiSettings, meta: { capability: 'aba' } },
+    { path: '/admin/aba/ai-settings/pandoc-debug', component: AbaPandocDebug, meta: { capability: 'aba' } },
+    { path: '/admin/aba/ai-settings/seed-report', component: AbaSeedReport, meta: { capability: 'aba' } },
+    { path: '/admin/aba/ai-settings/seed-report/review', component: AbaSeedReview, meta: { capability: 'aba' } },
 ]
+
+export function resolveAdminRouteAccess(path) {
+    const normalizedPath = typeof path === 'string' ? path.trim() : ''
+    if (normalizedPath === '') {
+        return null
+    }
+
+    const exactRoute = routes.find((route) => !route.path.includes('/:') && route.path === normalizedPath)
+    if (exactRoute) {
+        return {
+            public: exactRoute.meta?.public === true,
+            capability: typeof exactRoute.meta?.capability === 'string' ? exactRoute.meta.capability : null,
+        }
+    }
+
+    const dynamicRoute = routes.find((route) => {
+        if (!route.path.includes('/:')) {
+            return false
+        }
+
+        const staticPrefix = route.path.replace(/\/:.*/g, '')
+        return normalizedPath === staticPrefix || normalizedPath.startsWith(`${staticPrefix}/`)
+    })
+
+    if (!dynamicRoute) {
+        return null
+    }
+
+    return {
+        public: dynamicRoute.meta?.public === true,
+        capability: typeof dynamicRoute.meta?.capability === 'string' ? dynamicRoute.meta.capability : null,
+    }
+}
 
 const router = createRouter({
     history: createWebHistory(),
@@ -64,49 +97,51 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-    // /application wird nicht wieter geprüft
-    if (to.path.startsWith('/application')) {
+    const routeAccess = resolveAdminRouteAccess(to.path)
+    if (!routeAccess) {
+        redirectToApplicationError(404, 'Die Seite konnte nicht gefunden werden')
+        next(false)
+        return
+    }
+
+    if (routeAccess.public || !routeAccess.capability) {
         next()
         return
     }
 
-    const matched = to.matched[0]
-
-    // Extract base path (remove everything from first `/:` onward)
-    const basePath = matched?.path.replace(/\/:.*/g, '')
-
-    // Find route whose path starts with the base path and contains dynamic params
-    const matchingRoute = routes.find((route) => {
-        const staticRoutePath = route.path.replace(/\/:.*/g, '')
-        return staticRoutePath === basePath
-    })
-
-    const data = {
-        route: 'admin',
-        from: from?.path ?? null,
-        to: to?.path ?? null,
-        matching_path: matchingRoute?.path ?? null,
-        base_path: basePath ?? null,
-    }
-
-    const answer = await isRouteAllowed(data)
-    if (answer) {
-        next()
-    } else {
+    const config = await loadAdminConfigForRouteGuard()
+    if (!config) {
         next(false)
+        return
     }
+
+    if (config.is_auth !== true) {
+        next('/admin/login')
+        return
+    }
+
+    if (config.capabilities?.[routeAccess.capability] === true) {
+        next()
+        return
+    }
+
+    redirectToApplicationError(403, 'Sie können auf diese Seite nicht zugreifen')
+    next(false)
 })
 
-async function isRouteAllowed(data) {
+async function loadAdminConfigForRouteGuard() {
     try {
-        const answer = await axios.post('/api/routes/is_route_allowed', { data })
-        return true
+        const response = await axios.get('/api/admin/config')
+        return response.data
     } catch (error) {
-        const redirectUrl = '/application/error?status=' + error.response.status + '&message=' + encodeURIComponent(error.response.data.message) + '&type=' + error
-        window.location.href = redirectUrl
-        return false
-    } finally {
+        redirectToApplicationError(error.response?.status || 500, error.response?.data?.message || 'Fehler passiert.')
+        return null
     }
+}
+
+function redirectToApplicationError(status, message) {
+    const redirectUrl = `/application/error?status=${status}&message=${encodeURIComponent(message)}&type=error`
+    window.location.href = redirectUrl
 }
 
 export default router

@@ -91,8 +91,10 @@ it('hides and denies aba for users without aba_teacher role', function () {
         ],
     ])->assertForbidden();
 
-    $menuTitles = collect($this->getJson('/api/admin/config')->assertSuccessful()->json('menu'))->pluck('title');
+    $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
+    $menuTitles = collect($config['menu'])->pluck('title');
     expect($menuTitles)->not->toContain('ABA');
+    expect((bool) data_get($config, 'capabilities.aba'))->toBeFalse();
 });
 
 it('hides and denies aba for aba_teacher without aba licence', function () {
@@ -109,8 +111,10 @@ it('hides and denies aba for aba_teacher without aba licence', function () {
         ],
     ])->assertForbidden();
 
-    $menuTitles = collect($this->getJson('/api/admin/config')->assertSuccessful()->json('menu'))->pluck('title');
+    $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
+    $menuTitles = collect($config['menu'])->pluck('title');
     expect($menuTitles)->not->toContain('ABA');
+    expect((bool) data_get($config, 'capabilities.aba'))->toBeFalse();
 });
 
 it('shows and allows aba for aba_teacher with active aba licence', function () {
@@ -128,8 +132,10 @@ it('shows and allows aba for aba_teacher with active aba licence', function () {
         ],
     ])->assertSuccessful();
 
-    $menuTitles = collect($this->getJson('/api/admin/config')->assertSuccessful()->json('menu'))->pluck('title');
+    $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
+    $menuTitles = collect($config['menu'])->pluck('title');
     expect($menuTitles)->toContain('ABA');
+    expect((bool) data_get($config, 'capabilities.aba'))->toBeTrue();
 });
 
 it('returns the current selected schoolyear in admin config', function () {

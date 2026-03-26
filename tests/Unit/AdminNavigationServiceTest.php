@@ -765,3 +765,55 @@ describe('menu item consistency', function () {
         }
     });
 });
+
+describe('routeCapabilities', function () {
+    it('returns all capabilities as false for unauthenticated access', function () {
+        $result = $this->service->routeCapabilities(null, []);
+
+        expect($result)->toBe([
+            'home' => false,
+            'profile' => false,
+            'users' => false,
+            'user_roles' => false,
+            'super_admin' => false,
+            'register_system' => false,
+            'tutoring' => false,
+            'teaching' => false,
+            'materials' => false,
+            'groups' => false,
+            'restaurant' => false,
+            'aba' => false,
+        ]);
+    });
+
+    it('derives capabilities from the active dashboard menu and roles', function () {
+        config([
+            'schooltool.register_active' => true,
+            'schooltool.teaching_active' => true,
+        ]);
+
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool']);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $menu = $this->service->dashboardMenu();
+        $capabilities = $this->service->routeCapabilities($user, $menu);
+
+        expect($capabilities['home'])->toBeTrue()
+            ->and($capabilities['profile'])->toBeTrue()
+            ->and($capabilities['users'])->toBeTrue()
+            ->and($capabilities['super_admin'])->toBeTrue()
+            ->and($capabilities['register_system'])->toBeTrue()
+            ->and($capabilities['teaching'])->toBeTrue()
+            ->and($capabilities['tutoring'])->toBeFalse()
+            ->and($capabilities['materials'])->toBeFalse()
+            ->and($capabilities['groups'])->toBeTrue()
+            ->and($capabilities['restaurant'])->toBeTrue()
+            ->and($capabilities['aba'])->toBeFalse();
+    });
+});

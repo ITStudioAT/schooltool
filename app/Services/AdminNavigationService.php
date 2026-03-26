@@ -10,6 +10,18 @@ class AdminNavigationService
 {
     use HasRoleTrait;
 
+    private const ADMIN_SHELL_ROLES = [
+        'admin',
+        'register_admin',
+        'tutoring_admin',
+        'teaching_admin',
+        'materials_admin',
+        'materials_moderator',
+        'teacher',
+        'lunch_admin',
+        'aba_teacher',
+    ];
+
     /* MENÜ AUF DER LINKEN SEITE */
     public function dashboardMenu(): array
     {
@@ -127,6 +139,47 @@ class AdminNavigationService
         $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
 
         return $menu;
+    }
+
+    public function routeCapabilities(?User $user, array $menu): array
+    {
+        $capabilities = [
+            'home' => false,
+            'profile' => false,
+            'users' => false,
+            'user_roles' => false,
+            'super_admin' => false,
+            'register_system' => false,
+            'tutoring' => false,
+            'teaching' => false,
+            'materials' => false,
+            'groups' => false,
+            'restaurant' => false,
+            'aba' => false,
+        ];
+
+        if (! $user) {
+            return $capabilities;
+        }
+
+        $menuByPath = collect($menu)
+            ->filter(fn (array $item) => isset($item['to']) && is_string($item['to']))
+            ->keyBy('to');
+
+        $capabilities['home'] = $user->hasAnyRole(self::ADMIN_SHELL_ROLES) || $user->hasRole('super_admin');
+        $capabilities['profile'] = $capabilities['home'];
+        $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
+        $capabilities['user_roles'] = $user->hasRole('super_admin');
+        $capabilities['super_admin'] = $menuByPath->has('/admin/super_admin');
+        $capabilities['register_system'] = (bool) data_get($menuByPath->get('/admin/register_system'), 'is_active', false);
+        $capabilities['tutoring'] = (bool) data_get($menuByPath->get('/admin/tutoring'), 'is_active', false);
+        $capabilities['teaching'] = (bool) data_get($menuByPath->get('/admin/teaching'), 'is_active', false);
+        $capabilities['materials'] = (bool) data_get($menuByPath->get('/admin/materials'), 'is_active', false);
+        $capabilities['groups'] = (bool) data_get($menuByPath->get('/admin/groups'), 'is_active', false);
+        $capabilities['restaurant'] = (bool) data_get($menuByPath->get('/admin/restaurant'), 'is_active', false);
+        $capabilities['aba'] = (bool) data_get($menuByPath->get('/admin/aba'), 'is_active', false);
+
+        return $capabilities;
     }
 
     /* MENÜ PROFILE */
