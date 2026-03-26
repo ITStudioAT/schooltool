@@ -37,6 +37,7 @@
                 <Foods v-if="main_action === 'foods'" />
                 <Menus v-if="main_action === 'menus'" />
                 <MenuPlans v-if="main_action === 'menu-plans'" />
+                <Users v-if="main_action === 'users'" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
@@ -54,10 +55,11 @@ import Overview from './components/Overview.vue'
 import Foods from './components/Foods.vue'
 import Menus from './components/Menus.vue'
 import MenuPlans from './components/MenuPlans.vue'
+import Users from './components/Users.vue'
 import Settings from './components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Users, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -131,6 +133,11 @@ export default {
                     icon: 'mdi-calendar-text-outline',
                     note: 'Platzhalter f\u00fcr geplante Wochen- und Zeitraumansichten.',
                 },
+                users: {
+                    label: 'Benutzer',
+                    icon: 'mdi-account-multiple-outline',
+                    note: 'Platzhalter f\u00fcr die Restaurant-Benutzerverwaltung.',
+                },
                 settings: {
                     label: 'Einstellungen',
                     icon: 'mdi-cog-outline',
@@ -165,6 +172,12 @@ export default {
                     label: 'Men\u00fcpl\u00e4ne',
                     meta: 'Pl\u00e4ne vorbereiten',
                     icon: 'mdi-calendar-text-outline',
+                },
+                {
+                    key: 'users',
+                    label: 'Benutzer',
+                    meta: 'Personen verwalten',
+                    icon: 'mdi-account-multiple-outline',
                 },
                 {
                     key: 'settings',

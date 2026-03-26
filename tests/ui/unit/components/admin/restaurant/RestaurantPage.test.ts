@@ -49,10 +49,10 @@ describe('Restaurant page navigation', () => {
         expect(restaurantStoreMock.loadSettings).toHaveBeenCalledTimes(1)
     })
 
-    it('builds the five navigation items', () => {
+    it('builds the navigation items with users after menu plans', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'settings'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'users', 'settings'])
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -118,6 +118,23 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.main_action).toBe('menu-plans')
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/menu-plans' })
+    })
+
+    it('switches to the users section when unlocked', () => {
+        const routerReplace = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'overview',
+            $router: { replace: routerReplace },
+            navigateTo(section: string) {
+                return (Restaurant as any).methods.navigateTo.call(this, section)
+            },
+        }
+
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'users')
+
+        expect(ctx.main_action).toBe('users')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/users' })
     })
 
     it('does not switch sections when locked', () => {
