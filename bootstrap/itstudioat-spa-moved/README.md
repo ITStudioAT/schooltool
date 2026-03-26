@@ -116,14 +116,14 @@ composer require symfony/http-client
 
 ## Permissions for routes ##
 ### Web-Routes ###
-Under routes/meta/web there is for each route.js-file a php-file.
-Here you may define, which route needs which (spatie-)roles.
-if the array is empty, no permission is needed.
+Secure web routes with middleware in `routes/web.php`.
+Use `auth:sanctum` together with `web-allowed:...` for coarse page access, and expose the same access state to the SPA through `/api/admin/config` capabilities.
 
-With a simple command you can synchronize these files.
-The php-file is made actual with the route-js-file as basis:
+Example:
 ```bash
-    php artisan routes:sync
+    Route::middleware(['auth:sanctum', 'web-allowed:admin'])->group(function () {
+        ...
+    });
 ```
 
 ### Api-Routes ###

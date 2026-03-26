@@ -9,6 +9,16 @@ class AdminNavigationService
 {
     use HasRoleTrait;
 
+    public function routeCapabilities(?User $user = null, ?array $menu = null): array
+    {
+        return [
+            'home' => auth()->check() && (bool) $this->userHasRole(['admin', 'user']),
+            'dashboard' => auth()->check() && (bool) $this->userHasRole(['admin']),
+            'profile' => auth()->check() && (bool) $this->userHasRole(['admin', 'user']),
+            'users' => auth()->check() && (bool) $this->userHasRole(['admin']),
+        ];
+    }
+
     /* MENÜ AUF DER LINKEN SEITE */
     public function dashboardMenu(): array
     {

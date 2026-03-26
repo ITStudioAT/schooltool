@@ -2,12 +2,9 @@
 
 use Illuminate\Support\Facades\Route;
 
-// Alles wird gethrottlet
-
-Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(function () {
+Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
 
     /***** ADMIN ROUTES *****/
-    /* auth-routes */
     Route::get('/admin/login', function () {
         return view('spa::admin');
     })->name('login');
@@ -23,23 +20,48 @@ Route::middleware(['throttle:global', 'throttle:web', 'web-allowed'])->group(fun
         return view('spa::admin');
     });
 
-    /* restliche admin-Routen */
-    Route::get('/admin/{any?}', function () {
-        return view('spa::admin');
-    })->where('any', '.*')->middleware(['auth:sanctum']);
+    Route::middleware(['auth:sanctum', 'web-allowed:user,admin'])->group(function () {
+        Route::get('/admin', function () {
+            return view('spa::admin');
+        });
 
-    /* APPLICATION ROUTES */
+        Route::get('/admin/profile', function () {
+            return view('spa::admin');
+        });
+    });
+
+    Route::middleware(['auth:sanctum', 'web-allowed:admin'])->group(function () {
+        Route::get('/admin/dashboard', function () {
+            return view('spa::admin');
+        });
+
+        Route::get('/admin/users', function () {
+            return view('spa::admin');
+        });
+
+        Route::get('/admin/users/all_users', function () {
+            return view('spa::admin');
+        });
+
+        Route::get('/admin/users/roles', function () {
+            return view('spa::admin');
+        });
+
+        Route::get('/admin/users/users_with_roles', function () {
+            return view('spa::admin');
+        });
+    });
+
+    Route::middleware(['auth:sanctum', 'web-allowed:user,admin'])->group(function () {
+        Route::get('/admin/{any?}', function () {
+            return view('spa::admin');
+        })->where('any', '.*');
+    });
+
     Route::get('/application/{any?}', function () {
         return view('spa::application');
     })->where('any', '.*');
 
-    /* HOMEPAGE ROUTES
-    Route::get('/', function () {
-        return view('spa::homepage');
-    });
-    */
-
-    /* WRONG ROUTES */
     Route::get('/{any?}', function () {
         return view('spa::homepage');
     });

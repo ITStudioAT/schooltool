@@ -24,6 +24,7 @@ class AdminController extends Controller
     public function config(Request $request)
     {
         $navigationService = new AdminNavigationService;
+        $menu = $navigationService->dashboardMenu();
 
         $data = [
             'logo' => config('spa.logo', ''),
@@ -35,7 +36,8 @@ class AdminController extends Controller
             'timeout' => config('spa.timeout', 3000),
             'is_auth' => auth()->check(),
             'user' => auth()->check() ? new UserResource(auth()->user()) : null,
-            'menu' => $navigationService->dashboardMenu(),
+            'menu' => $menu,
+            'capabilities' => $navigationService->routeCapabilities(auth()->user(), $menu),
         ];
 
         return response()->json($data, 200);

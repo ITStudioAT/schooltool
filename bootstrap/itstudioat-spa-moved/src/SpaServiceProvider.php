@@ -7,11 +7,9 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Itstudioat\Spa\Commands\CreateUser;
 use Itstudioat\Spa\Commands\Fake\UserFake;
-use Itstudioat\Spa\Commands\RoutesSync;
 use Itstudioat\Spa\Commands\SpaComplete;
 use Itstudioat\Spa\Commands\SpaPackages;
 use Itstudioat\Spa\Commands\SpaUpdate;
-use Itstudioat\Spa\Commands\SyncRoutes;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -30,9 +28,7 @@ class SpaServiceProvider extends PackageServiceProvider
                 SpaPackages::class,
                 SpaComplete::class,
                 SpaUpdate::class,
-                SyncRoutes::class,
                 UserFake::class,
-                RoutesSync::class,
             ])
             ->hasInstallCommand(function (InstallCommand $command) {
                 $command

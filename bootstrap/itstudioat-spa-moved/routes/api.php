@@ -6,14 +6,10 @@ use App\Http\Controllers\Admin\SpaRoleController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
-use App\Http\Controllers\Spa\RouteController;
 use Illuminate\Support\Facades\Route;
 
 // Globales Throttle
 Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function () {
-
-    /***** OTHER ROUTES *****/
-    Route::post('/routes/is_route_allowed', [RouteController::class, 'isRouteAllowed']);
 
     /***** HOMEPAGE ROUTES *****/
 
