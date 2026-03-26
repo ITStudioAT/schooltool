@@ -97,6 +97,24 @@
                                 <span class="mpe-stat__label">Frei</span>
                                 <strong class="mpe-stat__value">{{ freeDayCount }}</strong>
                             </div>
+                            <div
+                                v-if="canToggleAvailability"
+                                class="mpe-stat mpe-stat--availability"
+                                data-testid="availability-card">
+                                <div class="mpe-stat__availability-header">
+                                    <v-icon icon="mdi-eye-check-outline" size="15" class="mpe-stat__icon" />
+                                    <span class="mpe-stat__label">Status</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    class="mpe-availability-toggle"
+                                    :class="{ 'is-active': isPlanAvailable }"
+                                    :aria-pressed="isPlanAvailable ? 'true' : 'false'"
+                                    data-testid="availability-toggle"
+                                    @click="togglePlanAvailability">
+                                    Verfügbar
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Week Board -->
@@ -186,6 +204,15 @@
                                         </div>
                                         <div v-if="entryHasPriceOverride(entry) && entry.menu.price != null" class="mpe-entry-card__price-note">
                                             Basispreis: {{ formatPrice(entry.menu.price) }}
+                                        </div>
+
+                                        <div v-if="entryActiveEatingTimeLabels(entry).length" class="mpe-eating-times mpe-eating-times--active mt-2">
+                                            <div class="mpe-eating-times__label">Aktiv:</div>
+                                            <div
+                                                class="mpe-eating-times__summary"
+                                                :data-testid="`entry-active-times-${day.iso}-${entry._key}`">
+                                                {{ entryActiveEatingTimeLabels(entry).join(', ') }}
+                                            </div>
                                         </div>
 
                                         <!-- Eating time toggles -->
@@ -697,7 +724,8 @@ export default {
         return {
             newMenuLabel: NEW_MENU_LABEL,
             planTitle: '',
-            entriesByDate: {},   // { iso: [{ _key, menu, menuTitle, price, comments, eatingTimeIds }] }
+            isPlanAvailable: false,
+            entriesByDate: {},   // { iso: [{ _key, menu, menuTitle, price, comments, eatingTimeIds, eatingTimes }] }
             searchStates: {},    // { iso: { open: bool, query: '' } }
             isSaving: false,
             isPrinting: false,
@@ -740,6 +768,11 @@ export default {
         '$route.query.plan_id': 'loadInitialData',
         '$route.query.start': 'loadInitialData',
         '$route.query.end': 'loadInitialData',
+        openDayCount(newCount) {
+            if (newCount > 0 && this.isPlanAvailable) {
+                this.isPlanAvailable = false
+            }
+        },
     },
 
     computed: {
@@ -852,6 +885,10 @@ export default {
             return this.planDays.filter((day) => !day.isFreeDay && this.dayEntries(day.iso).length === 0).length
         },
 
+        canToggleAvailability() {
+            return this.planDays.length > 0 && this.openDayCount === 0
+        },
+
         coveragePercent() {
             const assignable = this.planDays.filter((day) => !day.isFreeDay).length
 
@@ -951,6 +988,7 @@ export default {
             } else {
                 this.entriesByDate = {}
                 this.planTitle = ''
+                this.isPlanAvailable = false
             }
         },
 
@@ -962,6 +1000,7 @@ export default {
             }
 
             this.planTitle = plan.title || ''
+            this.isPlanAvailable = plan.is_available === true
 
             const next = {}
 
@@ -980,10 +1019,19 @@ export default {
                     price: entry.price != null ? String(entry.price) : (menu.price != null ? String(menu.price) : ''),
                     comments: entry.comments || '',
                     eatingTimeIds: entry.eating_time_ids || [],
+                    eatingTimes: entry.eating_times || [],
                 })
             })
 
             this.entriesByDate = next
+        },
+
+        togglePlanAvailability() {
+            if (! this.canToggleAvailability) {
+                return
+            }
+
+            this.isPlanAvailable = ! this.isPlanAvailable
         },
 
         // ── Entry management ─────────────────────────────────────────────
@@ -1018,6 +1066,10 @@ export default {
                     price: menu?.price != null ? String(menu.price) : '',
                     comments: '',
                     eatingTimeIds: this.eatingTimes.map((et) => et.id),
+                    eatingTimes: this.eatingTimes.map((et) => ({
+                        id: et.id,
+                        eating_time: et.eating_time,
+                    })),
                 },
             ]
 
@@ -1055,12 +1107,48 @@ export default {
             return entry.eatingTimeIds.includes(timeId)
         },
 
+        formatEatingTimeLabel(value) {
+            const normalizedValue = String(value || '').trim()
+
+            if (normalizedValue === '') {
+                return ''
+            }
+
+            const shortValue = normalizedValue.match(/^\d{2}:\d{2}/)?.[0] || normalizedValue
+
+            return `${shortValue} Uhr`
+        },
+
+        entryActiveEatingTimeLabels(entry) {
+            const availableLabels = new Map(
+                this.eatingTimes.map((time) => [
+                    Number(time.id),
+                    this.formatEatingTimeLabel(time.eating_time),
+                ]),
+            )
+            const storedLabels = new Map(
+                (entry?.eatingTimes || []).map((time) => [
+                    Number(time.id),
+                    this.formatEatingTimeLabel(time.eating_time),
+                ]),
+            )
+
+            return (entry?.eatingTimeIds || [])
+                .map((timeId) => availableLabels.get(Number(timeId)) || storedLabels.get(Number(timeId)) || '')
+                .filter((label) => label !== '')
+        },
+
         toggleTime(entry, timeId) {
             if (entry.eatingTimeIds.includes(timeId)) {
                 entry.eatingTimeIds = entry.eatingTimeIds.filter((id) => id !== timeId)
             } else {
                 entry.eatingTimeIds = [...entry.eatingTimeIds, timeId]
             }
+
+            entry.eatingTimes = this.eatingTimes.filter((time) => entry.eatingTimeIds.includes(time.id)).map((time) => ({
+                id: time.id,
+                eating_time: time.eating_time,
+            }))
         },
 
         // ── Search ───────────────────────────────────────────────────────
@@ -1457,6 +1545,7 @@ export default {
                 title: this.planTitle || null,
                 start_date: this.rangeBounds?.start,
                 end_date: this.rangeBounds?.end,
+                is_available: this.canToggleAvailability ? this.isPlanAvailable : false,
                 entries,
             }
         },
@@ -1712,7 +1801,7 @@ export default {
 
 .mpe-summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 10px;
     margin-bottom: 20px;
 }
@@ -1742,6 +1831,39 @@ export default {
     font-weight: 900;
     color: #1f2937;
     line-height: 1;
+}
+
+.mpe-stat__availability-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mpe-availability-toggle {
+    width: 100%;
+    min-height: 56px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #475569;
+    font: inherit;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
+}
+
+.mpe-availability-toggle:hover {
+    transform: translateY(-1px);
+    border-color: rgba(34, 197, 94, 0.38);
+}
+
+.mpe-availability-toggle.is-active {
+    border-color: rgba(22, 163, 74, 0.5);
+    background: linear-gradient(160deg, #dcfce7, #bbf7d0);
+    color: #166534;
+    box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.16);
 }
 
 /* ---- Week Board ---- */
@@ -2058,6 +2180,12 @@ export default {
     color: #b45309;
 }
 
+.mpe-eating-times__summary {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #374151;
+}
+
 .mpe-time-chip {
     cursor: pointer;
 }
@@ -2256,6 +2384,9 @@ export default {
 .mpe-stat--free .mpe-stat__icon { color: #15803d; }
 .mpe-stat--free .mpe-stat__label { color: #15803d; }
 .mpe-stat--free { background: linear-gradient(160deg, #f0fdf4, #dcfce7); border-color: rgba(34, 197, 94, 0.2); }
+.mpe-stat--availability { background: linear-gradient(160deg, #f8fafc, #e2e8f0); border-color: rgba(148, 163, 184, 0.24); }
+.mpe-stat--availability .mpe-stat__icon,
+.mpe-stat--availability .mpe-stat__label { color: #475569; }
 
 /* ---- No-range Empty State ---- */
 
@@ -2295,4 +2426,3 @@ export default {
     .mpe-preview-food { grid-template-columns: 1fr; }
 }
 </style>
-

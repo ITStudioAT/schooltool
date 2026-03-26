@@ -26,6 +26,7 @@ class RestaurantMenuPlanFactory extends Factory
             'title' => $this->faker->words(2, true),
             'start_date' => $start->format('Y-m-d'),
             'end_date' => $end->format('Y-m-d'),
+            'is_available' => false,
         ];
     }
 }

@@ -33,6 +33,7 @@ class RestaurantMenuPlanService
             'title' => $validated['title'] ?? null,
             'start_date' => $validated['start_date'],
             'end_date' => $validated['end_date'],
+            'is_available' => (bool) ($validated['is_available'] ?? false),
         ]);
 
         $this->syncEntries($plan, $validated['entries'] ?? []);
@@ -54,6 +55,7 @@ class RestaurantMenuPlanService
             'title' => $validated['title'] ?? null,
             'start_date' => $validated['start_date'],
             'end_date' => $validated['end_date'],
+            'is_available' => (bool) ($validated['is_available'] ?? false),
         ]);
 
         $this->syncEntries($plan, $validated['entries'] ?? []);

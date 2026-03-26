@@ -4,9 +4,13 @@ use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -50,12 +54,18 @@ test('settings creates default categories for empty school', function () {
         ->toBeTrue()
         ->and($response->json('can_manage_online_settings'))
         ->toBeTrue()
+        ->and($response->json('online_settings.visibility_start_mode'))
+        ->toBe('when_available')
+        ->and($response->json('online_settings.visibility_start_week_offset'))
+        ->toBe(2)
         ->and($response->json('online_settings.order_start_mode'))
         ->toBe('when_available')
         ->and($response->json('online_settings.order_start_week_offset'))
         ->toBe(2)
         ->and($response->json('online_settings.order_end_day_of_week'))
         ->toBe(5)
+        ->and($response->json('online_settings.visibility_end_mode'))
+        ->toBe('plan_end')
         ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
         ->toEqual(['Fisch', 'Schwein'])
         ->and($response->json('ingredient_icons.0.image_url'))
@@ -80,6 +90,10 @@ test('restaurant admin can update school wide online ordering settings', functio
 
     $this->putJson('/api/admin/restaurant/online-settings', [
         'data' => [
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 2,
+            'visibility_start_day_of_week' => 0,
+            'visibility_start_time' => '14:00',
             'order_start_mode' => 'scheduled',
             'order_start_week_offset' => 2,
             'order_start_day_of_week' => 0,
@@ -87,13 +101,21 @@ test('restaurant admin can update school wide online ordering settings', functio
             'order_end_week_offset' => 1,
             'order_end_day_of_week' => 5,
             'order_end_time' => '17:00',
+            'visibility_end_mode' => 'week_end',
         ],
     ])->assertOk()
+        ->assertJsonPath('data.visibility_start_mode', 'scheduled')
+        ->assertJsonPath('data.visibility_start_time', '14:00')
         ->assertJsonPath('data.order_start_mode', 'scheduled')
-        ->assertJsonPath('data.order_end_time', '17:00');
+        ->assertJsonPath('data.order_end_time', '17:00')
+        ->assertJsonPath('data.visibility_end_mode', 'week_end');
 
     $this->assertDatabaseHas('school_tools', [
         'school_id' => $this->school->id,
+        'restaurant_menu_visibility_start_mode' => 'scheduled',
+        'restaurant_menu_visibility_start_week_offset' => 2,
+        'restaurant_menu_visibility_start_day_of_week' => 0,
+        'restaurant_menu_visibility_start_time' => '14:00:00',
         'restaurant_menu_order_start_mode' => 'scheduled',
         'restaurant_menu_order_start_week_offset' => 2,
         'restaurant_menu_order_start_day_of_week' => 0,
@@ -101,6 +123,7 @@ test('restaurant admin can update school wide online ordering settings', functio
         'restaurant_menu_order_end_week_offset' => 1,
         'restaurant_menu_order_end_day_of_week' => 5,
         'restaurant_menu_order_end_time' => '17:00:00',
+        'restaurant_menu_visibility_end_mode' => 'week_end',
     ]);
 });
 
@@ -109,6 +132,10 @@ test('restaurant online settings validate the required end time', function () {
 
     $this->putJson('/api/admin/restaurant/online-settings', [
         'data' => [
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 2,
+            'visibility_start_day_of_week' => 0,
+            'visibility_start_time' => '',
             'order_start_mode' => 'scheduled',
             'order_start_week_offset' => 2,
             'order_start_day_of_week' => 0,
@@ -116,9 +143,124 @@ test('restaurant online settings validate the required end time', function () {
             'order_end_week_offset' => 1,
             'order_end_day_of_week' => 5,
             'order_end_time' => '',
+            'visibility_end_mode' => 'plan_end',
         ],
     ])->assertStatus(422)
-        ->assertJsonValidationErrors(['data.order_end_time']);
+        ->assertJsonValidationErrors(['data.visibility_start_time', 'data.order_end_time']);
+});
+
+test('restaurant online settings reject a visibility start after the order start', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/online-settings', [
+        'data' => [
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 1,
+            'visibility_start_day_of_week' => 1,
+            'visibility_start_time' => '09:00',
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 2,
+            'order_start_day_of_week' => 0,
+            'order_start_time' => '15:00',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+        ],
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['data.visibility_start_time']);
+});
+
+test('restaurant online settings allow a scheduled visibility start with automatic order start', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/online-settings', [
+        'data' => [
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 2,
+            'visibility_start_day_of_week' => 5,
+            'visibility_start_time' => '12:00',
+            'order_start_mode' => 'when_available',
+            'order_start_week_offset' => 2,
+            'order_start_day_of_week' => 0,
+            'order_start_time' => '15:00',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.visibility_start_mode', 'scheduled')
+        ->assertJsonPath('data.order_start_mode', 'when_available');
+});
+
+test('restaurant admin can update visibility start to when orderable', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/online-settings', [
+        'data' => [
+            'visibility_start_mode' => 'when_orderable',
+            'visibility_start_week_offset' => 2,
+            'visibility_start_day_of_week' => 0,
+            'visibility_start_time' => '14:00',
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 2,
+            'order_start_day_of_week' => 0,
+            'order_start_time' => '15:00',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.visibility_start_mode', 'when_orderable');
+
+    $this->assertDatabaseHas('school_tools', [
+        'school_id' => $this->school->id,
+        'restaurant_menu_visibility_start_mode' => 'when_orderable',
+    ]);
+});
+
+test('repair migration restores missing online visibility start columns', function () {
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'restaurant_menu_order_start_mode' => 'scheduled',
+        'restaurant_menu_order_start_week_offset' => 2,
+        'restaurant_menu_order_start_day_of_week' => 1,
+        'restaurant_menu_order_start_time' => '13:30:00',
+        'restaurant_menu_order_end_week_offset' => 1,
+        'restaurant_menu_order_end_day_of_week' => 5,
+        'restaurant_menu_order_end_time' => '17:00:00',
+        'restaurant_menu_visibility_end_mode' => 'plan_end',
+    ]);
+
+    Schema::table('school_tools', function (Blueprint $table) {
+        $table->dropColumn([
+            'restaurant_menu_visibility_start_mode',
+            'restaurant_menu_visibility_start_week_offset',
+            'restaurant_menu_visibility_start_day_of_week',
+            'restaurant_menu_visibility_start_time',
+        ]);
+    });
+
+    expect(Schema::hasColumn('school_tools', 'restaurant_menu_visibility_start_mode'))->toBeFalse();
+
+    $migration = require database_path('migrations/2026_03_26_112507_repair_restaurant_menu_visibility_start_settings_on_school_tools_table.php');
+    $migration->up();
+
+    expect(Schema::hasColumn('school_tools', 'restaurant_menu_visibility_start_mode'))->toBeTrue()
+        ->and(Schema::hasColumn('school_tools', 'restaurant_menu_visibility_start_week_offset'))->toBeTrue()
+        ->and(Schema::hasColumn('school_tools', 'restaurant_menu_visibility_start_day_of_week'))->toBeTrue()
+        ->and(Schema::hasColumn('school_tools', 'restaurant_menu_visibility_start_time'))->toBeTrue();
+
+    $settings = DB::table('school_tools')
+        ->where('school_id', $this->school->id)
+        ->first();
+
+    expect($settings?->restaurant_menu_visibility_start_mode)->toBe('scheduled')
+        ->and((int) $settings?->restaurant_menu_visibility_start_week_offset)->toBe(2)
+        ->and((int) $settings?->restaurant_menu_visibility_start_day_of_week)->toBe(1)
+        ->and($settings?->restaurant_menu_visibility_start_time)->toStartWith('13:30');
 });
 
 test('category CRUD works for restaurant settings', function () {

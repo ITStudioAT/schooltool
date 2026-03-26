@@ -18,6 +18,7 @@ class StoreRestaurantMenuPlanRequest extends FormRequest
             'title' => ['nullable', 'string', 'max:255'],
             'start_date' => ['required', 'date_format:Y-m-d'],
             'end_date' => ['required', 'date_format:Y-m-d', 'gte:start_date'],
+            'is_available' => ['nullable', 'boolean'],
             'entries' => ['nullable', 'array'],
             'entries.*.plan_date' => ['required', 'date_format:Y-m-d'],
             'entries.*.menu_id' => ['required', 'integer', 'exists:restaurant_menus,id'],

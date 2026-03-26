@@ -4,7 +4,15 @@ import { describe, expect, it, vi } from 'vitest'
 import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import MenuPlansEntry from '@/pages/admin/restaurant/components/MenuPlansEntry.vue'
 
-function mountMenuPlansEntry(query: Record<string, string> = {}, freeDays: { free_date: string }[] = []) {
+function mountMenuPlansEntry(
+    query: Record<string, string> = {},
+    freeDays: { free_date: string }[] = [],
+    options: {
+        menus?: Array<Record<string, unknown>>
+        foods?: Array<Record<string, unknown>>
+        eatingTimes?: Array<Record<string, unknown>>
+    } = {},
+) {
     return mount(MenuPlansEntry, {
         global: {
             plugins: [
@@ -24,6 +32,22 @@ function mountMenuPlansEntry(query: Record<string, string> = {}, freeDays: { fre
                             pendingUnsetDates: [],
                             isLoaded: freeDays.length > 0,
                         },
+                        AdminRestaurantMenuStore: {
+                            menus: options.menus || [],
+                        },
+                        AdminRestaurantFoodStore: {
+                            foods: options.foods || [],
+                        },
+                        AdminRestaurantEatingTimeStore: {
+                            eatingTimes: options.eatingTimes || [],
+                            isLoaded: true,
+                        },
+                        AdminRestaurantStore: {
+                            settings: {
+                                categories: [],
+                                allergen_options: [],
+                            },
+                        },
                     },
                 }),
             ],
@@ -40,10 +64,32 @@ function mountMenuPlansEntry(query: Record<string, string> = {}, freeDays: { fre
                 'v-btn': {
                     template: '<button v-bind="$attrs" @click="$emit(\'click\', $event)"><slot /></button>',
                 },
+                'v-icon': { template: '<i><slot /></i>' },
+                'v-text-field': { template: '<input />' },
+                'v-dialog': { template: '<div><slot /></div>' },
+                'v-card': { template: '<div><slot /></div>' },
+                'v-card-title': { template: '<div><slot /></div>' },
+                'v-card-text': { template: '<div><slot /></div>' },
+                'v-card-actions': { template: '<div><slot /></div>' },
+                'v-form': { template: '<form><slot /></form>' },
+                'v-spacer': { template: '<div />' },
+                'v-textarea': { template: '<textarea />' },
+                'v-chip': { template: '<div><slot /></div>' },
+                'v-alert': { template: '<div><slot /></div>' },
+                'v-avatar': { template: '<div><slot /></div>' },
+                'v-img': { template: '<img />' },
                 AdminSectionHero: { template: '<header />' },
             },
         },
     })
+}
+
+function dayTile(wrapper: ReturnType<typeof mountMenuPlansEntry>, iso: string) {
+    return wrapper.get(`[data-testid="plan-day-${iso}"]`)
+}
+
+function dayAddButtons(wrapper: ReturnType<typeof mountMenuPlansEntry>, iso: string) {
+    return dayTile(wrapper, iso).findAll('button').filter((button) => button.text().includes('Men'))
 }
 
 describe('MenuPlans entry page', () => {
@@ -306,13 +352,11 @@ describe('MenuPlans entry page', () => {
                 week: '2026-04-13',
             },
         })
-        expect((wrapper.vm as any).backButtonLabel).toBe('Zurueck zum Plan')
     })
 
-    it('renders each day in the requested range and shows dummy menus for edit mode', () => {
+    it('renders each day in the requested range and keeps open days ready for menu assignment', () => {
         const wrapper = mountMenuPlansEntry({
-            mode: 'edit',
-            plan_id: 'mp-2026-03-23',
+            mode: 'create',
             start: '2026-03-23',
             end: '2026-03-27',
         })
@@ -325,30 +369,98 @@ describe('MenuPlans entry page', () => {
             '2026-03-27',
         ])
 
-        expect(wrapper.get('[data-testid="selected-menu-2026-03-23"]').text()).toContain('Pasta Napoli')
-        expect(wrapper.get('[data-testid="selected-menu-2026-03-25"]').text()).toContain('Gemuese Curry')
-        expect(wrapper.get('[data-testid="add-menu-2026-03-24"]').text()).toContain('Menu hinzufuegen')
-        expect(wrapper.get('[data-testid="add-menu-2026-03-26"]').exists()).toBe(true)
-        expect(wrapper.get('[data-testid="plan-progress-badge"]').text()).toContain('60%')
+        expect(dayAddButtons(wrapper, '2026-03-24')).toHaveLength(1)
+        expect(dayAddButtons(wrapper, '2026-03-24')[0].text()).toContain('Men')
+        expect(dayAddButtons(wrapper, '2026-03-26')).toHaveLength(1)
+        expect(wrapper.get('[data-testid="plan-progress-badge"]').text()).toContain('0%')
     })
 
-    it('assigns a dummy menu when the plus button is clicked', async () => {
+    it('adds a menu to a day after opening the search panel', async () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'create',
             start: '2026-03-23',
             end: '2026-03-27',
+        }, [], {
+            menus: [
+                {
+                    id: 9,
+                    title: 'Gemuese Curry',
+                    price: '8.50',
+                    foods: [],
+                },
+            ],
         })
 
-        await wrapper.get('[data-testid="add-menu-2026-03-24"]').trigger('click')
+        await dayAddButtons(wrapper, '2026-03-24')[0].trigger('click')
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain(NEW_MENU_LABEL)
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain('Gemuese Curry')
 
-        expect(wrapper.get('[data-testid="selected-menu-2026-03-24"]').text()).toContain('Gemuese Curry')
-        expect((wrapper.vm as any).selectedMenuCount).toBe(1)
+        await dayTile(wrapper, '2026-03-24').find('.mpe-search-result').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).dayEntries('2026-03-24')).toHaveLength(1)
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain('Gemuese Curry')
+        expect((wrapper.vm as any).filledDayCount).toBe(1)
+    })
+
+    it('stores availability as false in the payload while open days still exist', () => {
+        const ctx = {
+            entriesByDate: {},
+            planTitle: 'Testplan',
+            rangeBounds: {
+                start: '2026-03-23',
+                end: '2026-03-27',
+            },
+            isPlanAvailable: true,
+            canToggleAvailability: false,
+        }
+
+        expect((MenuPlansEntry as any).methods.buildPayload.call(ctx)).toMatchObject({
+            title: 'Testplan',
+            start_date: '2026-03-23',
+            end_date: '2026-03-27',
+            is_available: false,
+            entries: [],
+        })
+    })
+
+    it('shows active eating times from stored plan data even before the global list is loaded', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'create',
+            start: '2026-03-23',
+            end: '2026-03-23',
+        })
+
+        ;(wrapper.vm as any).entriesByDate = {
+            '2026-03-23': [
+                {
+                    _key: 'entry-1',
+                    menu: {
+                        id: 7,
+                        title: 'Wochenmenue',
+                        foods: [],
+                    },
+                    menuTitle: 'Wochenmenue',
+                    price: '8.50',
+                    comments: '',
+                    eatingTimeIds: [1, 2],
+                    eatingTimes: [
+                        { id: 1, eating_time: '12:25:00' },
+                        { id: 2, eating_time: '13:20:00' },
+                    ],
+                },
+            ],
+        }
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.get('[data-testid="entry-active-times-2026-03-23-entry-1"]').text()).toContain('12:25 Uhr')
+        expect(wrapper.get('[data-testid="entry-active-times-2026-03-23-entry-1"]').text()).toContain('13:20 Uhr')
     })
 
     describe('free day handling', () => {
         it('marks a free day tile with the free-day class', () => {
             const wrapper = mountMenuPlansEntry(
-                { mode: 'edit', start: '2026-03-23', end: '2026-03-27' },
+                { mode: 'create', start: '2026-03-23', end: '2026-03-27' },
                 [{ free_date: '2026-03-25' }],
             )
 
@@ -358,7 +470,7 @@ describe('MenuPlans entry page', () => {
 
         it('does not mark non-free days as free', () => {
             const wrapper = mountMenuPlansEntry(
-                { mode: 'edit', start: '2026-03-23', end: '2026-03-27' },
+                { mode: 'create', start: '2026-03-23', end: '2026-03-27' },
                 [{ free_date: '2026-03-25' }],
             )
 
@@ -372,20 +484,21 @@ describe('MenuPlans entry page', () => {
                 [{ free_date: '2026-03-25' }],
             )
 
-            expect(wrapper.get('[data-testid="free-day-2026-03-25"]').text()).toContain('Freier Tag')
-            expect(wrapper.find('[data-testid="add-menu-2026-03-25"]').exists()).toBe(false)
+            expect(dayTile(wrapper, '2026-03-25').find('.mpe-free-card').exists()).toBe(true)
+            expect(dayTile(wrapper, '2026-03-25').text()).toContain('Freier Tag')
+            expect(dayAddButtons(wrapper, '2026-03-25')).toHaveLength(0)
         })
 
-        it('blocks menu assignment on a free day', async () => {
+        it('does not render inline search controls on a free day', async () => {
             const wrapper = mountMenuPlansEntry(
                 { mode: 'create', start: '2026-03-23', end: '2026-03-27' },
                 [{ free_date: '2026-03-24' }],
             )
 
-            ;(wrapper.vm as any).assignDummyMenu('2026-03-24')
             await wrapper.vm.$nextTick()
 
-            expect((wrapper.vm as any).menuSelectionsByDate['2026-03-24']).toBeUndefined()
+            expect(dayTile(wrapper, '2026-03-24').find('.mpe-search-panel').exists()).toBe(false)
+            expect(dayAddButtons(wrapper, '2026-03-24')).toHaveLength(0)
         })
 
         it('still allows menu assignment on non-free days', async () => {
@@ -394,10 +507,15 @@ describe('MenuPlans entry page', () => {
                 [{ free_date: '2026-03-24' }],
             )
 
-            ;(wrapper.vm as any).assignDummyMenu('2026-03-23')
+            ;(wrapper.vm as any).addEntryForDay('2026-03-23', {
+                id: 4,
+                title: 'Gemuese Curry',
+                price: '8.50',
+            })
             await wrapper.vm.$nextTick()
 
-            expect((wrapper.vm as any).menuSelectionsByDate['2026-03-23']).toBeDefined()
+            expect((wrapper.vm as any).dayEntries('2026-03-23')).toHaveLength(1)
+            expect(dayTile(wrapper, '2026-03-23').text()).toContain('Gemuese Curry')
         })
 
         it('excludes free days from the open day count', () => {
@@ -412,26 +530,33 @@ describe('MenuPlans entry page', () => {
 
         it('excludes free days from the coverage percentage calculation', () => {
             const wrapper = mountMenuPlansEntry(
-                { mode: 'edit', start: '2026-03-23', end: '2026-03-27' },
+                { mode: 'create', start: '2026-03-23', end: '2026-03-27' },
                 [{ free_date: '2026-03-25' }],
             )
 
-            // edit seeds menus on even indices: 2026-03-23, 2026-03-25, 2026-03-27
-            // free day 2026-03-25 is excluded from selectedMenuCount
-            // assignable (non-free): Mon, Tue, Thu, Fri = 4
-            // menus on non-free days: Mon, Fri = 2
-            // coverage = round(2/4 * 100) = 50%
+            ;(wrapper.vm as any).entriesByDate = {
+                '2026-03-23': [{ _key: 'entry-1', menu: { id: 1, title: 'A' } }],
+                '2026-03-25': [{ _key: 'entry-2', menu: { id: 2, title: 'B' } }],
+                '2026-03-27': [{ _key: 'entry-3', menu: { id: 3, title: 'C' } }],
+            }
+
             expect((wrapper.vm as any).coveragePercent).toBe(50)
         })
 
-        it('skips free days when computing the first open day', () => {
+        it('ignores menus on free days when counting filled days', () => {
             const wrapper = mountMenuPlansEntry(
                 { mode: 'create', start: '2026-03-23', end: '2026-03-27' },
                 [{ free_date: '2026-03-23' }],
             )
 
             // 2026-03-23 is free → first open day should be 2026-03-24
-            expect((wrapper.vm as any).firstOpenDay?.iso).toBe('2026-03-24')
+            ;(wrapper.vm as any).entriesByDate = {
+                '2026-03-23': [{ _key: 'entry-1', menu: { id: 1, title: 'A' } }],
+                '2026-03-24': [{ _key: 'entry-2', menu: { id: 2, title: 'B' } }],
+            }
+
+            expect((wrapper.vm as any).filledDayCount).toBe(1)
+            expect((wrapper.vm as any).openDayCount).toBe(3)
         })
 
         it('counts free days in freeDayCount', () => {

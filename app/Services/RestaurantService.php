@@ -21,6 +21,10 @@ class RestaurantService
     private const DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER = 12;
 
     private const DEFAULT_ONLINE_SETTINGS = [
+        'visibility_start_mode' => 'when_available',
+        'visibility_start_week_offset' => 2,
+        'visibility_start_day_of_week' => 0,
+        'visibility_start_time' => '15:00',
         'order_start_mode' => 'when_available',
         'order_start_week_offset' => 2,
         'order_start_day_of_week' => 0,
@@ -28,6 +32,7 @@ class RestaurantService
         'order_end_week_offset' => 1,
         'order_end_day_of_week' => 5,
         'order_end_time' => '17:00',
+        'visibility_end_mode' => 'plan_end',
     ];
 
     public function settingsForUser(User $authUser): array
@@ -111,6 +116,10 @@ class RestaurantService
         }
 
         $normalized = [
+            'visibility_start_mode' => $this->normalizeVisibilityStartMode($settings['visibility_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode']),
+            'visibility_start_week_offset' => $this->normalizeWeekOffset($settings['visibility_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset']),
+            'visibility_start_day_of_week' => $this->normalizeDayOfWeek($settings['visibility_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week']),
+            'visibility_start_time' => $this->normalizeTimeString($settings['visibility_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_time']),
             'order_start_mode' => ($settings['order_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_mode']) === 'scheduled'
                 ? 'scheduled'
                 : 'when_available',
@@ -120,10 +129,15 @@ class RestaurantService
             'order_end_week_offset' => $this->normalizeWeekOffset($settings['order_end_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset']),
             'order_end_day_of_week' => $this->normalizeDayOfWeek($settings['order_end_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week']),
             'order_end_time' => $this->normalizeTimeString($settings['order_end_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time']),
+            'visibility_end_mode' => $this->normalizeVisibilityEndMode($settings['visibility_end_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode']),
         ];
 
         $schoolTool = $this->schoolToolForUser($user);
         $schoolTool->fill([
+            'restaurant_menu_visibility_start_mode' => $normalized['visibility_start_mode'],
+            'restaurant_menu_visibility_start_week_offset' => $normalized['visibility_start_week_offset'],
+            'restaurant_menu_visibility_start_day_of_week' => $normalized['visibility_start_day_of_week'],
+            'restaurant_menu_visibility_start_time' => $normalized['visibility_start_time'],
             'restaurant_menu_order_start_mode' => $normalized['order_start_mode'],
             'restaurant_menu_order_start_week_offset' => $normalized['order_start_week_offset'],
             'restaurant_menu_order_start_day_of_week' => $normalized['order_start_day_of_week'],
@@ -131,6 +145,7 @@ class RestaurantService
             'restaurant_menu_order_end_week_offset' => $normalized['order_end_week_offset'],
             'restaurant_menu_order_end_day_of_week' => $normalized['order_end_day_of_week'],
             'restaurant_menu_order_end_time' => $normalized['order_end_time'],
+            'restaurant_menu_visibility_end_mode' => $normalized['visibility_end_mode'],
         ])->save();
 
         return $this->normalizeOnlineSettings($schoolTool->fresh());
@@ -621,6 +636,10 @@ class RestaurantService
         }
 
         return collect([
+            'restaurant_menu_visibility_start_mode',
+            'restaurant_menu_visibility_start_week_offset',
+            'restaurant_menu_visibility_start_day_of_week',
+            'restaurant_menu_visibility_start_time',
             'restaurant_menu_order_start_mode',
             'restaurant_menu_order_start_week_offset',
             'restaurant_menu_order_start_day_of_week',
@@ -628,6 +647,7 @@ class RestaurantService
             'restaurant_menu_order_end_week_offset',
             'restaurant_menu_order_end_day_of_week',
             'restaurant_menu_order_end_time',
+            'restaurant_menu_visibility_end_mode',
         ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
     }
 
@@ -639,6 +659,10 @@ class RestaurantService
                 'tutoring_student_must_be_confirmed' => false,
                 'tutoring_confirmer_email' => null,
                 'tutoring_max_offers_per_student' => 0,
+                'restaurant_menu_visibility_start_mode' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode'],
+                'restaurant_menu_visibility_start_week_offset' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset'],
+                'restaurant_menu_visibility_start_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week'],
+                'restaurant_menu_visibility_start_time' => self::DEFAULT_ONLINE_SETTINGS['visibility_start_time'],
                 'restaurant_menu_order_start_mode' => self::DEFAULT_ONLINE_SETTINGS['order_start_mode'],
                 'restaurant_menu_order_start_week_offset' => self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset'],
                 'restaurant_menu_order_start_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week'],
@@ -646,6 +670,7 @@ class RestaurantService
                 'restaurant_menu_order_end_week_offset' => self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset'],
                 'restaurant_menu_order_end_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week'],
                 'restaurant_menu_order_end_time' => self::DEFAULT_ONLINE_SETTINGS['order_end_time'],
+                'restaurant_menu_visibility_end_mode' => self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode'],
             ]
         );
     }
@@ -657,6 +682,10 @@ class RestaurantService
         }
 
         return [
+            'visibility_start_mode' => $this->normalizeVisibilityStartMode($schoolTool->restaurant_menu_visibility_start_mode ?? $schoolTool->restaurant_menu_order_start_mode ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode']),
+            'visibility_start_week_offset' => $this->normalizeWeekOffset($schoolTool->restaurant_menu_visibility_start_week_offset ?? $schoolTool->restaurant_menu_order_start_week_offset ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset']),
+            'visibility_start_day_of_week' => $this->normalizeDayOfWeek($schoolTool->restaurant_menu_visibility_start_day_of_week ?? $schoolTool->restaurant_menu_order_start_day_of_week ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week']),
+            'visibility_start_time' => $this->normalizeTimeString($schoolTool->restaurant_menu_visibility_start_time ?? $schoolTool->restaurant_menu_order_start_time ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_time']),
             'order_start_mode' => $schoolTool->restaurant_menu_order_start_mode === 'scheduled' ? 'scheduled' : 'when_available',
             'order_start_week_offset' => $this->normalizeWeekOffset($schoolTool->restaurant_menu_order_start_week_offset ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset']),
             'order_start_day_of_week' => $this->normalizeDayOfWeek($schoolTool->restaurant_menu_order_start_day_of_week ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week']),
@@ -664,6 +693,7 @@ class RestaurantService
             'order_end_week_offset' => $this->normalizeWeekOffset($schoolTool->restaurant_menu_order_end_week_offset ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset']),
             'order_end_day_of_week' => $this->normalizeDayOfWeek($schoolTool->restaurant_menu_order_end_day_of_week ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week']),
             'order_end_time' => $this->normalizeTimeString($schoolTool->restaurant_menu_order_end_time ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time']),
+            'visibility_end_mode' => $this->normalizeVisibilityEndMode($schoolTool->restaurant_menu_visibility_end_mode ?? self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode']),
         ];
     }
 
@@ -686,6 +716,20 @@ class RestaurantService
         }
 
         return substr($normalized, 0, 5);
+    }
+
+    private function normalizeVisibilityEndMode(mixed $value): string
+    {
+        return $value === 'week_end' ? 'week_end' : 'plan_end';
+    }
+
+    private function normalizeVisibilityStartMode(mixed $value): string
+    {
+        return match ($value) {
+            'scheduled' => 'scheduled',
+            'when_orderable' => 'when_orderable',
+            default => 'when_available',
+        };
     }
 
     private function storeImage(mixed $file, string $directory): ?string

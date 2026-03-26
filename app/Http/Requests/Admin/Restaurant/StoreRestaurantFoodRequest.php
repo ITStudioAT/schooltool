@@ -37,7 +37,7 @@ class StoreRestaurantFoodRequest extends FormRequest
             $categoryTitle = trim((string) $this->input('category_title', ''));
 
             if (! $categoryId && $categoryTitle === '') {
-                $validator->errors()->add('category_title', 'Bitte wÃ¤hlen oder erstellen Sie eine Kategorie.');
+                $validator->errors()->add('category_title', 'Bitte wählen oder erstellen Sie eine Kategorie.');
             }
         });
     }

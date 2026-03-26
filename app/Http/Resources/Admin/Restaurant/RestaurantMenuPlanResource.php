@@ -15,6 +15,7 @@ class RestaurantMenuPlanResource extends JsonResource
             'title' => $this->title,
             'start_date' => $this->start_date?->format('Y-m-d'),
             'end_date' => $this->end_date?->format('Y-m-d'),
+            'is_available' => (bool) $this->is_available,
             'entries' => $this->whenLoaded('entries', fn () => $this->entries->map(fn (RestaurantMenuPlanEntry $entry) => [
                 'id' => $entry->id,
                 'plan_date' => $entry->plan_date?->format('Y-m-d'),
@@ -27,6 +28,15 @@ class RestaurantMenuPlanResource extends JsonResource
                     : null,
                 'eating_time_ids' => $entry->relationLoaded('eatingTimes')
                     ? $entry->eatingTimes->pluck('id')->values()->all()
+                    : [],
+                'eating_times' => $entry->relationLoaded('eatingTimes')
+                    ? $entry->eatingTimes
+                        ->map(fn ($eatingTime) => [
+                            'id' => $eatingTime->id,
+                            'eating_time' => $eatingTime->eating_time,
+                        ])
+                        ->values()
+                        ->all()
                     : [],
             ])),
         ];

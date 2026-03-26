@@ -47,6 +47,10 @@ class SchoolTool extends Model
         'material_max_file_upload_size',
         'health_at',
         'import_166_at',
+        'restaurant_menu_visibility_start_mode',
+        'restaurant_menu_visibility_start_week_offset',
+        'restaurant_menu_visibility_start_day_of_week',
+        'restaurant_menu_visibility_start_time',
         'restaurant_menu_order_start_mode',
         'restaurant_menu_order_start_week_offset',
         'restaurant_menu_order_start_day_of_week',
@@ -54,6 +58,7 @@ class SchoolTool extends Model
         'restaurant_menu_order_end_week_offset',
         'restaurant_menu_order_end_day_of_week',
         'restaurant_menu_order_end_time',
+        'restaurant_menu_visibility_end_mode',
     ];
 
     protected $casts = [
@@ -62,6 +67,8 @@ class SchoolTool extends Model
         'tutoring_student_must_be_confirmed' => 'boolean',
         'may_visible_for_other_schools' => 'boolean',
         'material_max_file_upload_size' => 'integer',
+        'restaurant_menu_visibility_start_week_offset' => 'integer',
+        'restaurant_menu_visibility_start_day_of_week' => 'integer',
         'restaurant_menu_order_start_week_offset' => 'integer',
         'restaurant_menu_order_start_day_of_week' => 'integer',
         'restaurant_menu_order_end_week_offset' => 'integer',

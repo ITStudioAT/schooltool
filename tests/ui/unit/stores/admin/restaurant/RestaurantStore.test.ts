@@ -54,6 +54,10 @@ describe('RestaurantStore', () => {
                 user_settings: { restaurant_foods_pagination_number: 16 },
                 can_manage_user_settings: true,
                 online_settings: {
+                    visibility_start_mode: 'when_orderable',
+                    visibility_start_week_offset: 2,
+                    visibility_start_day_of_week: 0,
+                    visibility_start_time: '14:00',
                     order_start_mode: 'scheduled',
                     order_start_week_offset: 2,
                     order_start_day_of_week: 0,
@@ -61,6 +65,7 @@ describe('RestaurantStore', () => {
                     order_end_week_offset: 1,
                     order_end_day_of_week: 5,
                     order_end_time: '17:00',
+                    visibility_end_mode: 'plan_end',
                 },
                 can_manage_online_settings: true,
                 stats: { foods_count: 4 },
@@ -76,6 +81,7 @@ describe('RestaurantStore', () => {
         expect(store.allergenOptions).toEqual([{ character: 'G', short_description: 'Milch oder Laktose' }])
         expect(store.userSettings.restaurant_foods_pagination_number).toBe(16)
         expect(store.canManageUserSettings).toBe(true)
+        expect(store.onlineSettings.visibility_start_mode).toBe('when_orderable')
         expect(store.onlineSettings.order_start_mode).toBe('scheduled')
         expect(store.canManageOnlineSettings).toBe(true)
         expect(store.stats.foods_count).toBe(4)
@@ -114,6 +120,10 @@ describe('RestaurantStore', () => {
         axiosMock.put.mockResolvedValue({
             data: {
                 data: {
+                    visibility_start_mode: 'when_orderable',
+                    visibility_start_week_offset: 2,
+                    visibility_start_day_of_week: 0,
+                    visibility_start_time: '14:00',
                     order_start_mode: 'scheduled',
                     order_start_week_offset: 2,
                     order_start_day_of_week: 0,
@@ -121,6 +131,7 @@ describe('RestaurantStore', () => {
                     order_end_week_offset: 1,
                     order_end_day_of_week: 5,
                     order_end_time: '17:00',
+                    visibility_end_mode: 'week_end',
                 },
             },
         })
@@ -134,6 +145,10 @@ describe('RestaurantStore', () => {
             user_settings: { restaurant_foods_pagination_number: 12 },
             can_manage_user_settings: true,
             online_settings: {
+                visibility_start_mode: 'when_available',
+                visibility_start_week_offset: 2,
+                visibility_start_day_of_week: 0,
+                visibility_start_time: '15:00',
                 order_start_mode: 'when_available',
                 order_start_week_offset: 2,
                 order_start_day_of_week: 0,
@@ -141,12 +156,17 @@ describe('RestaurantStore', () => {
                 order_end_week_offset: 1,
                 order_end_day_of_week: 5,
                 order_end_time: '17:00',
+                visibility_end_mode: 'plan_end',
             },
             can_manage_online_settings: true,
             stats: {},
         }
 
         const payload = {
+            visibility_start_mode: 'when_orderable',
+            visibility_start_week_offset: 2,
+            visibility_start_day_of_week: 0,
+            visibility_start_time: '14:00',
             order_start_mode: 'scheduled',
             order_start_week_offset: 2,
             order_start_day_of_week: 0,
@@ -154,12 +174,15 @@ describe('RestaurantStore', () => {
             order_end_week_offset: 1,
             order_end_day_of_week: 5,
             order_end_time: '17:00',
+            visibility_end_mode: 'week_end',
         }
 
         const result = await store.updateOnlineSettings(payload)
 
         expect(result).toEqual(payload)
+        expect(store.onlineSettings.visibility_start_mode).toBe('when_orderable')
         expect(store.onlineSettings.order_start_mode).toBe('scheduled')
+        expect(store.onlineSettings.visibility_end_mode).toBe('week_end')
         expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/online-settings', {
             data: payload,
         })

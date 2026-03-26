@@ -75,6 +75,7 @@ test('store creates menu plan with entries and eating times', function () {
         'title' => 'Testwoche',
         'start_date' => '2026-04-07',
         'end_date' => '2026-04-11',
+        'is_available' => true,
         'entries' => [
             [
                 'plan_date' => '2026-04-07',
@@ -90,17 +91,24 @@ test('store creates menu plan with entries and eating times', function () {
     $response->assertCreated()
         ->assertJsonPath('data.title', 'Testwoche')
         ->assertJsonPath('data.start_date', '2026-04-07')
+        ->assertJsonPath('data.is_available', true)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.menu_title', 'Montagsmenue')
         ->assertJsonPath('data.entries.0.price', '8.50')
         ->assertJsonPath('data.entries.0.comments', 'Ohne Sellerie servieren.');
 
     expect(RestaurantMenuPlan::query()->where('school_id', $this->school->id)->count())->toBe(1);
+    expect(RestaurantMenuPlan::query()->first()?->is_available)->toBeTrue();
     expect(RestaurantMenuPlanEntry::query()->count())->toBe(1);
 });
 
-test('show returns plan with entries and eating time ids', function () {
-    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
+test('show returns plan with entries and eating time details', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+        'is_available' => true,
+    ]);
     $entry = RestaurantMenuPlanEntry::factory()->create([
         'restaurant_menu_plan_id' => $plan->id,
         'plan_date' => '2026-04-07',
@@ -115,8 +123,11 @@ test('show returns plan with entries and eating time ids', function () {
         ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")
         ->assertOk()
         ->assertJsonPath('data.id', $plan->id)
+        ->assertJsonPath('data.is_available', true)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.eating_time_ids.0', $this->eatingTime->id)
+        ->assertJsonPath('data.entries.0.eating_times.0.id', $this->eatingTime->id)
+        ->assertJsonPath('data.entries.0.eating_times.0.eating_time', '11:30:00')
         ->assertJsonPath('data.entries.0.menu_title', 'Gemuesesuppe Spezial')
         ->assertJsonPath('data.entries.0.price', '7.80')
         ->assertJsonPath('data.entries.0.comments', 'Mit extra Brot.')
@@ -124,7 +135,7 @@ test('show returns plan with entries and eating time ids', function () {
         ->assertJsonPath('data.entries.0.menu.foods.0.description', 'Mit Kraeutern')
         ->assertJsonPath('data.entries.0.menu.foods.0.allergens.0', 'A')
         ->assertJsonPath('data.entries.0.menu.foods.0.ingredient_icons.0.title', 'Fisch')
-        ->assertJsonPath('data.entries.0.menu.foods.0.food_image_url', 'http://localhost:8000/storage/restaurant/foods/suppe.jpg');
+        ->assertJsonPath('data.entries.0.menu.foods.0.food_image_url', rtrim((string) config('app.url'), '/').'/storage/restaurant/foods/suppe.jpg');
 });
 
 test('update replaces entries', function () {
@@ -142,6 +153,7 @@ test('update replaces entries', function () {
             'title' => 'Aktualisiert',
             'start_date' => '2026-04-07',
             'end_date' => '2026-04-11',
+            'is_available' => true,
             'entries' => [
                 [
                     'plan_date' => '2026-04-08',
@@ -155,12 +167,14 @@ test('update replaces entries', function () {
         ])
         ->assertOk()
         ->assertJsonPath('data.title', 'Aktualisiert')
+        ->assertJsonPath('data.is_available', true)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.plan_date', '2026-04-08')
         ->assertJsonPath('data.entries.0.menu_title', 'Dienstagsmenue')
         ->assertJsonPath('data.entries.0.price', '12.10')
         ->assertJsonPath('data.entries.0.comments', 'Mit Salat.');
 
+    expect($plan->fresh()?->is_available)->toBeTrue();
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
 });
 
