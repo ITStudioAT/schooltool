@@ -338,9 +338,15 @@ describe('structured licence model', function () {
             'licence_schema_version' => 2,
             'school_licence_enabled' => false,
             'school_price_per_year' => '199',
+            'school_included_storage_gb' => 10,
+            'school_extra_storage_step_gb' => 100,
+            'school_extra_storage_step_price' => '5',
             'admin_licence_enabled' => false,
             'user_licence_enabled' => true,
             'user_price_per_year' => '29',
+            'user_included_storage_gb' => 10,
+            'user_extra_storage_step_gb' => 100,
+            'user_extra_storage_step_price' => '5',
             'user_role_names' => ['teacher'],
         ]);
 
@@ -359,6 +365,43 @@ describe('structured licence model', function () {
         $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
 
         expect($result)->toBe('active');
+    });
+
+    it('normalizes structured storage tariff fields for editable configuration', function () {
+        $licence = Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Materialientool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => true,
+            'school_price_per_year' => '199',
+            'school_included_storage_gb' => 10,
+            'school_extra_storage_step_gb' => 100,
+            'school_extra_storage_step_price' => '5.00',
+            'admin_licence_enabled' => true,
+            'admin_price_per_year' => '5',
+            'admin_role_names' => ['materials_admin'],
+            'admin_included_storage_gb' => 10,
+            'admin_extra_storage_step_gb' => 100,
+            'admin_extra_storage_step_price' => '5.00',
+            'user_licence_enabled' => true,
+            'user_price_per_year' => '5',
+            'user_role_names' => ['materials_moderator'],
+            'user_included_storage_gb' => 10,
+            'user_extra_storage_step_gb' => 100,
+            'user_extra_storage_step_price' => '5.00',
+        ]);
+
+        $configuration = $this->service->editableLicenceConfiguration($licence);
+
+        expect($configuration['school_included_storage_gb'])->toBe('10')
+            ->and($configuration['school_extra_storage_step_gb'])->toBe('100')
+            ->and($configuration['school_extra_storage_step_price'])->toBe('5')
+            ->and($configuration['admin_included_storage_gb'])->toBe('10')
+            ->and($configuration['admin_extra_storage_step_gb'])->toBe('100')
+            ->and($configuration['admin_extra_storage_step_price'])->toBe('5')
+            ->and($configuration['user_included_storage_gb'])->toBe('10')
+            ->and($configuration['user_extra_storage_step_gb'])->toBe('100')
+            ->and($configuration['user_extra_storage_step_price'])->toBe('5');
     });
 
     it('returns missing when structured user licence is required for the role but no assignment exists', function () {

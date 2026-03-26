@@ -227,12 +227,21 @@ describe('LicenceSaveModelRequest', function () {
             'licence_model' => [
                 'school_licence_enabled' => true,
                 'school_price_per_year' => '199',
+                'school_included_storage_gb' => '10',
+                'school_extra_storage_step_gb' => '100',
+                'school_extra_storage_step_price' => '5',
                 'admin_licence_enabled' => true,
                 'admin_price_per_year' => '59',
                 'admin_role_names' => ['admin'],
+                'admin_included_storage_gb' => '10',
+                'admin_extra_storage_step_gb' => '100',
+                'admin_extra_storage_step_price' => '5',
                 'user_licence_enabled' => true,
                 'user_price_per_year' => '29',
                 'user_role_names' => ['teacher'],
+                'user_included_storage_gb' => '10',
+                'user_extra_storage_step_gb' => '100',
+                'user_extra_storage_step_price' => '5',
             ],
         ], $request->rules());
 
@@ -281,6 +290,43 @@ describe('LicenceSaveModelRequest', function () {
 
         expect($validator->fails())->toBeTrue()
             ->and($validator->errors()->has('licence_model.school_price_per_year'))->toBeTrue();
+    });
+
+    it('rejects invalid structured storage tariff fields', function () {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => true,
+                'school_price_per_year' => '199',
+                'school_included_storage_gb' => '0',
+                'school_extra_storage_step_gb' => '100.5',
+                'school_extra_storage_step_price' => '-5',
+                'admin_licence_enabled' => true,
+                'admin_price_per_year' => '59',
+                'admin_role_names' => ['admin'],
+                'admin_included_storage_gb' => '10',
+                'admin_extra_storage_step_gb' => '0',
+                'admin_extra_storage_step_price' => '0',
+                'user_licence_enabled' => true,
+                'user_price_per_year' => '29',
+                'user_role_names' => ['teacher'],
+                'user_included_storage_gb' => '-1',
+                'user_extra_storage_step_gb' => '100',
+                'user_extra_storage_step_price' => '1.5',
+            ],
+        ], $request->rules());
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('licence_model.school_included_storage_gb'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.school_extra_storage_step_gb'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.school_extra_storage_step_price'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.admin_extra_storage_step_gb'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.admin_extra_storage_step_price'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.user_included_storage_gb'))->toBeTrue()
+            ->and($validator->errors()->has('licence_model.user_extra_storage_step_price'))->toBeTrue();
     });
 
     it('allows empty role arrays for inactive admin and user licences', function () {

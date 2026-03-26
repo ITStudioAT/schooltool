@@ -293,12 +293,21 @@ class LicenceService
             $licence->licence_schema_version = 2;
             $licence->school_licence_enabled = $normalizedStructuredConfiguration['school_licence_enabled'];
             $licence->school_price_per_year = $normalizedStructuredConfiguration['school_price_per_year'];
+            $licence->school_included_storage_gb = $normalizedStructuredConfiguration['school_included_storage_gb'];
+            $licence->school_extra_storage_step_gb = $normalizedStructuredConfiguration['school_extra_storage_step_gb'];
+            $licence->school_extra_storage_step_price = $normalizedStructuredConfiguration['school_extra_storage_step_price'];
             $licence->admin_licence_enabled = $normalizedStructuredConfiguration['admin_licence_enabled'];
             $licence->admin_price_per_year = $normalizedStructuredConfiguration['admin_price_per_year'];
             $licence->admin_role_names = $normalizedStructuredConfiguration['admin_role_names'];
+            $licence->admin_included_storage_gb = $normalizedStructuredConfiguration['admin_included_storage_gb'];
+            $licence->admin_extra_storage_step_gb = $normalizedStructuredConfiguration['admin_extra_storage_step_gb'];
+            $licence->admin_extra_storage_step_price = $normalizedStructuredConfiguration['admin_extra_storage_step_price'];
             $licence->user_licence_enabled = $normalizedStructuredConfiguration['user_licence_enabled'];
             $licence->user_price_per_year = $normalizedStructuredConfiguration['user_price_per_year'];
             $licence->user_role_names = $normalizedStructuredConfiguration['user_role_names'];
+            $licence->user_included_storage_gb = $normalizedStructuredConfiguration['user_included_storage_gb'];
+            $licence->user_extra_storage_step_gb = $normalizedStructuredConfiguration['user_extra_storage_step_gb'];
+            $licence->user_extra_storage_step_price = $normalizedStructuredConfiguration['user_extra_storage_step_price'];
             $licence->save();
             $licence->refresh();
 
@@ -321,12 +330,21 @@ class LicenceService
             return $this->normalizeStructuredLicenceConfiguration([
                 'school_licence_enabled' => $licence->school_licence_enabled,
                 'school_price_per_year' => $licence->school_price_per_year,
+                'school_included_storage_gb' => $licence->school_included_storage_gb,
+                'school_extra_storage_step_gb' => $licence->school_extra_storage_step_gb,
+                'school_extra_storage_step_price' => $licence->school_extra_storage_step_price,
                 'admin_licence_enabled' => $licence->admin_licence_enabled,
                 'admin_price_per_year' => $licence->admin_price_per_year,
                 'admin_role_names' => $licence->admin_role_names,
+                'admin_included_storage_gb' => $licence->admin_included_storage_gb,
+                'admin_extra_storage_step_gb' => $licence->admin_extra_storage_step_gb,
+                'admin_extra_storage_step_price' => $licence->admin_extra_storage_step_price,
                 'user_licence_enabled' => $licence->user_licence_enabled,
                 'user_price_per_year' => $licence->user_price_per_year,
                 'user_role_names' => $licence->user_role_names,
+                'user_included_storage_gb' => $licence->user_included_storage_gb,
+                'user_extra_storage_step_gb' => $licence->user_extra_storage_step_gb,
+                'user_extra_storage_step_price' => $licence->user_extra_storage_step_price,
             ]);
         }
 
@@ -352,12 +370,21 @@ class LicenceService
         return $this->normalizeStructuredLicenceConfiguration([
             'school_licence_enabled' => $this->toBool($legacyLicenceModel['school_licence_required'] ?? true, true),
             'school_price_per_year' => $licence->price_per_year,
+            'school_included_storage_gb' => null,
+            'school_extra_storage_step_gb' => null,
+            'school_extra_storage_step_price' => null,
             'admin_licence_enabled' => count($adminRoleNames) > 0,
             'admin_price_per_year' => null,
             'admin_role_names' => $adminRoleNames,
+            'admin_included_storage_gb' => null,
+            'admin_extra_storage_step_gb' => null,
+            'admin_extra_storage_step_price' => null,
             'user_licence_enabled' => count($userRoleNames) > 0,
             'user_price_per_year' => null,
             'user_role_names' => $userRoleNames,
+            'user_included_storage_gb' => null,
+            'user_extra_storage_step_gb' => null,
+            'user_extra_storage_step_price' => null,
         ]);
     }
 
@@ -375,12 +402,21 @@ class LicenceService
         return [
             'school_licence_enabled' => $this->toBool($licenceConfiguration['school_licence_enabled'] ?? true, true),
             'school_price_per_year' => $this->normalizePriceString($licenceConfiguration['school_price_per_year'] ?? null),
+            'school_included_storage_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['school_included_storage_gb'] ?? null),
+            'school_extra_storage_step_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['school_extra_storage_step_gb'] ?? null),
+            'school_extra_storage_step_price' => $this->normalizePriceString($licenceConfiguration['school_extra_storage_step_price'] ?? null),
             'admin_licence_enabled' => $this->toBool($licenceConfiguration['admin_licence_enabled'] ?? false, false),
             'admin_price_per_year' => $this->normalizePriceString($licenceConfiguration['admin_price_per_year'] ?? null),
             'admin_role_names' => $this->normalizeRoleNames($licenceConfiguration['admin_role_names'] ?? []),
+            'admin_included_storage_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['admin_included_storage_gb'] ?? null),
+            'admin_extra_storage_step_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['admin_extra_storage_step_gb'] ?? null),
+            'admin_extra_storage_step_price' => $this->normalizePriceString($licenceConfiguration['admin_extra_storage_step_price'] ?? null),
             'user_licence_enabled' => $this->toBool($licenceConfiguration['user_licence_enabled'] ?? false, false),
             'user_price_per_year' => $this->normalizePriceString($licenceConfiguration['user_price_per_year'] ?? null),
             'user_role_names' => $this->normalizeRoleNames($licenceConfiguration['user_role_names'] ?? []),
+            'user_included_storage_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['user_included_storage_gb'] ?? null),
+            'user_extra_storage_step_gb' => $this->normalizePositiveIntegerString($licenceConfiguration['user_extra_storage_step_gb'] ?? null),
+            'user_extra_storage_step_price' => $this->normalizePriceString($licenceConfiguration['user_extra_storage_step_price'] ?? null),
         ];
     }
 
@@ -811,8 +847,17 @@ class LicenceService
     private function licenceHasStructuredConfiguration(Licence $licence): bool
     {
         return $licence->school_price_per_year !== null
+            || $licence->school_included_storage_gb !== null
+            || $licence->school_extra_storage_step_gb !== null
+            || $licence->school_extra_storage_step_price !== null
             || $licence->admin_price_per_year !== null
+            || $licence->admin_included_storage_gb !== null
+            || $licence->admin_extra_storage_step_gb !== null
+            || $licence->admin_extra_storage_step_price !== null
             || $licence->user_price_per_year !== null
+            || $licence->user_included_storage_gb !== null
+            || $licence->user_extra_storage_step_gb !== null
+            || $licence->user_extra_storage_step_price !== null
             || ! empty($this->normalizeRoleNames($licence->admin_role_names ?? []))
             || ! empty($this->normalizeRoleNames($licence->user_role_names ?? []))
             || $this->toBool($licence->admin_licence_enabled ?? false, false)
@@ -990,16 +1035,39 @@ class LicenceService
         return $normalized;
     }
 
+    private function normalizePositiveIntegerString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $normalized = trim((string) $value);
+        if ($normalized === '') {
+            return null;
+        }
+
+        return preg_match('/^[1-9][0-9]*$/', $normalized) === 1 ? $normalized : $normalized;
+    }
+
     private function isStructuredLicenceConfiguration(array $licenceModel): bool
     {
         return array_key_exists('school_licence_enabled', $licenceModel)
             || array_key_exists('school_price_per_year', $licenceModel)
+            || array_key_exists('school_included_storage_gb', $licenceModel)
+            || array_key_exists('school_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('school_extra_storage_step_price', $licenceModel)
             || array_key_exists('admin_licence_enabled', $licenceModel)
             || array_key_exists('admin_price_per_year', $licenceModel)
             || array_key_exists('admin_role_names', $licenceModel)
+            || array_key_exists('admin_included_storage_gb', $licenceModel)
+            || array_key_exists('admin_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('admin_extra_storage_step_price', $licenceModel)
             || array_key_exists('user_licence_enabled', $licenceModel)
             || array_key_exists('user_price_per_year', $licenceModel)
-            || array_key_exists('user_role_names', $licenceModel);
+            || array_key_exists('user_role_names', $licenceModel)
+            || array_key_exists('user_included_storage_gb', $licenceModel)
+            || array_key_exists('user_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('user_extra_storage_step_price', $licenceModel);
     }
 
     private function looksLikeAdminRoleName(string $roleName): bool

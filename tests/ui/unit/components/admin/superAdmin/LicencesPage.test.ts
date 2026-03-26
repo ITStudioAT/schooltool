@@ -125,22 +125,40 @@ describe('Super admin licences overview', () => {
         const normalized = methods.normalizeLicenceModel.call(ctx, {
             school_licence_enabled: true,
             school_price_per_year: '199',
+            school_included_storage_gb: '10',
+            school_extra_storage_step_gb: '100',
+            school_extra_storage_step_price: '5',
             admin_licence_enabled: true,
             admin_price_per_year: '59',
             admin_role_names: ['admin', 'register_admin', 'admin'],
+            admin_included_storage_gb: '10',
+            admin_extra_storage_step_gb: '100',
+            admin_extra_storage_step_price: '5',
             user_licence_enabled: true,
             user_price_per_year: '29',
+            user_included_storage_gb: '10',
+            user_extra_storage_step_gb: '100',
+            user_extra_storage_step_price: '5',
             user_role_names: ['teacher'],
         })
 
         expect(normalized).toEqual({
             school_licence_enabled: true,
             school_price_per_year: '199',
+            school_included_storage_gb: '10',
+            school_extra_storage_step_gb: '100',
+            school_extra_storage_step_price: '5',
             admin_licence_enabled: true,
             admin_price_per_year: '59',
             admin_role_names: ['admin', 'register_admin'],
+            admin_included_storage_gb: '10',
+            admin_extra_storage_step_gb: '100',
+            admin_extra_storage_step_price: '5',
             user_licence_enabled: true,
             user_price_per_year: '29',
+            user_included_storage_gb: '10',
+            user_extra_storage_step_gb: '100',
+            user_extra_storage_step_price: '5',
             user_role_names: ['teacher'],
         })
     })
@@ -226,14 +244,50 @@ describe('Super admin licences overview', () => {
         expect(methods.overviewPriceLabel.call({}, '59', 'month')).toBe('EUR 59 / Monat')
         expect(methods.overviewPriceLabel.call({}, '')).toBe('')
         expect(methods.overviewPriceLabel.call({}, null)).toBe('')
+        expect(
+            methods.overviewStorageTariffLabel.call({}, 'user', {
+                user_included_storage_gb: '10',
+                user_extra_storage_step_gb: '100',
+                user_extra_storage_step_price: '5',
+            })
+        ).toBe('inkl. 10 GB, + EUR 5 / 100 GB')
+        expect(
+            methods.overviewStorageTariffLabel.call({}, 'user', {
+                user_included_storage_gb: '10',
+                user_extra_storage_step_gb: '',
+                user_extra_storage_step_price: '5',
+            })
+        ).toBe('')
+    })
+
+    it('shows overview badges only for needed licence layers', () => {
+        const methods = (Licences as any).methods
+
+        expect(
+            methods.hasVisibleOverviewLicenceBadges.call({}, {
+                school_licence_enabled: false,
+                admin_licence_enabled: false,
+                user_licence_enabled: false,
+            })
+        ).toBe(false)
+
+        expect(
+            methods.hasVisibleOverviewLicenceBadges.call({}, {
+                school_licence_enabled: false,
+                admin_licence_enabled: true,
+                user_licence_enabled: false,
+            })
+        ).toBe(true)
     })
 
     it('keeps admin and user overview prices independent from the school licence state', () => {
         const source = readFileSync('resources/js/pages/admin/superAdmin/components/Licences.vue', 'utf8')
 
-        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge-meta"')
-        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge-meta"')
-        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge-meta"')
+        expect(source).toContain('v-if="hasVisibleOverviewLicenceBadges(licenceModelFor(item))" class="licence-card__badges"')
+        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge"')
+        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning"')
+        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning"')
+        expect(source).toContain('class="licence-card__badge-head"')
         expect(source).toContain("overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month')")
         expect(source).toContain("overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month')")
     })
@@ -245,14 +299,19 @@ describe('Super admin licences overview', () => {
         expect(roleSectionAfterToggleBlocks).toHaveLength(2)
         expect(source).toContain('@click="toggleAdminRole(role.name)"')
         expect(source).toContain('@click="toggleUserRole(role.name)"')
-        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge-meta"')
-        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge-meta"')
-        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge-meta"')
+        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge"')
+        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning"')
+        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning"')
         expect(source).toContain('<span class="licence-card__badge-label">User-Lizenz</span>')
         expect(source).toContain("overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year')")
         expect(source).toContain("overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month')")
         expect(source).toContain("overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month')")
-        expect(source).toContain('label="Kosten pro Monat"')
+        expect(source).toContain('label="Basis-Tarif pro Jahr"')
+        expect(source).toContain('label="Basis-Tarif pro Monat"')
+        expect(source).toContain('label="Inkl. Speicher (GB)"')
+        expect(source).toContain('label="Je weitere (GB)"')
+        expect(source).toContain('label="Mehrpreis pro Monat"')
+        expect(source).toContain('label="Mehrpreis pro Jahr"')
         expect(source).toContain('label="Start-Datum"')
         expect(source).toContain('label="End-Datum"')
         expect(source).toContain("placeholder=\"TT.MM.\"")

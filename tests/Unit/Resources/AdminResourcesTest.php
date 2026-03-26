@@ -69,6 +69,43 @@ test('admin licence resource normalizes whole-number decimal prices for editing'
     expect($data['price_per_year'])->toBe(200);
 });
 
+test('admin licence resource exposes structured storage tariff fields in licence model', function () {
+    $licence = Licence::create([
+        'name' => 'Storage Tool',
+        'long_name' => 'Storage Tool Long',
+        'licence_schema_version' => 2,
+        'school_licence_enabled' => true,
+        'school_price_per_year' => '199',
+        'school_included_storage_gb' => 10,
+        'school_extra_storage_step_gb' => 100,
+        'school_extra_storage_step_price' => '5.00',
+        'admin_licence_enabled' => true,
+        'admin_price_per_year' => '10',
+        'admin_role_names' => ['admin'],
+        'admin_included_storage_gb' => 10,
+        'admin_extra_storage_step_gb' => 100,
+        'admin_extra_storage_step_price' => '5.00',
+        'user_licence_enabled' => true,
+        'user_price_per_year' => '5',
+        'user_role_names' => ['teacher'],
+        'user_included_storage_gb' => 20,
+        'user_extra_storage_step_gb' => 100,
+        'user_extra_storage_step_price' => '5.00',
+    ]);
+
+    $data = (new AdminLicenceResource($licence))->toArray(request());
+
+    expect(data_get($data, 'licence_model.school_included_storage_gb'))->toBe('10')
+        ->and(data_get($data, 'licence_model.school_extra_storage_step_gb'))->toBe('100')
+        ->and(data_get($data, 'licence_model.school_extra_storage_step_price'))->toBe('5')
+        ->and(data_get($data, 'licence_model.admin_included_storage_gb'))->toBe('10')
+        ->and(data_get($data, 'licence_model.admin_extra_storage_step_gb'))->toBe('100')
+        ->and(data_get($data, 'licence_model.admin_extra_storage_step_price'))->toBe('5')
+        ->and(data_get($data, 'licence_model.user_included_storage_gb'))->toBe('20')
+        ->and(data_get($data, 'licence_model.user_extra_storage_step_gb'))->toBe('100')
+        ->and(data_get($data, 'licence_model.user_extra_storage_step_price'))->toBe('5');
+});
+
 test('paginate resource maps paginator properties', function () {
     $paginator = new LengthAwarePaginator([1, 2], 2, 1, 1);
 

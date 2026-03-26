@@ -55,26 +55,47 @@
                                                 <div class="licence-card__title">{{ item.name }}</div>
                                                 <div class="licence-card__subtitle">{{ item.long_name || 'Keine Beschreibung hinterlegt' }}</div>
                                             </div>
-                                            <div class="licence-card__badges">
-                                                <div class="licence-card__badge" :class="{ 'is-ok': !licenceModelFor(item).school_licence_enabled }">
-                                                    <span class="licence-card__badge-label">Schullizenz</span>
-                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).school_licence_enabled ? 'JA' : 'NEIN' }}</span>
-                                                    <span v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge-meta">
+                                            <div v-if="hasVisibleOverviewLicenceBadges(licenceModelFor(item))" class="licence-card__badges">
+                                                <div v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge">
+                                                    <div class="licence-card__badge-head">
+                                                        <span class="licence-card__badge-label">Schullizenz</span>
+                                                        <span class="licence-card__badge-value">JA</span>
+                                                    </div>
+                                                    <span class="licence-card__badge-meta">
                                                         {{ overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year') }}
                                                     </span>
-                                                </div>
-                                                <div class="licence-card__badge" :class="{ 'is-warning': licenceModelFor(item).admin_licence_enabled }">
-                                                    <span class="licence-card__badge-label">Admin-Lizenz</span>
-                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).admin_licence_enabled ? 'JA' : 'NEIN' }}</span>
-                                                    <span v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge-meta">
-                                                        {{ overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month') }}
+                                                    <span
+                                                        v-if="overviewStorageTariffLabel('school', licenceModelFor(item))"
+                                                        class="licence-card__badge-meta">
+                                                        {{ overviewStorageTariffLabel('school', licenceModelFor(item)) }}
                                                     </span>
                                                 </div>
-                                                <div class="licence-card__badge" :class="{ 'is-warning': licenceModelFor(item).user_licence_enabled }">
-                                                    <span class="licence-card__badge-label">User-Lizenz</span>
-                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).user_licence_enabled ? 'JA' : 'NEIN' }}</span>
-                                                    <span v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge-meta">
+                                                <div v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning">
+                                                    <div class="licence-card__badge-head">
+                                                        <span class="licence-card__badge-label">Admin-Lizenz</span>
+                                                        <span class="licence-card__badge-value">JA</span>
+                                                    </div>
+                                                    <span class="licence-card__badge-meta">
+                                                        {{ overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month') }}
+                                                    </span>
+                                                    <span
+                                                        v-if="overviewStorageTariffLabel('admin', licenceModelFor(item))"
+                                                        class="licence-card__badge-meta">
+                                                        {{ overviewStorageTariffLabel('admin', licenceModelFor(item)) }}
+                                                    </span>
+                                                </div>
+                                                <div v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning">
+                                                    <div class="licence-card__badge-head">
+                                                        <span class="licence-card__badge-label">User-Lizenz</span>
+                                                        <span class="licence-card__badge-value">JA</span>
+                                                    </div>
+                                                    <span class="licence-card__badge-meta">
                                                         {{ overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month') }}
+                                                    </span>
+                                                    <span
+                                                        v-if="overviewStorageTariffLabel('user', licenceModelFor(item))"
+                                                        class="licence-card__badge-meta">
+                                                        {{ overviewStorageTariffLabel('user', licenceModelFor(item)) }}
                                                     </span>
                                                 </div>
                                             </div>
@@ -298,9 +319,35 @@
                                 v-if="currentLicenceModel.school_licence_enabled"
                                 v-model="currentLicenceModel.school_price_per_year"
                                 class="mt-4"
-                                label="Kosten pro Jahr"
+                                label="Basis-Tarif pro Jahr"
                                 inputmode="numeric"
                                 :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+
+                            <template v-if="currentLicenceModel.school_licence_enabled">
+                                <v-row dense class="mt-1">
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.school_included_storage_gb"
+                                            label="Inkl. Speicher (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.school_extra_storage_step_gb"
+                                            label="Je weitere (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.school_extra_storage_step_price"
+                                            label="Mehrpreis pro Jahr"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                </v-row>
+                            </template>
                         </v-card>
 
                         <v-card variant="outlined" class="pa-4 mb-4" v-if="currentLicenceModel">
@@ -319,9 +366,33 @@
                                 <v-text-field
                                     v-model="currentLicenceModel.admin_price_per_year"
                                     class="mt-4"
-                                    label="Kosten pro Monat"
+                                    label="Basis-Tarif pro Monat"
                                     inputmode="numeric"
                                     :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+
+                                <v-row dense class="mt-1">
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.admin_included_storage_gb"
+                                            label="Inkl. Speicher (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.admin_extra_storage_step_gb"
+                                            label="Je weitere (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.admin_extra_storage_step_price"
+                                            label="Mehrpreis pro Monat"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                </v-row>
                             </template>
 
                             <div class="text-subtitle-2 mt-4 mb-3">Zuordnung von Rollen</div>
@@ -358,9 +429,33 @@
                                 <v-text-field
                                     v-model="currentLicenceModel.user_price_per_year"
                                     class="mt-4"
-                                    label="Kosten pro Monat"
+                                    label="Basis-Tarif pro Monat"
                                     inputmode="numeric"
                                     :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+
+                                <v-row dense class="mt-1">
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.user_included_storage_gb"
+                                            label="Inkl. Speicher (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.user_extra_storage_step_gb"
+                                            label="Je weitere (GB)"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="currentLicenceModel.user_extra_storage_step_price"
+                                            label="Mehrpreis pro Monat"
+                                            inputmode="numeric"
+                                            :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                                    </v-col>
+                                </v-row>
                             </template>
 
                             <div class="text-subtitle-2 mt-4 mb-3">Zuordnung von Rollen</div>
@@ -678,6 +773,13 @@ export default {
         licenceModelFor(licence) {
             return this.normalizeLicenceModel(licence?.licence_model || null)
         },
+        hasVisibleOverviewLicenceBadges(licenceModel) {
+            if (!licenceModel || typeof licenceModel !== 'object') {
+                return false
+            }
+
+            return !!(licenceModel.school_licence_enabled || licenceModel.admin_licence_enabled || licenceModel.user_licence_enabled)
+        },
         sortedRoleNames(roleNames) {
             const roles = Array.isArray(roleNames) ? [...roleNames] : []
             if (roles.includes('*')) {
@@ -786,16 +888,41 @@ export default {
 
             return period === 'month' ? `EUR ${normalized} / Monat` : `EUR ${normalized} / Jahr`
         },
+        overviewStorageTariffLabel(layerName, licenceModel) {
+            const normalizedLayerName = String(layerName ?? '').trim()
+            if (!normalizedLayerName || !licenceModel || typeof licenceModel !== 'object') {
+                return ''
+            }
+
+            const includedStorage = String(licenceModel[`${normalizedLayerName}_included_storage_gb`] ?? '').trim()
+            const extraStorageStep = String(licenceModel[`${normalizedLayerName}_extra_storage_step_gb`] ?? '').trim()
+            const extraStorageStepPrice = String(licenceModel[`${normalizedLayerName}_extra_storage_step_price`] ?? '').trim()
+
+            if (includedStorage === '' || extraStorageStep === '' || extraStorageStepPrice === '') {
+                return ''
+            }
+
+            return `inkl. ${includedStorage} GB, + EUR ${extraStorageStepPrice} / ${extraStorageStep} GB`
+        },
         normalizeLicenceModel(licenceModel) {
             const fallback = {
                 school_licence_enabled: true,
                 school_price_per_year: '',
+                school_included_storage_gb: '',
+                school_extra_storage_step_gb: '',
+                school_extra_storage_step_price: '',
                 admin_licence_enabled: false,
                 admin_price_per_year: '',
                 admin_role_names: [],
+                admin_included_storage_gb: '',
+                admin_extra_storage_step_gb: '',
+                admin_extra_storage_step_price: '',
                 user_licence_enabled: false,
                 user_price_per_year: '',
                 user_role_names: [],
+                user_included_storage_gb: '',
+                user_extra_storage_step_gb: '',
+                user_extra_storage_step_price: '',
             }
 
             if (typeof licenceModel === 'string') {
@@ -829,18 +956,54 @@ export default {
                         typeof licenceModel.school_price_per_year === 'string'
                             ? licenceModel.school_price_per_year
                             : (licenceModel.school_price_per_year ?? '').toString(),
+                    school_included_storage_gb:
+                        typeof licenceModel.school_included_storage_gb === 'string'
+                            ? licenceModel.school_included_storage_gb
+                            : (licenceModel.school_included_storage_gb ?? '').toString(),
+                    school_extra_storage_step_gb:
+                        typeof licenceModel.school_extra_storage_step_gb === 'string'
+                            ? licenceModel.school_extra_storage_step_gb
+                            : (licenceModel.school_extra_storage_step_gb ?? '').toString(),
+                    school_extra_storage_step_price:
+                        typeof licenceModel.school_extra_storage_step_price === 'string'
+                            ? licenceModel.school_extra_storage_step_price
+                            : (licenceModel.school_extra_storage_step_price ?? '').toString(),
                     admin_licence_enabled: this.toBool(licenceModel.admin_licence_enabled, false),
                     admin_price_per_year:
                         typeof licenceModel.admin_price_per_year === 'string'
                             ? licenceModel.admin_price_per_year
                             : (licenceModel.admin_price_per_year ?? '').toString(),
                     admin_role_names: normalizeRoleNames(licenceModel.admin_role_names),
+                    admin_included_storage_gb:
+                        typeof licenceModel.admin_included_storage_gb === 'string'
+                            ? licenceModel.admin_included_storage_gb
+                            : (licenceModel.admin_included_storage_gb ?? '').toString(),
+                    admin_extra_storage_step_gb:
+                        typeof licenceModel.admin_extra_storage_step_gb === 'string'
+                            ? licenceModel.admin_extra_storage_step_gb
+                            : (licenceModel.admin_extra_storage_step_gb ?? '').toString(),
+                    admin_extra_storage_step_price:
+                        typeof licenceModel.admin_extra_storage_step_price === 'string'
+                            ? licenceModel.admin_extra_storage_step_price
+                            : (licenceModel.admin_extra_storage_step_price ?? '').toString(),
                     user_licence_enabled: this.toBool(licenceModel.user_licence_enabled, false),
                     user_price_per_year:
                         typeof licenceModel.user_price_per_year === 'string'
                             ? licenceModel.user_price_per_year
                             : (licenceModel.user_price_per_year ?? '').toString(),
                     user_role_names: normalizeRoleNames(licenceModel.user_role_names),
+                    user_included_storage_gb:
+                        typeof licenceModel.user_included_storage_gb === 'string'
+                            ? licenceModel.user_included_storage_gb
+                            : (licenceModel.user_included_storage_gb ?? '').toString(),
+                    user_extra_storage_step_gb:
+                        typeof licenceModel.user_extra_storage_step_gb === 'string'
+                            ? licenceModel.user_extra_storage_step_gb
+                            : (licenceModel.user_extra_storage_step_gb ?? '').toString(),
+                    user_extra_storage_step_price:
+                        typeof licenceModel.user_extra_storage_step_price === 'string'
+                            ? licenceModel.user_extra_storage_step_price
+                            : (licenceModel.user_extra_storage_step_price ?? '').toString(),
                 }
             }
 
@@ -856,12 +1019,21 @@ export default {
             return {
                 school_licence_enabled: this.toBool(licenceModel.school_licence_required, true),
                 school_price_per_year: '',
+                school_included_storage_gb: '',
+                school_extra_storage_step_gb: '',
+                school_extra_storage_step_price: '',
                 admin_licence_enabled: adminRoleNames.length > 0,
                 admin_price_per_year: '',
                 admin_role_names: adminRoleNames,
+                admin_included_storage_gb: '',
+                admin_extra_storage_step_gb: '',
+                admin_extra_storage_step_price: '',
                 user_licence_enabled: userRoleNames.length > 0,
                 user_price_per_year: '',
                 user_role_names: userRoleNames,
+                user_included_storage_gb: '',
+                user_extra_storage_step_gb: '',
+                user_extra_storage_step_price: '',
             }
         },
         looksLikeAdminRoleName(roleName) {

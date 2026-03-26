@@ -775,12 +775,21 @@ test('super admin can save licence model template', function () {
         'licence_model' => [
             'school_licence_enabled' => true,
             'school_price_per_year' => '199',
+            'school_included_storage_gb' => '10',
+            'school_extra_storage_step_gb' => '100',
+            'school_extra_storage_step_price' => '5',
             'admin_licence_enabled' => true,
             'admin_price_per_year' => '59',
             'admin_role_names' => ['admin', 'register_admin'],
+            'admin_included_storage_gb' => '10',
+            'admin_extra_storage_step_gb' => '100',
+            'admin_extra_storage_step_price' => '5',
             'user_licence_enabled' => true,
             'user_price_per_year' => '29',
             'user_role_names' => ['teacher'],
+            'user_included_storage_gb' => '10',
+            'user_extra_storage_step_gb' => '100',
+            'user_extra_storage_step_price' => '5',
         ],
     ];
 
@@ -790,21 +799,39 @@ test('super admin can save licence model template', function () {
         ->assertJsonPath('licence_schema_version', 2)
         ->assertJsonPath('licence_model.school_licence_enabled', true)
         ->assertJsonPath('licence_model.school_price_per_year', '199')
+        ->assertJsonPath('licence_model.school_included_storage_gb', '10')
+        ->assertJsonPath('licence_model.school_extra_storage_step_gb', '100')
+        ->assertJsonPath('licence_model.school_extra_storage_step_price', '5')
         ->assertJsonPath('licence_model.admin_licence_enabled', true)
         ->assertJsonPath('licence_model.admin_role_names.0', 'admin')
         ->assertJsonPath('licence_model.admin_role_names.1', 'register_admin')
+        ->assertJsonPath('licence_model.admin_included_storage_gb', '10')
+        ->assertJsonPath('licence_model.admin_extra_storage_step_gb', '100')
+        ->assertJsonPath('licence_model.admin_extra_storage_step_price', '5')
         ->assertJsonPath('licence_model.user_licence_enabled', true)
-        ->assertJsonPath('licence_model.user_role_names.0', 'teacher');
+        ->assertJsonPath('licence_model.user_role_names.0', 'teacher')
+        ->assertJsonPath('licence_model.user_included_storage_gb', '10')
+        ->assertJsonPath('licence_model.user_extra_storage_step_gb', '100')
+        ->assertJsonPath('licence_model.user_extra_storage_step_price', '5');
 
     $this->assertDatabaseHas('licences', [
         'id' => $licence->id,
         'licence_schema_version' => 2,
         'school_licence_enabled' => 1,
         'school_price_per_year' => '199',
+        'school_included_storage_gb' => 10,
+        'school_extra_storage_step_gb' => 100,
+        'school_extra_storage_step_price' => '5',
         'admin_licence_enabled' => 1,
         'admin_price_per_year' => '59',
+        'admin_included_storage_gb' => 10,
+        'admin_extra_storage_step_gb' => 100,
+        'admin_extra_storage_step_price' => '5',
         'user_licence_enabled' => 1,
         'user_price_per_year' => '29',
+        'user_included_storage_gb' => 10,
+        'user_extra_storage_step_gb' => 100,
+        'user_extra_storage_step_price' => '5',
     ]);
 });
 
@@ -861,6 +888,47 @@ test('save licence model rejects non-integer positive price fields', function ()
             'licence_model.school_price_per_year',
             'licence_model.admin_price_per_year',
             'licence_model.user_price_per_year',
+        ]);
+});
+
+test('save licence model rejects invalid storage tariff fields', function () {
+    $this->actingAs($this->superAdmin);
+
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'template_invalid_storage_tariff_test',
+        'long_name' => 'Template Invalid Storage Tariff Test',
+    ]);
+
+    $response = $this->putJson("/api/admin/licences/{$licence->id}/save_licence_model", [
+        'licence_model' => [
+            'school_licence_enabled' => true,
+            'school_price_per_year' => '199',
+            'school_included_storage_gb' => '0',
+            'school_extra_storage_step_gb' => '100',
+            'school_extra_storage_step_price' => '5',
+            'admin_licence_enabled' => true,
+            'admin_price_per_year' => '59',
+            'admin_role_names' => ['admin'],
+            'admin_included_storage_gb' => '10',
+            'admin_extra_storage_step_gb' => '0',
+            'admin_extra_storage_step_price' => '5',
+            'user_licence_enabled' => true,
+            'user_price_per_year' => '29',
+            'user_role_names' => ['teacher'],
+            'user_included_storage_gb' => '10',
+            'user_extra_storage_step_gb' => '100',
+            'user_extra_storage_step_price' => '0',
+        ],
+    ]);
+
+    $response->assertStatus(422)
+        ->assertJsonValidationErrors([
+            'licence_model.school_included_storage_gb',
+            'licence_model.admin_extra_storage_step_gb',
+            'licence_model.user_extra_storage_step_price',
         ]);
 });
 
