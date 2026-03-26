@@ -2,13 +2,13 @@
 
 namespace App\Models;
 
-use App\Models\Licence;
-use App\Models\Schoolyear;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -17,17 +17,18 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
  * @property string|null $email
  * @property string|null $logo
  * @property int $is_selectable
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read Schoolyear|null $activeSchoolyear
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Licence> $licences
+ * @property-read Collection<int, Licence> $licences
  * @property-read int|null $licences_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\Register> $registers
+ * @property-read Collection<int, Register> $registers
  * @property-read int|null $registers_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, Schoolyear> $schoolyears
+ * @property-read Collection<int, Schoolyear> $schoolyears
  * @property-read int|null $schoolyears_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\User> $users
+ * @property-read Collection<int, User> $users
  * @property-read int|null $users_count
+ *
  * @method static \Database\Factories\SchoolFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School newQuery()
@@ -41,6 +42,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereLongName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereShortName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|School whereUpdatedAt($value)
+ *
  * @mixin IdeHelperSchool
  * @mixin \Eloquent
  */
@@ -76,10 +78,14 @@ class School extends Model
         return $this->hasOne(SchoolTool::class, 'school_id');
     }
 
-
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function schoolUserLicences(): HasMany
+    {
+        return $this->hasMany(SchoolUserLicence::class);
     }
 
     // The one active year (or null)

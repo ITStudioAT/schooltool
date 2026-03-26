@@ -6,6 +6,7 @@ use App\Models\Licence;
 use App\Models\LicenceUserPlan;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -35,6 +36,10 @@ class LicenceService
             return 'missing';
         }
 
+        if ($this->usesStructuredLicenceModel($licence)) {
+            return $this->structuredSchoolAccessStatus($school, $licence);
+        }
+
         $schoolLicence = SchoolLicence::where('school_id', $school->id)
             ->where('licence_id', $licence->id)
             ->first();
@@ -55,6 +60,10 @@ class LicenceService
         $licence = Licence::where('name', $app)->first();
         if (! $licence) {
             return 'missing';
+        }
+
+        if ($this->usesStructuredLicenceModel($licence)) {
+            return $this->structuredToolAccessStatusForUser($user, $school, $licence, $candidateRoleNames);
         }
 
         $schoolLicence = SchoolLicence::where('school_id', $school->id)
@@ -125,6 +134,10 @@ class LicenceService
                 ->keyBy('school_id');
 
         $statusBySchoolId = $schools->mapWithKeys(function (School $school) use ($schoolLicences, $licence) {
+            if ($this->usesStructuredLicenceModel($licence)) {
+                return [$school->id => $this->structuredSchoolAccessStatus($school, $licence)];
+            }
+
             /** @var SchoolLicence|null $schoolLicence */
             $schoolLicence = $schoolLicences->get($school->id);
 
@@ -183,20 +196,29 @@ class LicenceService
         $schoolLicences = SchoolLicence::query()
             ->where('school_id', $school->id)
             ->with('licence')
-            ->get();
+            ->get()
+            ->keyBy('licence_id');
 
-        return $schoolLicences
-            ->filter(function (SchoolLicence $schoolLicence) {
-                $licence = $schoolLicence->licence;
-                if (! $licence || ! ((bool) $licence->is_selectable)) {
-                    return false;
+        return Licence::query()
+            ->where('is_selectable', true)
+            ->get()
+            ->filter(function (Licence $licence) use ($school, $schoolLicences) {
+                if ($this->usesStructuredLicenceModel($licence)) {
+                    return $this->structuredSchoolAccessStatus($school, $licence) === 'active';
                 }
 
-                return $this->schoolLicenceStatus($schoolLicence, $licence) === 'active';
+                /** @var SchoolLicence|null $schoolLicence */
+                $schoolLicence = $schoolLicences->get($licence->id);
+
+                return $schoolLicence !== null
+                    && $this->schoolLicenceStatus($schoolLicence, $licence) === 'active';
             })
-            ->map(function (SchoolLicence $schoolLicence) {
-                $licence = $schoolLicence->licence;
-                $licence->setRelation('pivot', $schoolLicence);
+            ->map(function (Licence $licence) use ($schoolLicences) {
+                /** @var SchoolLicence|null $schoolLicence */
+                $schoolLicence = $schoolLicences->get($licence->id);
+                if ($schoolLicence) {
+                    $licence->setRelation('pivot', $schoolLicence);
+                }
 
                 return $licence;
             })
@@ -265,6 +287,24 @@ class LicenceService
 
     public function saveLicenceModel(Licence $licence, array $licenceModel): Licence
     {
+        if ($this->isStructuredLicenceConfiguration($licenceModel)) {
+            $normalizedStructuredConfiguration = $this->normalizeStructuredLicenceConfiguration($licenceModel);
+
+            $licence->licence_schema_version = 2;
+            $licence->school_licence_enabled = $normalizedStructuredConfiguration['school_licence_enabled'];
+            $licence->school_price_per_year = $normalizedStructuredConfiguration['school_price_per_year'];
+            $licence->admin_licence_enabled = $normalizedStructuredConfiguration['admin_licence_enabled'];
+            $licence->admin_price_per_year = $normalizedStructuredConfiguration['admin_price_per_year'];
+            $licence->admin_role_names = $normalizedStructuredConfiguration['admin_role_names'];
+            $licence->user_licence_enabled = $normalizedStructuredConfiguration['user_licence_enabled'];
+            $licence->user_price_per_year = $normalizedStructuredConfiguration['user_price_per_year'];
+            $licence->user_role_names = $normalizedStructuredConfiguration['user_role_names'];
+            $licence->save();
+            $licence->refresh();
+
+            return $licence;
+        }
+
         $normalizedModel = $this->normalizeLicenceModel($licenceModel);
         $syncedPlansByRole = $this->syncLicenceUserPlans($licence, $normalizedModel['user_licence_plans_by_role'] ?? []);
         $normalizedModel['user_licence_plans_by_role'] = $syncedPlansByRole;
@@ -273,6 +313,75 @@ class LicenceService
         $licence->refresh();
 
         return $licence;
+    }
+
+    public function editableLicenceConfiguration(Licence $licence): array
+    {
+        if ($this->usesStructuredLicenceModel($licence) || $this->licenceHasStructuredConfiguration($licence)) {
+            return $this->normalizeStructuredLicenceConfiguration([
+                'school_licence_enabled' => $licence->school_licence_enabled,
+                'school_price_per_year' => $licence->school_price_per_year,
+                'admin_licence_enabled' => $licence->admin_licence_enabled,
+                'admin_price_per_year' => $licence->admin_price_per_year,
+                'admin_role_names' => $licence->admin_role_names,
+                'user_licence_enabled' => $licence->user_licence_enabled,
+                'user_price_per_year' => $licence->user_price_per_year,
+                'user_role_names' => $licence->user_role_names,
+            ]);
+        }
+
+        $legacyLicenceModel = $this->normalizeLicenceModel($licence->licence_model);
+        $requiredLegacyRoles = collect($legacyLicenceModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn ($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->values()
+            ->all();
+
+        $adminRoleNames = collect($requiredLegacyRoles)
+            ->filter(fn (string $roleName) => $this->looksLikeAdminRoleName($roleName))
+            ->values()
+            ->all();
+
+        $userRoleNames = collect($requiredLegacyRoles)
+            ->filter(fn (string $roleName) => ! $this->looksLikeAdminRoleName($roleName))
+            ->values()
+            ->all();
+
+        return $this->normalizeStructuredLicenceConfiguration([
+            'school_licence_enabled' => $this->toBool($legacyLicenceModel['school_licence_required'] ?? true, true),
+            'school_price_per_year' => $licence->price_per_year,
+            'admin_licence_enabled' => count($adminRoleNames) > 0,
+            'admin_price_per_year' => null,
+            'admin_role_names' => $adminRoleNames,
+            'user_licence_enabled' => count($userRoleNames) > 0,
+            'user_price_per_year' => null,
+            'user_role_names' => $userRoleNames,
+        ]);
+    }
+
+    public function normalizeStructuredLicenceConfiguration(mixed $licenceConfiguration): array
+    {
+        if (is_string($licenceConfiguration)) {
+            $decoded = json_decode($licenceConfiguration, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $licenceConfiguration = $decoded;
+            }
+        }
+
+        $licenceConfiguration = is_array($licenceConfiguration) ? $licenceConfiguration : [];
+
+        return [
+            'school_licence_enabled' => $this->toBool($licenceConfiguration['school_licence_enabled'] ?? true, true),
+            'school_price_per_year' => $this->normalizePriceString($licenceConfiguration['school_price_per_year'] ?? null),
+            'admin_licence_enabled' => $this->toBool($licenceConfiguration['admin_licence_enabled'] ?? false, false),
+            'admin_price_per_year' => $this->normalizePriceString($licenceConfiguration['admin_price_per_year'] ?? null),
+            'admin_role_names' => $this->normalizeRoleNames($licenceConfiguration['admin_role_names'] ?? []),
+            'user_licence_enabled' => $this->toBool($licenceConfiguration['user_licence_enabled'] ?? false, false),
+            'user_price_per_year' => $this->normalizePriceString($licenceConfiguration['user_price_per_year'] ?? null),
+            'user_role_names' => $this->normalizeRoleNames($licenceConfiguration['user_role_names'] ?? []),
+        ];
     }
 
     public function normalizeLicenceModel($licenceModel): array
@@ -553,6 +662,163 @@ class LicenceService
         return $hasExpiredAssignment ? 'expired' : 'missing';
     }
 
+    private function structuredToolAccessStatusForUser(?User $user, School $school, Licence $licence, array $candidateRoleNames = []): string
+    {
+        $schoolStatus = $this->structuredSchoolAccessStatus($school, $licence);
+        if ($this->structuredSchoolLicenceEnabled($licence) && $schoolStatus !== 'active') {
+            return $schoolStatus;
+        }
+
+        if (! $user) {
+            return 'active';
+        }
+
+        $relevantAssignmentTypes = $this->structuredRelevantAssignmentTypes($user, $licence, $candidateRoleNames);
+        if (empty($relevantAssignmentTypes)) {
+            return 'active';
+        }
+
+        $assignmentsByType = SchoolUserLicence::query()
+            ->where('school_id', $school->id)
+            ->where('licence_id', $licence->id)
+            ->where('user_id', $user->id)
+            ->whereIn('assignment_type', $relevantAssignmentTypes)
+            ->orderBy('valid_until')
+            ->get()
+            ->groupBy('assignment_type');
+
+        $hasExpiredAssignment = false;
+
+        foreach ($relevantAssignmentTypes as $assignmentType) {
+            $status = $this->structuredUserAssignmentCollectionStatus($assignmentsByType->get($assignmentType, collect()));
+
+            if ($status === 'active') {
+                return 'active';
+            }
+
+            if ($status === 'expired') {
+                $hasExpiredAssignment = true;
+            }
+        }
+
+        return $hasExpiredAssignment ? 'expired' : 'missing';
+    }
+
+    private function structuredSchoolAccessStatus(School $school, Licence $licence): string
+    {
+        if (! $this->structuredSchoolLicenceEnabled($licence)) {
+            return 'active';
+        }
+
+        $schoolLicence = SchoolLicence::query()
+            ->where('school_id', $school->id)
+            ->where('licence_id', $licence->id)
+            ->first();
+
+        if (! $schoolLicence) {
+            return 'missing';
+        }
+
+        return $this->datedAccessStatus($schoolLicence->valid_until);
+    }
+
+    private function structuredRelevantAssignmentTypes(User $user, Licence $licence, array $candidateRoleNames = []): array
+    {
+        $userRoleNames = $user->roles()
+            ->pluck('name')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $candidateRoleNames = collect($candidateRoleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($candidateRoleNames)) {
+            $userRoleNames = array_values(array_intersect($userRoleNames, $candidateRoleNames));
+        }
+
+        $assignmentTypes = [];
+
+        if ($this->toBool($licence->admin_licence_enabled ?? false, false)) {
+            $adminRoleNames = $this->normalizeRoleNames($licence->admin_role_names ?? []);
+            if ($this->configuredRolesMatchUserRoles($userRoleNames, $adminRoleNames)) {
+                $assignmentTypes[] = 'admin';
+            }
+        }
+
+        if ($this->toBool($licence->user_licence_enabled ?? false, false)) {
+            $userRoleNamesForLicence = $this->normalizeRoleNames($licence->user_role_names ?? []);
+            if ($this->configuredRolesMatchUserRoles($userRoleNames, $userRoleNamesForLicence)) {
+                $assignmentTypes[] = 'user';
+            }
+        }
+
+        return array_values(array_unique($assignmentTypes));
+    }
+
+    private function structuredUserAssignmentCollectionStatus(Collection $assignments): string
+    {
+        if ($assignments->isEmpty()) {
+            return 'missing';
+        }
+
+        $hasExpiredAssignment = false;
+
+        foreach ($assignments as $assignment) {
+            if (! $assignment instanceof SchoolUserLicence) {
+                continue;
+            }
+
+            if (! $assignment->is_active) {
+                continue;
+            }
+
+            $status = $this->datedAccessStatus(
+                $assignment->valid_until?->format('Y-m-d') ?? null,
+                $assignment->valid_from?->format('Y-m-d') ?? null
+            );
+
+            if ($status === 'active') {
+                return 'active';
+            }
+
+            if ($status === 'expired') {
+                $hasExpiredAssignment = true;
+            }
+        }
+
+        return $hasExpiredAssignment ? 'expired' : 'missing';
+    }
+
+    private function structuredSchoolLicenceEnabled(Licence $licence): bool
+    {
+        return $this->toBool($licence->school_licence_enabled ?? true, true);
+    }
+
+    private function usesStructuredLicenceModel(?Licence $licence): bool
+    {
+        return $licence !== null
+            && isset($licence->licence_schema_version)
+            && (int) $licence->licence_schema_version >= 2;
+    }
+
+    private function licenceHasStructuredConfiguration(Licence $licence): bool
+    {
+        return $licence->school_price_per_year !== null
+            || $licence->admin_price_per_year !== null
+            || $licence->user_price_per_year !== null
+            || ! empty($this->normalizeRoleNames($licence->admin_role_names ?? []))
+            || ! empty($this->normalizeRoleNames($licence->user_role_names ?? []))
+            || $this->toBool($licence->admin_licence_enabled ?? false, false)
+            || $this->toBool($licence->user_licence_enabled ?? false, false);
+    }
+
     private function normalizeUserLicenceAssignmentEntry($entry): array
     {
         if (is_string($entry)) {
@@ -599,6 +865,31 @@ class LicenceService
         }
     }
 
+    private function datedAccessStatus(?string $validUntil, ?string $validFrom = null): string
+    {
+        if ($validFrom !== null && trim($validFrom) !== '') {
+            try {
+                if (Carbon::parse(trim($validFrom))->toDateString() > Carbon::today()->toDateString()) {
+                    return 'missing';
+                }
+            } catch (\Throwable $e) {
+                return 'expired';
+            }
+        }
+
+        if ($validUntil === null || trim($validUntil) === '') {
+            return 'active';
+        }
+
+        try {
+            $normalizedValidUntil = Carbon::parse(trim($validUntil))->toDateString();
+        } catch (\Throwable $e) {
+            return 'expired';
+        }
+
+        return $normalizedValidUntil >= Carbon::today()->toDateString() ? 'active' : 'expired';
+    }
+
     private function toBool($value, bool $default): bool
     {
         if (is_bool($value)) {
@@ -634,6 +925,89 @@ class LicenceService
         }
 
         return is_array($licenceModel) ? $licenceModel : null;
+    }
+
+    private function normalizeRoleNames(mixed $roleNames): array
+    {
+        if (is_string($roleNames)) {
+            $decoded = json_decode($roleNames, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $roleNames = $decoded;
+            }
+        }
+
+        if (! is_array($roleNames)) {
+            return [];
+        }
+
+        return collect($roleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->pipe(function (Collection $roleNames) {
+                if ($roleNames->contains('*')) {
+                    return collect(['*']);
+                }
+
+                return $roleNames;
+            })
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function configuredRolesMatchUserRoles(array $userRoleNames, array $configuredRoleNames): bool
+    {
+        if (empty($userRoleNames) || empty($configuredRoleNames)) {
+            return false;
+        }
+
+        if (in_array('*', $configuredRoleNames, true)) {
+            return true;
+        }
+
+        return ! empty(array_intersect($userRoleNames, $configuredRoleNames));
+    }
+
+    private function normalizePriceString(mixed $price): ?string
+    {
+        if ($price === null) {
+            return null;
+        }
+
+        $normalized = trim((string) $price);
+        if ($normalized === '') {
+            return null;
+        }
+
+        if (preg_match('/^[1-9][0-9]*$/', $normalized) === 1) {
+            return $normalized;
+        }
+
+        if (preg_match('/^[1-9][0-9]*[.,]0+$/', $normalized) === 1) {
+            return strtok(str_replace(',', '.', $normalized), '.');
+        }
+
+        return $normalized;
+    }
+
+    private function isStructuredLicenceConfiguration(array $licenceModel): bool
+    {
+        return array_key_exists('school_licence_enabled', $licenceModel)
+            || array_key_exists('school_price_per_year', $licenceModel)
+            || array_key_exists('admin_licence_enabled', $licenceModel)
+            || array_key_exists('admin_price_per_year', $licenceModel)
+            || array_key_exists('admin_role_names', $licenceModel)
+            || array_key_exists('user_licence_enabled', $licenceModel)
+            || array_key_exists('user_price_per_year', $licenceModel)
+            || array_key_exists('user_role_names', $licenceModel);
+    }
+
+    private function looksLikeAdminRoleName(string $roleName): bool
+    {
+        $normalizedRoleName = strtolower(trim($roleName));
+
+        return str_contains($normalizedRoleName, 'admin')
+            || in_array($normalizedRoleName, ['super_admin'], true);
     }
 
     private function syncLicenceUserPlans(Licence $licence, array $plansByRole): array

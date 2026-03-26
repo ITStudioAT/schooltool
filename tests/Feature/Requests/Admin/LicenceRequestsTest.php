@@ -6,10 +6,11 @@
  * Tests for licence management requests.
  */
 
+use App\Http\Requests\Admin\LicenceDeleteLicencesRequest;
 use App\Http\Requests\Admin\LicenceIndexRequest;
+use App\Http\Requests\Admin\LicenceSaveModelRequest;
 use App\Http\Requests\Admin\LicenceStoreRequest;
 use App\Http\Requests\Admin\LicenceUpdateRequest;
-use App\Http\Requests\Admin\LicenceDeleteLicencesRequest;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
@@ -17,6 +18,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
@@ -34,10 +36,18 @@ beforeEach(function () {
     ]);
 });
 
-function validateLicenceRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateLicenceRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
-    return Validator::make($data, $request->rules());
+    $request = new $requestClass;
+    $request->merge($data);
+
+    if (method_exists($request, 'prepareForValidation')) {
+        $prepareForValidation = new ReflectionMethod($request, 'prepareForValidation');
+        $prepareForValidation->setAccessible(true);
+        $prepareForValidation->invoke($request);
+    }
+
+    return Validator::make($request->all(), $request->rules());
 }
 
 // ============================================================================
@@ -46,13 +56,13 @@ function validateLicenceRequest(string $requestClass, array $data): \Illuminate\
 
 describe('LicenceIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new LicenceIndexRequest();
+        $request = new LicenceIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new LicenceIndexRequest();
+        $request = new LicenceIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -63,13 +73,13 @@ describe('LicenceIndexRequest', function () {
 
 describe('LicenceStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new LicenceStoreRequest();
+        $request = new LicenceStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new LicenceStoreRequest();
+        $request = new LicenceStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -79,6 +89,8 @@ describe('LicenceStoreRequest', function () {
             'long_name' => 'Premium School Licence',
             'is_selectable' => true,
             'price_per_year' => 1200,
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -87,6 +99,8 @@ describe('LicenceStoreRequest', function () {
     it('passes with minimal required data', function () {
         $validator = validateLicenceRequest(LicenceStoreRequest::class, [
             'name' => 'basic_licence',
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -113,6 +127,8 @@ describe('LicenceStoreRequest', function () {
         $validator = validateLicenceRequest(LicenceStoreRequest::class, [
             'name' => 'new_licence',
             'long_name' => null,
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -122,9 +138,37 @@ describe('LicenceStoreRequest', function () {
         $validator = validateLicenceRequest(LicenceStoreRequest::class, [
             'name' => 'free_licence',
             'price_per_year' => null,
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
+    });
+
+    it('fails when price_per_year is zero', function () {
+        $validator = validateLicenceRequest(LicenceStoreRequest::class, [
+            'name' => 'invalid_zero_licence',
+            'price_per_year' => 0,
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('price_per_year'))->toBeTrue();
+    });
+
+    it('fails when end day month equals start day month', function () {
+        $request = new LicenceStoreRequest;
+        $request->merge([
+            'name' => 'invalid_date_window_licence',
+            'start_day_month' => '15.09.',
+            'end_day_month' => '15.09.',
+        ]);
+
+        $validator = Validator::make($request->all(), $request->rules());
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('end_day_month'))->toBeTrue();
     });
 });
 
@@ -134,14 +178,147 @@ describe('LicenceStoreRequest', function () {
 
 describe('LicenceUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new LicenceUpdateRequest();
+        $request = new LicenceUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new LicenceUpdateRequest();
+        $request = new LicenceUpdateRequest;
         expect($request->authorize())->toBeTrue();
+    });
+
+    it('fails when price_per_year is zero', function () {
+        $validator = validateLicenceRequest(LicenceUpdateRequest::class, [
+            'id' => $this->licence->id,
+            'name' => 'test_licence',
+            'price_per_year' => 0,
+            'start_day_month' => '01.09.',
+            'end_day_month' => '31.07.',
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('price_per_year'))->toBeTrue();
+    });
+
+    it('fails when start day month is missing', function () {
+        $validator = validateLicenceRequest(LicenceUpdateRequest::class, [
+            'id' => $this->licence->id,
+            'name' => 'test_licence',
+            'end_day_month' => '31.07.',
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('start_day_month'))->toBeTrue();
+    });
+});
+
+// ============================================================================
+// LicenceSaveModelRequest
+// ============================================================================
+
+describe('LicenceSaveModelRequest', function () {
+    it('accepts positive integer string price fields', function () {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => true,
+                'school_price_per_year' => '199',
+                'admin_licence_enabled' => true,
+                'admin_price_per_year' => '59',
+                'admin_role_names' => ['admin'],
+                'user_licence_enabled' => true,
+                'user_price_per_year' => '29',
+                'user_role_names' => ['teacher'],
+            ],
+        ], $request->rules());
+
+        expect($validator->passes())->toBeTrue();
+    });
+
+    it('rejects decimal structured price fields', function () {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => true,
+                'school_price_per_year' => '199.00',
+                'admin_licence_enabled' => true,
+                'admin_price_per_year' => '59',
+                'admin_role_names' => ['admin'],
+                'user_licence_enabled' => true,
+                'user_price_per_year' => '29',
+                'user_role_names' => ['teacher'],
+            ],
+        ], $request->rules());
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('licence_model.school_price_per_year'))->toBeTrue();
+    });
+
+    it('rejects zero structured price fields', function () {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => true,
+                'school_price_per_year' => '0',
+                'admin_licence_enabled' => true,
+                'admin_price_per_year' => '59',
+                'admin_role_names' => ['admin'],
+                'user_licence_enabled' => true,
+                'user_price_per_year' => '29',
+                'user_role_names' => ['teacher'],
+            ],
+        ], $request->rules());
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('licence_model.school_price_per_year'))->toBeTrue();
+    });
+
+    it('allows empty role arrays for inactive admin and user licences', function () {
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => true,
+                'school_price_per_year' => '199',
+                'admin_licence_enabled' => false,
+                'admin_price_per_year' => '',
+                'admin_role_names' => [],
+                'user_licence_enabled' => false,
+                'user_price_per_year' => '',
+                'user_role_names' => [],
+            ],
+        ], $request->rules(), $request->messages());
+
+        expect($validator->passes())->toBeTrue();
+    });
+
+    it('accepts wildcard user role selection for all current and future roles', function () {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+        $request = new LicenceSaveModelRequest;
+        $validator = Validator::make([
+            'licence_model' => [
+                'school_licence_enabled' => false,
+                'school_price_per_year' => null,
+                'admin_licence_enabled' => true,
+                'admin_price_per_year' => '10',
+                'admin_role_names' => ['admin'],
+                'user_licence_enabled' => true,
+                'user_price_per_year' => '29',
+                'user_role_names' => ['*'],
+            ],
+        ], $request->rules(), $request->messages());
+
+        expect($validator->passes())->toBeTrue();
     });
 });
 
@@ -151,13 +328,13 @@ describe('LicenceUpdateRequest', function () {
 
 describe('LicenceDeleteLicencesRequest', function () {
     it('requires authentication', function () {
-        $request = new LicenceDeleteLicencesRequest();
+        $request = new LicenceDeleteLicencesRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new LicenceDeleteLicencesRequest();
+        $request = new LicenceDeleteLicencesRequest;
         expect($request->authorize())->toBeTrue();
     });
 

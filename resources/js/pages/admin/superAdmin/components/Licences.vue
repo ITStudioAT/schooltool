@@ -23,18 +23,25 @@
                         </div>
 
                         <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
-                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectAll">
-                                Alle auswählen [{{ Math.max(0, licences.length - selected_licences.length) }}]
+                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectFirstLicence">
+                                Erste auswählen [{{ selected_licences.length === 0 && licences.length >= 1 ? 1 : 0 }}]
                             </v-btn>
                             <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                Alle abwählen [{{ selected_licences.length }}]
+                                Auswahl aufheben [{{ selected_licences.length }}]
                             </v-btn>
                         </div>
                     </div>
 
                     <div class="empty-state pa-2" v-if="licences.length === 0">Keine Lizenzen gefunden.</div>
                     <div class="empty-state pa-2" v-else>
-                        <v-list dense variant="flat" class="crud-list licences-list" select-strategy="leaf" v-model:selected="selected_licences" color="success-lighten-2">
+                        <v-list
+                            dense
+                            variant="flat"
+                            class="crud-list licences-list"
+                            select-strategy="leaf"
+                            v-model:selected="selected_licences"
+                            @update:selected="onSelectedLicencesUpdate"
+                            color="success-lighten-2">
                             <v-list-item
                                 v-for="item in licences"
                                 :key="item.id"
@@ -49,29 +56,57 @@
                                                 <div class="licence-card__subtitle">{{ item.long_name || 'Keine Beschreibung hinterlegt' }}</div>
                                             </div>
                                             <div class="licence-card__badges">
-                                                <div class="licence-card__badge" :class="{ 'is-ok': licenceModelFor(item).school_licence_required === false }">
+                                                <div class="licence-card__badge" :class="{ 'is-ok': !licenceModelFor(item).school_licence_enabled }">
                                                     <span class="licence-card__badge-label">Schullizenz</span>
-                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).school_licence_required ? 'Erforderlich' : 'Nicht nötig' }}</span>
+                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).school_licence_enabled ? 'JA' : 'NEIN' }}</span>
+                                                    <span v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge-meta">
+                                                        {{ overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year') }}
+                                                    </span>
                                                 </div>
-                                                <div class="licence-card__badge" :class="{ 'is-warning': isAnyUserLicenceRequired(licenceModelFor(item)) }">
-                                                    <span class="licence-card__badge-label">Userlizenz</span>
-                                                    <span class="licence-card__badge-value">{{ isAnyUserLicenceRequired(licenceModelFor(item)) ? 'Erforderlich' : 'Nicht nötig' }}</span>
+                                                <div class="licence-card__badge" :class="{ 'is-warning': licenceModelFor(item).admin_licence_enabled }">
+                                                    <span class="licence-card__badge-label">Admin-Lizenz</span>
+                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).admin_licence_enabled ? 'JA' : 'NEIN' }}</span>
+                                                    <span v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge-meta">
+                                                        {{ overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month') }}
+                                                    </span>
+                                                </div>
+                                                <div class="licence-card__badge" :class="{ 'is-warning': licenceModelFor(item).user_licence_enabled }">
+                                                    <span class="licence-card__badge-label">User-Lizenz</span>
+                                                    <span class="licence-card__badge-value">{{ licenceModelFor(item).user_licence_enabled ? 'JA' : 'NEIN' }}</span>
+                                                    <span v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge-meta">
+                                                        {{ overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month') }}
+                                                    </span>
                                                 </div>
                                             </div>
                                         </header>
 
                                         <div class="licence-card__roles-block">
-                                            <div class="licence-card__roles-title">Betroffene Rollen</div>
+                                            <div class="licence-card__roles-title">Admin-Rollen</div>
                                             <div class="licence-card__roles-list">
-                                                <template v-if="sortedAffectedRoles(licenceModelFor(item)).length >= 1">
+                                                <template v-if="sortedRoleNames(licenceModelFor(item).admin_role_names).length >= 1">
                                                     <v-chip
-                                                        v-for="roleName in sortedAffectedRoles(licenceModelFor(item))"
-                                                        :key="`licence-overview-role-${item.id}-${roleName}`"
+                                                        v-for="roleName in sortedRoleNames(licenceModelFor(item).admin_role_names)"
+                                                        :key="`licence-overview-admin-role-${item.id}-${roleName}`"
                                                         size="small"
                                                         class="licence-card__role-chip"
-                                                        :color="isRoleUserLicenceRequired(licenceModelFor(item), roleName) ? 'warning' : undefined"
-                                                        :variant="isRoleUserLicenceRequired(licenceModelFor(item), roleName) ? 'flat' : 'outlined'">
-                                                        {{ roleName }}
+                                                        color="warning"
+                                                        variant="flat">
+                                                        {{ displayRoleName(roleName) }}
+                                                    </v-chip>
+                                                </template>
+                                                <span v-else class="text-medium-emphasis">Keine Rollen hinterlegt</span>
+                                            </div>
+                                            <div class="licence-card__roles-title mt-3">User-Rollen</div>
+                                            <div class="licence-card__roles-list">
+                                                <template v-if="sortedRoleNames(licenceModelFor(item).user_role_names).length >= 1">
+                                                    <v-chip
+                                                        v-for="roleName in sortedRoleNames(licenceModelFor(item).user_role_names)"
+                                                        :key="`licence-overview-user-role-${item.id}-${roleName}`"
+                                                        size="small"
+                                                        class="licence-card__role-chip"
+                                                        color="primary"
+                                                        variant="flat">
+                                                        {{ displayRoleName(roleName) }}
                                                     </v-chip>
                                                 </template>
                                                 <span v-else class="text-medium-emphasis">Keine Rollen hinterlegt</span>
@@ -104,11 +139,10 @@
                             </v-btn>
                         </div>
 
-                        <template v-if="selected_licences.length >= 1">
+                        <template v-if="selected_licences.length === 1">
                             <v-divider class="crud-actions-divider" />
                             <div class="crud-actions-secondary">
                                 <v-btn
-                                    v-if="selected_licences.length == 1"
                                     block
                                     color="primary"
                                     variant="tonal"
@@ -118,7 +152,6 @@
                                     Ändern
                                 </v-btn>
                                 <v-btn
-                                    v-if="selected_licences.length == 1"
                                     block
                                     color="primary"
                                     variant="tonal"
@@ -167,7 +200,29 @@
                                 <v-text-field v-model="data.long_name" label="Kurze Beschreibung" :rules="[maxLength(255)]" />
                             </v-col>
                             <v-col cols="12">
-                                <v-text-field v-model="data.price_per_year" label="Kosten pro Jahr" :rules="[maxLength(255)]" />
+                                <v-text-field
+                                    v-model="data.price_per_year"
+                                    label="Kosten pro Jahr"
+                                    inputmode="numeric"
+                                    :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-text-field
+                                    v-model="data.start_day_month"
+                                    label="Start-Datum"
+                                    placeholder="TT.MM."
+                                    maxlength="6"
+                                    :rules="[required(), validDayMonth()]"
+                                    @blur="normalizeLicenceDayMonthField('start_day_month')" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-text-field
+                                    v-model="data.end_day_month"
+                                    label="End-Datum"
+                                    placeholder="TT.MM."
+                                    maxlength="6"
+                                    :rules="[required(), validDayMonth(), endDayMonthAfterStart(() => data.start_day_month)]"
+                                    @blur="normalizeLicenceDayMonthField('end_day_month')" />
                             </v-col>
                         </v-row>
                     </div>
@@ -199,9 +254,6 @@
                         <div class="kpi-sub mt-2" v-if="selected_licences.length == 1">
                             Es soll eine Lizenz gelöscht werden. Sind Sie sicher, dass Sie die markierte Lizenz löschen möchten?
                         </div>
-                        <div class="kpi-sub mt-2" v-if="selected_licences.length > 1">
-                            Es sollen {{ selected_licences.length }} Lizenzen gelöscht werden. Sind Sie sicher, dass Sie die markierten Lizenzen löschen möchten?
-                        </div>
                     </div>
 
                     <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
@@ -231,131 +283,114 @@
                         </v-alert>
 
                         <v-card variant="outlined" class="pa-4 mb-4" v-if="currentLicenceModel">
-                            <div class="text-subtitle-1 mb-3">Schullizenz nötig</div>
+                            <div class="text-subtitle-1 mb-3">Schullizenz</div>
                             <v-btn-toggle
-                                :model-value="currentLicenceModel.school_licence_required"
+                                :model-value="currentLicenceModel.school_licence_enabled"
                                 mandatory
                                 divided
                                 color="primary"
-                                @update:model-value="setSchoolLicenceRequired">
+                                @update:model-value="setSchoolLicenceEnabled">
                                 <v-btn :value="true">JA</v-btn>
                                 <v-btn :value="false">NEIN</v-btn>
                             </v-btn-toggle>
+
+                            <v-text-field
+                                v-if="currentLicenceModel.school_licence_enabled"
+                                v-model="currentLicenceModel.school_price_per_year"
+                                class="mt-4"
+                                label="Kosten pro Jahr"
+                                inputmode="numeric"
+                                :rules="[positiveIntegerOrNull(), maxLength(255)]" />
                         </v-card>
 
-                        <v-card variant="outlined" class="pa-4" v-if="currentLicenceModel">
-                            <div class="text-subtitle-1 mb-3">Betroffene Rollen</div>
+                        <v-card variant="outlined" class="pa-4 mb-4" v-if="currentLicenceModel">
+                            <div class="text-subtitle-1 mb-3">Admin-Lizenz</div>
+                            <v-btn-toggle
+                                :model-value="currentLicenceModel.admin_licence_enabled"
+                                mandatory
+                                divided
+                                color="primary"
+                                @update:model-value="setAdminLicenceEnabled">
+                                <v-btn :value="true">JA</v-btn>
+                                <v-btn :value="false">NEIN</v-btn>
+                            </v-btn-toggle>
+
+                            <template v-if="currentLicenceModel.admin_licence_enabled">
+                                <v-text-field
+                                    v-model="currentLicenceModel.admin_price_per_year"
+                                    class="mt-4"
+                                    label="Kosten pro Monat"
+                                    inputmode="numeric"
+                                    :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                            </template>
+
+                            <div class="text-subtitle-2 mt-4 mb-3">Zuordnung von Rollen</div>
                             <div class="d-flex flex-row flex-wrap ga-2" v-if="availableRoles.length >= 1">
                                 <v-chip
                                     v-for="role in availableRoles"
-                                    :key="`licence-model-role-${role.id}`"
+                                    :key="`licence-model-admin-role-${role.id}`"
                                     clickable
-                                    :color="isRoleAffected(role.name) ? 'primary' : undefined"
-                                    :variant="isRoleAffected(role.name) ? 'flat' : 'outlined'"
-                                    @click="toggleAffectedRole(role.name)">
+                                    :color="isAdminRoleSelected(role.name) ? 'warning' : undefined"
+                                    :variant="isAdminRoleSelected(role.name) ? 'flat' : 'outlined'"
+                                    @click="toggleAdminRole(role.name)">
                                     {{ role.name }}
                                 </v-chip>
                             </div>
-                            <div class="text-caption text-medium-emphasis" v-else>Keine Rollen verfügbar.</div>
-
-                            <div class="text-caption text-medium-emphasis mt-3" v-if="currentLicenceModel.affected_roles.length >= 1">
-                                Ausgewählt: {{ currentLicenceModel.affected_roles.join(', ') }}
+                            <div class="text-caption text-medium-emphasis mt-3" v-if="currentLicenceModel.admin_role_names.length >= 1">
+                                Ausgewählt: {{ formatSelectedRoleNames(currentLicenceModel.admin_role_names) }}
                             </div>
                             <div class="text-caption text-medium-emphasis mt-3" v-else>Noch keine Rollen ausgewählt.</div>
+                        </v-card>
 
-                            <v-divider class="my-4"></v-divider>
+                        <v-card variant="outlined" class="pa-4" v-if="currentLicenceModel">
+                            <div class="text-subtitle-1 mb-3">User-Lizenz</div>
+                            <v-btn-toggle
+                                :model-value="currentLicenceModel.user_licence_enabled"
+                                mandatory
+                                divided
+                                color="primary"
+                                @update:model-value="setUserLicenceEnabled">
+                                <v-btn :value="true">JA</v-btn>
+                                <v-btn :value="false">NEIN</v-btn>
+                            </v-btn-toggle>
 
-                            <div class="text-subtitle-1 mb-3">Eigene Userlizenz notwendig</div>
-                            <v-card
-                                v-for="roleName in currentLicenceModel.affected_roles"
-                                :key="`licence-model-role-setting-${roleName}`"
-                                variant="tonal"
-                                class="pa-3 mb-2">
-                                <div class="d-flex flex-row flex-wrap align-center justify-space-between ga-3">
-                                    <v-chip color="primary" variant="flat">{{ roleName }}</v-chip>
-                                    <v-btn-toggle
-                                        :model-value="isUserLicenceRequiredForRole(roleName)"
-                                        mandatory
-                                        divided
-                                        color="primary"
-                                        @update:model-value="setUserLicenceRequiredForRole(roleName, $event)">
-                                        <v-btn :value="true">JA</v-btn>
-                                        <v-btn :value="false">NEIN</v-btn>
-                                    </v-btn-toggle>
-                                </div>
-                                <div v-if="isUserLicenceRequiredForRole(roleName)" class="mt-3">
-                                    <v-divider class="mb-3"></v-divider>
-                                    <div class="d-flex flex-row align-center justify-space-between ga-2 mb-2">
-                                        <div class="text-body-2">Pläne (Text + Preis pro Jahr)</div>
-                                        <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                            <v-select
-                                                v-if="copyablePlanSourceRoles(roleName).length >= 1"
-                                                v-model="plan_copy_sources_by_role[roleName]"
-                                                :items="copyablePlanSourceRoles(roleName)"
-                                                label="Von Rolle kopieren"
-                                                density="compact"
-                                                hide-details
-                                                style="min-width: 220px; max-width: 260px" />
-                                            <v-btn
-                                                v-if="plan_copy_sources_by_role[roleName]"
-                                                size="small"
-                                                color="secondary"
-                                                variant="flat"
-                                                prepend-icon="mdi-content-copy"
-                                                @click="copyUserLicencePlansFromRole(roleName)">
-                                                Kopieren
-                                            </v-btn>
-                                            <v-btn
-                                                size="small"
-                                                color="primary"
-                                                variant="outlined"
-                                                prepend-icon="mdi-plus"
-                                                @click="addUserLicencePlanRow(roleName)">
-                                                Zeile
-                                            </v-btn>
-                                        </div>
-                                    </div>
+                            <template v-if="currentLicenceModel.user_licence_enabled">
+                                <v-text-field
+                                    v-model="currentLicenceModel.user_price_per_year"
+                                    class="mt-4"
+                                    label="Kosten pro Monat"
+                                    inputmode="numeric"
+                                    :rules="[positiveIntegerOrNull(), maxLength(255)]" />
+                            </template>
 
-                                    <v-card
-                                        v-for="(plan, planIndex) in userLicencePlansForRole(roleName)"
-                                        :key="`licence-model-plan-${roleName}-${planIndex}`"
-                                        variant="outlined"
-                                        class="pa-2 mb-2">
-                                        <v-row dense>
-                                            <v-col cols="12" md="7">
-                                                <v-text-field
-                                                    v-model="plan.text"
-                                                    label="Text"
-                                                    :rules="[required(), maxLength(255)]"
-                                                    hide-details="auto"
-                                                    density="compact" />
-                                            </v-col>
-                                            <v-col cols="12" md="4">
-                                                <v-text-field
-                                                    v-model="plan.price_per_year"
-                                                    label="Preis pro Jahr"
-                                                    :rules="[required(), decimalOrNull(), maxLength(255)]"
-                                                    hide-details="auto"
-                                                    density="compact" />
-                                            </v-col>
-                                            <v-col cols="12" md="1" class="d-flex align-center justify-end">
-                                                <v-btn
-                                                    icon="mdi-delete"
-                                                    size="small"
-                                                    color="error"
-                                                    variant="text"
-                                                    @click="removeUserLicencePlanRow(roleName, planIndex)" />
-                                            </v-col>
-                                        </v-row>
-                                    </v-card>
-
-                                    <div class="text-caption text-medium-emphasis" v-if="userLicencePlansForRole(roleName).length === 0">
-                                        Noch kein Plan angelegt.
-                                    </div>
-                                </div>
-                            </v-card>
-                            <div class="text-caption text-medium-emphasis" v-if="currentLicenceModel.affected_roles.length === 0">
-                                Wählen Sie zuerst eine oder mehrere Rollen aus.
+                            <div class="text-subtitle-2 mt-4 mb-3">Zuordnung von Rollen</div>
+                            <div class="d-flex flex-wrap ga-2 mb-3" v-if="availableRoles.length >= 1">
+                                <v-btn
+                                    color="primary"
+                                    :variant="usesAllUserRoles() ? 'flat' : 'tonal'"
+                                    rounded="lg"
+                                    size="small"
+                                    @click="selectAllUserRoles">
+                                    Alle
+                                </v-btn>
+                            </div>
+                            <div class="d-flex flex-row flex-wrap ga-2" v-if="availableRoles.length >= 1">
+                                <v-chip
+                                    v-for="role in availableRoles"
+                                    :key="`licence-model-user-role-${role.id}`"
+                                    clickable
+                                    :color="isUserRoleSelected(role.name) ? 'primary' : undefined"
+                                    :variant="isUserRoleSelected(role.name) ? 'flat' : 'outlined'"
+                                    @click="toggleUserRole(role.name)">
+                                    {{ role.name }}
+                                </v-chip>
+                            </div>
+                            <div class="text-caption text-medium-emphasis mt-3" v-if="currentLicenceModel.user_role_names.length >= 1">
+                                Ausgewählt: {{ formatSelectedRoleNames(currentLicenceModel.user_role_names) }}
+                            </div>
+                            <div class="text-caption text-medium-emphasis mt-3" v-else>Noch keine Rollen ausgewählt.</div>
+                            <div class="text-caption text-medium-emphasis mt-3" v-if="availableRoles.length === 0">
+                                Keine Rollen verfügbar.
                             </div>
                         </v-card>
                     </div>
@@ -408,7 +443,6 @@ export default {
             is_uploading: false,
             licence_models: {},
             is_licence_model_valid: false,
-            plan_copy_sources_by_role: {},
         }
     },
 
@@ -501,6 +535,8 @@ export default {
         async saveLicence(data) {
             if (this.is_uploading) return
             this.is_valid = false
+            this.normalizeLicenceDayMonthField('start_day_month')
+            this.normalizeLicenceDayMonthField('end_day_month')
             await this.$refs.form.validate()
             if (!this.is_valid) return
 
@@ -514,7 +550,11 @@ export default {
         },
 
         createLicence() {
-            this.data = { is_selectable: true }
+            this.data = {
+                is_selectable: true,
+                start_day_month: '',
+                end_day_month: '',
+            }
             this.action = 'create_licence'
         },
 
@@ -558,140 +598,204 @@ export default {
         clearSelection() {
             this.selected_licences = []
         },
-        selectAll() {
-            this.selected_licences = this.licences.map((item) => item.id)
+        selectFirstLicence() {
+            this.selected_licences = this.licences.length >= 1 ? [this.licences[0].id] : []
         },
         unselectAll() {
             this.selected_licences = []
         },
+        onSelectedLicencesUpdate(value) {
+            if (!Array.isArray(value)) {
+                this.selected_licences = []
+                return
+            }
+
+            if (value.length <= 1) {
+                this.selected_licences = value
+                return
+            }
+
+            this.selected_licences = [value[value.length - 1]]
+        },
         isSelectedLicence(id) {
             return this.selected_licences.includes(id)
         },
-        setSchoolLicenceRequired(value) {
+        setSchoolLicenceEnabled(value) {
             if (typeof value !== 'boolean') return
             if (!this.currentLicenceModel) return
-            this.currentLicenceModel.school_licence_required = value
+            this.currentLicenceModel.school_licence_enabled = value
         },
-        isRoleAffected(roleName) {
-            if (!this.currentLicenceModel) return false
-            return this.currentLicenceModel.affected_roles.includes(roleName)
-        },
-        toggleAffectedRole(roleName) {
+        setAdminLicenceEnabled(value) {
+            if (typeof value !== 'boolean') return
             if (!this.currentLicenceModel) return
-            const roles = this.currentLicenceModel.affected_roles
+            this.currentLicenceModel.admin_licence_enabled = value
+        },
+        setUserLicenceEnabled(value) {
+            if (typeof value !== 'boolean') return
+            if (!this.currentLicenceModel) return
+            this.currentLicenceModel.user_licence_enabled = value
+        },
+        isAdminRoleSelected(roleName) {
+            if (!this.currentLicenceModel) return false
+            return this.currentLicenceModel.admin_role_names.includes(roleName)
+        },
+        toggleAdminRole(roleName) {
+            if (!this.currentLicenceModel) return
+            const roles = this.currentLicenceModel.admin_role_names
             const index = roles.indexOf(roleName)
             if (index >= 0) {
                 roles.splice(index, 1)
-                delete this.currentLicenceModel.user_licence_required_by_role[roleName]
-                delete this.currentLicenceModel.user_licence_plans_by_role[roleName]
-                delete this.plan_copy_sources_by_role[roleName]
                 return
             }
             roles.push(roleName)
-            this.currentLicenceModel.user_licence_required_by_role[roleName] = false
-            this.currentLicenceModel.user_licence_plans_by_role[roleName] = []
         },
-        isUserLicenceRequiredForRole(roleName) {
+        isUserRoleSelected(roleName) {
             if (!this.currentLicenceModel) return false
-            return !!this.currentLicenceModel.user_licence_required_by_role[roleName]
+            if (this.usesAllUserRoles()) return true
+            return this.currentLicenceModel.user_role_names.includes(roleName)
         },
-        setUserLicenceRequiredForRole(roleName, value) {
+        toggleUserRole(roleName) {
             if (!this.currentLicenceModel) return
-            if (typeof value !== 'boolean') return
-            this.currentLicenceModel.user_licence_required_by_role[roleName] = value
-            if (value && this.userLicencePlansForRole(roleName).length === 0) {
-                this.addDefaultUserLicencePlanRow(roleName)
+            if (this.usesAllUserRoles()) {
+                this.currentLicenceModel.user_role_names = []
             }
-        },
-        userLicencePlansForRole(roleName) {
-            if (!this.currentLicenceModel) return []
-            if (!this.currentLicenceModel.user_licence_plans_by_role || typeof this.currentLicenceModel.user_licence_plans_by_role !== 'object') {
-                this.currentLicenceModel.user_licence_plans_by_role = {}
+            const roles = this.currentLicenceModel.user_role_names
+            const index = roles.indexOf(roleName)
+            if (index >= 0) {
+                roles.splice(index, 1)
+                return
             }
-            if (!Array.isArray(this.currentLicenceModel.user_licence_plans_by_role[roleName])) {
-                this.currentLicenceModel.user_licence_plans_by_role[roleName] = []
-            }
-            return this.currentLicenceModel.user_licence_plans_by_role[roleName]
+            roles.push(roleName)
         },
-        createUserLicencePlan(text = '', price_per_year = '', id = null) {
-            const plan = {
-                text,
-                price_per_year,
-            }
-            if (id !== null && id !== undefined) {
-                plan.id = id
-            }
-            return plan
+        usesAllUserRoles() {
+            if (!this.currentLicenceModel) return false
+            return this.currentLicenceModel.user_role_names.includes('*')
         },
-        createEmptyUserLicencePlan() {
-            return this.createUserLicencePlan('', '0')
-        },
-        createDefaultUserLicencePlan() {
-            return {
-                text: 'Standard',
-                price_per_year: '0',
-            }
-        },
-        addUserLicencePlanRow(roleName) {
-            this.userLicencePlansForRole(roleName).push(this.createEmptyUserLicencePlan())
-        },
-        addDefaultUserLicencePlanRow(roleName) {
-            this.userLicencePlansForRole(roleName).push(this.createDefaultUserLicencePlan())
-        },
-        removeUserLicencePlanRow(roleName, index) {
-            const plans = this.userLicencePlansForRole(roleName)
-            if (index < 0 || index >= plans.length) return
-            plans.splice(index, 1)
-        },
-        copyablePlanSourceRoles(targetRoleName) {
-            if (!this.currentLicenceModel) return []
-            return (this.currentLicenceModel.affected_roles || [])
-                .filter((roleName) => roleName !== targetRoleName)
-                .filter((roleName) => this.isUserLicenceRequiredForRole(roleName))
-                .filter((roleName) => this.userLicencePlansForRole(roleName).length >= 1)
-        },
-        copyUserLicencePlansFromRole(targetRoleName) {
-            const sourceRoleName = this.plan_copy_sources_by_role[targetRoleName]
-            if (!sourceRoleName || sourceRoleName === targetRoleName) return
-
-            const sourcePlans = this.userLicencePlansForRole(sourceRoleName)
-            const targetPlans = this.userLicencePlansForRole(targetRoleName)
-
-            targetPlans.splice(
-                0,
-                targetPlans.length,
-                ...sourcePlans.map((plan) =>
-                    this.createUserLicencePlan(
-                        typeof plan?.text === 'string' ? plan.text : '',
-                        typeof plan?.price_per_year === 'string' ? plan.price_per_year : '0'
-                    )
-                )
-            )
-
-            if (targetPlans.length === 0) {
-                targetPlans.push(this.createDefaultUserLicencePlan())
-            }
+        selectAllUserRoles() {
+            if (!this.currentLicenceModel) return
+            this.currentLicenceModel.user_role_names = ['*']
         },
         licenceModelFor(licence) {
             return this.normalizeLicenceModel(licence?.licence_model || null)
         },
-        isAnyUserLicenceRequired(licenceModel) {
-            const map = licenceModel?.user_licence_required_by_role || {}
-            return Object.values(map).some((value) => !!value)
-        },
-        isRoleUserLicenceRequired(licenceModel, roleName) {
-            return !!licenceModel?.user_licence_required_by_role?.[roleName]
-        },
-        sortedAffectedRoles(licenceModel) {
-            const roles = Array.isArray(licenceModel?.affected_roles) ? [...licenceModel.affected_roles] : []
+        sortedRoleNames(roleNames) {
+            const roles = Array.isArray(roleNames) ? [...roleNames] : []
+            if (roles.includes('*')) {
+                return ['*']
+            }
             return roles.sort((a, b) => String(a).localeCompare(String(b), 'de'))
+        },
+        displayRoleName(roleName) {
+            return roleName === '*' ? 'Alle' : roleName
+        },
+        formatSelectedRoleNames(roleNames) {
+            return this.sortedRoleNames(roleNames)
+                .map((roleName) => this.displayRoleName(roleName))
+                .join(', ')
+        },
+        toBool(value, fallback = false) {
+            if (typeof value === 'boolean') {
+                return value
+            }
+
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase()
+                if (['1', 'true', 'yes', 'ja'].includes(normalized)) {
+                    return true
+                }
+                if (['0', 'false', 'no', 'nein'].includes(normalized)) {
+                    return false
+                }
+            }
+
+            if (typeof value === 'number') {
+                return value !== 0
+            }
+
+            return fallback
+        },
+        positiveIntegerOrNull() {
+            return (value) => {
+                const normalized = String(value ?? '').trim()
+                return normalized === '' || /^[1-9][0-9]*$/.test(normalized) || 'Es muss sich um eine positive ganze Zahl handeln oder leer sein.'
+            }
+        },
+        validDayMonth() {
+            return (value) => this.isValidDayMonthValue(value) || 'Das Datum muss im Format TT.MM. angegeben werden.'
+        },
+        endDayMonthAfterStart(startValueGetter) {
+            return (value) => {
+                const startValue = typeof startValueGetter === 'function' ? startValueGetter() : ''
+                if (!this.isValidDayMonthValue(startValue) || !this.isValidDayMonthValue(value)) {
+                    return true
+                }
+
+                return this.isEndDayMonthAfterStartDayMonth(startValue, value) || 'Das End-Datum muss nach dem Start-Datum liegen.'
+            }
+        },
+        normalizeLicenceDayMonthField(fieldName) {
+            if (!this.data || typeof this.data !== 'object') return
+            this.data[fieldName] = this.normalizeDayMonthDisplayValue(this.data[fieldName])
+        },
+        normalizeDayMonthDisplayValue(value) {
+            const parsed = this.parseDayMonthValue(value)
+            if (!parsed) {
+                return String(value ?? '').trim()
+            }
+
+            return `${String(parsed.day).padStart(2, '0')}.${String(parsed.month).padStart(2, '0')}.`
+        },
+        isValidDayMonthValue(value) {
+            return this.parseDayMonthValue(value) !== null
+        },
+        isEndDayMonthAfterStartDayMonth(startValue, endValue) {
+            const start = this.parseDayMonthValue(startValue)
+            const end = this.parseDayMonthValue(endValue)
+
+            if (!start || !end) {
+                return false
+            }
+
+            return end.month !== start.month || end.day !== start.day
+        },
+        parseDayMonthValue(value) {
+            if (typeof value !== 'string') {
+                return null
+            }
+
+            const normalized = value.trim()
+            const matches = normalized.match(/^(0[1-9]|[12][0-9]|3[01])\.(0[1-9]|1[0-2])\.?$/)
+            if (!matches) {
+                return null
+            }
+
+            const day = Number(matches[1])
+            const month = Number(matches[2])
+            const maxDay = new Date(2001, month, 0).getDate()
+            if (day > maxDay) {
+                return null
+            }
+
+            return { day, month }
+        },
+        overviewPriceLabel(priceValue, period = 'year') {
+            const normalized = String(priceValue ?? '').trim()
+            if (normalized === '') {
+                return ''
+            }
+
+            return period === 'month' ? `EUR ${normalized} / Monat` : `EUR ${normalized} / Jahr`
         },
         normalizeLicenceModel(licenceModel) {
             const fallback = {
-                school_licence_required: true,
-                affected_roles: [],
-                user_licence_required_by_role: {},
-                user_licence_plans_by_role: {},
+                school_licence_enabled: true,
+                school_price_per_year: '',
+                admin_licence_enabled: false,
+                admin_price_per_year: '',
+                admin_role_names: [],
+                user_licence_enabled: false,
+                user_price_per_year: '',
+                user_role_names: [],
             }
 
             if (typeof licenceModel === 'string') {
@@ -704,55 +808,68 @@ export default {
 
             if (!licenceModel || typeof licenceModel !== 'object') return fallback
 
-            const affectedRolesRaw = Array.isArray(licenceModel.affected_roles) ? licenceModel.affected_roles : []
-            const affected_roles = []
-            for (const roleName of affectedRolesRaw) {
-                if (typeof roleName !== 'string') continue
-                const trimmed = roleName.trim()
-                if (!trimmed || affected_roles.includes(trimmed)) continue
-                affected_roles.push(trimmed)
+            const normalizeRoleNames = (roleNames) => {
+                const normalizedRoles = []
+                for (const roleName of Array.isArray(roleNames) ? roleNames : []) {
+                    if (typeof roleName !== 'string') continue
+                    const trimmed = roleName.trim()
+                    if (!trimmed || normalizedRoles.includes(trimmed)) continue
+                    if (trimmed === '*') {
+                        return ['*']
+                    }
+                    normalizedRoles.push(trimmed)
+                }
+                return normalizedRoles
             }
 
+            if ('school_licence_enabled' in licenceModel || 'admin_licence_enabled' in licenceModel || 'user_licence_enabled' in licenceModel) {
+                return {
+                    school_licence_enabled: this.toBool(licenceModel.school_licence_enabled, true),
+                    school_price_per_year:
+                        typeof licenceModel.school_price_per_year === 'string'
+                            ? licenceModel.school_price_per_year
+                            : (licenceModel.school_price_per_year ?? '').toString(),
+                    admin_licence_enabled: this.toBool(licenceModel.admin_licence_enabled, false),
+                    admin_price_per_year:
+                        typeof licenceModel.admin_price_per_year === 'string'
+                            ? licenceModel.admin_price_per_year
+                            : (licenceModel.admin_price_per_year ?? '').toString(),
+                    admin_role_names: normalizeRoleNames(licenceModel.admin_role_names),
+                    user_licence_enabled: this.toBool(licenceModel.user_licence_enabled, false),
+                    user_price_per_year:
+                        typeof licenceModel.user_price_per_year === 'string'
+                            ? licenceModel.user_price_per_year
+                            : (licenceModel.user_price_per_year ?? '').toString(),
+                    user_role_names: normalizeRoleNames(licenceModel.user_role_names),
+                }
+            }
+
+            const affectedRoles = normalizeRoleNames(licenceModel.affected_roles)
             const rawMap =
                 licenceModel.user_licence_required_by_role && typeof licenceModel.user_licence_required_by_role === 'object'
                     ? licenceModel.user_licence_required_by_role
                     : {}
-            const user_licence_required_by_role = {}
-            for (const roleName of affected_roles) {
-                user_licence_required_by_role[roleName] = !!rawMap[roleName]
-            }
-
-            const rawPlansByRole =
-                licenceModel.user_licence_plans_by_role && typeof licenceModel.user_licence_plans_by_role === 'object'
-                    ? licenceModel.user_licence_plans_by_role
-                    : {}
-            const user_licence_plans_by_role = {}
-            for (const roleName of affected_roles) {
-                const rawPlans = Array.isArray(rawPlansByRole[roleName]) ? rawPlansByRole[roleName] : []
-                const normalizedPlans = rawPlans
-                    .filter((plan) => plan && typeof plan === 'object')
-                    .map((plan) =>
-                        this.createUserLicencePlan(
-                            (typeof plan.text === 'string' ? plan.text : (plan.text ?? '').toString()).trim(),
-                            (typeof plan.price_per_year === 'string' ? plan.price_per_year : (plan.price_per_year ?? '').toString()).trim(),
-                            Number.isInteger(Number(plan.id)) && Number(plan.id) > 0 ? Number(plan.id) : null
-                        )
-                    )
-                    .filter((plan) => !(plan.text === '' && plan.price_per_year === ''))
-
-                user_licence_plans_by_role[roleName] = normalizedPlans
-
-                if (user_licence_required_by_role[roleName] && user_licence_plans_by_role[roleName].length === 0) {
-                    user_licence_plans_by_role[roleName] = [this.createDefaultUserLicencePlan()]
-                }
-            }
+            const requiredRoleNames = affectedRoles.filter((roleName) => !!rawMap[roleName])
+            const adminRoleNames = requiredRoleNames.filter((roleName) => this.looksLikeAdminRoleName(roleName))
+            const userRoleNames = requiredRoleNames.filter((roleName) => !this.looksLikeAdminRoleName(roleName))
 
             return {
-                school_licence_required: typeof licenceModel.school_licence_required === 'boolean' ? licenceModel.school_licence_required : true,
-                affected_roles,
-                user_licence_required_by_role,
-                user_licence_plans_by_role,
+                school_licence_enabled: this.toBool(licenceModel.school_licence_required, true),
+                school_price_per_year: '',
+                admin_licence_enabled: adminRoleNames.length > 0,
+                admin_price_per_year: '',
+                admin_role_names: adminRoleNames,
+                user_licence_enabled: userRoleNames.length > 0,
+                user_price_per_year: '',
+                user_role_names: userRoleNames,
             }
+        },
+        looksLikeAdminRoleName(roleName) {
+            const normalized = String(roleName || '')
+                .trim()
+                .toLowerCase()
+
+            return normalized.includes('admin') || normalized === 'super_admin'
         },
     },
 }

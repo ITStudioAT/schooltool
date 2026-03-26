@@ -258,6 +258,11 @@ class User extends Authenticatable
         return $this->hasMany(TeachingSchema::class);
     }
 
+    public function schoolUserLicences(): HasMany
+    {
+        return $this->hasMany(SchoolUserLicence::class);
+    }
+
     public function materialCards(): HasMany
     {
         return $this->hasMany(MaterialCard::class);

@@ -38,6 +38,8 @@ test('admin licence resource exposes pivot fields and booleans', function () {
         'name' => 'Tool',
         'long_name' => 'Tool Long',
         'price_per_year' => 100,
+        'start_day_month' => '09-01',
+        'end_day_month' => '07-31',
         'is_selectable' => 0,
     ]);
     $school->licences()->attach($licence->id, ['valid_until' => '2030-01-01']);
@@ -48,8 +50,23 @@ test('admin licence resource exposes pivot fields and booleans', function () {
 
     expect($data['name'])->toBe('Tool')
         ->and($data['valid_until'])->toBe('2030-01-01')
+        ->and($data['start_day_month'])->toBe('01.09.')
+        ->and($data['end_day_month'])->toBe('31.07.')
         ->and($data['is_selectable'])->toBeFalse()
         ->and(array_key_exists('school_licence_id', $data))->toBeTrue();
+});
+
+test('admin licence resource normalizes whole-number decimal prices for editing', function () {
+    $licence = Licence::create([
+        'name' => 'Tool Decimal',
+        'long_name' => 'Tool Decimal Long',
+        'price_per_year' => '200.00',
+        'is_selectable' => 1,
+    ]);
+
+    $data = (new AdminLicenceResource($licence))->toArray(request());
+
+    expect($data['price_per_year'])->toBe(200);
 });
 
 test('paginate resource maps paginator properties', function () {

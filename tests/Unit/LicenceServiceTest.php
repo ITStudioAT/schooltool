@@ -3,6 +3,7 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\User;
 use App\Services\LicenceService;
 use Carbon\Carbon;
@@ -320,6 +321,202 @@ describe('toolAccessStatusForUser with per-user licences', function () {
         $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
 
         expect($result)->toBe('active');
+    });
+});
+
+describe('structured licence model', function () {
+    it('returns active when structured school layer is disabled and the user has an active user assignment', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teacher', 'web');
+        $user->assignRole('teacher');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'school_price_per_year' => '199',
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => true,
+            'user_price_per_year' => '29',
+            'user_role_names' => ['teacher'],
+        ]);
+
+        SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'user',
+            'valid_from' => now()->subMonth()->toDateString(),
+            'valid_until' => now()->addMonth()->toDateString(),
+            'base_price_per_year' => '29',
+            'charged_price' => '14.50',
+            'is_active' => true,
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns missing when structured user licence is required for the role but no assignment exists', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teacher', 'web');
+        $user->assignRole('teacher');
+
+        Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => true,
+            'user_role_names' => ['teacher'],
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
+
+        expect($result)->toBe('missing');
+    });
+
+    it('returns expired when the matching structured user assignment has passed its valid until date', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teacher', 'web');
+        $user->assignRole('teacher');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => true,
+            'user_role_names' => ['teacher'],
+        ]);
+
+        SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'user',
+            'valid_from' => now()->subYear()->toDateString(),
+            'valid_until' => now()->subDay()->toDateString(),
+            'base_price_per_year' => '29',
+            'charged_price' => '29.00',
+            'is_active' => true,
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
+
+        expect($result)->toBe('expired');
+    });
+
+    it('returns active when a matching admin assignment exists for an allowed admin role', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teaching_admin', 'web');
+        $user->assignRole('teaching_admin');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['teaching_admin'],
+            'user_licence_enabled' => false,
+        ]);
+
+        SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'admin',
+            'valid_from' => now()->subMonth()->toDateString(),
+            'valid_until' => now()->addMonth()->toDateString(),
+            'base_price_per_year' => '59',
+            'charged_price' => '59.00',
+            'is_active' => true,
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teaching_admin']);
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns active when wildcard user roles are configured and the user has an active assignment', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('student', 'web');
+        $user->assignRole('student');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => true,
+            'user_role_names' => ['*'],
+        ]);
+
+        SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'user',
+            'valid_from' => now()->subMonth()->toDateString(),
+            'valid_until' => now()->addMonth()->toDateString(),
+            'base_price_per_year' => '29',
+            'charged_price' => '29.00',
+            'is_active' => true,
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['student']);
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns active for school-level status when structured school layer is disabled', function () {
+        $school = School::factory()->create();
+
+        Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Materialientool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => false,
+        ]);
+
+        $result = $this->service->licenceStatus($school, 'Materialientool');
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns missing for school-level status when structured school layer is enabled and no school assignment exists', function () {
+        $school = School::factory()->create();
+
+        Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Materialientool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => true,
+            'admin_licence_enabled' => false,
+            'user_licence_enabled' => false,
+        ]);
+
+        $result = $this->service->licenceStatus($school, 'Materialientool');
+
+        expect($result)->toBe('missing');
     });
 });
 

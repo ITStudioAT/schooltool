@@ -37,7 +37,7 @@
             </v-sheet>
 
             <v-sheet
-                v-if="main_action == 'licences' && ['super_admin'].some((role) => config.roles.includes(role))"
+                v-if="main_action == 'licences' && hasAnyConfiguredRole(['super_admin'])"
                 rounded="xl"
                 class="super-admin-subnav mb-2"
                 :class="{ 'is-locked': isNavigationLocked }">
@@ -54,7 +54,7 @@
             </v-sheet>
 
             <v-sheet
-                v-if="['teachers', 'teachers_list'].includes(main_action) && ['super_admin', 'admin'].some((role) => config.roles.includes(role))"
+                v-if="['teachers', 'teachers_list'].includes(main_action) && hasAnyConfiguredRole(['super_admin', 'admin'])"
                 rounded="xl"
                 class="super-admin-subnav mb-2"
                 :class="{ 'is-locked': isNavigationLocked }">
@@ -72,20 +72,20 @@
 
             <div class="super-admin-overview-shell" :class="{ 'super-admin-overview-shell--active': usesOverviewTheme }">
                 <v-row class="w-100 ma-0" dense>
-                    <ActiveSchool v-if="main_action == '' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-                    <Schools v-if="main_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
-                    <Schoolyears v-if="main_action == 'schoolyears' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-                    <Licences v-if="main_action == 'licences' && licences_action == 'overview' && ['super_admin'].some((role) => config.roles.includes(role))" />
-                    <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && ['super_admin'].some((role) => config.roles.includes(role))" />
-                    <Roles v-if="main_action == 'roles' && ['super_admin'].some((role) => config.roles.includes(role))" />
-                    <Users v-if="main_action == 'users' && ['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
-                    <Teachers v-if="main_action == 'teachers' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
-                    <TeachersList v-if="main_action == 'teachers_list' && (config.roles.includes('super_admin') || config.roles.includes('admin'))" />
+                    <ActiveSchool v-if="main_action == '' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
+                    <Schools v-if="main_action == 'schools' && hasAnyConfiguredRole(['super_admin'])" />
+                    <Schoolyears v-if="main_action == 'schoolyears' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
+                    <Licences v-if="main_action == 'licences' && licences_action == 'overview' && hasAnyConfiguredRole(['super_admin'])" />
+                    <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && hasAnyConfiguredRole(['super_admin'])" />
+                    <Roles v-if="main_action == 'roles' && hasAnyConfiguredRole(['super_admin'])" />
+                    <Users v-if="main_action == 'users' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
+                    <Teachers v-if="main_action == 'teachers' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
+                    <TeachersList v-if="main_action == 'teachers_list' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
                 </v-row>
             </div>
         </v-container>
 
-        <Log v-model="log_dialog" v-if="['super_admin', 'admin'].some((role) => config.roles.includes(role))" />
+        <Log v-model="log_dialog" v-if="hasAnyConfiguredRole(['super_admin', 'admin'])" />
 
         <v-dialog v-model="impersonation_dialog" max-width="720" persistent>
             <v-card>
@@ -255,8 +255,11 @@ export default {
             return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         canAccessSuperAdminPage() {
-            const roles = this.config?.roles || []
+            const roles = this.configuredRoleNames
             return ['super_admin', 'admin'].some((role) => roles.includes(role)) || this.isImpersonating
+        },
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
         },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
@@ -438,6 +441,10 @@ export default {
     },
 
     methods: {
+        hasAnyConfiguredRole(requiredRoles) {
+            const configuredRoleNames = Array.isArray(this.configuredRoleNames) ? this.configuredRoleNames : []
+            return configuredRoleNames.some((role) => requiredRoles.includes(role))
+        },
         isNavigationItemActive(item) {
             if (item.targetAction === 'teachers') {
                 return ['teachers', 'teachers_list'].includes(this.main_action)
