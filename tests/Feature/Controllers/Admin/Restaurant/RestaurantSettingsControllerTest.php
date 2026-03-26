@@ -17,7 +17,7 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    collect(['super_admin', 'admin', 'lunch_admin'])->each(function (string $role): void {
+    collect(['super_admin', 'admin', 'lunch_admin', 'lunch_user'])->each(function (string $role): void {
         Role::firstOrCreate([
             'name' => $role,
             'guard_name' => 'web',
@@ -38,6 +38,12 @@ beforeEach(function () {
 });
 
 test('settings creates default categories for empty school', function () {
+    $lunchUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+    ]);
+    $lunchUser->assignRole('lunch_user');
+
     $this->actingAs($this->admin, 'sanctum');
 
     $response = $this->getJson('/api/admin/restaurant/settings');
@@ -76,6 +82,8 @@ test('settings creates default categories for empty school', function () {
         ->toBe(5)
         ->and($response->json('online_settings.visibility_end_mode'))
         ->toBe('plan_end')
+        ->and($response->json('stats.lunch_users_count'))
+        ->toBe(1)
         ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
         ->toEqual(['Fisch', 'Schwein'])
         ->and($response->json('ingredient_icons.0.image_url'))

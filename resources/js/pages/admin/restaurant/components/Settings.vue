@@ -10,6 +10,7 @@
                             :variant="selectedPanel === 'general' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'general' }"
+                            :disabled="isPanelNavigationDisabled('general')"
                             @click="activatePanel('general')">
                             Allgemein
                         </v-btn>
@@ -19,6 +20,7 @@
                             :variant="selectedPanel === 'categories' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'categories' }"
+                            :disabled="isPanelNavigationDisabled('categories')"
                             @click="activatePanel('categories')">
                             Kategorien
                         </v-btn>
@@ -28,6 +30,7 @@
                             :variant="selectedPanel === 'ingredient-icons' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'ingredient-icons' }"
+                            :disabled="isPanelNavigationDisabled('ingredient-icons')"
                             @click="activatePanel('ingredient-icons')">
                             Zutaten-Symbole
                         </v-btn>
@@ -37,6 +40,7 @@
                             :variant="selectedPanel === 'free-days' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'free-days' }"
+                            :disabled="isPanelNavigationDisabled('free-days')"
                             @click="activatePanel('free-days')">
                             Freie Tage
                         </v-btn>
@@ -46,6 +50,7 @@
                             :variant="selectedPanel === 'eating-times' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'eating-times' }"
+                            :disabled="isPanelNavigationDisabled('eating-times')"
                             @click="activatePanel('eating-times')">
                             Speisezeiten
                         </v-btn>
@@ -55,6 +60,7 @@
                             :variant="selectedPanel === 'online' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
                             :class="{ 'settings-subnav__button--active': selectedPanel === 'online' }"
+                            :disabled="isPanelNavigationDisabled('online')"
                             @click="activatePanel('online')">
                             Online
                         </v-btn>
@@ -65,16 +71,35 @@
             <v-col v-if="selectedPanel === 'general'" cols="12">
                 <ItsGridBox variant="overview" color="primary" title="Allgemein" icon="mdi-tune-variant">
                     <template #header-actions>
-                        <v-btn
-                            v-if="!isEditingGeneralSettings"
-                            size="small"
-                            color="primary"
-                            variant="flat"
-                            prepend-icon="mdi-pencil"
-                            :disabled="!canManageGeneralSettings"
-                            @click="beginGeneralSettingsEdit">
-                            Bearbeiten
-                        </v-btn>
+                        <div class="d-flex flex-wrap justify-end ga-2">
+                            <template v-if="isEditingGeneralSettings">
+                                <v-btn
+                                    icon="mdi-close"
+                                    variant="text"
+                                    aria-label="Bearbeitung abbrechen"
+                                    title="Bearbeitung abbrechen"
+                                    data-testid="general-settings-cancel-icon"
+                                    @click="abortGeneralSettingsEdit" />
+                                <v-btn
+                                    icon="mdi-content-save"
+                                    color="primary"
+                                    variant="flat"
+                                    aria-label="Allgemeine Einstellungen speichern"
+                                    title="Allgemeine Einstellungen speichern"
+                                    data-testid="general-settings-save-icon"
+                                    @click="saveGeneralSettings" />
+                            </template>
+                            <v-btn
+                                v-else
+                                size="small"
+                                color="primary"
+                                variant="flat"
+                                prepend-icon="mdi-pencil"
+                                :disabled="!canManageGeneralSettings"
+                                @click="beginGeneralSettingsEdit">
+                                Bearbeiten
+                            </v-btn>
+                        </div>
                     </template>
 
                     <v-sheet rounded="xl" class="pa-5">
@@ -493,6 +518,10 @@ export default {
         activatePanel(panel) {
             const normalizedPanel = this.normalizePanel(panel)
 
+            if (this.isPanelNavigationDisabled(normalizedPanel)) {
+                return
+            }
+
             this.selectedPanel = normalizedPanel
             this.$router.replace({
                 query: {
@@ -503,6 +532,9 @@ export default {
         },
         normalizePanel(panel) {
             return validPanels.includes(panel) ? panel : 'general'
+        },
+        isPanelNavigationDisabled(panel) {
+            return this.isEditingGeneralSettings && panel !== this.selectedPanel
         },
         syncPanelFromRoute() {
             this.selectedPanel = this.normalizePanel(this.$route?.query?.panel)

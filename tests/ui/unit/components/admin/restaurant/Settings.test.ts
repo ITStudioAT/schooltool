@@ -10,7 +10,7 @@ const componentStubs = {
     ItsGridBox: { props: ['title'], template: '<div><div class="grid-title">{{ title }}</div><slot name="header-actions" /><slot /></div>' },
     'v-col': { template: '<div><slot /></div>' },
     'v-row': { template: '<div><slot /></div>' },
-    'v-btn': { template: '<button><slot /></button>' },
+    'v-btn': { template: '<button v-bind="$attrs"><slot /></button>' },
     'v-alert': { template: '<div><slot /></div>' },
     'v-list': { template: '<div><slot /></div>' },
     'v-list-item': { template: '<div><slot /><slot name="append" /></div>' },
@@ -197,8 +197,38 @@ describe('Restaurant settings component', () => {
         await wrapper.vm.$nextTick()
 
         expect((wrapper.vm as any).isEditingGeneralSettings).toBe(true)
+        expect(wrapper.text()).toContain('Abbrechen')
+        expect(wrapper.text()).toContain('Allgemeine Einstellungen speichern')
         expect(wrapper.find('input[data-label="Service-E-Mail-Adresse"]').exists()).toBe(true)
         expect(wrapper.find('input[data-label="E-Mail-Adresse für Bestätigung"]').exists()).toBe(true)
+    })
+
+    it('shows additional icon actions in the header while general editing is active', async () => {
+        const { wrapper } = mountSettings()
+
+        ;(wrapper.vm as any).beginGeneralSettingsEdit()
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="general-settings-cancel-icon"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="general-settings-save-icon"]').exists()).toBe(true)
+        expect(wrapper.text()).toContain('Abbrechen')
+        expect(wrapper.text()).toContain('Allgemeine Einstellungen speichern')
+    })
+
+    it('disables other settings menu buttons while general editing is active', async () => {
+        const { wrapper, routerReplace } = mountSettings()
+
+        ;(wrapper.vm as any).beginGeneralSettingsEdit()
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isPanelNavigationDisabled('general')).toBe(false)
+        expect((wrapper.vm as any).isPanelNavigationDisabled('categories')).toBe(true)
+
+        ;(wrapper.vm as any).activatePanel('categories')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).selectedPanel).toBe('general')
+        expect(routerReplace).not.toHaveBeenCalled()
     })
 
     it('saves general settings through the restaurant store', async () => {

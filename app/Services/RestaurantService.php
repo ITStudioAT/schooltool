@@ -62,6 +62,9 @@ class RestaurantService
         $menusCount = RestaurantMenu::query()
             ->where('school_id', $authUser->school_id)
             ->count();
+        $lunchUsersCount = User::query()
+            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
+            ->count();
 
         $foods = $this->foodsForUser($authUser);
 
@@ -81,6 +84,7 @@ class RestaurantService
                 'categories_count' => $categories->count(),
                 'ingredient_icons_count' => $ingredientIcons->count(),
                 'menus_count' => $menusCount,
+                'lunch_users_count' => $lunchUsersCount,
                 'foods_with_image_count' => $foods->filter(fn (RestaurantFood $food): bool => filled($food->food_image_path))->count(),
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
             ],
