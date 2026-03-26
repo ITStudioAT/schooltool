@@ -1,74 +1,91 @@
 <template>
     <v-col cols="12" md="6" xl="4">
-        <its-grid-box color="primary" title="Anmeldungen anzeigen" class="w-100">
-            <v-card tile flat color="primary" :disabled="booking_action != ''">
-                <v-card-text class="d-flex flex-row flex-wrap align-center ga-2">
-                    <its-menu-button title="Zurück" subtitle="Übersicht" icon="mdi-arrow-left" color="secondary" @click="action = ''" />
-
-                    <its-menu-button
-                        :title="selected_bookings.length == 1 ? 'Anmeldung' : 'Anmeldungen'"
-                        subtitle="löschen"
-                        icon="mdi-delete"
-                        color="warning"
-                        @click="remove"
-                        v-if="selected_bookings.length > 0" />
-                </v-card-text>
-            </v-card>
-
-            <!-- LÖSCHEN VON ANMELDUNGEN -->
-            <v-card tile flat color="warning" v-if="booking_action == 'remove_booking'">
-                <v-card-text>
-                    <its-grid-box color="primary" title="LÖSCHEN" class="h-100 w-100">
-                        <v-form ref="form" v-model="is_valid" @submit.prevent="deleteBookings(selected_bookings, delete_notify)" class="mb-4">
-                            <div class="text-h6" v-if="selected_bookings.length > 1">Sollen die markierten Anmeldungen wirklich gelöscht werden?</div>
-                            <div class="text-h6" v-if="selected_bookings.length == 1">Soll die markierte Anmeldung wirklich gelöscht werden?</div>
-                            <div class="d-flex flex-row align-center justify-end">
-                                <v-checkbox label="Lösch-Verständigung per E-Mail?" v-model="delete_notify"></v-checkbox>
-                            </div>
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="success" slim flat @click="abortBooking">Abbruch</v-btn>
-                                <v-btn color="error" slim flat type="submit">Löschen</v-btn>
-                            </div>
-                        </v-form>
-                    </its-grid-box>
-                </v-card-text>
-            </v-card>
-
-            <div v-for="booking in bookings" :key="booking.id" :value="booking.id" class="mt-4">
-                <div class="d-flex flex-row align-center text-body-1 ga-2">
-                    <div>{{ '📅 ' + booking.date }}</div>
-                    <div>{{ '🕒 ' + booking.from + ' -  ' + booking.to }}</div>
-                    <div>{{ '👷 ' + booking.supervisor }}</div>
+        <v-card rounded="xl" class="rd-card" flat>
+            <v-card-text class="pa-4">
+                <div class="rd-card__header mb-3">
+                    <div class="rd-card__icon-wrap">
+                        <v-icon size="18" icon="mdi-view-list-outline" />
+                    </div>
+                    <div class="rd-card__header-title">Anmeldungen</div>
+                    <div class="ml-auto d-flex align-center ga-2">
+                        <v-btn
+                            v-if="selected_bookings.length > 0 && booking_action === ''"
+                            icon="mdi-delete-outline"
+                            variant="tonal"
+                            color="error"
+                            size="small"
+                            :title="selected_bookings.length === 1 ? 'Anmeldung löschen' : 'Anmeldungen löschen'"
+                            @click="remove" />
+                        <v-btn icon="mdi-arrow-left" variant="tonal" color="secondary" size="small" title="Zurück" @click="action = ''" />
+                    </div>
                 </div>
-                <v-list
-                    variant="elevated"
-                    select-strategy="leaf"
-                    v-model:selected="selected_bookings"
-                    color="success-lighten-2"
-                    :disabled="booking_action != ''"
-                    v-if="booking.bookings.length >= 1">
-                    <v-list-item v-for="item in booking.bookings" :key="item.id" :value="item.id">
-                        <template v-slot:title>
-                            <div class="d-flex flex-row align-center text-body-2 ga-2">
-                                <div>{{ item.last_name + ' ' + item.first_name }}</div>
-                                <div>{{ '✉️ ' + item.email }}</div>
-                                <div v-if="item.phone">{{ '☎️ ' + item.phone }}</div>
-                            </div>
-                            <div class="d-flex flex-row align-center text-body-1 ga-2">
-                                <div>{{ '👩‍🎓 ' + item.student_last_name + ' ' + item.student_first_name }}</div>
-                                <div class="text-body-2" v-if="item.student_birthdate">
-                                    {{ '🎂 ' + item.student_birthdate }}
+
+                <div v-for="booking in bookings" :key="booking.id" class="rd-booking-group mb-4">
+                    <div class="rd-booking-group__header">
+                        <v-icon size="14" class="mr-1">mdi-calendar</v-icon>{{ booking.date }}
+                        <v-icon size="14" class="mx-1">mdi-clock-outline</v-icon>{{ booking.from }} – {{ booking.to }}
+                        <v-icon size="14" class="mx-1">mdi-account-hard-hat-outline</v-icon>{{ booking.supervisor }}
+                    </div>
+
+                    <div v-if="booking.bookings.length === 0" class="rd-booking-empty">Keine Buchungen.</div>
+
+                    <v-list
+                        v-if="booking.bookings.length >= 1"
+                        variant="flat"
+                        select-strategy="leaf"
+                        v-model:selected="selected_bookings"
+                        color="success"
+                        bg-color="transparent"
+                        density="compact"
+                        :disabled="booking_action !== ''">
+                        <v-list-item
+                            v-for="item in booking.bookings"
+                            :key="item.id"
+                            :value="item.id"
+                            rounded="lg"
+                            class="rd-booking-item mb-1">
+                            <template #title>
+                                <div class="rd-booking-item__name">{{ item.last_name }} {{ item.first_name }}</div>
+                                <div class="rd-booking-item__meta">
+                                    <span><v-icon size="12" class="mr-1">mdi-email-outline</v-icon>{{ item.email }}</span>
+                                    <span v-if="item.phone"><v-icon size="12" class="mr-1">mdi-phone-outline</v-icon>{{ item.phone }}</span>
                                 </div>
-                            </div>
-                            <div class="text-caption" v-if="item.note">{{ item.note }}</div>
-                        </template>
-                    </v-list-item>
-                </v-list>
-                <div class="mt-4 text-body-1 font-weight-bold" v-if="booking.bookings.length == 0">Keine Buchungen vorhanden!</div>
-            </div>
-        </its-grid-box>
+                                <div class="rd-booking-item__student">
+                                    <v-icon size="12" class="mr-1">mdi-human-child</v-icon>
+                                    {{ item.student_last_name }} {{ item.student_first_name }}
+                                    <span v-if="item.student_birthdate" class="ml-2">
+                                        <v-icon size="11" class="mr-1">mdi-cake-variant-outline</v-icon>{{ item.student_birthdate }}
+                                    </span>
+                                </div>
+                                <div class="text-caption rd-booking-item__note" v-if="item.note">{{ item.note }}</div>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </div>
+            </v-card-text>
+        </v-card>
+
+        <!-- Delete bookings dialog -->
+        <v-dialog :model-value="booking_action === 'remove_booking'" max-width="420" persistent>
+            <v-card rounded="xl" class="rd-dialog-card">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-5">
+                    <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                    {{ selected_bookings.length === 1 ? 'Anmeldung löschen' : 'Anmeldungen löschen' }}
+                </v-card-title>
+                <v-card-text class="px-5">
+                    {{ selected_bookings.length > 1 ? 'Sollen die markierten Anmeldungen wirklich gelöscht werden?' : 'Soll die markierte Anmeldung wirklich gelöscht werden?' }}
+                    <v-checkbox label="Lösch-Verständigung per E-Mail?" v-model="delete_notify" color="primary" density="compact" class="mt-2" />
+                </v-card-text>
+                <v-card-actions class="px-5 pb-5">
+                    <v-btn variant="tonal" rounded="lg" @click="abortBooking">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="error" variant="flat" rounded="lg" @click="deleteBookings(selected_bookings, delete_notify)">Löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-col>
 </template>
+
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
@@ -76,15 +93,11 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import { useRegisterDateStore } from '@/stores/admin/RegisterDateStore'
 import { useRegisterDateBookingStore } from '@/stores/admin/RegisterDateBookingStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-
-    components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -104,7 +117,6 @@ export default {
             registerDateBookingStore: null,
             is_valid: false,
             search_string: '',
-            is_valid: false,
             booking_action: '',
             delete_notify: false,
         }
@@ -116,6 +128,7 @@ export default {
         ...mapWritableState(useRegisterDateStore, ['register_dates', 'selected_register_dates', 'days', 'selected_day']),
         ...mapWritableState(useRegisterDateBookingStore, ['bookings', 'selected_bookings']),
     },
+
     watch: {},
 
     methods: {
@@ -125,10 +138,7 @@ export default {
         async loadBookings(dates) {
             await this.registerDateBookingStore.loadBookings(dates)
         },
-
         async deleteBookings(bookings, notify) {
-            var bookings_90 = bookings
-
             if (!(await this.registerDateBookingStore.deleteBookings(bookings, notify))) return
             const date = this.registerDateStore?.register_dates[0].date
             if (date) {
@@ -148,3 +158,71 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.rd-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.82) !important;
+    backdrop-filter: blur(4px);
+    color: #e2e8f0 !important;
+}
+
+.rd-card__header { display: flex; align-items: center; gap: 10px; }
+
+.rd-card__icon-wrap {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px;
+    background: rgba(99, 102, 241, 0.18); color: #818cf8; flex-shrink: 0;
+}
+
+.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+
+.rd-booking-group__header {
+    display: flex; align-items: center; flex-wrap: wrap;
+    font-size: 0.78rem; color: #64748b;
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 8px; padding: 6px 10px; margin-bottom: 4px;
+}
+
+.rd-booking-empty {
+    font-size: 0.82rem; color: #475569; padding: 4px 8px;
+}
+
+.rd-booking-item { border-radius: 8px !important; }
+
+.rd-booking-item__name { font-size: 0.88rem; font-weight: 600; color: #e2e8f0; }
+
+.rd-booking-item__meta {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    font-size: 0.76rem; color: #64748b; margin-top: 2px;
+}
+
+.rd-booking-item__student {
+    display: flex; align-items: center; flex-wrap: wrap;
+    font-size: 0.8rem; color: #94a3b8; margin-top: 2px;
+}
+
+.rd-booking-item__note { color: #64748b; margin-top: 2px; }
+
+:deep(.v-list-item) {
+    background: rgba(15, 23, 42, 0.4) !important;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+:deep(.v-list-item--active) {
+    background: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.25) !important;
+}
+
+:deep(.v-list-item__content),
+:deep(.v-list-item-title) {
+    color: #e2e8f0 !important;
+}
+
+.rd-dialog-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+</style>

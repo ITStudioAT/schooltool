@@ -1,53 +1,60 @@
 <template>
-    <!-- Geöffnete Anmeldesysteme -->
-    <v-row class="w-100">
+    <v-row class="w-100 mb-1" dense>
         <v-col cols="12" md="6" xl="4">
-            <its-grid-box color="primary" :title="'Geöffnete Anmeldesysteme'" class="h-100 w-100" :disabled="action != ''">
-                <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_active_register_array" color="success-lighten-2" bg-color="transparent">
-                    <v-list-item v-for="register in active_registers" :key="register" :value="register" class="mb-2">
-                        <template v-slot:title>
-                            <div class="d-flex flex-row align-center justify-space-between">
-                                <div>
-                                    <div class="text-body-1">{{ register.name }}</div>
-                                    <div class="text-caption">{{ register.schoolyear_name }}</div>
-                                </div>
-                            </div>
-                        </template>
-                    </v-list-item>
-                </v-list>
+            <v-card rounded="xl" class="rs-card" flat>
+                <v-card-text class="pa-4">
+                    <div class="rs-card__header mb-3">
+                        <div class="rs-card__icon-wrap" :class="hasActive ? 'rs-card__icon-wrap--success' : ''">
+                            <v-icon size="18" :icon="hasActive ? 'mdi-check-circle-outline' : 'mdi-circle-off-outline'" />
+                        </div>
+                        <div class="rs-card__header-title">Geöffnete Anmeldesysteme</div>
+                        <div class="ml-auto" v-if="selected_active_register && config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
+                            <v-btn
+                                icon="mdi-power-standby"
+                                variant="tonal"
+                                color="success"
+                                size="small"
+                                title="Anmeldesystem schließen"
+                                @click="toggleRegister(selected_active_register)" />
+                        </div>
+                    </div>
 
-                <div class="text-body-1 font-weight-medium" v-if="active_registers?.length == 0">Keine geöffneten Anmeldesysteme.</div>
-                <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
-                    <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <div class="mr-4">Geöffnete Anmeldesysteme</div>
-                        <div class="d-flex flex-row align-center">
-                            <div class="d-flex flex-row align-center" v-if="selected_active_register">
-                                <v-btn flat tile @click="toggleRegister(selected_active_register)" icon color="transparent">
-                                    <v-icon icon="mdi-power-standby" color="success"></v-icon>
-                                </v-btn>
+                    <div v-if="active_registers?.length === 0" class="rs-card__empty">
+                        <v-icon size="16" class="mr-1">mdi-information-outline</v-icon>
+                        Kein Anmeldesystem aktuell geöffnet.
+                    </div>
+
+                    <div v-else class="rs-card__list">
+                        <div
+                            v-for="register in active_registers"
+                            :key="register.id"
+                            class="rs-list-item"
+                            :class="{ 'rs-list-item--selected': selected_active_register_array?.includes(register) }"
+                            @click="selected_active_register_array = [register]">
+                            <div class="rs-list-item__dot rs-list-item__dot--active"></div>
+                            <div class="rs-list-item__body">
+                                <div class="rs-list-item__name">{{ register.name }}</div>
+                                <div class="rs-list-item__meta">{{ register.schoolyear_name }}</div>
                             </div>
                         </div>
                     </div>
-                </template>
-            </its-grid-box>
+                </v-card-text>
+            </v-card>
         </v-col>
     </v-row>
 </template>
+
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-
-    components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -73,6 +80,11 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'action']),
         ...mapWritableState(useSchoolyearStore, ['selected_active_register']),
         ...mapWritableState(useRegisterStore, ['registers', 'active_registers']),
+
+        hasActive() {
+            return Array.isArray(this.active_registers) && this.active_registers.length > 0
+        },
+
         selected_active_register: {
             get() {
                 return this.selected_active_register_array?.[0]
@@ -103,3 +115,104 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.rs-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.82) !important;
+    backdrop-filter: blur(4px);
+    color: #e2e8f0 !important;
+}
+
+.rs-card__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rs-card__icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(148, 163, 184, 0.12);
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.rs-card__icon-wrap--success {
+    background: rgba(34, 197, 94, 0.16);
+    color: #4ade80;
+}
+
+.rs-card__header-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.rs-card__empty {
+    display: flex;
+    align-items: center;
+    font-size: 0.84rem;
+    color: #64748b;
+    padding: 6px 0;
+}
+
+.rs-card__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.rs-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s;
+}
+
+.rs-list-item:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.rs-list-item--selected {
+    background: rgba(34, 197, 94, 0.1) !important;
+    border-color: rgba(34, 197, 94, 0.25) !important;
+}
+
+.rs-list-item__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.rs-list-item__dot--active {
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.rs-list-item__body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.rs-list-item__name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.rs-list-item__meta {
+    font-size: 0.76rem;
+    color: #64748b;
+}
+</style>

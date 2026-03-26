@@ -1,119 +1,113 @@
 <template>
     <v-col cols="12" md="6" xl="4">
-        <its-grid-box color="primary" title="Person anmelden" class="w-100" v-if="step == 0">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="getUserWithEmail(person)" class="mb-4">
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-card tile flat color="primary" class="mt-2">
-                            <v-card-text>
-                                <div>{{ '📅 ' + selectedRegisterDate.date }}</div>
-                                <div>{{ '🕒 ' + selectedRegisterDate.from + ' - ' + selectedRegisterDate.to }}</div>
-                                <div>{{ '👷 ' + selectedRegisterDate.supervisor }}</div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
-                </v-row>
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-text-field autofocus v-model="person.email" label="E-Mail" :rules="[mail()]" />
-                    </v-col>
-                </v-row>
-                <v-row>
-                    <v-col cols="12" class="d-flex flex-row align-center justify-space-between">
-                        <v-btn color="warning" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="success" slim flat type="submit">Weiter</v-btn>
-                    </v-col>
-                </v-row>
-            </v-form>
-        </its-grid-box>
 
-        <its-grid-box color="primary" :title="user ? 'Anmelder prüfen' : 'Neuer Anmelder'" class="w-100" v-if="step == 1">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="updateOrCreateUser(person)" class="mb-4">
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-card tile flat color="primary" class="mt-2">
-                            <v-card-text>
-                                <div>{{ '📅 ' + selectedRegisterDate.date }}</div>
-                                <div>{{ '🕒 ' + selectedRegisterDate.from + ' - ' + selectedRegisterDate.to }}</div>
-                                <div>{{ '👷 ' + selectedRegisterDate.supervisor }}</div>
-                            </v-card-text>
-                            <v-card-text class="text-h6">
-                                {{ person.email }}
-                            </v-card-text>
-                            <v-card-text v-if="!user">Unter der angegeben E-Mail ist kein Benuter gespeichert. Der Benutzer muss neu registriert werden.</v-card-text>
-                            <v-card-text v-if="user">Die E-Mail existiert. Die Daten können geändert/ergänzt werden.</v-card-text>
-                        </v-card>
-                    </v-col>
+        <!-- Step 0: E-Mail -->
+        <v-card v-if="step === 0" rounded="xl" class="rd-card" flat>
+            <v-card-text class="pa-4">
+                <div class="rd-card__header mb-4">
+                    <div class="rd-card__icon-wrap rd-card__icon-wrap--success">
+                        <v-icon size="18" icon="mdi-account-plus" />
+                    </div>
+                    <div>
+                        <div class="rd-card__header-title">Person anmelden</div>
+                        <div class="rd-card__header-sub">Schritt 1 von 3</div>
+                    </div>
+                </div>
 
-                    <v-col cols="12">
-                        <v-text-field autofocus v-model="person.last_name" label="Nachname" :rules="[required(), maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="person.first_name" label="Vorname" :rules="[maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="person.phone" label="Telefon" :rules="[maxLength(255)]" />
-                    </v-col>
-                </v-row>
+                <div class="rd-date-info mb-4" v-if="selectedRegisterDate">
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-calendar</v-icon>{{ selectedRegisterDate.date }}</div>
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-clock-outline</v-icon>{{ selectedRegisterDate.from }} – {{ selectedRegisterDate.to }}</div>
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-account-hard-hat-outline</v-icon>{{ selectedRegisterDate.supervisor }}</div>
+                </div>
 
-                <v-row>
-                    <v-col cols="12" class="d-flex flex-row align-center justify-space-between">
-                        <v-btn color="warning" slim flat @click="step--">Zurück</v-btn>
-                        <v-btn color="error" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="success" slim flat type="submit">Weiter</v-btn>
-                    </v-col>
-                </v-row>
-            </v-form>
-        </its-grid-box>
+                <v-form ref="form" v-model="is_valid" @submit.prevent="getUserWithEmail(person)">
+                    <v-text-field autofocus variant="outlined" density="comfortable" rounded="lg" v-model="person.email" label="E-Mail" :rules="[mail()]" />
+                </v-form>
+            </v-card-text>
+            <v-card-actions class="px-4 pb-4 ga-2">
+                <v-btn color="success" variant="flat" rounded="lg" @click="getUserWithEmail(person)" class="flex-1-1">
+                    <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>Weiter
+                </v-btn>
+                <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">Abbruch</v-btn>
+            </v-card-actions>
+        </v-card>
 
-        <its-grid-box color="primary" title="Person erfassen" class="w-100" v-if="step == 2">
-            <v-form ref="form" v-model="is_valid" @submit.prevent="createBooking(selectedRegisterDate, person)" class="mb-4">
-                <v-row dense>
-                    <v-col cols="12">
-                        <v-card tile flat color="primary" class="mt-2">
-                            <v-card-text>
-                                <div>{{ '📅 ' + selectedRegisterDate.date }}</div>
-                                <div>{{ '🕒 ' + selectedRegisterDate.from + ' - ' + selectedRegisterDate.to }}</div>
-                                <div>{{ '👷 ' + selectedRegisterDate.supervisor }}</div>
-                            </v-card-text>
-                            <v-card-text class="text-body-1">
-                                <div>{{ person.last_name + ' ' + person.first_name }}</div>
-                                <div>{{ '✉️ ' + person.email }}</div>
-                                <div v-if="person.phone">{{ '☎️ ' + person.phone }}</div>
-                            </v-card-text>
-                        </v-card>
-                    </v-col>
+        <!-- Step 1: Anmelder prüfen -->
+        <v-card v-if="step === 1" rounded="xl" class="rd-card" flat>
+            <v-card-text class="pa-4">
+                <div class="rd-card__header mb-4">
+                    <div class="rd-card__icon-wrap">
+                        <v-icon size="18" icon="mdi-account-check-outline" />
+                    </div>
+                    <div>
+                        <div class="rd-card__header-title">{{ user ? 'Anmelder prüfen' : 'Neuer Anmelder' }}</div>
+                        <div class="rd-card__header-sub">Schritt 2 von 3</div>
+                    </div>
+                </div>
 
-                    <v-col cols="12">
-                        <v-text-field autofocus v-model="person.student_last_name" label="Nachname des Kindes" :rules="[required(), maxLength(255)]" />
-                    </v-col>
-                    <v-col cols="12">
-                        <v-text-field v-model="person.student_first_name" label="Vorname des Kindes" :rules="[maxLength(255)]" />
-                    </v-col>
+                <div class="rd-date-info mb-3" v-if="selectedRegisterDate">
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-calendar</v-icon>{{ selectedRegisterDate.date }}</div>
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-clock-outline</v-icon>{{ selectedRegisterDate.from }} – {{ selectedRegisterDate.to }}</div>
+                    <div class="rd-date-info__row"><v-icon size="14" class="mr-1">mdi-account-hard-hat-outline</v-icon>{{ selectedRegisterDate.supervisor }}</div>
+                </div>
 
-                    <v-col cols="12">
-                        <v-text-field v-model="person.student_birthdate" label="Geburtsdatum (JJJJ-MM-TT)" :rules="[dateOrNull()]" />
-                    </v-col>
+                <v-alert :type="user ? 'success' : 'info'" variant="tonal" density="compact" rounded="lg" class="mb-3">
+                    {{ user ? 'E-Mail bekannt – Daten können angepasst werden.' : 'Neue Person – wird neu registriert.' }}
+                </v-alert>
 
-                    <v-col cols="12">
-                        <v-text-field v-model="person.note" label="Anmerkungen" :rules="[maxLength(255)]" />
-                    </v-col>
+                <div class="rd-email-badge mb-3">{{ person.email }}</div>
 
-                    <v-col cols="12">
-                        <div class="d-flex flex-row align-center justify-end">
-                            <v-checkbox label="Verständigung per E-Mail?" v-model="person.is_notify"></v-checkbox>
-                        </div>
-                    </v-col>
-                </v-row>
-                <v-row>
-                    <v-col cols="12" class="d-flex flex-row align-center justify-space-between">
-                        <v-btn color="warning" slim flat @click="step--">Zurück</v-btn>
-                        <v-btn color="error" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="success" slim flat type="submit">Buchen</v-btn>
-                    </v-col>
-                </v-row>
-            </v-form>
-        </its-grid-box>
+                <v-form ref="form" v-model="is_valid" @submit.prevent="updateOrCreateUser(person)">
+                    <v-text-field autofocus variant="outlined" density="comfortable" rounded="lg" v-model="person.last_name" label="Nachname" :rules="[required(), maxLength(255)]" class="mb-2" />
+                    <v-text-field variant="outlined" density="comfortable" rounded="lg" v-model="person.first_name" label="Vorname" :rules="[maxLength(255)]" class="mb-2" />
+                    <v-text-field variant="outlined" density="comfortable" rounded="lg" v-model="person.phone" label="Telefon" :rules="[maxLength(255)]" />
+                </v-form>
+            </v-card-text>
+            <v-card-actions class="px-4 pb-4 ga-2">
+                <v-btn color="secondary" variant="tonal" rounded="lg" @click="step--">Zurück</v-btn>
+                <v-btn color="success" variant="flat" rounded="lg" @click="updateOrCreateUser(person)" class="flex-1-1">
+                    <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>Weiter
+                </v-btn>
+                <v-btn color="error" variant="tonal" rounded="lg" @click="abort">Abbruch</v-btn>
+            </v-card-actions>
+        </v-card>
+
+        <!-- Step 2: Kind erfassen -->
+        <v-card v-if="step === 2" rounded="xl" class="rd-card" flat>
+            <v-card-text class="pa-4">
+                <div class="rd-card__header mb-4">
+                    <div class="rd-card__icon-wrap rd-card__icon-wrap--success">
+                        <v-icon size="18" icon="mdi-human-child" />
+                    </div>
+                    <div>
+                        <div class="rd-card__header-title">Kind erfassen</div>
+                        <div class="rd-card__header-sub">Schritt 3 von 3</div>
+                    </div>
+                </div>
+
+                <div class="rd-person-summary mb-3">
+                    <div class="rd-person-summary__name">{{ person.last_name }} {{ person.first_name }}</div>
+                    <div class="rd-person-summary__detail"><v-icon size="13" class="mr-1">mdi-email-outline</v-icon>{{ person.email }}</div>
+                    <div class="rd-person-summary__detail" v-if="person.phone"><v-icon size="13" class="mr-1">mdi-phone-outline</v-icon>{{ person.phone }}</div>
+                </div>
+
+                <v-form ref="form" v-model="is_valid" @submit.prevent="createBooking(selectedRegisterDate, person)">
+                    <v-text-field autofocus variant="outlined" density="comfortable" rounded="lg" v-model="person.student_last_name" label="Nachname Kind" :rules="[required(), maxLength(255)]" class="mb-2" />
+                    <v-text-field variant="outlined" density="comfortable" rounded="lg" v-model="person.student_first_name" label="Vorname Kind" :rules="[maxLength(255)]" class="mb-2" />
+                    <v-text-field variant="outlined" density="comfortable" rounded="lg" v-model="person.student_birthdate" label="Geburtsdatum (JJJJ-MM-TT)" :rules="[dateOrNull()]" class="mb-2" />
+                    <v-text-field variant="outlined" density="comfortable" rounded="lg" v-model="person.note" label="Anmerkungen" :rules="[maxLength(255)]" class="mb-2" />
+                    <v-checkbox density="compact" label="Verständigung per E-Mail?" v-model="person.is_notify" color="primary" hide-details class="mb-2" />
+                </v-form>
+            </v-card-text>
+            <v-card-actions class="px-4 pb-4 ga-2">
+                <v-btn color="secondary" variant="tonal" rounded="lg" @click="step--">Zurück</v-btn>
+                <v-btn color="success" variant="flat" rounded="lg" @click="createBooking(selectedRegisterDate, person)" class="flex-1-1">
+                    <v-icon size="16" class="mr-1">mdi-check</v-icon>Buchen
+                </v-btn>
+                <v-btn color="error" variant="tonal" rounded="lg" @click="abort">Abbruch</v-btn>
+            </v-card-actions>
+        </v-card>
+
     </v-col>
 </template>
 
@@ -124,15 +118,11 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
 import { useRegisterDateStore } from '@/stores/admin/RegisterDateStore'
 import { useRegisterDateBookingStore } from '@/stores/admin/RegisterDateBookingStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-
-    components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -162,67 +152,48 @@ export default {
 
         selectedRegisterDate() {
             const selectedId = this.selected_register_dates[0]
-            const found = this.register_dates.find((item) => item.id === selectedId)
-            return found
+            return this.register_dates.find((item) => item.id === selectedId)
         },
     },
+
     watch: {},
 
     methods: {
         abort() {
             this.action = ''
         },
-
         async getUserWithEmail(person) {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
             this.user = null
-            var answer = false
-            answer = await this.registerDateBookingStore.getUserWithEmail(person)
-
-            if (!answer) return
-
+            if (!(await this.registerDateBookingStore.getUserWithEmail(person))) return
             this.person.last_name = this.user ? this.user.last_name : null
             this.person.first_name = this.user ? this.user.first_name : null
             this.person.phone = this.user ? this.user.phone : null
-
             this.step = 1
         },
-
         async updateOrCreateUser(person) {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
             this.user = null
-            var answer = false
-            answer = await this.registerDateBookingStore.updateOrCreateUser(person)
-
-            if (!answer) return
-
+            if (!(await this.registerDateBookingStore.updateOrCreateUser(person))) return
             this.person.last_name = this.user ? this.user.last_name : null
             this.person.first_name = this.user ? this.user.first_name : null
             this.person.phone = this.user ? this.user.phone : null
-
             this.person.student_last_name = this.person.last_name
-
             this.step = 2
         },
-
         async createBooking(register_date, person) {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) return
             this.user = null
-            var answer = false
             person.register_date_id = register_date.id
-
-            answer = await this.registerDateBookingStore.createBooking(person)
-            if (!answer) return
-
+            if (!(await this.registerDateBookingStore.createBooking(person))) return
             await this.registerDateStore.loadDays()
             this.selected_day = this.days.find((item) => item.id === this.selected_day.id)
-
             const index = this.register_dates.findIndex((d) => d.id === register_date.id)
             this.register_dates[index].count_bookings++
             this.action = ''
@@ -230,3 +201,53 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.rd-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.82) !important;
+    backdrop-filter: blur(4px);
+    color: #e2e8f0 !important;
+}
+
+.rd-card__header { display: flex; align-items: center; gap: 10px; }
+
+.rd-card__icon-wrap {
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 8px;
+    background: rgba(99, 102, 241, 0.18); color: #818cf8; flex-shrink: 0;
+}
+
+.rd-card__icon-wrap--success { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+
+.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; line-height: 1.2; }
+.rd-card__header-sub { font-size: 0.74rem; color: #64748b; }
+
+.rd-date-info {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.rd-date-info__row {
+    display: flex; align-items: center;
+    font-size: 0.82rem; color: #94a3b8; padding: 2px 0;
+}
+
+.rd-email-badge {
+    font-size: 0.88rem; font-weight: 600; color: #818cf8;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 8px; padding: 6px 12px;
+}
+
+.rd-person-summary {
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 8px; padding: 10px 12px;
+}
+
+.rd-person-summary__name { font-size: 0.92rem; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+.rd-person-summary__detail { display: flex; align-items: center; font-size: 0.8rem; color: #64748b; }
+</style>

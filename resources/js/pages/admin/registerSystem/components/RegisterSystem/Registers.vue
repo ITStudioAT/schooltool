@@ -1,143 +1,208 @@
 <template>
-    <v-row class="w-100">
-        <v-col cols="12" md="6" xl="4">
-            <its-grid-box color="primary" :subtitle="selected_schoolyear?.name" class="h-100 w-100" :disabled="action != ''">
-                <div class="d-flex flex-wrap flex-row align-center ga-2">
-                    <!--
-                    <its-menu-button
-                        :title="register.name"
-                        :color="register.id == selected_register?.id ? 'success' : 'primary'"
-                        :icon="register.is_active ? 'mdi-power-standby' : ''"
-                        @click="setSelectedRegister(register)"
-                        v-for="register in registers" />
-                        -->
-                </div>
+    <v-row class="w-100" dense>
 
-                <v-list dense variant="elevated" select-strategy="single-leaf" v-model:selected="selected_register_array" color="success-lighten-2" bg-color="transparent">
-                    <v-list-item v-for="register in registers" :key="register" :value="register" class="mb-2" @click="setSelectedRegister(register)">
-                        <template v-slot:title>
-                            <div class="d-flex flex-row align-center justify-space-between">
-                                <div>
-                                    <div class="text-body-1">{{ register.name }}</div>
-                                </div>
-                            </div>
-                        </template>
-                    </v-list-item>
-                </v-list>
-                <!-- Menü -->
-                <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
-                    <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <div class="mr-4">Anmeldetools</div>
-                        <div class="d-flex flex-row flex-wrap align-center">
-                            <v-btn flat tile icon="mdi-plus" color="primary" @click="create" />
-                            <div class="d-flex flex-row flex-wrap align-center" v-if="selected_register">
-                                <v-btn flat tile icon="mdi-pencil" color="primary" @click="edit(selected_register)" />
-                                <v-btn flat tile icon color="primary" @click="remove(selected_register)">
-                                    <v-icon icon="mdi-delete" color="warning"></v-icon>
-                                </v-btn>
-                                <v-btn flat tile @click="toggleRegister(selected_register)" icon color="primary">
-                                    <v-icon icon="mdi-power-standby" :color="selected_register.is_active ? 'success' : 'error'"></v-icon>
-                                </v-btn>
-                                <v-btn class="ml-2" flat tile color="secondary" variant="outlined" to="/admin/register_system/details" text="Details" />
+        <!-- Register list -->
+        <v-col cols="12" md="6" xl="4">
+            <v-card rounded="xl" class="rs-card" flat>
+                <v-card-text class="pa-4">
+                    <div class="rs-card__header mb-3">
+                        <div class="rs-card__icon-wrap">
+                            <v-icon size="18" icon="mdi-clipboard-list-outline" />
+                        </div>
+                        <div>
+                            <div class="rs-card__header-title">Anmeldetools</div>
+                            <div class="rs-card__header-sub" v-if="selected_schoolyear">{{ selected_schoolyear.name }}</div>
+                        </div>
+                        <div class="ml-auto d-flex align-center ga-1" v-if="config?.user?.roles.some((role) => ['super_admin', 'admin', 'register_admin'].includes(role))">
+                            <v-btn
+                                v-if="selected_register"
+                                icon="mdi-pencil-outline"
+                                variant="tonal"
+                                color="primary"
+                                size="small"
+                                title="Bearbeiten"
+                                :disabled="action !== ''"
+                                @click="edit(selected_register)" />
+                            <v-btn
+                                v-if="selected_register"
+                                icon="mdi-delete-outline"
+                                variant="tonal"
+                                color="warning"
+                                size="small"
+                                title="Löschen"
+                                :disabled="action !== ''"
+                                @click="remove(selected_register)" />
+                            <v-btn
+                                v-if="selected_register"
+                                icon="mdi-power-standby"
+                                variant="tonal"
+                                :color="selected_register.is_active ? 'error' : 'success'"
+                                size="small"
+                                :title="selected_register.is_active ? 'Anmeldesystem schließen' : 'Anmeldesystem öffnen'"
+                                :disabled="action !== ''"
+                                @click="toggleRegister(selected_register)" />
+                            <v-btn
+                                v-if="selected_register"
+                                variant="tonal"
+                                color="secondary"
+                                size="small"
+                                prepend-icon="mdi-arrow-right"
+                                to="/admin/register_system/details"
+                                :disabled="action !== ''">
+                                Details
+                            </v-btn>
+                            <v-btn
+                                icon="mdi-plus"
+                                variant="tonal"
+                                color="success"
+                                size="small"
+                                title="Neues Anmeldesystem"
+                                :disabled="action !== ''"
+                                @click="create" />
+                        </div>
+                    </div>
+
+                    <div v-if="!registers.length" class="rs-card__empty">
+                        <v-icon size="16" class="mr-1">mdi-information-outline</v-icon>
+                        Keine Anmeldetools für dieses Schuljahr.
+                    </div>
+
+                    <div v-else class="rs-card__list">
+                        <div
+                            v-for="register in registers"
+                            :key="register.id"
+                            class="rs-list-item"
+                            :class="{ 'rs-list-item--selected': register.id === selected_register?.id }"
+                            @click="setSelectedRegister(register)">
+                            <div class="rs-list-item__dot" :class="register.is_active ? 'rs-list-item__dot--active' : 'rs-list-item__dot--inactive'"></div>
+                            <div class="rs-list-item__name">{{ register.name }}</div>
+                            <div class="ml-auto">
+                                <v-chip
+                                    size="x-small"
+                                    :color="register.is_active ? 'success' : 'default'"
+                                    :variant="register.is_active ? 'flat' : 'tonal'"
+                                    class="rs-list-item__badge">
+                                    {{ register.is_active ? 'Geöffnet' : 'Geschlossen' }}
+                                </v-chip>
                             </div>
                         </div>
                     </div>
-                </template>
-            </its-grid-box>
+                </v-card-text>
+            </v-card>
         </v-col>
 
-        <!-- ÄNDERN/ANLEGEN EINES Anmeldesystems -->
-        <v-col cols="12" md="6" xl="4" v-if="action == 'edit_register' || action == 'create_register'">
-            <its-grid-box color="primary" :title="data.id ? selected_register.name : 'Neues Anmeldesystem anlegen'" class="h-100 w-100">
-                <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)" class="mb-4">
-                    <v-text-field autofocus v-model="data.name" label="Bezeichnung" :rules="[required(), maxLength(255)]" />
-                    <div class="mb-4">
-                        <label class="text-caption text-medium-emphasis">Beschreibung am Bildschirm</label>
-                        <its-rich-text-editor v-model="data.description_on_website" />
+        <!-- Edit / Create dialog -->
+        <v-dialog :model-value="action === 'edit_register' || action === 'create_register'" max-width="560" persistent>
+            <v-card rounded="xl" class="rs-dialog-card">
+                <v-card-text class="pa-5">
+                    <div class="rs-card__header mb-5">
+                        <div class="rs-card__icon-wrap" :class="action === 'create_register' ? 'rs-card__icon-wrap--success' : ''">
+                            <v-icon size="18" :icon="action === 'create_register' ? 'mdi-plus-circle-outline' : 'mdi-pencil-outline'" />
+                        </div>
+                        <div>
+                            <div class="rs-card__header-title">{{ data.id ? selected_register.name : 'Neues Anmeldesystem' }}</div>
+                            <div class="rs-card__header-sub">{{ action === 'create_register' ? 'Neues Tool anlegen' : 'Einstellungen bearbeiten' }}</div>
+                        </div>
                     </div>
 
-                    <v-text-field v-model="data.max_registrations" label="Max. Anmeldungen gesamt (0=unendlich)" :rules="[required(), min(0)]" />
+                    <v-form ref="form" v-model="is_valid" @submit.prevent="save(data)">
+                        <v-text-field
+                            autofocus
+                            variant="outlined"
+                            density="comfortable"
+                            rounded="lg"
+                            v-model="data.name"
+                            label="Bezeichnung"
+                            :rules="[required(), maxLength(255)]"
+                            class="mb-2" />
 
-                    <v-card tile flat color="primary">
-                        <v-card-text>
-                            Bei der Eingabe werden Nachname, Vorname und E-Mail verpflichtend verlangt. Weitere erforderliche Eingaben können hier festgelegt werden.
-                        </v-card-text>
-                    </v-card>
+                        <div class="mb-4">
+                            <label class="rs-field-label">Beschreibung am Bildschirm</label>
+                            <its-rich-text-editor v-model="data.description_on_website" />
+                        </div>
 
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_phone" hide-details label="Telefon" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.must_phone" hide-details label="Pflichtfeld" v-if="data.show_phone" />
-                        </v-col>
-                    </v-row>
+                        <v-text-field
+                            variant="outlined"
+                            density="comfortable"
+                            rounded="lg"
+                            v-model="data.max_registrations"
+                            label="Max. Anmeldungen gesamt (0 = unbegrenzt)"
+                            :rules="[required(), min(0)]"
+                            class="mb-3" />
 
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_student_last_name" hide-details label="Nachname Kind" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.must_student_last_name" hide-details label="Pflichtfeld" v-if="data.show_student_last_name" />
-                        </v-col>
-                    </v-row>
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_student_first_name" hide-details label="Vorname Kind" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.must_student_first_name" hide-details label="Pflichtfeld" v-if="data.show_student_first_name" />
-                        </v-col>
-                    </v-row>
+                        <div class="rs-info-block mb-4">
+                            <v-icon size="15" class="mr-1">mdi-information-outline</v-icon>
+                            Nachname, Vorname und E-Mail sind immer Pflichtfelder. Weitere Felder können hier aktiviert werden.
+                        </div>
 
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_student_birthdate" hide-details label="Geburtsdatum" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.must_student_birthdate" hide-details label="Pflichtfeld" v-if="data.show_student_birthdate" />
-                        </v-col>
-                    </v-row>
+                        <div class="rs-field-group mb-1">
+                            <div class="rs-field-group__row">
+                                <v-checkbox v-model="data.show_phone" hide-details density="compact" label="Telefon" color="primary" />
+                                <v-checkbox v-if="data.show_phone" v-model="data.must_phone" hide-details density="compact" label="Pflichtfeld" color="warning" />
+                            </div>
+                            <div class="rs-field-group__row">
+                                <v-checkbox v-model="data.show_student_last_name" hide-details density="compact" label="Nachname Kind" color="primary" />
+                                <v-checkbox v-if="data.show_student_last_name" v-model="data.must_student_last_name" hide-details density="compact" label="Pflichtfeld" color="warning" />
+                            </div>
+                            <div class="rs-field-group__row">
+                                <v-checkbox v-model="data.show_student_first_name" hide-details density="compact" label="Vorname Kind" color="primary" />
+                                <v-checkbox v-if="data.show_student_first_name" v-model="data.must_student_first_name" hide-details density="compact" label="Pflichtfeld" color="warning" />
+                            </div>
+                            <div class="rs-field-group__row">
+                                <v-checkbox v-model="data.show_student_birthdate" hide-details density="compact" label="Geburtsdatum" color="primary" />
+                                <v-checkbox v-if="data.show_student_birthdate" v-model="data.must_student_birthdate" hide-details density="compact" label="Pflichtfeld" color="warning" />
+                            </div>
+                            <div class="rs-field-group__row">
+                                <v-checkbox v-model="data.show_note" hide-details density="compact" label="Anmerkungen" color="primary" />
+                                <v-checkbox v-if="data.show_note" v-model="data.must_note" hide-details density="compact" label="Pflichtfeld" color="warning" />
+                            </div>
+                        </div>
 
-                    <v-row dense>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.show_note" hide-details label="Anmerkungen" />
-                        </v-col>
-                        <v-col cols="6">
-                            <v-checkbox v-model="data.must_note" hide-details label="Pflichtfeld" v-if="data.show_note" />
-                        </v-col>
-                    </v-row>
+                        <v-divider class="my-3" style="border-color: rgba(148,163,184,0.16)" />
 
-                    <v-divider class="my-4" />
+                        <v-checkbox
+                            v-model="data.allow_siblings"
+                            hide-details
+                            density="compact"
+                            label="Mehrere Kinder pro Buchung erlauben (Geschwister)"
+                            color="primary"
+                            class="mb-2" />
+                    </v-form>
+                </v-card-text>
 
-                    <v-row dense>
-                        <v-col cols="12">
-                            <v-checkbox v-model="data.allow_siblings" hide-details label="Mehrere Kinder pro Buchung erlauben (Geschwister)" />
-                        </v-col>
-                    </v-row>
+                <v-card-actions class="px-5 pb-5 ga-2">
+                    <v-btn color="success" variant="flat" rounded="lg" @click="save(data)" class="flex-1-1">
+                        <v-icon size="16" class="mr-1">mdi-check</v-icon>
+                        Speichern
+                    </v-btn>
+                    <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">
+                        Abbruch
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
-                    <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="success" slim flat type="submit">Speichern</v-btn>
-                    </div>
-                </v-form>
-            </its-grid-box>
-        </v-col>
+        <!-- Delete confirmation dialog -->
+        <v-dialog v-model="showDeleteDialog" max-width="420" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                    Anmeldesystem löschen
+                </v-card-title>
+                <v-card-text class="px-4">
+                    Soll das Anmeldesystem <strong>„{{ selected_register?.name }}"</strong> wirklich gelöscht werden? Diese Aktion kann nicht rückgängig gemacht werden.
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-btn variant="tonal" @click="abort">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="error" variant="flat" @click="destroy(selected_register)">Löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
 
-        <!-- LÖSCHEN EINES Anmeldesystems -->
-        <v-col cols="12" md="6" xl="4" v-if="action == 'remove_register'">
-            <its-grid-box color="primary" :title="selected_register?.name" class="h-100 w-100">
-                <v-form ref="form" v-model="is_valid" @submit.prevent="destroy(selected_register)" class="mb-4">
-                    <div class="text-h6">Soll dieses Anmeldesystem wirklich gelöscht werden?</div>
-                    <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="success" slim flat @click="abort">Abbruch</v-btn>
-                        <v-btn color="error" slim flat type="submit">Löschen</v-btn>
-                    </div>
-                </v-form>
-            </its-grid-box>
-        </v-col>
     </v-row>
 </template>
+
 <script>
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import { useValidationRulesSetup } from '@/helpers/rules'
@@ -145,15 +210,13 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useRegisterStore } from '@/stores/admin/RegisterStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { ItsMenuButton, ItsGridBox, ItsRichTextEditor },
+    components: { ItsRichTextEditor },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -179,6 +242,10 @@ export default {
         ...mapWritableState(useAdminStore, ['config', 'selected_school', 'selected_schoolyear', 'selected_register', 'selected_active_register', 'action']),
         ...mapWritableState(useSchoolyearStore, []),
         ...mapWritableState(useRegisterStore, ['registers']),
+
+        showDeleteDialog() {
+            return this.action === 'remove_register'
+        },
     },
 
     watch: {
@@ -201,6 +268,7 @@ export default {
             }
             await this.registerStore.loadActiveRegisters()
         },
+
         async save(data) {
             this.is_valid = false
             await this.$refs.form.validate()
@@ -216,7 +284,6 @@ export default {
         },
 
         async destroy(data) {
-            var answer = false
             if (!(await this.registerStore.destroy(data))) return
             await this.loadRegisters()
             this.action = ''
@@ -227,10 +294,12 @@ export default {
             this.action = ''
             this.data = {}
         },
+
         edit(selected_register) {
             this.data = JSON.parse(JSON.stringify(selected_register))
             this.action = 'edit_register'
         },
+
         remove() {
             this.action = 'remove_register'
         },
@@ -260,9 +329,179 @@ export default {
 
         async toggleRegister(register) {
             await this.registerStore.toggleRegister(register)
-            await this.registerStore.loadActiveRegisters()
+            await this.loadRegisters()
             this.selected_active_register = null
         },
     },
 }
 </script>
+
+<style scoped>
+.rs-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(30, 41, 59, 0.82) !important;
+    backdrop-filter: blur(4px);
+    color: #e2e8f0 !important;
+}
+
+.rs-card__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.rs-card__icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: rgba(99, 102, 241, 0.18);
+    color: #818cf8;
+    flex-shrink: 0;
+}
+
+.rs-card__icon-wrap--success {
+    background: rgba(34, 197, 94, 0.16);
+    color: #4ade80;
+}
+
+.rs-card__header-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #f1f5f9;
+    line-height: 1.2;
+}
+
+.rs-card__header-sub {
+    font-size: 0.76rem;
+    color: #64748b;
+    margin-top: 1px;
+}
+
+.rs-card__empty {
+    display: flex;
+    align-items: center;
+    font-size: 0.84rem;
+    color: #64748b;
+    padding: 6px 0;
+}
+
+.rs-card__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.rs-list-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s;
+}
+
+.rs-list-item:hover {
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.rs-list-item--selected {
+    background: rgba(99, 102, 241, 0.12) !important;
+    border-color: rgba(99, 102, 241, 0.28) !important;
+}
+
+.rs-list-item__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.rs-list-item__dot--active {
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.rs-list-item__dot--inactive {
+    background: #475569;
+}
+
+.rs-list-item__name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    flex: 1;
+}
+
+.rs-list-item__badge {
+    font-size: 0.7rem !important;
+    letter-spacing: 0;
+}
+
+.rs-info-block {
+    display: flex;
+    align-items: flex-start;
+    font-size: 0.8rem;
+    color: #64748b;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.rs-field-label {
+    display: block;
+    font-size: 0.76rem;
+    color: #94a3b8;
+    margin-bottom: 6px;
+    letter-spacing: 0.02em;
+}
+
+.rs-field-group {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 10px;
+    padding: 4px 8px;
+    background: rgba(15, 23, 42, 0.3);
+}
+
+.rs-field-group__row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 36px;
+}
+
+.rs-dialog-card {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+.rs-dialog-card :deep(.toolbar .v-btn) {
+    color: #94a3b8;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.rs-dialog-card :deep(.toolbar .v-btn--variant-flat) {
+    color: #fff;
+    background: rgba(99, 102, 241, 0.7) !important;
+}
+
+.rs-dialog-card :deep(.toolbar .v-btn-group) {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.rs-dialog-card :deep(.editor-content) {
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    background: rgba(15, 23, 42, 0.5);
+    color: #e2e8f0;
+}
+
+.rs-dialog-card :deep(.ProseMirror) {
+    color: #e2e8f0;
+}
+</style>

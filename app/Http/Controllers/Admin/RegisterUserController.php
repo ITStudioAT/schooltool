@@ -7,11 +7,9 @@ use App\Http\Requests\Admin\RegisterUserDeleteRegisterUsersRequest;
 use App\Http\Requests\Admin\RegisterUserIndexRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\RegisterUserResource;
-use App\Http\Resources\Admin\UserResource;
 use App\Models\Register;
 use App\Models\User;
 use App\Services\RegisterUserService;
-use Illuminate\Http\Request;
 
 class RegisterUserController extends Controller
 {
@@ -20,7 +18,6 @@ class RegisterUserController extends Controller
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-
 
         $validated = $request->validated();
         $currentPage = $validated['page'] ?? 1;
@@ -32,7 +29,7 @@ class RegisterUserController extends Controller
             ->with([
                 'registerDateBookings' => function ($query) use ($register) {
                     $query->where('register_id', $register->id);
-                }
+                },
             ])
             ->when($search_string, function ($query, $search_string) {
                 $query->where(function ($q) use ($search_string) {
@@ -45,30 +42,28 @@ class RegisterUserController extends Controller
             ->orderBy('first_name')
             ->paginate(config('schooltool.pagination'));
 
-        $count_deletable_users = User::query()
-            // correct school
+        $count_all_register_users = User::query()
             ->where('school_id', $register->school_id)
-
-            // has role "register_user"
             ->whereHas('roles', function ($q) {
                 $q->where('name', 'register_user');
             })
+            ->count();
 
-            // and ONLY that one role
-            ->withCount('roles')
-            ->having('roles_count', 1)
+        $count_users_in_register = $register->users()->distinct()->count('users.id');
 
-            // user has NO bookings for this register
+        $count_deletable_users = User::query()
+            ->where('school_id', $register->school_id)
+            ->whereHas('roles', function ($q) {
+                $q->where('name', 'register_user');
+            })
             ->whereDoesntHave('registerDateBookings', function ($q) use ($register) {
                 $q->where('register_id', $register->id);
             })
-
             ->count();
 
-
-
-
         return response()->json([
+            'count_all_register_users' => $count_all_register_users,
+            'count_users_in_register' => $count_users_in_register,
             'count_deletable_users' => $count_deletable_users,
             'data' => RegisterUserResource::collection($users),
             'meta' => new PaginateResource($users),
@@ -83,10 +78,10 @@ class RegisterUserController extends Controller
         $validated = $request->validated();
         $register_id = $validated['register_id'];
 
-        $count = $service->deleteRegisterUsers($auth_user->school_id);
+        $count = $service->deleteRegisterUsers($auth_user->school_id, (int) $validated['register_id']);
 
         return response()->json([
-            'count' => $count
+            'count' => $count,
         ]);
     }
 }

@@ -16,6 +16,8 @@ export const useRegisterUserStore = defineStore('AdminRegisterUserStore', {
         school_admins: [],
         register_id: null,
         count_deleted: 0,
+        count_all_register_users: 0,
+        count_users_in_register: 0,
         count_deletable_users: 0,
     }),
 
@@ -30,6 +32,8 @@ export const useRegisterUserStore = defineStore('AdminRegisterUserStore', {
                 const response = await axios.get(`/api/admin/register_users`, { params: { register_id, search_string, page } })
                 this.register_users = response.data.data
                 this.meta = response.data.meta
+                this.count_all_register_users = response.data.count_all_register_users
+                this.count_users_in_register = response.data.count_users_in_register
                 this.count_deletable_users = response.data.count_deletable_users
                 return true
             } catch (error) {
@@ -52,7 +56,7 @@ export const useRegisterUserStore = defineStore('AdminRegisterUserStore', {
             const register_id = this.register_id
             try {
                 this.answer = await axios.post(`/api/admin/register_users/delete_register_users`, { register_id })
-                this.count_deleted = this.answer.count
+                this.count_deleted = this.answer.data?.count ?? 0
                 notification.notify({
                     message: 'Die Benutzer wurden bereinigt.',
                     type: 'success',

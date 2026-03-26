@@ -141,7 +141,7 @@ export const useRegisterDateStore = defineStore('AdminRegisterDateStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/register_dates/create_dates`, data)
-                // this.loadRegisterDates(this.selected_day.date)
+                await this.loadDays()
                 return true
             } catch (error) {
                 notification.notify({

@@ -1,40 +1,33 @@
 <template>
-    <v-row class="w-100">
-        <v-col cols="12">
-            <its-grid-box color="primary" title="Schuljahre" class="h-100 w-100" :disabled="action != ''">
-                <div class="d-flex flex-wrap flex-row align-center ga-2">
-                    <its-menu-button
-                        :title="schoolyear.name"
-                        :color="schoolyear.id == selected_schoolyear?.id ? 'success' : 'primary'"
-                        @click="setActiveSchoolyear(schoolyear)"
-                        v-for="schoolyear in schoolyears" />
-                </div>
-
-                <template v-slot:title v-if="config?.user?.roles.some((role) => ['super_admin', 'admin'].includes(role))">
-                    <div class="d-flex flex-row align-center justify-space-between w-100">
-                        <div class="mr-4">Schuljahre</div>
-                        <div class="d-flex flex-row align-center"></div>
-                    </div>
-                </template>
-            </its-grid-box>
-        </v-col>
-    </v-row>
+    <v-sheet rounded="xl" class="schoolyears-nav mb-3" :class="{ 'is-locked': action !== '' }">
+        <div class="schoolyears-nav__label">Schuljahr</div>
+        <div class="schoolyears-nav__buttons">
+            <v-btn
+                v-for="schoolyear in schoolyears"
+                :key="schoolyear.id"
+                rounded="xl"
+                :color="schoolyear.id === selected_schoolyear?.id ? 'success' : 'secondary'"
+                :variant="schoolyear.id === selected_schoolyear?.id ? 'flat' : 'tonal'"
+                class="schoolyears-nav__button"
+                :disabled="action !== ''"
+                @click="setActiveSchoolyear(schoolyear)">
+                <v-icon size="16" :icon="schoolyear.id === selected_schoolyear?.id ? 'mdi-check-circle-outline' : 'mdi-calendar-month-outline'" class="mr-2" />
+                {{ schoolyear.name }}
+            </v-btn>
+        </div>
+    </v-sheet>
 </template>
+
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
-import ItsMenuButton from '@/pages/components/ItsMenuButton.vue'
-import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
-
-    components: { ItsMenuButton, ItsGridBox },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -48,7 +41,6 @@ export default {
         return {
             adminStore: null,
             schoolyearStore: null,
-
             is_valid: false,
             data: {},
         }
@@ -74,3 +66,42 @@ export default {
     },
 }
 </script>
+
+<style scoped>
+.schoolyears-nav {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.schoolyears-nav__label {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.schoolyears-nav__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.schoolyears-nav__button {
+    height: 32px !important;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.schoolyears-nav.is-locked {
+    opacity: 0.68;
+    pointer-events: none;
+}
+</style>

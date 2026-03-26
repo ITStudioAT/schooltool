@@ -14,7 +14,6 @@ use App\Models\RegisterDateBooking;
 use App\Models\User;
 use App\Services\RegisterDateBookingService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 
 class RegisterDateBookingController extends Controller
 {
@@ -23,12 +22,22 @@ class RegisterDateBookingController extends Controller
      */
     public function index(Request $request)
     {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
         $validated = $request->validate([
             'dates' => ['required', 'array'],
             'dates.*' => ['integer', 'exists:register_dates,id'],
         ]);
 
-        $registerDates = \App\Models\RegisterDate::whereIn('id', $validated['dates'])->orderBy('date')->orderBy('from')->orderBy('supervisor')->get();
+        $registerDates = RegisterDate::whereIn('id', $validated['dates'])
+            ->where('school_id', $auth_user->school_id)
+            ->orderBy('date')
+            ->orderBy('from')
+            ->orderBy('supervisor')
+            ->get();
+
         return response()->json(RegisterDateResource::collection($registerDates), 200);
     }
 
@@ -42,9 +51,11 @@ class RegisterDateBookingController extends Controller
         }
 
         $validated = $request->validated();
-        $user = User::where('email', $validated['email'])->first();
+        $user = User::where('email', $validated['email'])->where('school_id', $auth_user->school_id)->first();
         unset($validated['email']);
-        if (!$user) abort(404, 'Benutzer wurde nicht gefunden');
+        if (! $user) {
+            abort(404, 'Benutzer wurde nicht gefunden');
+        }
 
         $user->assignRole('register_user');
 
@@ -87,8 +98,10 @@ class RegisterDateBookingController extends Controller
             'email' => 'required|email|max:255',
         ]);
 
-        $user = User::where('email', $validated['email'])->first();
-        if (!$user) return response()->json(null, 200);
+        $user = User::where('email', $validated['email'])->where('school_id', $auth_user->school_id)->first();
+        if (! $user) {
+            return response()->json(null, 200);
+        }
 
         return response()->json($user ? new UserResource($user) : null, 200);
     }
