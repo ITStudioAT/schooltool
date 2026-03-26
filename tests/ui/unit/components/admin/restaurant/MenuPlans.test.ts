@@ -1,9 +1,57 @@
 ﻿import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import MenuPlans from '@/pages/admin/restaurant/components/MenuPlans.vue'
+import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
+import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
-function mountMenuPlans(routeQuery: Record<string, string> = {}) {
+vi.mock('@/stores/admin/restaurant/MenuPlanStore', () => ({
+    useMenuPlanStore: vi.fn(),
+}))
+
+vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
+    useRestaurantStore: vi.fn(),
+}))
+
+function mountMenuPlans(
+    routeQuery: Record<string, string> = {},
+    plans: Array<Record<string, unknown>> = [
+        { id: 'mp-2026-03-23', start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
+    ],
+) {
     const routerPush = vi.fn()
+    const normalizedPlans = plans.map((plan) => ({ ...plan }))
+
+    vi.mocked(useMenuPlanStore).mockReturnValue({
+        plans: normalizedPlans,
+        isLoaded: true,
+        load: vi.fn(),
+        findPlanForDay: (isoDate: string) => normalizedPlans.find((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date) || null,
+        planCountForDay: (isoDate: string) => normalizedPlans.filter((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date).length,
+    } as never)
+
+    vi.mocked(useRestaurantStore).mockReturnValue({
+        settings: {
+            online_settings: {
+                order_start_mode: 'when_available',
+                order_start_week_offset: 2,
+                order_start_day_of_week: 0,
+                order_start_time: '15:00',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 5,
+                order_end_time: '17:00',
+            },
+        },
+        onlineSettings: {
+            order_start_mode: 'when_available',
+            order_start_week_offset: 2,
+            order_start_day_of_week: 0,
+            order_start_time: '15:00',
+            order_end_week_offset: 0,
+            order_end_day_of_week: 5,
+            order_end_time: '17:00',
+        },
+        loadSettings: vi.fn(),
+    } as never)
 
     return mount(MenuPlans, {
         global: {
@@ -93,14 +141,14 @@ describe('Restaurant menu plans component', () => {
 
     it('opens dummy menu-plan screen in create mode from erstellen', () => {
         const wrapper = mountMenuPlans()
-        const initialCount = (wrapper.vm as any).menuPlans.length
+        const initialCount = vi.mocked(useMenuPlanStore).mock.results.at(-1)?.value?.plans?.length
         const routerPush = (wrapper.vm as any).$router.push
 
         ;(wrapper.vm as any).selectedStartIso = '2026-04-01'
         ;(wrapper.vm as any).selectedEndIso = '2026-04-03'
         ;(wrapper.vm as any).createPreview()
 
-        expect((wrapper.vm as any).menuPlans).toHaveLength(initialCount)
+        expect(vi.mocked(useMenuPlanStore).mock.results.at(-1)?.value?.plans).toHaveLength(initialCount)
         expect(routerPush).toHaveBeenCalledWith({
             path: '/admin/menu-plans',
             query: {
@@ -139,6 +187,20 @@ describe('Restaurant menu plans component', () => {
         expect(wrapper.findAll('[data-testid^="menu-week-"]')).toHaveLength(3)
         expect(wrapper.findAll('[data-testid^="menu-day-"]')).toHaveLength(21)
         expect(wrapper.text()).toContain('Erstellen')
+    })
+
+    it('marks available and orderable menu-plan days with icons and explains them in the legend', async () => {
+        const wrapper = mountMenuPlans()
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-03-25T12:00:00')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-29"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-29"]').exists()).toBe(false)
+        expect(wrapper.text()).toContain('Sichtbarer Men')
+        expect(wrapper.text()).toContain('Bestellbarer Men')
     })
 
     it('combines existing menu-plan periods into connected start middle and end day classes', () => {

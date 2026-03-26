@@ -12,9 +12,12 @@ vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
     useRestaurantStore: vi.fn(),
 }))
 
-function mountOnlineSettings() {
+function mountOnlineSettings(options: {
+    plans?: Array<Record<string, unknown>>
+    onlineSettings?: Record<string, unknown>
+} = {}) {
     vi.mocked(useMenuPlanStore).mockReturnValue({
-        plans: [
+        plans: options.plans || [
             { id: 1, start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
             { id: 2, start_date: '2026-03-30', end_date: '2026-04-03', is_available: true },
         ],
@@ -36,6 +39,7 @@ function mountOnlineSettings() {
             order_end_day_of_week: 5,
             order_end_time: '17:00',
             visibility_end_mode: 'plan_end',
+            ...(options.onlineSettings || {}),
         },
         canManageOnlineSettings: true,
         updateOnlineSettings: vi.fn(),
@@ -197,8 +201,42 @@ describe('Restaurant online settings component', () => {
         expect(wrapper.get('[data-testid="order-panel"]').text()).toContain('Ab wann bestellbar?')
         expect(wrapper.get('[data-testid="order-panel"]').text()).toContain('Bis wann bestellbar?')
         expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Sichtbar')
-        expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Sichtbar von')
-        expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Bis wann sichtbar?')
+        expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Ab wann sichtbar?')
+        expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Sichbarkeitsende')
+    })
+
+    it('shows an extra card with menu plans inside the displayed preview range', () => {
+        const wrapper = mountOnlineSettings({
+            plans: [
+                { id: 1, start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
+                { id: 2, start_date: '2026-03-30', end_date: '2026-04-03', is_available: true },
+                { id: 3, start_date: '2026-03-11', end_date: '2026-03-13', is_available: true },
+            ],
+        })
+
+        expect(wrapper.get('[data-testid="plan-status-card"]').text()).toContain('Men')
+        expect(wrapper.get('[data-testid="plan-status-card"]').text()).toContain('09.03.2026 - 29.03.2026')
+        expect(wrapper.find('[data-testid="plan-status-1"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="plan-status-3"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="plan-status-2"]').exists()).toBe(false)
+    })
+
+    it('labels menu plans as visible orderable upcoming or already past', () => {
+        const wrapper = mountOnlineSettings()
+        const currentPlan = { id: 2, start_date: '2026-03-30', end_date: '2026-04-03', is_available: true }
+        const earlierPlan = { id: 1, start_date: '2026-03-23', end_date: '2026-03-27', is_available: true }
+
+        ;(wrapper.vm as any).previewNow = new Date('2026-03-01T12:00:00')
+        expect((wrapper.vm as any).planVisibilityState(earlierPlan).label).toBe('Nicht sichtbar')
+        expect((wrapper.vm as any).planOrderState(earlierPlan).label).toBe('Nicht bestellbar')
+
+        ;(wrapper.vm as any).previewNow = new Date('2026-03-26T12:00:00')
+        expect((wrapper.vm as any).planVisibilityState(currentPlan).label).toBe('Sichtbar')
+        expect((wrapper.vm as any).planOrderState(currentPlan).label).toBe('Bestellbar')
+
+        ;(wrapper.vm as any).previewNow = new Date('2026-03-29T12:00:00')
+        expect((wrapper.vm as any).planVisibilityState(earlierPlan).label).toBe('Nicht mehr sichtbar')
+        expect((wrapper.vm as any).planOrderState(earlierPlan).label).toBe('Nicht mehr bestellbar')
     })
 
     it('opens a visibility-start dialog from the sichtbar panel and applies the selected time', async () => {
@@ -393,7 +431,7 @@ describe('Restaurant online settings component', () => {
         const visibilityPanel = wrapper.get('[data-testid="visibility-panel"]')
 
         expect(visibilityPanel.text()).toContain('Sobald bestellbar')
-        expect(visibilityPanel.text()).toContain('Bis wann sichtbar?')
+        expect(visibilityPanel.text()).toContain('Sichbarkeitsende')
         expect(visibilityPanel.text()).toContain('Bis zum letzten Tag des Men\u00fcplans')
         expect(visibilityPanel.text()).toContain('Bis zum Ende der Woche')
     })

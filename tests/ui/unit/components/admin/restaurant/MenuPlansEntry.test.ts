@@ -55,6 +55,9 @@ function mountMenuPlansEntry(
                 $route: {
                     query,
                 },
+                $router: {
+                    replace: vi.fn(() => Promise.resolve()),
+                },
             },
             stubs: {
                 'v-container': { template: '<div><slot /></div>' },
@@ -373,6 +376,104 @@ describe('MenuPlans entry page', () => {
         expect(dayAddButtons(wrapper, '2026-03-24')[0].text()).toContain('Men')
         expect(dayAddButtons(wrapper, '2026-03-26')).toHaveLength(1)
         expect(wrapper.get('[data-testid="plan-progress-badge"]').text()).toContain('0%')
+    })
+
+    it('shows delete controls only on the first and last plan day', () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '1',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        expect(wrapper.find('[data-testid="delete-boundary-day-2026-03-23"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="delete-boundary-day-2026-03-27"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="delete-boundary-day-2026-03-25"]').exists()).toBe(false)
+    })
+
+    it('removes the first plan day from the active range and payload', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '1',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).entriesByDate = {
+            '2026-03-23': [{ _key: 'entry-1', menu: { id: 1, title: 'A' }, menuTitle: '', price: '', comments: '', eatingTimeIds: [] }],
+            '2026-03-24': [{ _key: 'entry-2', menu: { id: 2, title: 'B' }, menuTitle: '', price: '', comments: '', eatingTimeIds: [] }],
+        }
+        ;(wrapper.vm as any).searchStates = {
+            '2026-03-23': { open: true, query: 'alt' },
+            '2026-03-24': { open: false, query: '' },
+        }
+
+        ;(wrapper.vm as any).requestDeleteBoundaryDay('2026-03-23')
+        ;(wrapper.vm as any).confirmDeleteBoundaryDay()
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).planDays.map((day: { iso: string }) => day.iso)).toEqual([
+            '2026-03-24',
+            '2026-03-25',
+            '2026-03-26',
+            '2026-03-27',
+        ])
+        expect((wrapper.vm as any).entriesByDate['2026-03-23']).toBeUndefined()
+        expect((wrapper.vm as any).searchStates['2026-03-23']).toBeUndefined()
+        expect((MenuPlansEntry as any).methods.buildPayload.call(wrapper.vm)).toMatchObject({
+            start_date: '2026-03-24',
+            end_date: '2026-03-27',
+            entries: [
+                expect.objectContaining({
+                    plan_date: '2026-03-24',
+                    menu_id: 2,
+                }),
+            ],
+        })
+    })
+
+    it('removes the last plan day from the active range', () => {
+        const ctx = {
+            activeRangeBounds: {
+                start: '2026-03-23',
+                end: '2026-03-27',
+            },
+            rangeBounds: {
+                start: '2026-03-23',
+                end: '2026-03-27',
+            },
+            planDays: [
+                { iso: '2026-03-23' },
+                { iso: '2026-03-24' },
+                { iso: '2026-03-25' },
+                { iso: '2026-03-26' },
+                { iso: '2026-03-27' },
+            ],
+            deleteBoundaryDayTargetIso: '2026-03-27',
+            deleteBoundaryDayDialog: true,
+            entriesByDate: {
+                '2026-03-26': [{ _key: 'entry-2', menu: { id: 2, title: 'B' }, menuTitle: '', price: '', comments: '', eatingTimeIds: [] }],
+                '2026-03-27': [{ _key: 'entry-3', menu: { id: 3, title: 'C' }, menuTitle: '', price: '', comments: '', eatingTimeIds: [] }],
+            },
+            searchStates: {
+                '2026-03-27': { open: true, query: 'weg' },
+            },
+        }
+
+        ctx.toDate = (iso: string) => (MenuPlansEntry as any).methods.toDate.call(ctx, iso)
+        ctx.addDaysIso = (iso: string, days: number) => (MenuPlansEntry as any).methods.addDaysIso.call(ctx, iso, days)
+        ctx.canDeleteBoundaryDay = (iso: string) => (MenuPlansEntry as any).methods.canDeleteBoundaryDay.call(ctx, iso)
+        ctx.cancelDeleteBoundaryDay = () => (MenuPlansEntry as any).methods.cancelDeleteBoundaryDay.call(ctx)
+
+        ;(MenuPlansEntry as any).methods.confirmDeleteBoundaryDay.call(ctx)
+
+        expect(ctx.activeRangeBounds).toEqual({
+            start: '2026-03-23',
+            end: '2026-03-26',
+        })
+        expect(ctx.entriesByDate['2026-03-27']).toBeUndefined()
+        expect(ctx.deleteBoundaryDayDialog).toBe(false)
+        expect(ctx.deleteBoundaryDayTargetIso).toBe('')
     })
 
     it('adds a menu to a day after opening the search panel', async () => {

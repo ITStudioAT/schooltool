@@ -107,7 +107,7 @@
 
                         <div class="online-settings__panel-block">
                             <div class="online-settings__panel-subhead">
-                                <strong>Sichtbar von</strong>
+                                <strong>Ab wann sichtbar?</strong>
                                 <span>{{ visibilityStartStatusLabel }}</span>
                             </div>
 
@@ -150,12 +150,12 @@
 
                         <div class="online-settings__panel-block online-settings__panel-block--divided">
                             <div class="online-settings__panel-subhead">
-                                <strong>Bis wann sichtbar?</strong>
+                                <strong>Sichbarkeitsende</strong>
                                 <span>{{ visibilityStatusLabel }}</span>
                             </div>
 
                             <div class="online-settings__field online-settings__field--stacked">
-                                <span>Bis wann sichtbar?</span>
+                                <span>Sichbarkeitsende</span>
                                 <div class="online-settings__choice-row">
                                     <button
                                         v-for="option in visibilityOptions"
@@ -222,6 +222,65 @@
                                     </span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="online-settings__preview-control-card" data-testid="plan-status-card">
+                        <div class="online-settings__preview-control-header">
+                            <div>
+                                <strong>Men&uuml;pl&auml;ne im gezeigten Zeitraum</strong>
+                                <div class="online-settings__preview-range">{{ previewRangeLabel }}</div>
+                            </div>
+                            <span class="online-settings__panel-status">{{ menuPlansInPreviewRange.length }} Plan{{ menuPlansInPreviewRange.length === 1 ? '' : 'e' }}</span>
+                        </div>
+
+                        <div v-if="menuPlansInPreviewRange.length" class="online-settings__status-list">
+                            <article
+                                v-for="plan in menuPlansInPreviewRange"
+                                :key="`status-plan-${plan.id}`"
+                                class="online-settings__status-card"
+                                :data-testid="`plan-status-${plan.id}`">
+                                <div class="online-settings__status-card-head">
+                                    <div>
+                                        <div class="online-settings__status-title">{{ planRangeLabel(plan) }}</div>
+                                        <div class="online-settings__status-subtitle">
+                                            Men&uuml;woche {{ formatRangeDate(plan.start_date) }} bis {{ formatRangeDate(plan.end_date) }}
+                                        </div>
+                                    </div>
+                                    <span
+                                        v-if="plan.is_available !== true"
+                                        class="online-settings__state-pill online-settings__state-pill--muted">
+                                        Nicht freigegeben
+                                    </span>
+                                </div>
+
+                                <div class="online-settings__status-grid">
+                                    <div class="online-settings__status-group">
+                                        <span class="online-settings__status-label">Sichtbarkeit</span>
+                                        <span
+                                            class="online-settings__state-pill"
+                                            :class="planVisibilityState(plan).className">
+                                            {{ planVisibilityState(plan).label }}
+                                        </span>
+                                    </div>
+
+                                    <div class="online-settings__status-group">
+                                        <span class="online-settings__status-label">Bestellbarkeit</span>
+                                        <span
+                                            class="online-settings__state-pill"
+                                            :class="planOrderState(plan).className">
+                                            {{ planOrderState(plan).label }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+
+                        <div
+                            v-else
+                            class="online-settings__message online-settings__message--compact"
+                            data-testid="plan-status-empty">
+                            Im gezeigten Zeitraum liegt kein Men&uuml;plan.
                         </div>
                     </div>
                 </section>
@@ -545,6 +604,9 @@ export default {
         visibilityOptions() {
             return visibilityOptions
         },
+        menuPlans() {
+            return useMenuPlanStore().plans
+        },
         visibilityStartStatusLabel() {
             if (this.form.visibility_start_mode === 'scheduled') {
                 return this.visibilityStartSummary
@@ -650,6 +712,22 @@ export default {
                     }),
                 }
             })
+        },
+        previewRange() {
+            const previewPlan = this.previewTimelinePlan()
+
+            return {
+                start: this.previewDayIso(previewPlan, 2, 1),
+                end: this.previewDayIso(previewPlan, 0, 0),
+            }
+        },
+        previewRangeLabel() {
+            return `${this.formatRangeDate(this.previewRange.start)} - ${this.formatRangeDate(this.previewRange.end)}`
+        },
+        menuPlansInPreviewRange() {
+            return this.menuPlans
+                .filter((plan) => plan.start_date <= this.previewRange.end && plan.end_date >= this.previewRange.start)
+                .sort((left, right) => String(left.start_date).localeCompare(String(right.start_date)))
         },
         currentVisiblePlan() {
             return this.pickPrimaryPlan(this.availableMenuPlans.filter((plan) => this.isPlanVisibleNow(plan)))
@@ -965,6 +1043,66 @@ export default {
             const orderEnd = this.orderEndDateTime(plan)
 
             return orderStart <= now && now <= orderEnd
+        },
+        statusState(isCurrent, isPast, currentLabel, futureLabel, pastLabel) {
+            if (isCurrent) {
+                return {
+                    label: currentLabel,
+                    className: 'online-settings__state-pill--active',
+                }
+            }
+
+            if (isPast) {
+                return {
+                    label: pastLabel,
+                    className: 'online-settings__state-pill--past',
+                }
+            }
+
+            return {
+                label: futureLabel,
+                className: 'online-settings__state-pill--muted',
+            }
+        },
+        planVisibilityState(plan) {
+            if (plan.is_available !== true) {
+                return {
+                    label: 'Nicht sichtbar',
+                    className: 'online-settings__state-pill--muted',
+                }
+            }
+
+            const now = this.previewNowDate()
+            const visibilityStart = this.visibilityStartDateTime(plan)
+            const visibilityEnd = this.visibilityEndDateTime(plan)
+
+            return this.statusState(
+                visibilityStart <= now && now <= visibilityEnd,
+                now > visibilityEnd,
+                'Sichtbar',
+                'Nicht sichtbar',
+                'Nicht mehr sichtbar',
+            )
+        },
+        planOrderState(plan) {
+            if (plan.is_available !== true) {
+                return {
+                    label: 'Nicht bestellbar',
+                    className: 'online-settings__state-pill--muted',
+                }
+            }
+
+            const now = this.previewNowDate()
+            const orderStart = this.orderStartDateTime(plan)
+            const orderEnd = this.orderEndDateTime(plan)
+
+            return this.statusState(
+                orderStart <= now && now <= orderEnd,
+                now > orderEnd,
+                'Bestellbar',
+                'Nicht bestellbar',
+                'Nicht mehr bestellbar',
+            )
         },
         pickPrimaryPlan(plans) {
             if (! Array.isArray(plans) || plans.length === 0) {
@@ -1326,6 +1464,12 @@ export default {
     font-size: 0.92rem;
 }
 
+.online-settings__preview-range {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    color: rgba(67, 20, 7, 0.72);
+}
+
 .online-settings__timeline-toolbar {
     margin-top: 16px;
 }
@@ -1354,6 +1498,85 @@ export default {
 .online-settings__timeline-toolbar-note {
     align-self: center;
     font-weight: 600;
+}
+
+.online-settings__status-list {
+    display: grid;
+    gap: 12px;
+}
+
+.online-settings__status-card {
+    border: 1px solid rgba(180, 83, 9, 0.12);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.88);
+    padding: 14px;
+}
+
+.online-settings__status-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.online-settings__status-title {
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: rgb(120, 53, 15);
+}
+
+.online-settings__status-subtitle {
+    margin-top: 3px;
+    font-size: 0.82rem;
+    color: rgba(67, 20, 7, 0.72);
+}
+
+.online-settings__status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.online-settings__status-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.online-settings__status-label {
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(180, 83, 9);
+}
+
+.online-settings__state-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.online-settings__state-pill--active {
+    background: rgba(34, 197, 94, 0.14);
+    color: rgb(21, 128, 61);
+}
+
+.online-settings__state-pill--muted {
+    background: rgba(148, 163, 184, 0.16);
+    color: rgb(71, 85, 105);
+}
+
+.online-settings__state-pill--past {
+    background: rgba(249, 115, 22, 0.14);
+    color: rgb(154, 52, 18);
 }
 
 .online-settings__dialog-shell {

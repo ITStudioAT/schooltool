@@ -15,8 +15,6 @@ use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\HomepageRoutingService;
-use App\Services\LicenceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Spatie\Permission\Models\Role;
@@ -118,9 +116,17 @@ describe('loadSchoolsForTool', function () {
     });
 });
 
+describe('routing', function () {
+    test('restaurant page hard refresh returns the homepage shell', function () {
+        $this->get('/homepage/restaurant')
+            ->assertOk()
+            ->assertViewIs('homepage');
+    });
+});
+
 describe('config', function () {
     test('config returns valid school and licence when both exist', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name . '&app=Anmeldetool');
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name.'&app=Anmeldetool');
 
         $response->assertStatus(200)
             ->assertJson([
@@ -132,7 +138,7 @@ describe('config', function () {
     });
 
     test('config returns school info when only school parameter provided', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJson([
@@ -145,7 +151,7 @@ describe('config', function () {
         // Create another school so auto-selection doesn't kick in
         School::factory()->create([
             'short_name' => 'OTHER',
-            'is_selectable' => true
+            'is_selectable' => true,
         ]);
 
         $response = $this->getJson('/api/homepage/config?school=INVALID');
@@ -158,7 +164,7 @@ describe('config', function () {
     });
 
     test('config returns configuration structure', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJsonStructure([
@@ -198,7 +204,7 @@ describe('config', function () {
     });
 
     test('config auto selects single licence when school has one licence', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJson([
@@ -208,7 +214,7 @@ describe('config', function () {
     });
 
     test('config returns school licences for valid school', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200);
 
@@ -305,4 +311,3 @@ describe('logout', function () {
         expect(Auth::check())->toBeFalse();
     });
 });
-

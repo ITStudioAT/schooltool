@@ -131,14 +131,24 @@
                                         <div class="mpe-day__weekday">{{ day.weekdayLabel }}</div>
                                         <div class="mpe-day__date">{{ day.dateLabel }}</div>
                                     </div>
-                                    <div
-                                        class="mpe-day__status"
+                                    <div class="mpe-day__header-actions">
+                                        <div
+                                            class="mpe-day__status"
                                         :class="day.isFreeDay ? 'is-free' : dayEntries(day.iso).length ? 'is-filled' : 'is-empty'">
                                         <v-icon
                                             :icon="day.isFreeDay ? 'mdi-leaf' : dayEntries(day.iso).length ? 'mdi-check' : 'mdi-clock-outline'"
                                             size="11"
                                             class="mr-1" />
                                         {{ day.isFreeDay ? 'Frei' : dayEntries(day.iso).length ? `${dayEntries(day.iso).length} Menü(s)` : 'Offen' }}
+                                    </div>
+                                        <v-btn
+                                            v-if="canDeleteBoundaryDay(day.iso)"
+                                            icon="mdi-delete-outline"
+                                            size="x-small"
+                                            variant="text"
+                                            color="warning"
+                                            :data-testid="`delete-boundary-day-${day.iso}`"
+                                            @click="requestDeleteBoundaryDay(day.iso)" />
                                     </div>
                                 </header>
 
@@ -674,6 +684,65 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="deleteBoundaryDayDialog" max-width="460" persistent>
+            <v-card rounded="xl">
+                <v-card-title>Tag entfernen</v-card-title>
+
+                <v-card-text>
+                    <div class="text-body-1">
+                        Soll <strong>{{ deleteBoundaryDayLabel || 'dieser Tag' }}</strong> wirklich aus dem Plan entfernt werden?
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="cancelDeleteBoundaryDay">Abbrechen</v-btn>
+                    <v-btn color="warning" variant="flat" @click="confirmDeleteBoundaryDay">
+                        Entfernen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="saveReleaseDialog" max-width="560" persistent data-testid="save-release-dialog">
+            <v-card rounded="xl" class="save-release-dialog">
+                <v-card-title>Menüplan freigeben?</v-card-title>
+
+                <div class="save-release-dialog__hero">
+                    <div class="save-release-dialog__icon">
+                        <v-icon icon="mdi-alert-decagram" color="warning" size="30" />
+                    </div>
+                    <div class="save-release-dialog__hero-copy">
+                        <div class="save-release-dialog__eyebrow">Fertig, aber noch nicht freigegeben</div>
+                        <div class="save-release-dialog__title">Menüplan jetzt freigeben?</div>
+                    </div>
+                </div>
+
+                <v-card-text class="save-release-dialog__body">
+                    <v-alert
+                        type="warning"
+                        variant="tonal"
+                        density="comfortable"
+                        class="save-release-dialog__alert"
+                        data-testid="save-release-alert">
+                        Dieser Menüplan ist vollständig. Ohne Freigabe bleibt er für Sichtbarkeit und Bestellungen gesperrt.
+                    </v-alert>
+
+                    <div class="save-release-dialog__question">
+                        Soll der fertige Menüplan jetzt freigegeben werden?
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5 save-release-dialog__actions">
+                    <v-spacer />
+                    <v-btn variant="text" prepend-icon="mdi-clock-outline" @click="confirmSaveWithoutRelease">Noch nicht</v-btn>
+                    <v-btn color="primary" variant="flat" prepend-icon="mdi-eye-check-outline" @click="confirmSaveAndRelease">
+                        Freigeben
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -693,6 +762,14 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+}
+
+function normalizedRangeBounds(start, end) {
+    if (! isValidIsoDate(start) || ! isValidIsoDate(end)) {
+        return null
+    }
+
+    return start <= end ? { start, end } : { start: end, end: start }
 }
 
 function emptyNewMenuForm() {
@@ -725,6 +802,7 @@ export default {
             newMenuLabel: NEW_MENU_LABEL,
             planTitle: '',
             isPlanAvailable: false,
+            activeRangeBounds: null,
             entriesByDate: {},   // { iso: [{ _key, menu, menuTitle, price, comments, eatingTimeIds, eatingTimes }] }
             searchStates: {},    // { iso: { open: bool, query: '' } }
             isSaving: false,
@@ -737,6 +815,8 @@ export default {
             entryEditDialog: false,
             entryPreviewDialog: false,
             deleteEntryDialog: false,
+            deleteBoundaryDayDialog: false,
+            saveReleaseDialog: false,
             entryPreviewTarget: {
                 iso: '',
                 key: '',
@@ -749,6 +829,7 @@ export default {
                 iso: '',
                 key: '',
             },
+            deleteBoundaryDayTargetIso: '',
             entryEditForm: {
                 menuTitle: '',
                 price: '',
@@ -841,15 +922,15 @@ export default {
             return isNaN(id) ? null : id
         },
 
-        rangeBounds() {
+        routeRangeBounds() {
             const start = String(this.$route?.query?.start || '')
             const end = String(this.$route?.query?.end || '')
 
-            if (!isValidIsoDate(start) || !isValidIsoDate(end)) {
-                return null
-            }
+            return normalizedRangeBounds(start, end)
+        },
 
-            return start <= end ? { start, end } : { start: end, end: start }
+        rangeBounds() {
+            return this.activeRangeBounds || this.routeRangeBounds
         },
 
         planDays() {
@@ -945,6 +1026,9 @@ export default {
 
             return `/api/admin/restaurant/menu-plans/${this.planId}/print`
         },
+        deleteBoundaryDayLabel() {
+            return isValidIsoDate(this.deleteBoundaryDayTargetIso) ? this.formatDate(this.deleteBoundaryDayTargetIso) : ''
+        },
         entryPreviewEntry() {
             if (! this.entryPreviewTarget.iso || ! this.entryPreviewTarget.key) {
                 return null
@@ -963,6 +1047,7 @@ export default {
             const menuStore = useMenuStore()
             const restaurantStore = useRestaurantStore()
             const eatingTimeStore = useEatingTimeStore()
+            this.activeRangeBounds = this.routeRangeBounds
 
             const year = this.rangeBounds ? parseInt(this.rangeBounds.start.substring(0, 4), 10) : new Date().getFullYear()
             freeDayStore.loadYear(year)
@@ -987,6 +1072,7 @@ export default {
                 await this.loadExistingPlan(this.planId)
             } else {
                 this.entriesByDate = {}
+                this.searchStates = {}
                 this.planTitle = ''
                 this.isPlanAvailable = false
             }
@@ -1001,6 +1087,7 @@ export default {
 
             this.planTitle = plan.title || ''
             this.isPlanAvailable = plan.is_available === true
+            this.activeRangeBounds = normalizedRangeBounds(plan.start_date, plan.end_date)
 
             const next = {}
 
@@ -1262,6 +1349,23 @@ export default {
             this.deleteEntryDialog = true
         },
 
+        canDeleteBoundaryDay(iso) {
+            if (! this.rangeBounds || this.planDays.length <= 1) {
+                return false
+            }
+
+            return iso === this.rangeBounds.start || iso === this.rangeBounds.end
+        },
+
+        requestDeleteBoundaryDay(iso) {
+            if (! this.canDeleteBoundaryDay(iso)) {
+                return
+            }
+
+            this.deleteBoundaryDayTargetIso = iso
+            this.deleteBoundaryDayDialog = true
+        },
+
         closeEditEntryDialog() {
             this.entryEditDialog = false
             this.entryEditTarget = {
@@ -1294,6 +1398,33 @@ export default {
         confirmDeleteEntry() {
             this.removeEntry(this.deleteEntryTarget.iso, this.deleteEntryTarget.key)
             this.cancelDeleteEntry()
+        },
+
+        cancelDeleteBoundaryDay() {
+            this.deleteBoundaryDayDialog = false
+            this.deleteBoundaryDayTargetIso = ''
+        },
+
+        confirmDeleteBoundaryDay() {
+            const targetIso = this.deleteBoundaryDayTargetIso
+
+            if (! this.canDeleteBoundaryDay(targetIso)) {
+                this.cancelDeleteBoundaryDay()
+                return
+            }
+
+            const nextBounds = targetIso === this.rangeBounds.start
+                ? normalizedRangeBounds(this.addDaysIso(this.rangeBounds.start, 1), this.rangeBounds.end)
+                : normalizedRangeBounds(this.rangeBounds.start, this.addDaysIso(this.rangeBounds.end, -1))
+
+            this.activeRangeBounds = nextBounds
+
+            const { [targetIso]: _removedEntries, ...remainingEntriesByDate } = this.entriesByDate
+            const { [targetIso]: _removedSearchState, ...remainingSearchStates } = this.searchStates
+
+            this.entriesByDate = remainingEntriesByDate
+            this.searchStates = remainingSearchStates
+            this.cancelDeleteBoundaryDay()
         },
 
         closeCreateMenuDialog() {
@@ -1555,28 +1686,54 @@ export default {
                 return
             }
 
+            if (this.canToggleAvailability && ! this.isPlanAvailable) {
+                this.saveReleaseDialog = true
+                return
+            }
+
+            await this.persistPlan()
+        },
+
+        async confirmSaveWithoutRelease() {
+            this.saveReleaseDialog = false
+            await this.persistPlan(false)
+        },
+
+        async confirmSaveAndRelease() {
+            this.saveReleaseDialog = false
+            await this.persistPlan(true)
+        },
+
+        async persistPlan(forcedAvailability = null) {
             this.isSaving = true
 
             try {
                 const store = useMenuPlanStore()
                 const payload = this.buildPayload()
+                if (typeof forcedAvailability === 'boolean') {
+                    payload.is_available = forcedAvailability
+                }
                 let result
 
                 if (this.planId) {
                     result = await store.update(this.planId, payload)
                 } else {
                     result = await store.store(payload)
+                }
 
-                    if (result && result.id) {
-                        // Update URL to edit mode so further saves become updates
-                        this.$router.replace({
-                            query: {
-                                ...this.$route.query,
-                                mode: 'edit',
-                                plan_id: result.id,
-                            },
-                        }).catch(() => {})
-                    }
+                if (result && result.id && result.start_date && result.end_date) {
+                    this.isPlanAvailable = typeof result.is_available === 'boolean' ? result.is_available : payload.is_available === true
+                    this.activeRangeBounds = normalizedRangeBounds(result.start_date, result.end_date)
+
+                    this.$router.replace({
+                        query: {
+                            ...this.$route.query,
+                            mode: 'edit',
+                            plan_id: result.id,
+                            start: result.start_date,
+                            end: result.end_date,
+                        },
+                    }).catch(() => {})
                 }
             } finally {
                 this.isSaving = false
@@ -1914,6 +2071,77 @@ export default {
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     background: rgba(255, 255, 255, 0.75);
     flex-shrink: 0;
+}
+
+.mpe-day__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.save-release-dialog > .v-card-title {
+    display: none;
+}
+
+.save-release-dialog__hero {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 24px 24px 18px;
+    background: linear-gradient(135deg, #fff8eb 0%, #ffedd5 100%);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+.save-release-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    background: rgba(245, 158, 11, 0.16);
+    flex-shrink: 0;
+}
+
+.save-release-dialog__hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.save-release-dialog__eyebrow {
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #b45309;
+}
+
+.save-release-dialog__title {
+    font-size: 1.4rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #111827;
+}
+
+.save-release-dialog__body {
+    display: grid;
+    gap: 14px;
+    padding-top: 20px;
+}
+
+.save-release-dialog__alert {
+    margin-bottom: 0;
+}
+
+.save-release-dialog__question {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2937;
+}
+
+.save-release-dialog__actions {
+    gap: 10px;
 }
 
 .mpe-day__weekday {

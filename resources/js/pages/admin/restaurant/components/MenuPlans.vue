@@ -39,6 +39,20 @@
                                     :class="dayCellClasses(day.iso)"
                                     :data-testid="`menu-day-${day.iso}`"
                                     @click="selectDay(day.iso)">
+                                    <span
+                                        v-if="day.hasAvailablePlan"
+                                        class="mp-day__availability"
+                                        :data-testid="`available-plan-marker-${day.iso}`"
+                                        aria-label="Sichtbarer Menüplan">
+                                        <v-icon icon="mdi-eye" size="12" />
+                                    </span>
+                                    <span
+                                        v-if="day.hasOrderablePlan"
+                                        class="mp-day__orderable"
+                                        :data-testid="`orderable-plan-marker-${day.iso}`"
+                                        aria-label="Bestellbarer Menüplan">
+                                        <v-icon icon="mdi-cart-outline" size="12" />
+                                    </span>
                                     <span class="mp-day__num">{{ day.dayNumber }}</span>
                                     <span class="mp-day__mon">{{ day.monthShort }}</span>
                                     <span v-if="day.hasPlan" class="mp-day__dot" aria-hidden="true" />
@@ -58,6 +72,18 @@
                             <span class="mp-legend-item">
                                 <span class="mp-legend-swatch mp-legend-swatch--select" />
                                 Deine Auswahl
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-eye" aria-hidden="true">
+                                    <v-icon icon="mdi-eye" size="12" />
+                                </span>
+                                Sichtbarer Menüplan
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-cart" aria-hidden="true">
+                                    <v-icon icon="mdi-cart-outline" size="12" />
+                                </span>
+                                Bestellbarer Menüplan
                             </span>
                         </div>
 
@@ -145,9 +171,22 @@
 
 <script>
 import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
+import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
 function isValidIsoDate(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))
+}
+
+function defaultOnlineSettings() {
+    return {
+        order_start_mode: 'when_available',
+        order_start_week_offset: 2,
+        order_start_day_of_week: 0,
+        order_start_time: '15:00',
+        order_end_week_offset: 1,
+        order_end_day_of_week: 5,
+        order_end_time: '17:00',
+    }
 }
 
 export default {
@@ -161,15 +200,21 @@ export default {
             selectedStartIso: '',
             selectedEndIso: '',
             previewMessage: '',
+            currentDateTime: new Date(),
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
         }
     },
 
     created() {
         const store = useMenuPlanStore()
+        const restaurantStore = useRestaurantStore()
 
         if (! store.isLoaded) {
             store.load()
+        }
+
+        if (! restaurantStore.settings) {
+            restaurantStore.loadSettings()
         }
     },
 
@@ -251,6 +296,8 @@ export default {
                     dayNumber: String(date.getDate()).padStart(2, '0'),
                     monthShort: date.toLocaleDateString('de-AT', { month: 'short' }),
                     hasPlan: planCount > 0,
+                    hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
+                    hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
                     planCount,
                 }
             })
@@ -294,6 +341,16 @@ export default {
         },
         planCountForDay(isoString) {
             return useMenuPlanStore().planCountForDay(isoString)
+        },
+        availablePlanCountForDay(isoString) {
+            return useMenuPlanStore().plans.filter((plan) => {
+                return plan.is_available === true && this.isWithinRange(isoString, plan.start_date, plan.end_date)
+            }).length
+        },
+        orderablePlanCountForDay(isoString) {
+            return useMenuPlanStore().plans.filter((plan) => {
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanOrderableNow(plan)
+            }).length
         },
         findPlanForDay(isoString) {
             return useMenuPlanStore().findPlanForDay(isoString)
@@ -424,6 +481,58 @@ export default {
         goToNextWeek() {
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, 7)
         },
+        onlineSettings() {
+            return {
+                ...defaultOnlineSettings(),
+                ...(useRestaurantStore().onlineSettings || {}),
+            }
+        },
+        currentDateTimeValue() {
+            return this.currentDateTime instanceof Date ? this.currentDateTime : new Date(this.currentDateTime)
+        },
+        dayOffsetFromMonday(dayOfWeek) {
+            const normalized = Number(dayOfWeek)
+
+            return normalized === 0 ? 6 : normalized - 1
+        },
+        isoAtTime(isoString, timeString = '00:00', useEndOfDay = false) {
+            const date = this.toDate(isoString)
+
+            if (useEndOfDay) {
+                date.setHours(23, 59, 59, 999)
+                return date
+            }
+
+            const [hours, minutes] = String(timeString || '00:00').split(':').map((part) => parseInt(part, 10) || 0)
+            date.setHours(hours, minutes, 0, 0)
+
+            return date
+        },
+        scheduledDateTime(plan, weekOffset, dayOfWeek, timeString) {
+            const menuWeekStartIso = this.startOfWeekIso(plan.start_date)
+            const targetIso = this.addDaysIso(menuWeekStartIso, this.dayOffsetFromMonday(dayOfWeek) - (Number(weekOffset) * 7))
+
+            return this.isoAtTime(targetIso, timeString)
+        },
+        orderStartDateTime(plan) {
+            return this.onlineSettings().order_start_mode === 'scheduled'
+                ? this.scheduledDateTime(plan, this.onlineSettings().order_start_week_offset, this.onlineSettings().order_start_day_of_week, this.onlineSettings().order_start_time)
+                : new Date(0)
+        },
+        orderEndDateTime(plan) {
+            return this.scheduledDateTime(plan, this.onlineSettings().order_end_week_offset, this.onlineSettings().order_end_day_of_week, this.onlineSettings().order_end_time)
+        },
+        isPlanOrderableNow(plan) {
+            if (plan?.is_available !== true) {
+                return false
+            }
+
+            const now = this.currentDateTimeValue()
+            const orderStart = this.orderStartDateTime(plan)
+            const orderEnd = this.orderEndDateTime(plan)
+
+            return orderStart <= now && now <= orderEnd
+        },
     },
 }
 </script>
@@ -549,6 +658,34 @@ export default {
     margin-top: 3px;
 }
 
+.mp-day__availability {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
+}
+
+.mp-day__orderable {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.14);
+    color: #1d4ed8;
+}
+
 /* ---- Plan State ---- */
 
 .mp-day.has-plan {
@@ -645,6 +782,28 @@ export default {
 .mp-legend-swatch--plan { background: #f59e0b; border-radius: 3px; }
 .mp-legend-swatch--today { border-radius: 50%; box-shadow: inset 0 0 0 2px #1e293b; }
 .mp-legend-swatch--select { background: #ea580c; border-radius: 3px; }
+
+.mp-legend-eye {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
+}
+
+.mp-legend-cart {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.14);
+    color: #1d4ed8;
+}
 
 /* ---- Sidebar ---- */
 

@@ -13,6 +13,7 @@ import StudentPassword from '@/pages/homepage/student/password/Password.vue'
 import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
 import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 import Cashier from '@/pages/homepage/cashier/Cashier.vue'
+import Restaurant from '@/pages/homepage/index/Restaurant.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -30,6 +31,7 @@ const routes = [
     { path: '/student/profile', component: StudentProfile },
     { path: '/student/course/:id', component: StudentCourse },
     { path: '/homepage/cashier', component: Cashier },
+    { path: '/homepage/restaurant', component: Restaurant },
 ]
 
 const router = createRouter({

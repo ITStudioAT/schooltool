@@ -178,6 +178,59 @@ test('update replaces entries', function () {
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
 });
 
+test('update can shrink the menu plan range to remove the first day', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-07',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Montagsmenue',
+    ]);
+    RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Dienstagsmenue',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Gekuerzte Woche',
+            'start_date' => '2026-04-08',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'entries' => [
+                [
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Dienstagsmenue',
+                    'price' => '8.50',
+                    'comments' => null,
+                    'eating_time_ids' => [$this->eatingTime->id],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.start_date', '2026-04-08')
+        ->assertJsonPath('data.end_date', '2026-04-11')
+        ->assertJsonCount(1, 'data.entries')
+        ->assertJsonPath('data.entries.0.plan_date', '2026-04-08');
+
+    expect($plan->fresh()?->start_date?->toDateString())->toBe('2026-04-08');
+    expect(
+        RestaurantMenuPlanEntry::query()
+            ->where('restaurant_menu_plan_id', $plan->id)
+            ->pluck('plan_date')
+            ->map(fn ($date) => $date->toDateString())
+            ->all()
+    )->toBe(['2026-04-08']);
+});
+
 test('destroy deletes plan and cascades entries', function () {
     $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
     RestaurantMenuPlanEntry::factory()->create([
