@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\School;
+use App\Services\AccessScopeService;
 use App\Services\LicenceService;
 use Closure;
 use Illuminate\Http\Request;
@@ -97,20 +98,6 @@ class ToolLicensed
 
     private function normalizeCandidateRoleNames(array $candidateRoleNames): array
     {
-        $roles = [];
-        foreach ($candidateRoleNames as $roleName) {
-            if (! is_string($roleName)) {
-                continue;
-            }
-
-            $roleName = trim($roleName);
-            if ($roleName === '') {
-                continue;
-            }
-
-            $roles[$roleName] = true;
-        }
-
-        return array_keys($roles);
+        return app(AccessScopeService::class)->resolveRoleNames($candidateRoleNames);
     }
 }

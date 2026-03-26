@@ -79,4 +79,31 @@ describe('Admin Teaching CourseStore', () => {
         expect(store.selected_course).toBeNull()
         expect(store.selected_course_id).toBeNull()
     })
+
+    it('reuses the same in-flight course index request for concurrent callers', async () => {
+        let resolveRequest: ((value: unknown) => void) | null = null
+        axiosMock.get.mockReturnValueOnce(new Promise((resolve) => {
+            resolveRequest = resolve
+        }))
+
+        const store = useCourseStore()
+        const firstRequest = store.index()
+        const secondRequest = store.index()
+
+        expect(axiosMock.get).toHaveBeenCalledTimes(1)
+        expect(store.courses_request_promise).not.toBeNull()
+
+        resolveRequest?.({
+            data: {
+                data: [{ id: 9, title: 'Physik', students: [], students_deleted: [] }],
+                classes: ['2A'],
+            },
+        })
+
+        await expect(firstRequest).resolves.toBe(true)
+        await expect(secondRequest).resolves.toBe(true)
+        expect(store.courses).toEqual([{ id: 9, title: 'Physik', students: [], students_deleted: [] }])
+        expect(store.classes).toEqual(['2A'])
+        expect(store.courses_request_promise).toBeNull()
+    })
 })

@@ -26,6 +26,7 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             show_attendance: false,
             show_performances: false,
             timetable_view_mode: 'table',
+            courses_request_promise: null,
         }
     },
 
@@ -74,29 +75,43 @@ export const useCourseStore = defineStore('AdminCourseStore', {
         },
 
         async index() {
+            if (this.courses_request_promise) {
+                return this.courses_request_promise
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
-            adminStore.is_loading++
-            try {
-                const selectedId = this.selected_course?.id
-                const response = await axios.get(`/api/admin/teaching/courses`, {})
-                this.courses = response.data.data
-                this.classes = response.data.classes
-                if (selectedId) {
-                    this.selected_course = this.courses.find((c) => c.id === selectedId) || null
-                    this.ensureCourseStudentCollections(this.selected_course)
+            const requestPromise = (async () => {
+                adminStore.is_loading++
+                try {
+                    const selectedId = this.selected_course?.id
+                    const response = await axios.get(`/api/admin/teaching/courses`, {})
+                    this.courses = response.data.data
+                    this.classes = response.data.classes
+                    if (selectedId) {
+                        this.selected_course = this.courses.find((c) => c.id === selectedId) || null
+                        this.ensureCourseStudentCollections(this.selected_course)
+                    }
+                    return true
+                } catch (error) {
+                    notification.notify({
+                        status: error.response.status,
+                        message: error.response.data.message || 'Fehler passiert.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                    return false
+                } finally {
+                    adminStore.is_loading--
                 }
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return false
+            })()
+
+            this.courses_request_promise = requestPromise
+
+            try {
+                return await requestPromise
             } finally {
-                adminStore.is_loading--
+                this.courses_request_promise = null
             }
         },
 

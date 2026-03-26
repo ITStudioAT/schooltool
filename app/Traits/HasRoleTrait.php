@@ -2,21 +2,18 @@
 
 namespace App\Traits;
 
+use App\Models\User;
+use App\Services\AccessScopeService;
 use Illuminate\Support\Facades\Auth;
 
 trait HasRoleTrait
 {
     /**
-     * @param array|string $par_roles
-     * @return \App\Models\User|false
+     * @param  array<int, string>|string|null  $parRoles
      */
-    public function userHasRole($par_roles)
+    public function userHasRole(array|string|null $parRoles): User|false
     {
-        if (! is_array($par_roles)) {
-            $roles[] = $par_roles;
-        } else {
-            $roles = $par_roles;
-        }
+        $roles = app(AccessScopeService::class)->resolveRoleNames($parRoles);
 
         if (! Auth::check()) {
             return false;
@@ -27,6 +24,7 @@ trait HasRoleTrait
 
         // Wenn super_admin in der Konfiguration gesetzt ist, füge ihn zu den erforderlichen Rollen hinzu
         $roles[] = 'super_admin';
+        $roles = array_values(array_unique($roles));
 
         if (! $user->hasAnyRole($roles)) {
             return false;
@@ -35,9 +33,8 @@ trait HasRoleTrait
         return $user;
     }
 
-    public function userHasAtLeastOneRole()
+    public function userHasAtLeastOneRole(): User|false
     {
-
         if (! Auth::check()) {
             return false;
         }

@@ -14,6 +14,7 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             selected_import116: [],
             meta: [],
             settings: null,
+            settings_request_promise: null,
         }
     },
 
@@ -93,25 +94,39 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
         },
 
         async loadSettings() {
+            if (this.settings_request_promise) {
+                return this.settings_request_promise
+            }
+
             const notification = useNotificationStore()
             const homepageStore = useAdminStore()
-            homepageStore.is_loading++
+            const requestPromise = (async () => {
+                homepageStore.is_loading++
+                try {
+                    const response = await axios.get(`/api/admin/teaching/load_settings`, {})
+                    this.settings = response.data.settings
+                    return true
+                } catch (error) {
+                    const status = error?.response?.status
+                    const message = error?.response?.data?.message || 'Fehler passiert.'
+                    notification.notify({
+                        status,
+                        message,
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                    return false
+                } finally {
+                    homepageStore.is_loading--
+                }
+            })()
+
+            this.settings_request_promise = requestPromise
+
             try {
-                const response = await axios.get(`/api/admin/teaching/load_settings`, {})
-                this.settings = response.data.settings
-                return true
-            } catch (error) {
-                const status = error?.response?.status
-                const message = error?.response?.data?.message || 'Fehler passiert.'
-                notification.notify({
-                    status,
-                    message,
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return false
+                return await requestPromise
             } finally {
-                homepageStore.is_loading--
+                this.settings_request_promise = null
             }
         },
 

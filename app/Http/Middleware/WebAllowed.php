@@ -6,7 +6,6 @@ use App\Traits\HasRoleTrait;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 use Lab404\Impersonate\Services\ImpersonateManager;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -14,21 +13,11 @@ class WebAllowed
 {
     use HasRoleTrait;
 
-    protected array $allowed_roles;
-
     /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  array<int, string>  $allowedRoles
      */
-    public function __construct()
+    public function handle(Request $request, Closure $next, ...$allowedRoles): Response
     {
-        $this->allowed_roles = [];
-    }
-
-    public function handle(Request $request, Closure $next, ...$allowed_roles): Response
-    {
-
         if ($request->is('admin/login')) {
             return $next($request);
         }
@@ -49,20 +38,11 @@ class WebAllowed
                 return $next($request);
             }
 
-            if (! $this->userHasRole($allowed_roles)) {
+            if (! $this->userHasRole($allowedRoles)) {
                 return redirect('/admin/login');
             }
         }
 
         return $next($request);
-    }
-
-    private function error($status, $message): Response
-    {
-        return response()->json([
-            'status' => $status,
-            'message' => $message,
-            'type' => 'error',
-        ], $status);
     }
 }

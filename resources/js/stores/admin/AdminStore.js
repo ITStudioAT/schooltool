@@ -34,6 +34,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         impersonatable_schools: [],
         impersonatable_users: [],
         impersonatable_users_meta: [],
+        config_request_promise: null,
     }),
 
     actions: {
@@ -114,29 +115,42 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         },
 
         async loadConfig() {
-            const notification = useNotificationStore()
-            this.is_loading++
-            this.api_response = null
-            try {
-                await axios.get('/sanctum/csrf-cookie')
-                this.api_response = await axios.get('/api/admin/config', {})
-                this.config = this.api_response.data
-                this.selected_school = this.config?.selected_school
-                this.selected_schoolyear = this.config?.selected_schoolyear
-                this.selected_register = this.config?.selected_register
-                this.health = this.config?.health
+            if (this.config_request_promise) {
+                return this.config_request_promise
+            }
 
-                return this.api_response.data
-            } catch (error) {
-                notification.notify({
-                    status: error.response.status,
-                    message: error.response.data.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: this.config?.timeout,
-                })
-                return false
+            const notification = useNotificationStore()
+            const requestPromise = (async () => {
+                this.is_loading++
+                this.api_response = null
+                try {
+                    this.api_response = await axios.get('/api/admin/config', {})
+                    this.config = this.api_response.data
+                    this.selected_school = this.config?.selected_school
+                    this.selected_schoolyear = this.config?.selected_schoolyear
+                    this.selected_register = this.config?.selected_register
+                    this.health = this.config?.health
+
+                    return this.api_response.data
+                } catch (error) {
+                    notification.notify({
+                        status: error.response.status,
+                        message: error.response.data.message || 'Fehler passiert.',
+                        type: 'error',
+                        timeout: this.config?.timeout,
+                    })
+                    return false
+                } finally {
+                    this.is_loading--
+                }
+            })()
+
+            this.config_request_promise = requestPromise
+
+            try {
+                return await requestPromise
             } finally {
-                this.is_loading--
+                this.config_request_promise = null
             }
         },
 

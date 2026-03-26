@@ -23,14 +23,15 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'materials_moderator', 'guard_name' => 'web']);
 
-    $this->middleware = new WebAllowed();
+    $this->middleware = new WebAllowed;
 });
 
 describe('handle method - login route exception', function () {
     it('allows access to /admin/login without authentication', function () {
         $request = Request::create('/admin/login', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -39,7 +40,7 @@ describe('handle method - login route exception', function () {
 
     it('allows access to /admin/login regardless of role requirements', function () {
         $request = Request::create('/admin/login', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'super_admin');
 
@@ -50,7 +51,7 @@ describe('handle method - login route exception', function () {
 describe('handle method - non-admin routes', function () {
     it('allows access to non-admin routes without authentication', function () {
         $request = Request::create('/homepage', 'GET');
-        $next = fn($req) => response('Homepage OK');
+        $next = fn ($req) => response('Homepage OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -59,7 +60,7 @@ describe('handle method - non-admin routes', function () {
 
     it('allows access to root route without authentication', function () {
         $request = Request::create('/', 'GET');
-        $next = fn($req) => response('Root OK');
+        $next = fn ($req) => response('Root OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -68,7 +69,7 @@ describe('handle method - non-admin routes', function () {
 
     it('allows access to non-admin routes without role check', function () {
         $request = Request::create('/api/something', 'GET');
-        $next = fn($req) => response('API OK');
+        $next = fn ($req) => response('API OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -79,7 +80,7 @@ describe('handle method - non-admin routes', function () {
 describe('handle method - /admin route without authentication', function () {
     it('redirects to /admin/login when accessing /admin without authentication', function () {
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('Admin Dashboard');
+        $next = fn ($req) => response('Admin Dashboard');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -89,7 +90,7 @@ describe('handle method - /admin route without authentication', function () {
 
     it('redirects to /admin/login when accessing /admin/* without authentication', function () {
         $request = Request::create('/admin/users', 'GET');
-        $next = fn($req) => response('Users Page');
+        $next = fn ($req) => response('Users Page');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -99,7 +100,7 @@ describe('handle method - /admin route without authentication', function () {
 
     it('redirects to /admin/login when accessing nested admin routes', function () {
         $request = Request::create('/admin/users/create', 'GET');
-        $next = fn($req) => response('Create User');
+        $next = fn ($req) => response('Create User');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -115,7 +116,7 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('Admin Dashboard');
+        $next = fn ($req) => response('Admin Dashboard');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -129,7 +130,7 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/admin/settings', 'GET');
-        $next = fn($req) => response('Settings');
+        $next = fn ($req) => response('Settings');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'register_admin');
 
@@ -142,7 +143,7 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/admin/dashboard', 'GET');
-        $next = fn($req) => response('Dashboard');
+        $next = fn ($req) => response('Dashboard');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -158,7 +159,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('Admin Dashboard');
+        $next = fn ($req) => response('Admin Dashboard');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -171,7 +172,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/registers', 'GET');
-        $next = fn($req) => response('Registers Page');
+        $next = fn ($req) => response('Registers Page');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'register_admin');
 
@@ -184,7 +185,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/users', 'GET');
-        $next = fn($req) => response('Users Page');
+        $next = fn ($req) => response('Users Page');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -197,7 +198,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/special', 'GET');
-        $next = fn($req) => response('Special Page');
+        $next = fn ($req) => response('Special Page');
 
         $response = $this->middleware->handle($request, $next, 'register_admin');
 
@@ -210,11 +211,26 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/users/1/edit', 'GET');
-        $next = fn($req) => response('Edit User');
+        $next = fn ($req) => response('Edit User');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
         expect($response->getContent())->toBe('Edit User');
+    });
+});
+
+describe('handle method - scope parameters', function () {
+    it('allows access when user matches a named scope', function () {
+        $user = User::factory()->create();
+        $user->assignRole('materials_moderator');
+        Auth::login($user);
+
+        $request = Request::create('/admin/materials', 'GET');
+        $next = fn ($req) => response('Materials Page');
+
+        $response = $this->middleware->handle($request, $next, 'scope:materials_access');
+
+        expect($response->getContent())->toBe('Materials Page');
     });
 });
 
@@ -225,7 +241,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -238,7 +254,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'user', 'register_admin');
 
@@ -251,7 +267,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         // No roles specified, but super_admin should be added automatically
         $response = $this->middleware->handle($request, $next);
@@ -267,7 +283,7 @@ describe('handle method - edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -277,7 +293,7 @@ describe('handle method - edge cases', function () {
     it('differentiates between /admin and /administrator paths', function () {
         // /administrator should not trigger admin route protection
         $request = Request::create('/administrator', 'GET');
-        $next = fn($req) => response('Administrator OK');
+        $next = fn ($req) => response('Administrator OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -290,7 +306,7 @@ describe('handle method - edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/users', 'POST');
-        $next = fn($req) => response('User Created');
+        $next = fn ($req) => response('User Created');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -303,7 +319,7 @@ describe('handle method - edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/users/1', 'PUT');
-        $next = fn($req) => response('User Updated');
+        $next = fn ($req) => response('User Updated');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -316,7 +332,7 @@ describe('handle method - edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/users/1', 'DELETE');
-        $next = fn($req) => response('User Deleted');
+        $next = fn ($req) => response('User Deleted');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -331,7 +347,7 @@ describe('middleware integration with HasRoleTrait', function () {
         Auth::login($user);
 
         $request = Request::create('/admin', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         // The middleware should use HasRoleTrait's userHasRole which auto-adds super_admin
         $response = $this->middleware->handle($request, $next, 'admin');
@@ -345,7 +361,7 @@ describe('middleware integration with HasRoleTrait', function () {
         Auth::login($user);
 
         $request = Request::create('/admin/restricted', 'GET');
-        $next = fn($req) => response('Restricted OK');
+        $next = fn ($req) => response('Restricted OK');
 
         // Even though 'restricted_role' is required, super_admin should pass
         $response = $this->middleware->handle($request, $next, 'restricted_role');
@@ -353,16 +369,3 @@ describe('middleware integration with HasRoleTrait', function () {
         expect($response->getContent())->toBe('Restricted OK');
     });
 });
-
-describe('constructor', function () {
-    it('initializes with empty allowed_roles array', function () {
-        $middleware = new WebAllowed();
-
-        $reflection = new ReflectionClass($middleware);
-        $property = $reflection->getProperty('allowed_roles');
-        $property->setAccessible(true);
-
-        expect($property->getValue($middleware))->toBe([]);
-    });
-});
-

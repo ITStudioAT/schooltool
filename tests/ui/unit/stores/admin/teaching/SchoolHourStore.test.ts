@@ -54,6 +54,31 @@ describe('SchoolHourStore', () => {
         expect(adminStoreMock.is_loading).toBe(0)
     })
 
+    it('reuses the same in-flight school hour request for concurrent callers', async () => {
+        let resolveRequest: ((value: unknown) => void) | null = null
+        axiosMock.get.mockReturnValueOnce(new Promise((resolve) => {
+            resolveRequest = resolve
+        }))
+
+        const store = useSchoolHourStore()
+        const firstRequest = store.index()
+        const secondRequest = store.index()
+
+        expect(axiosMock.get).toHaveBeenCalledTimes(1)
+        expect(store.school_hours_request_promise).not.toBeNull()
+
+        resolveRequest?.({
+            data: {
+                data: [{ id: 2, hour: 2, from: '08:55', until: '09:45' }],
+            },
+        })
+
+        await expect(firstRequest).resolves.toBe(true)
+        await expect(secondRequest).resolves.toBe(true)
+        expect(store.school_hours).toEqual([{ id: 2, hour: 2, from: '08:55', until: '09:45' }])
+        expect(store.school_hours_request_promise).toBeNull()
+    })
+
     it('store creates multiple school hours and returns created list', async () => {
         axiosMock.post.mockResolvedValue({
             data: {

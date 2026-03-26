@@ -23,6 +23,13 @@ describe('admin route access metadata', () => {
         })
     })
 
+    it('normalizes trailing slashes for known admin routes', () => {
+        expect(resolveAdminRouteAccess('/admin/')).toEqual({
+            public: false,
+            capability: 'home',
+        })
+    })
+
     it('returns null for unknown admin routes', () => {
         expect(resolveAdminRouteAccess('/admin/unknown')).toBeNull()
     })

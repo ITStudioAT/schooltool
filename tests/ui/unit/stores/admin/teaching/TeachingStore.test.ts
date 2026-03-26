@@ -90,6 +90,33 @@ describe('TeachingStore', () => {
         expect(store.hasTwoSemesters).toBe(true)
     })
 
+    it('reuses the same in-flight settings request for concurrent callers', async () => {
+        const settings = {
+            teaching_schemas: [{ id: 'schema-1', works: [], grading: {} }],
+            teaching_behaviour: [],
+            teaching_notifications: [],
+        }
+
+        let resolveRequest: ((value: unknown) => void) | null = null
+        axiosMock.get.mockReturnValueOnce(new Promise((resolve) => {
+            resolveRequest = resolve
+        }))
+
+        const store = useTeachingStore()
+        const firstRequest = store.loadSettings()
+        const secondRequest = store.loadSettings()
+
+        expect(axiosMock.get).toHaveBeenCalledTimes(1)
+        expect(store.settings_request_promise).not.toBeNull()
+
+        resolveRequest?.({ data: { settings } })
+
+        await expect(firstRequest).resolves.toBe(true)
+        await expect(secondRequest).resolves.toBe(true)
+        expect(store.settings).toEqual(settings)
+        expect(store.settings_request_promise).toBeNull()
+    })
+
     it('does not fall back to default category evaluation values when a schema is empty', async () => {
         axiosMock.get.mockResolvedValue({
             data: {

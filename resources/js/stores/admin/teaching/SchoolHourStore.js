@@ -6,28 +6,43 @@ export const useSchoolHourStore = defineStore('AdminSchoolHourStore', {
     state: () => {
         return {
             school_hours: [],
+            school_hours_request_promise: null,
         }
     },
 
     actions: {
         async index() {
+            if (this.school_hours_request_promise) {
+                return this.school_hours_request_promise
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
-            adminStore.is_loading++
+            const requestPromise = (async () => {
+                adminStore.is_loading++
+                try {
+                    const response = await axios.get('/api/admin/teaching/school_hours')
+                    this.school_hours = response.data?.data || []
+                    return true
+                } catch (error) {
+                    notification.notify({
+                        status: error.response?.status,
+                        message: error.response?.data?.message || 'Fehler passiert.',
+                        type: 'error',
+                        timeout: 3000,
+                    })
+                    return false
+                } finally {
+                    adminStore.is_loading--
+                }
+            })()
+
+            this.school_hours_request_promise = requestPromise
+
             try {
-                const response = await axios.get('/api/admin/teaching/school_hours')
-                this.school_hours = response.data?.data || []
-                return true
-            } catch (error) {
-                notification.notify({
-                    status: error.response?.status,
-                    message: error.response?.data?.message || 'Fehler passiert.',
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return false
+                return await requestPromise
             } finally {
-                adminStore.is_loading--
+                this.school_hours_request_promise = null
             }
         },
 

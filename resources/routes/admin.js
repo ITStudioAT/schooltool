@@ -59,7 +59,7 @@ export const routes = [
 ]
 
 export function resolveAdminRouteAccess(path) {
-    const normalizedPath = typeof path === 'string' ? path.trim() : ''
+    const normalizedPath = normalizeAdminPath(path)
     if (normalizedPath === '') {
         return null
     }
@@ -89,6 +89,19 @@ export function resolveAdminRouteAccess(path) {
         public: dynamicRoute.meta?.public === true,
         capability: typeof dynamicRoute.meta?.capability === 'string' ? dynamicRoute.meta.capability : null,
     }
+}
+
+function normalizeAdminPath(path) {
+    if (typeof path !== 'string') {
+        return ''
+    }
+
+    const trimmedPath = path.trim()
+    if (trimmedPath.length > 1 && trimmedPath.endsWith('/')) {
+        return trimmedPath.replace(/\/+$/, '')
+    }
+
+    return trimmedPath
 }
 
 const router = createRouter({

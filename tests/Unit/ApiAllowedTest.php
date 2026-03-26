@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -24,20 +25,20 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
 
-    $this->middleware = new ApiAllowed();
+    $this->middleware = new ApiAllowed;
 });
 
 describe('handle method - unauthenticated requests', function () {
     it('aborts with 401 when user is not authenticated', function () {
         $request = Request::create('/api/admin/users', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
-        expect(fn() => $this->middleware->handle($request, $next, 'admin'))
-            ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        expect(fn () => $this->middleware->handle($request, $next, 'admin'))
+            ->toThrow(HttpException::class);
 
         try {
             $this->middleware->handle($request, $next, 'admin');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(401)
                 ->and($e->getMessage())->toBe('Nicht authorisiert');
         }
@@ -45,12 +46,12 @@ describe('handle method - unauthenticated requests', function () {
 
     it('aborts with 401 and German error message', function () {
         $request = Request::create('/api/admin/settings', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(401)
                 ->and($e->getMessage())->toBe('Nicht authorisiert');
         }
@@ -58,12 +59,12 @@ describe('handle method - unauthenticated requests', function () {
 
     it('aborts with 401 regardless of required role', function () {
         $request = Request::create('/api/admin/data', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'super_admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(401);
         }
     });
@@ -76,12 +77,12 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/api/admin/users', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(403)
                 ->and($e->getMessage())->toBe('Unzulässig');
         }
@@ -93,12 +94,12 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/api/admin/settings', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin', 'register_admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(403)
                 ->and($e->getMessage())->toBe('Unzulässig');
         }
@@ -109,12 +110,12 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/api/admin/data', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(403);
         }
     });
@@ -125,12 +126,12 @@ describe('handle method - authenticated user without required role', function ()
         Auth::login($user);
 
         $request = Request::create('/api/admin/restricted', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'register_admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getStatusCode())->toBe(403);
         }
     });
@@ -143,7 +144,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/users', 'GET');
-        $next = fn($req) => response('Admin Users');
+        $next = fn ($req) => response('Admin Users');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -156,7 +157,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/registers', 'GET');
-        $next = fn($req) => response('Registers Data');
+        $next = fn ($req) => response('Registers Data');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'register_admin');
 
@@ -169,7 +170,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/restricted', 'GET');
-        $next = fn($req) => response('Restricted Data');
+        $next = fn ($req) => response('Restricted Data');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -182,7 +183,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/special', 'GET');
-        $next = fn($req) => response('Special Data');
+        $next = fn ($req) => response('Special Data');
 
         $response = $this->middleware->handle($request, $next, 'register_admin');
 
@@ -195,7 +196,7 @@ describe('handle method - authenticated user with required role', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/test', 'GET');
-        $next = fn($req) => response()->json(['status' => 'success', 'data' => 'test']);
+        $next = fn ($req) => response()->json(['status' => 'success', 'data' => 'test']);
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -211,7 +212,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -224,7 +225,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'user', 'register_admin');
 
@@ -237,7 +238,7 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         // No roles specified, but super_admin should be added automatically by HasRoleTrait
         $response = $this->middleware->handle($request, $next);
@@ -251,11 +252,26 @@ describe('handle method - variadic role parameters', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin', 'user', 'register_admin', 'super_admin');
 
         expect($response->getContent())->toBe('OK');
+    });
+});
+
+describe('handle method - scope parameters', function () {
+    it('allows access when user matches a named scope', function () {
+        $user = User::factory()->create();
+        $user->assignRole('register_admin');
+        Auth::login($user);
+
+        $request = Request::create('/api/admin/registers', 'GET');
+        $next = fn ($req) => response('Registers Data');
+
+        $response = $this->middleware->handle($request, $next, 'scope:staff_admin_access');
+
+        expect($response->getContent())->toBe('Registers Data');
     });
 });
 
@@ -266,7 +282,7 @@ describe('handle method - different HTTP methods', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/data', 'GET');
-        $next = fn($req) => response('GET OK');
+        $next = fn ($req) => response('GET OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -279,7 +295,7 @@ describe('handle method - different HTTP methods', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/users', 'POST', ['name' => 'Test']);
-        $next = fn($req) => response('POST OK');
+        $next = fn ($req) => response('POST OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -292,7 +308,7 @@ describe('handle method - different HTTP methods', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/users/1', 'PUT');
-        $next = fn($req) => response('PUT OK');
+        $next = fn ($req) => response('PUT OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -305,7 +321,7 @@ describe('handle method - different HTTP methods', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/users/1', 'DELETE');
-        $next = fn($req) => response('DELETE OK');
+        $next = fn ($req) => response('DELETE OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -318,7 +334,7 @@ describe('handle method - different HTTP methods', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/users/1', 'PATCH');
-        $next = fn($req) => response('PATCH OK');
+        $next = fn ($req) => response('PATCH OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -333,7 +349,7 @@ describe('middleware integration with HasRoleTrait', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         // The middleware should use HasRoleTrait's userHasRole which auto-adds super_admin
         $response = $this->middleware->handle($request, $next, 'admin');
@@ -347,7 +363,7 @@ describe('middleware integration with HasRoleTrait', function () {
         Auth::login($user);
 
         $request = Request::create('/api/admin/restricted', 'GET');
-        $next = fn($req) => response('Restricted OK');
+        $next = fn ($req) => response('Restricted OK');
 
         // Even though 'restricted_role' is required, super_admin should pass
         $response = $this->middleware->handle($request, $next, 'restricted_role');
@@ -375,10 +391,10 @@ describe('middleware integration with HasRoleTrait', function () {
 describe('error handling', function () {
     it('throws HttpException not generic exception for 401', function () {
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
-        expect(fn() => $this->middleware->handle($request, $next, 'admin'))
-            ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        expect(fn () => $this->middleware->handle($request, $next, 'admin'))
+            ->toThrow(HttpException::class);
     });
 
     it('throws HttpException not generic exception for 403', function () {
@@ -387,20 +403,20 @@ describe('error handling', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
-        expect(fn() => $this->middleware->handle($request, $next, 'admin'))
-            ->toThrow(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        expect(fn () => $this->middleware->handle($request, $next, 'admin'))
+            ->toThrow(HttpException::class);
     });
 
     it('uses German error messages consistently', function () {
         // Test 401 error message
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getMessage())->toBe('Nicht authorisiert');
         }
 
@@ -411,7 +427,7 @@ describe('error handling', function () {
 
         try {
             $this->middleware->handle($request, $next, 'admin');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             expect($e->getMessage())->toBe('Unzulässig');
         }
     });
@@ -424,7 +440,7 @@ describe('edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         // No roles passed, but super_admin should be added by HasRoleTrait
         $response = $this->middleware->handle($request, $next);
@@ -439,7 +455,7 @@ describe('edge cases', function () {
         Auth::login($user);
 
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         $response = $this->middleware->handle($request, $next, 'admin');
 
@@ -449,12 +465,12 @@ describe('edge cases', function () {
     it('checks authentication before checking roles', function () {
         // Unauthenticated should return 401, not 403
         $request = Request::create('/api/test', 'GET');
-        $next = fn($req) => response('OK');
+        $next = fn ($req) => response('OK');
 
         try {
             $this->middleware->handle($request, $next, 'admin');
             $this->fail('Expected HttpException was not thrown');
-        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+        } catch (HttpException $e) {
             // Should be 401 (unauthenticated), not 403 (unauthorized)
             expect($e->getStatusCode())->toBe(401);
         }
@@ -475,4 +491,3 @@ describe('edge cases', function () {
         expect(json_decode($response->getContent(), true))->toBe(['key' => 'value']);
     });
 });
-

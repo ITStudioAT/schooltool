@@ -169,7 +169,6 @@ export default {
 
     async beforeMount() {
         this.registerRouteNavigationHooks()
-        await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)

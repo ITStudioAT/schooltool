@@ -38,32 +38,32 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
         'auth:sanctum',
-        'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Anmeldetool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
+        'web-allowed:scope:tool_web_access',
+        'tool-licensed:Anmeldetool,auth,scope:tool_web_access',
     ]);
 
     Route::get('/admin/tutoring/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
         'auth:sanctum',
-        'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Nachhilfetool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
+        'web-allowed:scope:tool_web_access',
+        'tool-licensed:Nachhilfetool,auth,scope:tool_web_access',
     ]);
 
     Route::get('/admin/teaching/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
         'auth:sanctum',
-        'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Lehrertool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
+        'web-allowed:scope:tool_web_access',
+        'tool-licensed:Lehrertool,auth,scope:tool_web_access',
     ]);
 
     Route::get('/admin/materials/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
         'auth:sanctum',
-        'web-allowed:admin,materials_admin,materials_moderator',
-        'tool-licensed:Materialientool,auth,admin,materials_admin,materials_moderator',
+        'web-allowed:scope:materials_access',
+        'tool-licensed:Materialientool,auth,scope:materials_access',
     ]);
 
     Route::get('/admin/aba/{any?}', function () {
@@ -74,7 +74,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware([
         'auth:sanctum',
-        'web-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher,lunch_admin,aba_teacher',
+        'web-allowed:scope:admin_shell_access',
     ]);
 
     /* APPLICATION ROUTES */

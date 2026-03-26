@@ -12,21 +12,11 @@ class ApiAllowed
 {
     use HasRoleTrait;
 
-    protected array $allowed_roles;
-
     /**
-     * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  array<int, string>  $allowedRoles
      */
-    public function __construct()
+    public function handle(Request $request, Closure $next, ...$allowedRoles): Response
     {
-        $this->allowed_roles = [];
-    }
-
-    public function handle(Request $request, Closure $next, ...$allowed_roles): Response
-    {
-
         if (! Auth::check()) {
             abort(401, 'Nicht authorisiert');
         }
@@ -34,19 +24,10 @@ class ApiAllowed
             abort(401, 'Nicht authorisiert');
         }
 
-        if (! $this->userHasRole($allowed_roles)) {
+        if (! $this->userHasRole($allowedRoles)) {
             abort(403, 'Unzulässig');
         }
 
         return $next($request);
-    }
-
-    private function error($status, $message): Response
-    {
-        return response()->json([
-            'status' => $status,
-            'message' => $message,
-            'type' => 'error',
-        ], $status);
     }
 }

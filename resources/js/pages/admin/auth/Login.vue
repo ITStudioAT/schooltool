@@ -205,7 +205,6 @@ export default {
     components: {},
 
     async beforeMount() {
-        await axios.get('/sanctum/csrf-cookie')
         this.adminStore = useAdminStore()
         if (!this.config?.is_auth) await this.adminStore.executeLogout()
         // await this.adminStore.loadConfig()
@@ -323,7 +322,7 @@ export default {
 
             if (this.data.step == 'LOGIN_SUCCESS') {
                 await this.adminStore.loadConfig()
-                this.$router.push('/admin/')
+                this.$router.push('/admin')
             } else {
                 this.step = 'LOGIN_ENTER_TOKEN'
             }
@@ -337,7 +336,7 @@ export default {
 
             if (this.data.step == 'LOGIN_SUCCESS') {
                 await this.adminStore.loadConfig()
-                this.$router.push('/admin/')
+                this.$router.push('/admin')
             }
         },
     },
