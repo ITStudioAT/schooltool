@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantEatingTimeController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFreeDayController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantGeneralSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
@@ -261,6 +262,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,lunch_admin'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
+        Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);
         Route::get('/admin/restaurant/free-days', [RestaurantFreeDayController::class, 'index']);

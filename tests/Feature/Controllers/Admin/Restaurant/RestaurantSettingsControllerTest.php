@@ -48,6 +48,16 @@ test('settings creates default categories for empty school', function () {
         ->toEqual(['Vorspeise', 'Hauptspeise', 'Nachspeise'])
         ->and($response->json('allergen_options'))
         ->toEqual(config('schooltool.eu_allergens'))
+        ->and($response->json('general_settings.service_email'))
+        ->toBe('')
+        ->and($response->json('general_settings.new_users_must_confirm_email'))
+        ->toBeFalse()
+        ->and($response->json('general_settings.new_users_confirmer_email'))
+        ->toBe('')
+        ->and($response->json('general_settings.user_information_intro_html'))
+        ->toBe('')
+        ->and($response->json('can_manage_general_settings'))
+        ->toBeTrue()
         ->and($response->json('user_settings.restaurant_foods_pagination_number'))
         ->toBe((int) config('schooltool.pagination'))
         ->and($response->json('can_manage_user_settings'))
@@ -125,6 +135,59 @@ test('restaurant admin can update school wide online ordering settings', functio
         'restaurant_menu_order_end_time' => '17:00:00',
         'restaurant_menu_visibility_end_mode' => 'week_end',
     ]);
+});
+
+test('restaurant admin can update school wide general settings', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/general-settings', [
+        'data' => [
+            'restaurant_service_email' => 'restaurant@example.test',
+            'restaurant_new_users_must_confirm_email' => true,
+            'restaurant_new_users_confirmer_email' => 'freigabe@example.test',
+            'restaurant_user_information_intro_html' => '<p><strong>Willkommen</strong> im Restaurant.</p>',
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.service_email', 'restaurant@example.test')
+        ->assertJsonPath('data.new_users_must_confirm_email', true)
+        ->assertJsonPath('data.new_users_confirmer_email', 'freigabe@example.test')
+        ->assertJsonPath('data.user_information_intro_html', '<p><strong>Willkommen</strong> im Restaurant.</p>');
+
+    $this->assertDatabaseHas('school_tools', [
+        'school_id' => $this->school->id,
+        'restaurant_service_email' => 'restaurant@example.test',
+        'restaurant_new_users_must_confirm_email' => true,
+        'restaurant_new_users_confirmer_email' => 'freigabe@example.test',
+        'restaurant_user_information_intro_html' => '<p><strong>Willkommen</strong> im Restaurant.</p>',
+    ]);
+});
+
+test('restaurant general settings validate the service email address', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/general-settings', [
+        'data' => [
+            'restaurant_service_email' => 'ungueltig',
+            'restaurant_new_users_must_confirm_email' => true,
+            'restaurant_new_users_confirmer_email' => 'freigabe@example.test',
+            'restaurant_user_information_intro_html' => '<p>Info</p>',
+        ],
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['data.restaurant_service_email']);
+});
+
+test('restaurant general settings require a confirmation email when new users must be confirmed', function () {
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson('/api/admin/restaurant/general-settings', [
+        'data' => [
+            'restaurant_service_email' => 'restaurant@example.test',
+            'restaurant_new_users_must_confirm_email' => true,
+            'restaurant_new_users_confirmer_email' => '',
+            'restaurant_user_information_intro_html' => '<p>Info</p>',
+        ],
+    ])->assertStatus(422)
+        ->assertJsonValidationErrors(['data.restaurant_new_users_confirmer_email']);
 });
 
 test('restaurant online settings validate the required end time', function () {

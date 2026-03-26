@@ -6,6 +6,7 @@ import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 
 const componentStubs = {
     FreeDays: { template: '<div class="free-days-stub">Freie Tage Inhalt</div>' },
+    ItsRichTextEditor: { props: ['modelValue'], template: '<div class="rich-text-editor-stub">{{ modelValue }}</div>' },
     ItsGridBox: { props: ['title'], template: '<div><div class="grid-title">{{ title }}</div><slot name="header-actions" /><slot /></div>' },
     'v-col': { template: '<div><slot /></div>' },
     'v-row': { template: '<div><slot /></div>' },
@@ -27,6 +28,7 @@ const componentStubs = {
     'v-text-field': { props: ['label'], template: '<input :data-label="label" />' },
     'file-pond': { template: '<div class="file-pond"></div>' },
     'v-checkbox': { props: ['label'], template: '<input :data-label="label" />' },
+    'v-switch': { props: ['label'], template: '<input :data-label="label" type="checkbox" />' },
     'v-sheet': { template: '<div><slot /></div>' },
     'v-avatar': { template: '<div><slot /></div>' },
     'v-img': { template: '<img />' },
@@ -48,6 +50,13 @@ function mountSettings(options: { initialState?: Record<string, unknown>, routeQ
                     initialState: {
                         AdminRestaurantStore: {
                             settings: {
+                                general_settings: {
+                                    service_email: 'service@example.test',
+                                    new_users_must_confirm_email: true,
+                                    new_users_confirmer_email: 'freigabe@example.test',
+                                    user_information_intro_html: '<p>Willkommen im Restaurant.</p>',
+                                },
+                                can_manage_general_settings: true,
                                 categories: [{ id: 1, title: 'Hauptspeise', sort_order: 20, foods_count: 2 }],
                                 ingredient_icons: [{ id: 2, title: 'Schwein', sort_order: 10, foods_count: 1, image_url: null }],
                                 online_settings: {
@@ -85,13 +94,23 @@ describe('Restaurant settings component', () => {
     it('shows the category dialog as a persistent modal with validated fields', async () => {
         const { wrapper } = mountSettings()
 
+        expect(wrapper.text()).toContain('Allgemein')
         expect(wrapper.text()).toContain('Kategorien')
         expect(wrapper.text()).toContain('Zutaten-Symbole')
         expect(wrapper.text()).toContain('Online')
-        expect((wrapper.vm as any).selectedPanel).toBe('categories')
+        expect((wrapper.vm as any).selectedPanel).toBe('general')
         expect(wrapper.findAll('.grid-title')).toHaveLength(1)
-        expect(wrapper.find('.grid-title').text()).toBe('Kategorien')
+        expect(wrapper.find('.grid-title').text()).toBe('Allgemein')
+        expect(wrapper.text()).toContain('Allgemeine Restaurant-Einstellungen')
+        expect(wrapper.text()).toContain('Service-E-Mail-Adresse')
+        expect(wrapper.text()).toContain('service@example.test')
+        expect(wrapper.text()).toContain('Neue Benutzer müssen bestätigt werden')
+        expect(wrapper.text()).toContain('freigabe@example.test')
+        expect(wrapper.find('input[data-label="Service-E-Mail-Adresse"]').exists()).toBe(false)
         expect(wrapper.find('input[data-label="Kategoriename"]').exists()).toBe(false)
+
+        ;(wrapper.vm as any).activatePanel('categories')
+        await wrapper.vm.$nextTick()
 
         ;(wrapper.vm as any).openNewCategory()
         await wrapper.vm.$nextTick()
@@ -144,7 +163,83 @@ describe('Restaurant settings component', () => {
             routeQuery: { panel: 'unknown' },
         })
 
-        expect((wrapper.vm as any).selectedPanel).toBe('categories')
+        expect((wrapper.vm as any).selectedPanel).toBe('general')
+    })
+
+    it('shows the general settings panel when selected explicitly', async () => {
+        const { wrapper, routerReplace, routeQuery } = mountSettings({
+            routeQuery: { panel: 'general', foo: 'bar' },
+        })
+
+        expect((wrapper.vm as any).selectedPanel).toBe('general')
+        expect(wrapper.find('.grid-title').text()).toBe('Allgemein')
+        expect(wrapper.text()).toContain('Allgemeine Restaurant-Einstellungen')
+        expect(wrapper.text()).toContain('freigabe@example.test')
+        expect(wrapper.text()).toContain('Willkommen im Restaurant.')
+
+        ;(wrapper.vm as any).activatePanel('general')
+        await wrapper.vm.$nextTick()
+
+        expect(routerReplace).toHaveBeenCalledWith({
+            query: {
+                ...routeQuery,
+                panel: 'general',
+            },
+        })
+    })
+
+    it('starts editing the general settings after clicking bearbeiten', async () => {
+        const { wrapper } = mountSettings()
+
+        expect((wrapper.vm as any).isEditingGeneralSettings).toBe(false)
+
+        ;(wrapper.vm as any).beginGeneralSettingsEdit()
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isEditingGeneralSettings).toBe(true)
+        expect(wrapper.find('input[data-label="Service-E-Mail-Adresse"]').exists()).toBe(true)
+        expect(wrapper.find('input[data-label="E-Mail-Adresse für Bestätigung"]').exists()).toBe(true)
+    })
+
+    it('saves general settings through the restaurant store', async () => {
+        const store = useRestaurantStore()
+        store.updateGeneralSettings = vi.fn().mockResolvedValue({
+            service_email: 'neu@example.test',
+            new_users_must_confirm_email: true,
+            new_users_confirmer_email: 'bestaetigung@example.test',
+            user_information_intro_html: '<p>Neu</p>',
+        })
+
+        const ctx = {
+            isEditingGeneralSettings: true,
+            isGeneralFormValid: false,
+            canManageGeneralSettings: true,
+            generalSettingsForm: {
+                service_email: 'neu@example.test',
+                new_users_must_confirm_email: true,
+                new_users_confirmer_email: 'bestaetigung@example.test',
+                user_information_intro_html: '<p>Neu</p>',
+            },
+            $refs: {
+                generalForm: {
+                    validate: vi.fn().mockImplementation(() => {
+                        ctx.isGeneralFormValid = true
+                    }),
+                },
+            },
+            resetGeneralSettingsForm: vi.fn(),
+        }
+
+        await (Settings as any).methods.saveGeneralSettings.call(ctx)
+
+        expect(store.updateGeneralSettings).toHaveBeenCalledWith({
+            restaurant_service_email: 'neu@example.test',
+            restaurant_new_users_must_confirm_email: true,
+            restaurant_new_users_confirmer_email: 'bestaetigung@example.test',
+            restaurant_user_information_intro_html: '<p>Neu</p>',
+        })
+        expect(ctx.resetGeneralSettingsForm).toHaveBeenCalled()
+        expect(ctx.isEditingGeneralSettings).toBe(false)
     })
 
     it('opens ingredient icons in a persistent create or edit dialog', async () => {

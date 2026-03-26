@@ -59,6 +59,10 @@ class SchoolTool extends Model
         'restaurant_menu_order_end_day_of_week',
         'restaurant_menu_order_end_time',
         'restaurant_menu_visibility_end_mode',
+        'restaurant_service_email',
+        'restaurant_new_users_must_confirm_email',
+        'restaurant_new_users_confirmer_email',
+        'restaurant_user_information_intro_html',
     ];
 
     protected $casts = [
@@ -73,5 +77,6 @@ class SchoolTool extends Model
         'restaurant_menu_order_start_day_of_week' => 'integer',
         'restaurant_menu_order_end_week_offset' => 'integer',
         'restaurant_menu_order_end_day_of_week' => 'integer',
+        'restaurant_new_users_must_confirm_email' => 'boolean',
     ];
 }

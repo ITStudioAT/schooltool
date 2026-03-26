@@ -51,6 +51,13 @@ describe('RestaurantStore', () => {
                 ],
                 allergen_options: [{ character: 'G', short_description: 'Milch oder Laktose' }],
                 allergen_suggestions: ['Milch'],
+                general_settings: {
+                    service_email: 'service@example.test',
+                    new_users_must_confirm_email: true,
+                    new_users_confirmer_email: 'freigabe@example.test',
+                    user_information_intro_html: '<p>Info</p>',
+                },
+                can_manage_general_settings: true,
                 user_settings: { restaurant_foods_pagination_number: 16 },
                 can_manage_user_settings: true,
                 online_settings: {
@@ -79,6 +86,9 @@ describe('RestaurantStore', () => {
         expect(store.categories.map((category) => category.title)).toEqual(['Vorspeise', 'Nachspeise'])
         expect(store.ingredientIcons.map((icon) => icon.title)).toEqual(['Fisch', 'Schwein'])
         expect(store.allergenOptions).toEqual([{ character: 'G', short_description: 'Milch oder Laktose' }])
+        expect(store.generalSettings.service_email).toBe('service@example.test')
+        expect(store.generalSettings.new_users_confirmer_email).toBe('freigabe@example.test')
+        expect(store.canManageGeneralSettings).toBe(true)
         expect(store.userSettings.restaurant_foods_pagination_number).toBe(16)
         expect(store.canManageUserSettings).toBe(true)
         expect(store.onlineSettings.visibility_start_mode).toBe('when_orderable')
@@ -113,6 +123,61 @@ describe('RestaurantStore', () => {
             data: {
                 restaurant_foods_pagination_number: 24,
             },
+        })
+    })
+
+    it('updates restaurant general settings locally after save', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: {
+                    service_email: 'service@example.test',
+                    new_users_must_confirm_email: true,
+                    new_users_confirmer_email: 'freigabe@example.test',
+                    user_information_intro_html: '<p>Hinweis</p>',
+                },
+            },
+        })
+
+        const store = useRestaurantStore()
+        store.settings = {
+            categories: [],
+            ingredient_icons: [],
+            allergen_options: [],
+            allergen_suggestions: [],
+            general_settings: {
+                service_email: '',
+                new_users_must_confirm_email: false,
+                new_users_confirmer_email: '',
+                user_information_intro_html: '',
+            },
+            can_manage_general_settings: true,
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
+            online_settings: {},
+            can_manage_online_settings: true,
+            stats: {},
+        }
+
+        const payload = {
+            restaurant_service_email: 'service@example.test',
+            restaurant_new_users_must_confirm_email: true,
+            restaurant_new_users_confirmer_email: 'freigabe@example.test',
+            restaurant_user_information_intro_html: '<p>Hinweis</p>',
+        }
+
+        const result = await store.updateGeneralSettings(payload)
+
+        expect(result).toEqual({
+            service_email: 'service@example.test',
+            new_users_must_confirm_email: true,
+            new_users_confirmer_email: 'freigabe@example.test',
+            user_information_intro_html: '<p>Hinweis</p>',
+        })
+        expect(store.generalSettings.service_email).toBe('service@example.test')
+        expect(store.generalSettings.new_users_must_confirm_email).toBe(true)
+        expect(store.generalSettings.new_users_confirmer_email).toBe('freigabe@example.test')
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/general-settings', {
+            data: payload,
         })
     })
 

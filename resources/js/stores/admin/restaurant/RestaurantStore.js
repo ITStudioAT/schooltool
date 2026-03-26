@@ -54,6 +54,8 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
         ingredientIcons: (state) => state.settings?.ingredient_icons || [],
         allergenOptions: (state) => state.settings?.allergen_options || [],
         allergenSuggestions: (state) => state.settings?.allergen_suggestions || [],
+        generalSettings: (state) => state.settings?.general_settings || {},
+        canManageGeneralSettings: (state) => state.settings?.can_manage_general_settings === true,
         userSettings: (state) => state.settings?.user_settings || {},
         canManageUserSettings: (state) => state.settings?.can_manage_user_settings === true,
         onlineSettings: (state) => state.settings?.online_settings || {},
@@ -129,6 +131,44 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                     type: 'error',
                     timeout: 3000,
                 })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateGeneralSettings(settings) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.put('/api/admin/restaurant/general-settings', {
+                    data: settings,
+                })
+
+                this.settings = {
+                    ...(this.settings || {}),
+                    general_settings: response?.data?.data || {},
+                    can_manage_general_settings: true,
+                }
+
+                notification.notify({
+                    message: 'Allgemeine Restaurant-Einstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der allgemeinen Restaurant-Einstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
                 return null
             } finally {
                 adminStore.is_loading--

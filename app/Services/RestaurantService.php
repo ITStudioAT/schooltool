@@ -20,6 +20,13 @@ class RestaurantService
 {
     private const DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER = 12;
 
+    private const DEFAULT_GENERAL_SETTINGS = [
+        'service_email' => '',
+        'new_users_must_confirm_email' => false,
+        'new_users_confirmer_email' => '',
+        'user_information_intro_html' => '',
+    ];
+
     private const DEFAULT_ONLINE_SETTINGS = [
         'visibility_start_mode' => 'when_available',
         'visibility_start_week_offset' => 2,
@@ -63,6 +70,8 @@ class RestaurantService
             'ingredient_icons' => $ingredientIcons,
             'allergen_options' => $this->configuredAllergenOptions(),
             'allergen_suggestions' => $this->extractAllergenSuggestions($foods),
+            'general_settings' => $this->generalSettingsForUser($authUser),
+            'can_manage_general_settings' => $this->supportsRestaurantGeneralSettings(),
             'user_settings' => $this->userSettingsForUser($authUser),
             'can_manage_user_settings' => $this->supportsRestaurantFoodsPaginationSettings(),
             'online_settings' => $this->onlineSettingsForUser($authUser),
@@ -83,6 +92,35 @@ class RestaurantService
         return [
             'restaurant_foods_pagination_number' => $this->restaurantFoodsPaginationNumberForUser($user),
         ];
+    }
+
+    public function generalSettingsForUser(User $user): array
+    {
+        if (! $this->supportsRestaurantGeneralSettings()) {
+            return self::DEFAULT_GENERAL_SETTINGS;
+        }
+
+        return $this->normalizeGeneralSettings($this->schoolToolForUser($user));
+    }
+
+    public function updateGeneralSettings(User $user, array $settings): array
+    {
+        if (! $this->supportsRestaurantGeneralSettings()) {
+            abort(500, 'Allgemeine Restaurant-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
+        }
+
+        $mustConfirmNewUsers = (bool) ($settings['restaurant_new_users_must_confirm_email'] ?? false);
+        $schoolTool = $this->schoolToolForUser($user);
+        $schoolTool->fill([
+            'restaurant_service_email' => $this->normalizeNullableString($settings['restaurant_service_email'] ?? null),
+            'restaurant_new_users_must_confirm_email' => $mustConfirmNewUsers,
+            'restaurant_new_users_confirmer_email' => $mustConfirmNewUsers
+                ? $this->normalizeNullableString($settings['restaurant_new_users_confirmer_email'] ?? null)
+                : null,
+            'restaurant_user_information_intro_html' => $this->normalizeNullableHtml($settings['restaurant_user_information_intro_html'] ?? null),
+        ])->save();
+
+        return $this->normalizeGeneralSettings($schoolTool->fresh());
     }
 
     public function updateUserSettings(User $user, int $restaurantFoodsPaginationNumber): array
@@ -601,6 +639,13 @@ class RestaurantService
         return $normalized === '' ? null : $normalized;
     }
 
+    private function normalizeNullableHtml(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized === '' ? null : $normalized;
+    }
+
     private function normalizePrice(mixed $value): ?string
     {
         if ($value === null || $value === '') {
@@ -651,6 +696,20 @@ class RestaurantService
         ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
     }
 
+    private function supportsRestaurantGeneralSettings(): bool
+    {
+        if (! Schema::hasTable('school_tools')) {
+            return false;
+        }
+
+        return collect([
+            'restaurant_service_email',
+            'restaurant_new_users_must_confirm_email',
+            'restaurant_new_users_confirmer_email',
+            'restaurant_user_information_intro_html',
+        ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
+    }
+
     private function schoolToolForUser(User $user): SchoolTool
     {
         return SchoolTool::query()->firstOrCreate(
@@ -671,8 +730,26 @@ class RestaurantService
                 'restaurant_menu_order_end_day_of_week' => self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week'],
                 'restaurant_menu_order_end_time' => self::DEFAULT_ONLINE_SETTINGS['order_end_time'],
                 'restaurant_menu_visibility_end_mode' => self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode'],
+                'restaurant_service_email' => self::DEFAULT_GENERAL_SETTINGS['service_email'],
+                'restaurant_new_users_must_confirm_email' => self::DEFAULT_GENERAL_SETTINGS['new_users_must_confirm_email'],
+                'restaurant_new_users_confirmer_email' => self::DEFAULT_GENERAL_SETTINGS['new_users_confirmer_email'],
+                'restaurant_user_information_intro_html' => self::DEFAULT_GENERAL_SETTINGS['user_information_intro_html'],
             ]
         );
+    }
+
+    private function normalizeGeneralSettings(?SchoolTool $schoolTool): array
+    {
+        if (! $schoolTool) {
+            return self::DEFAULT_GENERAL_SETTINGS;
+        }
+
+        return [
+            'service_email' => trim((string) ($schoolTool->restaurant_service_email ?? self::DEFAULT_GENERAL_SETTINGS['service_email'])),
+            'new_users_must_confirm_email' => (bool) ($schoolTool->restaurant_new_users_must_confirm_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_must_confirm_email']),
+            'new_users_confirmer_email' => trim((string) ($schoolTool->restaurant_new_users_confirmer_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_confirmer_email'])),
+            'user_information_intro_html' => trim((string) ($schoolTool->restaurant_user_information_intro_html ?? self::DEFAULT_GENERAL_SETTINGS['user_information_intro_html'])),
+        ];
     }
 
     private function normalizeOnlineSettings(?SchoolTool $schoolTool): array

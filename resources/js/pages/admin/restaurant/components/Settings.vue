@@ -6,6 +6,15 @@
                     <div class="d-flex flex-wrap ga-2">
                         <v-btn
                             rounded="xl"
+                            :color="selectedPanel === 'general' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'general' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'general' }"
+                            @click="activatePanel('general')">
+                            Allgemein
+                        </v-btn>
+                        <v-btn
+                            rounded="xl"
                             :color="selectedPanel === 'categories' ? 'primary' : undefined"
                             :variant="selectedPanel === 'categories' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
@@ -51,6 +60,111 @@
                         </v-btn>
                     </div>
                 </v-sheet>
+            </v-col>
+
+            <v-col v-if="selectedPanel === 'general'" cols="12">
+                <ItsGridBox variant="overview" color="primary" title="Allgemein" icon="mdi-tune-variant">
+                    <template #header-actions>
+                        <v-btn
+                            v-if="!isEditingGeneralSettings"
+                            size="small"
+                            color="primary"
+                            variant="flat"
+                            prepend-icon="mdi-pencil"
+                            :disabled="!canManageGeneralSettings"
+                            @click="beginGeneralSettingsEdit">
+                            Bearbeiten
+                        </v-btn>
+                    </template>
+
+                    <v-sheet rounded="xl" class="pa-5">
+                        <div class="text-overline text-primary mb-2">Schulweite Einstellungen</div>
+                        <div class="text-h6 font-weight-bold mb-2">Allgemeine Restaurant-Einstellungen</div>
+                        <div class="text-body-1 text-medium-emphasis mb-5">
+                            Diese Angaben gelten schulweit für das Restaurant und werden für Kommunikation und Benutzer-Informationen verwendet.
+                        </div>
+
+                        <v-alert v-if="!canManageGeneralSettings" type="warning" variant="tonal" class="mb-4">
+                            Allgemeine Restaurant-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.
+                        </v-alert>
+
+                        <div v-if="!isEditingGeneralSettings" class="general-settings-summary">
+                            <div class="general-settings-row">
+                                <div class="general-settings-row__label">Service-E-Mail-Adresse</div>
+                                <div class="general-settings-row__value">{{ generalSettings.service_email || 'Nicht hinterlegt' }}</div>
+                            </div>
+
+                            <div class="general-settings-row">
+                                <div class="general-settings-row__label">Neue Benutzer müssen bestätigt werden</div>
+                                <div class="general-settings-row__value">
+                                    <span
+                                        class="general-settings-badge"
+                                        :class="generalSettings.new_users_must_confirm_email ? 'is-yes' : 'is-no'">
+                                        {{ generalSettings.new_users_must_confirm_email ? 'Ja' : 'Nein' }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div v-if="generalSettings.new_users_must_confirm_email" class="general-settings-row">
+                                <div class="general-settings-row__label">E-Mail-Adresse für Bestätigung</div>
+                                <div class="general-settings-row__value">{{ generalSettings.new_users_confirmer_email || 'Nicht hinterlegt' }}</div>
+                            </div>
+
+                            <div class="general-settings-row general-settings-row--stacked">
+                                <div class="general-settings-row__label">Text für die erste Seite der Restaurant-Benutzerinformation</div>
+                                <div
+                                    v-if="generalSettings.user_information_intro_html"
+                                    class="general-settings-richtext"
+                                    v-html="generalSettings.user_information_intro_html" />
+                                <div v-else class="general-settings-muted">Kein Text hinterlegt.</div>
+                            </div>
+                        </div>
+
+                        <v-form v-else ref="generalForm" v-model="isGeneralFormValid" @submit.prevent="saveGeneralSettings">
+                            <v-row dense>
+                                <v-col cols="12" md="6">
+                                    <v-text-field
+                                        v-model="generalSettingsForm.service_email"
+                                        label="Service-E-Mail-Adresse"
+                                        variant="outlined"
+                                        density="comfortable"
+                                        :rules="[mailOrNull(), maxLength(255)]" />
+                                </v-col>
+
+                                <v-col cols="12">
+                                    <v-switch
+                                        v-model="generalSettingsForm.new_users_must_confirm_email"
+                                        label="Neue Benutzer müssen bestätigt werden"
+                                        color="primary"
+                                        inset />
+                                </v-col>
+
+                                <v-col v-if="generalSettingsForm.new_users_must_confirm_email" cols="12" md="6">
+                                    <v-text-field
+                                        v-model="generalSettingsForm.new_users_confirmer_email"
+                                        label="E-Mail-Adresse für Bestätigung"
+                                        variant="outlined"
+                                        density="comfortable"
+                                        :rules="[required(), mail(), maxLength(255)]" />
+                                </v-col>
+
+                                <v-col cols="12">
+                                    <div class="text-subtitle-2 mb-2">Text für die erste Seite der Restaurant-Benutzerinformation</div>
+                                    <ItsRichTextEditor v-model="generalSettingsForm.user_information_intro_html" />
+                                </v-col>
+                            </v-row>
+
+                            <div class="d-flex flex-wrap justify-end ga-2 mt-5">
+                                <v-btn variant="text" @click="abortGeneralSettingsEdit">
+                                    Abbrechen
+                                </v-btn>
+                                <v-btn color="primary" variant="flat" @click="saveGeneralSettings">
+                                    Allgemeine Einstellungen speichern
+                                </v-btn>
+                            </div>
+                        </v-form>
+                    </v-sheet>
+                </ItsGridBox>
             </v-col>
 
             <v-col v-if="selectedPanel === 'categories'" cols="12">
@@ -277,6 +391,7 @@ import { mapState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import EatingTimes from '@/pages/admin/restaurant/components/EatingTimes.vue'
 import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
+import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import OnlineSettings from '@/pages/admin/restaurant/components/OnlineSettings.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
@@ -304,18 +419,29 @@ function emptyIngredientIconForm() {
     }
 }
 
-const validPanels = ['categories', 'ingredient-icons', 'free-days', 'eating-times', 'online']
+function emptyGeneralSettingsForm() {
+    return {
+        service_email: '',
+        new_users_must_confirm_email: false,
+        new_users_confirmer_email: '',
+        user_information_intro_html: '',
+    }
+}
+
+const validPanels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'online']
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, OnlineSettings },
+    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings },
 
     data() {
         return {
-            selectedPanel: 'categories',
+            selectedPanel: 'general',
+            isEditingGeneralSettings: false,
+            isGeneralFormValid: false,
             categoryDialog: false,
             isCategoryFormValid: false,
             categoryDeleteDialog: false,
@@ -325,6 +451,7 @@ export default {
             categoryEditingId: null,
             pendingDeleteCategory: null,
             pendingDeleteIngredientIcon: null,
+            generalSettingsForm: emptyGeneralSettingsForm(),
             categoryForm: emptyCategoryForm(),
             ingredientIconEditingId: null,
             ingredientIconForm: emptyIngredientIconForm(),
@@ -332,7 +459,7 @@ export default {
     },
 
     computed: {
-        ...mapState(useRestaurantStore, ['categories', 'ingredientIcons']),
+        ...mapState(useRestaurantStore, ['categories', 'ingredientIcons', 'generalSettings', 'canManageGeneralSettings']),
         ingredientIconPreview() {
             if (! this.ingredientIconForm.image) {
                 return null
@@ -347,11 +474,18 @@ export default {
 
     created() {
         this.syncPanelFromRoute()
+        this.resetGeneralSettingsForm()
     },
 
     watch: {
         '$route.query.panel'() {
             this.syncPanelFromRoute()
+        },
+        generalSettings: {
+            handler() {
+                this.resetGeneralSettingsForm()
+            },
+            deep: true,
         },
     },
 
@@ -368,10 +502,53 @@ export default {
             }).catch(() => {})
         },
         normalizePanel(panel) {
-            return validPanels.includes(panel) ? panel : 'categories'
+            return validPanels.includes(panel) ? panel : 'general'
         },
         syncPanelFromRoute() {
             this.selectedPanel = this.normalizePanel(this.$route?.query?.panel)
+        },
+        resetGeneralSettingsForm() {
+            this.generalSettingsForm = {
+                service_email: this.generalSettings?.service_email || '',
+                new_users_must_confirm_email: this.generalSettings?.new_users_must_confirm_email === true,
+                new_users_confirmer_email: this.generalSettings?.new_users_confirmer_email || '',
+                user_information_intro_html: this.generalSettings?.user_information_intro_html || '',
+            }
+            this.isGeneralFormValid = false
+        },
+        beginGeneralSettingsEdit() {
+            if (! this.canManageGeneralSettings) {
+                return
+            }
+
+            this.resetGeneralSettingsForm()
+            this.isEditingGeneralSettings = true
+        },
+        abortGeneralSettingsEdit() {
+            this.resetGeneralSettingsForm()
+            this.isEditingGeneralSettings = false
+        },
+        async saveGeneralSettings() {
+            this.isGeneralFormValid = false
+            await this.$refs.generalForm?.validate()
+
+            if (! this.isGeneralFormValid || ! this.canManageGeneralSettings) {
+                return
+            }
+
+            const result = await useRestaurantStore().updateGeneralSettings({
+                restaurant_service_email: this.generalSettingsForm.service_email,
+                restaurant_new_users_must_confirm_email: this.generalSettingsForm.new_users_must_confirm_email,
+                restaurant_new_users_confirmer_email: this.generalSettingsForm.new_users_must_confirm_email
+                    ? this.generalSettingsForm.new_users_confirmer_email
+                    : '',
+                restaurant_user_information_intro_html: this.generalSettingsForm.user_information_intro_html,
+            })
+
+            if (result) {
+                this.resetGeneralSettingsForm()
+                this.isEditingGeneralSettings = false
+            }
         },
         shortLabel(title) {
             return String(title || '').slice(0, 2).toUpperCase()
@@ -542,6 +719,66 @@ export default {
     background: rgba(255, 255, 255, 0.92);
 }
 
+.general-settings-summary {
+    display: grid;
+    gap: 16px;
+}
+
+.general-settings-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+    padding: 16px 18px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.general-settings-row--stacked {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.general-settings-row__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(71, 85, 105);
+}
+
+.general-settings-row__value {
+    color: rgb(15, 23, 42);
+    word-break: break-word;
+}
+
+.general-settings-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.general-settings-badge.is-yes {
+    background: rgba(22, 163, 74, 0.14);
+    color: rgb(21, 128, 61);
+}
+
+.general-settings-badge.is-no {
+    background: rgba(148, 163, 184, 0.16);
+    color: rgb(71, 85, 105);
+}
+
+.general-settings-richtext {
+    color: rgb(15, 23, 42);
+}
+
+.general-settings-muted {
+    color: rgb(100, 116, 139);
+}
+
 .settings-icon-card__avatar {
     background: rgba(59, 130, 246, 0.12);
 }
@@ -551,5 +788,11 @@ export default {
     background: rgba(239, 246, 255, 0.72);
     display: flex;
     justify-content: center;
+}
+
+@media (max-width: 760px) {
+    .general-settings-row {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 </style>

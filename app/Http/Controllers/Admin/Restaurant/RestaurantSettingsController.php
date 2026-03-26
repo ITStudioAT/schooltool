@@ -23,6 +23,8 @@ class RestaurantSettingsController extends Controller
             'ingredient_icons' => RestaurantIngredientIconResource::collection($settings['ingredient_icons']),
             'allergen_options' => $settings['allergen_options'],
             'allergen_suggestions' => $settings['allergen_suggestions'],
+            'general_settings' => $settings['general_settings'],
+            'can_manage_general_settings' => $settings['can_manage_general_settings'],
             'user_settings' => $settings['user_settings'],
             'can_manage_user_settings' => $settings['can_manage_user_settings'],
             'online_settings' => $settings['online_settings'],
