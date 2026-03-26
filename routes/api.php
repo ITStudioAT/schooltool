@@ -38,6 +38,7 @@ use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantOnlineSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\SchoolController;
@@ -262,6 +263,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:admin,lunch_admin'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
+        Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
+        Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
         Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);

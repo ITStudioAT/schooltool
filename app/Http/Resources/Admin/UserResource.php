@@ -3,7 +3,6 @@
 namespace App\Http\Resources\Admin;
 
 use Carbon\Carbon;
-
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -25,6 +24,17 @@ class UserResource extends JsonResource
             'schoolclass' => $this->schoolclass,
             'email' => $this->email,
             'phone' => $this->phone,
+            'import116_id' => $this->import116_id ? (int) $this->import116_id : null,
+            'import116_children' => collect($this->import116_children ?? [])
+                ->map(function (array $child): array {
+                    return [
+                        'name' => trim((string) ($child['name'] ?? '')),
+                        'email' => trim((string) ($child['email'] ?? '')),
+                    ];
+                })
+                ->values(),
+            'has_sepa' => (bool) $this->sepa_at,
+            'sepa_at' => $this->sepa_at ? Carbon::parse($this->sepa_at)->format('d.m.Y') : null,
             'is_2fa' => (bool) $this->is_2fa,
             'is_active' => (bool) $this->is_active,
             'is_confirmed' => (bool) $this->confirmed_at,

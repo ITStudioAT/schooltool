@@ -39,6 +39,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $last_name
  * @property string|null $first_name
  * @property string|null $phone
+ * @property Carbon|null $sepa_at
  * @property string|null $login_at
  * @property string|null $login_ip
  * @property int|null $is_2fa
@@ -195,6 +196,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
+            'sepa_at' => 'datetime',
             'tutoring_filter' => 'array',
             'teaching_behaviour' => 'array',
             'teaching_notifications' => 'array',
