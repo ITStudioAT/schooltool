@@ -12,7 +12,6 @@ use Illuminate\Support\Collection;
 
 class LicenceService
 {
-
     public function selectableSchoolLicences($school)
     {
         return SchoolLicence::where('school_id', $school->id)->get();
@@ -133,11 +132,11 @@ class LicenceService
         });
 
         $activeSchools = $schools
-            ->filter(fn(School $school) => $statusBySchoolId->get($school->id) === 'active')
+            ->filter(fn (School $school) => $statusBySchoolId->get($school->id) === 'active')
             ->values();
 
         $hasAnySchoolWithLicence = $statusBySchoolId
-            ->contains(fn(string $status) => $status !== 'missing');
+            ->contains(fn (string $status) => $status !== 'missing');
 
         $overallStatus = 'missing';
         if ($activeSchools->isNotEmpty()) {
@@ -248,16 +247,20 @@ class LicenceService
     public function checkLicence($school, $licence_load)
     {
         $licence = Licence::where('name', $licence_load)->first();
-        if (!$licence) return ['status' => 'error', 'msg' => 'Die Lizenz konnte nicht gefunden werden.'];
+        if (! $licence) {
+            return ['status' => 'error', 'msg' => 'Die Lizenz konnte nicht gefunden werden.'];
+        }
 
         $school_licence = SchoolLicence::where('school_id', $school->id)->where('licence_id', $licence->id)->first();
-        if (!$school_licence) return ['status' => 'error', 'msg' => 'Die Schule hat für die App keine Lizenz.'];
+        if (! $school_licence) {
+            return ['status' => 'error', 'msg' => 'Die Schule hat für die App keine Lizenz.'];
+        }
 
         if ($this->licenceStatus($school, $licence_load) !== 'active') {
             return ['status' => 'error', 'msg' => 'Die Lizenz für die App ist abgelaufen.'];
         }
 
-        return ['status' => 'ok', 'redirect' => '&licence=' . $licence_load];
+        return ['status' => 'ok', 'redirect' => '&licence='.$licence_load];
     }
 
     public function saveLicenceModel(Licence $licence, array $licenceModel): Licence
@@ -276,7 +279,9 @@ class LicenceService
     {
         $default = $this->defaultLicenceModel();
 
-        if (!is_array($licenceModel)) {
+        $licenceModel = $this->parseLicenceModelInput($licenceModel);
+
+        if (! is_array($licenceModel)) {
             return $default;
         }
 
@@ -286,7 +291,7 @@ class LicenceService
         $affectedRoles = [];
         if (is_array($affectedRolesRaw)) {
             foreach ($affectedRolesRaw as $role) {
-                if (!is_string($role)) {
+                if (! is_string($role)) {
                     continue;
                 }
                 $role = trim($role);
@@ -315,7 +320,7 @@ class LicenceService
 
             $plans = [];
             foreach ($rawPlans as $plan) {
-                if (!is_array($plan)) {
+                if (! is_array($plan)) {
                     continue;
                 }
 
@@ -362,54 +367,26 @@ class LicenceService
         ];
     }
 
-    private function defaultLicenceModel(): array
+    public function mergeLicenceModels(mixed $schoolLicenceModelRaw, mixed $baseLicenceModelRaw): array
     {
-        return [
-            'school_licence_required' => true,
-            'affected_roles' => [],
-            'user_licence_required_by_role' => [],
-            'user_licence_plans_by_role' => [],
-        ];
-    }
+        $schoolSourceModel = $this->parseLicenceModelInput($schoolLicenceModelRaw);
+        $baseSourceModel = $this->parseLicenceModelInput($baseLicenceModelRaw);
 
-    private function defaultUserLicencePlan(): array
-    {
-        return [
-            'text' => 'Standard',
-            'price_per_year' => '0',
-        ];
-    }
-
-    private function effectiveSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
-    {
-        if (is_array($schoolLicence->licence_model)) {
-            return $this->normalizeLicenceModel($schoolLicence->licence_model);
-        }
-
-        if ($licence && is_array($licence->licence_model)) {
-            return $this->normalizeLicenceModel($licence->licence_model);
-        }
-
-        return $this->defaultLicenceModel();
-    }
-
-    private function mergedSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
-    {
-        $schoolModel = $this->normalizeLicenceModel($schoolLicence->licence_model);
-        $baseModel = $licence ? $this->normalizeLicenceModel($licence->licence_model) : $this->defaultLicenceModel();
+        $schoolModel = $this->normalizeLicenceModel($schoolSourceModel);
+        $baseModel = $this->normalizeLicenceModel($baseSourceModel);
 
         $affectedRoles = collect(array_merge(
             is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
             is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
         ))
-            ->map(fn($role) => is_string($role) ? trim($role) : '')
+            ->map(fn ($role) => is_string($role) ? trim($role) : '')
             ->filter()
             ->unique()
             ->values()
             ->all();
 
-        $schoolRequiredByRole = is_array($schoolModel['user_licence_required_by_role'] ?? null)
-            ? $schoolModel['user_licence_required_by_role']
+        $schoolRequiredByRoleSource = is_array($schoolSourceModel['user_licence_required_by_role'] ?? null)
+            ? $schoolSourceModel['user_licence_required_by_role']
             : [];
         $baseRequiredByRole = is_array($baseModel['user_licence_required_by_role'] ?? null)
             ? $baseModel['user_licence_required_by_role']
@@ -426,9 +403,9 @@ class LicenceService
         $plansByRole = [];
 
         foreach ($affectedRoles as $roleName) {
-            $requiredByRole[$roleName] =
-                (bool) ($schoolRequiredByRole[$roleName] ?? false)
-                || (bool) ($baseRequiredByRole[$roleName] ?? false);
+            $requiredByRole[$roleName] = array_key_exists($roleName, $schoolRequiredByRoleSource)
+                ? $this->toBool($schoolRequiredByRoleSource[$roleName], false)
+                : (bool) ($baseRequiredByRole[$roleName] ?? false);
 
             $schoolRolePlans = (array_key_exists($roleName, $schoolPlansByRole) && is_array($schoolPlansByRole[$roleName]))
                 ? $schoolPlansByRole[$roleName]
@@ -449,7 +426,7 @@ class LicenceService
                 $planPrice = isset($plan['price_per_year']) ? trim((string) $plan['price_per_year']) : '';
                 $planKey = $planId !== null && $planId > 0
                     ? "id:{$planId}"
-                    : 'txt:' . $planText . '|price:' . $planPrice;
+                    : 'txt:'.$planText.'|price:'.$planPrice;
 
                 if (isset($seenPlanKeys[$planKey])) {
                     continue;
@@ -462,12 +439,52 @@ class LicenceService
             $plansByRole[$roleName] = $mergedPlans;
         }
 
+        $schoolLicenceRequired = $schoolSourceModel !== null && array_key_exists('school_licence_required', $schoolSourceModel)
+            ? $this->toBool($schoolSourceModel['school_licence_required'], true)
+            : $this->toBool($baseModel['school_licence_required'] ?? true, true);
+
         return [
-            'school_licence_required' => (bool) ($schoolModel['school_licence_required'] ?? true),
+            'school_licence_required' => $schoolLicenceRequired,
             'affected_roles' => $affectedRoles,
             'user_licence_required_by_role' => $requiredByRole,
             'user_licence_plans_by_role' => $plansByRole,
         ];
+    }
+
+    private function defaultLicenceModel(): array
+    {
+        return [
+            'school_licence_required' => true,
+            'affected_roles' => [],
+            'user_licence_required_by_role' => [],
+            'user_licence_plans_by_role' => [],
+        ];
+    }
+
+    private function defaultUserLicencePlan(): array
+    {
+        return [
+            'text' => 'Standard',
+            'price_per_year' => '0',
+        ];
+    }
+
+    private function effectiveSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
+    {
+        if ($this->parseLicenceModelInput($schoolLicence->licence_model) !== null) {
+            return $this->normalizeLicenceModel($schoolLicence->licence_model);
+        }
+
+        if ($licence && $this->parseLicenceModelInput($licence->licence_model) !== null) {
+            return $this->normalizeLicenceModel($licence->licence_model);
+        }
+
+        return $this->defaultLicenceModel();
+    }
+
+    private function mergedSchoolLicenceModel(SchoolLicence $schoolLicence, ?Licence $licence = null): array
+    {
+        return $this->mergeLicenceModels($schoolLicence->licence_model, $licence?->licence_model);
     }
 
     private function userLicenceStatusForTool(User $user, SchoolLicence $schoolLicence, ?Licence $licence = null, array $candidateRoleNames = []): string
@@ -475,9 +492,9 @@ class LicenceService
         $licenceModel = $this->mergedSchoolLicenceModel($schoolLicence, $licence);
 
         $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
-            ->filter(fn($isRequired) => (bool) $isRequired)
+            ->filter(fn ($isRequired) => (bool) $isRequired)
             ->keys()
-            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
             ->unique()
             ->values()
@@ -489,14 +506,14 @@ class LicenceService
 
         $userRoleNames = $user->roles()
             ->pluck('name')
-            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
             ->unique()
             ->values()
             ->all();
 
         $candidateRoleNames = collect($candidateRoleNames)
-            ->map(fn($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
             ->unique()
             ->values()
@@ -540,6 +557,7 @@ class LicenceService
     {
         if (is_string($entry)) {
             $validUntil = trim($entry);
+
             return [
                 'valid_until' => $validUntil !== '' ? $validUntil : null,
                 'is_activated' => false,
@@ -593,11 +611,29 @@ class LicenceService
 
         if (is_string($value)) {
             $normalized = strtolower(trim($value));
-            if (in_array($normalized, ['1', 'true', 'yes', 'ja'], true)) return true;
-            if (in_array($normalized, ['0', 'false', 'no', 'nein'], true)) return false;
+            if (in_array($normalized, ['1', 'true', 'yes', 'ja'], true)) {
+                return true;
+            }
+            if (in_array($normalized, ['0', 'false', 'no', 'nein'], true)) {
+                return false;
+            }
         }
 
         return $default;
+    }
+
+    private function parseLicenceModelInput(mixed $licenceModel): ?array
+    {
+        if (is_string($licenceModel)) {
+            $decoded = json_decode($licenceModel, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return null;
+            }
+
+            $licenceModel = $decoded;
+        }
+
+        return is_array($licenceModel) ? $licenceModel : null;
     }
 
     private function syncLicenceUserPlans(Licence $licence, array $plansByRole): array

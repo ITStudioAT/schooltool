@@ -331,6 +331,55 @@ describe('dashboardMenu', function () {
             ->and($materialsItem['status_icon'])->toBe('mdi-clock-alert-outline')
             ->and($materialsItem['status_color'])->toBe('warning');
     });
+
+    it('keeps teaching menu active when school override disables template user licence requirement', function () {
+        config(['schooltool.teaching_active' => true]);
+
+        $school = School::factory()->create();
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'first_name' => 'Teacher',
+            'last_name' => 'Override',
+        ]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']));
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addMonth(),
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => false,
+                ],
+            ],
+            'user_licence_assignments' => [],
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $teachingItem = collect($result)->firstWhere('title', 'Unterricht');
+
+        expect($teachingItem)
+            ->not->toBeNull()
+            ->and($teachingItem['is_active'])->toBeTrue()
+            ->and($teachingItem)->not->toHaveKey('status_icon');
+    });
 });
 
 describe('profileMenu', function () {

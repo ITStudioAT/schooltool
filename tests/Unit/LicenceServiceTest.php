@@ -8,6 +8,7 @@ use App\Services\LicenceService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -194,6 +195,26 @@ describe('licenceStatus with school_licence_required', function () {
         expect($result)->toBe('active');
     });
 
+    it('returns active when school licence model is stored as json string and school licence is not required', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create(['name' => 'app1', 'long_name' => 'Application 1']);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->subDay(),
+            'licence_model' => json_encode([
+                'school_licence_required' => false,
+                'affected_roles' => [],
+                'user_licence_required_by_role' => [],
+            ]),
+        ]);
+
+        $result = $this->service->licenceStatus($school, 'app1');
+
+        expect($result)->toBe('active');
+    });
+
     it('uses template model when school licence model is null', function () {
         $school = School::factory()->create();
         $licence = Licence::create([
@@ -259,6 +280,44 @@ describe('toolAccessStatusForUser with per-user licences', function () {
         ]);
 
         $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool');
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns active when school model disables template user licence requirement for the role', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teacher', 'web');
+        $user->assignRole('teacher');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addYear(),
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => false,
+                ],
+            ],
+            'user_licence_assignments' => [],
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
 
         expect($result)->toBe('active');
     });
@@ -363,7 +422,7 @@ describe('deleteLicences', function () {
         ]);
 
         $this->service->deleteLicences([$licence->id]);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Mindestens eine Lizenz ist noch einer Schule zugeordnet');
+    })->throws(HttpException::class, 'Mindestens eine Lizenz ist noch einer Schule zugeordnet');
 
     it('aborts when at least one licence in the array is assigned to a school', function () {
         $school = School::factory()->create();
@@ -377,7 +436,7 @@ describe('deleteLicences', function () {
         ]);
 
         $this->service->deleteLicences([$licence1->id, $licence2->id]);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    })->throws(HttpException::class);
 
     it('does not delete any licences when one is assigned', function () {
         $school = School::factory()->create();
@@ -392,7 +451,7 @@ describe('deleteLicences', function () {
 
         try {
             $this->service->deleteLicences([$licence1->id, $licence2->id]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Expected to throw
         }
 

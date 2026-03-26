@@ -80,6 +80,14 @@
                                             <div v-if="item.email" class="entry-email">
                                                 <v-icon icon="mdi-email-outline" size="x-small" />
                                                 <span>{{ item.email }}</span>
+                                                <v-btn
+                                                    icon="mdi-content-copy"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="secondary"
+                                                    density="comfortable"
+                                                    title="E-Mail kopieren"
+                                                    @click.stop="copyEmailToClipboard(item.email)" />
                                             </div>
                                         </div>
 
@@ -98,7 +106,17 @@
                                         <div v-if="item.mother_name || item.mother_email || item.mother_phone_1 || item.mother_phone_2" class="entry-parent entry-parent--mother">
                                             <div class="entry-parent-line">
                                                 <div class="entry-parent-name">{{ item.mother_name || 'Erziehungsberechtigte 1' }}</div>
-                                                <div v-if="item.mother_email" class="entry-parent-mail">{{ item.mother_email }}</div>
+                                                <div v-if="item.mother_email" class="entry-parent-mail">
+                                                    <span>{{ item.mother_email }}</span>
+                                                    <v-btn
+                                                        icon="mdi-content-copy"
+                                                        size="x-small"
+                                                        variant="text"
+                                                        color="secondary"
+                                                        density="comfortable"
+                                                        title="E-Mail kopieren"
+                                                        @click.stop="copyEmailToClipboard(item.mother_email)" />
+                                                </div>
                                             </div>
                                             <div class="entry-parent-phones">
                                                 <span v-if="item.mother_phone_1">{{ item.mother_phone_1 }}</span>
@@ -109,7 +127,17 @@
                                         <div v-if="item.father_name || item.father_email || item.father_phone_1 || item.father_phone_2" class="entry-parent entry-parent--father">
                                             <div class="entry-parent-line">
                                                 <div class="entry-parent-name">{{ item.father_name || 'Erziehungsberechtigte 2' }}</div>
-                                                <div v-if="item.father_email" class="entry-parent-mail">{{ item.father_email }}</div>
+                                                <div v-if="item.father_email" class="entry-parent-mail">
+                                                    <span>{{ item.father_email }}</span>
+                                                    <v-btn
+                                                        icon="mdi-content-copy"
+                                                        size="x-small"
+                                                        variant="text"
+                                                        color="secondary"
+                                                        density="comfortable"
+                                                        title="E-Mail kopieren"
+                                                        @click.stop="copyEmailToClipboard(item.father_email)" />
+                                                </div>
                                             </div>
                                             <div class="entry-parent-phones">
                                                 <span v-if="item.father_phone_1">{{ item.father_phone_1 }}</span>
@@ -135,6 +163,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import Pagination20 from '@/pages/components/Pagination20.vue'
 
@@ -178,6 +207,57 @@ export default {
     },
 
     methods: {
+        async copyTextToClipboard(value) {
+            const text = String(value || '').trim()
+            if (!text) {
+                return false
+            }
+
+            if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text)
+                    return true
+                } catch {
+                    // Fallback below.
+                }
+            }
+
+            if (typeof document === 'undefined') {
+                return false
+            }
+
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = text
+                textarea.setAttribute('readonly', '')
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                document.body.appendChild(textarea)
+                textarea.select()
+                textarea.setSelectionRange(0, text.length)
+                const copied = document.execCommand('copy')
+                document.body.removeChild(textarea)
+
+                return copied
+            } catch {
+                return false
+            }
+        },
+        async copyEmailToClipboard(email) {
+            const normalizedEmail = String(email || '').trim()
+            if (!normalizedEmail) {
+                return
+            }
+
+            const notification = useNotificationStore()
+            const copied = await this.copyTextToClipboard(normalizedEmail)
+
+            notification.notify({
+                message: copied ? 'E-Mail wurde in die Zwischenablage kopiert.' : 'E-Mail konnte nicht kopiert werden.',
+                type: copied ? 'success' : 'warning',
+                timeout: 2200,
+            })
+        },
         search() {
             this.selected_import116 = []
             this.teachingStore.search116()
@@ -270,6 +350,7 @@ export default {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
     font-size: 1rem;
     color: rgba(16, 38, 58, 0.85);
     word-break: break-word;
@@ -309,6 +390,9 @@ export default {
 }
 
 .entry-parent-mail {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.95rem;
     color: rgba(16, 38, 58, 0.82);
     word-break: break-word;
