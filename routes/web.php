@@ -39,7 +39,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*')->middleware([
         'auth:sanctum',
         'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Anmeldetool,auth',
+        'tool-licensed:Anmeldetool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
     ]);
 
     Route::get('/admin/tutoring/{any?}', function () {
@@ -47,7 +47,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*')->middleware([
         'auth:sanctum',
         'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Nachhilfetool,auth',
+        'tool-licensed:Nachhilfetool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
     ]);
 
     Route::get('/admin/teaching/{any?}', function () {
@@ -55,7 +55,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*')->middleware([
         'auth:sanctum',
         'web-allowed:admin,register_admin,tutoring_admin,teacher,lunch_admin',
-        'tool-licensed:Lehrertool,auth',
+        'tool-licensed:Lehrertool,auth,admin,register_admin,tutoring_admin,teacher,lunch_admin',
     ]);
 
     Route::get('/admin/materials/{any?}', function () {
@@ -63,7 +63,7 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
     })->where('any', '.*')->middleware([
         'auth:sanctum',
         'web-allowed:admin,materials_admin,materials_moderator',
-        'tool-licensed:Materialientool,auth',
+        'tool-licensed:Materialientool,auth,admin,materials_admin,materials_moderator',
     ]);
 
     Route::get('/admin/aba/{any?}', function () {

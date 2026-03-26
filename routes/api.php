@@ -187,7 +187,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - aba_teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:aba_teacher', 'tool-licensed:ABA,auth'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:aba_teacher', 'tool-licensed:ABA,auth,aba_teacher'])->group(function () {
         Route::get('/admin/aba/schoolyears', [SchoolyearController::class, 'index']);
         Route::post('/admin/aba/schoolyears/set_active', [SchoolyearController::class, 'setActiveSchoolyear']);
 
@@ -218,8 +218,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/save_password_with_code', [UserController::class, 'savePasswordWithCode']);
 
         // RegisterUsers
-        Route::get('/admin/register_users', [RegisterUserController::class, 'index'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_users/delete_register_users', [RegisterUserController::class, 'deleteRegisterUsers'])->middleware('tool-licensed:Anmeldetool');
+        Route::get('/admin/register_users', [RegisterUserController::class, 'index'])->middleware('tool-licensed:Anmeldetool,auto,user,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher');
+        Route::post('/admin/register_users/delete_register_users', [RegisterUserController::class, 'deleteRegisterUsers'])->middleware('tool-licensed:Anmeldetool,auto,user,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,teacher');
     });
 
     /* SANCTUM - admin */
@@ -243,13 +243,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, teaching_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin', 'tool-licensed:Lehrertool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin', 'tool-licensed:Lehrertool,auto,admin,teaching_admin'])->group(function () {
         Route::post('/admin/teaching_upload/{slug}', [FileUploadController::class, 'upload']);
         Route::patch('/admin/teaching_upload/{slug}', [FileUploadController::class, 'uploadNext']);
     });
 
     /* SANCTUM - tutoring_user */
-    Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user', 'tool-licensed:Nachhilfetool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:tutoring_user', 'tool-licensed:Nachhilfetool,auto,tutoring_user'])->group(function () {
         Route::apiResource('/homepage/tutoring/users', App\Http\Controllers\Tutoring\UserController::class)->names('tutoring.users');
         Route::post('/homepage/tutoring/update_password', [App\Http\Controllers\Tutoring\UserController::class, 'updatePassword']);
         Route::post('/homepage/tutoring/logout', [App\Http\Controllers\Tutoring\UserController::class, 'logout']);
@@ -294,7 +294,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin'])->group(function () {});
 
     /* SANCTUM - admin, tutoring_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin', 'tool-licensed:Nachhilfetool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,tutoring_admin', 'tool-licensed:Nachhilfetool,auto,admin,tutoring_admin'])->group(function () {
         Route::post('/admin/school_tools/save_tutoring_settings', [SchoolToolController::class, 'saveTutoringSettings']);
         Route::apiResource('/admin/tutoring/subjects', App\Http\Controllers\Admin\Tutoring\SubjectController::class)->names('admin.tutoring.subjects');
         Route::apiResource('/admin/tutoring/users', App\Http\Controllers\Admin\Tutoring\UserController::class)->names('admin.tutoring.users');
@@ -305,7 +305,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, teaching_admin, teacher */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,teacher', 'tool-licensed:Lehrertool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,teaching_admin,teacher', 'tool-licensed:Lehrertool,auto,admin,teaching_admin,teacher'])->group(function () {
         Route::get('/admin/teaching/search116', [TeachingController::class, 'search116']);
         Route::get('/admin/teaching/load_settings', [TeachingController::class, 'loadSettings']);
         Route::post('/admin/teaching/save_settings', [TeachingController::class, 'saveSettings']);
@@ -340,7 +340,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool,auto,admin,materials_admin,materials_moderator'])->group(function () {
         Route::get('/admin/materials/config', [MaterialController::class, 'config']);
         Route::post('/admin/materials/workspaces', [MaterialWorkspaceController::class, 'store']);
         Route::put('/admin/materials/workspaces/{material_workspace}', [MaterialWorkspaceController::class, 'update']);
@@ -437,7 +437,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,materials_admin,materials_moderator', 'tool-licensed:Materialientool,auto,admin,materials_admin,materials_moderator'])->group(function () {
         Route::get('/admin/materials/types', [MaterialTypeController::class, 'index']);
         Route::post('/admin/materials/types', [MaterialTypeController::class, 'store']);
         Route::put('/admin/materials/types/{material_type}', [MaterialTypeController::class, 'update']);
@@ -445,7 +445,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin', 'tool-licensed:Materialientool'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:admin', 'tool-licensed:Materialientool,auto,admin'])->group(function () {
         Route::get('/admin/materials/statuses', [MaterialStatusController::class, 'index']);
         Route::post('/admin/materials/statuses', [MaterialStatusController::class, 'store']);
         Route::put('/admin/materials/statuses/{material_status}', [MaterialStatusController::class, 'update']);
@@ -457,11 +457,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher'])->group(function () {
 
         // Tutoring, Offers
-        Route::apiResource('/admin/tutoring/offers', App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers')->middleware('tool-licensed:Nachhilfetool');
-        Route::post('/admin/tutoring/delete_offers', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'deleteOffers'])->middleware('tool-licensed:Nachhilfetool');
-        Route::post('/admin/tutoring/toggle_active_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer'])->middleware('tool-licensed:Nachhilfetool');
-        Route::post('/admin/tutoring/toggle_accepted_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer'])->middleware('tool-licensed:Nachhilfetool');
-        Route::get('/admin/tutoring/get_stats', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats'])->middleware('tool-licensed:Nachhilfetool');
+        Route::apiResource('/admin/tutoring/offers', App\Http\Controllers\Admin\Tutoring\OfferController::class)->names('admin.tutoring.offers')->middleware('tool-licensed:Nachhilfetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/tutoring/delete_offers', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'deleteOffers'])->middleware('tool-licensed:Nachhilfetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/tutoring/toggle_active_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer'])->middleware('tool-licensed:Nachhilfetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/tutoring/toggle_accepted_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer'])->middleware('tool-licensed:Nachhilfetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::get('/admin/tutoring/get_stats', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats'])->middleware('tool-licensed:Nachhilfetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
         // /admin/tutoring/get_stats
 
         // Roles
@@ -505,28 +505,28 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/schoolyears_paginate', [SchoolyearController::class, 'indexPaginate']);
 
         // registers
-        Route::apiResource('/admin/registers', App\Http\Controllers\Admin\RegisterController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/set_active', [App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/get_active', [App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/toggle', [App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_excel', [RegisterPrintController::class, 'printExcel'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_supervisor', [RegisterPrintController::class, 'printSupervisor'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/registers/print_date', [RegisterPrintController::class, 'printDate'])->middleware('tool-licensed:Anmeldetool');
+        Route::apiResource('/admin/registers', App\Http\Controllers\Admin\RegisterController::class)->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/set_active', [App\Http\Controllers\Admin\RegisterController::class, 'setActiveRegister'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/get_active', [App\Http\Controllers\Admin\RegisterController::class, 'getActiveRegisters'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/toggle', [App\Http\Controllers\Admin\RegisterController::class, 'toggleRegister'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/print_excel', [RegisterPrintController::class, 'printExcel'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/print_supervisor', [RegisterPrintController::class, 'printSupervisor'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/registers/print_date', [RegisterPrintController::class, 'printDate'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
 
         // register_dates
-        Route::apiResource('/admin/register_dates', RegisterDateController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/create_dates', [RegisterDateController::class, 'createDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/load_days', [RegisterDateController::class, 'loadDays'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/filter_register_dates', [RegisterDateController::class, 'filterRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/lock_register_dates', [RegisterDateController::class, 'lockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/unlock_register_dates', [RegisterDateController::class, 'unlockRegisterDates'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_dates/delete_register_dates', [RegisterDateController::class, 'deleteRegisterDates'])->middleware('tool-licensed:Anmeldetool');
+        Route::apiResource('/admin/register_dates', RegisterDateController::class)->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/create_dates', [RegisterDateController::class, 'createDates'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/load_days', [RegisterDateController::class, 'loadDays'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/filter_register_dates', [RegisterDateController::class, 'filterRegisterDates'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/lock_register_dates', [RegisterDateController::class, 'lockRegisterDates'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/unlock_register_dates', [RegisterDateController::class, 'unlockRegisterDates'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_dates/delete_register_dates', [RegisterDateController::class, 'deleteRegisterDates'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
 
         // register_date_bookings
-        Route::apiResource('/admin/register_date_bookings', RegisterDateBookingController::class)->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/get_user_with_email', [RegisterDateBookingController::class, 'getUserWithEmail'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/update_or_create_user', [RegisterDateBookingController::class, 'updateOrCreateUser'])->middleware('tool-licensed:Anmeldetool');
-        Route::post('/admin/register_date_bookings/delete_bookings', [RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool');
+        Route::apiResource('/admin/register_date_bookings', RegisterDateBookingController::class)->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_date_bookings/get_user_with_email', [RegisterDateBookingController::class, 'getUserWithEmail'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_date_bookings/update_or_create_user', [RegisterDateBookingController::class, 'updateOrCreateUser'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
+        Route::post('/admin/register_date_bookings/delete_bookings', [RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool,auto,admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher');
     });
 
     /* SANCTUM - admin */

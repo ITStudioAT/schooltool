@@ -7,23 +7,22 @@ use App\Services\LicenceService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 class ToolLicensed
 {
-    public function handle(Request $request, Closure $next, string $licenceName, string $schoolSource = 'auto'): Response
+    public function handle(Request $request, Closure $next, string $licenceName, string $schoolSource = 'auto', ...$candidateRoleNames): Response
     {
         $licenceService = app(LicenceService::class);
 
         $configFlag = $this->configFlagForLicence($licenceName);
-        if ($configFlag && !config($configFlag, false)) {
+        if ($configFlag && ! config($configFlag, false)) {
             return $this->deny($request, 'missing');
         }
 
         $school = $this->resolveSchool($request, $schoolSource);
-        $allowedRoles = $this->resolveAllowedRolesFromRoute($request);
-        $status = $licenceService->toolAccessStatusForUser(Auth::user(), $school, $licenceName, $allowedRoles);
+        $candidateRoleNames = $this->normalizeCandidateRoleNames($candidateRoleNames);
+        $status = $licenceService->toolAccessStatusForUser(Auth::user(), $school, $licenceName, $candidateRoleNames);
         if ($status !== 'active') {
             return $this->deny($request, $status);
         }
@@ -80,7 +79,7 @@ class ToolLicensed
         }
 
         if ($request->is('homepage/*')) {
-            return redirect('/homepage/error?msg=' . urlencode($message));
+            return redirect('/homepage/error?msg='.urlencode($message));
         }
 
         return redirect('/');
@@ -96,31 +95,20 @@ class ToolLicensed
         };
     }
 
-    private function resolveAllowedRolesFromRoute(Request $request): array
+    private function normalizeCandidateRoleNames(array $candidateRoleNames): array
     {
-        $route = $request->route();
-        if (! $route || ! method_exists($route, 'gatherMiddleware')) {
-            return [];
-        }
-
         $roles = [];
-        foreach ($route->gatherMiddleware() as $middleware) {
-            if (! is_string($middleware)) {
+        foreach ($candidateRoleNames as $roleName) {
+            if (! is_string($roleName)) {
                 continue;
             }
 
-            if (! Str::startsWith($middleware, ['api-allowed:', 'web-allowed:'])) {
+            $roleName = trim($roleName);
+            if ($roleName === '') {
                 continue;
             }
 
-            [, $list] = array_pad(explode(':', $middleware, 2), 2, '');
-            foreach (explode(',', (string) $list) as $roleName) {
-                $roleName = trim($roleName);
-                if ($roleName === '') {
-                    continue;
-                }
-                $roles[$roleName] = true;
-            }
+            $roles[$roleName] = true;
         }
 
         return array_keys($roles);
