@@ -5,6 +5,52 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Laravel\Sanctum\Http\Middleware\AuthenticateSession;
 use Laravel\Sanctum\Sanctum;
 
+$normalizeStatefulDomain = static function (?string $domain): ?string {
+    if ($domain === null) {
+        return null;
+    }
+
+    $domain = trim($domain);
+
+    if ($domain === '') {
+        return null;
+    }
+
+    if (! str_contains($domain, '://')) {
+        return strtolower($domain);
+    }
+
+    $parts = parse_url($domain);
+
+    if (! is_array($parts) || ! isset($parts['host'])) {
+        return null;
+    }
+
+    $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+
+    return strtolower($parts['host']).$port;
+};
+
+$configuredStatefulDomains = array_values(array_unique(array_filter(array_map(
+    static fn (string $domain): ?string => $normalizeStatefulDomain($domain),
+    explode(',', (string) env('SANCTUM_STATEFUL_DOMAINS', ''))
+))));
+
+$defaultStatefulDomains = array_values(array_unique(array_filter([
+    'localhost',
+    'localhost:3000',
+    'localhost:5173',
+    '127.0.0.1',
+    '127.0.0.1:8000',
+    '127.0.0.1:5173',
+    '::1',
+    'schooltool.test',
+    $normalizeStatefulDomain((string) env('APP_URL', '')),
+    $normalizeStatefulDomain((string) env('FRONTEND_URL', '')),
+    $normalizeStatefulDomain(Sanctum::currentApplicationUrlWithPort()),
+    Sanctum::currentRequestHost(),
+])));
+
 return [
 
     /*
@@ -18,11 +64,9 @@ return [
     |
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1, https://localhost, https://127.0.0.1, https://schooltool.at',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
+    'stateful' => array_values(array_unique(array_merge(
+        $configuredStatefulDomains,
+        $defaultStatefulDomains,
     ))),
 
     /*
