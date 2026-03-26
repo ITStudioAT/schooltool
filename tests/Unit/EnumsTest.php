@@ -1,62 +1,7 @@
 <?php
 
-use App\Enums\RouteResult;
 use App\Enums\TwoFaResult;
 use App\Enums\VerificationResult;
-
-describe('RouteResult Enum', function () {
-    it('has all expected cases', function () {
-        $cases = RouteResult::cases();
-
-        expect($cases)->toHaveCount(4)
-            ->and(array_column($cases, 'name'))->toContain('ALLOWED', 'NOT_ALLOWED', 'NOT_EXISTS', 'NOT_FOUND');
-    });
-
-    it('has correct string values', function () {
-        expect(RouteResult::ALLOWED->value)->toBe('allowed')
-            ->and(RouteResult::NOT_ALLOWED->value)->toBe('not_allowed')
-            ->and(RouteResult::NOT_EXISTS->value)->toBe('not_exists')
-            ->and(RouteResult::NOT_FOUND->value)->toBe('not_found');
-    });
-
-    it('can be instantiated from string value', function () {
-        expect(RouteResult::from('allowed'))->toBe(RouteResult::ALLOWED)
-            ->and(RouteResult::from('not_allowed'))->toBe(RouteResult::NOT_ALLOWED)
-            ->and(RouteResult::from('not_exists'))->toBe(RouteResult::NOT_EXISTS)
-            ->and(RouteResult::from('not_found'))->toBe(RouteResult::NOT_FOUND);
-    });
-
-    it('throws exception for invalid value', function () {
-        RouteResult::from('invalid');
-    })->throws(ValueError::class);
-
-    it('can use tryFrom for safe value retrieval', function () {
-        expect(RouteResult::tryFrom('allowed'))->toBe(RouteResult::ALLOWED)
-            ->and(RouteResult::tryFrom('invalid'))->toBeNull();
-    });
-
-    it('can be compared', function () {
-        $result1 = RouteResult::ALLOWED;
-        $result2 = RouteResult::ALLOWED;
-        $result3 = RouteResult::NOT_ALLOWED;
-
-        expect($result1 === $result2)->toBeTrue()
-            ->and($result1 === $result3)->toBeFalse();
-    });
-
-    it('can be used in match expressions', function () {
-        $result = RouteResult::ALLOWED;
-
-        $message = match ($result) {
-            RouteResult::ALLOWED => 'access granted',
-            RouteResult::NOT_ALLOWED => 'access denied',
-            RouteResult::NOT_EXISTS => 'route not exists',
-            RouteResult::NOT_FOUND => 'route not found',
-        };
-
-        expect($message)->toBe('access granted');
-    });
-});
 
 describe('TwoFaResult Enum', function () {
     it('has all expected cases', function () {
@@ -199,14 +144,12 @@ describe('VerificationResult Enum', function () {
 
 describe('Enum Integration Tests', function () {
     it('all enums are backed by string values', function () {
-        expect(RouteResult::ALLOWED)->toBeInstanceOf(\BackedEnum::class)
-            ->and(TwoFaResult::TWO_FA_OK)->toBeInstanceOf(\BackedEnum::class)
-            ->and(VerificationResult::VERIFICATION_SUCCESS)->toBeInstanceOf(\BackedEnum::class);
+        expect(TwoFaResult::TWO_FA_OK)->toBeInstanceOf(BackedEnum::class)
+            ->and(VerificationResult::VERIFICATION_SUCCESS)->toBeInstanceOf(BackedEnum::class);
     });
 
     it('all enum values can be serialized to JSON', function () {
         $data = [
-            'route' => RouteResult::ALLOWED->value,
             'twofa' => TwoFaResult::TWO_FA_OK->value,
             'verification' => VerificationResult::VERIFICATION_SUCCESS->value,
         ];
@@ -219,11 +162,11 @@ describe('Enum Integration Tests', function () {
 
     it('enums can be used in arrays as keys', function () {
         $statusMessages = [
-            RouteResult::ALLOWED->value => 'Access granted',
-            RouteResult::NOT_ALLOWED->value => 'Access denied',
+            TwoFaResult::TWO_FA_OK->value => '2FA OK',
+            VerificationResult::EMAIL_SENT->value => 'Email sent',
         ];
 
-        expect($statusMessages[RouteResult::ALLOWED->value])->toBe('Access granted')
-            ->and($statusMessages[RouteResult::NOT_ALLOWED->value])->toBe('Access denied');
+        expect($statusMessages[TwoFaResult::TWO_FA_OK->value])->toBe('2FA OK')
+            ->and($statusMessages[VerificationResult::EMAIL_SENT->value])->toBe('Email sent');
     });
 });

@@ -84,13 +84,6 @@ it('hides and denies aba for users without aba_teacher role', function () {
 
     $this->get('/admin/aba')->assertForbidden();
 
-    $this->postJson('/api/routes/is_route_allowed', [
-        'data' => [
-            'route' => 'admin',
-            'to' => '/admin/aba',
-        ],
-    ])->assertForbidden();
-
     $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
     $menuTitles = collect($config['menu'])->pluck('title');
     expect($menuTitles)->not->toContain('ABA');
@@ -103,13 +96,6 @@ it('hides and denies aba for aba_teacher without aba licence', function () {
     $this->actingAs($user);
 
     $this->get('/admin/aba')->assertForbidden();
-
-    $this->postJson('/api/routes/is_route_allowed', [
-        'data' => [
-            'route' => 'admin',
-            'to' => '/admin/aba',
-        ],
-    ])->assertForbidden();
 
     $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
     $menuTitles = collect($config['menu'])->pluck('title');
@@ -124,13 +110,6 @@ it('shows and allows aba for aba_teacher with active aba licence', function () {
     $this->actingAs($user);
 
     $this->get('/admin/aba')->assertSuccessful()->assertViewIs('spa::admin');
-
-    $this->postJson('/api/routes/is_route_allowed', [
-        'data' => [
-            'route' => 'admin',
-            'to' => '/admin/aba',
-        ],
-    ])->assertSuccessful();
 
     $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
     $menuTitles = collect($config['menu'])->pluck('title');

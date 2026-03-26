@@ -51,7 +51,6 @@ use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\RegisterController;
-use App\Http\Controllers\Spa\RouteController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
@@ -70,7 +69,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /***** OTHER ROUTES *****/
-    Route::post('/routes/is_route_allowed', [RouteController::class, 'isRouteAllowed']);
     Route::post('/admin/execute_logout', [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
