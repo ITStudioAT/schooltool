@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
+import { maxLength } from '@/helpers/rules'
 import { readFileSync } from 'node:fs'
 
 describe('Super admin licences overview', () => {
@@ -145,17 +146,20 @@ describe('Super admin licences overview', () => {
         expect(normalized).toEqual({
             school_licence_enabled: true,
             school_price_per_year: '199',
+            school_storage_enabled: true,
             school_included_storage_gb: '10',
             school_extra_storage_step_gb: '100',
             school_extra_storage_step_price: '5',
             admin_licence_enabled: true,
             admin_price_per_year: '59',
             admin_role_names: ['admin', 'register_admin'],
+            admin_storage_enabled: true,
             admin_included_storage_gb: '10',
             admin_extra_storage_step_gb: '100',
             admin_extra_storage_step_price: '5',
             user_licence_enabled: true,
             user_price_per_year: '29',
+            user_storage_enabled: true,
             user_included_storage_gb: '10',
             user_extra_storage_step_gb: '100',
             user_extra_storage_step_price: '5',
@@ -185,6 +189,38 @@ describe('Super admin licences overview', () => {
         expect(normalized.user_licence_enabled).toBe(false)
     })
 
+    it('tracks storage tariff opt-in per licence layer and clears values when disabled', () => {
+        const methods = (Licences as any).methods
+        const ctx = {
+            ...methods,
+            currentLicenceModel: {
+                school_storage_enabled: true,
+                school_included_storage_gb: '5',
+                school_extra_storage_step_gb: '25',
+                school_extra_storage_step_price: '3',
+            },
+        }
+
+        expect(
+            methods.hasStorageTariffConfigured.call(ctx, 'school', {
+                school_included_storage_gb: '',
+                school_extra_storage_step_gb: '25',
+                school_extra_storage_step_price: '',
+            })
+        ).toBe(true)
+
+        methods.setStorageEnabled.call(ctx, 'school', false)
+
+        expect(ctx.currentLicenceModel.school_storage_enabled).toBe(false)
+        expect(ctx.currentLicenceModel.school_included_storage_gb).toBe('')
+        expect(ctx.currentLicenceModel.school_extra_storage_step_gb).toBe('')
+        expect(ctx.currentLicenceModel.school_extra_storage_step_price).toBe('')
+
+        methods.setStorageEnabled.call(ctx, 'school', true)
+
+        expect(ctx.currentLicenceModel.school_storage_enabled).toBe(true)
+    })
+
     it('validates cost fields as positive integers or empty', () => {
         const methods = (Licences as any).methods
         const rule = methods.positiveIntegerOrNull.call({})
@@ -196,20 +232,24 @@ describe('Super admin licences overview', () => {
         expect(rule('-3')).toBe('Es muss sich um eine positive ganze Zahl handeln oder leer sein.')
     })
 
+    it('accepts integer values for max length validation on numeric licence fields', () => {
+        const rule = maxLength(255)
+
+        expect(rule(200)).toBe(true)
+        expect(rule('200')).toBe(true)
+    })
+
     it('validates start and end day-month values in TT.MM. format', () => {
         const methods = (Licences as any).methods
         const ctx = {
             ...methods,
         }
         const validDayMonth = methods.validDayMonth.call(ctx)
-        const endAfterStart = methods.endDayMonthAfterStart.call(ctx, () => '01.09.')
 
         expect(validDayMonth('01.09.')).toBe(true)
         expect(validDayMonth('31.02.')).toBe('Das Datum muss im Format TT.MM. angegeben werden.')
         expect(methods.normalizeDayMonthDisplayValue.call(ctx, '1.9.')).toBe('1.9.')
         expect(methods.normalizeDayMonthDisplayValue.call(ctx, '01.09')).toBe('01.09.')
-        expect(endAfterStart('31.07.')).toBe(true)
-        expect(endAfterStart('01.09.')).toBe('Das End-Datum muss nach dem Start-Datum liegen.')
     })
 
     it('stores wildcard user role selection with the Alle action', () => {
@@ -258,6 +298,11 @@ describe('Super admin licences overview', () => {
                 user_extra_storage_step_price: '5',
             })
         ).toBe('')
+        expect(methods.overviewDateRangeLabel.call(methods, '01.08.', '31.07.')).toBe('Zeitraum: 01.08. - 31.07.')
+        expect(methods.overviewDateRangeLabel.call(methods, '01.08.', '')).toBe('Zeitraum: 01.08. - 31.07.')
+        expect(methods.overviewDateRangeLabel.call(methods, '01.08.', '31.08.')).toBe('Zeitraum: 01.08. - 31.08.')
+        expect(methods.overviewDateRangeLabel.call(methods, '', '')).toBe('')
+        expect(methods.derivePreviousDayMonthDisplayValue.call(methods, '01.08.')).toBe('31.07.')
     })
 
     it('shows overview badges only for needed licence layers', () => {
@@ -280,16 +325,20 @@ describe('Super admin licences overview', () => {
         ).toBe(true)
     })
 
-    it('keeps admin and user overview prices independent from the school licence state', () => {
+    it('shows compact licence-type indicators in the overview header', () => {
         const source = readFileSync('resources/js/pages/admin/superAdmin/components/Licences.vue', 'utf8')
 
-        expect(source).toContain('v-if="hasVisibleOverviewLicenceBadges(licenceModelFor(item))" class="licence-card__badges"')
-        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge"')
-        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning"')
-        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning"')
-        expect(source).toContain('class="licence-card__badge-head"')
-        expect(source).toContain("overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month')")
-        expect(source).toContain("overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month')")
+        expect(source).toContain('v-if="hasVisibleOverviewLicenceBadges(licenceModelFor(item))" class="licence-card__status-icons"')
+        expect(source).toContain(`:class="{ 'is-active': licenceModelFor(item).school_licence_enabled }"`)
+        expect(source).toContain(`:class="{ 'is-active': licenceModelFor(item).admin_licence_enabled }"`)
+        expect(source).toContain(`:class="{ 'is-active': licenceModelFor(item).user_licence_enabled }"`)
+        expect(source).toContain('Schule')
+        expect(source).toContain('Admin')
+        expect(source).toContain('User')
+        expect(source).toContain('overviewDateRangeLabel(item.start_day_month, item.end_day_month)')
+        expect(source).toContain('Zeitraum:')
+        expect(source).not.toContain('class="licence-card__badges"')
+        expect(source).not.toContain('class="licence-card__badge-head"')
     })
 
     it('keeps admin and user role selection visible independent of the JA/NEIN toggle', () => {
@@ -299,21 +348,28 @@ describe('Super admin licences overview', () => {
         expect(roleSectionAfterToggleBlocks).toHaveLength(2)
         expect(source).toContain('@click="toggleAdminRole(role.name)"')
         expect(source).toContain('@click="toggleUserRole(role.name)"')
-        expect(source).toContain('v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge"')
-        expect(source).toContain('v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning"')
-        expect(source).toContain('v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning"')
-        expect(source).toContain('<span class="licence-card__badge-label">User-Lizenz</span>')
-        expect(source).toContain("overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year')")
-        expect(source).toContain("overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month')")
-        expect(source).toContain("overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month')")
+        expect(source).toContain('class="licence-card__status-icons"')
+        expect(source).toContain('class="licence-card__status-icon"')
+        expect(source).not.toContain('<span class="licence-card__badge-label">User-Lizenz</span>')
+        expect(source).not.toContain("overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year')")
+        expect(source).not.toContain("overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month')")
+        expect(source).not.toContain("overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month')")
         expect(source).toContain('label="Basis-Tarif pro Jahr"')
         expect(source).toContain('label="Basis-Tarif pro Monat"')
         expect(source).toContain('label="Inkl. Speicher (GB)"')
         expect(source).toContain('label="Je weitere (GB)"')
         expect(source).toContain('label="Mehrpreis pro Monat"')
         expect(source).toContain('label="Mehrpreis pro Jahr"')
+        expect(source).toContain('label="Speicherstaffel verwenden"')
+        expect(source).toContain('v-model="currentLicenceModel.school_storage_enabled"')
+        expect(source).toContain('v-model="currentLicenceModel.admin_storage_enabled"')
+        expect(source).toContain('v-model="currentLicenceModel.user_storage_enabled"')
+        expect(source).toContain('@update:model-value="setStorageEnabled(\'school\', $event)"')
+        expect(source).toContain('@update:model-value="setStorageEnabled(\'admin\', $event)"')
+        expect(source).toContain('@update:model-value="setStorageEnabled(\'user\', $event)"')
         expect(source).toContain('label="Start-Datum"')
-        expect(source).toContain('label="End-Datum"')
+        expect(source).not.toContain('label="End-Datum"')
+        expect(source).toContain('End-Datum wird automatisch auf den Vortag gesetzt.')
         expect(source).toContain("placeholder=\"TT.MM.\"")
         expect(source).toContain('@click="selectAllUserRoles"')
         expect(source).toContain(":variant=\"usesAllUserRoles() ? 'flat' : 'tonal'\"")

@@ -292,6 +292,27 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             }
         },
 
+        async saveSchoolLicenceSchool(school_licence_id, data) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.put(`/api/admin/school_licences/${school_licence_id}/save_school`, data)
+                notification.notify({ message: 'Schul-Lizenz gespeichert.', type: 'success', timeout: 3000 })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async saveSchoolLicenceModel(school_licence_id, licence_model) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

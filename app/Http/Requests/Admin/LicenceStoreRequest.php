@@ -10,9 +10,11 @@ class LicenceStoreRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
+        $normalizedStartDayMonth = $this->normalizeDayMonthForStorage($this->input('start_day_month'));
+
         $this->merge([
-            'start_day_month' => $this->normalizeDayMonthForStorage($this->input('start_day_month')),
-            'end_day_month' => $this->normalizeDayMonthForStorage($this->input('end_day_month')),
+            'start_day_month' => $normalizedStartDayMonth,
+            'end_day_month' => $this->deriveEndDayMonthForStorage($normalizedStartDayMonth),
         ]);
     }
 
@@ -41,26 +43,7 @@ class LicenceStoreRequest extends FormRequest
                     $fail('Das Start-Datum muss im Format TT.MM. angegeben werden.');
                 }
             }],
-            'end_day_month' => [
-                'required',
-                'string',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! $this->isValidStorageDayMonth($value)) {
-                        $fail('Das End-Datum muss im Format TT.MM. angegeben werden.');
-
-                        return;
-                    }
-
-                    $startDayMonth = $this->input('start_day_month');
-                    if (! $this->isValidStorageDayMonth($startDayMonth)) {
-                        return;
-                    }
-
-                    if (! $this->isEndDayMonthAfterStartDayMonth((string) $startDayMonth, (string) $value)) {
-                        $fail('Das End-Datum muss nach dem Start-Datum liegen.');
-                    }
-                },
-            ],
+            'end_day_month' => ['nullable', 'string'],
         ];
     }
 
@@ -99,15 +82,18 @@ class LicenceStoreRequest extends FormRequest
         return checkdate((int) $matches[1], (int) $matches[2], 2001);
     }
 
-    private function isEndDayMonthAfterStartDayMonth(string $startDayMonth, string $endDayMonth): bool
+    private function deriveEndDayMonthForStorage(mixed $startDayMonth): mixed
     {
-        [$startMonth, $startDay] = array_map('intval', explode('-', $startDayMonth));
-        [$endMonth, $endDay] = array_map('intval', explode('-', $endDayMonth));
-
-        if ($startMonth === $endMonth && $startDay === $endDay) {
-            return false;
+        if (! $this->isValidStorageDayMonth($startDayMonth)) {
+            return $startDayMonth;
         }
 
-        return true;
+        [$startMonth, $startDay] = array_map('intval', explode('-', (string) $startDayMonth));
+        $currentDate = \DateTimeImmutable::createFromFormat('!Y-m-d', sprintf('2001-%02d-%02d', $startMonth, $startDay));
+        if (! $currentDate instanceof \DateTimeImmutable) {
+            return $startDayMonth;
+        }
+
+        return $currentDate->modify('-1 day')->format('m-d');
     }
 }

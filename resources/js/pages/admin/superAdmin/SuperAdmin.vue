@@ -222,11 +222,33 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
-        this.main_action = ''
         this.action = ''
+        this.syncFromRoute()
     },
 
     unmounted() {},
+
+    watch: {
+        $route() {
+            this.syncFromRoute()
+        },
+        main_action(val) {
+            const expectedPath = val === '' ? '/admin/super_admin' : `/admin/super_admin/${val}`
+            if (this.$route.path !== expectedPath) {
+                this.$router.push(expectedPath)
+            }
+        },
+        licences_action(val) {
+            if (this.main_action !== 'licences') return
+            const currentTab = this.$route.query.tab || 'overview'
+            if (val === currentTab) return
+            if (val === 'overview') {
+                this.$router.push('/admin/super_admin/licences')
+            } else {
+                this.$router.push(`/admin/super_admin/licences?tab=${val}`)
+            }
+        },
+    },
 
     data() {
         return {
@@ -452,6 +474,16 @@ export default {
 
             return item.targetAction !== undefined && this.main_action === item.targetAction
         },
+        syncFromRoute() {
+            const section = this.$route.params.section || ''
+            const validSections = ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list']
+            this.main_action = validSections.includes(section) ? section : ''
+
+            if (section === 'licences') {
+                const tab = this.$route.query.tab || 'overview'
+                this.licences_action = ['overview', 'schools'].includes(tab) ? tab : 'overview'
+            }
+        },
         async handleNavigation(item) {
             if (this.isNavigationLocked) {
                 return
@@ -468,23 +500,23 @@ export default {
             }
 
             if (item.targetAction === 'licences') {
-                this.openLicencesOverview()
+                this.$router.push('/admin/super_admin/licences')
                 return
             }
 
             if (item.targetAction === 'teachers') {
-                this.openTeachersOverview()
+                this.$router.push('/admin/super_admin/teachers')
                 return
             }
 
-            this.main_action = item.targetAction
+            const path = item.targetAction === '' ? '/admin/super_admin' : `/admin/super_admin/${item.targetAction}`
+            this.$router.push(path)
         },
         openLicencesOverview() {
-            this.main_action = 'licences'
-            this.licences_action = 'overview'
+            this.$router.push('/admin/super_admin/licences')
         },
         openTeachersOverview() {
-            this.main_action = 'teachers'
+            this.$router.push('/admin/super_admin/teachers')
         },
         async openImpersonationDialog() {
             this.impersonation_dialog = true

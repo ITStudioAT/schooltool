@@ -203,7 +203,6 @@ test('store creates new licence for super admin', function () {
         'is_selectable' => true,
         'price_per_year' => 1000,
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -224,14 +223,14 @@ test('store creates new licence for super admin', function () {
             'is_selectable' => true,
             'price_per_year' => 1000,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
+            'end_day_month' => '31.08.',
         ]);
 
     $this->assertDatabaseHas('licences', [
         'name' => 'new_app',
         'long_name' => 'New Application',
         'start_day_month' => '09-01',
-        'end_day_month' => '07-31',
+        'end_day_month' => '08-31',
     ]);
 });
 
@@ -242,7 +241,6 @@ test('store denies access for admin user', function () {
         'name' => 'new_app',
         'long_name' => 'New Application',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -257,7 +255,6 @@ test('store denies access for regular user', function () {
         'name' => 'new_app',
         'long_name' => 'New Application',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -282,7 +279,6 @@ test('store validates required name field', function () {
     $data = [
         'long_name' => 'New Application',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -300,7 +296,6 @@ test('store validates unique name field', function () {
         'name' => 'existing_app',
         'long_name' => 'New Application',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -315,7 +310,6 @@ test('store accepts nullable fields', function () {
     $data = [
         'name' => 'minimal_app',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -327,7 +321,7 @@ test('store accepts nullable fields', function () {
         'long_name' => null,
         'price_per_year' => null,
         'start_day_month' => '09-01',
-        'end_day_month' => '07-31',
+        'end_day_month' => '08-31',
     ]);
 });
 
@@ -350,7 +344,6 @@ test('update modifies existing licence for super admin', function () {
         'is_selectable' => false,
         'price_per_year' => 1500,
         'start_day_month' => '15.09.',
-        'end_day_month' => '30.06.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -362,7 +355,7 @@ test('update modifies existing licence for super admin', function () {
             'long_name' => 'Updated Name',
             'price_per_year' => 1500,
             'start_day_month' => '15.09.',
-            'end_day_month' => '30.06.',
+            'end_day_month' => '14.09.',
         ]);
 
     $this->assertDatabaseHas('licences', [
@@ -370,7 +363,7 @@ test('update modifies existing licence for super admin', function () {
         'long_name' => 'Updated Name',
         'price_per_year' => 1500,
         'start_day_month' => '09-15',
-        'end_day_month' => '06-30',
+        'end_day_month' => '09-14',
     ]);
 });
 
@@ -384,7 +377,6 @@ test('update denies access for admin user', function () {
         'name' => 'test_app',
         'long_name' => 'Updated',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -402,7 +394,6 @@ test('update denies access for regular user', function () {
         'name' => 'test_app',
         'long_name' => 'Updated',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -432,7 +423,6 @@ test('update validates required fields', function () {
     $data = [
         'long_name' => 'Updated',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -441,7 +431,7 @@ test('update validates required fields', function () {
         ->assertJsonValidationErrors(['id', 'name']);
 });
 
-test('update rejects end day month equal to start day month', function () {
+test('update derives the end day month from the start day month', function () {
     $this->actingAs($this->superAdmin);
 
     $licence = Licence::create([
@@ -456,11 +446,19 @@ test('update rejects end day month equal to start day month', function () {
         'name' => 'test_app',
         'long_name' => 'Updated',
         'start_day_month' => '15.09.',
-        'end_day_month' => '15.09.',
     ]);
 
-    $response->assertStatus(422)
-        ->assertJsonValidationErrors(['end_day_month']);
+    $response->assertStatus(200)
+        ->assertJson([
+            'start_day_month' => '15.09.',
+            'end_day_month' => '14.09.',
+        ]);
+
+    $this->assertDatabaseHas('licences', [
+        'id' => $licence->id,
+        'start_day_month' => '09-15',
+        'end_day_month' => '09-14',
+    ]);
 });
 
 test('update allows same name for same licence', function () {
@@ -473,7 +471,6 @@ test('update allows same name for same licence', function () {
         'name' => 'test_app',
         'long_name' => 'Updated Name',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -492,7 +489,6 @@ test('update rejects duplicate name for different licence', function () {
         'name' => 'existing_app',
         'long_name' => 'Updated',
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->putJson("/api/admin/licences/{$licence->id}", $data);
@@ -659,7 +655,6 @@ test('full licence crud workflow works correctly', function () {
         'is_selectable' => true,
         'price_per_year' => 1200,
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $createResponse = $this->postJson('/api/admin/licences', $createData);
@@ -679,7 +674,6 @@ test('full licence crud workflow works correctly', function () {
         'is_selectable' => false,
         'price_per_year' => 1500,
         'start_day_month' => '15.09.',
-        'end_day_month' => '30.06.',
     ];
 
     $updateResponse = $this->putJson("/api/admin/licences/{$licenceId}", $updateData);
@@ -727,7 +721,6 @@ test('licence model attributes are correctly set', function () {
         'is_selectable' => false,
         'price_per_year' => 999,
         'start_day_month' => '01.09.',
-        'end_day_month' => '31.07.',
     ];
 
     $response = $this->postJson('/api/admin/licences', $data);
@@ -741,7 +734,7 @@ test('licence model attributes are correctly set', function () {
         ->and($licence->is_selectable)->toBe(0)
         ->and($licence->price_per_year)->toBe(999)
         ->and($licence->start_day_month)->toBe('09-01')
-        ->and($licence->end_day_month)->toBe('07-31');
+        ->and($licence->end_day_month)->toBe('08-31');
 });
 
 test('index normalizes whole-number decimal prices in the licence payload', function () {

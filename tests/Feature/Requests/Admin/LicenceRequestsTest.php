@@ -90,7 +90,6 @@ describe('LicenceStoreRequest', function () {
             'is_selectable' => true,
             'price_per_year' => 1200,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -100,7 +99,6 @@ describe('LicenceStoreRequest', function () {
         $validator = validateLicenceRequest(LicenceStoreRequest::class, [
             'name' => 'basic_licence',
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -128,7 +126,6 @@ describe('LicenceStoreRequest', function () {
             'name' => 'new_licence',
             'long_name' => null,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -139,7 +136,6 @@ describe('LicenceStoreRequest', function () {
             'name' => 'free_licence',
             'price_per_year' => null,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -150,25 +146,25 @@ describe('LicenceStoreRequest', function () {
             'name' => 'invalid_zero_licence',
             'price_per_year' => 0,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->fails())->toBeTrue()
             ->and($validator->errors()->has('price_per_year'))->toBeTrue();
     });
 
-    it('fails when end day month equals start day month', function () {
+    it('derives end day month from the previous calendar day', function () {
         $request = new LicenceStoreRequest;
         $request->merge([
-            'name' => 'invalid_date_window_licence',
-            'start_day_month' => '15.09.',
-            'end_day_month' => '15.09.',
+            'name' => 'derived_end_day_month_licence',
+            'start_day_month' => '01.08.',
         ]);
 
-        $validator = Validator::make($request->all(), $request->rules());
+        $prepareForValidation = new ReflectionMethod($request, 'prepareForValidation');
+        $prepareForValidation->setAccessible(true);
+        $prepareForValidation->invoke($request);
 
-        expect($validator->fails())->toBeTrue()
-            ->and($validator->errors()->has('end_day_month'))->toBeTrue();
+        expect($request->input('start_day_month'))->toBe('08-01')
+            ->and($request->input('end_day_month'))->toBe('07-31');
     });
 });
 
@@ -194,7 +190,6 @@ describe('LicenceUpdateRequest', function () {
             'name' => 'test_licence',
             'price_per_year' => 0,
             'start_day_month' => '01.09.',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->fails())->toBeTrue()
@@ -205,7 +200,6 @@ describe('LicenceUpdateRequest', function () {
         $validator = validateLicenceRequest(LicenceUpdateRequest::class, [
             'id' => $this->licence->id,
             'name' => 'test_licence',
-            'end_day_month' => '31.07.',
         ]);
 
         expect($validator->fails())->toBeTrue()

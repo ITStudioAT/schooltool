@@ -2,17 +2,17 @@
 
 namespace App\Models;
 
-use App\Models\Licence;
-use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $school_id
  * @property int $licence_id
  * @property string|null $valid_until
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence query()
@@ -22,9 +22,12 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolLicence whereValidUntil($value)
+ *
  * @mixin IdeHelperSchoolLicence
+ *
  * @property-read Licence|null $licence
  * @property-read School|null $school
+ *
  * @mixin \Eloquent
  */
 class SchoolLicence extends Model
@@ -33,11 +36,16 @@ class SchoolLicence extends Model
         'school_id',
         'licence_id',
         'valid_until',
+        'charged_school_price',
+        'extra_storage_units',
+        'extra_storage_unit_price',
         'licence_model',
         'user_licence_assignments',
     ];
 
     protected $casts = [
+        'charged_school_price' => 'decimal:2',
+        'extra_storage_unit_price' => 'decimal:2',
         'licence_model' => 'array',
         'user_licence_assignments' => 'array',
     ];

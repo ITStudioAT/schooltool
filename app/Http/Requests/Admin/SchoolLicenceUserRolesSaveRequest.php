@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
@@ -18,7 +19,7 @@ class SchoolLicenceUserRolesSaveRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -29,6 +30,7 @@ class SchoolLicenceUserRolesSaveRequest extends FormRequest
             'roles.*.valid_until' => ['nullable', 'date'],
             'roles.*.is_activated' => ['sometimes', 'boolean'],
             'roles.*.plan_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'roles.*.charged_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ];
     }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
+import { readFileSync } from 'node:fs'
 
 describe('Super admin licence assignments', () => {
     it('sorts licences alphabetically by name', () => {
@@ -27,6 +28,114 @@ describe('Super admin licence assignments', () => {
 
         expect(fromFlag).toBe(true)
         expect(fromModel).toBe(true)
+    })
+
+    it('counts assigned admin and user licences from required roles', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx = {
+            normalizeLicenceModel(licenceModel: unknown) {
+                return methods.normalizeLicenceModel.call(this, licenceModel)
+            },
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            hasAdminLicenceRequiredRole(licence: unknown) {
+                return methods.hasAdminLicenceRequiredRole.call(this, licence)
+            },
+            hasUserLicenceRequiredRole(licence: unknown) {
+                return methods.hasUserLicenceRequiredRole.call(this, licence)
+            },
+            sortedLicences: methods.sortedLicences,
+            toBool: methods.toBool,
+        }
+
+        const licences = [
+            {
+                name: 'Lehrertool',
+                licence_model: {
+                    affected_roles: ['teacher'],
+                    user_licence_required_by_role: { teacher: true },
+                },
+            },
+            {
+                name: 'Adminportal',
+                licence_model: {
+                    affected_roles: ['admin'],
+                    user_licence_required_by_role: { admin: true },
+                },
+            },
+            {
+                name: 'Ohne Zusatzlizenz',
+                licence_model: {
+                    affected_roles: ['teacher'],
+                    user_licence_required_by_role: { teacher: false },
+                },
+            },
+        ]
+
+        expect(methods.countAssignedAdminLicences.call(ctx, licences)).toBe(1)
+        expect(methods.countAssignedUserLicences.call(ctx, licences)).toBe(1)
+    })
+
+    it('shows only the assignment sections that are enabled by the licence model', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx = {
+            normalizeLicenceModel(licenceModel: unknown) {
+                return methods.normalizeLicenceModel.call(this, licenceModel)
+            },
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            isSchoolLicenceNotNeeded(licence: unknown) {
+                return methods.isSchoolLicenceNotNeeded.call(this, licence)
+            },
+            sortedLicences: methods.sortedLicences,
+            schoolAssignableLicences(licences: unknown) {
+                return methods.schoolAssignableLicences.call(this, licences)
+            },
+            countAssignedAdminLicences(licences: unknown) {
+                return methods.countAssignedAdminLicences.call(this, licences)
+            },
+            countAssignedUserLicences(licences: unknown) {
+                return methods.countAssignedUserLicences.call(this, licences)
+            },
+            hasAdminLicenceRequiredRole(licence: unknown) {
+                return methods.hasAdminLicenceRequiredRole.call(this, licence)
+            },
+            hasUserLicenceRequiredRole(licence: unknown) {
+                return methods.hasUserLicenceRequiredRole.call(this, licence)
+            },
+            toBool: methods.toBool,
+        }
+
+        const licences = [
+            {
+                name: 'Schullizenz',
+                licence_model: {
+                    school_licence_enabled: true,
+                    admin_licence_enabled: false,
+                    user_licence_enabled: false,
+                },
+            },
+            {
+                name: 'Adminlizenz',
+                licence_model: {
+                    school_licence_enabled: false,
+                    admin_licence_enabled: true,
+                    user_licence_enabled: false,
+                },
+            },
+            {
+                name: 'Userlizenz',
+                licence_model: {
+                    school_licence_enabled: false,
+                    admin_licence_enabled: false,
+                    user_licence_enabled: true,
+                },
+            },
+        ]
+
+        expect(methods.schoolAssignableLicences.call(ctx, licences).map((item: { name: string }) => item.name)).toEqual(['Schullizenz'])
+        expect(methods.hasSchoolLicenceAssignments.call(ctx, licences)).toBe(true)
+        expect(methods.hasAdminLicenceAssignments.call(ctx, licences)).toBe(true)
+        expect(methods.hasUserLicenceAssignments.call(ctx, licences)).toBe(true)
+        expect(methods.hasSchoolLicenceAssignments.call(ctx, licences.slice(1))).toBe(false)
     })
 
     it('evaluates licence active status based on valid_until date', () => {
@@ -69,36 +178,59 @@ describe('Super admin licence assignments', () => {
         expect(ctx.closeSelectedUserLicenceCard).toHaveBeenCalledTimes(1)
     })
 
-    it('shows overview card only when no school is selected', () => {
-        const showOverviewCard = (LicenceSchools as any).computed.showOverviewCard
-
-        expect(showOverviewCard.call({ selectedSchool: null })).toBe(true)
-        expect(showOverviewCard.call({ selectedSchool: { id: 1 } })).toBe(false)
-    })
-
-    it('locks action when a school is selected and unlocks when cleared', () => {
+    it('keeps overview interactions unlocked when only a school is selected', () => {
         const methods = (LicenceSchools as any).methods
         const ctx = {
             isInteractionLocked: false,
             selectedSchoolId: 7,
-            action: '',
+            action: 'school_licence_model',
             model_lock_action: 'school_licence_model',
-            selection_lock_action: 'school_licence_selection',
         }
 
         methods.syncInteractionLockAction.call(ctx)
-        expect(ctx.action).toBe('school_licence_selection')
-
-        ctx.selectedSchoolId = null
-        methods.syncInteractionLockAction.call(ctx)
         expect(ctx.action).toBe('')
+
+        ctx.isInteractionLocked = true
+        methods.syncInteractionLockAction.call(ctx)
+        expect(ctx.action).toBe('school_licence_model')
     })
 
     it('keeps school and side cards at equal xl width', () => {
+        const mainColXl = (LicenceSchools as any).computed.mainColXl
         const schoolDetailXl = (LicenceSchools as any).computed.schoolDetailXl
 
+        expect(mainColXl.call({})).toBe(11)
         expect(schoolDetailXl.call({})).toBe(6)
         expect(schoolDetailXl.call({ selectedSchoolLicence: { school_licence_id: 1 }, currentSchoolLicenceModel: { school_licence_required: true } })).toBe(6)
+    })
+
+    it('shows assigned licences in the school list as stacked rows', () => {
+        const source = readFileSync('resources/js/pages/admin/superAdmin/components/LicenceSchools.vue', 'utf8')
+
+        expect(source).toContain('class="assignment-schools-list"')
+        expect(source).not.toContain('v-model:selected="selected_schools"')
+        expect(source).not.toContain('@update:selected="onSelectedSchoolsUpdate"')
+        expect(source).toContain('v-for="licence in sortedLicences(item.licences)"')
+        expect(source).toContain('class="licence-card__roles-list assignment-school-licence-list"')
+        expect(source).toContain('class="assignment-school-licence-row"')
+        expect(source).toContain('class="assignment-school-licence-row__name"')
+        expect(source).toContain("`licence-assignment-${item.id}-${licence.id}`")
+        expect(source).not.toContain('Optionen')
+        expect(source).not.toContain('assignment-school-inline-manager')
+        expect(source).not.toContain('Keine E-Mail hinterlegt')
+        expect(source).not.toContain('licence-card__subtitle')
+        expect(source).not.toContain('class="assignment-school-licence-type-list"')
+        expect(source).not.toContain('class="assignment-school-licence-type-pill"')
+        expect(source).not.toContain('isSchoolLicenceRequired(licence)')
+        expect(source).not.toContain('licence-card__status-icons')
+        expect(source).not.toContain('Zugewiesene Schul-Lizenzen')
+        expect(source).not.toContain('Zugewiesene Admin-Lizenzen')
+        expect(source).not.toContain('Zugewiesene User-Lizenzen')
+        expect(source).not.toContain('class="assignment-school-licence-counter-list"')
+        expect(source).not.toContain('class="assignment-school-licence-counter-row"')
+        expect(source).not.toContain('Gültig bis:')
+        expect(source).not.toContain('<span class="licence-card__badge-label">Lizenzen</span>')
+        expect(source).not.toContain('<v-col cols="12" md="8" :xl="schoolDetailXl" v-if="selectedSchool">')
     })
 
     it('toggles licence role assignment directly from licence-model roles', () => {

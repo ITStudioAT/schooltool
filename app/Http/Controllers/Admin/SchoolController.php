@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\SchoolDeleteLicenceRequest;
 use App\Http\Requests\Admin\SchoolDeleteSchoolsRequest;
 use App\Http\Requests\Admin\SchoolIndexRequest;
 use App\Http\Requests\Admin\SchoolLicenceSaveModelRequest;
+use App\Http\Requests\Admin\SchoolLicenceSaveSchoolRequest;
 use App\Http\Requests\Admin\SchoolLicenceUserRolesSaveRequest;
 use App\Http\Requests\Admin\SchoolLicenceUsersRequest;
 use App\Http\Requests\Admin\SchoolLoadSchoolLicencesRequest;
@@ -234,7 +235,7 @@ class SchoolController extends Controller
         $matches = $users
             ->groupBy(fn (User $user) => mb_strtolower(trim((string) $user->email)))
             ->map(function ($group) {
-                /** @var \App\Models\User $first */
+                /** @var User $first */
                 $first = $group->first();
                 $schools = $group
                     ->map(function (User $user) {
@@ -324,6 +325,23 @@ class SchoolController extends Controller
         $licences = School::findOrFail($school_licence->school_id)->licences;
 
         return response()->json(LicenceResource::collection($licences), 200);
+    }
+
+    public function saveSchoolLicenceSchool(SchoolLicenceSaveSchoolRequest $request, SchoolLicence $school_licence)
+    {
+        if (! $this->userHasRole(['super_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validated();
+
+        $school_licence->update([
+            'charged_school_price' => $validated['charged_school_price'] ?? null,
+            'extra_storage_units' => $validated['extra_storage_units'] ?? null,
+            'extra_storage_unit_price' => $validated['extra_storage_unit_price'] ?? null,
+        ]);
+
+        return response()->noContent();
     }
 
     public function deleteLicence(SchoolDeleteLicenceRequest $request, LicenceService $service)
@@ -486,6 +504,7 @@ class SchoolController extends Controller
                         'valid_until' => $roleValidUntil,
                         'is_activated' => $isActivated,
                         'is_active' => $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated),
+                        'charged_price' => $entry['charged_price'] ?? null,
                     ];
                 }
 
@@ -568,10 +587,14 @@ class SchoolController extends Controller
                 : null;
 
             if ($assigned) {
+                $chargedPrice = isset($entry['charged_price']) && is_numeric($entry['charged_price'])
+                    ? round((float) $entry['charged_price'], 2)
+                    : ($this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null)['charged_price'] ?? null);
                 $updatedUserAssignments[$roleName] = [
                     'valid_until' => $validUntil,
                     'is_activated' => $isActivated,
                     'plan_id' => $planId,
+                    'charged_price' => $chargedPrice,
                 ];
 
                 continue;
@@ -1088,6 +1111,7 @@ class SchoolController extends Controller
                     'valid_until' => $validUntil,
                     'is_activated' => $isActivated,
                     'plan_id' => $planId,
+                    'charged_price' => $entry['charged_price'] ?? null,
                     'plans' => isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
                         ? array_values($plansByRole[$roleName])
                         : [],
@@ -1126,6 +1150,7 @@ class SchoolController extends Controller
                 'valid_until' => $validUntil !== '' ? $validUntil : null,
                 'is_activated' => false,
                 'plan_id' => null,
+                'charged_price' => null,
             ];
         }
 
@@ -1134,6 +1159,7 @@ class SchoolController extends Controller
                 'valid_until' => null,
                 'is_activated' => false,
                 'plan_id' => null,
+                'charged_price' => null,
             ];
         }
 
@@ -1142,11 +1168,15 @@ class SchoolController extends Controller
         $planId = isset($entry['plan_id']) && is_numeric($entry['plan_id']) && (int) $entry['plan_id'] > 0
             ? (int) $entry['plan_id']
             : null;
+        $chargedPrice = isset($entry['charged_price']) && is_numeric($entry['charged_price'])
+            ? round((float) $entry['charged_price'], 2)
+            : null;
 
         return [
             'valid_until' => $validUntil,
             'is_activated' => (bool) ($entry['is_activated'] ?? false),
             'plan_id' => $planId,
+            'charged_price' => $chargedPrice,
         ];
     }
 

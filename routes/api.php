@@ -484,6 +484,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
         Route::post('/admin/schools/add_licence', [SchoolController::class, 'addLicence']);
         Route::post('/admin/schools/delete_licence', [SchoolController::class, 'deleteLicence']);
+        Route::put('/admin/school_licences/{school_licence}/save_school', [SchoolController::class, 'saveSchoolLicenceSchool']);
         Route::put('/admin/school_licences/{school_licence}/save_licence_model', [SchoolController::class, 'saveSchoolLicenceModel']);
         Route::get('/admin/school_licences/{school_licence}/users', [SchoolController::class, 'loadSchoolLicenceUsers']);
         Route::get('/admin/school_licences/{school_licence}/users/{user}/roles', [SchoolController::class, 'loadSchoolLicenceUserRoles']);

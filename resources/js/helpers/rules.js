@@ -39,7 +39,13 @@ export function minLength(minLength) {
 }
 
 export function maxLength(maxLength) {
-    return (v) => v == null || v.length <= maxLength || 'Die Eingabe ist zu lang (max. ' + maxLength + ' Zeichen)'
+    return (v) => {
+        if (v == null) {
+            return true
+        }
+
+        return String(v).length <= maxLength || 'Die Eingabe ist zu lang (max. ' + maxLength + ' Zeichen)'
+    }
 }
 
 export function exactLength(length) {

@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" :xl="mainColXl" v-if="showOverviewCard">
+    <v-col cols="12" :xl="mainColXl">
         <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
             <div class="admin-card-head crud-head mb-4">
                 <div>
@@ -35,52 +35,77 @@
                 <v-list
                     dense
                     variant="flat"
-                    class="assignment-schools-list"
-                    select-strategy="leaf"
-                    v-model:selected="selected_schools"
-                    @update:selected="onSelectedSchoolsUpdate"
-                    color="success-lighten-2">
+                    class="assignment-schools-list">
                     <v-list-item
                         v-for="item in schools"
                         :key="item.id"
-                        :value="item.id"
-                        class="assignment-schools-item"
-                        :class="{ 'is-selected': selectedSchoolId === item.id }">
+                        class="assignment-schools-item">
                         <template #title>
                             <article class="licence-card">
                                 <header class="licence-card__header">
                                     <div class="licence-card__title-wrap">
                                         <div class="licence-card__title">{{ item.long_name }}</div>
-                                        <div class="licence-card__subtitle">{{ item.email || 'Keine E-Mail hinterlegt' }}</div>
-                                    </div>
-                                    <div class="licence-card__badges">
-                                        <div class="licence-card__badge">
-                                            <span class="licence-card__badge-label">Kürzel</span>
-                                            <span class="licence-card__badge-value">{{ item.short_name || '-' }}</span>
-                                        </div>
-                                        <div class="licence-card__badge">
-                                            <span class="licence-card__badge-label">Lizenzen</span>
-                                            <span class="licence-card__badge-value">{{ Array.isArray(item.licences) ? item.licences.length : 0 }}</span>
-                                        </div>
                                     </div>
                                 </header>
 
                                 <div class="licence-card__roles-block">
-                                    <div class="licence-card__roles-title">Zugewiesene Lizenzen</div>
-                                    <div class="licence-card__roles-list">
+                                    <div class="licence-card__roles-list assignment-school-licence-list">
                                         <template v-if="item.licences && item.licences.length >= 1">
-                                            <v-chip
+                                            <div
                                                 v-for="licence in sortedLicences(item.licences)"
                                                 :key="`licence-assignment-${item.id}-${licence.id}`"
-                                                size="small"
-                                                class="licence-card__role-chip"
-                                                :color="isSchoolLicenceNotNeeded(licence) ? 'success' : undefined"
-                                                :variant="isSchoolLicenceNotNeeded(licence) ? 'flat' : 'outlined'">
-                                                <v-avatar size="14" :color="isLicenceActive(licence) ? 'success' : 'error'" class="mr-1">
-                                                    <v-icon size="10" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
-                                                </v-avatar>
-                                                {{ licence.name }}
-                                            </v-chip>
+                                                class="assignment-school-licence-row">
+                                                <div class="assignment-school-licence-row__name">
+                                                    {{ licence.name }}
+                                                    <div v-if="licence.school_licence_enabled" class="assignment-school-licence-row__valid-until" :class="{ 'is-expired': isValidUntilExpired(licence.valid_until) }">
+                                                        <v-icon
+                                                            size="13"
+                                                            :icon="isValidUntilExpired(licence.valid_until) ? 'mdi-close-circle' : 'mdi-check-circle'"
+                                                            :color="isValidUntilExpired(licence.valid_until) ? 'error' : 'success'"
+                                                            class="mr-1" />
+                                                        Schul-Lizenz gültig bis {{ formatValidUntil(licence.valid_until) }}
+                                                    </div>
+                                                    <div v-if="licence.admin_licence_enabled" class="assignment-school-licence-row__counter">
+                                                        <v-icon size="13" icon="mdi-shield-crown-outline" class="mr-1" />
+                                                        Admin-Lizenzen: {{ licence.admin_licence_count }}
+                                                    </div>
+                                                    <div v-if="licence.user_licence_enabled" class="assignment-school-licence-row__counter">
+                                                        <v-icon size="13" icon="mdi-account-multiple" class="mr-1" />
+                                                        Benutzer-Lizenzen: {{ licence.user_licence_count }}
+                                                    </div>
+                                                </div>
+                                                <div class="assignment-school-licence-row__right">
+                                                    <div class="assignment-school-licence-row__icons">
+                                                        <v-tooltip text="Schullizenz" location="top">
+                                                            <template #activator="{ props }">
+                                                                <div v-if="licence.school_licence_enabled" v-bind="props" class="licence-type-icon">
+                                                                    <v-icon size="14" icon="mdi-domain" />
+                                                                </div>
+                                                            </template>
+                                                        </v-tooltip>
+                                                        <v-tooltip text="Adminlizenz" location="top">
+                                                            <template #activator="{ props }">
+                                                                <div v-if="licence.admin_licence_enabled" v-bind="props" class="licence-type-icon licence-type-icon--admin">
+                                                                    <v-icon size="14" icon="mdi-shield-crown-outline" />
+                                                                </div>
+                                                            </template>
+                                                        </v-tooltip>
+                                                        <v-tooltip text="Userlizenz" location="top">
+                                                            <template #activator="{ props }">
+                                                                <div v-if="licence.user_licence_enabled" v-bind="props" class="licence-type-icon licence-type-icon--user">
+                                                                    <v-icon size="14" icon="mdi-account-multiple" />
+                                                                </div>
+                                                            </template>
+                                                        </v-tooltip>
+                                                    </div>
+                                                    <v-btn
+                                                        size="x-small"
+                                                        variant="tonal"
+                                                        color="primary"
+                                                        icon="mdi-pencil"
+                                                        @click.stop="openEditLicenceDialog(item, licence)" />
+                                                </div>
+                                            </div>
                                         </template>
                                         <span v-else class="text-medium-emphasis">Keine Lizenzen zugewiesen</span>
                                     </div>
@@ -92,112 +117,6 @@
 
                 <Pagination :meta="meta" :store="schoolStore" selected_field="selected_schools" />
             </section>
-        </section>
-    </v-col>
-
-    <v-col cols="12" md="8" :xl="schoolDetailXl" v-if="selectedSchool">
-        <section class="admin-card ai-glass-panel pa-4">
-            <div class="admin-card-head mb-3 d-flex align-center justify-space-between ga-2">
-                <div>
-                    <div class="admin-card-eyebrow">Schule</div>
-                    <h2 class="admin-card-title">{{ selectedSchool.long_name }}</h2>
-                </div>
-                <v-btn
-                    color="primary"
-                    variant="flat"
-                    size="default"
-                    prepend-icon="mdi-arrow-left"
-                    class="text-none font-weight-bold"
-                    :disabled="isInteractionLocked"
-                    @click="clearSelection">
-                    Zur Übersicht
-                </v-btn>
-            </div>
-            <v-card variant="outlined" class="pa-4 mb-4">
-                    <div class="text-subtitle-1 mb-3">Lizenz zuweisen</div>
-                    <v-row dense>
-                        <v-col cols="12">
-                            <v-select
-                                v-model="new_assignment.licence_id"
-                                :items="assignableLicences"
-                                item-title="name"
-                                item-value="id"
-                                label="Lizenz"
-                                :disabled="isInteractionLocked"
-                                clearable />
-                        </v-col>
-                        <v-col cols="12">
-                            <v-date-input v-model="new_assignment.valid_until" label="Gültig bis" class="flex-grow-1" :disabled="isInteractionLocked" />
-                        </v-col>
-                    </v-row>
-                    <v-card tile flat color="transparent" class="d-flex flex-row justify-end mt-2">
-                        <v-btn color="success" flat tile :disabled="isInteractionLocked" @click="addLicenceToSelectedSchool">Hinzufügen</v-btn>
-                    </v-card>
-                </v-card>
-
-                <v-card variant="outlined" class="pa-4 mb-4">
-                    <div class="text-subtitle-1 mb-3">Zugewiesene Lizenzen</div>
-                    <v-list dense variant="flat" class="assignment-licence-list" v-if="school_licences.length >= 1">
-                        <v-list-item
-                            v-for="licence in sortedLicences(school_licences)"
-                            :key="`school-licence-${licence.school_licence_id}`"
-                            class="assignment-licence-item">
-                            <template #title>
-                                <article class="licence-card licence-card--compact">
-                                    <header class="licence-card__header">
-                                        <div class="licence-card__title-wrap">
-                                            <div class="d-flex flex-row align-center ga-1">
-                                                <v-avatar size="16" :color="isLicenceActive(licence) ? 'success' : 'error'">
-                                                    <v-icon size="11" color="white" :icon="isLicenceActive(licence) ? 'mdi-check' : 'mdi-close'" />
-                                                </v-avatar>
-                                                <div class="licence-card__title" :class="{ 'text-success': isSchoolLicenceNotNeeded(licence) }">{{ licence.name }}</div>
-                                                <v-btn
-                                                    size="x-small"
-                                                    icon="mdi-pencil"
-                                                    variant="text"
-                                                    color="secondary"
-                                                    :disabled="isInteractionLocked"
-                                                    @click="openEditDateDialog(licence)" />
-                                            </div>
-                                            <div class="licence-card__subtitle">Gültig bis: {{ licence.valid_until || '-' }}</div>
-                                        </div>
-                                    </header>
-                                    <div class="d-flex flex-row ga-2 flex-wrap">
-                                        <v-btn
-                                            size="small"
-                                            flat
-                                            tile
-                                            color="primary"
-                                            :disabled="isInteractionLocked"
-                                            @click="openSchoolLicenceModel(licence)">
-                                            Lizenzmodell
-                                        </v-btn>
-                                        <v-btn
-                                            v-if="hasUserLicenceRequiredRole(licence)"
-                                            size="small"
-                                            flat
-                                            tile
-                                            color="primary"
-                                            :disabled="isInteractionLocked"
-                                            @click="openUserLicences(licence)">
-                                            Benutzerlizenzen
-                                        </v-btn>
-                                        <v-btn
-                                            size="small"
-                                            flat
-                                            tile
-                                            color="warning"
-                                            :disabled="isInteractionLocked"
-                                            @click="removeSchoolLicence(licence.school_licence_id)">
-                                            Entfernen
-                                        </v-btn>
-                                    </div>
-                                </article>
-                            </template>
-                        </v-list-item>
-                    </v-list>
-                    <div class="text-caption text-medium-emphasis" v-else>Keine Lizenzen zugewiesen.</div>
-                </v-card>
         </section>
     </v-col>
 
@@ -549,6 +468,394 @@
             </v-card-actions>
         </v-card>
     </v-dialog>
+
+    <v-dialog v-model="edit_licence_dialog" persistent max-width="640">
+        <v-card class="crud-dialog-card user-licence-user-dialog-solid">
+            <div class="crud-dialog-head">
+                <div>
+                    <div class="admin-card-eyebrow">Lizenz bearbeiten</div>
+                    <div class="admin-card-title" style="margin-top: 4px">
+                        {{ edit_licence_school ? edit_licence_school.long_name : '' }}
+                        <span v-if="edit_licence_item"> – {{ edit_licence_item.name }}</span>
+                    </div>
+                </div>
+                <v-btn icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
+            </div>
+
+            <v-tabs v-model="edit_licence_tab" color="primary" class="edit-licence-tabs">
+                <v-tab
+                    v-if="edit_licence_item && edit_licence_item.school_licence_enabled"
+                    value="school"
+                    prepend-icon="mdi-domain">
+                    Schul-Lizenz
+                </v-tab>
+                <v-tab
+                    v-if="edit_licence_item && edit_licence_item.admin_licence_enabled"
+                    value="admin"
+                    prepend-icon="mdi-shield-crown-outline">
+                    Admin-Lizenzen
+                </v-tab>
+                <v-tab
+                    v-if="edit_licence_item && edit_licence_item.user_licence_enabled"
+                    value="user"
+                    prepend-icon="mdi-account-multiple">
+                    Benutzer-Lizenzen
+                </v-tab>
+            </v-tabs>
+
+            <v-divider />
+
+            <v-card-text class="crud-dialog-body">
+                <v-tabs-window v-model="edit_licence_tab">
+                    <v-tabs-window-item value="school">
+                        <div class="edit-licence-section-title">Laufzeit</div>
+                        <div class="edit-licence-price-grid mb-4">
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && edit_licence_item.start_day_month">
+                                <span class="edit-licence-price-label">Laufzeit</span>
+                                <span class="edit-licence-price-value">
+                                    {{ edit_licence_item.start_day_month }} – {{ edit_licence_item.end_day_month || dayBefore(edit_licence_item.start_day_month) }}
+                                </span>
+                            </div>
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Gültig bis</span>
+                                <span class="d-flex align-center" style="gap: 8px;">
+                                    <span class="edit-licence-price-value d-flex align-center" style="gap: 10px;">
+                                        <v-icon
+                                            size="13"
+                                            :icon="isValidUntilExpired(edit_licence_item && edit_licence_item.valid_until) ? 'mdi-close-circle' : 'mdi-check-circle'"
+                                            :color="isValidUntilExpired(edit_licence_item && edit_licence_item.valid_until) ? 'error' : 'success'" />
+                                        {{ formatValidUntil(edit_licence_item && edit_licence_item.valid_until) }}
+                                    </span>
+                                    <v-menu>
+                                        <template #activator="{ props }">
+                                            <v-btn v-bind="props" size="x-small" variant="text" icon="mdi-pencil" density="compact" />
+                                        </template>
+                                        <v-list density="compact" min-width="240">
+                                            <v-list-item
+                                                prepend-icon="mdi-link-off"
+                                                title="Schullizenz entfernen"
+                                                base-color="error"
+                                                @click="deleteLicenceFromDialog" />
+                                            <v-list-item
+                                                prepend-icon="mdi-calendar-end"
+                                                :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
+                                                @click="setValidUntilNextYearEnd" />
+                                            <v-list-item
+                                                prepend-icon="mdi-infinity"
+                                                title="unendlich"
+                                                @click="setValidUntilUnlimited" />
+                                            <v-list-item
+                                                prepend-icon="mdi-calendar-plus"
+                                                title="ein Jahr verlängern"
+                                                @click="extendValidUntilOneYear" />
+                                            <v-list-item
+                                                prepend-icon="mdi-calendar-clock"
+                                                :title="`Teillizenz (${nextYearEndLabel(effectiveEndDayMonth)}, ${teillizenzPreisLabel})`"
+                                                @click="setValidUntilNextYearEnd" />
+                                        </v-list>
+                                    </v-menu>
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="edit-licence-section-title">Preis-Informationen</div>
+                        <div class="edit-licence-price-grid mb-4">
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item && edit_licence_item.school_price_per_year) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && edit_licence_item.school_included_storage_gb != null">
+                                <span class="edit-licence-price-label">Inkl. Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatStorage(edit_licence_item.school_included_storage_gb) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && (edit_licence_item.school_extra_storage_step_gb != null || edit_licence_item.school_extra_storage_step_price != null)">
+                                <span class="edit-licence-price-label">Zusatz-Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item.school_extra_storage_step_price) }} / {{ formatStorage(edit_licence_item.school_extra_storage_step_gb) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div class="edit-licence-section-title mb-0">Abrechnung dieser Schule</div>
+                            <v-btn
+                                v-if="!edit_school_billing_editing"
+                                size="x-small"
+                                variant="tonal"
+                                color="primary"
+                                icon="mdi-pencil"
+                                @click="edit_school_billing_editing = true" />
+                        </div>
+
+                        <div class="edit-licence-price-grid" v-if="!edit_school_billing_editing">
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                                <span class="edit-licence-price-value">
+                                    {{ edit_school_charged_price != null ? formatPrice(edit_school_charged_price) : (edit_licence_item?.school_price_per_year != null ? formatPrice(edit_licence_item.school_price_per_year) + ' (Basis-Tarif)' : '–') }}
+                                </span>
+                            </div>
+                            <template v-if="edit_licence_item && (edit_licence_item.school_extra_storage_step_gb != null || edit_licence_item.school_extra_storage_step_price != null)">
+                                <div class="edit-licence-price-row">
+                                    <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                    <span class="edit-licence-price-value">{{ edit_school_extra_storage_units != null ? edit_school_extra_storage_units : '–' }}</span>
+                                </div>
+                                <div class="edit-licence-price-row">
+                                    <span class="edit-licence-price-label">Preis je Einheit</span>
+                                    <span class="edit-licence-price-value">{{ edit_school_extra_storage_unit_price != null ? formatPrice(edit_school_extra_storage_unit_price) : '–' }}</span>
+                                </div>
+                            </template>
+                            <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(billingTotal) }}</span>
+                            </div>
+                        </div>
+
+                        <template v-if="edit_school_billing_editing">
+                            <v-row dense>
+                                <v-col cols="12">
+                                    <v-text-field
+                                        v-model="edit_school_charged_price"
+                                        label="Verrechneter Preis / Jahr (€)"
+                                        inputmode="numeric"
+                                        clearable
+                                        :placeholder="edit_licence_item ? String(edit_licence_item.school_price_per_year ?? '') : ''"
+                                        hint="Leer lassen = Basis-Tarif"
+                                        persistent-hint />
+                                </v-col>
+                                <template v-if="edit_licence_item && (edit_licence_item.school_extra_storage_step_gb != null || edit_licence_item.school_extra_storage_step_price != null)">
+                                    <v-col cols="6">
+                                        <v-text-field
+                                            v-model="edit_school_extra_storage_units"
+                                            label="Zusatz-Speicher Einheiten"
+                                            inputmode="numeric"
+                                            clearable
+                                            :hint="edit_licence_item.school_extra_storage_step_gb ? `1 Einheit = ${edit_licence_item.school_extra_storage_step_gb} GB` : ''"
+                                            persistent-hint />
+                                    </v-col>
+                                    <v-col cols="6">
+                                        <v-text-field
+                                            v-model="edit_school_extra_storage_unit_price"
+                                            label="Preis je Einheit (€)"
+                                            inputmode="numeric"
+                                            clearable
+                                            :placeholder="edit_licence_item ? String(edit_licence_item.school_extra_storage_step_price ?? '') : ''"
+                                            hint="Leer lassen = Standardpreis"
+                                            persistent-hint />
+                                    </v-col>
+                                </template>
+                            </v-row>
+                            <div class="d-flex justify-space-between mt-4">
+                                <v-btn color="warning" variant="text" rounded="lg" @click="cancelSchoolBillingEdit">Abbrechen</v-btn>
+                                <v-btn color="success" variant="flat" rounded="lg" @click="saveSchoolLicenceSchool">Speichern</v-btn>
+                            </div>
+                        </template>
+                    </v-tabs-window-item>
+                    <v-tabs-window-item value="admin">
+                        <div class="edit-licence-section-title">Preis-Informationen</div>
+                        <div class="edit-licence-price-grid mb-4">
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item && edit_licence_item.admin_price_per_year) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && edit_licence_item.admin_included_storage_gb != null">
+                                <span class="edit-licence-price-label">Inkl. Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatStorage(edit_licence_item.admin_included_storage_gb) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)">
+                                <span class="edit-licence-price-label">Zusatz-Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item.admin_extra_storage_step_price) }} / {{ formatStorage(edit_licence_item.admin_extra_storage_step_gb) }}</span>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div class="edit-licence-section-title mb-0">Benutzer</div>
+                        </div>
+                        <div class="d-flex align-center ga-2 mb-2">
+                            <v-text-field
+                                v-model="edit_admin_search"
+                                placeholder="Suchen..."
+                                density="compact"
+                                variant="outlined"
+                                clearable
+                                hide-details
+                                prepend-inner-icon="mdi-magnify"
+                                class="flex-grow-1"
+                                @keyup.enter="loadAdminUsers"
+                                @click:clear="onAdminSearchClear" />
+                            <v-btn size="small" variant="tonal" color="primary" icon="mdi-magnify" @click="loadAdminUsers" />
+                            <v-btn size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode" />
+                        </div>
+
+                        <div v-if="edit_admin_users.length" class="mb-2">
+                            <div
+                                v-for="user in edit_admin_users"
+                                :key="`admin-user-${user.id}`"
+                                class="admin-user-row">
+                                <div class="admin-user-row__main">
+                                    <div class="admin-user-row__name">
+                                        {{ user.last_name }} {{ user.first_name }}
+                                        <span class="admin-user-row__email">{{ user.email }}</span>
+                                    </div>
+                                    <div class="admin-user-row__actions">
+                                        <v-icon
+                                            v-if="adminUserIsAssigned(user)"
+                                            size="16"
+                                            icon="mdi-check-circle"
+                                            color="success" />
+                                        <v-btn
+                                            v-else
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="success"
+                                            icon="mdi-plus"
+                                            @click="assignAdminUser(user)" />
+                                        <v-btn
+                                            v-if="adminUserIsAssigned(user)"
+                                            size="x-small"
+                                            variant="text"
+                                            :color="edit_admin_user_edit_id === user.id ? 'primary' : 'default'"
+                                            icon="mdi-pencil"
+                                            @click="toggleAdminUserEdit(user)" />
+                                    </div>
+                                </div>
+
+                                <div v-if="edit_admin_user_edit_id === user.id" class="admin-user-edit">
+                                    <div class="edit-licence-price-grid mb-2">
+                                        <div class="edit-licence-price-row">
+                                            <span class="edit-licence-price-label">Gültig bis</span>
+                                            <span class="d-flex align-center" style="gap: 8px;">
+                                                <span class="edit-licence-price-value d-flex align-center" style="gap: 10px;">
+                                                    <v-icon
+                                                        size="13"
+                                                        :icon="isValidUntilExpired(edit_admin_user_valid_until) ? 'mdi-close-circle' : 'mdi-check-circle'"
+                                                        :color="isValidUntilExpired(edit_admin_user_valid_until) ? 'error' : 'success'" />
+                                                    {{ formatValidUntil(edit_admin_user_valid_until) }}
+                                                </span>
+                                                <v-menu>
+                                                    <template #activator="{ props }">
+                                                        <v-btn v-bind="props" size="x-small" variant="text" icon="mdi-pencil" density="compact" />
+                                                    </template>
+                                                    <v-list density="compact" min-width="220">
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-end"
+                                                            :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
+                                                            @click="setAdminUserValidUntil(user, nextYearEndDate(effectiveEndDayMonth))" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-infinity"
+                                                            title="unendlich"
+                                                            @click="setAdminUserValidUntil(user, null)" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-plus"
+                                                            title="ein Jahr verlängern"
+                                                            @click="extendAdminUserValidUntilOneYear(user)" />
+                                                    </v-list>
+                                                </v-menu>
+                                            </span>
+                                        </div>
+
+                                        <div class="edit-licence-price-row">
+                                            <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                                            <span class="d-flex align-center" style="gap: 8px;">
+                                                <span class="edit-licence-price-value">
+                                                    {{ edit_admin_user_charged_price != null
+                                                        ? formatPrice(edit_admin_user_charged_price)
+                                                        : (edit_licence_item?.admin_price_per_year != null ? formatPrice(edit_licence_item.admin_price_per_year) + ' (Basis-Tarif)' : '–') }}
+                                                </span>
+                                                <v-btn
+                                                    v-if="!edit_admin_user_price_editing"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    icon="mdi-pencil"
+                                                    density="compact"
+                                                    @click="edit_admin_user_price_editing = true" />
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <template v-if="edit_admin_user_price_editing">
+                                        <v-text-field
+                                            v-model="edit_admin_user_charged_price"
+                                            label="Verrechneter Preis / Jahr (€)"
+                                            inputmode="numeric"
+                                            density="compact"
+                                            variant="outlined"
+                                            clearable
+                                            :placeholder="edit_licence_item ? String(edit_licence_item.admin_price_per_year ?? '') : ''"
+                                            hint="Leer lassen = Basis-Tarif"
+                                            persistent-hint
+                                            class="mb-2" />
+                                        <div class="d-flex justify-space-between">
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_admin_user_price_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveAdminUserBilling(user)">Speichern</v-btn>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="text-caption text-medium-emphasis mb-2">Keine Benutzer gefunden.</div>
+
+                        <template v-if="edit_admin_add_mode">
+                            <v-divider class="mb-3" />
+                            <div class="edit-licence-section-title mb-2">Benutzer hinzufügen</div>
+                            <div class="d-flex align-center ga-2 mb-2">
+                                <v-text-field
+                                    v-model="edit_admin_add_search"
+                                    placeholder="Nachname..."
+                                    density="compact"
+                                    variant="outlined"
+                                    clearable
+                                    hide-details
+                                    prepend-inner-icon="mdi-magnify"
+                                    class="flex-grow-1"
+                                    @keyup.enter="searchAdminUsersToAdd"
+                                    @click:clear="edit_admin_add_results = []" />
+                                <v-btn size="small" variant="tonal" color="primary" icon="mdi-magnify" @click="searchAdminUsersToAdd" />
+                                <v-btn size="small" variant="text" color="warning" icon="mdi-close" @click="closeAdminAddMode" />
+                            </div>
+                            <v-list v-if="edit_admin_add_results.length" density="compact">
+                                <v-list-item
+                                    v-for="user in edit_admin_add_results"
+                                    :key="`admin-add-${user.id}`"
+                                    :subtitle="user.email">
+                                    <template #title>
+                                        <span>{{ user.last_name }} {{ user.first_name }}</span>
+                                    </template>
+                                    <template #append>
+                                        <v-btn
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="success"
+                                            icon="mdi-plus"
+                                            @click="assignAdminUser(user)" />
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                            <div v-else-if="edit_admin_add_search" class="text-caption text-medium-emphasis">Keine Treffer.</div>
+                        </template>
+                    </v-tabs-window-item>
+                    <v-tabs-window-item value="user">
+                        <div class="edit-licence-section-title">Preis-Informationen</div>
+                        <div class="edit-licence-price-grid">
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item && edit_licence_item.user_price_per_year) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && edit_licence_item.user_included_storage_gb != null">
+                                <span class="edit-licence-price-label">Inkl. Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatStorage(edit_licence_item.user_included_storage_gb) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row" v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)">
+                                <span class="edit-licence-price-label">Zusatz-Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item.user_extra_storage_step_price) }} / {{ formatStorage(edit_licence_item.user_extra_storage_step_gb) }}</span>
+                            </div>
+                        </div>
+                    </v-tabs-window-item>
+                </v-tabs-window>
+            </v-card-text>
+
+            <v-card-actions class="d-flex justify-space-between pa-4">
+                <v-btn color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
@@ -583,17 +890,30 @@ export default {
             licenceStore: null,
             roleStore: null,
             model_lock_action: 'school_licence_model',
-            selection_lock_action: 'school_licence_selection',
             selected_school_licence_id: null,
             selected_user_licences_school_licence_id: null,
             edit_date_dialog: false,
             edit_school_licence: null,
+            edit_licence_dialog: false,
+            edit_licence_tab: null,
+            edit_licence_school: null,
+            edit_licence_item: null,
+            edit_school_charged_price: null,
+            edit_school_extra_storage_units: null,
+            edit_school_extra_storage_unit_price: null,
+            edit_school_billing_editing: false,
+            edit_admin_users: [],
+            edit_admin_users_role_statuses: {},
+            edit_admin_search: '',
+            edit_admin_add_mode: false,
+            edit_admin_add_search: '',
+            edit_admin_add_results: [],
+            edit_admin_user_edit_id: null,
+            edit_admin_user_valid_until: null,
+            edit_admin_user_price_editing: false,
+            edit_admin_user_charged_price: null,
             edit_valid_until: '',
             edit_no_date: false,
-            new_assignment: {
-                licence_id: null,
-                valid_until: '',
-            },
             school_licence_models: {},
             user_licence_user_search_string: '',
             selected_user_licence_role_filters: [],
@@ -624,36 +944,14 @@ export default {
         totalSchoolsCount() {
             return this.meta?.total ?? this.schools?.length ?? 0
         },
-        showOverviewCard() {
-            return !this.selectedSchool
-        },
         mainColXl() {
-            if (this.selectedSchool && !this.isUserLicencesOpen) {
-                return 6
-            }
-            if (this.selectedUserLicenceUser) {
-                return 4
-            }
-            if (this.selectedUserLicencesSource) {
-                return 7
-            }
-            return 6
+            return 11
         },
         schoolDetailXl() {
             return 6
         },
         selectedSchoolId() {
             return this.selected_schools[0] ?? null
-        },
-        selectedSchool() {
-            return this.schools.find((item) => item.id === this.selectedSchoolId) || null
-        },
-        assignableLicences() {
-            const assigned = new Set((this.school_licences || []).map((item) => item.id))
-            const all = Array.isArray(this.licences) ? this.licences : []
-            return all
-                .filter((licence) => !assigned.has(licence.id))
-                .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'de'))
         },
         selectedSchoolLicence() {
             return (this.school_licences || []).find((item) => item.school_licence_id === this.selected_school_licence_id) || null
@@ -716,6 +1014,38 @@ export default {
         selectedUserLicenceValidUntilLabel() {
             return this.school_licence_user_role_details_valid_until || this.selectedUserLicencesSource?.valid_until || 'unbegrenzt'
         },
+        effectiveEndDayMonth() {
+            if (!this.edit_licence_item) return null
+            return this.edit_licence_item.end_day_month || this.dayBefore(this.edit_licence_item.start_day_month)
+        },
+        teillizenzPreisLabel() {
+            if (!this.effectiveEndDayMonth) return ''
+            const yearEndStr = this.nextYearEndDate(this.effectiveEndDayMonth)
+            const yearEnd = new Date(yearEndStr)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const daysRemaining = Math.max(0, Math.round((yearEnd - today) / 86400000))
+            const fullYearPrice =
+                this.edit_school_charged_price != null
+                    ? parseFloat(this.edit_school_charged_price)
+                    : this.edit_licence_item?.school_price_per_year != null
+                      ? parseFloat(this.edit_licence_item.school_price_per_year)
+                      : null
+            if (fullYearPrice === null || isNaN(fullYearPrice)) return `${daysRemaining} Tage`
+            const prorated = Math.ceil((fullYearPrice * daysRemaining) / 365)
+            return `${this.formatPrice(prorated)}`
+        },
+        billingTotal() {
+            const base =
+                this.edit_school_charged_price != null
+                    ? parseFloat(this.edit_school_charged_price)
+                    : this.edit_licence_item?.school_price_per_year != null
+                      ? parseFloat(this.edit_licence_item.school_price_per_year)
+                      : 0
+            const units = parseInt(this.edit_school_extra_storage_units) || 0
+            const unitPrice = parseFloat(this.edit_school_extra_storage_unit_price) || 0
+            return (isNaN(base) ? 0 : base) + units * (isNaN(unitPrice) ? 0 : unitPrice)
+        },
         availableRoles() {
             return this.roles || []
         },
@@ -738,9 +1068,9 @@ export default {
     },
 
     watch: {
-        'new_assignment.valid_until'(val) {
-            if (val && val instanceof Date) {
-                this.new_assignment.valid_until = this.toDateString(val)
+        edit_licence_tab(val) {
+            if (val === 'admin') {
+                this.loadAdminUsers()
             }
         },
         edit_valid_until(val) {
@@ -754,22 +1084,6 @@ export default {
     },
 
     methods: {
-        async onSelectedSchoolsUpdate(value) {
-            if (!Array.isArray(value)) {
-                this.selected_schools = []
-                this.school_licences = []
-                this.closeSchoolLicenceModel()
-                this.closeUserLicencesCard()
-                return
-            }
-            if (value.length <= 1) {
-                this.selected_schools = value
-            } else {
-                this.selected_schools = [value[value.length - 1]]
-            }
-
-            await this.loadSelectedSchoolInfos()
-        },
         async loadSelectedSchoolInfos() {
             if (!this.selectedSchoolId) {
                 this.school_licences = []
@@ -781,10 +1095,6 @@ export default {
             await this.schoolStore.loadSchoolInfos(this.selectedSchoolId)
             this.closeSchoolLicenceModel()
             this.closeUserLicencesCard()
-            this.new_assignment = {
-                licence_id: null,
-                valid_until: this.defaultValidUntil(),
-            }
             this.bootstrapSchoolLicenceModels()
         },
         bootstrapSchoolLicenceModels() {
@@ -840,6 +1150,315 @@ export default {
             date.setFullYear(date.getFullYear() + 1)
             return this.localDateKey(date)
         },
+        dayBefore(dayMonth) {
+            // dayMonth format: "DD.MM." e.g. "01.08."
+            const match = dayMonth && dayMonth.match(/^(\d{2})\.(\d{2})\.$/)
+            if (!match) return '?'
+            const date = new Date(2000, parseInt(match[2], 10) - 1, parseInt(match[1], 10))
+            date.setDate(date.getDate() - 1)
+            const d = String(date.getDate()).padStart(2, '0')
+            const m = String(date.getMonth() + 1).padStart(2, '0')
+            return `${d}.${m}.`
+        },
+        formatPrice(value) {
+            if (value === null || value === undefined || value === '') return '–'
+            const num = parseFloat(value)
+            if (isNaN(num)) return '–'
+            return num % 1 === 0
+                ? `€ ${num.toFixed(0)}`
+                : `€ ${num.toFixed(2).replace('.', ',')}`
+        },
+        formatStorage(value) {
+            if (value === null || value === undefined || value === '') return '–'
+            const num = parseInt(value, 10)
+            if (isNaN(num)) return '–'
+            return `${num} GB`
+        },
+        openEditLicenceDialog(school, licence) {
+            this.edit_licence_school = school
+            this.edit_licence_item = licence
+            this.edit_licence_tab = licence.school_licence_enabled ? 'school'
+                : licence.admin_licence_enabled ? 'admin'
+                : licence.user_licence_enabled ? 'user'
+                : null
+            this.edit_school_charged_price = licence.charged_school_price ?? null
+            this.edit_school_extra_storage_units = licence.extra_storage_units ?? null
+            this.edit_school_extra_storage_unit_price = licence.extra_storage_unit_price ?? null
+            this.edit_school_billing_editing = false
+            this.edit_licence_dialog = true
+        },
+        closeEditLicenceDialog() {
+            this.edit_licence_dialog = false
+            this.edit_licence_tab = null
+            this.edit_licence_school = null
+            this.edit_licence_item = null
+            this.edit_school_charged_price = null
+            this.edit_school_extra_storage_units = null
+            this.edit_school_extra_storage_unit_price = null
+            this.edit_school_billing_editing = false
+            this.edit_admin_users = []
+            this.edit_admin_users_role_statuses = {}
+            this.edit_admin_search = ''
+            this.edit_admin_add_mode = false
+            this.edit_admin_add_search = ''
+            this.edit_admin_add_results = []
+            this.edit_admin_user_edit_id = null
+            this.edit_admin_user_valid_until = null
+            this.edit_admin_user_price_editing = false
+            this.edit_admin_user_charged_price = null
+        },
+        cancelSchoolBillingEdit() {
+            this.edit_school_charged_price = this.edit_licence_item?.charged_school_price ?? null
+            this.edit_school_extra_storage_units = this.edit_licence_item?.extra_storage_units ?? null
+            this.edit_school_extra_storage_unit_price = this.edit_licence_item?.extra_storage_unit_price ?? null
+            this.edit_school_billing_editing = false
+        },
+        async refreshEditLicenceItem() {
+            await this.schoolStore.index(this.meta?.current_page || 1)
+            const school = this.schools.find((s) => s.id === this.edit_licence_school?.id)
+            const licence = school?.licences?.find((l) => l.id === this.edit_licence_item?.id)
+            if (licence) {
+                this.edit_licence_item = licence
+            }
+        },
+        async setLicenceValidUntil(valid_until) {
+            if (!this.edit_licence_item || !this.edit_licence_school) return
+            const data = {
+                school_id: this.edit_licence_school.id,
+                licence_id: this.edit_licence_item.id,
+                valid_until,
+            }
+            if (!(await this.schoolStore.addLicence(data))) return
+            await this.refreshEditLicenceItem()
+        },
+        nextYearEndDate(endDayMonth) {
+            if (!endDayMonth) return this.defaultValidUntil()
+            const cleaned = endDayMonth.replace(/\.$/, '')
+            const parts = cleaned.split('.')
+            if (parts.length < 2) return this.defaultValidUntil()
+            const day = parseInt(parts[0], 10)
+            const month = parseInt(parts[1], 10) - 1
+            const today = new Date()
+            let candidate = new Date(today.getFullYear(), month, day)
+            if (candidate <= today) {
+                candidate = new Date(today.getFullYear() + 1, month, day)
+            }
+            return this.localDateKey(candidate)
+        },
+        nextYearEndLabel(endDayMonth) {
+            const dateStr = this.nextYearEndDate(endDayMonth)
+            const [year, month, day] = dateStr.split('-')
+            return `${day}.${month}.${String(year).slice(2)}`
+        },
+        async setValidUntilNextYearEnd() {
+            await this.setLicenceValidUntil(this.nextYearEndDate(this.effectiveEndDayMonth))
+        },
+        async setValidUntilUnlimited() {
+            await this.setLicenceValidUntil(null)
+        },
+        async extendValidUntilOneYear() {
+            const current = this.edit_licence_item?.valid_until
+            let newDate
+            if (current) {
+                const d = new Date(current)
+                d.setFullYear(d.getFullYear() + 1)
+                newDate = this.localDateKey(d)
+            } else {
+                newDate = this.defaultValidUntil()
+            }
+            await this.setLicenceValidUntil(newDate)
+        },
+        adminRolesFromLicenceModel(licence) {
+            const model = this.normalizeLicenceModel(licence?.licence_model || null)
+            return (model.affected_roles || []).filter((r) => this.looksLikeAdminRoleName(r))
+        },
+        async loadAdminUsers() {
+            if (!this.edit_licence_item?.school_licence_id) return
+            const adminRoles = this.adminRolesFromLicenceModel(this.edit_licence_item)
+            try {
+                this.adminStore.is_loading++
+                const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
+                    params: {
+                        search_string: this.edit_admin_search || null,
+                        role_names: adminRoles,
+                    },
+                })
+                this.edit_admin_users = response.data.data || []
+                this.edit_admin_users_role_statuses = response.data.role_statuses_by_user || {}
+            } catch {
+                this.edit_admin_users = []
+                this.edit_admin_users_role_statuses = {}
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        adminUserIsAssigned(user) {
+            const statuses = this.edit_admin_users_role_statuses[String(user.id)]
+            if (!statuses || typeof statuses !== 'object') return false
+            return Object.values(statuses).some((s) => s && typeof s === 'object')
+        },
+        openAdminAddMode() {
+            this.edit_admin_add_mode = true
+            this.edit_admin_add_search = ''
+            this.edit_admin_add_results = []
+        },
+        closeAdminAddMode() {
+            this.edit_admin_add_mode = false
+            this.edit_admin_add_search = ''
+            this.edit_admin_add_results = []
+        },
+        async onAdminSearchClear() {
+            this.edit_admin_search = ''
+            await this.loadAdminUsers()
+        },
+        async searchAdminUsersToAdd() {
+            if (!this.edit_admin_add_search.trim() || !this.edit_licence_item?.school_licence_id) {
+                this.edit_admin_add_results = []
+                return
+            }
+            const adminRoles = this.adminRolesFromLicenceModel(this.edit_licence_item)
+            try {
+                this.adminStore.is_loading++
+                const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
+                    params: {
+                        search_string: this.edit_admin_add_search,
+                        role_names: adminRoles,
+                    },
+                })
+                this.edit_admin_add_results = response.data.data || []
+            } catch {
+                this.edit_admin_add_results = []
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        async assignAdminUser(user) {
+            if (!this.edit_licence_item?.school_licence_id) return
+            try {
+                this.adminStore.is_loading++
+                const rolesResponse = await axios.get(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`
+                )
+                const roles = (rolesResponse.data.roles || []).map((role) => ({
+                    ...role,
+                    assigned: this.looksLikeAdminRoleName(role.name) ? true : !!role.assigned,
+                }))
+                await axios.put(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`,
+                    { roles }
+                )
+            } catch {
+                useNotificationStore().notify({ message: 'Fehler beim Zuweisen.', type: 'error', timeout: 3000 })
+                return
+            } finally {
+                this.adminStore.is_loading--
+            }
+            await this.loadAdminUsers()
+            await this.refreshEditLicenceItem()
+        },
+        adminUserStatusForUser(user) {
+            const statuses = this.edit_admin_users_role_statuses[String(user.id)]
+            if (!statuses || typeof statuses !== 'object') return null
+            return Object.values(statuses)[0] || null
+        },
+        toggleAdminUserEdit(user) {
+            if (this.edit_admin_user_edit_id === user.id) {
+                this.edit_admin_user_edit_id = null
+                this.edit_admin_user_valid_until = null
+                this.edit_admin_user_price_editing = false
+                this.edit_admin_user_charged_price = null
+                return
+            }
+            const status = this.adminUserStatusForUser(user)
+            this.edit_admin_user_edit_id = user.id
+            this.edit_admin_user_valid_until = status?.valid_until || null
+            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            this.edit_admin_user_price_editing = false
+        },
+        async saveAdminUserRoles(user, patchFn) {
+            if (!this.edit_licence_item?.school_licence_id) return false
+            try {
+                this.adminStore.is_loading++
+                const rolesResponse = await axios.get(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`
+                )
+                const roles = (rolesResponse.data.roles || []).map((role) => patchFn(role))
+                await axios.put(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`,
+                    { roles }
+                )
+                return true
+            } catch {
+                useNotificationStore().notify({ message: 'Fehler beim Speichern.', type: 'error', timeout: 3000 })
+                return false
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        async setAdminUserValidUntil(user, valid_until) {
+            const ok = await this.saveAdminUserRoles(user, (role) => ({
+                ...role,
+                valid_until: this.looksLikeAdminRoleName(role.name) ? valid_until : role.valid_until,
+            }))
+            if (!ok) return
+            this.edit_admin_user_valid_until = valid_until
+            await this.loadAdminUsers()
+            // sync status for open edit panel
+            const status = this.adminUserStatusForUser(user)
+            this.edit_admin_user_valid_until = status?.valid_until || null
+        },
+        async extendAdminUserValidUntilOneYear(user) {
+            const current = this.edit_admin_user_valid_until
+            let newDate
+            if (current) {
+                const d = new Date(current)
+                d.setFullYear(d.getFullYear() + 1)
+                newDate = this.localDateKey(d)
+            } else {
+                newDate = this.defaultValidUntil()
+            }
+            await this.setAdminUserValidUntil(user, newDate)
+        },
+        async saveAdminUserBilling(user) {
+            const chargedPrice = this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : null
+            const ok = await this.saveAdminUserRoles(user, (role) => ({
+                ...role,
+                charged_price: this.looksLikeAdminRoleName(role.name) ? chargedPrice : role.charged_price,
+            }))
+            if (!ok) return
+            this.edit_admin_user_price_editing = false
+            await this.loadAdminUsers()
+            const status = this.adminUserStatusForUser(user)
+            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            await this.refreshEditLicenceItem()
+        },
+        async deleteLicenceFromDialog() {
+            const id = this.edit_licence_item?.school_licence_id
+            if (!id) return
+            this.closeEditLicenceDialog()
+            await this.removeSchoolLicence(id)
+        },
+        async saveSchoolLicenceSchool() {
+            if (!this.edit_licence_item?.school_licence_id) return
+            const data = {
+                charged_school_price: this.edit_school_charged_price !== '' ? this.edit_school_charged_price : null,
+                extra_storage_units: this.edit_school_extra_storage_units !== '' ? this.edit_school_extra_storage_units : null,
+                extra_storage_unit_price: this.edit_school_extra_storage_unit_price !== '' ? this.edit_school_extra_storage_unit_price : null,
+            }
+            if (!(await this.schoolStore.saveSchoolLicenceSchool(this.edit_licence_item.school_licence_id, data))) return
+            this.edit_school_billing_editing = false
+            await this.schoolStore.index(this.meta?.current_page || 1)
+        },
+        formatValidUntil(dateStr) {
+            if (!dateStr) return 'unbegrenzt'
+            const [year, month, day] = dateStr.split('-')
+            if (!year || !month || !day) return dateStr
+            return `${day}.${month}.${year}`
+        },
+        isValidUntilExpired(dateStr) {
+            if (!dateStr) return false
+            return dateStr < this.localDateKey()
+        },
         toDateString(date) {
             const parsed = parseLocalDate(date)
             const year = parsed.getFullYear()
@@ -857,7 +1476,7 @@ export default {
             if (licence?.school_licence_required === false) return true
 
             const model = this.normalizeLicenceModel(licence?.licence_model || null)
-            return model.school_licence_required === false
+            return model.school_licence_required === false || model.school_licence_enabled === false
         },
         isLicenceActive(licence) {
             if (this.isSchoolLicenceNotNeeded(licence)) return true
@@ -867,24 +1486,30 @@ export default {
             const normalized = validUntil instanceof Date ? this.toDateString(validUntil) : String(validUntil).slice(0, 10)
             return normalized >= this.localDateKey()
         },
-        async addLicenceToSelectedSchool() {
-            if (!this.selectedSchoolId) return
-            if (!this.new_assignment.licence_id || !this.new_assignment.valid_until) return
-
-            const data = {
-                school_id: this.selectedSchoolId,
-                licence_id: this.new_assignment.licence_id,
-                valid_until: this.new_assignment.valid_until,
-            }
-
-            if (!(await this.schoolStore.addLicence(data))) return
-
-            await this.schoolStore.index(this.meta?.current_page || 1)
-            this.new_assignment = {
-                licence_id: null,
-                valid_until: this.defaultValidUntil(),
-            }
-            this.bootstrapSchoolLicenceModels()
+        schoolAssignableLicences(licences) {
+            return this.sortedLicences(licences).filter((licence) => !this.isSchoolLicenceNotNeeded(licence))
+        },
+        hasSchoolLicenceAssignments(licences) {
+            return this.schoolAssignableLicences(licences).length >= 1
+        },
+        countAssignedAdminLicences(licences) {
+            return this.sortedLicences(licences).filter((licence) => this.hasAdminLicenceRequiredRole(licence)).length
+        },
+        hasAdminLicenceAssignments(licences) {
+            return this.countAssignedAdminLicences(licences) >= 1
+        },
+        countAssignedUserLicences(licences) {
+            return this.sortedLicences(licences).filter((licence) => this.hasUserLicenceRequiredRole(licence)).length
+        },
+        hasUserLicenceAssignments(licences) {
+            return this.countAssignedUserLicences(licences) >= 1
+        },
+        hasAdminLicenceRequiredRole(licence) {
+            const model = this.normalizeLicenceModel(licence?.licence_model || null)
+            if (model.admin_licence_enabled) return true
+            return Object.entries(model.user_licence_required_by_role || {}).some(
+                ([roleName, isRequired]) => !!isRequired && this.looksLikeAdminRoleName(roleName)
+            )
         },
         async removeSchoolLicence(school_licence_id) {
             if (!(await this.schoolStore.deleteLicence(school_licence_id))) return
@@ -980,7 +1605,10 @@ export default {
         },
         hasUserLicenceRequiredRole(licence) {
             const model = this.normalizeLicenceModel(licence?.licence_model || null)
-            return Object.values(model.user_licence_required_by_role || {}).some((value) => !!value)
+            if (model.user_licence_enabled) return true
+            return Object.entries(model.user_licence_required_by_role || {}).some(
+                ([roleName, isRequired]) => !!isRequired && !this.looksLikeAdminRoleName(roleName)
+            )
         },
         async openUserLicences(licence) {
             this.selected_user_licences_school_licence_id = licence?.school_licence_id || null
@@ -1353,17 +1981,16 @@ export default {
                 this.action = this.model_lock_action
                 return
             }
-            if (this.selectedSchoolId) {
-                this.action = this.selection_lock_action
-                return
-            }
-            if ([this.model_lock_action, this.selection_lock_action].includes(this.action)) {
+            if (this.action === this.model_lock_action) {
                 this.action = ''
             }
         },
         normalizeLicenceModel(licenceModel) {
             const fallback = {
                 school_licence_required: true,
+                school_licence_enabled: true,
+                admin_licence_enabled: false,
+                user_licence_enabled: false,
                 affected_roles: [],
                 user_licence_required_by_role: {},
                 user_licence_plans_by_role: {},
@@ -1414,8 +2041,15 @@ export default {
                     }))
             }
 
+            const requiredRoleNames = affected_roles.filter((roleName) => !!user_licence_required_by_role[roleName])
+            const adminRoleNames = requiredRoleNames.filter((roleName) => this.looksLikeAdminRoleName(roleName))
+            const userRoleNames = requiredRoleNames.filter((roleName) => !this.looksLikeAdminRoleName(roleName))
+
             return {
                 school_licence_required: this.toBool(licenceModel.school_licence_required, true),
+                school_licence_enabled: this.toBool(licenceModel.school_licence_enabled, this.toBool(licenceModel.school_licence_required, true)),
+                admin_licence_enabled: this.toBool(licenceModel.admin_licence_enabled, adminRoleNames.length > 0),
+                user_licence_enabled: this.toBool(licenceModel.user_licence_enabled, userRoleNames.length > 0),
                 affected_roles,
                 user_licence_required_by_role,
                 user_licence_plans_by_role,
@@ -1431,6 +2065,13 @@ export default {
             }
             return fallback
         },
+        looksLikeAdminRoleName(roleName) {
+            const normalized = String(roleName || '')
+                .trim()
+                .toLowerCase()
+
+            return normalized.includes('admin') || normalized === 'super_admin'
+        },
     },
 }
 </script>
@@ -1442,6 +2083,183 @@ export default {
 .assignment-schools-list :deep(.v-list-item__content),
 .assignment-licence-list :deep(.v-list-item__content) {
     overflow: visible;
+}
+
+.assignment-school-licence-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(16, 38, 58, 0.08);
+}
+
+.assignment-school-licence-row__right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.assignment-school-licence-row__icons {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.licence-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid rgba(79, 120, 196, 0.28);
+    background: rgba(79, 120, 196, 0.1);
+    color: rgb(79, 120, 196);
+}
+
+.licence-type-icon--admin {
+    border-color: rgba(180, 110, 20, 0.28);
+    background: rgba(180, 110, 20, 0.08);
+    color: rgb(180, 110, 20);
+}
+
+.licence-type-icon--user {
+    border-color: rgba(46, 140, 100, 0.28);
+    background: rgba(46, 140, 100, 0.08);
+    color: rgb(46, 140, 100);
+}
+
+.assignment-school-licence-list {
+    display: grid;
+    gap: 0;
+    align-items: stretch;
+}
+
+.assignment-school-licence-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
+.assignment-school-licence-row:first-child {
+    padding-top: 0;
+}
+
+.assignment-school-licence-row__name {
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: #10263a;
+    line-height: 1.3;
+    min-width: 0;
+}
+
+.assignment-school-licence-row__valid-until {
+    display: flex;
+    align-items: center;
+    margin-top: 3px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: rgba(16, 38, 58, 0.6);
+}
+
+.assignment-school-licence-row__counter {
+    display: flex;
+    align-items: center;
+    margin-top: 2px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: rgba(16, 38, 58, 0.6);
+}
+
+.edit-licence-tabs {
+    border-bottom: 1px solid rgba(16, 38, 58, 0.1);
+}
+
+.edit-licence-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(16, 38, 58, 0.5);
+    margin-bottom: 10px;
+}
+
+.edit-licence-price-grid {
+    display: grid;
+    gap: 2px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.edit-licence-price-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 14px;
+    background: rgba(255, 255, 255, 0.7);
+    gap: 12px;
+}
+
+.edit-licence-price-row:nth-child(even) {
+    background: rgba(246, 249, 255, 0.9);
+}
+
+.edit-licence-price-row--sum {
+    border-top: 1px solid rgba(16, 38, 58, 0.15);
+    margin-top: 2px;
+    padding-top: 4px;
+    background: transparent !important;
+}
+
+.admin-user-row {
+    border-bottom: 1px solid rgba(16, 38, 58, 0.08);
+    padding: 4px 0;
+}
+
+.admin-user-row__main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.admin-user-row__name {
+    font-size: 0.875rem;
+    line-height: 1.4;
+}
+
+.admin-user-row__email {
+    display: block;
+    font-size: 0.78rem;
+    color: rgba(16, 38, 58, 0.55);
+}
+
+.admin-user-row__actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.admin-user-edit {
+    padding: 8px 0 4px;
+    border-top: 1px solid rgba(16, 38, 58, 0.06);
+    margin-top: 4px;
+}
+
+.edit-licence-price-label {
+    font-size: 0.84rem;
+    color: rgba(16, 38, 58, 0.65);
+}
+
+.edit-licence-price-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #10263a;
+    white-space: nowrap;
 }
 
 .user-licence-user-dialog-solid {

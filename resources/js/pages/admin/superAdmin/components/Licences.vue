@@ -54,50 +54,41 @@
                                             <div class="licence-card__title-wrap">
                                                 <div class="licence-card__title">{{ item.name }}</div>
                                                 <div class="licence-card__subtitle">{{ item.long_name || 'Keine Beschreibung hinterlegt' }}</div>
+                                                <div v-if="overviewDateRangeLabel(item.start_day_month, item.end_day_month)" class="licence-card__subtitle">
+                                                    {{ overviewDateRangeLabel(item.start_day_month, item.end_day_month) }}
+                                                </div>
                                             </div>
-                                            <div v-if="hasVisibleOverviewLicenceBadges(licenceModelFor(item))" class="licence-card__badges">
-                                                <div v-if="licenceModelFor(item).school_licence_enabled" class="licence-card__badge">
-                                                    <div class="licence-card__badge-head">
-                                                        <span class="licence-card__badge-label">Schullizenz</span>
-                                                        <span class="licence-card__badge-value">JA</span>
-                                                    </div>
-                                                    <span class="licence-card__badge-meta">
-                                                        {{ overviewPriceLabel(licenceModelFor(item).school_price_per_year, 'year') }}
-                                                    </span>
-                                                    <span
-                                                        v-if="overviewStorageTariffLabel('school', licenceModelFor(item))"
-                                                        class="licence-card__badge-meta">
-                                                        {{ overviewStorageTariffLabel('school', licenceModelFor(item)) }}
-                                                    </span>
-                                                </div>
-                                                <div v-if="licenceModelFor(item).admin_licence_enabled" class="licence-card__badge is-warning">
-                                                    <div class="licence-card__badge-head">
-                                                        <span class="licence-card__badge-label">Admin-Lizenz</span>
-                                                        <span class="licence-card__badge-value">JA</span>
-                                                    </div>
-                                                    <span class="licence-card__badge-meta">
-                                                        {{ overviewPriceLabel(licenceModelFor(item).admin_price_per_year, 'month') }}
-                                                    </span>
-                                                    <span
-                                                        v-if="overviewStorageTariffLabel('admin', licenceModelFor(item))"
-                                                        class="licence-card__badge-meta">
-                                                        {{ overviewStorageTariffLabel('admin', licenceModelFor(item)) }}
-                                                    </span>
-                                                </div>
-                                                <div v-if="licenceModelFor(item).user_licence_enabled" class="licence-card__badge is-warning">
-                                                    <div class="licence-card__badge-head">
-                                                        <span class="licence-card__badge-label">User-Lizenz</span>
-                                                        <span class="licence-card__badge-value">JA</span>
-                                                    </div>
-                                                    <span class="licence-card__badge-meta">
-                                                        {{ overviewPriceLabel(licenceModelFor(item).user_price_per_year, 'month') }}
-                                                    </span>
-                                                    <span
-                                                        v-if="overviewStorageTariffLabel('user', licenceModelFor(item))"
-                                                        class="licence-card__badge-meta">
-                                                        {{ overviewStorageTariffLabel('user', licenceModelFor(item)) }}
-                                                    </span>
-                                                </div>
+                                            <div class="licence-card__type-icons">
+                                                <v-tooltip text="Schullizenz" location="top">
+                                                    <template #activator="{ props }">
+                                                        <div
+                                                            v-if="licenceModelFor(item).school_licence_enabled"
+                                                            v-bind="props"
+                                                            class="licence-card__type-icon">
+                                                            <v-icon size="18" icon="mdi-domain" />
+                                                        </div>
+                                                    </template>
+                                                </v-tooltip>
+                                                <v-tooltip text="Adminlizenz" location="top">
+                                                    <template #activator="{ props }">
+                                                        <div
+                                                            v-if="licenceModelFor(item).admin_licence_enabled"
+                                                            v-bind="props"
+                                                            class="licence-card__type-icon licence-card__type-icon--admin">
+                                                            <v-icon size="18" icon="mdi-shield-crown-outline" />
+                                                        </div>
+                                                    </template>
+                                                </v-tooltip>
+                                                <v-tooltip text="Userlizenz" location="top">
+                                                    <template #activator="{ props }">
+                                                        <div
+                                                            v-if="licenceModelFor(item).user_licence_enabled"
+                                                            v-bind="props"
+                                                            class="licence-card__type-icon licence-card__type-icon--user">
+                                                            <v-icon size="18" icon="mdi-account-multiple" />
+                                                        </div>
+                                                    </template>
+                                                </v-tooltip>
                                             </div>
                                         </header>
 
@@ -237,13 +228,9 @@
                                     @blur="normalizeLicenceDayMonthField('start_day_month')" />
                             </v-col>
                             <v-col cols="12" md="6">
-                                <v-text-field
-                                    v-model="data.end_day_month"
-                                    label="End-Datum"
-                                    placeholder="TT.MM."
-                                    maxlength="6"
-                                    :rules="[required(), validDayMonth(), endDayMonthAfterStart(() => data.start_day_month)]"
-                                    @blur="normalizeLicenceDayMonthField('end_day_month')" />
+                                <div class="text-caption text-medium-emphasis mt-2">
+                                    End-Datum wird automatisch auf den Vortag gesetzt.
+                                </div>
                             </v-col>
                         </v-row>
                     </div>
@@ -324,7 +311,17 @@
                                 :rules="[positiveIntegerOrNull(), maxLength(255)]" />
 
                             <template v-if="currentLicenceModel.school_licence_enabled">
+                                <v-checkbox
+                                    v-model="currentLicenceModel.school_storage_enabled"
+                                    class="mt-2"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    label="Speicherstaffel verwenden"
+                                    @update:model-value="setStorageEnabled('school', $event)" />
+
                                 <v-row dense class="mt-1">
+                                    <template v-if="currentLicenceModel.school_storage_enabled">
                                     <v-col cols="12" md="4">
                                         <v-text-field
                                             v-model="currentLicenceModel.school_included_storage_gb"
@@ -346,6 +343,7 @@
                                             inputmode="numeric"
                                             :rules="[positiveIntegerOrNull(), maxLength(255)]" />
                                     </v-col>
+                                    </template>
                                 </v-row>
                             </template>
                         </v-card>
@@ -370,7 +368,17 @@
                                     inputmode="numeric"
                                     :rules="[positiveIntegerOrNull(), maxLength(255)]" />
 
+                                <v-checkbox
+                                    v-model="currentLicenceModel.admin_storage_enabled"
+                                    class="mt-2"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    label="Speicherstaffel verwenden"
+                                    @update:model-value="setStorageEnabled('admin', $event)" />
+
                                 <v-row dense class="mt-1">
+                                    <template v-if="currentLicenceModel.admin_storage_enabled">
                                     <v-col cols="12" md="4">
                                         <v-text-field
                                             v-model="currentLicenceModel.admin_included_storage_gb"
@@ -392,6 +400,7 @@
                                             inputmode="numeric"
                                             :rules="[positiveIntegerOrNull(), maxLength(255)]" />
                                     </v-col>
+                                    </template>
                                 </v-row>
                             </template>
 
@@ -433,7 +442,17 @@
                                     inputmode="numeric"
                                     :rules="[positiveIntegerOrNull(), maxLength(255)]" />
 
+                                <v-checkbox
+                                    v-model="currentLicenceModel.user_storage_enabled"
+                                    class="mt-2"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    label="Speicherstaffel verwenden"
+                                    @update:model-value="setStorageEnabled('user', $event)" />
+
                                 <v-row dense class="mt-1">
+                                    <template v-if="currentLicenceModel.user_storage_enabled">
                                     <v-col cols="12" md="4">
                                         <v-text-field
                                             v-model="currentLicenceModel.user_included_storage_gb"
@@ -455,6 +474,7 @@
                                             inputmode="numeric"
                                             :rules="[positiveIntegerOrNull(), maxLength(255)]" />
                                     </v-col>
+                                    </template>
                                 </v-row>
                             </template>
 
@@ -631,7 +651,6 @@ export default {
             if (this.is_uploading) return
             this.is_valid = false
             this.normalizeLicenceDayMonthField('start_day_month')
-            this.normalizeLicenceDayMonthField('end_day_month')
             await this.$refs.form.validate()
             if (!this.is_valid) return
 
@@ -648,7 +667,6 @@ export default {
             this.data = {
                 is_selectable: true,
                 start_day_month: '',
-                end_day_month: '',
             }
             this.action = 'create_licence'
         },
@@ -729,6 +747,23 @@ export default {
             if (typeof value !== 'boolean') return
             if (!this.currentLicenceModel) return
             this.currentLicenceModel.user_licence_enabled = value
+        },
+        setStorageEnabled(layerName, value) {
+            if (typeof value !== 'boolean') return
+            if (!this.currentLicenceModel) return
+
+            const normalizedLayerName = String(layerName ?? '').trim()
+            if (!['school', 'admin', 'user'].includes(normalizedLayerName)) return
+
+            this.currentLicenceModel[`${normalizedLayerName}_storage_enabled`] = value
+
+            if (value) {
+                return
+            }
+
+            this.currentLicenceModel[`${normalizedLayerName}_included_storage_gb`] = ''
+            this.currentLicenceModel[`${normalizedLayerName}_extra_storage_step_gb`] = ''
+            this.currentLicenceModel[`${normalizedLayerName}_extra_storage_step_price`] = ''
         },
         isAdminRoleSelected(roleName) {
             if (!this.currentLicenceModel) return false
@@ -825,16 +860,6 @@ export default {
         validDayMonth() {
             return (value) => this.isValidDayMonthValue(value) || 'Das Datum muss im Format TT.MM. angegeben werden.'
         },
-        endDayMonthAfterStart(startValueGetter) {
-            return (value) => {
-                const startValue = typeof startValueGetter === 'function' ? startValueGetter() : ''
-                if (!this.isValidDayMonthValue(startValue) || !this.isValidDayMonthValue(value)) {
-                    return true
-                }
-
-                return this.isEndDayMonthAfterStartDayMonth(startValue, value) || 'Das End-Datum muss nach dem Start-Datum liegen.'
-            }
-        },
         normalizeLicenceDayMonthField(fieldName) {
             if (!this.data || typeof this.data !== 'object') return
             this.data[fieldName] = this.normalizeDayMonthDisplayValue(this.data[fieldName])
@@ -849,16 +874,6 @@ export default {
         },
         isValidDayMonthValue(value) {
             return this.parseDayMonthValue(value) !== null
-        },
-        isEndDayMonthAfterStartDayMonth(startValue, endValue) {
-            const start = this.parseDayMonthValue(startValue)
-            const end = this.parseDayMonthValue(endValue)
-
-            if (!start || !end) {
-                return false
-            }
-
-            return end.month !== start.month || end.day !== start.day
         },
         parseDayMonthValue(value) {
             if (typeof value !== 'string') {
@@ -888,6 +903,37 @@ export default {
 
             return period === 'month' ? `EUR ${normalized} / Monat` : `EUR ${normalized} / Jahr`
         },
+        overviewDateRangeLabel(startDayMonth, endDayMonth) {
+            const normalizedStartDayMonth = String(startDayMonth ?? '').trim()
+            const normalizedEndDayMonth = String(endDayMonth ?? '').trim()
+            const resolvedEndDayMonth =
+                normalizedEndDayMonth !== '' ? normalizedEndDayMonth : this.derivePreviousDayMonthDisplayValue(startDayMonth)
+
+            if (normalizedStartDayMonth === '' && resolvedEndDayMonth === '') {
+                return ''
+            }
+
+            if (normalizedStartDayMonth !== '' && resolvedEndDayMonth !== '') {
+                return `Zeitraum: ${normalizedStartDayMonth} - ${resolvedEndDayMonth}`
+            }
+
+            if (normalizedStartDayMonth !== '') {
+                return `Zeitraum: ${normalizedStartDayMonth}`
+            }
+
+            return `Zeitraum: ${resolvedEndDayMonth}`
+        },
+        derivePreviousDayMonthDisplayValue(value) {
+            const parsed = this.parseDayMonthValue(value)
+            if (!parsed) {
+                return ''
+            }
+
+            const currentDate = new Date(2001, parsed.month - 1, parsed.day)
+            currentDate.setDate(currentDate.getDate() - 1)
+
+            return `${String(currentDate.getDate()).padStart(2, '0')}.${String(currentDate.getMonth() + 1).padStart(2, '0')}.`
+        },
         overviewStorageTariffLabel(layerName, licenceModel) {
             const normalizedLayerName = String(layerName ?? '').trim()
             if (!normalizedLayerName || !licenceModel || typeof licenceModel !== 'object') {
@@ -904,22 +950,37 @@ export default {
 
             return `inkl. ${includedStorage} GB, + EUR ${extraStorageStepPrice} / ${extraStorageStep} GB`
         },
+        hasStorageTariffConfigured(layerName, licenceModel) {
+            const normalizedLayerName = String(layerName ?? '').trim()
+            if (!normalizedLayerName || !licenceModel || typeof licenceModel !== 'object') {
+                return false
+            }
+
+            return [
+                `${normalizedLayerName}_included_storage_gb`,
+                `${normalizedLayerName}_extra_storage_step_gb`,
+                `${normalizedLayerName}_extra_storage_step_price`,
+            ].some((fieldName) => String(licenceModel[fieldName] ?? '').trim() !== '')
+        },
         normalizeLicenceModel(licenceModel) {
             const fallback = {
                 school_licence_enabled: true,
                 school_price_per_year: '',
+                school_storage_enabled: false,
                 school_included_storage_gb: '',
                 school_extra_storage_step_gb: '',
                 school_extra_storage_step_price: '',
                 admin_licence_enabled: false,
                 admin_price_per_year: '',
                 admin_role_names: [],
+                admin_storage_enabled: false,
                 admin_included_storage_gb: '',
                 admin_extra_storage_step_gb: '',
                 admin_extra_storage_step_price: '',
                 user_licence_enabled: false,
                 user_price_per_year: '',
                 user_role_names: [],
+                user_storage_enabled: false,
                 user_included_storage_gb: '',
                 user_extra_storage_step_gb: '',
                 user_extra_storage_step_price: '',
@@ -950,60 +1011,76 @@ export default {
             }
 
             if ('school_licence_enabled' in licenceModel || 'admin_licence_enabled' in licenceModel || 'user_licence_enabled' in licenceModel) {
+                const normalizedSchoolIncludedStorage = typeof licenceModel.school_included_storage_gb === 'string'
+                    ? licenceModel.school_included_storage_gb
+                    : (licenceModel.school_included_storage_gb ?? '').toString()
+                const normalizedSchoolExtraStorageStep = typeof licenceModel.school_extra_storage_step_gb === 'string'
+                    ? licenceModel.school_extra_storage_step_gb
+                    : (licenceModel.school_extra_storage_step_gb ?? '').toString()
+                const normalizedSchoolExtraStorageStepPrice = typeof licenceModel.school_extra_storage_step_price === 'string'
+                    ? licenceModel.school_extra_storage_step_price
+                    : (licenceModel.school_extra_storage_step_price ?? '').toString()
+                const normalizedAdminIncludedStorage = typeof licenceModel.admin_included_storage_gb === 'string'
+                    ? licenceModel.admin_included_storage_gb
+                    : (licenceModel.admin_included_storage_gb ?? '').toString()
+                const normalizedAdminExtraStorageStep = typeof licenceModel.admin_extra_storage_step_gb === 'string'
+                    ? licenceModel.admin_extra_storage_step_gb
+                    : (licenceModel.admin_extra_storage_step_gb ?? '').toString()
+                const normalizedAdminExtraStorageStepPrice = typeof licenceModel.admin_extra_storage_step_price === 'string'
+                    ? licenceModel.admin_extra_storage_step_price
+                    : (licenceModel.admin_extra_storage_step_price ?? '').toString()
+                const normalizedUserIncludedStorage = typeof licenceModel.user_included_storage_gb === 'string'
+                    ? licenceModel.user_included_storage_gb
+                    : (licenceModel.user_included_storage_gb ?? '').toString()
+                const normalizedUserExtraStorageStep = typeof licenceModel.user_extra_storage_step_gb === 'string'
+                    ? licenceModel.user_extra_storage_step_gb
+                    : (licenceModel.user_extra_storage_step_gb ?? '').toString()
+                const normalizedUserExtraStorageStepPrice = typeof licenceModel.user_extra_storage_step_price === 'string'
+                    ? licenceModel.user_extra_storage_step_price
+                    : (licenceModel.user_extra_storage_step_price ?? '').toString()
+
                 return {
                     school_licence_enabled: this.toBool(licenceModel.school_licence_enabled, true),
                     school_price_per_year:
                         typeof licenceModel.school_price_per_year === 'string'
                             ? licenceModel.school_price_per_year
                             : (licenceModel.school_price_per_year ?? '').toString(),
-                    school_included_storage_gb:
-                        typeof licenceModel.school_included_storage_gb === 'string'
-                            ? licenceModel.school_included_storage_gb
-                            : (licenceModel.school_included_storage_gb ?? '').toString(),
-                    school_extra_storage_step_gb:
-                        typeof licenceModel.school_extra_storage_step_gb === 'string'
-                            ? licenceModel.school_extra_storage_step_gb
-                            : (licenceModel.school_extra_storage_step_gb ?? '').toString(),
-                    school_extra_storage_step_price:
-                        typeof licenceModel.school_extra_storage_step_price === 'string'
-                            ? licenceModel.school_extra_storage_step_price
-                            : (licenceModel.school_extra_storage_step_price ?? '').toString(),
+                    school_storage_enabled: this.hasStorageTariffConfigured('school', {
+                        school_included_storage_gb: normalizedSchoolIncludedStorage,
+                        school_extra_storage_step_gb: normalizedSchoolExtraStorageStep,
+                        school_extra_storage_step_price: normalizedSchoolExtraStorageStepPrice,
+                    }),
+                    school_included_storage_gb: normalizedSchoolIncludedStorage,
+                    school_extra_storage_step_gb: normalizedSchoolExtraStorageStep,
+                    school_extra_storage_step_price: normalizedSchoolExtraStorageStepPrice,
                     admin_licence_enabled: this.toBool(licenceModel.admin_licence_enabled, false),
                     admin_price_per_year:
                         typeof licenceModel.admin_price_per_year === 'string'
                             ? licenceModel.admin_price_per_year
                             : (licenceModel.admin_price_per_year ?? '').toString(),
                     admin_role_names: normalizeRoleNames(licenceModel.admin_role_names),
-                    admin_included_storage_gb:
-                        typeof licenceModel.admin_included_storage_gb === 'string'
-                            ? licenceModel.admin_included_storage_gb
-                            : (licenceModel.admin_included_storage_gb ?? '').toString(),
-                    admin_extra_storage_step_gb:
-                        typeof licenceModel.admin_extra_storage_step_gb === 'string'
-                            ? licenceModel.admin_extra_storage_step_gb
-                            : (licenceModel.admin_extra_storage_step_gb ?? '').toString(),
-                    admin_extra_storage_step_price:
-                        typeof licenceModel.admin_extra_storage_step_price === 'string'
-                            ? licenceModel.admin_extra_storage_step_price
-                            : (licenceModel.admin_extra_storage_step_price ?? '').toString(),
+                    admin_storage_enabled: this.hasStorageTariffConfigured('admin', {
+                        admin_included_storage_gb: normalizedAdminIncludedStorage,
+                        admin_extra_storage_step_gb: normalizedAdminExtraStorageStep,
+                        admin_extra_storage_step_price: normalizedAdminExtraStorageStepPrice,
+                    }),
+                    admin_included_storage_gb: normalizedAdminIncludedStorage,
+                    admin_extra_storage_step_gb: normalizedAdminExtraStorageStep,
+                    admin_extra_storage_step_price: normalizedAdminExtraStorageStepPrice,
                     user_licence_enabled: this.toBool(licenceModel.user_licence_enabled, false),
                     user_price_per_year:
                         typeof licenceModel.user_price_per_year === 'string'
                             ? licenceModel.user_price_per_year
                             : (licenceModel.user_price_per_year ?? '').toString(),
                     user_role_names: normalizeRoleNames(licenceModel.user_role_names),
-                    user_included_storage_gb:
-                        typeof licenceModel.user_included_storage_gb === 'string'
-                            ? licenceModel.user_included_storage_gb
-                            : (licenceModel.user_included_storage_gb ?? '').toString(),
-                    user_extra_storage_step_gb:
-                        typeof licenceModel.user_extra_storage_step_gb === 'string'
-                            ? licenceModel.user_extra_storage_step_gb
-                            : (licenceModel.user_extra_storage_step_gb ?? '').toString(),
-                    user_extra_storage_step_price:
-                        typeof licenceModel.user_extra_storage_step_price === 'string'
-                            ? licenceModel.user_extra_storage_step_price
-                            : (licenceModel.user_extra_storage_step_price ?? '').toString(),
+                    user_storage_enabled: this.hasStorageTariffConfigured('user', {
+                        user_included_storage_gb: normalizedUserIncludedStorage,
+                        user_extra_storage_step_gb: normalizedUserExtraStorageStep,
+                        user_extra_storage_step_price: normalizedUserExtraStorageStepPrice,
+                    }),
+                    user_included_storage_gb: normalizedUserIncludedStorage,
+                    user_extra_storage_step_gb: normalizedUserExtraStorageStep,
+                    user_extra_storage_step_price: normalizedUserExtraStorageStepPrice,
                 }
             }
 
@@ -1019,18 +1096,21 @@ export default {
             return {
                 school_licence_enabled: this.toBool(licenceModel.school_licence_required, true),
                 school_price_per_year: '',
+                school_storage_enabled: false,
                 school_included_storage_gb: '',
                 school_extra_storage_step_gb: '',
                 school_extra_storage_step_price: '',
                 admin_licence_enabled: adminRoleNames.length > 0,
                 admin_price_per_year: '',
                 admin_role_names: adminRoleNames,
+                admin_storage_enabled: false,
                 admin_included_storage_gb: '',
                 admin_extra_storage_step_gb: '',
                 admin_extra_storage_step_price: '',
                 user_licence_enabled: userRoleNames.length > 0,
                 user_price_per_year: '',
                 user_role_names: userRoleNames,
+                user_storage_enabled: false,
                 user_included_storage_gb: '',
                 user_extra_storage_step_gb: '',
                 user_extra_storage_step_price: '',
@@ -1053,5 +1133,35 @@ export default {
 <style scoped>
 .licences-list :deep(.v-list-item__content) {
     overflow: visible;
+}
+
+.licence-card__type-icons {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.licence-card__type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid rgba(79, 120, 196, 0.28);
+    background: rgba(79, 120, 196, 0.1);
+    color: rgb(79, 120, 196);
+}
+
+.licence-card__type-icon--admin {
+    border-color: rgba(180, 110, 20, 0.28);
+    background: rgba(180, 110, 20, 0.08);
+    color: rgb(180, 110, 20);
+}
+
+.licence-card__type-icon--user {
+    border-color: rgba(46, 140, 100, 0.28);
+    background: rgba(46, 140, 100, 0.08);
+    color: rgb(46, 140, 100);
 }
 </style>
