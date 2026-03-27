@@ -587,9 +587,10 @@ class SchoolController extends Controller
                 : null;
 
             if ($assigned) {
-                $chargedPrice = isset($entry['charged_price']) && is_numeric($entry['charged_price'])
-                    ? round((float) $entry['charged_price'], 2)
-                    : ($this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null)['charged_price'] ?? null);
+                $existingChargedPrice = $this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null)['charged_price'] ?? null;
+                $chargedPrice = array_key_exists('charged_price', $entry)
+                    ? (is_numeric($entry['charged_price']) ? round((float) $entry['charged_price'], 2) : null)
+                    : $existingChargedPrice;
                 $updatedUserAssignments[$roleName] = [
                     'valid_until' => $validUntil,
                     'is_activated' => $isActivated,

@@ -589,7 +589,7 @@
                             <div class="edit-licence-price-row">
                                 <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
                                 <span class="edit-licence-price-value">
-                                    {{ edit_school_charged_price != null ? formatPrice(edit_school_charged_price) : (edit_licence_item?.school_price_per_year != null ? formatPrice(edit_licence_item.school_price_per_year) + ' (Basis-Tarif)' : '–') }}
+                                    {{ overridePriceLabel(edit_school_charged_price, edit_licence_item?.school_price_per_year, 'Basis-Tarif') }}
                                 </span>
                             </div>
                             <template v-if="edit_licence_item && (edit_licence_item.school_extra_storage_step_gb != null || edit_licence_item.school_extra_storage_step_price != null)">
@@ -617,7 +617,7 @@
                                         inputmode="numeric"
                                         clearable
                                         :placeholder="edit_licence_item ? String(edit_licence_item.school_price_per_year ?? '') : ''"
-                                        hint="Leer lassen = Basis-Tarif"
+                                        hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
                                         persistent-hint />
                                 </v-col>
                                 <template v-if="edit_licence_item && (edit_licence_item.school_extra_storage_step_gb != null || edit_licence_item.school_extra_storage_step_price != null)">
@@ -637,7 +637,7 @@
                                             inputmode="numeric"
                                             clearable
                                             :placeholder="edit_licence_item ? String(edit_licence_item.school_extra_storage_step_price ?? '') : ''"
-                                            hint="Leer lassen = Standardpreis"
+                                            hint="Leer lassen = Standardpreis, 0 = EUR 0"
                                             persistent-hint />
                                     </v-col>
                                 </template>
@@ -755,9 +755,7 @@
                                             <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
                                             <span class="d-flex align-center" style="gap: 8px;">
                                                 <span class="edit-licence-price-value">
-                                                    {{ edit_admin_user_charged_price != null
-                                                        ? formatPrice(edit_admin_user_charged_price)
-                                                        : (edit_licence_item?.admin_price_per_year != null ? formatPrice(edit_licence_item.admin_price_per_year) + ' (Basis-Tarif)' : '–') }}
+                                                    {{ overridePriceLabel(edit_admin_user_charged_price, edit_licence_item?.admin_price_per_year, 'Basis-Tarif') }}
                                                 </span>
                                                 <v-btn
                                                     v-if="!edit_admin_user_price_editing"
@@ -779,7 +777,7 @@
                                             variant="outlined"
                                             clearable
                                             :placeholder="edit_licence_item ? String(edit_licence_item.admin_price_per_year ?? '') : ''"
-                                            hint="Leer lassen = Basis-Tarif"
+                                            hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
                                             persistent-hint
                                             class="mb-2" />
                                         <div class="d-flex justify-space-between">
@@ -1167,6 +1165,17 @@ export default {
             return num % 1 === 0
                 ? `€ ${num.toFixed(0)}`
                 : `€ ${num.toFixed(2).replace('.', ',')}`
+        },
+        overridePriceLabel(overridePrice, defaultPrice, defaultLabel = 'Basis-Tarif') {
+            if (overridePrice !== null && overridePrice !== undefined && overridePrice !== '') {
+                return this.formatPrice(overridePrice)
+            }
+
+            if (defaultPrice !== null && defaultPrice !== undefined && defaultPrice !== '') {
+                return `${this.formatPrice(defaultPrice)} (${defaultLabel})`
+            }
+
+            return '–'
         },
         formatStorage(value) {
             if (value === null || value === undefined || value === '') return '–'

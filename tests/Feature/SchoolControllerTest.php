@@ -348,7 +348,7 @@ test('admin can update school via service', function () {
     $this->mock(SchoolService::class, function ($mock) use ($schoolToUpdate, $payload, $updatedSchool) {
         $mock->shouldReceive('update')
             ->once()
-            ->with(\Mockery::on(fn ($school) => $school->id === $schoolToUpdate->id), $payload)
+            ->with(Mockery::on(fn ($school) => $school->id === $schoolToUpdate->id), $payload)
             ->andReturn($updatedSchool);
     });
 
@@ -1180,6 +1180,118 @@ test('super admin can save school licence user role details with valid until', f
 
     $schoolLicence->refresh();
     expect(isset($schoolLicence->user_licence_assignments[(string) $user->id]))->toBeFalse();
+});
+
+test('saving school licence user roles clears charged price when null is submitted', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'user_roles_clear_price',
+        'long_name' => 'User Roles Clear Price Licence',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $user->assignRole('teacher');
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2027-01-31',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+        'user_licence_assignments' => [
+            (string) $user->id => [
+                'teacher' => [
+                    'valid_until' => '2026-10-15',
+                    'is_activated' => true,
+                    'charged_price' => 19.5,
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$user->id}/roles", [
+        'roles' => [
+            [
+                'name' => 'teacher',
+                'assigned' => true,
+                'valid_until' => '2026-10-15',
+                'is_activated' => true,
+                'charged_price' => null,
+            ],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('roles.0.charged_price', null);
+
+    $schoolLicence->refresh();
+
+    expect(data_get($schoolLicence->user_licence_assignments, "{$user->id}.teacher.charged_price"))->toBeNull();
+});
+
+test('saving school licence user roles preserves zero as charged price override', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'user_roles_zero_price',
+        'long_name' => 'User Roles Zero Price Licence',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $user->assignRole('teacher');
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2027-01-31',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+        'user_licence_assignments' => [
+            (string) $user->id => [
+                'teacher' => [
+                    'valid_until' => '2026-10-15',
+                    'is_activated' => true,
+                    'charged_price' => 19.5,
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$user->id}/roles", [
+        'roles' => [
+            [
+                'name' => 'teacher',
+                'assigned' => true,
+                'valid_until' => '2026-10-15',
+                'is_activated' => true,
+                'charged_price' => 0,
+            ],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('roles.0.charged_price', 0);
+
+    $schoolLicence->refresh();
+
+    expect(data_get($schoolLicence->user_licence_assignments, "{$user->id}.teacher.charged_price"))->toBe(0);
 });
 
 // ============================================================================

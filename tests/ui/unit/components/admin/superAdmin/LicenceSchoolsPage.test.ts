@@ -290,6 +290,18 @@ describe('Super admin licence assignments', () => {
         expect(roleEntry.plan_id).toBe(2)
     })
 
+    it('distinguishes null and zero for charged price overrides', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx = {
+            formatPrice: methods.formatPrice,
+        }
+
+        expect(methods.overridePriceLabel.call(ctx, null, '59')).toBe('€ 59 (Basis-Tarif)')
+        expect(methods.overridePriceLabel.call(ctx, '', '59')).toBe('€ 59 (Basis-Tarif)')
+        expect(methods.overridePriceLabel.call(ctx, 0, '59')).toBe('€ 0')
+        expect(methods.overridePriceLabel.call(ctx, '0', '59')).toBe('€ 0')
+    })
+
     it('treats roles with disabled user licence requirement as active without activation', () => {
         const methods = (LicenceSchools as any).methods
         const roleEntry = {
