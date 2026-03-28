@@ -807,6 +807,19 @@ export default {
     color: rgb(15, 23, 42);
 }
 
+.general-settings-richtext :deep(p) {
+    margin: 0 0 0.6em;
+}
+
+.general-settings-richtext :deep(p:last-child) {
+    margin-bottom: 0;
+}
+
+.general-settings-richtext :deep(p:empty),
+.general-settings-richtext :deep(p > br:only-child) {
+    min-height: 1em;
+}
+
 .general-settings-muted {
     color: rgb(100, 116, 139);
 }

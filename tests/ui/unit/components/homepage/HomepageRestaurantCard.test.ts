@@ -20,4 +20,18 @@ describe('homepage restaurant entry', () => {
         expect(source).toContain("import Restaurant from '@/pages/homepage/index/Restaurant.vue'")
         expect(source).toContain("{ path: '/homepage/restaurant', component: Restaurant }")
     })
+
+    it('renders the restaurant info text from homepage config', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Restaurant.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('School-Info')
+        expect(source).toContain('Menüpläne aktuell bestellbar')
+        expect(source).toContain('Menüpläne aktuell sichtbar')
+        expect(source).toContain("this.homepageStore.loadConfig(this.$route?.query?.school ?? null, this.$route?.query?.app ?? null)")
+        expect(source).toContain("return this.config?.restaurant?.user_information_intro_html || ''")
+        expect(source).toContain("return Number(this.config?.restaurant?.orderable_menu_plans_count || 0)")
+        expect(source).toContain("return Number(this.config?.restaurant?.visible_menu_plans_count || 0)")
+        expect(source).not.toContain('Diese Seite ist aktuell eine interne Vorschau.')
+    })
 })

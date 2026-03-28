@@ -90,7 +90,7 @@
                                 <div class="restaurant-users-card__state">
                                     <v-chip
                                         size="x-small"
-                                        :color="user.has_sepa ? 'success' : 'secondary'"
+                                        :color="user.has_sepa ? 'success' : 'error'"
                                         variant="tonal">
                                         {{ user.has_sepa ? 'SEPA' : 'Kein SEPA' }}
                                     </v-chip>

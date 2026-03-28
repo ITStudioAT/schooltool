@@ -11,8 +11,12 @@
                     <div class="restaurant-hero-copy">
                         <div class="restaurant-eyebrow">SchoolTool Restaurant</div>
                         <h1 class="restaurant-title">Restaurant</h1>
-                        <p class="restaurant-lead">
-                            Diese Seite ist aktuell eine interne Vorschau. Hier entsteht die neue Benutzeroberfläche für Speisepläne, Bestellungen und alle Infos rund um das Essen.
+                        <div
+                            v-if="restaurantIntroHtml"
+                            class="restaurant-lead restaurant-lead--richtext"
+                            v-html="restaurantIntroHtml" />
+                        <p v-else class="restaurant-lead">
+                            Kein Informationstext hinterlegt.
                         </p>
 
                         <div class="restaurant-actions">
@@ -22,11 +26,20 @@
                     </div>
 
                     <div class="restaurant-status-card">
-                        <div class="restaurant-status-card__label">Status</div>
-                        <div class="restaurant-status-card__title">Dummy-Seite aktiv</div>
-                        <p class="restaurant-status-card__text">
-                            Die externe Weiterleitung wurde entfernt. Dieser Bereich bleibt jetzt vollständig in der App.
-                        </p>
+                        <div class="restaurant-status-card__label">School-Info</div>
+                        <div class="restaurant-status-card__title">{{ schoolInfoName }}</div>
+
+                        <div class="restaurant-status-card__stats">
+                            <div class="restaurant-status-card__stat">
+                                <span class="restaurant-status-card__stat-label">Menüpläne aktuell bestellbar</span>
+                                <strong class="restaurant-status-card__stat-value">{{ orderableMenuPlansCount }}</strong>
+                            </div>
+
+                            <div class="restaurant-status-card__stat">
+                                <span class="restaurant-status-card__stat-label">Menüpläne aktuell sichtbar</span>
+                                <strong class="restaurant-status-card__stat-value">{{ visibleMenuPlansCount }}</strong>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -63,8 +76,41 @@
 </template>
 
 <script>
+import { mapWritableState } from 'pinia'
+import { useHomepageStore } from '@/stores/homepage/HomepageStore'
+
 export default {
     name: 'HomepageRestaurantPage',
+
+    async beforeMount() {
+        this.homepageStore = useHomepageStore()
+
+        if (! this.config) {
+            await this.homepageStore.loadConfig(this.$route?.query?.school ?? null, this.$route?.query?.app ?? null)
+        }
+    },
+
+    data() {
+        return {
+            homepageStore: null,
+        }
+    },
+
+    computed: {
+        ...mapWritableState(useHomepageStore, ['config']),
+        restaurantIntroHtml() {
+            return this.config?.restaurant?.user_information_intro_html || ''
+        },
+        schoolInfoName() {
+            return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
+        },
+        orderableMenuPlansCount() {
+            return Number(this.config?.restaurant?.orderable_menu_plans_count || 0)
+        },
+        visibleMenuPlansCount() {
+            return Number(this.config?.restaurant?.visible_menu_plans_count || 0)
+        },
+    },
 }
 </script>
 
@@ -137,6 +183,14 @@ export default {
     color: #4b5563;
 }
 
+.restaurant-lead--richtext :deep(p) {
+    margin: 0 0 0.7em;
+}
+
+.restaurant-lead--richtext :deep(p:last-child) {
+    margin-bottom: 0;
+}
+
 .restaurant-actions {
     display: flex;
     flex-wrap: wrap;
@@ -201,6 +255,31 @@ export default {
 .restaurant-status-card__text {
     line-height: 1.65;
     opacity: 0.94;
+}
+
+.restaurant-status-card__stats {
+    display: grid;
+    gap: 12px;
+}
+
+.restaurant-status-card__stat {
+    display: grid;
+    gap: 4px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 247, 237, 0.14);
+}
+
+.restaurant-status-card__stat-label {
+    font-size: 0.82rem;
+    line-height: 1.4;
+    opacity: 0.82;
+}
+
+.restaurant-status-card__stat-value {
+    font-size: 1.4rem;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .restaurant-content {
