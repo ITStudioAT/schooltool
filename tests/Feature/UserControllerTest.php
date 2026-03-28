@@ -111,13 +111,22 @@ test('super admin can store user via UserService', function () {
         ]);
 });
 
-test('admin can also store user', function () {
+test('admin can store user with regular roles but not super_admin', function () {
     $this->actingAs($this->adminUser, 'sanctum');
 
     $this->postJson('/api/admin/users20/store', [
         'last_name' => 'Nope',
         'email' => 'nope@test.com',
+        'roles' => [
+            ['name' => 'teacher', 'checked' => true],
+            ['name' => 'super_admin', 'checked' => true],
+        ],
     ])->assertStatus(200);
+
+    $createdUser = User::where('email', 'nope@test.com')->firstOrFail();
+
+    expect($createdUser->hasRole('teacher'))->toBeTrue()
+        ->and($createdUser->hasRole('super_admin'))->toBeFalse();
 });
 
 // ============================================================================
@@ -518,7 +527,31 @@ test('admin cannot assign super_admin role via users20 update', function () {
     expect($target->fresh()->hasRole('super_admin'))->toBeFalse();
 });
 
-test('admin cannot assign regular roles via users20 update', function () {
+test('admin cannot remove super_admin role via users20 update', function () {
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'no-demotion@test.com',
+        'last_name' => 'NoDemotion',
+    ]);
+    $target->assignRole('super_admin');
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $target->id,
+        'last_name' => 'NoDemotion',
+        'first_name' => $target->first_name,
+        'email' => $target->email,
+        'roles' => [
+            ['name' => 'super_admin', 'checked' => false],
+        ],
+    ])->assertStatus(200);
+
+    expect($target->fresh()->hasRole('super_admin'))->toBeTrue();
+});
+
+test('admin can assign regular roles via users20 update', function () {
     $target = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -538,7 +571,7 @@ test('admin cannot assign regular roles via users20 update', function () {
         ],
     ])->assertStatus(200);
 
-    expect($target->fresh()->hasRole('teacher'))->toBeFalse();
+    expect($target->fresh()->hasRole('teacher'))->toBeTrue();
 });
 
 test('kron@naturwelt.at remains super_admin even when unchecked in users20 update', function () {

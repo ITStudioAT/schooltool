@@ -170,6 +170,30 @@ describe('dashboardMenu', function () {
             ->and($registerItem['to'])->toBe('/admin/register_system');
     });
 
+    it('includes settings menu item for admin shell roles such as teacher', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create([
+            'first_name' => 'Teach',
+            'last_name' => 'Er',
+            'school_id' => $school->id,
+        ]);
+        $role = Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Lehrertool']);
+
+        $result = $this->service->dashboardMenu();
+
+        $settingsItem = collect($result)->firstWhere('title', 'Einstellungen');
+
+        expect($settingsItem)
+            ->not->toBeNull()
+            ->and($settingsItem['icon'])->toBe('mdi-cog')
+            ->and($settingsItem['to'])->toBe('/admin/settings');
+    });
+
     it('truncates long user names to 17 characters', function () {
         $user = User::factory()->create([
             'first_name' => 'VeryLongFirstName',
@@ -897,6 +921,7 @@ describe('routeCapabilities', function () {
         $capabilities = $this->service->routeCapabilities($user, $menu);
 
         expect($capabilities['home'])->toBeTrue()
+            ->and($capabilities['settings'])->toBeTrue()
             ->and($capabilities['profile'])->toBeTrue()
             ->and($capabilities['users'])->toBeTrue()
             ->and($capabilities['super_admin'])->toBeTrue()
@@ -926,9 +951,11 @@ describe('routeCapabilities', function () {
 
         $capabilities = $this->service->routeCapabilities($user, [
             ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+            ['title' => 'Einstellungen', 'to' => '/admin/settings', 'is_active' => true],
         ]);
 
         expect($capabilities['home'])->toBeTrue()
+            ->and($capabilities['settings'])->toBeTrue()
             ->and($capabilities['profile'])->toBeTrue();
     });
 

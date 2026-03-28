@@ -36,7 +36,7 @@ class AdminNavigationService
         $isSuperAdmin = $this->userHasRole(['super_admin']);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
-        if ($isSuperAdmin) {
+        if ($isSuperAdmin || $user->hasAnyRole(self::ADMIN_SHELL_ROLES)) {
             $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'is_active' => true];
         }
 
@@ -172,7 +172,7 @@ class AdminNavigationService
             ->keyBy('to');
 
         $capabilities['home'] = $user->hasAnyRole(self::ADMIN_SHELL_ROLES) || $user->hasRole('super_admin');
-        $capabilities['settings'] = $user->hasRole('super_admin');
+        $capabilities['settings'] = $user->hasAnyRole(self::ADMIN_SHELL_ROLES) || $user->hasRole('super_admin');
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');

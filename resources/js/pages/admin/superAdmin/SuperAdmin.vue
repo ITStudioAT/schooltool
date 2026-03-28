@@ -37,23 +37,6 @@
             </v-sheet>
 
             <v-sheet
-                v-if="main_action == 'licences' && hasAnyConfiguredRole(['super_admin'])"
-                rounded="xl"
-                class="super-admin-subnav mb-2"
-                :class="{ 'is-locked': isNavigationLocked }">
-                <v-btn-toggle v-model="licences_action" mandatory class="super-admin-subnav__switcher" color="primary" divided :disabled="isNavigationLocked">
-                    <v-btn
-                        v-for="item in visibleLicenceNavigationItems"
-                        :key="item.key"
-                        :value="item.key"
-                        class="super-admin-subnav__button"
-                        :prepend-icon="item.icon">
-                        {{ item.label }}
-                    </v-btn>
-                </v-btn-toggle>
-            </v-sheet>
-
-            <v-sheet
                 v-if="['teachers', 'teachers_list'].includes(main_action) && hasAnyConfiguredRole(['super_admin', 'admin'])"
                 rounded="xl"
                 class="super-admin-subnav mb-2"
@@ -74,11 +57,6 @@
                 <v-row class="w-100 ma-0" dense>
                     <ActiveSchool v-if="main_action == '' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
                     <Schools v-if="main_action == 'schools' && hasAnyConfiguredRole(['super_admin'])" />
-                    <Schoolyears v-if="main_action == 'schoolyears' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
-                    <Licences v-if="main_action == 'licences' && licences_action == 'overview' && hasAnyConfiguredRole(['super_admin'])" />
-                    <LicenceSchools v-if="main_action == 'licences' && licences_action == 'schools' && hasAnyConfiguredRole(['super_admin'])" />
-                    <Roles v-if="main_action == 'roles' && hasAnyConfiguredRole(['super_admin'])" />
-                    <Users v-if="main_action == 'users' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
                     <Teachers v-if="main_action == 'teachers' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
                     <TeachersList v-if="main_action == 'teachers_list' && hasAnyConfiguredRole(['super_admin', 'admin'])" />
                 </v-row>
@@ -205,11 +183,6 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Schools from './components/Schools.vue'
-import Schoolyears from './components/Schoolyears.vue'
-import Licences from './components/Licences.vue'
-import LicenceSchools from './components/LicenceSchools.vue'
-import Roles from './components/Roles.vue'
-import Users from './components/Users.vue'
 import Teachers from './components/Teachers.vue'
 import TeachersList from './components/TeachersList.vue'
 
@@ -218,7 +191,7 @@ import ActiveSchool from './components/ActiveSchool.vue'
 import Log from './components/Log.vue'
 
 export default {
-    components: { AdminSectionHero, Schools, Schoolyears, ActiveSchool, Licences, LicenceSchools, Roles, Users, Log, Teachers, TeachersList },
+    components: { AdminSectionHero, Schools, ActiveSchool, Log, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -238,22 +211,11 @@ export default {
                 this.$router.push(expectedPath)
             }
         },
-        licences_action(val) {
-            if (this.main_action !== 'licences') return
-            const currentTab = this.$route.query.tab || 'overview'
-            if (val === currentTab) return
-            if (val === 'overview') {
-                this.$router.push('/admin/super_admin/licences')
-            } else {
-                this.$router.push(`/admin/super_admin/licences?tab=${val}`)
-            }
-        },
     },
 
     data() {
         return {
             adminStore: null,
-            licences_action: 'overview',
             log_dialog: false,
             impersonation_dialog: false,
             selected_impersonation_school_id: null,
@@ -271,10 +233,10 @@ export default {
             return this.main_action == ''
         },
         shouldShowHeader() {
-            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list'].includes(this.main_action)
+            return ['', 'schools', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         usesOverviewTheme() {
-            return ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list'].includes(this.main_action)
+            return ['', 'schools', 'teachers', 'teachers_list'].includes(this.main_action)
         },
         canAccessSuperAdminPage() {
             const roles = this.configuredRoleNames
@@ -290,10 +252,6 @@ export default {
             const map = {
                 '': { icon: 'mdi-home', label: 'Übersicht', note: 'Dashboard & aktive Schule' },
                 schools: { icon: 'mdi-school', label: 'Schulen', note: 'Schulverwaltung' },
-                schoolyears: { icon: 'mdi-calendar-multiple', label: 'Schuljahre', note: 'Schuljahresverwaltung' },
-                licences: { icon: 'mdi-card-account-details', label: 'Lizenzen', note: 'Lizenzverwaltung' },
-                roles: { icon: 'mdi-badge-account-horizontal-outline', label: 'Rollen', note: 'Rollenverwaltung' },
-                users: { icon: 'mdi-account-multiple', label: 'Benutzer', note: 'Benutzerverwaltung' },
                 teachers: { icon: 'mdi-account-tie', label: 'Lehrer', note: 'Lehrerverwaltung' },
                 teachers_list: { icon: 'mdi-view-list', label: 'Lehrerliste', note: 'Lehrerverwaltung' },
             }
@@ -336,38 +294,6 @@ export default {
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
                 {
-                    key: 'schoolyears',
-                    label: 'Schuljahre',
-                    meta: 'Kalender',
-                    icon: 'mdi-calendar-multiple',
-                    targetAction: 'schoolyears',
-                    visible: hasAnyRole(['super_admin', 'admin']),
-                },
-                {
-                    key: 'licences',
-                    label: 'Lizenzen',
-                    meta: 'Modelle',
-                    icon: 'mdi-card-account-details',
-                    targetAction: 'licences',
-                    visible: hasAnyRole(['super_admin']),
-                },
-                {
-                    key: 'roles',
-                    label: 'Rollen',
-                    meta: 'Rechte',
-                    icon: 'mdi-badge-account-horizontal-outline',
-                    targetAction: 'roles',
-                    visible: hasAnyRole(['super_admin']),
-                },
-                {
-                    key: 'users',
-                    label: 'Benutzer',
-                    meta: 'Accounts',
-                    icon: 'mdi-account-multiple',
-                    targetAction: 'users',
-                    visible: hasAnyRole(['super_admin', 'admin']),
-                },
-                {
                     key: 'teachers',
                     label: 'Lehrer',
                     meta: 'Lehrerliste',
@@ -392,22 +318,6 @@ export default {
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
             ].filter((item) => item.visible)
-        },
-        visibleLicenceNavigationItems() {
-            return [
-                {
-                    key: 'overview',
-                    label: 'Alle Lizenzen',
-                    meta: 'Übersicht',
-                    icon: 'mdi-home',
-                },
-                {
-                    key: 'schools',
-                    label: 'Lizenzvergaben',
-                    meta: 'Schulen',
-                    icon: 'mdi-card-account-details-outline',
-                },
-            ]
         },
         visibleTeacherNavigationItems() {
             return [
@@ -468,13 +378,25 @@ export default {
         },
         syncFromRoute() {
             const section = this.$route.params.section || ''
-            const validSections = ['', 'schools', 'schoolyears', 'licences', 'roles', 'users', 'teachers', 'teachers_list']
-            this.main_action = validSections.includes(section) ? section : ''
-
             if (section === 'licences') {
-                const tab = this.$route.query.tab || 'overview'
-                this.licences_action = ['overview', 'schools'].includes(tab) ? tab : 'overview'
+                this.redirectLicencesToSettings()
+                return
             }
+            if (section === 'schoolyears') {
+                this.redirectSchoolyearsToSettings()
+                return
+            }
+            if (section === 'users') {
+                this.redirectUsersToSettings()
+                return
+            }
+            if (section === 'roles') {
+                this.redirectRolesToSettings()
+                return
+            }
+
+            const validSections = ['', 'schools', 'teachers', 'teachers_list']
+            this.main_action = validSections.includes(section) ? section : ''
         },
         async handleNavigation(item) {
             if (this.isNavigationLocked) {
@@ -491,11 +413,6 @@ export default {
                 return
             }
 
-            if (item.targetAction === 'licences') {
-                this.$router.push('/admin/super_admin/licences')
-                return
-            }
-
             if (item.targetAction === 'teachers') {
                 this.$router.push('/admin/super_admin/teachers')
                 return
@@ -504,11 +421,25 @@ export default {
             const path = item.targetAction === '' ? '/admin/super_admin' : `/admin/super_admin/${item.targetAction}`
             this.$router.push(path)
         },
-        openLicencesOverview() {
-            this.$router.push('/admin/super_admin/licences')
-        },
         openTeachersOverview() {
             this.$router.push('/admin/super_admin/teachers')
+        },
+        redirectLicencesToSettings() {
+            const currentTab = this.$route.query.tab === 'schools' ? 'schools' : 'overview'
+            const target = currentTab === 'schools'
+                ? '/admin/settings?panel=licence_models&licence_tab=schools'
+                : '/admin/settings?panel=licence_models'
+
+            this.$router.replace(target)
+        },
+        redirectSchoolyearsToSettings() {
+            this.$router.replace('/admin/settings?tab=admin')
+        },
+        redirectUsersToSettings() {
+            this.$router.replace('/admin/settings?tab=admin&panel=users')
+        },
+        redirectRolesToSettings() {
+            this.$router.replace('/admin/settings?panel=roles')
         },
         async openImpersonationDialog() {
             this.impersonation_dialog = true

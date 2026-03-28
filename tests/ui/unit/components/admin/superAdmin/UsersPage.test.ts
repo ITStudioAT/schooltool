@@ -38,8 +38,8 @@ const vuetifyStubs = {
     VForm: { template: '<form><slot /></form>' },
     'v-text-field': { template: '<input />' },
     VTextField: { template: '<input />' },
-    'v-checkbox': { template: '<input type="checkbox" />' },
-    VCheckbox: { template: '<input type="checkbox" />' },
+    'v-checkbox': { props: ['label', 'disabled'], template: '<label><input type="checkbox" :disabled="disabled" /><span>{{ label }}</span></label>' },
+    VCheckbox: { props: ['label', 'disabled'], template: '<label><input type="checkbox" :disabled="disabled" /><span>{{ label }}</span></label>' },
 }
 
 describe('Users roles list item UI helpers', () => {
@@ -118,6 +118,62 @@ describe('Users roles list item UI helpers', () => {
 
         expect(methods.formatRoleLabel('teaching_admin')).toBe('Teaching Admin')
         expect(methods.formatRoleLabel('super_admin')).toBe('Super Admin')
+    })
+
+    it('lets admin manage regular roles while keeping super_admin locked', async () => {
+        render(Users, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                action: 'edit_user',
+                                config: {
+                                    roles: ['admin'],
+                                    impersonation: { is_impersonating: false },
+                                },
+                            },
+                            AdminUser20Store: {
+                                users: [],
+                                selected_users: [],
+                                meta: { total: 0 },
+                                data: {
+                                    id: 77,
+                                    first_name: 'Admin',
+                                    last_name: 'Editor',
+                                    email: 'editor@test.local',
+                                    roles: [
+                                        { name: 'super_admin', checked: true },
+                                        { name: 'teacher', checked: false },
+                                    ],
+                                },
+                                search_string: '',
+                                answer: null,
+                                role: '',
+                            },
+                            AdminRoleStore: {
+                                roles: [],
+                                selected_role: null,
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                    SearchField: { template: '<div />' },
+                    Pagination: { template: '<div />' },
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText(/können alle Rollen außer/i)).toBeInTheDocument()
+        })
+
+        expect(screen.getByLabelText('teacher')).toBeEnabled()
+        expect(screen.getByLabelText('super_admin')).toBeDisabled()
+        expect(screen.getAllByRole('checkbox')).toHaveLength(2)
     })
 
 })

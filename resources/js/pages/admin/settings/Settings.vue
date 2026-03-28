@@ -23,7 +23,7 @@
                 </v-tabs>
             </v-sheet>
 
-            <v-sheet rounded="xl" class="settings-subnav mb-2">
+            <v-sheet v-if="showsSubNavigation" rounded="xl" class="settings-subnav mb-2">
                 <div class="settings-subnav__buttons">
                     <v-btn
                         v-for="item in subNavigationItems"
@@ -42,10 +42,43 @@
                 </div>
             </v-sheet>
 
+            <v-sheet
+                v-if="showsLicenceSubNavigation"
+                rounded="xl"
+                class="settings-licence-subnav mb-2">
+                <v-btn-toggle v-model="licence_models_action" mandatory class="settings-licence-subnav__switcher" color="primary" divided>
+                    <v-btn
+                        v-for="item in visibleLicenceNavigationItems"
+                        :key="item.key"
+                        :value="item.key"
+                        class="settings-licence-subnav__button"
+                        :prepend-icon="item.icon">
+                        {{ item.label }}
+                    </v-btn>
+                </v-btn-toggle>
+            </v-sheet>
+
             <div class="settings-content">
                 <v-row class="w-100 ma-0" dense>
-                    <div v-if="sub_action === 'schools'" class="settings-schools-wrap">
+                    <div v-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
                         <Schools />
+                    </div>
+
+                    <div v-else-if="isAdminTab && sub_action === 'schoolyears'" class="settings-schoolyears-wrap">
+                        <Schoolyears />
+                    </div>
+
+                    <div v-else-if="isAdminTab && sub_action === 'users'" class="settings-users-wrap">
+                        <Users />
+                    </div>
+
+                    <div v-else-if="isSuperAdminTab && sub_action === 'licence_models'" class="settings-licences-wrap">
+                        <Licences v-if="licence_models_action === 'overview'" />
+                        <LicenceSchools v-else-if="licence_models_action === 'schools'" />
+                    </div>
+
+                    <div v-else-if="isSuperAdminTab && sub_action === 'roles'" class="settings-roles-wrap">
+                        <Roles />
                     </div>
 
                     <v-col v-else cols="12">
@@ -54,7 +87,12 @@
                                 <v-icon size="48" color="grey-lighten-1">mdi-cog-outline</v-icon>
                             </div>
                             <div class="settings-empty-text">
-                                Einstellungen für <strong>{{ activeSection }}</strong> &rsaquo; <strong>{{ activeSubSection }}</strong> werden hier bald verfügbar sein.
+                                <template v-if="activeSubSection">
+                                    Einstellungen für <strong>{{ activeSection }}</strong> &rsaquo; <strong>{{ activeSubSection }}</strong> werden hier bald verfügbar sein.
+                                </template>
+                                <template v-else>
+                                    Einstellungen für <strong>{{ activeSection }}</strong> werden hier bald verfügbar sein.
+                                </template>
                             </div>
                         </v-sheet>
                     </v-col>
@@ -68,30 +106,68 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import Schools from '@/pages/admin/superAdmin/components/Schools.vue'
+import Schoolyears from '@/pages/admin/superAdmin/components/Schoolyears.vue'
+import Users from '@/pages/admin/superAdmin/components/Users.vue'
+import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
+import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
+import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
 
 export default {
-    components: { Schools },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles },
+
+    mounted() {
+        this.syncRouteQuery()
+    },
 
     data() {
         return {
             main_action: this.initialTab(),
-            sub_action: 'schools',
+            sub_action: this.initialSubAction(),
+            licence_models_action: this.initialLicenceModelsAction(),
         }
     },
 
     watch: {
-        main_action(val) {
-            this.sub_action = 'schools'
-            const query = val === 'super_admin' ? '' : `?tab=${val}`
-            const target = `/admin/settings${query}`
-            if (this.$route.fullPath !== target) {
-                this.$router.replace(target)
+        main_action() {
+            this.sub_action = this.defaultSubAction
+            this.licence_models_action = 'overview'
+            this.syncRouteQuery()
+        },
+        sub_action(val) {
+            if (!this.showsLicenceSubNavigation || val !== 'licence_models') {
+                this.licence_models_action = 'overview'
+            }
+            this.syncRouteQuery()
+        },
+        licence_models_action() {
+            if (this.showsLicenceSubNavigation && this.sub_action === 'licence_models') {
+                this.syncRouteQuery()
             }
         },
         '$route.query.tab'(val) {
             const tab = val || 'super_admin'
             if (this.navigationItems.some((i) => i.key === tab)) {
                 this.main_action = tab
+            }
+        },
+        '$route.query.panel'(val) {
+            if (!this.showsSubNavigation) {
+                return
+            }
+
+            const panel = val || this.defaultSubAction
+            if (this.subNavigationItems.some((i) => i.key === panel)) {
+                this.sub_action = panel
+            }
+        },
+        '$route.query.licence_tab'(val) {
+            if (!this.isSuperAdminTab) {
+                return
+            }
+
+            const licenceTab = val || 'overview'
+            if (this.visibleLicenceNavigationItems.some((i) => i.key === licenceTab)) {
+                this.licence_models_action = licenceTab
             }
         },
     },
@@ -112,36 +188,148 @@ export default {
             const item = this.navigationItems.find((i) => i.key === this.main_action)
             return item ? item.label : ''
         },
+        configuredRoleNames() {
+            return Array.isArray(this.config?.roles) ? this.config.roles : []
+        },
+        canAccessSuperAdminSettingsTab() {
+            return this.configuredRoleNames.includes('super_admin')
+        },
+        canAccessAdminSettingsTab() {
+            return ['super_admin', 'admin'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        showsSubNavigation() {
+            return ['super_admin', 'admin'].includes(this.main_action)
+        },
+        defaultSubAction() {
+            return this.main_action === 'admin' ? 'schoolyears' : 'schools'
+        },
+        isSuperAdminTab() {
+            return this.main_action === 'super_admin'
+        },
+        isAdminTab() {
+            return this.main_action === 'admin'
+        },
+        showsLicenceSubNavigation() {
+            return this.isSuperAdminTab && this.sub_action === 'licence_models'
+        },
         activeSubSection() {
+            if (!this.showsSubNavigation) {
+                return ''
+            }
+
             const item = this.subNavigationItems.find((i) => i.key === this.sub_action)
             return item ? item.label : ''
         },
         subNavigationItems() {
+            if (this.isAdminTab) {
+                return [
+                    { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
+                    { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
+                    { key: 'display', label: 'Anzeige', meta: 'Darstellung', icon: 'mdi-palette-outline' },
+                ]
+            }
+
             return [
                 { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
-                { key: 'display', label: 'Anzeige', meta: 'Darstellung', icon: 'mdi-palette-outline' },
-                { key: 'advanced', label: 'Erweitert', meta: 'Optionen', icon: 'mdi-tune-variant' },
+                { key: 'licence_models', label: 'Lizenzen Modelle', meta: 'Lizenzverwaltung', icon: 'mdi-card-account-details' },
+                { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
+            ]
+        },
+        visibleLicenceNavigationItems() {
+            return [
+                {
+                    key: 'overview',
+                    label: 'Alle Lizenzen',
+                    meta: 'Übersicht',
+                    icon: 'mdi-home',
+                },
+                {
+                    key: 'schools',
+                    label: 'Lizenzvergaben',
+                    meta: 'Schulen',
+                    icon: 'mdi-card-account-details-outline',
+                },
             ]
         },
         navigationItems() {
             return [
-                { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown' },
-                { key: 'admin', label: 'Admin', icon: 'mdi-shield-account' },
+                { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
+                { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
                 { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check' },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group' },
                 { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant' },
                 { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline' },
                 { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife' },
                 { key: 'profile', label: 'Profil', icon: 'mdi-account-circle' },
-            ]
+            ].filter((item) => item.visible !== false)
         },
     },
 
     methods: {
+        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab) {
+            return [
+                canAccessSuperAdminTab ? 'super_admin' : null,
+                canAccessAdminTab ? 'admin' : null,
+                'register',
+                'tutoring',
+                'teaching',
+                'groups',
+                'restaurant',
+                'profile',
+            ].filter(Boolean)
+        },
         initialTab() {
             const tab = this.$route?.query?.tab || 'super_admin'
-            const keys = ['super_admin', 'admin', 'register', 'tutoring', 'teaching', 'groups', 'restaurant', 'profile']
-            return keys.includes(tab) ? tab : 'super_admin'
+            const adminStore = useAdminStore()
+            const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
+            const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
+            const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
+            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab)
+
+            return keys.includes(tab) ? tab : keys[0]
+        },
+        initialSubAction() {
+            const panel = this.$route?.query?.panel || 'schools'
+            const tab = this.$route?.query?.tab || 'super_admin'
+            const adminStore = useAdminStore()
+            const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
+            const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
+            const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
+            const resolvedTab = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab).includes(tab)
+                ? tab
+                : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab)[0]
+            const keys = resolvedTab === 'admin'
+                ? ['schoolyears', 'users', 'display']
+                : ['schools', 'licence_models', 'roles']
+
+            return keys.includes(panel) ? panel : (resolvedTab === 'admin' ? 'schoolyears' : 'schools')
+        },
+        initialLicenceModelsAction() {
+            const tab = this.$route?.query?.licence_tab || 'overview'
+            const keys = ['overview', 'schools']
+            return keys.includes(tab) ? tab : 'overview'
+        },
+        syncRouteQuery() {
+            const query = {}
+
+            if (this.main_action !== 'super_admin') {
+                query.tab = this.main_action
+            }
+
+            if (this.showsSubNavigation && this.sub_action !== this.defaultSubAction) {
+                query.panel = this.sub_action
+            }
+
+            if (this.isSuperAdminTab && this.sub_action === 'licence_models' && this.licence_models_action !== 'overview') {
+                query.licence_tab = this.licence_models_action
+            }
+
+            const search = new URLSearchParams(query).toString()
+            const target = search ? `/admin/settings?${search}` : '/admin/settings'
+
+            if (this.$route.fullPath !== target) {
+                this.$router.replace(target)
+            }
         },
     },
 }
@@ -242,6 +430,43 @@ export default {
 .settings-schools-wrap {
     width: 1000px;
     max-width: 100%;
+}
+
+.settings-schoolyears-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-users-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-licences-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-roles-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-licence-subnav {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 8px;
+}
+
+.settings-licence-subnav__switcher {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.settings-licence-subnav__button {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
 }
 
 .settings-empty-card {

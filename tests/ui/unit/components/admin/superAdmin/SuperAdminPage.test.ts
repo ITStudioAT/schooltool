@@ -2,23 +2,24 @@ import { describe, expect, it, vi } from 'vitest'
 import SuperAdmin from '@/pages/admin/superAdmin/SuperAdmin.vue'
 
 describe('Super admin page navigation', () => {
-    it('shows header in overview and core admin sections', () => {
+    it('shows header only in remaining overview and admin sections', () => {
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: '' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'schools' })).toBe(true)
-        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'schoolyears' })).toBe(true)
-        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'licences' })).toBe(true)
-        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'roles' })).toBe(true)
-        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'users' })).toBe(true)
+        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'schoolyears' })).toBe(false)
+        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'roles' })).toBe(false)
+        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'licences' })).toBe(false)
+        expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'users' })).toBe(false)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'teachers' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'teachers_list' })).toBe(true)
         expect((SuperAdmin as any).computed.shouldShowHeader.call({ main_action: 'unknown' })).toBe(false)
     })
 
-    it('uses overview dark background theme in requested sections', () => {
+    it('uses overview dark background theme only in the remaining requested sections', () => {
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: '' })).toBe(true)
-        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'licences' })).toBe(true)
-        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'roles' })).toBe(true)
-        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'users' })).toBe(true)
+        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'schoolyears' })).toBe(false)
+        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'roles' })).toBe(false)
+        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'licences' })).toBe(false)
+        expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'users' })).toBe(false)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'teachers' })).toBe(true)
         expect((SuperAdmin as any).computed.usesOverviewTheme.call({ main_action: 'teachers_list' })).toBe(true)
     })
@@ -33,10 +34,10 @@ describe('Super admin page navigation', () => {
 
         const items = (SuperAdmin as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'schoolyears', 'users', 'teachers', 'log'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'teachers', 'log'])
     })
 
-    it('builds full navigation items for super admin role', () => {
+    it('omits the migrated schoolyears, users, licences, and roles entries from the super admin navigation', () => {
         const ctx = {
             config: {
                 roles: ['super_admin'],
@@ -48,11 +49,6 @@ describe('Super admin page navigation', () => {
 
         expect(items.map((item: { key: string }) => item.key)).toEqual([
             'overview',
-            'schools',
-            'schoolyears',
-            'licences',
-            'roles',
-            'users',
             'teachers',
             'impersonation',
             'log',
@@ -79,10 +75,10 @@ describe('Super admin page navigation', () => {
 
     it('marks navigation items as active only for matching targetAction', () => {
         const ctx = {
-            main_action: 'users',
+            main_action: 'teachers',
         }
 
-        const active = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { targetAction: 'users' })
+        const active = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { targetAction: 'teachers' })
         const inactive = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { action: 'log' })
 
         expect(active).toBe(true)
@@ -106,51 +102,108 @@ describe('Super admin page navigation', () => {
 
     it('prevents navigation when controls are locked', async () => {
         const openImpersonationDialog = vi.fn()
-        const openLicencesOverview = vi.fn()
         const openTeachersOverview = vi.fn()
         const ctx = {
             isNavigationLocked: true,
             main_action: '',
             log_dialog: false,
             openImpersonationDialog,
-            openLicencesOverview,
             openTeachersOverview,
         }
 
-        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'users' })
+        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'teachers' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'log' })
 
         expect(ctx.main_action).toBe('')
         expect(ctx.log_dialog).toBe(false)
         expect(openImpersonationDialog).not.toHaveBeenCalled()
-        expect(openLicencesOverview).not.toHaveBeenCalled()
         expect(openTeachersOverview).not.toHaveBeenCalled()
     })
 
-    it('routes special navigation actions to dedicated handlers', async () => {
+    it('routes remaining special navigation actions to dedicated handlers', async () => {
         const openImpersonationDialog = vi.fn()
-        const openLicencesOverview = vi.fn()
-        const openTeachersOverview = vi.fn()
+        const push = vi.fn()
         const ctx = {
             isNavigationLocked: false,
             main_action: '',
             log_dialog: false,
             openImpersonationDialog,
-            openLicencesOverview,
-            openTeachersOverview,
+            $router: { push },
         }
 
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'impersonation' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'log' })
-        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'licences' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'teachers' })
-        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'users' })
+        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: '' })
 
         expect(openImpersonationDialog).toHaveBeenCalledTimes(1)
-        expect(openLicencesOverview).toHaveBeenCalledTimes(1)
-        expect(openTeachersOverview).toHaveBeenCalledTimes(1)
+        expect(push).toHaveBeenNthCalledWith(1, '/admin/super_admin/teachers')
+        expect(push).toHaveBeenNthCalledWith(2, '/admin/super_admin')
         expect(ctx.log_dialog).toBe(true)
-        expect(ctx.main_action).toBe('users')
+    })
+
+    it('redirects legacy schoolyears routes to the admin settings destination', () => {
+        const replace = vi.fn()
+        const ctx = {
+            $route: {
+                params: { section: 'schoolyears' },
+                query: {},
+            },
+            $router: { replace },
+            redirectSchoolyearsToSettings: (SuperAdmin as any).methods.redirectSchoolyearsToSettings,
+        }
+
+        ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=admin')
+    })
+
+    it('redirects legacy users routes to the admin settings destination', () => {
+        const replace = vi.fn()
+        const ctx = {
+            $route: {
+                params: { section: 'users' },
+                query: {},
+            },
+            $router: { replace },
+            redirectUsersToSettings: (SuperAdmin as any).methods.redirectUsersToSettings,
+        }
+
+        ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=admin&panel=users')
+    })
+
+    it('redirects legacy licences routes to the settings destination', () => {
+        const replace = vi.fn()
+        const ctx = {
+            $route: {
+                params: { section: 'licences' },
+                query: { tab: 'schools' },
+            },
+            $router: { replace },
+            redirectLicencesToSettings: (SuperAdmin as any).methods.redirectLicencesToSettings,
+        }
+
+        ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith('/admin/settings?panel=licence_models&licence_tab=schools')
+    })
+
+    it('redirects legacy roles routes to the settings destination', () => {
+        const replace = vi.fn()
+        const ctx = {
+            $route: {
+                params: { section: 'roles' },
+                query: {},
+            },
+            $router: { replace },
+            redirectRolesToSettings: (SuperAdmin as any).methods.redirectRolesToSettings,
+        }
+
+        ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith('/admin/settings?panel=roles')
     })
 
     it('uses homepage redirect target when impersonated user has no admin-capable roles', () => {

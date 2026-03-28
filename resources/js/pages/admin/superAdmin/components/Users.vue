@@ -218,9 +218,14 @@
 
                         <div class="empty-state crud-form-section mt-3">
                             <div class="admin-card-eyebrow">Rollen</div>
-                            <template v-if="isCurrentUserSuperAdmin()">
+                            <template v-if="canManageRoles()">
                                 <div class="kpi-sub mt-1 mb-2">
-                                    Hinweis: Bei der Vergabe von Rollen gibt es Einschränkungen. Zum Beispiel kann einem Benutzer, der im Anmeldetool registriert ist, der register_user nicht entzogen werden.
+                                    <template v-if="isCurrentUserSuperAdmin()">
+                                        Hinweis: Bei der Vergabe von Rollen gibt es Einschränkungen. Zum Beispiel kann einem Benutzer, der im Anmeldetool registriert ist, der register_user nicht entzogen werden.
+                                    </template>
+                                    <template v-else>
+                                        Mit der Rolle <code>admin</code> können alle Rollen außer <code>super_admin</code> vergeben oder entzogen werden.
+                                    </template>
                                 </div>
                                 <div class="d-flex flex-row flex-wrap align-center ga-2">
                                     <v-checkbox
@@ -234,7 +239,7 @@
                                         dense />
                                 </div>
                             </template>
-                            <div class="kpi-sub mt-1" v-else>Rollen dürfen nur von <code>super_admin</code> vergeben werden.</div>
+                            <div class="kpi-sub mt-1" v-else>Rollen dürfen nur von <code>admin</code> oder <code>super_admin</code> verwaltet werden.</div>
                         </div>
 
                         <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
@@ -377,7 +382,7 @@ export default {
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) { return }
-            if (this.isCurrentUserSuperAdmin()) {
+            if (this.canManageRoles()) {
                 this.enforceProtectedSuperAdminRole(data)
             } else {
                 delete data.roles
@@ -397,7 +402,7 @@ export default {
 
         createUser() {
             this.data = { is_selectable: true }
-            if (this.isCurrentUserSuperAdmin()) {
+            if (this.canManageRoles()) {
                 this.data.roles = this.roles.map((role) => ({ ...role }))
                 this.enforceProtectedSuperAdminRole(this.data)
             }
@@ -419,7 +424,7 @@ export default {
             const user = this.users.find((s) => s.id === user_id)
             this.data = JSON.parse(JSON.stringify(user))
 
-            if (this.isCurrentUserSuperAdmin()) {
+            if (this.canManageRoles()) {
                 this.data.roles = this.roles.map((role) => ({
                     ...role,
                     checked: user.roles.includes(role.name),
@@ -432,6 +437,9 @@ export default {
 
         isCurrentUserSuperAdmin() {
             return (this.config?.roles || []).includes('super_admin')
+        },
+        canManageRoles() {
+            return (this.config?.roles || []).some((role) => ['super_admin', 'admin'].includes(role))
         },
 
         isProtectedSuperAdminUser(userData = this.data) {
