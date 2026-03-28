@@ -83,6 +83,50 @@ describe('Super admin licence assignments', () => {
         expect(methods.countAssignedUserLicences.call(ctx, licences)).toBe(1)
     })
 
+    it('allows inline removal only for licences without school licence and without assigned admin or user licences', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx = {
+            canDeleteLicenceItem(licence: unknown) {
+                return methods.canDeleteLicenceItem.call(this, licence)
+            },
+            isSchoolLicenceNotNeeded(licence: unknown) {
+                return methods.isSchoolLicenceNotNeeded.call(this, licence)
+            },
+            normalizeLicenceModel(licenceModel: unknown) {
+                return methods.normalizeLicenceModel.call(this, licenceModel)
+            },
+            toBool: methods.toBool,
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+        }
+
+        const removable = methods.canDeleteSchoolLicenceFromList.call(ctx, {
+            school_licence_enabled: false,
+            admin_licence_count: 0,
+            user_licence_count: 0,
+            licence_model: {
+                school_licence_enabled: false,
+            },
+        })
+        const blockedBySchoolLicence = methods.canDeleteSchoolLicenceFromList.call(ctx, {
+            school_licence_enabled: true,
+            admin_licence_count: 0,
+            user_licence_count: 0,
+            valid_until: '2026-07-31',
+        })
+        const blockedByAssignments = methods.canDeleteSchoolLicenceFromList.call(ctx, {
+            school_licence_enabled: false,
+            admin_licence_count: 1,
+            user_licence_count: 0,
+            licence_model: {
+                school_licence_enabled: false,
+            },
+        })
+
+        expect(removable).toBe(true)
+        expect(blockedBySchoolLicence).toBe(false)
+        expect(blockedByAssignments).toBe(false)
+    })
+
     it('normalizes structured admin and user role names from school licence items', () => {
         const methods = (LicenceSchools as any).methods
         const ctx = {
@@ -397,6 +441,18 @@ describe('Super admin licence assignments', () => {
         expect(source).not.toContain('saveAdminLicenceSchool')
         expect(source).not.toContain('cancelAdminBillingEdit')
         expect(source).toContain('title="Lizenz entfernen"')
+        expect(source).toContain('title="Schullizenz entfernen"')
+        expect(source).toContain('v-if="canDeleteEditLicenceItem()"')
+        expect(source).toContain('v-if="canDeleteSchoolLicenceFromList(licence)"')
+        expect(source).toContain('canDeleteEditLicenceItem()')
+        expect(source).toContain('canDeleteLicenceItem(licence = this.edit_licence_item)')
+        expect(source).toContain('canDeleteSchoolLicenceFromList(licence)')
+        expect(source).toContain('return this.isSchoolLicenceNotNeeded(licence) && this.canDeleteLicenceItem(licence)')
+        expect(source).toContain('return adminLicences + userLicences === 0')
+        expect(source).toContain('prepend-icon="mdi-link-off"')
+        expect(source).toContain('@click="deleteLicenceFromDialog"')
+        expect(source).toContain('@click.stop="deleteLicenceFromList(item, licence)"')
+        expect(source).toContain('Entfernen')
         expect(source).toContain('applyAdminUserTeillizenz(user)')
         expect(source).toContain('removeAdminUserLicence(user)')
         expect(source).toContain(":class=\"{ 'is-editing': edit_admin_user_edit_id === user.id }\"")

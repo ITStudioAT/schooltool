@@ -53,7 +53,7 @@
                                 }}
                             </span>
                         </div>
-                        <div v-if="isAllowed(['super_admin'])" class="mt-3">
+                        <div v-if="isAllowed(['admin', 'super_admin'])" class="mt-3">
                             <div v-if="restart_queues_loading" class="restart-status mb-2">
                                 <v-icon size="16" class="restart-status-icon mdi-spin mr-1">mdi-loading</v-icon>
                                 <span class="text-caption restart-status-text">Neustart + Tests laufen... {{ restart_countdown }}s</span>
@@ -89,6 +89,7 @@
                                 <h3 class="admin-card-title">System-Checks</h3>
                             </div>
                             <v-btn
+                                v-if="isAllowed(['admin', 'super_admin'])"
                                 size="small"
                                 variant="flat"
                                 color="primary"

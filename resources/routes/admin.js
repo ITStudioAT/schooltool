@@ -23,6 +23,7 @@ const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const Groups = () => import('@/pages/admin/groups/Groups.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
+const Settings = () => import('@/pages/admin/settings/Settings.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
 const AbaAiSettings = () => import('@/pages/admin/aba/AbaAiSettings.vue')
@@ -32,6 +33,7 @@ const AbaSeedReview = () => import('@/pages/admin/aba/AbaSeedReview.vue')
 
 export const routes = [
     { path: '/admin', component: Index, meta: { capability: 'home' } },
+    { path: '/admin/settings', component: Settings, meta: { capability: 'settings' } },
     { path: '/admin/login', component: Auth_Login, meta: { public: true } },
     { path: '/admin/unknown_password', component: Auth_UnknownPassword, meta: { public: true } },
     { path: '/admin/register', component: Auth_Register, meta: { public: true } },

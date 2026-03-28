@@ -44,6 +44,17 @@ describe('Index runTests', () => {
         expect(expiredLicenceCount.call(context)).toBe(2)
     })
 
+    it('shows queue and test action buttons only for admin and super_admin', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])" class="mt-3"`)
+        expect(source).toContain(`v-if="isAllowed(['admin', 'super_admin'])"`)
+        expect(source).toContain('Queues neu starten')
+        expect(source).toContain('Tests prüfen')
+        expect(source).not.toContain(`v-if="isAllowed(['super_admin'])" class="mt-3"`)
+    })
+
     it('treats a valid role as active even when the legacy activation flag is false', () => {
         const isUserLicenceRoleActive = (IndexPage as any).methods.isUserLicenceRoleActive
 

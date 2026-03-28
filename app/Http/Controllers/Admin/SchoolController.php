@@ -1289,23 +1289,10 @@ class SchoolController extends Controller
 
     private function schoolLicenceHasRemainingUserLicenceAssignments(SchoolLicence $school_licence): bool
     {
-        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
-
-        foreach ($assignments as $userAssignments) {
-            if (! is_array($userAssignments)) {
-                continue;
-            }
-
-            foreach ($userAssignments as $roleName => $entry) {
-                if (! is_string($roleName) || trim($roleName) === '') {
-                    continue;
-                }
-
-                return true;
-            }
-        }
-
-        return false;
+        return SchoolUserLicence::query()
+            ->where('school_id', $school_licence->school_id)
+            ->where('licence_id', $school_licence->licence_id)
+            ->exists();
     }
 
     private function schoolLicenceUserRolesPayload(SchoolLicence $school_licence, User $user, LicenceService $service): array

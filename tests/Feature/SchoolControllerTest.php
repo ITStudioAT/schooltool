@@ -631,6 +631,85 @@ test('super admin can delete school licence', function () {
     ])->assertStatus(200);
 });
 
+test('super admin can delete school licence when only legacy user assignment data exists', function () {
+    $licence = Licence::create([
+        'name' => 'removable_legacy_only',
+        'long_name' => 'Removable Legacy Only Licence',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addMonth()->toDateString(),
+        'user_licence_assignments' => [
+            (string) $user->id => [
+                'materials_admin' => [
+                    'valid_until' => now()->addMonth()->toDateString(),
+                    'charged_price' => 5,
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/schools/delete_licence', [
+        'school_licence_id' => $schoolLicence->id,
+    ])->assertSuccessful();
+
+    $this->assertDatabaseMissing('school_licences', [
+        'id' => $schoolLicence->id,
+    ]);
+});
+
+test('super admin cannot delete school licence when structured user licences still exist', function () {
+    $licence = Licence::create([
+        'name' => 'not_removable_structured',
+        'long_name' => 'Not Removable Structured Licence',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addMonth()->toDateString(),
+    ]);
+
+    SchoolUserLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'user_id' => $user->id,
+        'assignment_type' => 'admin',
+        'valid_from' => now()->subDay()->toDateString(),
+        'valid_until' => now()->addMonth()->toDateString(),
+        'base_price_per_year' => '5.00',
+        'charged_price' => '5.00',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/schools/delete_licence', [
+        'school_licence_id' => $schoolLicence->id,
+    ])->assertUnprocessable()
+        ->assertJson([
+            'message' => 'Lizenz kann nicht entfernt werden, solange noch Benutzerlizenzen vorhanden sind.',
+        ]);
+
+    $this->assertDatabaseHas('school_licences', [
+        'id' => $schoolLicence->id,
+    ]);
+});
+
 test('super admin can save school specific licence model', function () {
     $licence = Licence::create([
         'name' => 'model_school_specific',

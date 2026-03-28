@@ -79,6 +79,16 @@
                                                 </div>
                                                 <div class="assignment-school-licence-row__right">
                                                     <v-btn
+                                                        v-if="canDeleteSchoolLicenceFromList(licence)"
+                                                        size="small"
+                                                        variant="tonal"
+                                                        color="error"
+                                                        prepend-icon="mdi-link-off"
+                                                        class="assignment-school-licence-row__action"
+                                                        @click.stop="deleteLicenceFromList(item, licence)">
+                                                        Entfernen
+                                                    </v-btn>
+                                                    <v-btn
                                                         v-if="licence.school_licence_enabled"
                                                         size="small"
                                                         variant="tonal"
@@ -578,7 +588,18 @@
                         <span v-if="edit_licence_item"> – {{ edit_licence_item.name }}</span>
                     </div>
                 </div>
-                <v-btn v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
+                <div class="d-flex align-center" style="gap: 8px;">
+                    <v-btn
+                        v-if="canDeleteEditLicenceItem()"
+                        color="error"
+                        variant="text"
+                        rounded="lg"
+                        prepend-icon="mdi-link-off"
+                        @click="deleteLicenceFromDialog">
+                        Entfernen
+                    </v-btn>
+                    <v-btn v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
+                </div>
             </div>
 
             <v-tabs v-model="edit_licence_tab" color="primary" class="edit-licence-tabs">
@@ -634,6 +655,7 @@
                                         </template>
                                         <v-list density="compact" min-width="240">
                                             <v-list-item
+                                                v-if="canDeleteEditLicenceItem()"
                                                 prepend-icon="mdi-link-off"
                                                 title="Schullizenz entfernen"
                                                 base-color="error"
@@ -2891,6 +2913,25 @@ export default {
             const [year, month, day] = dateStr.split('-')
             if (!year || !month || !day) return dateStr
             return `${day}.${month}.${year}`
+        },
+        canDeleteLicenceItem(licence = this.edit_licence_item) {
+            const adminLicences = Number(licence?.admin_licence_count || 0)
+            const userLicences = Number(licence?.user_licence_count || 0)
+            return adminLicences + userLicences === 0
+        },
+        canDeleteEditLicenceItem() {
+            return this.canDeleteLicenceItem(this.edit_licence_item)
+        },
+        canDeleteSchoolLicenceFromList(licence) {
+            return this.isSchoolLicenceNotNeeded(licence) && this.canDeleteLicenceItem(licence)
+        },
+        async deleteLicenceFromList(school, licence) {
+            const id = licence?.school_licence_id
+            if (!school || !id) return
+            await this.removeSchoolLicence(id)
+            if (this.adminStore?.loadConfig) {
+                await this.adminStore.loadConfig()
+            }
         },
         isValidUntilExpired(dateStr) {
             if (!dateStr) return false

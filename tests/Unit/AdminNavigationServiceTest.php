@@ -919,6 +919,18 @@ describe('routeCapabilities', function () {
         expect($capabilities['materials'])->toBeFalse();
     });
 
+    it('allows home capability for admin login roles such as teaching_admin', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+        ]);
+
+        expect($capabilities['home'])->toBeTrue()
+            ->and($capabilities['profile'])->toBeTrue();
+    });
+
     it('disables module routes when the dashboard item is shown but disabled', function () {
         $user = User::factory()->create();
         $user->assignRole(Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']));
