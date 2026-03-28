@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Traits\HasRoleTrait;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class AdminNavigationService
@@ -54,7 +55,7 @@ class AdminNavigationService
         $groupsFeatureLicensed = in_array($teachingLicenceStatus, ['active'], true) || in_array($materialsLicenceStatus, ['active'], true);
 
         // ANMELDESYSTEM
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'register_admin'])) {
+        if ($this->userHasRole(['admin', 'register_admin'])) {
             if ($registerLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Anmeldetool',
@@ -66,7 +67,7 @@ class AdminNavigationService
         }
 
         // TUTORING
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
+        if ($this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
             if ($tutoringLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Nachhilfe',
@@ -79,8 +80,8 @@ class AdminNavigationService
 
         // TEACHER
 
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
-            if ($isSuperAdmin || $teachingLicenceStatus !== 'missing') {
+        if ($this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            if ($teachingLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
@@ -101,8 +102,8 @@ class AdminNavigationService
         }
 
         // MATERIALS
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
-            if ($isSuperAdmin || $materialsLicenceStatus !== 'missing') {
+        if ($this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
+            if ($materialsLicenceStatus !== 'missing') {
                 $menu[] = [
                     'title' => 'Materialien',
                     'icon' => 'mdi-folder-multiple-outline',
@@ -113,7 +114,7 @@ class AdminNavigationService
         }
 
         // GROUPS (visible if at least one valid licence exists: Lehrertool OR Materialientool)
-        if (($isSuperAdmin || $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) && $groupsFeatureLicensed) {
+        if ($this->userHasRole(['admin', 'materials_admin', 'materials_moderator']) && $groupsFeatureLicensed) {
             $menu[] = [
                 'title' => 'Gruppen',
                 'icon' => 'mdi-account-group-outline',
@@ -123,7 +124,7 @@ class AdminNavigationService
         }
 
         // RESTAURANT
-        if ($isSuperAdmin || $this->userHasRole(['admin', 'lunch_admin'])) {
+        if ($this->userHasRole(['admin', 'lunch_admin'])) {
             $menu[] = [
                 'title' => 'Restaurant',
                 'icon' => 'mdi-silverware-fork-knife',
@@ -170,14 +171,14 @@ class AdminNavigationService
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');
-        $capabilities['super_admin'] = $menuByPath->has('/admin/super_admin');
-        $capabilities['register_system'] = (bool) data_get($menuByPath->get('/admin/register_system'), 'is_active', false);
-        $capabilities['tutoring'] = (bool) data_get($menuByPath->get('/admin/tutoring'), 'is_active', false);
-        $capabilities['teaching'] = (bool) data_get($menuByPath->get('/admin/teaching'), 'is_active', false);
-        $capabilities['materials'] = (bool) data_get($menuByPath->get('/admin/materials'), 'is_active', false);
-        $capabilities['groups'] = (bool) data_get($menuByPath->get('/admin/groups'), 'is_active', false);
-        $capabilities['restaurant'] = (bool) data_get($menuByPath->get('/admin/restaurant'), 'is_active', false);
-        $capabilities['aba'] = (bool) data_get($menuByPath->get('/admin/aba'), 'is_active', false);
+        $capabilities['super_admin'] = $this->menuRouteCapability($user, $menuByPath, '/admin/super_admin', ['admin']);
+        $capabilities['register_system'] = $this->menuRouteCapability($user, $menuByPath, '/admin/register_system', ['admin', 'register_admin']);
+        $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', ['admin', 'tutoring_admin', 'teacher']);
+        $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', ['admin', 'teaching_admin', 'teacher']);
+        $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', ['admin', 'materials_admin', 'materials_moderator']);
+        $capabilities['groups'] = $this->menuRouteCapability($user, $menuByPath, '/admin/groups', ['admin', 'materials_admin', 'materials_moderator']);
+        $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', ['admin', 'lunch_admin']);
+        $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', ['aba_teacher'], false);
 
         return $capabilities;
     }
@@ -249,5 +250,29 @@ class AdminNavigationService
         }
 
         return [];
+    }
+
+    /**
+     * Apply the dashboard visibility rules to module routes:
+     * - hidden item => route disabled
+     * - shown but disabled item => route disabled
+     * - shown and enabled item => route allowed
+     * Additionally require the correct role for the module.
+     */
+    private function menuRouteCapability(User $user, Collection $menuByPath, string $path, array $allowedRoles, bool $allowSuperAdmin = true): bool
+    {
+        $dashboardShow = $menuByPath->has($path);
+        $dashboardDisabled = ! (bool) data_get($menuByPath->get($path), 'is_active', false);
+        $disableAllWebRoutes = ! $dashboardShow || $dashboardDisabled;
+
+        if ($disableAllWebRoutes) {
+            return false;
+        }
+
+        if ($allowSuperAdmin && $user->hasRole('super_admin')) {
+            return true;
+        }
+
+        return $user->hasAnyRole($allowedRoles);
     }
 }

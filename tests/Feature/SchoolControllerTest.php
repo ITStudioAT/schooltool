@@ -12,6 +12,7 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolService;
@@ -1168,6 +1169,58 @@ test('super admin school licence user list exposes extra storage units for admin
         ->assertOk()
         ->assertJsonPath("role_statuses_by_user.{$admin->id}.admin.extra_storage_units", 4)
         ->assertJsonPath("role_statuses_by_user.{$admin->id}.admin.extra_storage_unit_price", 7);
+});
+
+test('saving structured admin licence roles syncs aggregated school user licence assignment', function () {
+    $licence = Licence::create([
+        'name' => 'structured_admin_sync',
+        'long_name' => 'Structured Admin Sync Licence',
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['admin'],
+        'admin_price_per_year' => '5',
+        'licence_schema_version' => 2,
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addMonth()->toDateString(),
+        'licence_model' => [],
+        'user_licence_assignments' => [],
+    ]);
+
+    $admin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'admin.sync@test.com',
+    ]);
+    $admin->assignRole('admin');
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$admin->id}/roles", [
+        'roles' => [
+            [
+                'name' => 'admin',
+                'assigned' => true,
+                'valid_until' => '2026-10-15',
+                'is_activated' => true,
+                'charged_price' => 5,
+            ],
+        ],
+    ])->assertOk();
+
+    $storedAssignment = SchoolUserLicence::query()
+        ->where('school_id', $this->school->id)
+        ->where('licence_id', $licence->id)
+        ->where('user_id', $admin->id)
+        ->where('assignment_type', 'admin')
+        ->first();
+
+    expect($storedAssignment)->not->toBeNull()
+        ->and($storedAssignment?->valid_until?->format('Y-m-d'))->toBe('2026-10-15')
+        ->and((float) $storedAssignment?->charged_price)->toBe(5.0)
+        ->and($storedAssignment?->is_active)->toBeTrue();
 });
 
 test('super admin can load unassigned admin-role users for admin add mode', function () {

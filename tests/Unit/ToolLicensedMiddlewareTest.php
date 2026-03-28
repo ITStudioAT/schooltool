@@ -175,3 +175,31 @@ it('uses scope references on route middleware instead of raw role lists', functi
             });
     });
 });
+
+it('redirects blocked admin web routes to /admin instead of /', function () {
+    $school = School::factory()->create();
+    $user = User::factory()->create(['school_id' => $school->id]);
+
+    $request = Request::create('/admin/teaching', 'GET');
+    $request->setRouteResolver(fn () => new IlluminateRoute('GET', '/admin/teaching/{any?}', []));
+
+    $this->actingAs($user);
+
+    $licenceService = Mockery::mock(LicenceService::class);
+    $licenceService->shouldReceive('toolAccessStatusForUser')
+        ->once()
+        ->andReturn('missing');
+
+    $this->app->instance(LicenceService::class, $licenceService);
+
+    $response = app(ToolLicensed::class)->handle(
+        $request,
+        fn () => response('ok'),
+        'Lehrertool',
+        'auth',
+        'scope:tool_web_access'
+    );
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(url('/admin'));
+});

@@ -322,6 +322,51 @@ describe('toolAccessStatusForUser with per-user licences', function () {
 
         expect($result)->toBe('active');
     });
+
+    it('returns active when a valid legacy user assignment exists even if it is not activated', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teacher', 'web');
+        $user->assignRole('teacher');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addYear(),
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+            'user_licence_assignments' => [
+                (string) $user->id => [
+                    'teacher' => [
+                        'valid_until' => now()->addMonth()->toDateString(),
+                        'is_activated' => false,
+                    ],
+                ],
+            ],
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teacher']);
+
+        expect($result)->toBe('active');
+    });
 });
 
 describe('structured licence model', function () {
@@ -460,7 +505,7 @@ describe('structured licence model', function () {
         expect($result)->toBe('expired');
     });
 
-    it('returns active when a matching admin assignment exists for an allowed admin role', function () {
+    it('returns active when a matching admin assignment exists for an allowed admin role even if it is marked inactive', function () {
         $school = School::factory()->create();
         $user = User::factory()->create(['school_id' => $school->id]);
 
@@ -486,7 +531,44 @@ describe('structured licence model', function () {
             'valid_until' => now()->addMonth()->toDateString(),
             'base_price_per_year' => '59',
             'charged_price' => '59.00',
-            'is_active' => true,
+            'is_active' => false,
+        ]);
+
+        $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teaching_admin']);
+
+        expect($result)->toBe('active');
+    });
+
+    it('returns active when a matching legacy admin assignment exists in school licence assignments even if it is not activated', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+
+        Role::findOrCreate('teaching_admin', 'web');
+        $user->assignRole('teaching_admin');
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['teaching_admin'],
+            'user_licence_enabled' => false,
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addMonth()->toDateString(),
+            'user_licence_assignments' => [
+                (string) $user->id => [
+                    'teaching_admin' => [
+                        'valid_until' => now()->addMonth()->toDateString(),
+                        'is_activated' => false,
+                        'charged_price' => 5,
+                    ],
+                ],
+            ],
         ]);
 
         $result = $this->service->toolAccessStatusForUser($user, $school, 'Lehrertool', ['teaching_admin']);

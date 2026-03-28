@@ -3,6 +3,7 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\UserService;
@@ -199,7 +200,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool', 'Materialientool']);
 
         $result = $this->service->dashboardMenu();
 
@@ -379,6 +380,96 @@ describe('dashboardMenu', function () {
             ->not->toBeNull()
             ->and($teachingItem['is_active'])->toBeTrue()
             ->and($teachingItem)->not->toHaveKey('status_icon');
+    });
+
+    it('keeps teaching menu active when a valid structured assignment exists but is marked inactive', function () {
+        config(['schooltool.teaching_active' => true]);
+
+        $school = School::factory()->create();
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'first_name' => 'Teacher',
+            'last_name' => 'Structured',
+        ]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']));
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => true,
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['teaching_admin'],
+            'user_licence_enabled' => false,
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addMonth()->toDateString(),
+        ]);
+
+        SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'admin',
+            'valid_from' => now()->subMonth()->toDateString(),
+            'valid_until' => now()->addMonth()->toDateString(),
+            'base_price_per_year' => '59',
+            'charged_price' => '59.00',
+            'is_active' => false,
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $teachingItem = collect($result)->firstWhere('title', 'Unterricht');
+
+        expect($teachingItem)
+            ->not->toBeNull()
+            ->and($teachingItem['is_active'])->toBeTrue()
+            ->and($teachingItem)->not->toHaveKey('status_icon');
+    });
+
+    it('hides teaching menu item when the user has the role but no teaching licence assignment remains', function () {
+        config(['schooltool.teaching_active' => true]);
+
+        $school = School::factory()->create();
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'first_name' => 'Teacher',
+            'last_name' => 'Removed',
+        ]);
+        $user->assignRole([
+            Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']),
+        ]);
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_schema_version' => 2,
+            'school_licence_enabled' => false,
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['teaching_admin'],
+            'user_licence_enabled' => false,
+        ]);
+
+        SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => now()->addMonth()->toDateString(),
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $teachingItem = collect($result)->firstWhere('title', 'Unterricht');
+
+        expect($teachingItem)->toBeNull();
     });
 });
 
@@ -815,5 +906,40 @@ describe('routeCapabilities', function () {
             ->and($capabilities['groups'])->toBeTrue()
             ->and($capabilities['restaurant'])->toBeTrue()
             ->and($capabilities['aba'])->toBeFalse();
+    });
+
+    it('disables module routes when the dashboard item is hidden', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+        ]);
+
+        expect($capabilities['materials'])->toBeFalse();
+    });
+
+    it('disables module routes when the dashboard item is shown but disabled', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Materialien', 'to' => '/admin/materials', 'is_active' => false],
+        ]);
+
+        expect($capabilities['materials'])->toBeFalse();
+    });
+
+    it('requires the correct role even when the dashboard item is active', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Materialien', 'to' => '/admin/materials', 'is_active' => true],
+            ['title' => 'Unterricht', 'to' => '/admin/teaching', 'is_active' => true],
+        ]);
+
+        expect($capabilities['materials'])->toBeFalse()
+            ->and($capabilities['teaching'])->toBeTrue();
     });
 });

@@ -83,6 +83,10 @@ class ToolLicensed
             return redirect('/homepage/error?msg='.urlencode($message));
         }
 
+        if ($request->is('admin/*')) {
+            return redirect('/admin');
+        }
+
         return redirect('/');
     }
 

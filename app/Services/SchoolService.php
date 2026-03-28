@@ -351,11 +351,8 @@ class SchoolService
             ->groupBy(fn (SchoolUserLicence $a) => (int) $a->user_id)
             ->map(function (Collection $assignments) use ($schoolLicence, $schoolLicenceRequired, $today): string {
                 foreach ($assignments as $assignment) {
-                    if (! $assignment->is_active) {
-                        continue;
-                    }
                     $userValid = $assignment->valid_until?->format('Y-m-d') ?? null;
-                    if ($this->isDashboardAssignmentActive($schoolLicenceRequired, $schoolLicence?->valid_until, $userValid, true, $today)) {
+                    if ($this->isDashboardAssignmentActive($schoolLicenceRequired, $schoolLicence?->valid_until, $userValid, $today)) {
                         return 'active';
                     }
                 }
@@ -373,12 +370,8 @@ class SchoolService
         ];
     }
 
-    private function isDashboardAssignmentActive(bool $schoolLicenceRequired, mixed $schoolValidUntil, ?string $userValidUntil, bool $isActivated, string $today): bool
+    private function isDashboardAssignmentActive(bool $schoolLicenceRequired, mixed $schoolValidUntil, ?string $userValidUntil, string $today): bool
     {
-        if (! $isActivated) {
-            return false;
-        }
-
         if ($schoolLicenceRequired && ! $this->isDashboardDateActive($schoolValidUntil, $today)) {
             return false;
         }
@@ -552,7 +545,7 @@ class SchoolService
                 $firstPlan = collect($plans)->first(fn ($plan) => is_array($plan));
                 $plan = is_array($selectedPlan) ? $selectedPlan : $firstPlan;
 
-                $isActive = $assigned && $isActivated && (
+                $isActive = $assigned && (
                     (! $schoolLicenceRequired || $this->isDateActiveForSchoolInfo($schoolLicenceValidUntil))
                     && $this->isDateActiveForSchoolInfo($validUntil)
                 );
@@ -578,7 +571,6 @@ class SchoolService
 
         $hasUserLicence = collect($roleSummaries)->contains(fn (array $entry) => (bool) ($entry['is_active'] ?? false));
         $selectedRoleSummary = collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['is_active'] ?? false))
-            ?? collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['is_activated'] ?? false))
             ?? collect($roleSummaries)->first(fn (array $entry) => (bool) ($entry['assigned'] ?? false))
             ?? collect($roleSummaries)->first();
 

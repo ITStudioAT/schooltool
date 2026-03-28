@@ -643,6 +643,10 @@
                                                 :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
                                                 @click="setValidUntilNextYearEnd" />
                                             <v-list-item
+                                                prepend-icon="mdi-calendar-arrow-left"
+                                                title="bis gestern"
+                                                @click="setValidUntilYesterday" />
+                                            <v-list-item
                                                 prepend-icon="mdi-infinity"
                                                 title="unendlich"
                                                 @click="setValidUntilUnlimited" />
@@ -852,6 +856,10 @@
                                                             prepend-icon="mdi-calendar-end"
                                                             :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
                                                             @click="setAdminUserValidUntil(user, nextYearEndDate(effectiveEndDayMonth))" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-arrow-left"
+                                                            title="bis gestern"
+                                                            @click="setAdminUserValidUntilYesterday(user)" />
                                                         <v-list-item
                                                             prepend-icon="mdi-infinity"
                                                             title="unendlich"
@@ -1091,6 +1099,10 @@
                                                             prepend-icon="mdi-calendar-end"
                                                             :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
                                                             @click="setUserLicenceUserValidUntil(user, nextYearEndDate(effectiveEndDayMonth))" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-arrow-left"
+                                                            title="bis gestern"
+                                                            @click="setUserLicenceUserValidUntilYesterday(user)" />
                                                         <v-list-item
                                                             prepend-icon="mdi-infinity"
                                                             title="unendlich"
@@ -1880,6 +1892,9 @@ export default {
             if (licence) {
                 this.edit_licence_item = licence
             }
+            if (this.adminStore?.loadConfig) {
+                await this.adminStore.loadConfig()
+            }
         },
         async setLicenceValidUntil(valid_until) {
             if (!this.edit_licence_item || !this.edit_licence_school) return
@@ -1905,6 +1920,11 @@ export default {
             }
             return this.localDateKey(candidate)
         },
+        yesterdayDate() {
+            const yesterday = new Date()
+            yesterday.setDate(yesterday.getDate() - 1)
+            return this.localDateKey(yesterday)
+        },
         nextYearEndLabel(endDayMonth) {
             const dateStr = this.nextYearEndDate(endDayMonth)
             const [year, month, day] = dateStr.split('-')
@@ -1912,6 +1932,9 @@ export default {
         },
         async setValidUntilNextYearEnd() {
             await this.setLicenceValidUntil(this.nextYearEndDate(this.effectiveEndDayMonth))
+        },
+        async setValidUntilYesterday() {
+            await this.setLicenceValidUntil(this.yesterdayDate())
         },
         async setValidUntilUnlimited() {
             await this.setLicenceValidUntil(null)
@@ -2629,8 +2652,12 @@ export default {
             if (!ok) return
             this.edit_user_licence_user_valid_until = valid_until
             await this.loadUserLicenceUsers()
+            await this.refreshEditLicenceItem()
             const status = this.userLicenceUserStatusForUser(user)
             this.edit_user_licence_user_valid_until = status?.valid_until || null
+        },
+        async setUserLicenceUserValidUntilYesterday(user) {
+            await this.setUserLicenceUserValidUntil(user, this.yesterdayDate())
         },
         async extendUserLicenceUserValidUntilOneYear(user) {
             const current = this.edit_user_licence_user_valid_until
@@ -2756,9 +2783,13 @@ export default {
             if (!ok) return
             this.edit_admin_user_valid_until = valid_until
             await this.loadAdminUsers()
+            await this.refreshEditLicenceItem()
             // sync status for open edit panel
             const status = this.adminUserStatusForUser(user)
             this.edit_admin_user_valid_until = status?.valid_until || null
+        },
+        async setAdminUserValidUntilYesterday(user) {
+            await this.setAdminUserValidUntil(user, this.yesterdayDate())
         },
         async extendAdminUserValidUntilOneYear(user) {
             const current = this.edit_admin_user_valid_until
@@ -2840,6 +2871,9 @@ export default {
             if (!id) return
             this.closeEditLicenceDialog()
             await this.removeSchoolLicence(id)
+            if (this.adminStore?.loadConfig) {
+                await this.adminStore.loadConfig()
+            }
         },
         async saveSchoolLicenceSchool() {
             if (!this.edit_licence_item?.school_licence_id) return
@@ -2943,6 +2977,9 @@ export default {
             if (!(await this.schoolStore.saveSchoolLicenceModel(this.selected_school_licence_id, payload))) return
 
             await this.schoolStore.index(this.meta?.current_page || 1)
+            if (this.adminStore?.loadConfig) {
+                await this.adminStore.loadConfig()
+            }
             this.bootstrapSchoolLicenceModels()
             this.closeSchoolLicenceModel()
         },
@@ -3454,9 +3491,6 @@ export default {
 
             if (!response) return
             this.normalizeSelectedUserRoleDetails()
-            if (this.adminStore?.loadConfig) {
-                await this.adminStore.loadConfig()
-            }
 
             const currentPage = Number(this.school_licence_users_meta?.current_page || 1)
             await this.loadSchoolLicenceUsers(currentPage)

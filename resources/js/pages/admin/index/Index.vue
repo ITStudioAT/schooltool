@@ -251,7 +251,7 @@
                                             <span>{{ entry.type_label }}</span>
                                             <span v-if="entry.is_active && entry.valid_until" class="licence-tag is-active">gültig bis {{ formatDateDisplay(entry.valid_until) }}</span>
                                             <span v-else-if="entry.is_active" class="licence-tag is-active">unbegrenzt</span>
-                                            <span v-else class="licence-tag is-expired">nicht aktiv</span>
+                                            <span v-else class="licence-tag is-expired">abgelaufen</span>
                                         </div>
                                     </div>
                                 </div>
@@ -653,7 +653,7 @@ export default {
             return Array.isArray(roles) ? roles.filter((entry) => entry && typeof entry === 'object' && entry.role_name) : []
         },
         isUserLicenceRoleActive(roleEntry) {
-            return !!roleEntry?.is_active && !!roleEntry?.is_activated
+            return !!roleEntry?.is_active
         },
         userLicenceRoleDotClass(roleEntry) {
             if (!this.isUserLicenceRoleActive(roleEntry)) return 'is-inactive'

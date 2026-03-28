@@ -509,6 +509,56 @@ describe('schoolInfos', function () {
             ->and(data_get($licenceData, 'current_user_licence.enabled'))->toBeFalse()
             ->and(data_get($licenceData, 'current_user_licence.required'))->toBeFalse();
     });
+
+    it('treats a valid current user licence as active even when the legacy activation flag is false', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+        $user->assignRole('teacher');
+        Auth::login($user);
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+        ]);
+
+        $school->licences()->attach($licence->id, [
+            'valid_until' => now()->addMonth()->toDateString(),
+            'licence_model' => json_encode([
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ]),
+            'user_licence_assignments' => json_encode([
+                (string) $user->id => [
+                    'teacher' => [
+                        'valid_until' => now()->addMonth()->toDateString(),
+                        'is_activated' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $result = $this->service->schoolInfos($school->id);
+        $licenceData = $result['licences'][0];
+
+        expect(data_get($licenceData, 'current_user_licence.has_licence'))->toBeTrue()
+            ->and(data_get($licenceData, 'current_user_licence.roles.0.is_active'))->toBeTrue()
+            ->and(data_get($licenceData, 'current_user_licence.roles.0.is_activated'))->toBeFalse();
+    });
 });
 
 describe('loadSwitchableSchools', function () {

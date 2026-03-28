@@ -314,10 +314,12 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('userLicenceListStorageTotalGb(user, licenceSource = null)')
         expect(source).toContain('userLicenceSummaryEntries(user, licenceSource = null)')
         expect(source).toContain('userLicencePlanForRole(roleName, roleStatus, licenceSource = null)')
+        expect(source).toContain('async refreshEditLicenceItem()')
+        expect(source).toContain('if (this.adminStore?.loadConfig) {')
         expect(source).toContain('visibleAdminUsers()')
-        expect(source).toContain('v-if="visibleAdminUsers.length"')
+        expect(source).toContain('v-if="visibleAdminUsers.length && !edit_admin_add_mode"')
         expect(source).toContain('v-for="user in visibleAdminUsers"')
-        expect(source).toContain('v-if="!edit_admin_user_edit_id" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode"')
+        expect(source).toContain('v-if="!edit_admin_user_edit_id && !edit_admin_add_mode" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode"')
         expect(source).toContain('editLicenceCloseLocked()')
         expect(source).toContain('editLicenceTabLocked()')
         expect(source).toContain(`:disabled="isEditLicenceTabDisabled('school')"`)
@@ -332,7 +334,7 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('v-date-input v-model="edit_valid_until" label="Gültig bis" :disabled="edit_no_date"')
         expect(source).toContain('v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog"')
         expect(source).toContain('<v-card-actions class="d-flex pa-4 justify-space-between">')
-        expect(source).toContain('<v-btn v-if="!(edit_licence_tab === \'admin\' && edit_admin_user_edit_id)" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>')
+        expect(source).toContain('<v-btn v-if="!(edit_licence_tab === \'admin\' && (edit_admin_user_edit_id || edit_admin_add_mode)) && !(edit_licence_tab === \'user\' && (edit_user_licence_user_edit_id || edit_user_licence_add_mode))" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>')
         expect(source).not.toContain('Benutzerlizenz schließen')
         expect(source).toContain("admin-user-row__editing-hint")
         expect(source).toContain('<span v-if="edit_admin_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>')
@@ -346,6 +348,10 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('adminUserBillingTotalForUser(user)')
         expect(source).toContain('adminUserStorageTotalGbForUser(user)')
         expect(source).toContain('adminTeillizenzPreisLabel')
+        expect(source).toContain('title="bis gestern"')
+        expect(source).toContain('setValidUntilYesterday')
+        expect(source).toContain('setAdminUserValidUntilYesterday(user)')
+        expect(source).toContain('setUserLicenceUserValidUntilYesterday(user)')
         expect(source).toContain('overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel())')
         expect(source).toContain("{{ overridePriceLabel(roleEntry.charged_price, selectedUserRolePlanPrice(roleEntry), 'Planpreis') }}")
         expect(source).toContain('selectedUserLicenceHasExtraStorage()')
@@ -487,6 +493,7 @@ describe('Super admin licence assignments', () => {
         const methods = (LicenceSchools as any).methods
         const saveAdminUserRoles = vi.fn().mockResolvedValue(true)
         const loadAdminUsers = vi.fn().mockResolvedValue(undefined)
+        const refreshEditLicenceItem = vi.fn().mockResolvedValue(undefined)
         const ctx: any = {
             edit_licence_item: {
                 admin_licence_enabled: true,
@@ -502,6 +509,7 @@ describe('Super admin licence assignments', () => {
             adminUserStatusForUser: vi.fn().mockReturnValue({ valid_until: '2027-01-31' }),
             saveAdminUserRoles,
             loadAdminUsers,
+            refreshEditLicenceItem,
             sortedRoleNames: methods.sortedRoleNames,
             looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
             toBool: methods.toBool,
@@ -516,7 +524,48 @@ describe('Super admin licence assignments', () => {
             valid_until: '2026-12-31',
         })
         expect(loadAdminUsers).toHaveBeenCalledTimes(1)
+        expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
         expect(ctx.edit_admin_user_valid_until).toBe('2027-01-31')
+    })
+
+    it('updates user licence validity and refreshes the edited licence item', async () => {
+        const methods = (LicenceSchools as any).methods
+        const saveUserLicenceUserRoles = vi.fn().mockResolvedValue(true)
+        const loadUserLicenceUsers = vi.fn().mockResolvedValue(undefined)
+        const refreshEditLicenceItem = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            edit_licence_item: {
+                user_licence_enabled: true,
+                user_role_names: ['teacher'],
+                licence_model: {},
+            },
+            normalizeLicenceModel(licenceModel: unknown) {
+                return methods.normalizeLicenceModel.call(this, licenceModel)
+            },
+            userRolesFromLicenceModel(licence: unknown) {
+                return methods.userRolesFromLicenceModel.call(this, licence)
+            },
+            userLicenceUserStatusForUser: vi.fn().mockReturnValue({ valid_until: '2027-01-31' }),
+            saveUserLicenceUserRoles,
+            loadUserLicenceUsers,
+            refreshEditLicenceItem,
+            sortedRoleNames: methods.sortedRoleNames,
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            toBool: methods.toBool,
+        }
+
+        await methods.setUserLicenceUserValidUntil.call(ctx, { id: 55 }, '2026-12-31')
+
+        expect(saveUserLicenceUserRoles).toHaveBeenCalledTimes(1)
+        const patchFn = saveUserLicenceUserRoles.mock.calls[0][1]
+        expect(patchFn({ name: 'teacher', assigned: false, is_activated: false, valid_until: null })).toMatchObject({
+            assigned: true,
+            is_activated: true,
+            valid_until: '2026-12-31',
+        })
+        expect(loadUserLicenceUsers).toHaveBeenCalledTimes(1)
+        expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+        expect(ctx.edit_user_licence_user_valid_until).toBe('2027-01-31')
     })
 
     it('opens the requested licence tab when editing from assignment buttons', async () => {
@@ -592,6 +641,50 @@ describe('Super admin licence assignments', () => {
         expect(ctx.edit_no_date).toBe(true)
         expect(ctx.edit_valid_until).toBe('')
         expect(ctx.edit_date_dialog).toBe(true)
+    })
+
+    it('sets the school licence valid until date to yesterday through the shortcut action', async () => {
+        const methods = (LicenceSchools as any).methods
+        const setLicenceValidUntil = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            yesterdayDate: vi.fn().mockReturnValue('2026-03-27'),
+            setLicenceValidUntil,
+        }
+
+        await methods.setValidUntilYesterday.call(ctx)
+
+        expect(ctx.yesterdayDate).toHaveBeenCalledTimes(1)
+        expect(setLicenceValidUntil).toHaveBeenCalledWith('2026-03-27')
+    })
+
+    it('sets the admin user licence valid until date to yesterday through the shortcut action', async () => {
+        const methods = (LicenceSchools as any).methods
+        const setAdminUserValidUntil = vi.fn().mockResolvedValue(undefined)
+        const user = { id: 44 }
+        const ctx: any = {
+            yesterdayDate: vi.fn().mockReturnValue('2026-03-27'),
+            setAdminUserValidUntil,
+        }
+
+        await methods.setAdminUserValidUntilYesterday.call(ctx, user)
+
+        expect(ctx.yesterdayDate).toHaveBeenCalledTimes(1)
+        expect(setAdminUserValidUntil).toHaveBeenCalledWith(user, '2026-03-27')
+    })
+
+    it('sets the user licence valid until date to yesterday through the shortcut action', async () => {
+        const methods = (LicenceSchools as any).methods
+        const setUserLicenceUserValidUntil = vi.fn().mockResolvedValue(undefined)
+        const user = { id: 55 }
+        const ctx: any = {
+            yesterdayDate: vi.fn().mockReturnValue('2026-03-27'),
+            setUserLicenceUserValidUntil,
+        }
+
+        await methods.setUserLicenceUserValidUntilYesterday.call(ctx, user)
+
+        expect(ctx.yesterdayDate).toHaveBeenCalledTimes(1)
+        expect(setUserLicenceUserValidUntil).toHaveBeenCalledWith(user, '2026-03-27')
     })
 
     it('calculates the school billing total from the billed price and storage units', () => {
@@ -1322,6 +1415,31 @@ describe('Super admin licence assignments', () => {
         ])
         expect(loadAdminUsers).toHaveBeenCalledTimes(1)
         expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+    })
+
+    it('refreshes the admin config when refreshing the edited licence item', async () => {
+        const methods = (LicenceSchools as any).methods
+        const index = vi.fn().mockResolvedValue(undefined)
+        const loadConfig = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            meta: { current_page: 3 },
+            schoolStore: { index },
+            schools: [
+                {
+                    id: 7,
+                    licences: [{ id: 11, name: 'Lehrertool' }],
+                },
+            ],
+            edit_licence_school: { id: 7 },
+            edit_licence_item: { id: 11, name: 'Old' },
+            adminStore: { loadConfig },
+        }
+
+        await methods.refreshEditLicenceItem.call(ctx)
+
+        expect(index).toHaveBeenCalledWith(3)
+        expect(loadConfig).toHaveBeenCalledTimes(1)
+        expect(ctx.edit_licence_item).toEqual({ id: 11, name: 'Lehrertool' })
     })
 
     it('clears the focused admin user edit state', () => {

@@ -23,6 +23,7 @@ use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\LicenceService;
@@ -559,7 +560,7 @@ class SchoolController extends Controller
                         'valid_until' => $roleValidUntil,
                         'is_activated' => $isActivated,
                         'is_active' => $userLicenceRequired
-                            ? $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated)
+                            ? ($hasLicenceAssignment && $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated))
                             : true,
                         'plan_id' => $userLicenceRequired ? ($entry['plan_id'] ?? null) : null,
                         'charged_price' => $userLicenceRequired ? ($entry['charged_price'] ?? null) : null,
@@ -680,6 +681,7 @@ class SchoolController extends Controller
 
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
 
         return response()->json(
             $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
@@ -769,6 +771,8 @@ class SchoolController extends Controller
             $school_licence->save();
         }
 
+        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
+
         return response()->json(
             $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
             200
@@ -856,6 +860,7 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
             'message' => 'Benutzerlizenz aktiviert.',
@@ -960,6 +965,7 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
             'message' => 'Benutzerlizenz verlängert.',
@@ -1023,6 +1029,7 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
             'message' => 'Benutzerlizenz deaktiviert.',
@@ -1130,6 +1137,156 @@ class SchoolController extends Controller
         ];
     }
 
+    private function syncStructuredAccessAssignmentsForUser(SchoolLicence $school_licence, User $user, LicenceService $service): void
+    {
+        $licence = $school_licence->licence;
+        if (! $licence || (int) ($licence->licence_schema_version ?? 0) < 2) {
+            return;
+        }
+
+        $configuration = $service->editableLicenceConfiguration($licence);
+        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
+            ? $assignments[(string) $user->id]
+            : [];
+        $userRoleNames = $user->roles()
+            ->pluck('name')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->syncStructuredAccessAssignmentTypeForUser(
+            $school_licence,
+            $user,
+            $userRoleNames,
+            $userAssignments,
+            'admin',
+            is_array($configuration['admin_role_names'] ?? null) ? $configuration['admin_role_names'] : [],
+            $configuration['admin_price_per_year'] ?? null
+        );
+
+        $this->syncStructuredAccessAssignmentTypeForUser(
+            $school_licence,
+            $user,
+            $userRoleNames,
+            $userAssignments,
+            'user',
+            is_array($configuration['user_role_names'] ?? null) ? $configuration['user_role_names'] : [],
+            $configuration['user_price_per_year'] ?? null
+        );
+    }
+
+    private function syncStructuredAccessAssignmentTypeForUser(
+        SchoolLicence $school_licence,
+        User $user,
+        array $userRoleNames,
+        array $userAssignments,
+        string $assignmentType,
+        array $configuredRoleNames,
+        mixed $basePrice
+    ): void {
+        $matchingRoleNames = $this->matchingStructuredRoleNamesForUser($userRoleNames, $configuredRoleNames);
+        $assignmentQuery = SchoolUserLicence::query()
+            ->where('school_id', $school_licence->school_id)
+            ->where('licence_id', $school_licence->licence_id)
+            ->where('user_id', $user->id)
+            ->where('assignment_type', $assignmentType);
+
+        if (empty($matchingRoleNames)) {
+            $assignmentQuery->delete();
+
+            return;
+        }
+
+        $entries = collect($matchingRoleNames)
+            ->filter(fn (string $roleName) => array_key_exists($roleName, $userAssignments))
+            ->map(fn (string $roleName) => $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null))
+            ->values();
+
+        if ($entries->isEmpty()) {
+            $assignmentQuery->delete();
+
+            return;
+        }
+
+        $chargedPrice = $entries
+            ->map(fn (array $entry) => $entry['charged_price'] ?? null)
+            ->first(fn ($value) => $value !== null);
+        $basePricePerYear = is_numeric($basePrice) ? round((float) $basePrice, 2) : null;
+        $payload = [
+            'valid_until' => $this->aggregateStructuredAssignmentValidUntil($entries->all()),
+            'base_price_per_year' => $basePricePerYear,
+            'charged_price' => is_numeric($chargedPrice) ? round((float) $chargedPrice, 2) : null,
+            'is_active' => $entries->contains(fn (array $entry) => (bool) ($entry['is_activated'] ?? false)),
+        ];
+
+        $existingAssignment = $assignmentQuery->first();
+        if ($existingAssignment) {
+            $existingAssignment->fill($payload);
+            $existingAssignment->save();
+
+            return;
+        }
+
+        SchoolUserLicence::create([
+            'school_id' => $school_licence->school_id,
+            'licence_id' => $school_licence->licence_id,
+            'user_id' => $user->id,
+            'assignment_type' => $assignmentType,
+            'valid_from' => null,
+            ...$payload,
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function matchingStructuredRoleNamesForUser(array $userRoleNames, array $configuredRoleNames): array
+    {
+        $normalizedUserRoleNames = collect($userRoleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $normalizedConfiguredRoleNames = collect($configuredRoleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($normalizedUserRoleNames) || empty($normalizedConfiguredRoleNames)) {
+            return [];
+        }
+
+        if (in_array('*', $normalizedConfiguredRoleNames, true)) {
+            return $normalizedUserRoleNames;
+        }
+
+        return array_values(array_intersect($normalizedUserRoleNames, $normalizedConfiguredRoleNames));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $entries
+     */
+    private function aggregateStructuredAssignmentValidUntil(array $entries): ?string
+    {
+        $validUntilValues = collect($entries)
+            ->map(fn (array $entry) => isset($entry['valid_until']) && is_string($entry['valid_until']) ? trim($entry['valid_until']) : null)
+            ->values();
+
+        if ($validUntilValues->contains(fn ($value) => $value === null || $value === '')) {
+            return null;
+        }
+
+        return $validUntilValues
+            ->filter(fn ($value) => is_string($value) && $value !== '')
+            ->max();
+    }
+
     private function schoolLicenceHasRemainingUserLicenceAssignments(SchoolLicence $school_licence): bool
     {
         $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
@@ -1224,10 +1381,6 @@ class SchoolController extends Controller
 
     private function isUserRoleAssignmentActive(bool $schoolLicenceRequired, ?string $schoolLicenceValidUntil, ?string $userRoleValidUntil, bool $isActivated = false): bool
     {
-        if (! $isActivated) {
-            return false;
-        }
-
         if ($schoolLicenceRequired && ! $this->isDateActive($schoolLicenceValidUntil)) {
             return false;
         }

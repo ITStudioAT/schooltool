@@ -682,11 +682,11 @@ class LicenceService
         $hasExpiredAssignment = false;
 
         foreach ($relevantRequiredRoles as $roleName) {
-            $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
-
-            if (! $entry['is_activated']) {
+            if (! array_key_exists($roleName, $userAssignments)) {
                 continue;
             }
+
+            $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
 
             if ($this->isDateActive($entry['valid_until'])) {
                 return 'active';
@@ -700,7 +700,11 @@ class LicenceService
 
     private function structuredToolAccessStatusForUser(?User $user, School $school, Licence $licence, array $candidateRoleNames = []): string
     {
-        $schoolStatus = $this->structuredSchoolAccessStatus($school, $licence);
+        $schoolLicence = SchoolLicence::query()
+            ->where('school_id', $school->id)
+            ->where('licence_id', $licence->id)
+            ->first();
+        $schoolStatus = $this->structuredSchoolAccessStatusFromAssignment($schoolLicence, $licence);
         if ($this->structuredSchoolLicenceEnabled($licence) && $schoolStatus !== 'active') {
             return $schoolStatus;
         }
@@ -737,19 +741,31 @@ class LicenceService
             }
         }
 
+        if ($schoolLicence) {
+            $legacyStatus = $this->structuredLegacyAssignmentStatusForUser($user, $schoolLicence, $licence, $candidateRoleNames);
+            if ($legacyStatus !== 'missing') {
+                return $legacyStatus;
+            }
+        }
+
         return $hasExpiredAssignment ? 'expired' : 'missing';
     }
 
     private function structuredSchoolAccessStatus(School $school, Licence $licence): string
     {
-        if (! $this->structuredSchoolLicenceEnabled($licence)) {
-            return 'active';
-        }
-
         $schoolLicence = SchoolLicence::query()
             ->where('school_id', $school->id)
             ->where('licence_id', $licence->id)
             ->first();
+
+        return $this->structuredSchoolAccessStatusFromAssignment($schoolLicence, $licence);
+    }
+
+    private function structuredSchoolAccessStatusFromAssignment(?SchoolLicence $schoolLicence, Licence $licence): string
+    {
+        if (! $this->structuredSchoolLicenceEnabled($licence)) {
+            return 'active';
+        }
 
         if (! $schoolLicence) {
             return 'missing';
@@ -798,6 +814,82 @@ class LicenceService
         return array_values(array_unique($assignmentTypes));
     }
 
+    private function structuredLegacyAssignmentStatusForUser(User $user, SchoolLicence $schoolLicence, Licence $licence, array $candidateRoleNames = []): string
+    {
+        $relevantRoleNamesByType = $this->structuredRelevantRoleNamesByType($user, $licence, $candidateRoleNames);
+        if (empty($relevantRoleNamesByType)) {
+            return 'active';
+        }
+
+        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
+            ? $assignments[(string) $user->id]
+            : [];
+
+        $hasExpiredAssignment = false;
+
+        foreach ($relevantRoleNamesByType as $roleNames) {
+            foreach ($roleNames as $roleName) {
+                if (! array_key_exists($roleName, $userAssignments)) {
+                    continue;
+                }
+
+                $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
+
+                if ($this->isDateActive($entry['valid_until'])) {
+                    return 'active';
+                }
+
+                $hasExpiredAssignment = true;
+            }
+        }
+
+        return $hasExpiredAssignment ? 'expired' : 'missing';
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    private function structuredRelevantRoleNamesByType(User $user, Licence $licence, array $candidateRoleNames = []): array
+    {
+        $userRoleNames = $user->roles()
+            ->pluck('name')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $candidateRoleNames = collect($candidateRoleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($candidateRoleNames)) {
+            $userRoleNames = array_values(array_intersect($userRoleNames, $candidateRoleNames));
+        }
+
+        $relevantRoleNamesByType = [];
+
+        if ($this->toBool($licence->admin_licence_enabled ?? false, false)) {
+            $matchingAdminRoleNames = $this->matchingConfiguredRoleNames($userRoleNames, $this->normalizeRoleNames($licence->admin_role_names ?? []));
+            if (! empty($matchingAdminRoleNames)) {
+                $relevantRoleNamesByType['admin'] = $matchingAdminRoleNames;
+            }
+        }
+
+        if ($this->toBool($licence->user_licence_enabled ?? false, false)) {
+            $matchingUserRoleNames = $this->matchingConfiguredRoleNames($userRoleNames, $this->normalizeRoleNames($licence->user_role_names ?? []));
+            if (! empty($matchingUserRoleNames)) {
+                $relevantRoleNamesByType['user'] = $matchingUserRoleNames;
+            }
+        }
+
+        return $relevantRoleNamesByType;
+    }
+
     private function structuredUserAssignmentCollectionStatus(Collection $assignments): string
     {
         if ($assignments->isEmpty()) {
@@ -808,10 +900,6 @@ class LicenceService
 
         foreach ($assignments as $assignment) {
             if (! $assignment instanceof SchoolUserLicence) {
-                continue;
-            }
-
-            if (! $assignment->is_active) {
                 continue;
             }
 
@@ -1011,6 +1099,19 @@ class LicenceService
         }
 
         return ! empty(array_intersect($userRoleNames, $configuredRoleNames));
+    }
+
+    private function matchingConfiguredRoleNames(array $userRoleNames, array $configuredRoleNames): array
+    {
+        if (empty($userRoleNames) || empty($configuredRoleNames)) {
+            return [];
+        }
+
+        if (in_array('*', $configuredRoleNames, true)) {
+            return $userRoleNames;
+        }
+
+        return array_values(array_intersect($userRoleNames, $configuredRoleNames));
     }
 
     private function normalizePriceString(mixed $price): ?string
