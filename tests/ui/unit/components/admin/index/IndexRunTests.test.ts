@@ -13,6 +13,37 @@ describe('Index runTests', () => {
         expect(source).not.toContain('<span v-else class="licence-tag is-expired">nicht aktiv</span>')
     })
 
+    it('uses the shortened admin dashboard hero title', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/admin/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<h2 class="admin-hero-title">Zentrale Übersicht</h2>')
+        expect(source).not.toContain('Zentrale Übersicht für Systemzustand, Team und Lizenzen')
+        expect(source).not.toContain('Behalten Sie Admins, Gesundheitschecks und aktive Schul-Lizenzen in einer Oberfläche im Blick.')
+    })
+
+    it('counts active and expired school plus personal licences in the KPI', () => {
+        const activeLicenceCount = (IndexPage as any).computed.activeLicenceCount
+        const expiredLicenceCount = (IndexPage as any).computed.expiredLicenceCount
+
+        const context: Record<string, any> = {
+            schoolLicencesWithSchoolLicence: [
+                { school_licence_enabled: true, valid_until: '2026-07-10' },
+                { school_licence_enabled: true, valid_until: '2026-01-10' },
+            ],
+            myLicenceEntries: [
+                { is_active: true, valid_until: '2026-07-10' },
+                { is_active: true, valid_until: null },
+                { is_active: false, valid_until: '2026-07-10' },
+            ],
+            isLicenceActive: (licence: Record<string, any>) => licence.valid_until >= '2026-03-28',
+            isMyLicenceEntryActive: (entry: Record<string, any>) => entry.is_active && (!entry.valid_until || entry.valid_until >= '2026-03-28'),
+        }
+
+        expect(activeLicenceCount.call(context)).toBe(3)
+        expect(expiredLicenceCount.call(context)).toBe(2)
+    })
+
     it('treats a valid role as active even when the legacy activation flag is false', () => {
         const isUserLicenceRoleActive = (IndexPage as any).methods.isUserLicenceRoleActive
 

@@ -32,10 +32,7 @@
                 </header>
 
                 <div class="admin-hero-copy">
-                    <h2 class="admin-hero-title">Zentrale Übersicht für Systemzustand, Team und Lizenzen</h2>
-                    <p class="admin-hero-description">
-                        Behalten Sie Admins, Gesundheitschecks und aktive Schul-Lizenzen in einer Oberfläche im Blick. Schnell prüfen, reagieren und verwalten.
-                    </p>
+                    <h2 class="admin-hero-title">Zentrale Übersicht</h2>
                 </div>
 
                 <div class="admin-kpi-grid">
@@ -472,10 +469,16 @@ export default {
         ...mapWritableState(useHealthStore, ['data', 'data_2', 'cron_status']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
         activeLicenceCount() {
-            return (this.school_licences || []).filter((licence) => this.isLicenceActive(licence)).length
+            const activeSchoolLicences = this.schoolLicencesWithSchoolLicence.filter((licence) => this.isLicenceActive(licence)).length
+            const activePersonalLicences = this.myLicenceEntries.filter((entry) => this.isMyLicenceEntryActive(entry)).length
+
+            return activeSchoolLicences + activePersonalLicences
         },
         expiredLicenceCount() {
-            return (this.school_licences || []).filter((licence) => !this.isLicenceActive(licence)).length
+            const expiredSchoolLicences = this.schoolLicencesWithSchoolLicence.filter((licence) => !this.isLicenceActive(licence)).length
+            const expiredPersonalLicences = this.myLicenceEntries.filter((entry) => !this.isMyLicenceEntryActive(entry)).length
+
+            return expiredSchoolLicences + expiredPersonalLicences
         },
         schoolLicencesWithSchoolLicence() {
             return (this.school_licences || []).filter((licence) => licence.school_licence_enabled)
@@ -645,6 +648,12 @@ export default {
             const schoolLicenceRequired = this.toBool(licence?.licence_model?.school_licence_required, true)
             if (!schoolLicenceRequired) return true
             const validUntil = licence?.valid_until
+            if (!validUntil) return true
+            return String(validUntil) >= this.localDateKey()
+        },
+        isMyLicenceEntryActive(entry) {
+            if (!entry?.is_active) return false
+            const validUntil = entry?.valid_until
             if (!validUntil) return true
             return String(validUntil) >= this.localDateKey()
         },

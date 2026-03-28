@@ -468,7 +468,7 @@ describe('schoolInfos', function () {
         expect($adminsData)->toHaveCount(4);
     });
 
-    it('uses school override when licence requirement is disabled for the current user role', function () {
+    it('uses structured school override when the current user role no longer requires a personal licence', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
 
@@ -482,6 +482,8 @@ describe('schoolInfos', function () {
         $licence = Licence::create([
             'name' => 'Lehrertool',
             'long_name' => 'Lehrertool',
+            'user_licence_enabled' => true,
+            'user_role_names' => ['teacher'],
             'licence_model' => [
                 'school_licence_required' => true,
                 'affected_roles' => ['teacher'],
@@ -494,20 +496,18 @@ describe('schoolInfos', function () {
         $school->licences()->attach($licence->id, [
             'valid_until' => now()->addMonth()->toDateString(),
             'licence_model' => json_encode([
-                'school_licence_required' => true,
-                'affected_roles' => ['teacher'],
-                'user_licence_required_by_role' => [
-                    'teacher' => false,
-                ],
+                'school_licence_enabled' => true,
+                'user_licence_enabled' => false,
+                'user_role_names' => [],
             ]),
         ]);
 
         $result = $this->service->schoolInfos($school->id);
         $licenceData = $result['licences'][0];
 
-        expect(data_get($licenceData, 'licence_model.user_licence_required_by_role.teacher'))->toBeFalse()
-            ->and(data_get($licenceData, 'current_user_licence.enabled'))->toBeFalse()
-            ->and(data_get($licenceData, 'current_user_licence.required'))->toBeFalse();
+        expect(data_get($licenceData, 'current_user_licence.enabled'))->toBeFalse()
+            ->and(data_get($licenceData, 'current_user_licence.required'))->toBeFalse()
+            ->and(data_get($licenceData, 'my_user_licence'))->toBeNull();
     });
 
     it('treats a valid current user licence as active even when the legacy activation flag is false', function () {
@@ -560,7 +560,7 @@ describe('schoolInfos', function () {
             ->and(data_get($licenceData, 'current_user_licence.roles.0.is_activated'))->toBeFalse();
     });
 
-    it('uses structured school role mappings for my licences before falling back to legacy guessing', function () {
+    it('uses the new structured licence configuration for my licences when the school assignment still has legacy role requirements', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
 
@@ -574,13 +574,16 @@ describe('schoolInfos', function () {
         $licence = Licence::create([
             'name' => 'Lehrertool',
             'long_name' => 'Lehrertool',
-            'admin_role_names' => [],
+            'admin_licence_enabled' => true,
+            'admin_role_names' => ['teacher', 'teaching_admin'],
+            'user_licence_enabled' => false,
             'user_role_names' => [],
             'licence_model' => [
                 'school_licence_required' => true,
-                'affected_roles' => ['teacher'],
+                'affected_roles' => ['teacher', 'teaching_admin'],
                 'user_licence_required_by_role' => [
                     'teacher' => true,
+                    'teaching_admin' => true,
                 ],
             ],
         ]);
@@ -588,11 +591,12 @@ describe('schoolInfos', function () {
         $school->licences()->attach($licence->id, [
             'valid_until' => now()->addMonth()->toDateString(),
             'licence_model' => json_encode([
-                'school_licence_enabled' => true,
-                'admin_licence_enabled' => true,
-                'admin_role_names' => ['teacher'],
-                'user_licence_enabled' => false,
-                'user_role_names' => [],
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher', 'teaching_admin'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                    'teaching_admin' => true,
+                ],
             ]),
             'user_licence_assignments' => json_encode([
                 (string) $user->id => [
@@ -608,6 +612,7 @@ describe('schoolInfos', function () {
         $licenceData = $result['licences'][0];
 
         expect(data_get($licenceData, 'my_admin_licence.valid_until'))->toBe(now()->addMonth()->toDateString())
+            ->and(data_get($licenceData, 'current_user_licence.required'))->toBeTrue()
             ->and(data_get($licenceData, 'my_user_licence'))->toBeNull();
     });
 });
