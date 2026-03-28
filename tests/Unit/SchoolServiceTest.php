@@ -559,6 +559,57 @@ describe('schoolInfos', function () {
             ->and(data_get($licenceData, 'current_user_licence.roles.0.is_active'))->toBeTrue()
             ->and(data_get($licenceData, 'current_user_licence.roles.0.is_activated'))->toBeFalse();
     });
+
+    it('uses structured school role mappings for my licences before falling back to legacy guessing', function () {
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+        $user->assignRole('teacher');
+        Auth::login($user);
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+            'admin_role_names' => [],
+            'user_role_names' => [],
+            'licence_model' => [
+                'school_licence_required' => true,
+                'affected_roles' => ['teacher'],
+                'user_licence_required_by_role' => [
+                    'teacher' => true,
+                ],
+            ],
+        ]);
+
+        $school->licences()->attach($licence->id, [
+            'valid_until' => now()->addMonth()->toDateString(),
+            'licence_model' => json_encode([
+                'school_licence_enabled' => true,
+                'admin_licence_enabled' => true,
+                'admin_role_names' => ['teacher'],
+                'user_licence_enabled' => false,
+                'user_role_names' => [],
+            ]),
+            'user_licence_assignments' => json_encode([
+                (string) $user->id => [
+                    'teacher' => [
+                        'valid_until' => now()->addMonth()->toDateString(),
+                        'is_activated' => false,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $result = $this->service->schoolInfos($school->id);
+        $licenceData = $result['licences'][0];
+
+        expect(data_get($licenceData, 'my_admin_licence.valid_until'))->toBe(now()->addMonth()->toDateString())
+            ->and(data_get($licenceData, 'my_user_licence'))->toBeNull();
+    });
 });
 
 describe('loadSwitchableSchools', function () {

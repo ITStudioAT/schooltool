@@ -309,7 +309,7 @@ class SchoolService
 
                 $row = $this->attachCurrentUserLicenceSummary($row, $authUser, $schoolLicence, $licenceService);
 
-                $row = $this->classifyMyLicences($row, $licence, $mergedModel);
+                $row = $this->classifyMyLicences($row, $schoolLicence, $licence, $mergedModel, $licenceService);
 
                 return $row;
             })
@@ -389,8 +389,13 @@ class SchoolService
         return $date === '' || $date >= $today;
     }
 
-    private function classifyMyLicences(array $row, $licence, array $mergedModel): array
-    {
+    private function classifyMyLicences(
+        array $row,
+        ?SchoolLicence $schoolLicence,
+        $licence,
+        array $mergedModel,
+        LicenceService $licenceService
+    ): array {
         $roles = $row['current_user_licence']['roles'] ?? [];
         if (! is_array($roles) || $roles === []) {
             $row['my_admin_licence'] = null;
@@ -399,8 +404,8 @@ class SchoolService
             return $row;
         }
 
-        $adminRoleNames = $this->resolveRoleNamesForType($licence, $mergedModel, 'admin');
-        $userRoleNames = $this->resolveRoleNamesForType($licence, $mergedModel, 'user');
+        $adminRoleNames = $this->resolveRoleNamesForType($schoolLicence, $licence, $mergedModel, 'admin', $licenceService);
+        $userRoleNames = $this->resolveRoleNamesForType($schoolLicence, $licence, $mergedModel, 'user', $licenceService);
 
         $row['my_admin_licence'] = $this->bestRoleSummary($roles, $adminRoleNames);
         $row['my_user_licence'] = $this->bestRoleSummary($roles, $userRoleNames);
@@ -411,8 +416,18 @@ class SchoolService
     /**
      * @return array<int, string>
      */
-    private function resolveRoleNamesForType($licence, array $mergedModel, string $type): array
-    {
+    private function resolveRoleNamesForType(
+        ?SchoolLicence $schoolLicence,
+        $licence,
+        array $mergedModel,
+        string $type,
+        LicenceService $licenceService
+    ): array {
+        $configuredRoleNames = $this->resolveStructuredRoleNamesForType($schoolLicence, $licence, $type, $licenceService);
+        if ($configuredRoleNames !== null) {
+            return $configuredRoleNames;
+        }
+
         $key = $type === 'admin' ? 'admin_role_names' : 'user_role_names';
 
         $configured = is_array($mergedModel[$key] ?? null)
@@ -438,6 +453,87 @@ class SchoolService
             ->filter(fn (string $r) => $type === 'admin'
                 ? $this->looksLikeAdminRole($r)
                 : ! $this->looksLikeAdminRole($r))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>|null
+     */
+    private function resolveStructuredRoleNamesForType(
+        ?SchoolLicence $schoolLicence,
+        $licence,
+        string $type,
+        LicenceService $licenceService
+    ): ?array {
+        $key = $type === 'admin' ? 'admin_role_names' : 'user_role_names';
+
+        $schoolSourceModel = $this->parseLicenceModelArray($schoolLicence?->licence_model ?? null);
+        if ($this->isStructuredLicenceConfiguration($schoolSourceModel)) {
+            if (array_key_exists($key, $schoolSourceModel)) {
+                return $licenceService->normalizeStructuredLicenceConfiguration($schoolSourceModel)[$key] ?? [];
+            }
+
+            $baseSourceModel = $this->parseLicenceModelArray($licence->licence_model ?? null);
+            if ($this->isStructuredLicenceConfiguration($baseSourceModel)) {
+                return $licenceService->normalizeStructuredLicenceConfiguration($baseSourceModel)[$key] ?? [];
+            }
+
+            return $this->normalizeRoleNames($licence->$key ?? []);
+        }
+
+        $baseSourceModel = $this->parseLicenceModelArray($licence->licence_model ?? null);
+        if ($this->isStructuredLicenceConfiguration($baseSourceModel)) {
+            return $licenceService->normalizeStructuredLicenceConfiguration($baseSourceModel)[$key] ?? [];
+        }
+
+        $licenceRoleNames = $this->normalizeRoleNames($licence->$key ?? []);
+
+        return $licenceRoleNames !== [] ? $licenceRoleNames : null;
+    }
+
+    private function parseLicenceModelArray(mixed $licenceModel): array
+    {
+        if (is_string($licenceModel)) {
+            $decoded = json_decode($licenceModel, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $licenceModel = $decoded;
+            }
+        }
+
+        return is_array($licenceModel) ? $licenceModel : [];
+    }
+
+    private function isStructuredLicenceConfiguration(array $licenceModel): bool
+    {
+        return array_key_exists('school_licence_enabled', $licenceModel)
+            || array_key_exists('school_price_per_year', $licenceModel)
+            || array_key_exists('school_included_storage_gb', $licenceModel)
+            || array_key_exists('school_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('school_extra_storage_step_price', $licenceModel)
+            || array_key_exists('admin_licence_enabled', $licenceModel)
+            || array_key_exists('admin_price_per_year', $licenceModel)
+            || array_key_exists('admin_role_names', $licenceModel)
+            || array_key_exists('admin_included_storage_gb', $licenceModel)
+            || array_key_exists('admin_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('admin_extra_storage_step_price', $licenceModel)
+            || array_key_exists('user_licence_enabled', $licenceModel)
+            || array_key_exists('user_price_per_year', $licenceModel)
+            || array_key_exists('user_role_names', $licenceModel)
+            || array_key_exists('user_included_storage_gb', $licenceModel)
+            || array_key_exists('user_extra_storage_step_gb', $licenceModel)
+            || array_key_exists('user_extra_storage_step_price', $licenceModel);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeRoleNames(mixed $roleNames): array
+    {
+        return collect(is_array($roleNames) ? $roleNames : [])
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
             ->values()
             ->all();
     }
