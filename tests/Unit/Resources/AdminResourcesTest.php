@@ -19,6 +19,7 @@ use App\Models\Register;
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
 use App\Models\School;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
@@ -224,6 +225,100 @@ test('admin school resource casts selectable flag', function () {
     $data = (new AdminSchoolResource($school))->toArray(request());
 
     expect($data['is_selectable'])->toBeFalse();
+});
+
+test('admin school resource exposes structured licence role names for assignment dialogs', function () {
+    $school = School::factory()->create();
+    $licence = Licence::create([
+        'name' => 'Structured Roles',
+        'long_name' => 'Structured Roles Long',
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['admin', 'register_admin'],
+        'user_licence_enabled' => true,
+        'user_role_names' => ['teacher'],
+    ]);
+    $school->licences()->attach($licence->id, ['valid_until' => '2030-01-01']);
+    $school->load('licences');
+
+    $data = (new AdminSchoolResource($school))->toArray(request());
+
+    expect(data_get($data, 'licences.0.admin_role_names'))->toBe(['admin', 'register_admin'])
+        ->and(data_get($data, 'licences.0.user_role_names'))->toBe(['teacher']);
+});
+
+test('admin school resource counts assigned admin and user licences from school licence assignments', function () {
+    $school = School::factory()->create();
+    $adminUser = User::factory()->create(['school_id' => $school->id]);
+    $expiredAdminUser = User::factory()->create(['school_id' => $school->id]);
+    $teacherUser = User::factory()->create(['school_id' => $school->id]);
+
+    $licence = Licence::create([
+        'name' => 'Assigned Roles',
+        'long_name' => 'Assigned Roles Long',
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['register_admin', 'teaching_admin'],
+        'user_licence_enabled' => true,
+        'user_role_names' => ['teacher'],
+    ]);
+
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2030-01-01',
+        'licence_model' => [
+            'admin_role_names' => ['register_admin', 'teaching_admin'],
+            'user_role_names' => ['teacher'],
+        ],
+        'user_licence_assignments' => [
+            (string) $adminUser->id => [
+                'register_admin' => ['valid_until' => '2030-01-01'],
+                'teaching_admin' => ['valid_until' => '2030-01-01'],
+            ],
+            (string) $expiredAdminUser->id => [
+                'register_admin' => ['valid_until' => '2020-01-01'],
+            ],
+            (string) $teacherUser->id => [
+                'teacher' => ['valid_until' => '2030-01-01'],
+            ],
+        ],
+    ]);
+
+    $school->load('licences');
+
+    $data = (new AdminSchoolResource($school))->toArray(request());
+
+    expect(data_get($data, 'licences.0.admin_licence_count'))->toBe(2)
+        ->and(data_get($data, 'licences.0.admin_licence_active_count'))->toBe(1)
+        ->and(data_get($data, 'licences.0.admin_licence_expired_count'))->toBe(1)
+        ->and(data_get($data, 'licences.0.user_licence_count'))->toBe(1);
+});
+
+test('admin school resource exposes admin billing overrides for school licences', function () {
+    $school = School::factory()->create();
+    $licence = Licence::create([
+        'name' => 'Admin Billing Fields',
+        'long_name' => 'Admin Billing Fields Long',
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['register_admin'],
+        'admin_extra_storage_step_gb' => 100,
+        'admin_extra_storage_step_price' => '5',
+    ]);
+
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'charged_admin_price' => 79.5,
+        'admin_extra_storage_units' => 2,
+        'admin_extra_storage_unit_price' => 5,
+    ]);
+
+    $school->load('licences');
+
+    $data = (new AdminSchoolResource($school))->toArray(request());
+
+    expect(data_get($data, 'licences.0.charged_admin_price'))->toBe('79.50')
+        ->and(data_get($data, 'licences.0.admin_extra_storage_units'))->toBe(2)
+        ->and(data_get($data, 'licences.0.admin_extra_storage_unit_price'))->toBe('5.00');
 });
 
 test('school tool resource maps tutoring settings', function () {

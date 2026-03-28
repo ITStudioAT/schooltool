@@ -17,16 +17,6 @@
                 <SearchField :store="schoolStore" selected_field="selected_schools" />
 
                 <div class="d-flex flex-row flex-wrap align-center ga-2 mt-2" :disabled="action != ''">
-                    <v-btn
-                        color="error"
-                        slim
-                        tile
-                        class="text-caption"
-                        :variant="expired_only ? 'flat' : 'outlined'"
-                        :disabled="isInteractionLocked"
-                        @click="toggleExpiredSchools">
-                        Abgelaufen
-                    </v-btn>
                     <v-btn color="primary" slim flat tile class="text-caption" @click="clearSelection" :disabled="isInteractionLocked" v-if="selected_schools.length >= 1">
                         Auswahl aufheben
                     </v-btn>
@@ -46,6 +36,13 @@
                                     <div class="licence-card__title-wrap">
                                         <div class="licence-card__title">{{ item.long_name }}</div>
                                     </div>
+                                    <v-btn
+                                        size="small"
+                                        variant="tonal"
+                                        color="success"
+                                        icon="mdi-plus"
+                                        :disabled="isInteractionLocked"
+                                        @click.stop="openEditDateDialog(item)" />
                                 </header>
 
                                 <div class="licence-card__roles-block">
@@ -68,6 +65,7 @@
                                                     <div v-if="licence.admin_licence_enabled" class="assignment-school-licence-row__counter">
                                                         <v-icon size="13" icon="mdi-shield-crown-outline" class="mr-1" />
                                                         Admin-Lizenzen: {{ licence.admin_licence_count }}
+                                                        (gültig: {{ licence.admin_licence_active_count || 0 }}, abgelaufen: {{ licence.admin_licence_expired_count || 0 }})
                                                     </div>
                                                     <div v-if="licence.user_licence_enabled" class="assignment-school-licence-row__counter">
                                                         <v-icon size="13" icon="mdi-account-multiple" class="mr-1" />
@@ -75,35 +73,36 @@
                                                     </div>
                                                 </div>
                                                 <div class="assignment-school-licence-row__right">
-                                                    <div class="assignment-school-licence-row__icons">
-                                                        <v-tooltip text="Schullizenz" location="top">
-                                                            <template #activator="{ props }">
-                                                                <div v-if="licence.school_licence_enabled" v-bind="props" class="licence-type-icon">
-                                                                    <v-icon size="14" icon="mdi-domain" />
-                                                                </div>
-                                                            </template>
-                                                        </v-tooltip>
-                                                        <v-tooltip text="Adminlizenz" location="top">
-                                                            <template #activator="{ props }">
-                                                                <div v-if="licence.admin_licence_enabled" v-bind="props" class="licence-type-icon licence-type-icon--admin">
-                                                                    <v-icon size="14" icon="mdi-shield-crown-outline" />
-                                                                </div>
-                                                            </template>
-                                                        </v-tooltip>
-                                                        <v-tooltip text="Userlizenz" location="top">
-                                                            <template #activator="{ props }">
-                                                                <div v-if="licence.user_licence_enabled" v-bind="props" class="licence-type-icon licence-type-icon--user">
-                                                                    <v-icon size="14" icon="mdi-account-multiple" />
-                                                                </div>
-                                                            </template>
-                                                        </v-tooltip>
-                                                    </div>
                                                     <v-btn
-                                                        size="x-small"
+                                                        v-if="licence.school_licence_enabled"
+                                                        size="small"
                                                         variant="tonal"
                                                         color="primary"
-                                                        icon="mdi-pencil"
-                                                        @click.stop="openEditLicenceDialog(item, licence)" />
+                                                        prepend-icon="mdi-domain"
+                                                        class="assignment-school-licence-row__action"
+                                                        @click.stop="openEditLicenceDialog(item, licence, 'school')">
+                                                        Schullizenz
+                                                    </v-btn>
+                                                    <v-btn
+                                                        v-if="licence.admin_licence_enabled"
+                                                        size="small"
+                                                        variant="tonal"
+                                                        color="warning"
+                                                        prepend-icon="mdi-shield-crown-outline"
+                                                        class="assignment-school-licence-row__action"
+                                                        @click.stop="openEditLicenceDialog(item, licence, 'admin')">
+                                                        Admin-Lizenzen
+                                                    </v-btn>
+                                                    <v-btn
+                                                        v-if="licence.user_licence_enabled"
+                                                        size="small"
+                                                        variant="tonal"
+                                                        color="success"
+                                                        prepend-icon="mdi-account-multiple"
+                                                        class="assignment-school-licence-row__action"
+                                                        @click.stop="openEditLicenceDialog(item, licence, 'user')">
+                                                        Benutzer-Lizenzen
+                                                    </v-btn>
                                                 </div>
                                             </div>
                                         </template>
@@ -454,17 +453,34 @@
 
     <v-dialog v-model="edit_date_dialog" max-width="520">
         <v-card>
-            <v-card-title>Lizenzdatum ändern</v-card-title>
+            <v-card-title>{{ edit_school_licence ? 'Lizenzdatum ändern' : 'Lizenz hinzufügen' }}</v-card-title>
             <v-card-text>
+                <div class="text-body-2 mb-3" v-if="edit_date_school">
+                    {{ edit_date_school.long_name }}
+                </div>
                 <div class="text-body-2 mb-3" v-if="edit_school_licence">
                     {{ edit_school_licence.name }}
                 </div>
-                <v-checkbox v-model="edit_no_date" label="Kein Ablaufdatum" hide-details class="mb-2" />
-                <v-date-input v-model="edit_valid_until" label="Gültig bis" :disabled="edit_no_date" class="flex-grow-1" />
+                <v-select
+                    v-else
+                    v-model="edit_date_licence_id"
+                    :items="availableEditDateLicences"
+                    item-title="name"
+                    item-value="id"
+                    label="Lizenz"
+                    class="mb-3"
+                    hide-details="auto" />
+                <div v-if="!edit_school_licence && availableEditDateLicences.length === 0" class="text-caption text-medium-emphasis mb-3">
+                    Keine weitere Lizenz verfügbar.
+                </div>
+                <template v-if="edit_school_licence">
+                    <v-checkbox v-model="edit_no_date" label="Kein Ablaufdatum" hide-details class="mb-2" />
+                    <v-date-input v-model="edit_valid_until" label="Gültig bis" :disabled="edit_no_date" class="flex-grow-1" />
+                </template>
             </v-card-text>
             <v-card-actions class="d-flex justify-space-between">
                 <v-btn color="warning" variant="flat" @click="closeEditDateDialog">Abbrechen</v-btn>
-                <v-btn color="success" variant="flat" @click="saveEditedDate">Speichern</v-btn>
+                <v-btn color="success" variant="flat" :disabled="!edit_school_licence && !edit_date_licence_id" @click="saveEditedDate">Speichern</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -479,25 +495,28 @@
                         <span v-if="edit_licence_item"> – {{ edit_licence_item.name }}</span>
                     </div>
                 </div>
-                <v-btn icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
+                <v-btn v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
             </div>
 
             <v-tabs v-model="edit_licence_tab" color="primary" class="edit-licence-tabs">
                 <v-tab
                     v-if="edit_licence_item && edit_licence_item.school_licence_enabled"
                     value="school"
+                    :disabled="isEditLicenceTabDisabled('school')"
                     prepend-icon="mdi-domain">
                     Schul-Lizenz
                 </v-tab>
                 <v-tab
                     v-if="edit_licence_item && edit_licence_item.admin_licence_enabled"
                     value="admin"
+                    :disabled="isEditLicenceTabDisabled('admin')"
                     prepend-icon="mdi-shield-crown-outline">
                     Admin-Lizenzen
                 </v-tab>
                 <v-tab
                     v-if="edit_licence_item && edit_licence_item.user_licence_enabled"
                     value="user"
+                    :disabled="isEditLicenceTabDisabled('user')"
                     prepend-icon="mdi-account-multiple">
                     Benutzer-Lizenzen
                 </v-tab>
@@ -556,6 +575,16 @@
                                     </v-menu>
                                 </span>
                             </div>
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Gesamtkosten</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(billingTotal) }}</span>
+                            </div>
+                            <div
+                                v-if="schoolStorageTotalGb !== null"
+                                class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Gesamtspeicher</span>
+                                <span class="edit-licence-price-value">{{ formatStorage(schoolStorageTotalGb) }}</span>
+                            </div>
                         </div>
 
                         <div class="edit-licence-section-title">Preis-Informationen</div>
@@ -599,7 +628,9 @@
                                 </div>
                                 <div class="edit-licence-price-row">
                                     <span class="edit-licence-price-label">Preis je Einheit</span>
-                                    <span class="edit-licence-price-value">{{ edit_school_extra_storage_unit_price != null ? formatPrice(edit_school_extra_storage_unit_price) : '–' }}</span>
+                                    <span class="edit-licence-price-value">
+                                        {{ overridePriceLabel(edit_school_extra_storage_unit_price, edit_licence_item?.school_extra_storage_step_price, 'Basis-Tarif') }}
+                                    </span>
                                 </div>
                             </template>
                             <div class="edit-licence-price-row edit-licence-price-row--sum">
@@ -667,52 +698,38 @@
 
                         <div class="d-flex align-center justify-space-between mb-2">
                             <div class="edit-licence-section-title mb-0">Benutzer</div>
-                        </div>
-                        <div class="d-flex align-center ga-2 mb-2">
-                            <v-text-field
-                                v-model="edit_admin_search"
-                                placeholder="Suchen..."
-                                density="compact"
-                                variant="outlined"
-                                clearable
-                                hide-details
-                                prepend-inner-icon="mdi-magnify"
-                                class="flex-grow-1"
-                                @keyup.enter="loadAdminUsers"
-                                @click:clear="onAdminSearchClear" />
-                            <v-btn size="small" variant="tonal" color="primary" icon="mdi-magnify" @click="loadAdminUsers" />
-                            <v-btn size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode" />
+                            <v-btn v-if="!edit_admin_user_edit_id" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode" />
                         </div>
 
-                        <div v-if="edit_admin_users.length" class="mb-2">
+                        <div v-if="visibleAdminUsers.length" class="mb-2">
                             <div
-                                v-for="user in edit_admin_users"
+                                v-for="user in visibleAdminUsers"
                                 :key="`admin-user-${user.id}`"
-                                class="admin-user-row">
+                                class="admin-user-row"
+                                :class="{ 'is-editing': edit_admin_user_edit_id === user.id }">
                                 <div class="admin-user-row__main">
                                     <div class="admin-user-row__name">
-                                        {{ user.last_name }} {{ user.first_name }}
+                                        <span class="admin-user-row__title">
+                                            <v-icon
+                                                v-if="adminUserHasValidLicence(user)"
+                                                size="14"
+                                                color="success"
+                                                icon="mdi-check-circle"
+                                                class="admin-user-row__status-icon" />
+                                            <span>{{ user.last_name }} {{ user.first_name }}</span>
+                                        </span>
                                         <span class="admin-user-row__email">{{ user.email }}</span>
+                                        <span class="admin-user-row__meta">{{ adminUserLicenceRuntimeLabel(user) }}</span>
                                     </div>
                                     <div class="admin-user-row__actions">
-                                        <v-icon
-                                            v-if="adminUserIsAssigned(user)"
-                                            size="16"
-                                            icon="mdi-check-circle"
-                                            color="success" />
-                                        <v-btn
-                                            v-else
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="success"
-                                            icon="mdi-plus"
-                                            @click="assignAdminUser(user)" />
+                                        <span v-if="edit_admin_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>
                                         <v-btn
                                             v-if="adminUserIsAssigned(user)"
                                             size="x-small"
                                             variant="text"
                                             :color="edit_admin_user_edit_id === user.id ? 'primary' : 'default'"
                                             icon="mdi-pencil"
+                                            :style="{ visibility: edit_admin_user_edit_id ? 'hidden' : 'visible' }"
                                             @click="toggleAdminUserEdit(user)" />
                                     </div>
                                 </div>
@@ -735,6 +752,11 @@
                                                     </template>
                                                     <v-list density="compact" min-width="220">
                                                         <v-list-item
+                                                            prepend-icon="mdi-link-off"
+                                                            title="Lizenz entfernen"
+                                                            base-color="error"
+                                                            @click="removeAdminUserLicence(user)" />
+                                                        <v-list-item
                                                             prepend-icon="mdi-calendar-end"
                                                             :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
                                                             @click="setAdminUserValidUntil(user, nextYearEndDate(effectiveEndDayMonth))" />
@@ -746,6 +768,10 @@
                                                             prepend-icon="mdi-calendar-plus"
                                                             title="ein Jahr verlängern"
                                                             @click="extendAdminUserValidUntilOneYear(user)" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-clock"
+                                                            :title="`Teillizenz (${nextYearEndLabel(effectiveEndDayMonth)}, ${adminTeillizenzPreisLabel})`"
+                                                            @click="applyAdminUserTeillizenz(user)" />
                                                     </v-list>
                                                 </v-menu>
                                             </span>
@@ -849,8 +875,9 @@
                 </v-tabs-window>
             </v-card-text>
 
-            <v-card-actions class="d-flex justify-space-between pa-4">
-                <v-btn color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
+            <v-card-actions class="d-flex pa-4" :class="edit_admin_user_edit_id ? 'justify-end' : 'justify-space-between'">
+                <v-btn v-if="!editLicenceCloseLocked" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
+                <v-btn v-else-if="edit_admin_user_edit_id" color="warning" variant="tonal" rounded="lg" @click="closeAdminUserEdit">Benutzerlizenz schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -891,6 +918,8 @@ export default {
             selected_school_licence_id: null,
             selected_user_licences_school_licence_id: null,
             edit_date_dialog: false,
+            edit_date_school: null,
+            edit_date_licence_id: null,
             edit_school_licence: null,
             edit_licence_dialog: false,
             edit_licence_tab: null,
@@ -902,7 +931,6 @@ export default {
             edit_school_billing_editing: false,
             edit_admin_users: [],
             edit_admin_users_role_statuses: {},
-            edit_admin_search: '',
             edit_admin_add_mode: false,
             edit_admin_add_search: '',
             edit_admin_add_results: [],
@@ -950,6 +978,9 @@ export default {
         },
         selectedSchoolId() {
             return this.selected_schools[0] ?? null
+        },
+        editDateSchoolId() {
+            return this.edit_date_school?.id ?? this.selectedSchoolId
         },
         selectedSchoolLicence() {
             return (this.school_licences || []).find((item) => item.school_licence_id === this.selected_school_licence_id) || null
@@ -1018,19 +1049,24 @@ export default {
         },
         teillizenzPreisLabel() {
             if (!this.effectiveEndDayMonth) return ''
-            const yearEndStr = this.nextYearEndDate(this.effectiveEndDayMonth)
-            const yearEnd = new Date(yearEndStr)
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-            const daysRemaining = Math.max(0, Math.round((yearEnd - today) / 86400000))
-            const fullYearPrice =
-                this.edit_school_charged_price != null
-                    ? parseFloat(this.edit_school_charged_price)
-                    : this.edit_licence_item?.school_price_per_year != null
-                      ? parseFloat(this.edit_licence_item.school_price_per_year)
-                      : null
-            if (fullYearPrice === null || isNaN(fullYearPrice)) return `${daysRemaining} Tage`
-            const prorated = Math.ceil((fullYearPrice * daysRemaining) / 365)
+            const prorated = this.proratedYearPrice(
+                this.edit_school_charged_price != null ? this.edit_school_charged_price : this.edit_licence_item?.school_price_per_year,
+                this.effectiveEndDayMonth
+            )
+            if (prorated === null) {
+                return `${this.remainingDaysUntil(this.effectiveEndDayMonth)} Tage`
+            }
+            return `${this.formatPrice(prorated)}`
+        },
+        adminTeillizenzPreisLabel() {
+            if (!this.effectiveEndDayMonth) return ''
+            const prorated = this.proratedYearPrice(
+                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.edit_licence_item?.admin_price_per_year,
+                this.effectiveEndDayMonth
+            )
+            if (prorated === null) {
+                return `${this.remainingDaysUntil(this.effectiveEndDayMonth)} Tage`
+            }
             return `${this.formatPrice(prorated)}`
         },
         billingTotal() {
@@ -1041,11 +1077,45 @@ export default {
                       ? parseFloat(this.edit_licence_item.school_price_per_year)
                       : 0
             const units = parseInt(this.edit_school_extra_storage_units) || 0
-            const unitPrice = parseFloat(this.edit_school_extra_storage_unit_price) || 0
+            const unitPrice =
+                this.edit_school_extra_storage_unit_price !== null && this.edit_school_extra_storage_unit_price !== undefined && this.edit_school_extra_storage_unit_price !== ''
+                    ? parseFloat(this.edit_school_extra_storage_unit_price)
+                    : this.edit_licence_item?.school_extra_storage_step_price != null
+                      ? parseFloat(this.edit_licence_item.school_extra_storage_step_price)
+                      : 0
             return (isNaN(base) ? 0 : base) + units * (isNaN(unitPrice) ? 0 : unitPrice)
+        },
+        schoolStorageTotalGb() {
+            const included =
+                this.edit_licence_item?.school_included_storage_gb != null
+                    ? parseInt(this.edit_licence_item.school_included_storage_gb, 10)
+                    : null
+            const stepGb =
+                this.edit_licence_item?.school_extra_storage_step_gb != null
+                    ? parseInt(this.edit_licence_item.school_extra_storage_step_gb, 10)
+                    : null
+            const units = parseInt(this.edit_school_extra_storage_units, 10) || 0
+
+            const normalizedIncluded = included !== null && !isNaN(included) ? included : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncluded === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncluded || 0) + units * (normalizedStepGb || 0)
         },
         availableRoles() {
             return this.roles || []
+        },
+        visibleAdminUsers() {
+            const users = Array.isArray(this.edit_admin_users) ? this.edit_admin_users : []
+            if (!this.edit_admin_user_edit_id) {
+                return users
+            }
+
+            const editingUserId = Number(this.edit_admin_user_edit_id)
+            return users.filter((user) => Number(user?.id) === editingUserId)
         },
         userLicenceRoleNames() {
             return this.sortedRoleNames(this.school_licence_users_roles || [])
@@ -1062,6 +1132,34 @@ export default {
             const currentPage = meta.current_page || 1
             const lastPage = meta.last_page || 1
             return `Seite ${currentPage} von ${lastPage}`
+        },
+        availableEditDateLicences() {
+            const allLicences = Array.isArray(this.licences) ? this.sortedLicences(this.licences) : []
+            const assignedLicenceIds = new Set(
+                Array.isArray(this.edit_date_school?.licences)
+                    ? this.edit_date_school.licences
+                        .map((licence) => Number(licence?.id))
+                        .filter((licenceId) => Number.isInteger(licenceId) && licenceId > 0)
+                    : []
+            )
+
+            if (this.edit_school_licence?.id) {
+                assignedLicenceIds.delete(Number(this.edit_school_licence.id))
+            }
+
+            return allLicences.filter((licence) => !assignedLicenceIds.has(Number(licence?.id)))
+        },
+        editLicenceCloseLocked() {
+            return !!(
+                this.edit_admin_user_edit_id ||
+                this.edit_school_billing_editing
+            )
+        },
+        editLicenceTabLocked() {
+            return !!(
+                this.editLicenceCloseLocked ||
+                this.edit_admin_add_mode
+            )
         },
     },
 
@@ -1108,11 +1206,6 @@ export default {
             this.closeSchoolLicenceModel()
             this.closeUserLicencesCard()
         },
-        async toggleExpiredSchools() {
-            this.expired_only = !this.expired_only
-            this.clearSelection()
-            await this.schoolStore.index(1)
-        },
         sortedLicences(licences) {
             const items = Array.isArray(licences) ? [...licences] : []
             return items.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'de'))
@@ -1147,6 +1240,20 @@ export default {
             const date = new Date()
             date.setFullYear(date.getFullYear() + 1)
             return this.localDateKey(date)
+        },
+        remainingDaysUntil(endDayMonth) {
+            if (!endDayMonth) return 0
+            const yearEndStr = this.nextYearEndDate(endDayMonth)
+            const yearEnd = new Date(`${yearEndStr}T00:00:00`)
+            const today = new Date(`${this.localDateKey()}T00:00:00`)
+            return Math.max(0, Math.round((yearEnd - today) / 86400000))
+        },
+        proratedYearPrice(rawPrice, endDayMonth) {
+            const daysRemaining = this.remainingDaysUntil(endDayMonth)
+            if (rawPrice === null || rawPrice === undefined || rawPrice === '') return null
+            const fullYearPrice = parseFloat(rawPrice)
+            if (isNaN(fullYearPrice)) return null
+            return Math.ceil((fullYearPrice * daysRemaining) / 365)
         },
         dayBefore(dayMonth) {
             // dayMonth format: "DD.MM." e.g. "01.08."
@@ -1183,18 +1290,28 @@ export default {
             if (isNaN(num)) return '–'
             return `${num} GB`
         },
-        openEditLicenceDialog(school, licence) {
+        isEditLicenceTabDisabled(tab) {
+            return this.editLicenceTabLocked && this.edit_licence_tab !== tab
+        },
+        async openEditLicenceDialog(school, licence, requestedTab = null) {
             this.edit_licence_school = school
             this.edit_licence_item = licence
-            this.edit_licence_tab = licence.school_licence_enabled ? 'school'
-                : licence.admin_licence_enabled ? 'admin'
-                : licence.user_licence_enabled ? 'user'
-                : null
+            const allowedTabs = [
+                licence.school_licence_enabled ? 'school' : null,
+                licence.admin_licence_enabled ? 'admin' : null,
+                licence.user_licence_enabled ? 'user' : null,
+            ].filter(Boolean)
+            this.edit_licence_tab = allowedTabs.includes(requestedTab)
+                ? requestedTab
+                : allowedTabs[0] || null
             this.edit_school_charged_price = licence.charged_school_price ?? null
             this.edit_school_extra_storage_units = licence.extra_storage_units ?? null
             this.edit_school_extra_storage_unit_price = licence.extra_storage_unit_price ?? null
             this.edit_school_billing_editing = false
             this.edit_licence_dialog = true
+            if (this.edit_licence_tab === 'admin') {
+                await this.loadAdminUsers()
+            }
         },
         closeEditLicenceDialog() {
             this.edit_licence_dialog = false
@@ -1207,7 +1324,6 @@ export default {
             this.edit_school_billing_editing = false
             this.edit_admin_users = []
             this.edit_admin_users_role_statuses = {}
-            this.edit_admin_search = ''
             this.edit_admin_add_mode = false
             this.edit_admin_add_search = ''
             this.edit_admin_add_results = []
@@ -1278,8 +1394,8 @@ export default {
             await this.setLicenceValidUntil(newDate)
         },
         adminRolesFromLicenceModel(licence) {
-            const model = this.normalizeLicenceModel(licence?.licence_model || null)
-            return (model.affected_roles || []).filter((r) => this.looksLikeAdminRoleName(r))
+            const model = this.normalizeLicenceModel(licence || null)
+            return this.sortedRoleNames(model.admin_role_names || [])
         },
         async loadAdminUsers() {
             if (!this.edit_licence_item?.school_licence_id) return
@@ -1288,7 +1404,6 @@ export default {
                 this.adminStore.is_loading++
                 const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
                     params: {
-                        search_string: this.edit_admin_search || null,
                         role_names: adminRoles,
                     },
                 })
@@ -1304,7 +1419,7 @@ export default {
         adminUserIsAssigned(user) {
             const statuses = this.edit_admin_users_role_statuses[String(user.id)]
             if (!statuses || typeof statuses !== 'object') return false
-            return Object.values(statuses).some((s) => s && typeof s === 'object')
+            return Object.values(statuses).some((status) => status && typeof status === 'object' && status.assigned === true)
         },
         openAdminAddMode() {
             this.edit_admin_add_mode = true
@@ -1316,12 +1431,14 @@ export default {
             this.edit_admin_add_search = ''
             this.edit_admin_add_results = []
         },
-        async onAdminSearchClear() {
-            this.edit_admin_search = ''
-            await this.loadAdminUsers()
+        closeAdminUserEdit() {
+            this.edit_admin_user_edit_id = null
+            this.edit_admin_user_valid_until = null
+            this.edit_admin_user_price_editing = false
+            this.edit_admin_user_charged_price = null
         },
         async searchAdminUsersToAdd() {
-            if (!this.edit_admin_add_search.trim() || !this.edit_licence_item?.school_licence_id) {
+            if (!this.edit_licence_item?.school_licence_id) {
                 this.edit_admin_add_results = []
                 return
             }
@@ -1330,11 +1447,17 @@ export default {
                 this.adminStore.is_loading++
                 const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
                     params: {
-                        search_string: this.edit_admin_add_search,
+                        search_string: this.edit_admin_add_search.trim() || null,
                         role_names: adminRoles,
+                        assigned_only: 0,
                     },
                 })
-                this.edit_admin_add_results = response.data.data || []
+                const roleStatusesByUser = response.data.role_statuses_by_user || {}
+                this.edit_admin_add_results = (response.data.data || []).filter((user) => {
+                    const statuses = roleStatusesByUser[String(user.id)]
+                    if (!statuses || typeof statuses !== 'object') return true
+                    return !Object.values(statuses).some((status) => status && typeof status === 'object' && status.assigned === true)
+                })
             } catch {
                 this.edit_admin_add_results = []
             } finally {
@@ -1348,9 +1471,10 @@ export default {
                 const rolesResponse = await axios.get(
                     `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`
                 )
+                const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
                 const roles = (rolesResponse.data.roles || []).map((role) => ({
                     ...role,
-                    assigned: this.looksLikeAdminRoleName(role.name) ? true : !!role.assigned,
+                    assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
                 }))
                 await axios.put(
                     `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`,
@@ -1362,6 +1486,7 @@ export default {
             } finally {
                 this.adminStore.is_loading--
             }
+            this.edit_admin_add_results = this.edit_admin_add_results.filter((candidate) => Number(candidate?.id) !== Number(user?.id))
             await this.loadAdminUsers()
             await this.refreshEditLicenceItem()
         },
@@ -1370,14 +1495,50 @@ export default {
             if (!statuses || typeof statuses !== 'object') return null
             return Object.values(statuses)[0] || null
         },
+        adminUserHasValidLicence(user) {
+            if (!this.adminUserIsAssigned(user)) return false
+            const status = this.adminUserStatusForUser(user)
+            return !this.isValidUntilExpired(status?.valid_until || null)
+        },
+        adminUserLicenceRuntimeLabel(user) {
+            const status = this.adminUserStatusForUser(user)
+            if (!status || !this.adminUserIsAssigned(user)) return 'Keine Benutzerlizenz'
+            if (!status.valid_until) {
+                return 'Benutzerlizenz läuft unbegrenzt'
+            }
+
+            const validUntil =
+                status.valid_until instanceof Date
+                    ? this.toDateString(status.valid_until)
+                    : String(status.valid_until).slice(0, 10)
+
+            if (!validUntil) {
+                return 'Keine Benutzerlizenz'
+            }
+
+            const today = new Date(`${this.localDateKey()}T00:00:00`)
+            const endDate = new Date(`${validUntil}T00:00:00`)
+            const remainingDays = Math.ceil((endDate.getTime() - today.getTime()) / 86400000)
+
+            if (remainingDays < 0) {
+                return `Benutzerlizenz abgelaufen am ${this.formatValidUntil(validUntil)}`
+            }
+            if (remainingDays === 0) {
+                return `Benutzerlizenz läuft heute ab (${this.formatValidUntil(validUntil)})`
+            }
+            if (remainingDays === 1) {
+                return `Benutzerlizenz läuft noch 1 Tag (${this.formatValidUntil(validUntil)})`
+            }
+            return `Benutzerlizenz läuft noch ${remainingDays} Tage (${this.formatValidUntil(validUntil)})`
+        },
         toggleAdminUserEdit(user) {
             if (this.edit_admin_user_edit_id === user.id) {
-                this.edit_admin_user_edit_id = null
-                this.edit_admin_user_valid_until = null
-                this.edit_admin_user_price_editing = false
-                this.edit_admin_user_charged_price = null
+                this.closeAdminUserEdit()
                 return
             }
+            this.edit_admin_add_mode = false
+            this.edit_admin_add_search = ''
+            this.edit_admin_add_results = []
             const status = this.adminUserStatusForUser(user)
             this.edit_admin_user_edit_id = user.id
             this.edit_admin_user_valid_until = status?.valid_until || null
@@ -1405,9 +1566,11 @@ export default {
             }
         },
         async setAdminUserValidUntil(user, valid_until) {
+            const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
             const ok = await this.saveAdminUserRoles(user, (role) => ({
                 ...role,
-                valid_until: this.looksLikeAdminRoleName(role.name) ? valid_until : role.valid_until,
+                assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                valid_until: adminRoleNames.has(String(role?.name || '').trim()) ? valid_until : role.valid_until,
             }))
             if (!ok) return
             this.edit_admin_user_valid_until = valid_until
@@ -1428,11 +1591,47 @@ export default {
             }
             await this.setAdminUserValidUntil(user, newDate)
         },
-        async saveAdminUserBilling(user) {
-            const chargedPrice = this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : null
+        async applyAdminUserTeillizenz(user) {
+            const validUntil = this.nextYearEndDate(this.effectiveEndDayMonth)
+            const chargedPrice = this.proratedYearPrice(
+                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.edit_licence_item?.admin_price_per_year,
+                this.effectiveEndDayMonth
+            )
+            const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
             const ok = await this.saveAdminUserRoles(user, (role) => ({
                 ...role,
-                charged_price: this.looksLikeAdminRoleName(role.name) ? chargedPrice : role.charged_price,
+                assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                valid_until: adminRoleNames.has(String(role?.name || '').trim()) ? validUntil : role.valid_until,
+                charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+            }))
+            if (!ok) return
+            await this.loadAdminUsers()
+            const status = this.adminUserStatusForUser(user)
+            this.edit_admin_user_valid_until = status?.valid_until || null
+            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            this.edit_admin_user_price_editing = false
+            await this.refreshEditLicenceItem()
+        },
+        async removeAdminUserLicence(user) {
+            const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveAdminUserRoles(user, (role) => ({
+                ...role,
+                assigned: adminRoleNames.has(String(role?.name || '').trim()) ? false : !!role.assigned,
+                valid_until: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.valid_until,
+                charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.charged_price,
+            }))
+            if (!ok) return
+            this.closeAdminUserEdit()
+            await this.loadAdminUsers()
+            await this.refreshEditLicenceItem()
+        },
+        async saveAdminUserBilling(user) {
+            const chargedPrice = this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : null
+            const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveAdminUserRoles(user, (role) => ({
+                ...role,
+                assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
             }))
             if (!ok) return
             this.edit_admin_user_price_editing = false
@@ -1456,7 +1655,7 @@ export default {
             }
             if (!(await this.schoolStore.saveSchoolLicenceSchool(this.edit_licence_item.school_licence_id, data))) return
             this.edit_school_billing_editing = false
-            await this.schoolStore.index(this.meta?.current_page || 1)
+            await this.refreshEditLicenceItem()
         },
         formatValidUntil(dateStr) {
             if (!dateStr) return 'unbegrenzt'
@@ -1484,7 +1683,7 @@ export default {
         isSchoolLicenceNotNeeded(licence) {
             if (licence?.school_licence_required === false) return true
 
-            const model = this.normalizeLicenceModel(licence?.licence_model || null)
+            const model = this.normalizeLicenceModel(licence || null)
             return model.school_licence_required === false || model.school_licence_enabled === false
         },
         isLicenceActive(licence) {
@@ -1514,8 +1713,8 @@ export default {
             return this.countAssignedUserLicences(licences) >= 1
         },
         hasAdminLicenceRequiredRole(licence) {
-            const model = this.normalizeLicenceModel(licence?.licence_model || null)
-            if (model.admin_licence_enabled) return true
+            const model = this.normalizeLicenceModel(licence || null)
+            if (model.admin_licence_enabled || (model.admin_role_names || []).length >= 1) return true
             return Object.entries(model.user_licence_required_by_role || {}).some(
                 ([roleName, isRequired]) => !!isRequired && this.looksLikeAdminRoleName(roleName)
             )
@@ -1552,25 +1751,31 @@ export default {
             this.bootstrapSchoolLicenceModels()
             this.closeSchoolLicenceModel()
         },
-        openEditDateDialog(licence) {
+        openEditDateDialog(school, licence = null) {
+            this.edit_date_school = school || null
             this.edit_school_licence = licence || null
+            this.edit_date_licence_id = licence?.id ?? null
             this.edit_no_date = !licence?.valid_until
-            this.edit_valid_until = licence?.valid_until || this.defaultValidUntil()
+            this.edit_valid_until = licence?.valid_until || ''
             this.edit_date_dialog = true
         },
         closeEditDateDialog() {
             this.edit_date_dialog = false
+            this.edit_date_school = null
+            this.edit_date_licence_id = null
             this.edit_school_licence = null
             this.edit_valid_until = ''
             this.edit_no_date = false
         },
         async saveEditedDate() {
-            if (!this.edit_school_licence || !this.selectedSchoolId) return
+            const schoolId = this.editDateSchoolId
+            const licenceId = this.edit_school_licence?.id ?? this.edit_date_licence_id
+            if (!licenceId || !schoolId) return
             if (!this.edit_no_date && !this.edit_valid_until) return
 
             const data = {
-                school_id: this.selectedSchoolId,
-                licence_id: this.edit_school_licence.id,
+                school_id: schoolId,
+                licence_id: licenceId,
                 valid_until: this.edit_no_date ? null : this.edit_valid_until,
             }
 
@@ -1613,8 +1818,8 @@ export default {
             this.currentSchoolLicenceModel.user_licence_required_by_role[roleName] = value
         },
         hasUserLicenceRequiredRole(licence) {
-            const model = this.normalizeLicenceModel(licence?.licence_model || null)
-            if (model.user_licence_enabled) return true
+            const model = this.normalizeLicenceModel(licence || null)
+            if (model.user_licence_enabled || (model.user_role_names || []).length >= 1) return true
             return Object.entries(model.user_licence_required_by_role || {}).some(
                 ([roleName, isRequired]) => !!isRequired && !this.looksLikeAdminRoleName(roleName)
             )
@@ -2000,6 +2205,8 @@ export default {
                 school_licence_enabled: true,
                 admin_licence_enabled: false,
                 user_licence_enabled: false,
+                admin_role_names: [],
+                user_role_names: [],
                 affected_roles: [],
                 user_licence_required_by_role: {},
                 user_licence_plans_by_role: {},
@@ -2015,9 +2222,50 @@ export default {
 
             if (!licenceModel || typeof licenceModel !== 'object') return fallback
 
-            const affectedRolesRaw = Array.isArray(licenceModel.affected_roles) ? licenceModel.affected_roles : []
+            const source =
+                licenceModel.licence_model && typeof licenceModel.licence_model === 'object'
+                    ? {
+                        ...licenceModel.licence_model,
+                        school_licence_required:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'school_licence_required')
+                                ? licenceModel.school_licence_required
+                                : licenceModel.licence_model.school_licence_required,
+                        school_licence_enabled:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'school_licence_enabled')
+                                ? licenceModel.school_licence_enabled
+                                : licenceModel.licence_model.school_licence_enabled,
+                        admin_licence_enabled:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'admin_licence_enabled')
+                                ? licenceModel.admin_licence_enabled
+                                : licenceModel.licence_model.admin_licence_enabled,
+                        admin_role_names:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'admin_role_names')
+                                ? licenceModel.admin_role_names
+                                : licenceModel.licence_model.admin_role_names,
+                        user_licence_enabled:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'user_licence_enabled')
+                                ? licenceModel.user_licence_enabled
+                                : licenceModel.licence_model.user_licence_enabled,
+                        user_role_names:
+                            Object.prototype.hasOwnProperty.call(licenceModel, 'user_role_names')
+                                ? licenceModel.user_role_names
+                                : licenceModel.licence_model.user_role_names,
+                    }
+                    : licenceModel
+
+            const normalizeRoleNames = (roleNames) => {
+                const items = Array.isArray(roleNames) ? roleNames : []
+                return items
+                    .map((roleName) => (typeof roleName === 'string' ? roleName.trim() : ''))
+                    .filter((roleName) => !!roleName)
+                    .filter((roleName, index, all) => all.indexOf(roleName) === index)
+            }
+
+            const affectedRolesRaw = Array.isArray(source.affected_roles) ? source.affected_roles : []
+            const admin_role_names = normalizeRoleNames(source.admin_role_names)
+            const user_role_names = normalizeRoleNames(source.user_role_names)
             const affected_roles = []
-            for (const roleName of affectedRolesRaw) {
+            for (const roleName of [...affectedRolesRaw, ...admin_role_names, ...user_role_names]) {
                 if (typeof roleName !== 'string') continue
                 const trimmed = roleName.trim()
                 if (!trimmed || affected_roles.includes(trimmed)) continue
@@ -2025,8 +2273,8 @@ export default {
             }
 
             const rawMap =
-                licenceModel.user_licence_required_by_role && typeof licenceModel.user_licence_required_by_role === 'object'
-                    ? licenceModel.user_licence_required_by_role
+                source.user_licence_required_by_role && typeof source.user_licence_required_by_role === 'object'
+                    ? source.user_licence_required_by_role
                     : {}
             const user_licence_required_by_role = {}
             for (const roleName of affected_roles) {
@@ -2034,8 +2282,8 @@ export default {
             }
 
             const rawPlansByRole =
-                licenceModel.user_licence_plans_by_role && typeof licenceModel.user_licence_plans_by_role === 'object'
-                    ? licenceModel.user_licence_plans_by_role
+                source.user_licence_plans_by_role && typeof source.user_licence_plans_by_role === 'object'
+                    ? source.user_licence_plans_by_role
                     : {}
             const user_licence_plans_by_role = {}
             for (const roleName of affected_roles) {
@@ -2051,14 +2299,18 @@ export default {
             }
 
             const requiredRoleNames = affected_roles.filter((roleName) => !!user_licence_required_by_role[roleName])
-            const adminRoleNames = requiredRoleNames.filter((roleName) => this.looksLikeAdminRoleName(roleName))
-            const userRoleNames = requiredRoleNames.filter((roleName) => !this.looksLikeAdminRoleName(roleName))
+            const inferredAdminRoleNames = requiredRoleNames.filter((roleName) => this.looksLikeAdminRoleName(roleName))
+            const inferredUserRoleNames = requiredRoleNames.filter((roleName) => !this.looksLikeAdminRoleName(roleName))
+            const normalizedAdminRoleNames = admin_role_names.length >= 1 ? admin_role_names : inferredAdminRoleNames
+            const normalizedUserRoleNames = user_role_names.length >= 1 ? user_role_names : inferredUserRoleNames
 
             return {
-                school_licence_required: this.toBool(licenceModel.school_licence_required, true),
-                school_licence_enabled: this.toBool(licenceModel.school_licence_enabled, this.toBool(licenceModel.school_licence_required, true)),
-                admin_licence_enabled: this.toBool(licenceModel.admin_licence_enabled, adminRoleNames.length > 0),
-                user_licence_enabled: this.toBool(licenceModel.user_licence_enabled, userRoleNames.length > 0),
+                school_licence_required: this.toBool(source.school_licence_required, true),
+                school_licence_enabled: this.toBool(source.school_licence_enabled, this.toBool(source.school_licence_required, true)),
+                admin_licence_enabled: this.toBool(source.admin_licence_enabled, normalizedAdminRoleNames.length > 0),
+                user_licence_enabled: this.toBool(source.user_licence_enabled, normalizedUserRoleNames.length > 0),
+                admin_role_names: normalizedAdminRoleNames,
+                user_role_names: normalizedUserRoleNames,
                 affected_roles,
                 user_licence_required_by_role,
                 user_licence_plans_by_role,
@@ -2106,39 +2358,16 @@ export default {
 
 .assignment-school-licence-row__right {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 8px;
     flex-shrink: 0;
+    width: min(220px, 100%);
 }
 
-.assignment-school-licence-row__icons {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.licence-type-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    border: 1px solid rgba(79, 120, 196, 0.28);
-    background: rgba(79, 120, 196, 0.1);
-    color: rgb(79, 120, 196);
-}
-
-.licence-type-icon--admin {
-    border-color: rgba(180, 110, 20, 0.28);
-    background: rgba(180, 110, 20, 0.08);
-    color: rgb(180, 110, 20);
-}
-
-.licence-type-icon--user {
-    border-color: rgba(46, 140, 100, 0.28);
-    background: rgba(46, 140, 100, 0.08);
-    color: rgb(46, 140, 100);
+.assignment-school-licence-row__action {
+    justify-content: flex-start;
+    text-transform: none;
 }
 
 .assignment-school-licence-list {
@@ -2162,6 +2391,10 @@ export default {
     color: #10263a;
     line-height: 1.3;
     min-width: 0;
+}
+
+.assignment-schools-item :deep(.licence-card__title) {
+    color: rgb(var(--v-theme-primary));
 }
 
 .assignment-school-licence-row__valid-until {
@@ -2228,6 +2461,10 @@ export default {
     padding: 4px 0;
 }
 
+.admin-user-row.is-editing {
+    border-bottom-color: rgba(79, 120, 196, 0.18);
+}
+
 .admin-user-row__main {
     display: flex;
     align-items: center;
@@ -2240,10 +2477,39 @@ export default {
     line-height: 1.4;
 }
 
+.admin-user-row__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.admin-user-row__status-icon {
+    flex-shrink: 0;
+}
+
 .admin-user-row__email {
     display: block;
     font-size: 0.78rem;
     color: rgba(16, 38, 58, 0.55);
+}
+
+.admin-user-row__meta {
+    display: block;
+    font-size: 0.76rem;
+    color: rgba(16, 38, 58, 0.68);
+}
+
+.admin-user-row__editing-hint {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(79, 120, 196, 0.12);
+    color: rgb(79, 120, 196);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 
 .admin-user-row__actions {

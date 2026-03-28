@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\UserResource;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
+use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
@@ -157,7 +158,23 @@ class SchoolService
     public function deleteSchools($ids)
     {
         foreach ($ids as $id) {
+            $this->guardSchoolDeletionAllowed((int) $id);
+        }
+
+        foreach ($ids as $id) {
             $this->deleteSchool($id);
+        }
+    }
+
+    private function guardSchoolDeletionAllowed(int $id): void
+    {
+        $school = School::find($id);
+        if (! $school) {
+            return;
+        }
+
+        if (SchoolLicence::query()->where('school_id', $id)->exists()) {
+            abort(409, "Schule '{$school->long_name}' kann nicht gelöscht werden, weil ihr Lizenzen zugeordnet sind.");
         }
     }
 
@@ -189,8 +206,8 @@ class SchoolService
 
         $school = School::findOrFail($id);
 
-        // Lizenzen löschen
-        $school->licences()->detach();
+        SchoolUserLicence::query()->where('school_id', $id)->delete();
+        SchoolLicence::query()->where('school_id', $id)->delete();
 
         // Super-Admin löschen
         User::where('school_id', $id)->each(function ($user) {

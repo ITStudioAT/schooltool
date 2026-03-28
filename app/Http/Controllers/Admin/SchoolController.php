@@ -45,6 +45,7 @@ class SchoolController extends Controller
         $validated = $request->validated();
         $search_string = $validated['search_string'] ?? null;
         $expiredOnly = (bool) ($validated['expired_only'] ?? false);
+        $assignedOnly = array_key_exists('assigned_only', $validated) ? (bool) $validated['assigned_only'] : true;
 
         $schools = School::query()
             ->with(['licences' => function ($query) {
@@ -339,6 +340,9 @@ class SchoolController extends Controller
             'charged_school_price' => $validated['charged_school_price'] ?? null,
             'extra_storage_units' => $validated['extra_storage_units'] ?? null,
             'extra_storage_unit_price' => $validated['extra_storage_unit_price'] ?? null,
+            'charged_admin_price' => $validated['charged_admin_price'] ?? null,
+            'admin_extra_storage_units' => $validated['admin_extra_storage_units'] ?? null,
+            'admin_extra_storage_unit_price' => $validated['admin_extra_storage_unit_price'] ?? null,
         ]);
 
         return response()->noContent();
@@ -392,11 +396,26 @@ class SchoolController extends Controller
         $validated = $request->validated();
         $search_string = $validated['search_string'] ?? null;
         $expiredOnly = (bool) ($validated['expired_only'] ?? false);
+        $assignedOnly = array_key_exists('assigned_only', $validated) ? (bool) $validated['assigned_only'] : true;
 
         $licenceModel = $this->mergedSchoolLicenceUserLicenceModel($school_licence->loadMissing('licence'), $service);
         $schoolLicenceRequired = (bool) ($licenceModel['school_licence_required'] ?? true);
 
-        $licenceModelRoles = collect($licenceModel['user_licence_required_by_role'] ?? [])
+        $requiredByRole = is_array($licenceModel['user_licence_required_by_role'] ?? null)
+            ? $licenceModel['user_licence_required_by_role']
+            : [];
+
+        $licenceFilterRoles = collect(array_merge(
+            is_array($licenceModel['affected_roles'] ?? null) ? $licenceModel['affected_roles'] : [],
+            array_keys($requiredByRole)
+        ))
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $licenceModelRoles = collect($requiredByRole)
             ->filter(fn ($isRequired) => (bool) $isRequired)
             ->keys()
             ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
@@ -413,12 +432,31 @@ class SchoolController extends Controller
             ->all();
 
         $activeRoleFilters = collect($selectedRoles)
-            ->filter(fn ($roleName) => in_array($roleName, $licenceModelRoles, true))
+            ->filter(fn ($roleName) => in_array($roleName, $licenceFilterRoles, true))
             ->values()
             ->all();
 
         $shouldApplyRoleFilter = ! empty($activeRoleFilters);
         $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $assignmentRoleNames = $shouldApplyRoleFilter
+            ? array_values(array_intersect($licenceModelRoles, $activeRoleFilters))
+            : $licenceModelRoles;
+        $assignedUserIds = collect($assignments)
+            ->filter(fn ($userAssignments) => is_array($userAssignments))
+            ->filter(function (array $userAssignments) use ($assignmentRoleNames) {
+                foreach ($assignmentRoleNames as $roleName) {
+                    if (array_key_exists($roleName, $userAssignments)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->keys()
+            ->map(fn ($userId) => (int) $userId)
+            ->filter(fn ($userId) => $userId > 0)
+            ->values()
+            ->all();
 
         $usersQuery = User::query()
             ->with('roles')
@@ -430,7 +468,18 @@ class SchoolController extends Controller
                         ->orWhere('email', 'like', "%{$search_string}%");
                 });
             })
-            ->when($shouldApplyRoleFilter, fn ($query) => $query->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', $activeRoleFilters)));
+            ->when(
+                empty($licenceModelRoles) || ($assignedOnly && empty($assignedUserIds)),
+                fn ($query) => $query->whereRaw('1=0'),
+                function ($query) use ($assignedOnly, $assignedUserIds, $shouldApplyRoleFilter, $activeRoleFilters, $licenceModelRoles) {
+                    if ($assignedOnly) {
+                        $query->whereIn('id', $assignedUserIds);
+                    }
+
+                    $roleNames = $shouldApplyRoleFilter ? $activeRoleFilters : $licenceModelRoles;
+                    $query->whereHas('roles', fn ($roleQuery) => $roleQuery->whereIn('name', $roleNames));
+                }
+            );
 
         if ($expiredOnly) {
             if (empty($licenceModelRoles)) {
@@ -477,7 +526,7 @@ class SchoolController extends Controller
             ->paginate(config('schooltool.pagination'));
 
         $roleStatusesByUser = $users->getCollection()
-            ->mapWithKeys(function (User $user) use ($licenceModelRoles, $assignments, $school_licence, $schoolLicenceRequired) {
+            ->mapWithKeys(function (User $user) use ($licenceFilterRoles, $requiredByRole, $assignments, $school_licence, $schoolLicenceRequired) {
                 $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
                     ? $assignments[(string) $user->id]
                     : [];
@@ -491,20 +540,25 @@ class SchoolController extends Controller
                 $userRoleLookup = array_flip($userRoleNames);
 
                 $statuses = [];
-                foreach ($licenceModelRoles as $roleName) {
+                foreach ($licenceFilterRoles as $roleName) {
                     if (! isset($userRoleLookup[$roleName])) {
                         continue;
                     }
 
+                    $userLicenceRequired = (bool) ($requiredByRole[$roleName] ?? false);
+                    $hasLicenceAssignment = array_key_exists($roleName, $userAssignments);
                     $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
-                    $roleValidUntil = $entry['valid_until'];
-                    $isActivated = $entry['is_activated'];
+                    $roleValidUntil = $userLicenceRequired ? $entry['valid_until'] : null;
+                    $isActivated = $userLicenceRequired ? $entry['is_activated'] : true;
 
                     $statuses[$roleName] = [
+                        'assigned' => $userLicenceRequired ? $hasLicenceAssignment : true,
                         'valid_until' => $roleValidUntil,
                         'is_activated' => $isActivated,
-                        'is_active' => $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated),
-                        'charged_price' => $entry['charged_price'] ?? null,
+                        'is_active' => $userLicenceRequired
+                            ? $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated)
+                            : true,
+                        'charged_price' => $userLicenceRequired ? ($entry['charged_price'] ?? null) : null,
                     ];
                 }
 
@@ -963,10 +1017,27 @@ class SchoolController extends Controller
     {
         $schoolModel = $service->normalizeLicenceModel($school_licence->licence_model);
         $baseModel = $service->normalizeLicenceModel($school_licence->licence?->licence_model);
+        $baseStructuredConfiguration = $school_licence->licence
+            ? $service->editableLicenceConfiguration($school_licence->licence)
+            : [];
+        $baseStructuredRoleNames = collect(array_merge(
+            (bool) ($baseStructuredConfiguration['admin_licence_enabled'] ?? false)
+                ? (is_array($baseStructuredConfiguration['admin_role_names'] ?? null) ? $baseStructuredConfiguration['admin_role_names'] : [])
+                : [],
+            (bool) ($baseStructuredConfiguration['user_licence_enabled'] ?? false)
+                ? (is_array($baseStructuredConfiguration['user_role_names'] ?? null) ? $baseStructuredConfiguration['user_role_names'] : [])
+                : []
+        ))
+            ->map(fn ($role) => is_string($role) ? trim($role) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
 
         $affectedRoles = collect(array_merge(
             is_array($schoolModel['affected_roles'] ?? null) ? $schoolModel['affected_roles'] : [],
-            is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : []
+            is_array($baseModel['affected_roles'] ?? null) ? $baseModel['affected_roles'] : [],
+            $baseStructuredRoleNames
         ))
             ->map(fn ($role) => is_string($role) ? trim($role) : '')
             ->filter()
@@ -980,6 +1051,11 @@ class SchoolController extends Controller
         $baseRequiredByRole = is_array($baseModel['user_licence_required_by_role'] ?? null)
             ? $baseModel['user_licence_required_by_role']
             : [];
+        foreach ($baseStructuredRoleNames as $roleName) {
+            if (! array_key_exists($roleName, $baseRequiredByRole)) {
+                $baseRequiredByRole[$roleName] = true;
+            }
+        }
 
         $schoolPlansByRole = is_array($schoolModel['user_licence_plans_by_role'] ?? null)
             ? $schoolModel['user_licence_plans_by_role']

@@ -17,21 +17,6 @@
 
             <div class="crud-content-grid">
                 <section class="admin-card ai-glass-panel crud-main-card pa-3">
-                    <div class="d-grid ga-3 mb-3">
-                        <div class="empty-state crud-search-panel">
-                            <SearchField :store="licenceStore" selected_field="selected_licences" />
-                        </div>
-
-                        <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
-                            <v-btn color="primary" variant="tonal" rounded="lg" class="text-caption" @click="selectFirstLicence">
-                                Erste auswählen [{{ selected_licences.length === 0 && licences.length >= 1 ? 1 : 0 }}]
-                            </v-btn>
-                            <v-btn color="primary" variant="text" rounded="lg" class="text-caption" @click="unselectAll">
-                                Auswahl aufheben [{{ selected_licences.length }}]
-                            </v-btn>
-                        </div>
-                    </div>
-
                     <div class="empty-state pa-2" v-if="licences.length === 0">Keine Lizenzen gefunden.</div>
                     <div class="empty-state pa-2" v-else>
                         <v-list
@@ -93,8 +78,9 @@
                                         </header>
 
                                         <div class="licence-card__roles-block">
-                                            <div class="licence-card__roles-title">Admin-Rollen</div>
-                                            <div class="licence-card__roles-list">
+                                            <div class="licence-card__roles-row">
+                                                <div class="licence-card__roles-title">Admin-Rollen</div>
+                                                <div class="licence-card__roles-list">
                                                 <template v-if="sortedRoleNames(licenceModelFor(item).admin_role_names).length >= 1">
                                                     <v-chip
                                                         v-for="roleName in sortedRoleNames(licenceModelFor(item).admin_role_names)"
@@ -107,9 +93,11 @@
                                                     </v-chip>
                                                 </template>
                                                 <span v-else class="text-medium-emphasis">Keine Rollen hinterlegt</span>
+                                                </div>
                                             </div>
-                                            <div class="licence-card__roles-title mt-3">User-Rollen</div>
-                                            <div class="licence-card__roles-list">
+                                            <div class="licence-card__roles-row mt-3">
+                                                <div class="licence-card__roles-title">User-Rollen</div>
+                                                <div class="licence-card__roles-list">
                                                 <template v-if="sortedRoleNames(licenceModelFor(item).user_role_names).length >= 1">
                                                     <v-chip
                                                         v-for="roleName in sortedRoleNames(licenceModelFor(item).user_role_names)"
@@ -122,6 +110,7 @@
                                                     </v-chip>
                                                 </template>
                                                 <span v-else class="text-medium-emphasis">Keine Rollen hinterlegt</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </article>
@@ -524,7 +513,6 @@
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
-import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 
 // SPECIFIC
@@ -537,7 +525,7 @@ export default {
         return useValidationRulesSetup()
     },
 
-    components: { Pagination, SearchField },
+    components: { Pagination },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -707,15 +695,6 @@ export default {
         },
         abort() {
             this.action = ''
-        },
-        clearSelection() {
-            this.selected_licences = []
-        },
-        selectFirstLicence() {
-            this.selected_licences = this.licences.length >= 1 ? [this.licences[0].id] : []
-        },
-        unselectAll() {
-            this.selected_licences = []
         },
         onSelectedLicencesUpdate(value) {
             if (!Array.isArray(value)) {
@@ -1163,5 +1142,26 @@ export default {
     border-color: rgba(46, 140, 100, 0.28);
     background: rgba(46, 140, 100, 0.08);
     color: rgb(46, 140, 100);
+}
+
+.licence-card__roles-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.licence-card__roles-row .licence-card__roles-title {
+    margin-bottom: 0;
+    flex: 0 0 auto;
+}
+
+.licence-card__roles-row .licence-card__roles-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 280px;
+    min-width: 0;
 }
 </style>

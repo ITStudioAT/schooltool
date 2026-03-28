@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
@@ -9,23 +10,25 @@ class SchoolLicenceUsersRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        if (! $this->has('expired_only')) {
-            return;
-        }
-
-        $value = $this->input('expired_only');
-        if (is_string($value)) {
-            $normalized = strtolower(trim($value));
-            if ($normalized === 'true') {
-                $value = 1;
-            } elseif ($normalized === 'false') {
-                $value = 0;
+        foreach (['expired_only', 'assigned_only'] as $field) {
+            if (! $this->has($field)) {
+                continue;
             }
-        }
 
-        $this->merge([
-            'expired_only' => $value,
-        ]);
+            $value = $this->input($field);
+            if (is_string($value)) {
+                $normalized = strtolower(trim($value));
+                if ($normalized === 'true') {
+                    $value = 1;
+                } elseif ($normalized === 'false') {
+                    $value = 0;
+                }
+            }
+
+            $this->merge([
+                $field => $value,
+            ]);
+        }
     }
 
     /**
@@ -39,7 +42,7 @@ class SchoolLicenceUsersRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -49,6 +52,7 @@ class SchoolLicenceUsersRequest extends FormRequest
             'role_names' => ['nullable', 'array'],
             'role_names.*' => ['string', 'max:255'],
             'expired_only' => ['nullable', 'boolean'],
+            'assigned_only' => ['nullable', 'boolean'],
         ];
     }
 }

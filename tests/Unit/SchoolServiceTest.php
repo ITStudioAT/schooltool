@@ -335,7 +335,7 @@ describe('deleteSchool', function () {
         expect(School::find($school->id))->not->toBeNull();
     });
 
-    it('detaches licences when deleting school', function () {
+    it('blocks deletion when school has assigned licences', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
         $user = User::factory()->create(['school_id' => $school->id, 'schoolyear_id' => null]);
@@ -346,9 +346,10 @@ describe('deleteSchool', function () {
 
         expect($school->licences()->count())->toBe(1);
 
-        $this->service->deleteSchools([$school->id]);
+        expect(fn () => $this->service->deleteSchools([$school->id]))
+            ->toThrow(HttpException::class, "Schule '{$school->long_name}' kann nicht gelöscht werden, weil ihr Lizenzen zugeordnet sind.");
 
-        expect(School::find($school->id))->toBeNull();
+        expect(School::find($school->id))->not->toBeNull();
     });
 
     it('removes user roles when deleting school', function () {

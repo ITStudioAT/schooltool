@@ -87,17 +87,16 @@ describe('Super admin licences overview', () => {
         })
     })
 
-    it('supports single-selection helper actions', () => {
+    it('supports single-selection state updates', () => {
         const ctx = {
-            licences: [{ id: 11 }, { id: 12 }, { id: 13 }],
             selected_licences: [],
         }
 
-        ;(Licences as any).methods.selectFirstLicence.call(ctx)
+        ;(Licences as any).methods.onSelectedLicencesUpdate.call(ctx, [11])
         expect(ctx.selected_licences).toEqual([11])
         expect((Licences as any).methods.isSelectedLicence.call(ctx, 11)).toBe(true)
 
-        ;(Licences as any).methods.unselectAll.call(ctx)
+        ;(Licences as any).methods.onSelectedLicencesUpdate.call(ctx, [])
         expect(ctx.selected_licences).toEqual([])
         expect((Licences as any).methods.isSelectedLicence.call(ctx, 12)).toBe(false)
     })
@@ -335,6 +334,11 @@ describe('Super admin licences overview', () => {
         expect(source).toContain('Schule')
         expect(source).toContain('Admin')
         expect(source).toContain('User')
+        expect(source).toContain('class="licence-card__roles-row"')
+        expect(source).toContain('.licence-card__roles-row {')
+        expect(source).toContain('align-items: center;')
+        expect(source).toContain('.licence-card__roles-row .licence-card__roles-list {')
+        expect(source).toContain('display: flex;')
         expect(source).toContain('overviewDateRangeLabel(item.start_day_month, item.end_day_month)')
         expect(source).toContain('Zeitraum:')
         expect(source).not.toContain('class="licence-card__badges"')
@@ -375,6 +379,8 @@ describe('Super admin licences overview', () => {
         expect(source).toContain(":variant=\"usesAllUserRoles() ? 'flat' : 'tonal'\"")
         expect(source).toContain('Alle')
         expect(source).toContain('@update:selected="onSelectedLicencesUpdate"')
-        expect(source).toContain('@click="selectFirstLicence"')
+        expect(source).not.toContain('<SearchField :store="licenceStore" selected_field="selected_licences" />')
+        expect(source).not.toContain('Erste auswählen')
+        expect(source).not.toContain('Auswahl aufheben')
     })
 })

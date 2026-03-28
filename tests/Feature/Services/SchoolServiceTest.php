@@ -3,6 +3,8 @@
 use App\Models\Licence;
 use App\Models\Register;
 use App\Models\School;
+use App\Models\SchoolLicence;
+use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolService;
@@ -10,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(RefreshDatabase::class);
 
@@ -210,7 +213,7 @@ describe('deleteSchools', function () {
         expect(Schoolyear::find($schoolyear->id))->toBeNull();
     });
 
-    it('detaches all licences when deleting school', function () {
+    it('blocks deletion when school has assigned licences', function () {
         Storage::fake('public');
 
         // Create school with ID != 1
@@ -231,9 +234,58 @@ describe('deleteSchools', function () {
 
         expect($school->licences()->count())->toBe(1);
 
-        $this->service->deleteSchools([$school->id]);
+        expect(fn () => $this->service->deleteSchools([$school->id]))
+            ->toThrow(HttpException::class, "Schule '{$school->long_name}' kann nicht gelöscht werden, weil ihr Lizenzen zugeordnet sind.");
 
-        expect(School::find($school->id))->toBeNull();
+        expect(School::find($school->id))->not->toBeNull();
+    });
+
+    it('blocks deletion when school has school licence records and user licence assignments', function () {
+        Storage::fake('public');
+
+        $school = School::factory()->create();
+        $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
+        $user = User::factory()->create([
+            'school_id' => $school->id,
+            'schoolyear_id' => $schoolyear->id,
+        ]);
+
+        $licence = Licence::create([
+            'name' => 'Assigned Licence',
+            'long_name' => 'Assigned Licence Long Name',
+            'is_selectable' => true,
+        ]);
+
+        $schoolLicence = SchoolLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'valid_until' => '2027-07-31',
+            'user_licence_assignments' => [
+                (string) $user->id => [
+                    'teacher' => [
+                        'assigned' => true,
+                        'valid_until' => '2027-07-31',
+                    ],
+                ],
+            ],
+        ]);
+
+        $schoolUserLicence = SchoolUserLicence::create([
+            'school_id' => $school->id,
+            'licence_id' => $licence->id,
+            'user_id' => $user->id,
+            'assignment_type' => 'user',
+            'valid_until' => '2027-07-31',
+            'charged_price' => '25.00',
+            'is_active' => true,
+        ]);
+
+        expect(fn () => $this->service->deleteSchools([$school->id]))
+            ->toThrow(HttpException::class, "Schule '{$school->long_name}' kann nicht gelöscht werden, weil ihr Lizenzen zugeordnet sind.");
+
+        expect(School::find($school->id))->not->toBeNull()
+            ->and(SchoolLicence::find($schoolLicence->id))->not->toBeNull()
+            ->and(SchoolUserLicence::find($schoolUserLicence->id))->not->toBeNull();
     });
 
     it('deletes school logo when deleting school', function () {
