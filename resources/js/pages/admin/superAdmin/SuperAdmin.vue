@@ -336,14 +336,6 @@ export default {
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
                 {
-                    key: 'schools',
-                    label: 'Schulen',
-                    meta: 'Verwaltung',
-                    icon: 'mdi-school',
-                    targetAction: 'schools',
-                    visible: hasAnyRole(['super_admin']),
-                },
-                {
                     key: 'schoolyears',
                     label: 'Schuljahre',
                     meta: 'Kalender',

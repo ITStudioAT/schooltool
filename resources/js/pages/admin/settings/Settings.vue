@@ -44,7 +44,11 @@
 
             <div class="settings-content">
                 <v-row class="w-100 ma-0" dense>
-                    <v-col cols="12">
+                    <div v-if="sub_action === 'schools'" class="settings-schools-wrap">
+                        <Schools />
+                    </div>
+
+                    <v-col v-else cols="12">
                         <v-sheet rounded="xl" class="pa-6 settings-empty-card">
                             <div class="settings-empty-icon">
                                 <v-icon size="48" color="grey-lighten-1">mdi-cog-outline</v-icon>
@@ -63,18 +67,21 @@
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import Schools from '@/pages/admin/superAdmin/components/Schools.vue'
 
 export default {
+    components: { Schools },
+
     data() {
         return {
             main_action: this.initialTab(),
-            sub_action: 'overview',
+            sub_action: 'schools',
         }
     },
 
     watch: {
         main_action(val) {
-            this.sub_action = 'overview'
+            this.sub_action = 'schools'
             const query = val === 'super_admin' ? '' : `?tab=${val}`
             const target = `/admin/settings${query}`
             if (this.$route.fullPath !== target) {
@@ -111,7 +118,7 @@ export default {
         },
         subNavigationItems() {
             return [
-                { key: 'overview', label: 'Übersicht', meta: 'Allgemein', icon: 'mdi-view-dashboard-outline' },
+                { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
                 { key: 'display', label: 'Anzeige', meta: 'Darstellung', icon: 'mdi-palette-outline' },
                 { key: 'advanced', label: 'Erweitert', meta: 'Optionen', icon: 'mdi-tune-variant' },
             ]
@@ -230,6 +237,11 @@ export default {
 .settings-subnav__button-meta {
     font-size: 0.68rem;
     opacity: 0.65;
+}
+
+.settings-schools-wrap {
+    width: 1000px;
+    max-width: 100%;
 }
 
 .settings-empty-card {
