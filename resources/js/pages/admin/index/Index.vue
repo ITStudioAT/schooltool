@@ -28,17 +28,6 @@
                             <span>Schule</span>
                             <strong>{{ config?.selected_school?.long_name || config?.selected_school?.name }}</strong>
                         </div>
-                        <v-btn
-                            color="white"
-                            variant="flat"
-                            rounded="xl"
-                            class="admin-run-tests-btn"
-                            prepend-icon="mdi-refresh"
-                            @click="runTests"
-                            :loading="queue_test_status == 'running' || cron_test_status == 'running'"
-                            :disabled="queue_test_status == 'running'">
-                            Tests prüfen
-                        </v-btn>
                     </div>
                 </header>
 
@@ -86,11 +75,6 @@
                         </div>
                     </div>
 
-                    <div class="kpi-card ai-glass-panel">
-                        <div class="kpi-label">Admins</div>
-                        <div class="kpi-value">{{ school_admins?.length || 0 }}</div>
-                        <div class="kpi-sub">{{ (config?.selected_school?.name || 'Schule') + ' Team' }}</div>
-                    </div>
 
                     <div class="kpi-card ai-glass-panel">
                         <div class="kpi-label">Aktive Lizenzen</div>
@@ -102,11 +86,22 @@
 
                 <div class="admin-content-grid">
                     <section class="admin-card ai-glass-panel admin-card-tests">
-                        <div class="admin-card-head">
+                        <div class="admin-card-head" style="display: flex; justify-content: space-between; align-items: flex-start;">
                             <div>
                                 <div class="admin-card-eyebrow">Monitoring</div>
                                 <h3 class="admin-card-title">System-Checks</h3>
                             </div>
+                            <v-btn
+                                size="small"
+                                variant="flat"
+                                color="primary"
+                                rounded="lg"
+                                prepend-icon="mdi-refresh"
+                                @click="runTests"
+                                :loading="queue_test_status == 'running' || cron_test_status == 'running'"
+                                :disabled="queue_test_status == 'running'">
+                                Tests prüfen
+                            </v-btn>
                         </div>
 
                         <div class="status-list">
@@ -214,129 +209,56 @@
                         </div>
                     </section>
 
-                    <section class="admin-card ai-glass-panel admin-card-admins">
-                        <div class="admin-card-head">
-                            <div>
-                                <div class="admin-card-eyebrow">Team</div>
-                                <h3 class="admin-card-title">Admins</h3>
-                            </div>
-                        </div>
 
-                        <div class="people-list" v-if="(school_admins || []).length > 0">
-                            <div v-for="admin in school_admins" :key="admin.id" class="person-row">
-                                <div class="person-avatar" :class="{ 'has-short-code': !!userBadgeShortName(admin) }" :title="userBadgeText(admin)">
-                                    {{ userBadgeText(admin) }}
-                                </div>
-                                <div class="person-body">
-                                    <div class="person-name">{{ admin.last_name + ' ' + admin.first_name }}</div>
-                                    <div class="person-email">{{ admin.email }}</div>
-                                    <div class="person-roles">{{ admin.roles.join(', ') }}</div>
+                    <div class="admin-licence-row">
+                        <section class="admin-card ai-glass-panel">
+                            <div class="admin-card-head">
+                                <div>
+                                    <div class="admin-card-eyebrow">Lizenzen</div>
+                                    <h3 class="admin-card-title">Schullizenzen</h3>
                                 </div>
                             </div>
-                        </div>
-                        <div v-else class="empty-state">Keine Admins gefunden.</div>
-                    </section>
 
-                    <section class="admin-card ai-glass-panel admin-card-licences">
-                        <div class="admin-card-head">
-                            <div>
-                                <div class="admin-card-eyebrow">Abrechnung / Zugriff</div>
-                                <h3 class="admin-card-title">Lizenzen</h3>
-                            </div>
-                        </div>
-
-                        <div class="licence-list" v-if="(school_licences || []).length > 0">
-                            <div v-for="licence in school_licences" :key="licence.id" class="licence-item">
-                                <div class="licence-main">
-                                    <div class="licence-left">
-                                        <div class="licence-dot" :class="isLicenceActive(licence) ? 'is-active' : 'is-expired'"></div>
-                                        <div>
-                                            <div class="licence-name">{{ licence.name }}</div>
-                                            <div class="licence-long" v-if="licence.long_name">{{ licence.long_name }}</div>
+                            <div class="licence-list" v-if="schoolLicencesWithSchoolLicence.length > 0">
+                                <div v-for="licence in schoolLicencesWithSchoolLicence" :key="licence.id" class="licence-item">
+                                    <div class="licence-name">{{ licence.name }}</div>
+                                    <div class="licence-long" v-if="licence.long_name">{{ licence.long_name }}</div>
+                                    <div class="licence-detail-lines">
+                                        <div class="licence-detail-line">
+                                            <span v-if="isLicenceActive(licence) && licence.valid_until" class="licence-tag is-active">gültig bis {{ formatDateDisplay(licence.valid_until) }}</span>
+                                            <span v-else-if="isLicenceActive(licence)" class="licence-tag is-active">unbegrenzt</span>
+                                            <span v-else class="licence-tag is-expired">abgelaufen</span>
                                         </div>
                                     </div>
-                                    <div class="licence-right">
-                                        <div class="licence-validity" v-if="isLicenceActive(licence)">
-                                            <span v-if="licence.valid_until">aktiv bis {{ formatDateDisplay(licence.valid_until) }}</span>
-                                            <span v-else>aktiv (unbegrenzt)</span>
-                                        </div>
-                                        <div class="licence-validity is-expired-text" v-else>abgelaufen seit {{ formatDateDisplay(licence.valid_until) }}</div>
-                                        <div class="licence-price">EUR {{ licence.price_per_year }} / Jahr</div>
-                                    </div>
-                                </div>
-
-                                <div
-                                    v-if="isLicenceActive(licence) && licence.current_user_licence?.enabled"
-                                    class="user-licence-box">
-                                    <template v-if="userLicenceRoleEntries(licence).length > 0">
-                                        <div class="user-licence-title">Benutzerlizenzen</div>
-                                        <div
-                                            v-for="roleEntry in userLicenceRoleEntries(licence)"
-                                            :key="`user-licence-role-${licence.school_licence_id}-${roleEntry.role_name}`"
-                                            class="user-licence-role-card">
-                                            <div class="user-licence-role-head">
-                                                <span
-                                                    class="user-licence-role-dot"
-                                                    :class="userLicenceRoleDotClass(roleEntry)"></span>
-                                                <div class="user-licence-role-name">{{ roleEntry.role_name }}</div>
-                                            </div>
-
-                                            <template v-if="isUserLicenceRoleActive(roleEntry)">
-                                                <div class="user-licence-line">Status: aktiv</div>
-                                                <div class="user-licence-line" v-if="roleEntry?.plan?.text">Plan: {{ roleEntry.plan.text }}</div>
-                                                <div class="user-licence-line">
-                                                    Preis:
-                                                    {{ roleEntry?.plan?.price_per_year ? formatPlanPrice(roleEntry.plan.price_per_year) : '-' }}
-                                                </div>
-                                                <div class="user-licence-line">
-                                                    Gültig bis:
-                                                    {{ roleEntry?.valid_until ? formatDateDisplay(roleEntry.valid_until) : 'unbegrenzt' }}
-                                                </div>
-                                                <v-btn
-                                                    v-if="shouldShowRenewUserLicenceButton(roleEntry)"
-                                                    size="small"
-                                                    variant="outlined"
-                                                    color="primary"
-                                                    rounded="lg"
-                                                    class="mt-2 mr-2"
-                                                    @click="openRenewUserLicenceDialog(licence, roleEntry)">
-                                                    Verlängern
-                                                </v-btn>
-                                                <v-btn
-                                                    size="small"
-                                                    variant="outlined"
-                                                    color="error"
-                                                    rounded="lg"
-                                                    class="mt-2"
-                                                    @click="confirmDeactivateUserLicence(licence, roleEntry)">
-                                                    Deaktivieren
-                                                </v-btn>
-                                            </template>
-
-                                            <template v-else>
-                                                <div class="user-licence-line is-warning-text">Status: nicht aktiv</div>
-                                                <div class="user-licence-line">Für diese Funktion ist eine Benutzerlizenz erforderlich.</div>
-                                                <v-btn
-                                                    size="small"
-                                                    variant="outlined"
-                                                    color="primary"
-                                                    rounded="lg"
-                                                    class="mt-2"
-                                                    @click="openActivateUserLicenceDialog(licence, roleEntry.role_name)">
-                                                    Aktivieren
-                                                </v-btn>
-                                            </template>
-                                        </div>
-                                    </template>
-                                    <template v-else>
-                                        <div class="user-licence-title is-warning">Benutzerlizenz nicht aktiv</div>
-                                        <div class="user-licence-line">Für Ihre Rollen ist aktuell keine Benutzerlizenz zugeordnet.</div>
-                                    </template>
                                 </div>
                             </div>
-                        </div>
-                        <div v-else class="empty-state">Keine Lizenzen vorhanden.</div>
-                    </section>
+                            <div v-else class="empty-state">Keine Schullizenzen vorhanden.</div>
+                        </section>
+
+                        <section class="admin-card ai-glass-panel">
+                            <div class="admin-card-head">
+                                <div>
+                                    <div class="admin-card-eyebrow">Lizenzen</div>
+                                    <h3 class="admin-card-title">Meine Lizenzen</h3>
+                                </div>
+                            </div>
+
+                            <div class="licence-list" v-if="myLicenceEntries.length > 0">
+                                <div v-for="entry in myLicenceEntries" :key="entry.key" class="licence-item">
+                                    <div class="licence-name">{{ entry.licence_name }}</div>
+                                    <div class="licence-detail-lines">
+                                        <div class="licence-detail-line">
+                                            <span>{{ entry.type_label }}</span>
+                                            <span v-if="entry.is_active && entry.valid_until" class="licence-tag is-active">gültig bis {{ formatDateDisplay(entry.valid_until) }}</span>
+                                            <span v-else-if="entry.is_active" class="licence-tag is-active">unbegrenzt</span>
+                                            <span v-else class="licence-tag is-expired">nicht aktiv</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div v-else class="empty-state">Keine persönlichen Lizenzen vorhanden.</div>
+                        </section>
+                    </div>
                 </div>
             </div>
         </section>
@@ -554,6 +476,33 @@ export default {
         },
         expiredLicenceCount() {
             return (this.school_licences || []).filter((licence) => !this.isLicenceActive(licence)).length
+        },
+        schoolLicencesWithSchoolLicence() {
+            return (this.school_licences || []).filter((licence) => licence.school_licence_enabled)
+        },
+        myLicenceEntries() {
+            const entries = []
+            for (const licence of this.school_licences || []) {
+                if (licence.my_admin_licence) {
+                    entries.push({
+                        key: `admin-${licence.id}`,
+                        licence_name: licence.name,
+                        type_label: 'Admin-Lizenz',
+                        is_active: licence.my_admin_licence.is_active,
+                        valid_until: licence.my_admin_licence.valid_until,
+                    })
+                }
+                if (licence.my_user_licence) {
+                    entries.push({
+                        key: `user-${licence.id}`,
+                        licence_name: licence.name,
+                        type_label: 'Benutzer-Lizenz',
+                        is_active: licence.my_user_licence.is_active,
+                        valid_until: licence.my_user_licence.valid_until,
+                    })
+                }
+            }
+            return entries
         },
     },
 

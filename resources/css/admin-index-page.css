@@ -150,7 +150,7 @@
 .admin-kpi-grid {
     margin-top: 22px;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr 1fr;
     gap: 14px;
 }
 
@@ -206,7 +206,14 @@
 .admin-content-grid {
     margin-top: 16px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+
+.admin-licence-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 14px;
 }
 
@@ -501,6 +508,43 @@
     font-size: 0.82rem;
 }
 
+.licence-detail-lines {
+    margin-top: 6px;
+    display: grid;
+    gap: 3px;
+}
+
+.licence-detail-line {
+    font-size: 0.78rem;
+    color: rgba(16, 38, 58, 0.86);
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.licence-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 6px;
+}
+
+.licence-tag.is-active {
+    background: rgba(46, 164, 79, 0.12);
+    color: #1a7f37;
+}
+
+.licence-tag.is-expired {
+    background: rgba(220, 53, 69, 0.1);
+    color: #932f3c;
+}
+
+.licence-tag-muted {
+    font-size: 0.72rem;
+    color: rgba(16, 38, 58, 0.55);
+}
+
 .user-licence-box {
     margin-top: 8px;
     padding: 8px 10px;
@@ -631,6 +675,10 @@
     .admin-card-licences {
         grid-column: auto;
         grid-row: auto;
+    }
+
+    .admin-licence-row {
+        grid-template-columns: 1fr;
     }
 
     .licence-right {

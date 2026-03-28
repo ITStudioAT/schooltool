@@ -343,6 +343,9 @@ class SchoolController extends Controller
             'charged_admin_price' => $validated['charged_admin_price'] ?? null,
             'admin_extra_storage_units' => $validated['admin_extra_storage_units'] ?? null,
             'admin_extra_storage_unit_price' => $validated['admin_extra_storage_unit_price'] ?? null,
+            'charged_user_price' => $validated['charged_user_price'] ?? null,
+            'user_extra_storage_units' => $validated['user_extra_storage_units'] ?? null,
+            'user_extra_storage_unit_price' => $validated['user_extra_storage_unit_price'] ?? null,
         ]);
 
         return response()->noContent();

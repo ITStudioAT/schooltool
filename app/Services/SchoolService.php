@@ -12,6 +12,7 @@ use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -274,8 +275,16 @@ class SchoolService
             ->get()
             ->keyBy(fn (SchoolLicence $schoolLicence) => (string) $schoolLicence->id);
 
+        $licenceIds = $licences->pluck('id')->all();
+        $userLicenceAssignments = SchoolUserLicence::query()
+            ->where('school_id', $school_id)
+            ->whereIn('licence_id', $licenceIds)
+            ->select('licence_id', 'assignment_type', 'user_id', 'valid_until', 'is_active')
+            ->get()
+            ->groupBy('licence_id');
+
         $licenceRows = $licences
-            ->map(function ($licence) use ($authUser, $licenceService, $schoolLicencesById) {
+            ->map(function ($licence) use ($authUser, $licenceService, $schoolLicencesById, $userLicenceAssignments) {
                 $row = (new LicenceResource($licence))->resolve();
                 $schoolLicenceId = (string) ($row['school_licence_id'] ?? '');
                 $schoolLicence = $schoolLicencesById->get($schoolLicenceId);
@@ -285,7 +294,24 @@ class SchoolService
                     $licenceService
                 );
 
-                return $this->attachCurrentUserLicenceSummary($row, $authUser, $schoolLicence, $licenceService);
+                $mergedModel = $row['licence_model'];
+                $schoolLicenceRequired = (bool) ($mergedModel['school_licence_required'] ?? true);
+
+                $row['school_licence_enabled'] = (bool) $licence->school_licence_enabled;
+                $row['school_licence_required'] = $schoolLicenceRequired;
+                $row['admin_licence_enabled'] = (bool) $licence->admin_licence_enabled;
+                $row['user_licence_enabled'] = (bool) $licence->user_licence_enabled;
+
+                $stored = $userLicenceAssignments->get($licence->id, collect());
+
+                $row = array_merge($row, $this->dashboardUserSummary($stored, $schoolLicence, $schoolLicenceRequired, 'admin'));
+                $row = array_merge($row, $this->dashboardUserSummary($stored, $schoolLicence, $schoolLicenceRequired, 'user'));
+
+                $row = $this->attachCurrentUserLicenceSummary($row, $authUser, $schoolLicence, $licenceService);
+
+                $row = $this->classifyMyLicences($row, $licence, $mergedModel);
+
+                return $row;
             })
             ->values()
             ->all();
@@ -306,6 +332,158 @@ class SchoolService
         $data['teachers']['count'] = Teacher::where('school_id', $school_id)->count();
 
         return $data;
+    }
+
+    /**
+     * @return array{admin_licence_count: int, admin_licence_active_count: int, admin_licence_expired_count: int}|array{user_licence_count: int, user_licence_active_count: int, user_licence_expired_count: int}
+     */
+    private function dashboardUserSummary(
+        Collection $storedAssignments,
+        ?SchoolLicence $schoolLicence,
+        bool $schoolLicenceRequired,
+        string $type
+    ): array {
+        $today = now()->toDateString();
+
+        $statusesByUser = $storedAssignments
+            ->filter(fn (SchoolUserLicence $a) => $a->assignment_type === $type)
+            ->filter(fn (SchoolUserLicence $a) => is_numeric($a->user_id) && (int) $a->user_id > 0)
+            ->groupBy(fn (SchoolUserLicence $a) => (int) $a->user_id)
+            ->map(function (Collection $assignments) use ($schoolLicence, $schoolLicenceRequired, $today): string {
+                foreach ($assignments as $assignment) {
+                    if (! $assignment->is_active) {
+                        continue;
+                    }
+                    $userValid = $assignment->valid_until?->format('Y-m-d') ?? null;
+                    if ($this->isDashboardAssignmentActive($schoolLicenceRequired, $schoolLicence?->valid_until, $userValid, true, $today)) {
+                        return 'active';
+                    }
+                }
+
+                return 'expired';
+            });
+
+        $total = $statusesByUser->count();
+        $active = $statusesByUser->filter(fn (string $s) => $s === 'active')->count();
+
+        return [
+            "{$type}_licence_count" => $total,
+            "{$type}_licence_active_count" => $active,
+            "{$type}_licence_expired_count" => $total - $active,
+        ];
+    }
+
+    private function isDashboardAssignmentActive(bool $schoolLicenceRequired, mixed $schoolValidUntil, ?string $userValidUntil, bool $isActivated, string $today): bool
+    {
+        if (! $isActivated) {
+            return false;
+        }
+
+        if ($schoolLicenceRequired && ! $this->isDashboardDateActive($schoolValidUntil, $today)) {
+            return false;
+        }
+
+        return $this->isDashboardDateActive($userValidUntil, $today);
+    }
+
+    private function isDashboardDateActive(mixed $value, string $today): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+        $date = is_string($value) ? trim($value) : (string) $value;
+
+        return $date === '' || $date >= $today;
+    }
+
+    private function classifyMyLicences(array $row, $licence, array $mergedModel): array
+    {
+        $roles = $row['current_user_licence']['roles'] ?? [];
+        if (! is_array($roles) || $roles === []) {
+            $row['my_admin_licence'] = null;
+            $row['my_user_licence'] = null;
+
+            return $row;
+        }
+
+        $adminRoleNames = $this->resolveRoleNamesForType($licence, $mergedModel, 'admin');
+        $userRoleNames = $this->resolveRoleNamesForType($licence, $mergedModel, 'user');
+
+        $row['my_admin_licence'] = $this->bestRoleSummary($roles, $adminRoleNames);
+        $row['my_user_licence'] = $this->bestRoleSummary($roles, $userRoleNames);
+
+        return $row;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveRoleNamesForType($licence, array $mergedModel, string $type): array
+    {
+        $key = $type === 'admin' ? 'admin_role_names' : 'user_role_names';
+
+        $configured = is_array($mergedModel[$key] ?? null)
+            ? $mergedModel[$key]
+            : (is_array($licence->$key ?? null) ? $licence->$key : []);
+
+        $normalized = collect($configured)
+            ->map(fn ($r) => is_string($r) ? trim($r) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalized !== []) {
+            return $normalized;
+        }
+
+        return collect($mergedModel['user_licence_required_by_role'] ?? [])
+            ->filter(fn ($isRequired) => (bool) $isRequired)
+            ->keys()
+            ->map(fn ($r) => is_string($r) ? trim($r) : '')
+            ->filter()
+            ->filter(fn (string $r) => $type === 'admin'
+                ? $this->looksLikeAdminRole($r)
+                : ! $this->looksLikeAdminRole($r))
+            ->values()
+            ->all();
+    }
+
+    private function looksLikeAdminRole(string $roleName): bool
+    {
+        $normalized = mb_strtolower(trim($roleName));
+
+        return str_contains($normalized, 'admin') || $normalized === 'super_admin';
+    }
+
+    private function bestRoleSummary(array $roles, array $roleNames): ?array
+    {
+        if ($roleNames === []) {
+            return null;
+        }
+
+        $matched = collect($roles)
+            ->filter(fn (array $entry) => in_array($entry['role_name'] ?? '', $roleNames, true));
+
+        if ($matched->isEmpty()) {
+            return null;
+        }
+
+        $active = $matched->first(fn (array $entry) => ! empty($entry['is_active']));
+
+        if ($active) {
+            return [
+                'is_active' => true,
+                'valid_until' => $active['valid_until'] ?? null,
+            ];
+        }
+
+        $first = $matched->first();
+
+        return [
+            'is_active' => false,
+            'valid_until' => $first['valid_until'] ?? null,
+        ];
     }
 
     private function mergeDashboardLicenceModel(mixed $schoolLicenceModelRaw, mixed $baseLicenceModelRaw, LicenceService $licenceService): array

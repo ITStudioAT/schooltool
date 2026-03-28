@@ -347,6 +347,15 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('adminUserStorageTotalGbForUser(user)')
         expect(source).toContain('adminTeillizenzPreisLabel')
         expect(source).toContain('overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel())')
+        expect(source).toContain("{{ overridePriceLabel(roleEntry.charged_price, selectedUserRolePlanPrice(roleEntry), 'Planpreis') }}")
+        expect(source).toContain('selectedUserLicenceHasExtraStorage()')
+        expect(source).toContain('selectedUserRoleExtraStorageTotal(roleEntry)')
+        expect(source).toContain('selectedUserRoleStorageTotalGb(roleEntry)')
+        expect(source).toContain('selectedUserRoleBillingTotal(roleEntry)')
+        expect(source).toContain('v-model="roleEntry.charged_price"')
+        expect(source).toContain('label="Verrechneter Preis / Jahr (€)"')
+        expect(source).toContain('v-model="roleEntry.extra_storage_units"')
+        expect(source).toContain('v-model="roleEntry.extra_storage_unit_price"')
         expect(source).toContain('v-model="edit_admin_user_extra_storage_units"')
         expect(source).toContain('label="Zusatz-Speicher Einheiten"')
         expect(source).toContain('v-model="edit_admin_user_charged_price_draft"')
@@ -768,6 +777,35 @@ describe('Super admin licence assignments', () => {
             adminUserExtraStorageUnitsForUser: methods.adminUserExtraStorageUnitsForUser,
             defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
         }, user)).toBe(320)
+    })
+
+    it('calculates selected user role billing and storage totals with plan and storage fallback', () => {
+        const methods = (LicenceSchools as any).methods
+        const roleEntry = {
+            assigned: true,
+            plan_id: 3,
+            charged_price: null,
+            extra_storage_units: 2,
+            extra_storage_unit_price: null,
+            plans: [{ id: 3, text: 'Pro', price_per_year: '12' }],
+        }
+        const ctx: any = {
+            selectedUserLicencesSource: {
+                user_included_storage_gb: '20',
+                user_extra_storage_step_gb: '100',
+                user_extra_storage_step_price: '5',
+            },
+            selectedUserLicenceHasExtraStorage: methods.selectedUserLicenceHasExtraStorage,
+            selectedUserLicenceExtraStorageUnitPrice: methods.selectedUserLicenceExtraStorageUnitPrice,
+            selectedUserRolePlan: methods.selectedUserRolePlan,
+            selectedUserRolePlanPrice: methods.selectedUserRolePlanPrice,
+            selectedUserRoleExtraStorageTotal: methods.selectedUserRoleExtraStorageTotal,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        }
+
+        expect(methods.selectedUserRoleExtraStorageTotal.call(ctx, roleEntry)).toBe(10)
+        expect(methods.selectedUserRoleStorageTotalGb.call(ctx, roleEntry)).toBe(220)
+        expect(methods.selectedUserRoleBillingTotal.call(ctx, roleEntry)).toBe(22)
     })
 
     it('calculates the admin user extra storage total from user storage units with school fallback', () => {
@@ -1363,9 +1401,14 @@ describe('Super admin licence assignments', () => {
                     valid_until: '2026-12-31',
                     is_activated: true,
                     plan_id: 3,
+                    user_licence_required: true,
+                    charged_price: '19,50',
+                    extra_storage_units: '2',
+                    extra_storage_unit_price: '7,25',
                 },
             ],
             normalizeRoleValidUntilForApi: methods.normalizeRoleValidUntilForApi,
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
             buildSelectedUserRolePayload: methods.buildSelectedUserRolePayload,
             syncSelectedUserLicenceRolesToUserRoles: vi.fn().mockImplementation(async () => {
                 ctx.selectedUserLicenceRoleEntries = [
@@ -1375,6 +1418,10 @@ describe('Super admin licence assignments', () => {
                         valid_until: null,
                         is_activated: false,
                         plan_id: null,
+                        user_licence_required: true,
+                        charged_price: null,
+                        extra_storage_units: null,
+                        extra_storage_unit_price: null,
                     },
                 ]
                 return true
@@ -1400,6 +1447,9 @@ describe('Super admin licence assignments', () => {
             valid_until: '2026-12-31',
             is_activated: true,
             plan_id: 3,
+            charged_price: '19.50',
+            extra_storage_units: '2',
+            extra_storage_unit_price: '7.25',
         })
     })
 })

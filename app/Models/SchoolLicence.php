@@ -42,6 +42,9 @@ class SchoolLicence extends Model
         'charged_admin_price',
         'admin_extra_storage_units',
         'admin_extra_storage_unit_price',
+        'charged_user_price',
+        'user_extra_storage_units',
+        'user_extra_storage_unit_price',
         'licence_model',
         'user_licence_assignments',
     ];
@@ -51,6 +54,8 @@ class SchoolLicence extends Model
         'extra_storage_unit_price' => 'decimal:2',
         'charged_admin_price' => 'decimal:2',
         'admin_extra_storage_unit_price' => 'decimal:2',
+        'charged_user_price' => 'decimal:2',
+        'user_extra_storage_unit_price' => 'decimal:2',
         'licence_model' => 'array',
         'user_licence_assignments' => 'array',
     ];

@@ -65,13 +65,16 @@
                                                     <div v-if="licence.admin_licence_enabled" class="assignment-school-licence-row__counter">
                                                         <v-icon size="13" icon="mdi-shield-crown-outline" :color="(licence.admin_licence_expired_count || 0) === 0 ? 'success' : undefined" class="mr-1" />
                                                         Admin-Lizenzen: {{ licence.admin_licence_count }}
-                                                        (gültig: {{ licence.admin_licence_active_count || 0 }}, <span
+                                                        (gültig: {{ licence.admin_licence_active_count || 0 }},&nbsp;<span
                                                             class="assignment-school-licence-row__counter-expired"
                                                             :class="{ 'is-highlighted': (licence.admin_licence_expired_count || 0) > 0 }">abgelaufen: {{ licence.admin_licence_expired_count || 0 }}</span>)
                                                     </div>
                                                     <div v-if="licence.user_licence_enabled" class="assignment-school-licence-row__counter">
-                                                        <v-icon size="13" icon="mdi-account-multiple" class="mr-1" />
+                                                        <v-icon size="13" icon="mdi-account-multiple" :color="(licence.user_licence_expired_count || 0) === 0 ? 'success' : undefined" class="mr-1" />
                                                         Benutzer-Lizenzen: {{ licence.user_licence_count }}
+                                                        (gültig: {{ licence.user_licence_active_count || 0 }},&nbsp;<span
+                                                            class="assignment-school-licence-row__counter-expired"
+                                                            :class="{ 'is-highlighted': (licence.user_licence_expired_count || 0) > 0 }">abgelaufen: {{ licence.user_licence_expired_count || 0 }}</span>)
                                                     </div>
                                                 </div>
                                                 <div class="assignment-school-licence-row__right">
@@ -409,6 +412,39 @@
                         </div>
                     </div>
 
+                    <div class="edit-licence-price-grid mb-3">
+                        <div class="edit-licence-price-row">
+                            <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                            <span class="edit-licence-price-value">
+                                {{ overridePriceLabel(roleEntry.charged_price, selectedUserRolePlanPrice(roleEntry), 'Planpreis') }}
+                            </span>
+                        </div>
+                        <template v-if="selectedUserLicenceHasExtraStorage()">
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                <span class="edit-licence-price-value">{{ roleEntry.extra_storage_units != null && roleEntry.extra_storage_units !== '' ? roleEntry.extra_storage_units : '–' }}</span>
+                            </div>
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Preis je Einheit</span>
+                                <span class="edit-licence-price-value">
+                                    {{ overridePriceLabel(roleEntry.extra_storage_unit_price, selectedUserLicenceExtraStorageUnitPrice(), 'Standardpreis') }}
+                                </span>
+                            </div>
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
+                                <span class="edit-licence-price-value">{{ formatPrice(selectedUserRoleExtraStorageTotal(roleEntry)) }}</span>
+                            </div>
+                            <div class="edit-licence-price-row">
+                                <span class="edit-licence-price-label">Summe Speicher</span>
+                                <span class="edit-licence-price-value">{{ formatStorage(selectedUserRoleStorageTotalGb(roleEntry)) }}</span>
+                            </div>
+                        </template>
+                        <div class="edit-licence-price-row edit-licence-price-row--sum">
+                            <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                            <span class="edit-licence-price-value">{{ formatPrice(selectedUserRoleBillingTotal(roleEntry)) }}</span>
+                        </div>
+                    </div>
+
                     <v-row dense>
                         <v-col cols="12" md="4">
                             <div class="text-caption text-medium-emphasis mb-1">Aktiviert</div>
@@ -436,6 +472,43 @@
                                 :disabled="!roleEntry.assigned || !roleEntry.is_activated"
                                 hide-details="auto" />
                         </v-col>
+
+                        <v-col cols="12" md="4">
+                            <v-text-field
+                                v-model="roleEntry.charged_price"
+                                label="Verrechneter Preis / Jahr (€)"
+                                inputmode="numeric"
+                                clearable
+                                :placeholder="selectedUserRolePlanPrice(roleEntry) != null ? editablePriceInputValue(selectedUserRolePlanPrice(roleEntry)) : ''"
+                                hint="Leer lassen = Planpreis, 0 = EUR 0"
+                                persistent-hint
+                                hide-details="auto" />
+                        </v-col>
+
+                        <template v-if="selectedUserLicenceHasExtraStorage()">
+                            <v-col cols="12" md="4">
+                                <v-text-field
+                                    v-model="roleEntry.extra_storage_units"
+                                    label="Zusatz-Speicher Einheiten"
+                                    inputmode="numeric"
+                                    clearable
+                                    :hint="selectedUserLicencesSource?.user_extra_storage_step_gb ? `1 Einheit = ${selectedUserLicencesSource.user_extra_storage_step_gb} GB` : 'Leer lassen = Standardwert'"
+                                    persistent-hint
+                                    hide-details="auto" />
+                            </v-col>
+
+                            <v-col cols="12" md="6">
+                                <v-text-field
+                                    v-model="roleEntry.extra_storage_unit_price"
+                                    label="Preis je Einheit (€)"
+                                    inputmode="numeric"
+                                    clearable
+                                    :placeholder="selectedUserLicenceExtraStorageUnitPrice() != null ? editablePriceInputValue(selectedUserLicenceExtraStorageUnitPrice()) : ''"
+                                    hint="Leer lassen = Standardpreis, 0 = EUR 0"
+                                    persistent-hint
+                                    hide-details="auto" />
+                            </v-col>
+                        </template>
 
                         <v-col cols="12">
                             <v-date-input
@@ -708,10 +781,10 @@
 
                         <div class="d-flex align-center justify-space-between mb-2">
                             <div class="edit-licence-section-title mb-0">Benutzer</div>
-                            <v-btn v-if="!edit_admin_user_edit_id" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode" />
+                            <v-btn v-if="!edit_admin_user_edit_id && !edit_admin_add_mode" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openAdminAddMode" />
                         </div>
 
-                        <div v-if="visibleAdminUsers.length" class="mb-2">
+                        <div v-if="visibleAdminUsers.length && !edit_admin_add_mode" class="mb-2">
                             <div
                                 v-for="user in visibleAdminUsers"
                                 :key="`admin-user-${user.id}`"
@@ -887,7 +960,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div v-else class="text-caption text-medium-emphasis mb-2">Keine Benutzer gefunden.</div>
+                        <div v-else-if="!edit_admin_add_mode" class="text-caption text-medium-emphasis mb-2">Keine Benutzer gefunden.</div>
 
                         <template v-if="edit_admin_add_mode">
                             <v-divider class="mb-3" />
@@ -930,7 +1003,7 @@
                     </v-tabs-window-item>
                     <v-tabs-window-item value="user">
                         <div class="edit-licence-section-title">Preis-Informationen</div>
-                        <div class="edit-licence-price-grid">
+                        <div class="edit-licence-price-grid mb-4">
                             <div class="edit-licence-price-row">
                                 <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
                                 <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item && edit_licence_item.user_price_per_year) }}</span>
@@ -944,12 +1017,234 @@
                                 <span class="edit-licence-price-value">{{ formatPrice(edit_licence_item.user_extra_storage_step_price) }} / {{ formatStorage(edit_licence_item.user_extra_storage_step_gb) }}</span>
                             </div>
                         </div>
+
+                        <div class="d-flex align-center justify-space-between mb-2">
+                            <div class="edit-licence-section-title mb-0">Benutzer</div>
+                            <v-btn v-if="!edit_user_licence_user_edit_id && !edit_user_licence_add_mode" size="small" variant="tonal" color="success" icon="mdi-plus" @click="openUserLicenceAddMode" />
+                        </div>
+
+                        <div v-if="visibleUserLicenceUsers.length && !edit_user_licence_add_mode" class="mb-2">
+                            <div
+                                v-for="user in visibleUserLicenceUsers"
+                                :key="`user-licence-user-${user.id}`"
+                                class="admin-user-row"
+                                :class="{ 'is-editing': edit_user_licence_user_edit_id === user.id }">
+                                <div class="admin-user-row__main">
+                                    <div class="admin-user-row__name">
+                                        <span class="admin-user-row__title">
+                                            <v-icon
+                                                v-if="userLicenceUserHasValidLicence(user)"
+                                                size="14"
+                                                color="success"
+                                                icon="mdi-check-circle"
+                                                class="admin-user-row__status-icon" />
+                                            <span>{{ user.last_name }} {{ user.first_name }}</span>
+                                        </span>
+                                        <span class="admin-user-row__email">{{ user.email }}</span>
+                                        <span class="admin-user-row__meta">{{ userLicenceUserRuntimeLabel(user) }}</span>
+                                        <span class="admin-user-row__meta" v-if="userLicenceUserBillingTotalForUser(user) !== null || userLicenceUserStorageTotalGbForUser(user) !== null">
+                                            Gesamt / Jahr: {{ formatPrice(userLicenceUserBillingTotalForUser(user)) }}
+                                            <template v-if="userLicenceUserStorageTotalGbForUser(user) !== null">
+                                                &nbsp;Summe Speicher: {{ formatStorage(userLicenceUserStorageTotalGbForUser(user)) }}
+                                            </template>
+                                        </span>
+                                    </div>
+                                    <div class="admin-user-row__actions">
+                                        <span v-if="edit_user_licence_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>
+                                        <v-btn
+                                            v-if="userLicenceUserIsAssigned(user)"
+                                            size="x-small"
+                                            variant="text"
+                                            :color="edit_user_licence_user_edit_id === user.id ? 'primary' : 'default'"
+                                            icon="mdi-pencil"
+                                            :style="{ visibility: edit_user_licence_user_edit_id ? 'hidden' : 'visible' }"
+                                            @click="toggleUserLicenceUserEdit(user)" />
+                                    </div>
+                                </div>
+
+                                <div v-if="edit_user_licence_user_edit_id === user.id" class="admin-user-edit">
+                                    <div v-if="!edit_user_licence_user_price_editing" class="d-flex justify-end mb-2">
+                                        <v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeUserLicenceUserEdit">Zurück</v-btn>
+                                    </div>
+                                    <div class="edit-licence-price-grid mb-2">
+                                        <div class="edit-licence-price-row">
+                                            <span class="edit-licence-price-label">Gültig bis</span>
+                                            <span class="d-flex align-center" style="gap: 8px;">
+                                                <span class="edit-licence-price-value d-flex align-center" style="gap: 10px;">
+                                                    <v-icon
+                                                        size="13"
+                                                        :icon="isValidUntilExpired(edit_user_licence_user_valid_until) ? 'mdi-close-circle' : 'mdi-check-circle'"
+                                                        :color="isValidUntilExpired(edit_user_licence_user_valid_until) ? 'error' : 'success'" />
+                                                    {{ formatValidUntil(edit_user_licence_user_valid_until) }}
+                                                </span>
+                                                <v-menu>
+                                                    <template #activator="{ props }">
+                                                        <v-btn v-bind="props" size="x-small" variant="text" icon="mdi-pencil" density="compact" />
+                                                    </template>
+                                                    <v-list density="compact" min-width="220">
+                                                        <v-list-item
+                                                            prepend-icon="mdi-link-off"
+                                                            title="Lizenz entfernen"
+                                                            base-color="error"
+                                                            @click="removeUserLicenceUserLicence(user)" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-end"
+                                                            :title="`bis Jahresende (${nextYearEndLabel(effectiveEndDayMonth)})`"
+                                                            @click="setUserLicenceUserValidUntil(user, nextYearEndDate(effectiveEndDayMonth))" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-infinity"
+                                                            title="unendlich"
+                                                            @click="setUserLicenceUserValidUntil(user, null)" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-plus"
+                                                            title="ein Jahr verlängern"
+                                                            @click="extendUserLicenceUserValidUntilOneYear(user)" />
+                                                        <v-list-item
+                                                            prepend-icon="mdi-calendar-clock"
+                                                            :title="`Teillizenz (${nextYearEndLabel(effectiveEndDayMonth)}, ${userLicenceTeillizenzPreisLabel})`"
+                                                            @click="applyUserLicenceUserTeillizenz(user)" />
+                                                    </v-list>
+                                                </v-menu>
+                                            </span>
+                                        </div>
+
+                                        <div class="edit-licence-price-row">
+                                            <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                                            <span class="d-flex align-center" style="gap: 8px;">
+                                                <span class="edit-licence-price-value">
+                                                    {{ overridePriceLabel(edit_user_licence_user_charged_price, effectiveUserBasePrice(), userBillingDefaultLabel()) }}
+                                                </span>
+                                                <v-btn
+                                                    v-if="!edit_user_licence_user_price_editing"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    icon="mdi-pencil"
+                                                    density="compact"
+                                                    @click="edit_user_licence_user_price_editing = true" />
+                                            </span>
+                                        </div>
+                                        <template v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)">
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ overrideCountLabel(edit_user_licence_user_extra_storage_units, edit_licence_item?.user_extra_storage_units, 'Tarif dieser Schule') }}
+                                                </span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Preis je Einheit</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ overridePriceLabel(edit_user_licence_user_extra_storage_unit_price, effectiveUserLicenceUserExtraStorageUnitPrice(), userBillingDefaultLabel()) }}
+                                                </span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserExtraStorageTotal()) }}</span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Summe Speicher</span>
+                                                <span class="edit-licence-price-value">{{ formatStorage(userLicenceUserStorageTotalGb()) }}</span>
+                                            </div>
+                                        </template>
+                                        <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                            <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                                            <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserBillingTotal()) }}</span>
+                                        </div>
+                                    </div>
+
+                                    <template v-if="edit_user_licence_user_price_editing">
+                                        <v-text-field
+                                            v-model="edit_user_licence_user_charged_price_draft"
+                                            label="Verrechneter Preis / Jahr (€)"
+                                            inputmode="numeric"
+                                            density="compact"
+                                            variant="outlined"
+                                            clearable
+                                            hint="Leer lassen = Standard-Tarif, 0 = EUR 0"
+                                            persistent-hint
+                                            class="mb-2" />
+                                        <v-row
+                                            v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)"
+                                            dense
+                                            class="mb-1">
+                                            <v-col cols="6">
+                                                <v-text-field
+                                                    v-model="edit_user_licence_user_extra_storage_units"
+                                                    label="Zusatz-Speicher Einheiten"
+                                                    inputmode="numeric"
+                                                    density="compact"
+                                                    variant="outlined"
+                                                    clearable
+                                                    :placeholder="edit_licence_item ? String(edit_licence_item.user_extra_storage_units ?? '') : ''"
+                                                    :hint="edit_licence_item?.user_extra_storage_step_gb ? `1 Einheit = ${edit_licence_item.user_extra_storage_step_gb} GB` : 'Leer lassen = Tarif dieser Schule'"
+                                                    persistent-hint />
+                                            </v-col>
+                                            <v-col cols="6">
+                                                <v-text-field
+                                                    v-model="edit_user_licence_user_extra_storage_unit_price"
+                                                    label="Preis je Einheit (€)"
+                                                    inputmode="numeric"
+                                                    density="compact"
+                                                    variant="outlined"
+                                                    clearable
+                                                    :placeholder="effectiveUserExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveUserExtraStorageUnitPrice()) : ''"
+                                                    hint="Leer lassen = Standardpreis, 0 = EUR 0"
+                                                    persistent-hint />
+                                            </v-col>
+                                        </v-row>
+                                        <div class="d-flex justify-space-between">
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_user_licence_user_price_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveUserLicenceUserBilling(user)">Speichern</v-btn>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else-if="!edit_user_licence_add_mode" class="text-caption text-medium-emphasis mb-2">Keine Benutzer gefunden.</div>
+
+                        <template v-if="edit_user_licence_add_mode">
+                            <v-divider class="mb-3" />
+                            <div class="edit-licence-section-title mb-2">Benutzer hinzufügen</div>
+                            <div class="d-flex align-center ga-2 mb-2">
+                                <v-text-field
+                                    v-model="edit_user_licence_add_search"
+                                    placeholder="Nachname..."
+                                    density="compact"
+                                    variant="outlined"
+                                    clearable
+                                    hide-details
+                                    prepend-inner-icon="mdi-magnify"
+                                    class="flex-grow-1"
+                                    @keyup.enter="searchUserLicenceUsersToAdd"
+                                    @click:clear="edit_user_licence_add_results = []" />
+                                <v-btn size="small" variant="tonal" color="primary" icon="mdi-magnify" @click="searchUserLicenceUsersToAdd" />
+                                <v-btn size="small" variant="text" color="warning" icon="mdi-close" @click="closeUserLicenceAddMode" />
+                            </div>
+                            <v-list v-if="edit_user_licence_add_results.length" density="compact">
+                                <v-list-item
+                                    v-for="user in edit_user_licence_add_results"
+                                    :key="`user-licence-add-${user.id}`"
+                                    :subtitle="user.email">
+                                    <template #title>
+                                        <span>{{ user.last_name }} {{ user.first_name }}</span>
+                                    </template>
+                                    <template #append>
+                                        <v-btn
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="success"
+                                            icon="mdi-plus"
+                                            @click="assignUserLicenceUser(user)" />
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                            <div v-else-if="edit_user_licence_add_search" class="text-caption text-medium-emphasis">Keine Treffer.</div>
+                        </template>
                     </v-tabs-window-item>
                 </v-tabs-window>
             </v-card-text>
 
             <v-card-actions class="d-flex pa-4 justify-space-between">
-                <v-btn v-if="!(edit_licence_tab === 'admin' && edit_admin_user_edit_id)" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
+                <v-btn v-if="!(edit_licence_tab === 'admin' && (edit_admin_user_edit_id || edit_admin_add_mode)) && !(edit_licence_tab === 'user' && (edit_user_licence_user_edit_id || edit_user_licence_add_mode))" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -1013,6 +1308,18 @@ export default {
             edit_admin_user_charged_price_draft: null,
             edit_admin_user_extra_storage_units: null,
             edit_admin_user_extra_storage_unit_price: null,
+            edit_user_licence_users: [],
+            edit_user_licence_users_role_statuses: {},
+            edit_user_licence_add_mode: false,
+            edit_user_licence_add_search: '',
+            edit_user_licence_add_results: [],
+            edit_user_licence_user_edit_id: null,
+            edit_user_licence_user_valid_until: null,
+            edit_user_licence_user_price_editing: false,
+            edit_user_licence_user_charged_price: null,
+            edit_user_licence_user_charged_price_draft: null,
+            edit_user_licence_user_extra_storage_units: null,
+            edit_user_licence_user_extra_storage_unit_price: null,
             edit_valid_until: '',
             edit_no_date: false,
             school_licence_models: {},
@@ -1192,6 +1499,26 @@ export default {
             const editingUserId = Number(this.edit_admin_user_edit_id)
             return users.filter((user) => Number(user?.id) === editingUserId)
         },
+        visibleUserLicenceUsers() {
+            const users = Array.isArray(this.edit_user_licence_users) ? this.edit_user_licence_users : []
+            if (!this.edit_user_licence_user_edit_id) {
+                return users
+            }
+
+            const editingUserId = Number(this.edit_user_licence_user_edit_id)
+            return users.filter((user) => Number(user?.id) === editingUserId)
+        },
+        userLicenceTeillizenzPreisLabel() {
+            if (!this.effectiveEndDayMonth) return ''
+            const prorated = this.proratedYearPrice(
+                this.edit_user_licence_user_charged_price != null ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
+                this.effectiveEndDayMonth
+            )
+            if (prorated === null) {
+                return `${this.remainingDaysUntil(this.effectiveEndDayMonth)} Tage`
+            }
+            return `${this.formatPrice(prorated)}`
+        },
         userLicenceRoleNames() {
             return this.sortedRoleNames(this.school_licence_users_roles || [])
         },
@@ -1227,13 +1554,15 @@ export default {
         editLicenceCloseLocked() {
             return !!(
                 this.edit_admin_user_edit_id ||
+                this.edit_user_licence_user_edit_id ||
                 this.edit_school_billing_editing
             )
         },
         editLicenceTabLocked() {
             return !!(
                 this.editLicenceCloseLocked ||
-                this.edit_admin_add_mode
+                this.edit_admin_add_mode ||
+                this.edit_user_licence_add_mode
             )
         },
     },
@@ -1242,6 +1571,9 @@ export default {
         edit_licence_tab(val) {
             if (val === 'admin') {
                 this.loadAdminUsers()
+            }
+            if (val === 'user') {
+                this.loadUserLicenceUsers()
             }
         },
         edit_valid_until(val) {
@@ -1497,6 +1829,9 @@ export default {
             if (this.edit_licence_tab === 'admin') {
                 await this.loadAdminUsers()
             }
+            if (this.edit_licence_tab === 'user') {
+                await this.loadUserLicenceUsers()
+            }
         },
         closeEditLicenceDialog() {
             this.edit_licence_dialog = false
@@ -1519,6 +1854,18 @@ export default {
             this.edit_admin_user_charged_price_draft = null
             this.edit_admin_user_extra_storage_units = null
             this.edit_admin_user_extra_storage_unit_price = null
+            this.edit_user_licence_users = []
+            this.edit_user_licence_users_role_statuses = {}
+            this.edit_user_licence_add_mode = false
+            this.edit_user_licence_add_search = ''
+            this.edit_user_licence_add_results = []
+            this.edit_user_licence_user_edit_id = null
+            this.edit_user_licence_user_valid_until = null
+            this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_charged_price = null
+            this.edit_user_licence_user_charged_price_draft = null
+            this.edit_user_licence_user_extra_storage_units = null
+            this.edit_user_licence_user_extra_storage_unit_price = null
         },
         cancelSchoolBillingEdit() {
             this.edit_school_charged_price = this.editablePriceInputValue(this.edit_licence_item?.charged_school_price)
@@ -1925,6 +2272,442 @@ export default {
             const total = this.adminUserBillingTotal()
 
             return total !== null ? String(total) : ''
+        },
+        userRolesFromLicenceModel(licence) {
+            const model = this.normalizeLicenceModel(licence || null)
+            return this.sortedRoleNames(model.user_role_names || [])
+        },
+        async loadUserLicenceUsers() {
+            if (!this.edit_licence_item?.school_licence_id) return
+            const userRoles = this.userRolesFromLicenceModel(this.edit_licence_item)
+            try {
+                this.adminStore.is_loading++
+                const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
+                    params: {
+                        role_names: userRoles,
+                    },
+                })
+                this.edit_user_licence_users = response.data.data || []
+                this.edit_user_licence_users_role_statuses = response.data.role_statuses_by_user || {}
+            } catch {
+                this.edit_user_licence_users = []
+                this.edit_user_licence_users_role_statuses = {}
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        userLicenceUserIsAssigned(user) {
+            const statuses = this.edit_user_licence_users_role_statuses[String(user.id)]
+            if (!statuses || typeof statuses !== 'object') return false
+            return Object.values(statuses).some((status) => status && typeof status === 'object' && status.assigned === true)
+        },
+        openUserLicenceAddMode() {
+            this.edit_user_licence_add_mode = true
+            this.edit_user_licence_add_search = ''
+            this.edit_user_licence_add_results = []
+        },
+        closeUserLicenceAddMode() {
+            this.edit_user_licence_add_mode = false
+            this.edit_user_licence_add_search = ''
+            this.edit_user_licence_add_results = []
+        },
+        closeUserLicenceUserEdit() {
+            this.edit_user_licence_user_edit_id = null
+            this.edit_user_licence_user_valid_until = null
+            this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_charged_price = null
+            this.edit_user_licence_user_charged_price_draft = null
+            this.edit_user_licence_user_extra_storage_units = null
+            this.edit_user_licence_user_extra_storage_unit_price = null
+        },
+        async searchUserLicenceUsersToAdd() {
+            if (!this.edit_licence_item?.school_licence_id) {
+                this.edit_user_licence_add_results = []
+                return
+            }
+            const userRoles = this.userRolesFromLicenceModel(this.edit_licence_item)
+            try {
+                this.adminStore.is_loading++
+                const response = await axios.get(`/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users`, {
+                    params: {
+                        search_string: this.edit_user_licence_add_search.trim() || null,
+                        role_names: userRoles,
+                        assigned_only: 0,
+                    },
+                })
+                const roleStatusesByUser = response.data.role_statuses_by_user || {}
+                this.edit_user_licence_add_results = (response.data.data || []).filter((user) => {
+                    const statuses = roleStatusesByUser[String(user.id)]
+                    if (!statuses || typeof statuses !== 'object') return true
+                    return !Object.values(statuses).some((status) => status && typeof status === 'object' && status.assigned === true)
+                })
+            } catch {
+                this.edit_user_licence_add_results = []
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        async assignUserLicenceUser(user) {
+            if (!this.edit_licence_item?.school_licence_id) return
+            try {
+                this.adminStore.is_loading++
+                const rolesResponse = await axios.get(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`
+                )
+                const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+                const roles = (rolesResponse.data.roles || []).map((role) => ({
+                    ...role,
+                    assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                    is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
+                }))
+                await axios.put(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`,
+                    { roles }
+                )
+            } catch {
+                useNotificationStore().notify({ message: 'Fehler beim Zuweisen.', type: 'error', timeout: 3000 })
+                return
+            } finally {
+                this.adminStore.is_loading--
+            }
+            this.edit_user_licence_add_results = this.edit_user_licence_add_results.filter((candidate) => Number(candidate?.id) !== Number(user?.id))
+            await this.loadUserLicenceUsers()
+            await this.refreshEditLicenceItem()
+        },
+        userLicenceUserStatusForUser(user) {
+            const statuses = this.edit_user_licence_users_role_statuses[String(user.id)]
+            if (!statuses || typeof statuses !== 'object') return null
+            return Object.values(statuses)[0] || null
+        },
+        userLicenceUserHasValidLicence(user) {
+            if (!this.userLicenceUserIsAssigned(user)) return false
+            const status = this.userLicenceUserStatusForUser(user)
+            return !this.isValidUntilExpired(status?.valid_until || null)
+        },
+        userLicenceUserRuntimeLabel(user) {
+            const status = this.userLicenceUserStatusForUser(user)
+            if (!status || !this.userLicenceUserIsAssigned(user)) return 'Keine Benutzerlizenz'
+            if (!status.valid_until) {
+                return 'Benutzerlizenz läuft unbegrenzt'
+            }
+
+            const validUntil =
+                status.valid_until instanceof Date
+                    ? this.toDateString(status.valid_until)
+                    : String(status.valid_until).slice(0, 10)
+
+            if (!validUntil) {
+                return 'Keine Benutzerlizenz'
+            }
+
+            const today = new Date(`${this.localDateKey()}T00:00:00`)
+            const endDate = new Date(`${validUntil}T00:00:00`)
+            const remainingDays = Math.ceil((endDate.getTime() - today.getTime()) / 86400000)
+
+            if (remainingDays < 0) {
+                return `Benutzerlizenz abgelaufen am ${this.formatValidUntil(validUntil)}`
+            }
+            if (remainingDays === 0) {
+                return `Benutzerlizenz läuft heute ab (${this.formatValidUntil(validUntil)})`
+            }
+            if (remainingDays === 1) {
+                return `Benutzerlizenz läuft noch 1 Tag (${this.formatValidUntil(validUntil)})`
+            }
+            return `Benutzerlizenz läuft noch ${remainingDays} Tage (${this.formatValidUntil(validUntil)})`
+        },
+        userLicenceUserBasePriceForUser(user) {
+            const status = this.userLicenceUserStatusForUser(user)
+
+            if (status?.charged_price !== null && status?.charged_price !== undefined && status?.charged_price !== '') {
+                return status.charged_price
+            }
+
+            return this.effectiveUserBasePrice()
+        },
+        userLicenceUserExtraStorageUnitPriceForUser(user) {
+            const status = this.userLicenceUserStatusForUser(user)
+
+            if (status?.extra_storage_unit_price !== null && status?.extra_storage_unit_price !== undefined && status?.extra_storage_unit_price !== '') {
+                return status.extra_storage_unit_price
+            }
+
+            return this.effectiveUserExtraStorageUnitPrice()
+        },
+        userLicenceUserExtraStorageUnitsForUser(user) {
+            const status = this.userLicenceUserStatusForUser(user)
+
+            if (status?.extra_storage_units !== null && status?.extra_storage_units !== undefined && status?.extra_storage_units !== '') {
+                return status.extra_storage_units
+            }
+
+            return this.defaultUserLicenceUserExtraStorageUnits()
+        },
+        userLicenceUserBillingTotalForUser(user) {
+            const basePrice = this.userLicenceUserBasePriceForUser(user)
+            const unitPrice = this.userLicenceUserExtraStorageUnitPriceForUser(user)
+            const units = this.userLicenceUserExtraStorageUnitsForUser(user)
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = units !== null && units !== undefined && units !== '' && parsedUnits > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        userLicenceUserStorageTotalGbForUser(user) {
+            const includedGb = this.edit_licence_item?.user_included_storage_gb != null
+                ? parseInt(this.edit_licence_item.user_included_storage_gb, 10)
+                : null
+            const stepGb = this.edit_licence_item?.user_extra_storage_step_gb != null
+                ? parseInt(this.edit_licence_item.user_extra_storage_step_gb, 10)
+                : null
+            const units = this.userLicenceUserExtraStorageUnitsForUser(user)
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const normalizedIncludedGb = includedGb !== null && !isNaN(includedGb) ? includedGb : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncludedGb === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncludedGb || 0) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (normalizedStepGb || 0)
+        },
+        effectiveUserBasePrice() {
+            if (this.edit_licence_item?.charged_user_price !== null && this.edit_licence_item?.charged_user_price !== undefined && this.edit_licence_item?.charged_user_price !== '') {
+                return this.edit_licence_item.charged_user_price
+            }
+
+            if (this.edit_licence_item?.user_price_per_year !== null && this.edit_licence_item?.user_price_per_year !== undefined && this.edit_licence_item?.user_price_per_year !== '') {
+                return this.edit_licence_item.user_price_per_year
+            }
+
+            return null
+        },
+        effectiveUserExtraStorageUnitPrice() {
+            if (this.edit_licence_item?.user_extra_storage_unit_price !== null && this.edit_licence_item?.user_extra_storage_unit_price !== undefined && this.edit_licence_item?.user_extra_storage_unit_price !== '') {
+                return this.edit_licence_item.user_extra_storage_unit_price
+            }
+
+            if (this.edit_licence_item?.user_extra_storage_step_price !== null && this.edit_licence_item?.user_extra_storage_step_price !== undefined && this.edit_licence_item?.user_extra_storage_step_price !== '') {
+                return this.edit_licence_item.user_extra_storage_step_price
+            }
+
+            return null
+        },
+        effectiveUserLicenceUserExtraStorageUnitPrice() {
+            if (this.edit_user_licence_user_extra_storage_unit_price !== null && this.edit_user_licence_user_extra_storage_unit_price !== undefined && this.edit_user_licence_user_extra_storage_unit_price !== '') {
+                return this.edit_user_licence_user_extra_storage_unit_price
+            }
+
+            return this.effectiveUserExtraStorageUnitPrice()
+        },
+        defaultUserLicenceUserExtraStorageUnits() {
+            if (this.edit_licence_item?.user_extra_storage_units !== null && this.edit_licence_item?.user_extra_storage_units !== undefined && this.edit_licence_item?.user_extra_storage_units !== '') {
+                return this.edit_licence_item.user_extra_storage_units
+            }
+
+            return null
+        },
+        effectiveUserLicenceUserExtraStorageUnits() {
+            if (this.edit_user_licence_user_extra_storage_units !== null && this.edit_user_licence_user_extra_storage_units !== undefined && this.edit_user_licence_user_extra_storage_units !== '') {
+                return this.edit_user_licence_user_extra_storage_units
+            }
+
+            return this.defaultUserLicenceUserExtraStorageUnits()
+        },
+        userLicenceUserBillingTotal() {
+            const basePrice = this.effectiveUserBasePrice()
+            const unitPrice = this.effectiveUserLicenceUserExtraStorageUnitPrice()
+            const units = this.effectiveUserLicenceUserExtraStorageUnits()
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = units !== null && units !== undefined && units !== '' && parsedUnits > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        userLicenceUserExtraStorageTotal() {
+            const hasStorageOption =
+                this.edit_licence_item &&
+                (this.edit_licence_item.user_extra_storage_step_gb != null || this.edit_licence_item.user_extra_storage_step_price != null)
+
+            if (!hasStorageOption) {
+                return null
+            }
+
+            const unitPrice = this.effectiveUserLicenceUserExtraStorageUnitPrice()
+            const units = this.effectiveUserLicenceUserExtraStorageUnits()
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+
+            return (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        userLicenceUserStorageTotalGb() {
+            const includedGb = this.edit_licence_item?.user_included_storage_gb != null
+                ? parseInt(this.edit_licence_item.user_included_storage_gb, 10)
+                : null
+            const stepGb = this.edit_licence_item?.user_extra_storage_step_gb != null
+                ? parseInt(this.edit_licence_item.user_extra_storage_step_gb, 10)
+                : null
+            const units = this.effectiveUserLicenceUserExtraStorageUnits()
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+
+            const normalizedIncludedGb = includedGb !== null && !isNaN(includedGb) ? includedGb : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncludedGb === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncludedGb || 0) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (normalizedStepGb || 0)
+        },
+        userBillingDefaultLabel() {
+            if (
+                (this.edit_licence_item?.charged_user_price !== null && this.edit_licence_item?.charged_user_price !== undefined && this.edit_licence_item?.charged_user_price !== '') ||
+                (this.edit_licence_item?.user_extra_storage_units !== null && this.edit_licence_item?.user_extra_storage_units !== undefined && this.edit_licence_item?.user_extra_storage_units !== '') ||
+                (this.edit_licence_item?.user_extra_storage_unit_price !== null && this.edit_licence_item?.user_extra_storage_unit_price !== undefined && this.edit_licence_item?.user_extra_storage_unit_price !== '')
+            ) {
+                return 'Tarif dieser Schule'
+            }
+
+            return 'Basis-Tarif'
+        },
+        toggleUserLicenceUserEdit(user) {
+            if (this.edit_user_licence_user_edit_id === user.id) {
+                this.closeUserLicenceUserEdit()
+                return
+            }
+            this.edit_user_licence_add_mode = false
+            this.edit_user_licence_add_search = ''
+            this.edit_user_licence_add_results = []
+            const status = this.userLicenceUserStatusForUser(user)
+            this.edit_user_licence_user_edit_id = user.id
+            this.edit_user_licence_user_valid_until = status?.valid_until || null
+            this.edit_user_licence_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_user_licence_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveUserBasePrice())
+            this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
+            this.edit_user_licence_user_price_editing = false
+        },
+        async saveUserLicenceUserRoles(user, patchFn) {
+            if (!this.edit_licence_item?.school_licence_id) return false
+            try {
+                this.adminStore.is_loading++
+                const rolesResponse = await axios.get(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`
+                )
+                const roles = (rolesResponse.data.roles || []).map((role) => patchFn(role))
+                await axios.put(
+                    `/api/admin/school_licences/${this.edit_licence_item.school_licence_id}/users/${user.id}/roles`,
+                    { roles }
+                )
+                return true
+            } catch {
+                useNotificationStore().notify({ message: 'Fehler beim Speichern.', type: 'error', timeout: 3000 })
+                return false
+            } finally {
+                this.adminStore.is_loading--
+            }
+        },
+        async setUserLicenceUserValidUntil(user, valid_until) {
+            const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
+                ...role,
+                assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
+                valid_until: userRoleNames.has(String(role?.name || '').trim()) ? valid_until : role.valid_until,
+            }))
+            if (!ok) return
+            this.edit_user_licence_user_valid_until = valid_until
+            await this.loadUserLicenceUsers()
+            const status = this.userLicenceUserStatusForUser(user)
+            this.edit_user_licence_user_valid_until = status?.valid_until || null
+        },
+        async extendUserLicenceUserValidUntilOneYear(user) {
+            const current = this.edit_user_licence_user_valid_until
+            let newDate
+            if (current) {
+                const d = new Date(current)
+                d.setFullYear(d.getFullYear() + 1)
+                newDate = this.localDateKey(d)
+            } else {
+                newDate = this.defaultValidUntil()
+            }
+            await this.setUserLicenceUserValidUntil(user, newDate)
+        },
+        async applyUserLicenceUserTeillizenz(user) {
+            const validUntil = this.nextYearEndDate(this.effectiveEndDayMonth)
+            const chargedPrice = this.proratedYearPrice(
+                this.edit_user_licence_user_charged_price != null ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
+                this.effectiveEndDayMonth
+            )
+            const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
+                ...role,
+                assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
+                valid_until: userRoleNames.has(String(role?.name || '').trim()) ? validUntil : role.valid_until,
+                charged_price: userRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                extra_storage_units: userRoleNames.has(String(role?.name || '').trim()) ? this.effectiveUserLicenceUserExtraStorageUnits() : role.extra_storage_units,
+                extra_storage_unit_price: userRoleNames.has(String(role?.name || '').trim()) ? this.effectiveUserLicenceUserExtraStorageUnitPrice() : role.extra_storage_unit_price,
+            }))
+            if (!ok) return
+            await this.loadUserLicenceUsers()
+            const status = this.userLicenceUserStatusForUser(user)
+            this.edit_user_licence_user_valid_until = status?.valid_until || null
+            this.edit_user_licence_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_user_licence_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveUserBasePrice())
+            this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
+            this.edit_user_licence_user_price_editing = false
+            await this.refreshEditLicenceItem()
+        },
+        async removeUserLicenceUserLicence(user) {
+            const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
+                ...role,
+                assigned: userRoleNames.has(String(role?.name || '').trim()) ? false : !!role.assigned,
+                valid_until: userRoleNames.has(String(role?.name || '').trim()) ? null : role.valid_until,
+                charged_price: userRoleNames.has(String(role?.name || '').trim()) ? null : role.charged_price,
+                extra_storage_units: userRoleNames.has(String(role?.name || '').trim()) ? null : role.extra_storage_units,
+                extra_storage_unit_price: userRoleNames.has(String(role?.name || '').trim()) ? null : role.extra_storage_unit_price,
+            }))
+            if (!ok) return
+            this.closeUserLicenceUserEdit()
+            await this.loadUserLicenceUsers()
+            await this.refreshEditLicenceItem()
+        },
+        async saveUserLicenceUserBilling(user) {
+            const chargedPrice = this.normalizedPriceInputValue(this.edit_user_licence_user_charged_price_draft)
+            const extraStorageUnits = this.edit_user_licence_user_extra_storage_units !== '' ? this.edit_user_licence_user_extra_storage_units : null
+            const extraStorageUnitPrice = this.normalizedPriceInputValue(this.edit_user_licence_user_extra_storage_unit_price)
+            const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
+                ...role,
+                assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
+                charged_price: userRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                extra_storage_units: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnits : role.extra_storage_units,
+                extra_storage_unit_price: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnitPrice : role.extra_storage_unit_price,
+            }))
+            if (!ok) return
+            this.edit_user_licence_user_price_editing = false
+            await this.loadUserLicenceUsers()
+            const status = this.userLicenceUserStatusForUser(user)
+            this.edit_user_licence_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_user_licence_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveUserBasePrice())
+            this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
+            await this.refreshEditLicenceItem()
         },
         toggleAdminUserEdit(user) {
             if (this.edit_admin_user_edit_id === user.id) {
@@ -2350,6 +3133,9 @@ export default {
                 roleEntry.valid_until = null
                 roleEntry.is_activated = false
                 roleEntry.plan_id = null
+                roleEntry.charged_price = null
+                roleEntry.extra_storage_units = null
+                roleEntry.extra_storage_unit_price = null
                 return
             }
 
@@ -2357,6 +3143,9 @@ export default {
                 roleEntry.valid_until = null
                 roleEntry.is_activated = true
                 roleEntry.plan_id = null
+                roleEntry.charged_price = null
+                roleEntry.extra_storage_units = null
+                roleEntry.extra_storage_unit_price = null
                 return
             }
 
@@ -2476,7 +3265,96 @@ export default {
                 valid_until: item.assigned ? this.normalizeRoleValidUntilForApi(item.valid_until) : null,
                 is_activated: item.assigned ? !!item.is_activated : false,
                 plan_id: item.assigned && Number.isInteger(Number(item.plan_id)) && Number(item.plan_id) > 0 ? Number(item.plan_id) : null,
+                charged_price: item.assigned && item.user_licence_required ? this.normalizedPriceInputValue(item.charged_price) : null,
+                extra_storage_units:
+                    item.assigned && item.user_licence_required && item.extra_storage_units !== '' && item.extra_storage_units !== undefined
+                        ? item.extra_storage_units
+                        : null,
+                extra_storage_unit_price: item.assigned && item.user_licence_required ? this.normalizedPriceInputValue(item.extra_storage_unit_price) : null,
             }))
+        },
+        selectedUserLicenceHasExtraStorage() {
+            return !!(
+                this.selectedUserLicencesSource &&
+                (this.selectedUserLicencesSource.user_extra_storage_step_gb != null || this.selectedUserLicencesSource.user_extra_storage_step_price != null)
+            )
+        },
+        selectedUserLicenceExtraStorageUnitPrice() {
+            if (this.selectedUserLicencesSource?.extra_storage_unit_price !== null && this.selectedUserLicencesSource?.extra_storage_unit_price !== undefined && this.selectedUserLicencesSource?.extra_storage_unit_price !== '') {
+                return this.selectedUserLicencesSource.extra_storage_unit_price
+            }
+
+            if (this.selectedUserLicencesSource?.user_extra_storage_step_price !== null && this.selectedUserLicencesSource?.user_extra_storage_step_price !== undefined && this.selectedUserLicencesSource?.user_extra_storage_step_price !== '') {
+                return this.selectedUserLicencesSource.user_extra_storage_step_price
+            }
+
+            return null
+        },
+        selectedUserRolePlan(roleEntry) {
+            const plans = Array.isArray(roleEntry?.plans) ? roleEntry.plans : []
+            const selectedPlanId = Number(roleEntry?.plan_id)
+
+            if (Number.isInteger(selectedPlanId) && selectedPlanId > 0) {
+                const selectedPlan = plans.find((plan) => Number(plan?.id) === selectedPlanId)
+                if (selectedPlan) {
+                    return selectedPlan
+                }
+            }
+
+            return plans.find((plan) => plan && typeof plan === 'object') || null
+        },
+        selectedUserRolePlanPrice(roleEntry) {
+            return this.selectedUserRolePlan(roleEntry)?.price_per_year ?? null
+        },
+        selectedUserRoleExtraStorageTotal(roleEntry) {
+            if (!this.selectedUserLicenceHasExtraStorage()) {
+                return null
+            }
+
+            const unitPrice =
+                roleEntry?.extra_storage_unit_price !== null && roleEntry?.extra_storage_unit_price !== undefined && roleEntry?.extra_storage_unit_price !== ''
+                    ? roleEntry.extra_storage_unit_price
+                    : this.selectedUserLicenceExtraStorageUnitPrice()
+            const units = roleEntry?.extra_storage_units
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+
+            return (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        selectedUserRoleStorageTotalGb(roleEntry) {
+            const includedGb = this.selectedUserLicencesSource?.user_included_storage_gb != null
+                ? parseInt(this.selectedUserLicencesSource.user_included_storage_gb, 10)
+                : null
+            const stepGb = this.selectedUserLicencesSource?.user_extra_storage_step_gb != null
+                ? parseInt(this.selectedUserLicencesSource.user_extra_storage_step_gb, 10)
+                : null
+            const units = roleEntry?.extra_storage_units
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const normalizedIncludedGb = includedGb !== null && !isNaN(includedGb) ? includedGb : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncludedGb === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncludedGb || 0) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (normalizedStepGb || 0)
+        },
+        selectedUserRoleBillingTotal(roleEntry) {
+            const basePrice =
+                roleEntry?.charged_price !== null && roleEntry?.charged_price !== undefined && roleEntry?.charged_price !== ''
+                    ? roleEntry.charged_price
+                    : this.selectedUserRolePlanPrice(roleEntry)
+            const extraStorageTotal = this.selectedUserRoleExtraStorageTotal(roleEntry)
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedExtraStorageTotal = extraStorageTotal !== null ? this.normalizePriceToNumber(extraStorageTotal) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = extraStorageTotal !== null && !isNaN(parsedExtraStorageTotal) && parsedExtraStorageTotal > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedExtraStorageTotal) ? 0 : parsedExtraStorageTotal)
         },
         rolePlanSelectItems(roleEntry) {
             const plans = Array.isArray(roleEntry?.plans) ? roleEntry.plans : []
@@ -2516,6 +3394,9 @@ export default {
                             : null,
                     is_activated: userLicenceRequired ? (isUserRoleAssigned && !!entry?.is_activated) : true,
                     plan_id: userLicenceRequired && Number.isInteger(planId) && planId > 0 ? planId : null,
+                    charged_price: userLicenceRequired ? this.editablePriceInputValue(entry?.charged_price) : null,
+                    extra_storage_units: userLicenceRequired ? (entry?.extra_storage_units ?? null) : null,
+                    extra_storage_unit_price: userLicenceRequired ? this.editablePriceInputValue(entry?.extra_storage_unit_price) : null,
                     plans: userLicenceRequired && Array.isArray(entry?.plans) ? entry.plans : [],
                 }
             })

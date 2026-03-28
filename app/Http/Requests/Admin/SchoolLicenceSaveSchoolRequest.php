@@ -27,6 +27,9 @@ class SchoolLicenceSaveSchoolRequest extends FormRequest
             'charged_admin_price' => ['nullable', 'numeric', 'min:0'],
             'admin_extra_storage_units' => ['nullable', 'integer', 'min:0'],
             'admin_extra_storage_unit_price' => ['nullable', 'numeric', 'min:0'],
+            'charged_user_price' => ['nullable', 'numeric', 'min:0'],
+            'user_extra_storage_units' => ['nullable', 'integer', 'min:0'],
+            'user_extra_storage_unit_price' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

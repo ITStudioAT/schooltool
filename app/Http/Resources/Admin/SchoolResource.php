@@ -103,7 +103,12 @@ class SchoolResource extends JsonResource
                         'user_included_storage_gb' => $licence->user_included_storage_gb,
                         'user_extra_storage_step_gb' => $licence->user_extra_storage_step_gb,
                         'user_extra_storage_step_price' => $licence->user_extra_storage_step_price,
+                        'charged_user_price' => $schoolLicence?->charged_user_price,
+                        'user_extra_storage_units' => $schoolLicence?->user_extra_storage_units,
+                        'user_extra_storage_unit_price' => $schoolLicence?->user_extra_storage_unit_price,
                         'user_licence_count' => $userSummary['total'],
+                        'user_licence_active_count' => $userSummary['active'],
+                        'user_licence_expired_count' => $userSummary['expired'],
                     ];
                 })->values()
                 : [],
@@ -199,7 +204,9 @@ class SchoolResource extends JsonResource
 
                     $hasRelevantRoleAssignment = true;
                     $entry = $this->normalizeUserLicenceAssignmentEntry($userAssignments[$roleName] ?? null);
-                    $isActivated = $assignmentType === 'user' ? $entry['is_activated'] : true;
+                    $isActivated = $assignmentType === 'user'
+                        ? ($entry['is_activated'] || $entry['valid_until'] !== null)
+                        : true;
 
                     if ($this->isAssignmentActive(
                         $schoolLicenceRequired,
