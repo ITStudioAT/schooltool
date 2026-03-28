@@ -32,7 +32,7 @@ describe('Super admin licence assignments', () => {
         }
 
         const fromFlag = methods.isSchoolLicenceNotNeeded.call(ctx, { school_licence_required: false })
-        const fromModel = methods.isSchoolLicenceNotNeeded.call(ctx, { licence_model: JSON.stringify({ school_licence_required: false }) })
+        const fromModel = methods.isSchoolLicenceNotNeeded.call(ctx, JSON.stringify({ school_licence_required: false }))
 
         expect(fromFlag).toBe(true)
         expect(fromModel).toBe(true)
@@ -112,6 +112,7 @@ describe('Super admin licence assignments', () => {
                 return methods.normalizeLicenceModel.call(this, licenceModel)
             },
             looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            sortedRoleNames: methods.sortedRoleNames,
             toBool: methods.toBool,
         }
 
@@ -298,8 +299,21 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('Benutzer-Lizenzen')
         expect(source).toContain('admin_licence_active_count')
         expect(source).toContain('admin_licence_expired_count')
+        expect(source).toContain(`:color="(licence.admin_licence_expired_count || 0) === 0 ? 'success' : undefined"`)
         expect(source).toContain('(gültig:')
         expect(source).toContain('abgelaufen:')
+        expect(source).toContain('assignment-school-licence-row__counter-expired')
+        expect(source).toContain(`:class="{ 'is-highlighted': (licence.admin_licence_expired_count || 0) > 0 }"`)
+        expect(source).toContain('.assignment-school-licence-row__counter-expired.is-highlighted')
+        expect(source).toContain('color: rgb(var(--v-theme-error));')
+        expect(source).toContain('Gesamtkosten:')
+        expect(source).toContain('Gesamtspeicher:')
+        expect(source).toContain('formatPrice(userLicenceListPriceTotal(item))')
+        expect(source).toContain('formatStorage(userLicenceListStorageTotalGb(item))')
+        expect(source).toContain('userLicenceListPriceTotal(user, licenceSource = null)')
+        expect(source).toContain('userLicenceListStorageTotalGb(user, licenceSource = null)')
+        expect(source).toContain('userLicenceSummaryEntries(user, licenceSource = null)')
+        expect(source).toContain('userLicencePlanForRole(roleName, roleStatus, licenceSource = null)')
         expect(source).toContain('visibleAdminUsers()')
         expect(source).toContain('v-if="visibleAdminUsers.length"')
         expect(source).toContain('v-for="user in visibleAdminUsers"')
@@ -317,15 +331,44 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('v-checkbox v-model="edit_no_date" label="Kein Ablaufdatum"')
         expect(source).toContain('v-date-input v-model="edit_valid_until" label="Gültig bis" :disabled="edit_no_date"')
         expect(source).toContain('v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog"')
-        expect(source).toContain('<v-card-actions class="d-flex pa-4" :class="edit_admin_user_edit_id ? \'justify-end\' : \'justify-space-between\'">')
-        expect(source).toContain('v-if="!editLicenceCloseLocked" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>')
-        expect(source).toContain('v-else-if="edit_admin_user_edit_id" color="warning" variant="tonal" rounded="lg" @click="closeAdminUserEdit">Benutzerlizenz schließen</v-btn>')
+        expect(source).toContain('<v-card-actions class="d-flex pa-4 justify-space-between">')
+        expect(source).toContain('<v-btn v-if="!(edit_licence_tab === \'admin\' && edit_admin_user_edit_id)" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>')
+        expect(source).not.toContain('Benutzerlizenz schließen')
         expect(source).toContain("admin-user-row__editing-hint")
+        expect(source).toContain('<span v-if="edit_admin_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>')
         expect(source).toContain('admin-user-row__title')
         expect(source).toContain('admin-user-row__meta')
         expect(source).toContain('adminUserHasValidLicence(user)')
         expect(source).toContain('adminUserLicenceRuntimeLabel(user)')
+        expect(source).toContain('<span class="admin-user-row__meta" v-if="adminUserBillingTotalForUser(user) !== null || adminUserStorageTotalGbForUser(user) !== null">')
+        expect(source).toContain('Gesamt / Jahr: {{ formatPrice(adminUserBillingTotalForUser(user)) }}')
+        expect(source).toContain('&nbsp;Summe Speicher: {{ formatStorage(adminUserStorageTotalGbForUser(user)) }}')
+        expect(source).toContain('adminUserBillingTotalForUser(user)')
+        expect(source).toContain('adminUserStorageTotalGbForUser(user)')
         expect(source).toContain('adminTeillizenzPreisLabel')
+        expect(source).toContain('overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel())')
+        expect(source).toContain('v-model="edit_admin_user_extra_storage_units"')
+        expect(source).toContain('label="Zusatz-Speicher Einheiten"')
+        expect(source).toContain('v-model="edit_admin_user_charged_price_draft"')
+        expect(source).toContain('v-model="edit_admin_user_extra_storage_unit_price"')
+        expect(source).toContain('<div v-if="!edit_admin_user_price_editing" class="d-flex justify-end mb-2">')
+        expect(source).toContain('<v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeAdminUserEdit">Zurück</v-btn>')
+        expect(source).toContain('<span class="edit-licence-price-label">Preis je Einheit</span>')
+        expect(source).toContain('<span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>')
+        expect(source).toContain('formatPrice(adminUserExtraStorageTotal())')
+        expect(source).toContain('<span class="edit-licence-price-label">Summe Speicher</span>')
+        expect(source).toContain('formatStorage(adminUserStorageTotalGb())')
+        expect(source).toContain('<span class="edit-licence-price-label">Gesamt / Jahr</span>')
+        expect(source).toContain('formatPrice(adminUserBillingTotal())')
+        expect(source).toContain('adminUserExtraStorageTotal()')
+        expect(source).toContain('adminUserStorageTotalGb()')
+        expect(source).toContain('label="Preis je Einheit (€)"')
+        expect(source).toContain(":placeholder=\"effectiveAdminExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveAdminExtraStorageUnitPrice()) : ''\"")
+        expect(source).toContain(":placeholder=\"edit_licence_item ? editablePriceInputValue(edit_licence_item.school_price_per_year) : ''\"")
+        expect(source).toContain(":placeholder=\"edit_licence_item ? editablePriceInputValue(edit_licence_item.school_extra_storage_step_price) : ''\"")
+        expect(source).toContain('editablePriceInputValue(value)')
+        expect(source).toContain('normalizedPriceInputValue(value)')
+        expect(source).toContain("overrideCountLabel(edit_admin_user_extra_storage_units, edit_licence_item?.admin_extra_storage_units, 'Tarif dieser Schule')")
         expect(source).toContain("status.assigned === true")
         expect(source).toContain('assigned_only: 0')
         expect(source).toContain('this.edit_admin_add_results = this.edit_admin_add_results.filter((candidate) => Number(candidate?.id) !== Number(user?.id))')
@@ -335,10 +378,9 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('<span class="edit-licence-price-value">{{ formatStorage(schoolStorageTotalGb) }}</span>')
         expect(source).toContain("overridePriceLabel(edit_school_extra_storage_unit_price, edit_licence_item?.school_extra_storage_step_price, 'Basis-Tarif')")
         expect(source).toContain('schoolStorageTotalGb()')
-        expect(source).not.toContain('Abrechnung dieser Schule')
+        expect(source).toContain('Abrechnung dieser Schule')
         expect(source).not.toContain('saveAdminLicenceSchool')
         expect(source).not.toContain('cancelAdminBillingEdit')
-        expect(source).not.toContain('adminBillingTotal')
         expect(source).toContain('title="Lizenz entfernen"')
         expect(source).toContain('applyAdminUserTeillizenz(user)')
         expect(source).toContain('removeAdminUserLicence(user)')
@@ -481,6 +523,7 @@ describe('Super admin licence assignments', () => {
             edit_school_billing_editing: true,
             edit_licence_dialog: false,
             loadAdminUsers,
+            editablePriceInputValue: methods.editablePriceInputValue,
         }
 
         await methods.openEditLicenceDialog.call(ctx, { id: 7 }, {
@@ -550,6 +593,7 @@ describe('Super admin licence assignments', () => {
             edit_licence_item: { school_price_per_year: '10' },
             edit_school_extra_storage_units: '3',
             edit_school_extra_storage_unit_price: '5',
+            normalizePriceToNumber: (LicenceSchools as any).methods.normalizePriceToNumber,
         })).toBe(65)
 
         expect(billingTotal.call({
@@ -557,6 +601,7 @@ describe('Super admin licence assignments', () => {
             edit_licence_item: { school_price_per_year: '10' },
             edit_school_extra_storage_units: null,
             edit_school_extra_storage_unit_price: null,
+            normalizePriceToNumber: (LicenceSchools as any).methods.normalizePriceToNumber,
         })).toBe(10)
 
         expect(billingTotal.call({
@@ -567,6 +612,7 @@ describe('Super admin licence assignments', () => {
             },
             edit_school_extra_storage_units: '3',
             edit_school_extra_storage_unit_price: null,
+            normalizePriceToNumber: (LicenceSchools as any).methods.normalizePriceToNumber,
         })).toBe(71)
     })
 
@@ -596,6 +642,287 @@ describe('Super admin licence assignments', () => {
             },
             edit_school_extra_storage_units: null,
         })).toBeNull()
+    })
+
+    it('calculates the admin billing total from the effective school admin tariff and storage units', () => {
+        const methods = (LicenceSchools as any).methods
+
+        expect(methods.adminBillingTotal.call({
+            edit_licence_item: {
+                charged_admin_price: '79.5',
+                admin_price_per_year: '59',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+                admin_extra_storage_step_price: '7',
+            },
+            effectiveAdminBasePrice: methods.effectiveAdminBasePrice,
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(89.5)
+
+        expect(methods.adminBillingTotal.call({
+            edit_licence_item: {
+                charged_admin_price: null,
+                admin_price_per_year: '59',
+                admin_extra_storage_units: null,
+                admin_extra_storage_unit_price: null,
+                admin_extra_storage_step_price: '5',
+            },
+            effectiveAdminBasePrice: methods.effectiveAdminBasePrice,
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(59)
+    })
+
+    it('calculates the admin user billing total from user storage units with school fallback', () => {
+        const methods = (LicenceSchools as any).methods
+
+        expect(methods.adminUserBillingTotal.call({
+            edit_admin_user_extra_storage_units: '3',
+            edit_admin_user_extra_storage_unit_price: '4',
+            edit_licence_item: {
+                charged_admin_price: '79.5',
+                admin_price_per_year: '59',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+                admin_extra_storage_step_price: '7',
+            },
+            effectiveAdminBasePrice: methods.effectiveAdminBasePrice,
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            effectiveAdminUserExtraStorageUnitPrice: methods.effectiveAdminUserExtraStorageUnitPrice,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(91.5)
+
+        expect(methods.adminUserBillingTotal.call({
+            edit_admin_user_extra_storage_units: null,
+            edit_admin_user_extra_storage_unit_price: null,
+            edit_licence_item: {
+                charged_admin_price: null,
+                admin_price_per_year: '59',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+            },
+            effectiveAdminBasePrice: methods.effectiveAdminBasePrice,
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            effectiveAdminUserExtraStorageUnitPrice: methods.effectiveAdminUserExtraStorageUnitPrice,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(69)
+    })
+
+    it('calculates the admin user overview billing total from saved user values with school fallback', () => {
+        const methods = (LicenceSchools as any).methods
+        const user = { id: 44 }
+
+        expect(methods.adminUserBillingTotalForUser.call({
+            edit_licence_item: {
+                charged_admin_price: '59',
+                admin_price_per_year: '59',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+                admin_extra_storage_step_price: '7',
+            },
+            edit_admin_users_role_statuses: {
+                '44': {
+                    admin: {
+                        assigned: true,
+                        charged_price: '12.5',
+                        extra_storage_units: 3,
+                        extra_storage_unit_price: '4',
+                    },
+                },
+            },
+            adminUserStatusForUser: methods.adminUserStatusForUser,
+            adminUserBasePriceForUser: methods.adminUserBasePriceForUser,
+            adminUserExtraStorageUnitPriceForUser: methods.adminUserExtraStorageUnitPriceForUser,
+            adminUserExtraStorageUnitsForUser: methods.adminUserExtraStorageUnitsForUser,
+            effectiveAdminBasePrice: methods.effectiveAdminBasePrice,
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        }, user)).toBe(24.5)
+    })
+
+    it('calculates the admin user overview storage total from saved user values with school fallback', () => {
+        const methods = (LicenceSchools as any).methods
+        const user = { id: 44 }
+
+        expect(methods.adminUserStorageTotalGbForUser.call({
+            edit_licence_item: {
+                admin_included_storage_gb: '20',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_step_gb: '100',
+            },
+            edit_admin_users_role_statuses: {
+                '44': {
+                    admin: {
+                        assigned: true,
+                        extra_storage_units: 3,
+                    },
+                },
+            },
+            adminUserStatusForUser: methods.adminUserStatusForUser,
+            adminUserExtraStorageUnitsForUser: methods.adminUserExtraStorageUnitsForUser,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+        }, user)).toBe(320)
+    })
+
+    it('calculates the admin user extra storage total from user storage units with school fallback', () => {
+        const methods = (LicenceSchools as any).methods
+
+        expect(methods.adminUserExtraStorageTotal.call({
+            edit_admin_user_extra_storage_units: '3',
+            edit_admin_user_extra_storage_unit_price: '4',
+            edit_licence_item: {
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+                admin_extra_storage_step_gb: '100',
+                admin_extra_storage_step_price: '7',
+            },
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            effectiveAdminUserExtraStorageUnitPrice: methods.effectiveAdminUserExtraStorageUnitPrice,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(12)
+
+        expect(methods.adminUserExtraStorageTotal.call({
+            edit_admin_user_extra_storage_units: null,
+            edit_admin_user_extra_storage_unit_price: null,
+            edit_licence_item: {
+                admin_extra_storage_units: 2,
+                admin_extra_storage_unit_price: '5',
+                admin_extra_storage_step_gb: '100',
+                admin_extra_storage_step_price: '7',
+            },
+            effectiveAdminExtraStorageUnitPrice: methods.effectiveAdminExtraStorageUnitPrice,
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            effectiveAdminUserExtraStorageUnitPrice: methods.effectiveAdminUserExtraStorageUnitPrice,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+        })).toBe(10)
+    })
+
+    it('calculates the admin user total storage amount in GB from included and extra storage', () => {
+        const methods = (LicenceSchools as any).methods
+
+        expect(methods.adminUserStorageTotalGb.call({
+            edit_admin_user_extra_storage_units: '3',
+            edit_licence_item: {
+                admin_included_storage_gb: '20',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_step_gb: '100',
+            },
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+        })).toBe(320)
+
+        expect(methods.adminUserStorageTotalGb.call({
+            edit_admin_user_extra_storage_units: null,
+            edit_licence_item: {
+                admin_included_storage_gb: '20',
+                admin_extra_storage_units: 2,
+                admin_extra_storage_step_gb: '100',
+            },
+            effectiveAdminUserExtraStorageUnits: methods.effectiveAdminUserExtraStorageUnits,
+            defaultAdminUserExtraStorageUnits: methods.defaultAdminUserExtraStorageUnits,
+        })).toBe(220)
+    })
+
+    it('calculates user licence list totals from assigned roles, plans, and extra storage', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx: any = {
+            selectedUserLicencesSource: {
+                user_price_per_year: '5',
+                user_included_storage_gb: '20',
+                user_extra_storage_step_gb: '100',
+                licence_model: {
+                    school_licence_required: true,
+                    affected_roles: ['teacher', 'editor'],
+                    user_licence_required_by_role: {
+                        teacher: true,
+                        editor: true,
+                    },
+                    user_licence_plans_by_role: {
+                        teacher: [{ id: 3, text: 'Pro', price_per_year: '12' }],
+                        editor: [{ id: 8, text: 'Basic', price_per_year: '7' }],
+                    },
+                },
+            },
+            school_licence_users_role_statuses: {
+                '44': {
+                    teacher: {
+                        assigned: true,
+                        plan_id: 3,
+                        charged_price: null,
+                        extra_storage_units: 2,
+                    },
+                    editor: {
+                        assigned: true,
+                        plan_id: 8,
+                        charged_price: '9.5',
+                        extra_storage_units: 1,
+                    },
+                },
+            },
+            normalizeLicenceModel: methods.normalizeLicenceModel,
+            toBool: methods.toBool,
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            sortedRoleNames: methods.sortedRoleNames,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+            userLicenceStatusesForUser: methods.userLicenceStatusesForUser,
+            userLicencePlanForRole: methods.userLicencePlanForRole,
+            userLicenceSummaryEntries: methods.userLicenceSummaryEntries,
+        }
+        const user = {
+            id: 44,
+            roles: ['teacher', 'editor'],
+        }
+
+        expect(methods.userLicenceListPriceTotal.call(ctx, user)).toBe(21.5)
+        expect(methods.userLicenceListStorageTotalGb.call(ctx, user)).toBe(340)
+    })
+
+    it('hides user licence list storage totals when no storage option exists', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx: any = {
+            selectedUserLicencesSource: {
+                user_price_per_year: '9',
+                licence_model: {
+                    school_licence_required: true,
+                    affected_roles: ['teacher'],
+                    user_licence_required_by_role: {
+                        teacher: true,
+                    },
+                    user_licence_plans_by_role: {
+                        teacher: [{ id: 4, text: 'Default', price_per_year: '9' }],
+                    },
+                },
+            },
+            school_licence_users_role_statuses: {
+                '12': {
+                    teacher: {
+                        assigned: true,
+                        plan_id: 4,
+                        charged_price: null,
+                        extra_storage_units: null,
+                    },
+                },
+            },
+            normalizeLicenceModel: methods.normalizeLicenceModel,
+            toBool: methods.toBool,
+            looksLikeAdminRoleName: methods.looksLikeAdminRoleName,
+            sortedRoleNames: methods.sortedRoleNames,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
+            userLicenceStatusesForUser: methods.userLicenceStatusesForUser,
+            userLicencePlanForRole: methods.userLicencePlanForRole,
+            userLicenceSummaryEntries: methods.userLicenceSummaryEntries,
+        }
+
+        expect(methods.userLicenceListStorageTotalGb.call(ctx, { id: 12, roles: ['teacher'] })).toBeNull()
     })
 
     it('disables only the other licence tabs while editing is active', () => {
@@ -677,6 +1004,7 @@ describe('Super admin licence assignments', () => {
         const methods = (LicenceSchools as any).methods
 
         const activeCtx = {
+            adminUserIsAssigned: () => true,
             adminUserStatusForUser: () => ({ valid_until: '2026-01-20', is_active: true }),
             formatValidUntil: methods.formatValidUntil,
             localDateKey: () => '2026-01-15',
@@ -720,10 +1048,37 @@ describe('Super admin licence assignments', () => {
         )
     })
 
+    it('loads extra storage units into the focused admin user edit state', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx: any = {
+            edit_admin_user_edit_id: null,
+            edit_admin_add_mode: true,
+            edit_admin_add_search: 'Ada',
+            edit_admin_add_results: [{ id: 1 }],
+            adminUserStatusForUser: () => ({ valid_until: '2026-12-31', charged_price: '15.00', extra_storage_units: 4, extra_storage_unit_price: '6.50' }),
+            effectiveAdminBasePrice: () => 5,
+            editablePriceInputValue: methods.editablePriceInputValue,
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
+        }
+
+        methods.toggleAdminUserEdit.call(ctx, { id: 9 })
+
+        expect(ctx.edit_admin_user_edit_id).toBe(9)
+        expect(ctx.edit_admin_user_valid_until).toBe('2026-12-31')
+        expect(ctx.edit_admin_user_charged_price).toBe('15.00')
+        expect(ctx.edit_admin_user_charged_price_draft).toBe('15,00')
+        expect(ctx.edit_admin_user_extra_storage_units).toBe(4)
+        expect(ctx.edit_admin_user_extra_storage_unit_price).toBe('6,50')
+        expect(ctx.edit_admin_add_mode).toBe(false)
+        expect(ctx.edit_admin_add_search).toBe('')
+        expect(ctx.edit_admin_add_results).toEqual([])
+    })
+
     it('calculates prorated annual prices for partial licences', () => {
         const methods = (LicenceSchools as any).methods
         const ctx = {
             remainingDaysUntil: () => 100,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
         }
 
         expect(methods.proratedYearPrice.call(ctx, '365', '31.12.')).toBe(100)
@@ -738,32 +1093,47 @@ describe('Super admin licence assignments', () => {
         const ctx: any = {
             effectiveEndDayMonth: '31.12.',
             edit_admin_user_charged_price: null,
+            edit_admin_user_extra_storage_units: '3',
+            edit_admin_user_extra_storage_unit_price: '4',
             edit_licence_item: {
                 admin_price_per_year: '365',
                 admin_role_names: ['teacher'],
             },
             nextYearEndDate: vi.fn().mockReturnValue('2026-12-31'),
             proratedYearPrice: vi.fn().mockReturnValue(100),
+            adminUserBillingTotal: vi.fn().mockReturnValue(465),
+            effectiveAdminUserExtraStorageUnits: vi.fn().mockReturnValue(3),
+            effectiveAdminUserExtraStorageUnitPrice: vi.fn().mockReturnValue(4),
             adminRolesFromLicenceModel: vi.fn().mockReturnValue(['teacher']),
             saveAdminUserRoles,
             loadAdminUsers,
             refreshEditLicenceItem,
-            adminUserStatusForUser: vi.fn().mockReturnValue({ valid_until: '2026-12-31', charged_price: 100 }),
+            adminUserStatusForUser: vi.fn().mockReturnValue({ valid_until: '2026-12-31', charged_price: '100.00', extra_storage_units: 3, extra_storage_unit_price: '4.50' }),
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
+            editablePriceInputValue: methods.editablePriceInputValue,
+            effectiveAdminBasePrice: vi.fn().mockReturnValue('5.00'),
         }
 
         await methods.applyAdminUserTeillizenz.call(ctx, { id: 44 })
 
+        expect(ctx.adminUserBillingTotal).toHaveBeenCalledTimes(1)
+        expect(ctx.proratedYearPrice).toHaveBeenCalledWith(465, '31.12.')
         expect(saveAdminUserRoles).toHaveBeenCalledTimes(1)
         const patchFn = saveAdminUserRoles.mock.calls[0][1]
         expect(patchFn({ name: 'teacher', assigned: false, valid_until: null, charged_price: null })).toMatchObject({
             assigned: true,
             valid_until: '2026-12-31',
             charged_price: 100,
+            extra_storage_units: 3,
+            extra_storage_unit_price: 4,
         })
         expect(loadAdminUsers).toHaveBeenCalledTimes(1)
         expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
         expect(ctx.edit_admin_user_valid_until).toBe('2026-12-31')
-        expect(ctx.edit_admin_user_charged_price).toBe(100)
+        expect(ctx.edit_admin_user_charged_price).toBe('100.00')
+        expect(ctx.edit_admin_user_charged_price_draft).toBe('100,00')
+        expect(ctx.edit_admin_user_extra_storage_units).toBe(3)
+        expect(ctx.edit_admin_user_extra_storage_unit_price).toBe('4,50')
         expect(ctx.edit_admin_user_price_editing).toBe(false)
     })
 
@@ -796,6 +1166,48 @@ describe('Super admin licence assignments', () => {
         expect(closeAdminUserEdit).toHaveBeenCalledTimes(1)
         expect(loadAdminUsers).toHaveBeenCalledTimes(1)
         expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+    })
+
+    it('saves admin billing with per-user extra storage units', async () => {
+        const methods = (LicenceSchools as any).methods
+        const saveAdminUserRoles = vi.fn().mockResolvedValue(true)
+        const loadAdminUsers = vi.fn().mockResolvedValue(undefined)
+        const refreshEditLicenceItem = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            edit_admin_user_charged_price: null,
+            edit_admin_user_charged_price_draft: '12,50',
+            edit_admin_user_extra_storage_units: '4',
+            edit_admin_user_extra_storage_unit_price: '7,25',
+            edit_licence_item: {
+                admin_role_names: ['teacher'],
+            },
+            adminRolesFromLicenceModel: vi.fn().mockReturnValue(['teacher']),
+            saveAdminUserRoles,
+            loadAdminUsers,
+            refreshEditLicenceItem,
+            adminUserStatusForUser: vi.fn().mockReturnValue({ charged_price: null, extra_storage_units: 4, extra_storage_unit_price: '7.25' }),
+            effectiveAdminBasePrice: vi.fn().mockReturnValue('5.00'),
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
+            editablePriceInputValue: methods.editablePriceInputValue,
+        }
+
+        await methods.saveAdminUserBilling.call(ctx, { id: 44 })
+
+        expect(saveAdminUserRoles).toHaveBeenCalledTimes(1)
+        const patchFn = saveAdminUserRoles.mock.calls[0][1]
+        expect(patchFn({ name: 'teacher', assigned: false, charged_price: 25, extra_storage_units: 1 })).toMatchObject({
+            assigned: true,
+            charged_price: '12.50',
+            extra_storage_units: '4',
+            extra_storage_unit_price: '7.25',
+        })
+        expect(loadAdminUsers).toHaveBeenCalledTimes(1)
+        expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+        expect(ctx.edit_admin_user_price_editing).toBe(false)
+        expect(ctx.edit_admin_user_charged_price).toBeNull()
+        expect(ctx.edit_admin_user_charged_price_draft).toBe('5,00')
+        expect(ctx.edit_admin_user_extra_storage_units).toBe(4)
+        expect(ctx.edit_admin_user_extra_storage_unit_price).toBe('7,25')
     })
 
     it('loads unassigned admin add candidates with empty search input', async () => {
@@ -881,6 +1293,9 @@ describe('Super admin licence assignments', () => {
             edit_admin_user_valid_until: '2026-12-31',
             edit_admin_user_price_editing: true,
             edit_admin_user_charged_price: 15,
+            edit_admin_user_charged_price_draft: 15,
+            edit_admin_user_extra_storage_units: 4,
+            edit_admin_user_extra_storage_unit_price: 7,
         }
 
         methods.closeAdminUserEdit.call(ctx)
@@ -889,18 +1304,31 @@ describe('Super admin licence assignments', () => {
         expect(ctx.edit_admin_user_valid_until).toBeNull()
         expect(ctx.edit_admin_user_price_editing).toBe(false)
         expect(ctx.edit_admin_user_charged_price).toBeNull()
+        expect(ctx.edit_admin_user_charged_price_draft).toBeNull()
+        expect(ctx.edit_admin_user_extra_storage_units).toBeNull()
+        expect(ctx.edit_admin_user_extra_storage_unit_price).toBeNull()
     })
 
     it('distinguishes null and zero for charged price overrides', () => {
         const methods = (LicenceSchools as any).methods
         const ctx = {
             formatPrice: methods.formatPrice,
+            normalizePriceToNumber: methods.normalizePriceToNumber,
         }
 
         expect(methods.overridePriceLabel.call(ctx, null, '59')).toBe('€ 59 (Basis-Tarif)')
         expect(methods.overridePriceLabel.call(ctx, '', '59')).toBe('€ 59 (Basis-Tarif)')
         expect(methods.overridePriceLabel.call(ctx, 0, '59')).toBe('€ 0')
         expect(methods.overridePriceLabel.call(ctx, '0', '59')).toBe('€ 0')
+    })
+
+    it('formats editable price inputs with decimal commas', () => {
+        const methods = (LicenceSchools as any).methods
+
+        expect(methods.editablePriceInputValue.call({}, '5.00')).toBe('5,00')
+        expect(methods.editablePriceInputValue.call({}, '7.50')).toBe('7,50')
+        expect(methods.normalizedPriceInputValue.call({}, '5,00')).toBe('5.00')
+        expect(methods.normalizedPriceInputValue.call({}, '7,50')).toBe('7.50')
     })
 
     it('treats roles with disabled user licence requirement as active without activation', () => {

@@ -753,6 +753,7 @@ test('super admin only loads assigned user licence users for user licences card'
             'teacher' => [
                 'valid_until' => now()->addMonth()->toDateString(),
                 'is_activated' => true,
+                'plan_id' => 3,
             ],
         ],
     ];
@@ -784,7 +785,8 @@ test('super admin only loads assigned user licence users for user licences card'
     expect(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.assigned"))->toBeTrue()
         ->and(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.is_active"))->toBeTrue()
         ->and(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.is_activated"))->toBeTrue()
-        ->and(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.valid_until"))->toBe(now()->addMonth()->toDateString());
+        ->and(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.valid_until"))->toBe(now()->addMonth()->toDateString())
+        ->and(data_get($roleStatuses, "{$assignedTeacher->id}.teacher.plan_id"))->toBe(3);
 
     $responseAllSelected = $this->getJson("/api/admin/school_licences/{$schoolLicence->id}/users?role_names[]=teacher");
     $idsAllSelected = collect($responseAllSelected->json('data'))->pluck('id')->all();
@@ -1122,6 +1124,50 @@ test('super admin can filter school licence users by structured admin licence ro
         ->and($ids)->not->toContain($student->id)
         ->and(data_get($roleStatuses, "{$admin->id}.admin"))->toBeArray()
         ->and($response->json('active_role_filters'))->toBe(['admin']);
+});
+
+test('super admin school licence user list exposes extra storage units for admin assignments', function () {
+    $licence = Licence::create([
+        'name' => 'structured_admin_storage',
+        'long_name' => 'Structured Admin Storage Licence',
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['admin'],
+        'licence_schema_version' => 2,
+    ]);
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addMonth()->toDateString(),
+        'licence_model' => [],
+        'user_licence_assignments' => [],
+    ]);
+
+    $admin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'admin.storage@test.com',
+    ]);
+    $admin->assignRole('admin');
+
+    $schoolLicence->user_licence_assignments = [
+        (string) $admin->id => [
+            'admin' => [
+                'valid_until' => now()->addMonth()->toDateString(),
+                'is_activated' => true,
+                'extra_storage_units' => 4,
+                'extra_storage_unit_price' => 7,
+            ],
+        ],
+    ];
+    $schoolLicence->save();
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->getJson("/api/admin/school_licences/{$schoolLicence->id}/users?role_names[]=admin")
+        ->assertOk()
+        ->assertJsonPath("role_statuses_by_user.{$admin->id}.admin.extra_storage_units", 4)
+        ->assertJsonPath("role_statuses_by_user.{$admin->id}.admin.extra_storage_unit_price", 7);
 });
 
 test('super admin can load unassigned admin-role users for admin add mode', function () {
@@ -1506,6 +1552,66 @@ test('saving school licence user roles preserves zero as charged price override'
     $schoolLicence->refresh();
 
     expect(data_get($schoolLicence->user_licence_assignments, "{$user->id}.teacher.charged_price"))->toBe(0);
+});
+
+test('saving school licence user roles stores extra storage units', function () {
+    Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
+
+    $licence = Licence::create([
+        'name' => 'user_roles_storage_units',
+        'long_name' => 'User Roles Storage Units Licence',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+    $user->assignRole('teacher');
+
+    $schoolLicence = SchoolLicence::create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => '2027-01-31',
+        'licence_model' => [
+            'school_licence_required' => true,
+            'affected_roles' => ['teacher'],
+            'user_licence_required_by_role' => [
+                'teacher' => true,
+            ],
+        ],
+        'user_licence_assignments' => [
+            (string) $user->id => [
+                'teacher' => [
+                    'valid_until' => '2026-10-15',
+                    'is_activated' => true,
+                    'extra_storage_units' => 1,
+                    'extra_storage_unit_price' => 5,
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->putJson("/api/admin/school_licences/{$schoolLicence->id}/users/{$user->id}/roles", [
+        'roles' => [
+            [
+                'name' => 'teacher',
+                'assigned' => true,
+                'valid_until' => '2026-10-15',
+                'is_activated' => true,
+                'extra_storage_units' => 3,
+                'extra_storage_unit_price' => 7,
+            ],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('roles.0.extra_storage_units', 3)
+        ->assertJsonPath('roles.0.extra_storage_unit_price', 7);
+
+    $schoolLicence->refresh();
+
+    expect(data_get($schoolLicence->user_licence_assignments, "{$user->id}.teacher.extra_storage_units"))->toBe(3)
+        ->and(data_get($schoolLicence->user_licence_assignments, "{$user->id}.teacher.extra_storage_unit_price"))->toBe(7);
 });
 
 // ============================================================================

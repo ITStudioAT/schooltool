@@ -558,7 +558,10 @@ class SchoolController extends Controller
                         'is_active' => $userLicenceRequired
                             ? $this->isUserRoleAssignmentActive($schoolLicenceRequired, $school_licence->valid_until, $roleValidUntil, $isActivated)
                             : true,
+                        'plan_id' => $userLicenceRequired ? ($entry['plan_id'] ?? null) : null,
                         'charged_price' => $userLicenceRequired ? ($entry['charged_price'] ?? null) : null,
+                        'extra_storage_units' => $userLicenceRequired ? ($entry['extra_storage_units'] ?? null) : null,
+                        'extra_storage_unit_price' => $userLicenceRequired ? ($entry['extra_storage_unit_price'] ?? null) : null,
                     ];
                 }
 
@@ -641,15 +644,25 @@ class SchoolController extends Controller
                 : null;
 
             if ($assigned) {
-                $existingChargedPrice = $this->normalizeUserLicenceAssignmentEntry($assignments[$userKey][$roleName] ?? null)['charged_price'] ?? null;
+                $existingChargedPrice = $existingRoleEntry['charged_price'] ?? null;
                 $chargedPrice = array_key_exists('charged_price', $entry)
                     ? (is_numeric($entry['charged_price']) ? round((float) $entry['charged_price'], 2) : null)
                     : $existingChargedPrice;
+                $existingExtraStorageUnits = $existingRoleEntry['extra_storage_units'] ?? null;
+                $extraStorageUnits = array_key_exists('extra_storage_units', $entry)
+                    ? (is_numeric($entry['extra_storage_units']) ? (int) $entry['extra_storage_units'] : null)
+                    : $existingExtraStorageUnits;
+                $existingExtraStorageUnitPrice = $existingRoleEntry['extra_storage_unit_price'] ?? null;
+                $extraStorageUnitPrice = array_key_exists('extra_storage_unit_price', $entry)
+                    ? (is_numeric($entry['extra_storage_unit_price']) ? round((float) $entry['extra_storage_unit_price'], 2) : null)
+                    : $existingExtraStorageUnitPrice;
                 $updatedUserAssignments[$roleName] = [
                     'valid_until' => $validUntil,
                     'is_activated' => $isActivated,
                     'plan_id' => $planId,
                     'charged_price' => $chargedPrice,
+                    'extra_storage_units' => $extraStorageUnits,
+                    'extra_storage_unit_price' => $extraStorageUnitPrice,
                 ];
 
                 continue;
@@ -1189,6 +1202,8 @@ class SchoolController extends Controller
                     'is_activated' => $isActivated,
                     'plan_id' => $planId,
                     'charged_price' => $entry['charged_price'] ?? null,
+                    'extra_storage_units' => $entry['extra_storage_units'] ?? null,
+                    'extra_storage_unit_price' => $entry['extra_storage_unit_price'] ?? null,
                     'plans' => isset($plansByRole[$roleName]) && is_array($plansByRole[$roleName])
                         ? array_values($plansByRole[$roleName])
                         : [],
@@ -1228,6 +1243,8 @@ class SchoolController extends Controller
                 'is_activated' => false,
                 'plan_id' => null,
                 'charged_price' => null,
+                'extra_storage_units' => null,
+                'extra_storage_unit_price' => null,
             ];
         }
 
@@ -1237,6 +1254,8 @@ class SchoolController extends Controller
                 'is_activated' => false,
                 'plan_id' => null,
                 'charged_price' => null,
+                'extra_storage_units' => null,
+                'extra_storage_unit_price' => null,
             ];
         }
 
@@ -1248,12 +1267,20 @@ class SchoolController extends Controller
         $chargedPrice = isset($entry['charged_price']) && is_numeric($entry['charged_price'])
             ? round((float) $entry['charged_price'], 2)
             : null;
+        $extraStorageUnits = isset($entry['extra_storage_units']) && is_numeric($entry['extra_storage_units']) && (int) $entry['extra_storage_units'] >= 0
+            ? (int) $entry['extra_storage_units']
+            : null;
+        $extraStorageUnitPrice = isset($entry['extra_storage_unit_price']) && is_numeric($entry['extra_storage_unit_price'])
+            ? round((float) $entry['extra_storage_unit_price'], 2)
+            : null;
 
         return [
             'valid_until' => $validUntil,
             'is_activated' => (bool) ($entry['is_activated'] ?? false),
             'plan_id' => $planId,
             'charged_price' => $chargedPrice,
+            'extra_storage_units' => $extraStorageUnits,
+            'extra_storage_unit_price' => $extraStorageUnitPrice,
         ];
     }
 

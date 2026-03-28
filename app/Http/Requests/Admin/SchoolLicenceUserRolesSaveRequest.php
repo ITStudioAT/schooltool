@@ -31,6 +31,8 @@ class SchoolLicenceUserRolesSaveRequest extends FormRequest
             'roles.*.is_activated' => ['sometimes', 'boolean'],
             'roles.*.plan_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'roles.*.charged_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'roles.*.extra_storage_units' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'roles.*.extra_storage_unit_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
         ];
     }
 }

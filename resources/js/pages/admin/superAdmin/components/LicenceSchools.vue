@@ -63,9 +63,11 @@
                                                         Schul-Lizenz gültig bis {{ formatValidUntil(licence.valid_until) }}
                                                     </div>
                                                     <div v-if="licence.admin_licence_enabled" class="assignment-school-licence-row__counter">
-                                                        <v-icon size="13" icon="mdi-shield-crown-outline" class="mr-1" />
+                                                        <v-icon size="13" icon="mdi-shield-crown-outline" :color="(licence.admin_licence_expired_count || 0) === 0 ? 'success' : undefined" class="mr-1" />
                                                         Admin-Lizenzen: {{ licence.admin_licence_count }}
-                                                        (gültig: {{ licence.admin_licence_active_count || 0 }}, abgelaufen: {{ licence.admin_licence_expired_count || 0 }})
+                                                        (gültig: {{ licence.admin_licence_active_count || 0 }}, <span
+                                                            class="assignment-school-licence-row__counter-expired"
+                                                            :class="{ 'is-highlighted': (licence.admin_licence_expired_count || 0) > 0 }">abgelaufen: {{ licence.admin_licence_expired_count || 0 }}</span>)
                                                     </div>
                                                     <div v-if="licence.user_licence_enabled" class="assignment-school-licence-row__counter">
                                                         <v-icon size="13" icon="mdi-account-multiple" class="mr-1" />
@@ -277,6 +279,14 @@
                                             </v-chip>
                                         </template>
                                         <span v-else class="text-caption text-medium-emphasis">-</span>
+                                    </div>
+                                    <div class="d-flex flex-row flex-wrap align-center ga-2">
+                                        <span class="text-caption text-medium-emphasis">Gesamtkosten:</span>
+                                        <span class="text-caption font-weight-medium">{{ formatPrice(userLicenceListPriceTotal(item)) }}</span>
+                                        <template v-if="userLicenceListStorageTotalGb(item) !== null">
+                                            <span class="text-caption text-medium-emphasis">Gesamtspeicher:</span>
+                                            <span class="text-caption font-weight-medium">{{ formatStorage(userLicenceListStorageTotalGb(item)) }}</span>
+                                        </template>
                                     </div>
                                 </div>
                             </template>
@@ -647,7 +657,7 @@
                                         label="Verrechneter Preis / Jahr (€)"
                                         inputmode="numeric"
                                         clearable
-                                        :placeholder="edit_licence_item ? String(edit_licence_item.school_price_per_year ?? '') : ''"
+                                        :placeholder="edit_licence_item ? editablePriceInputValue(edit_licence_item.school_price_per_year) : ''"
                                         hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
                                         persistent-hint />
                                 </v-col>
@@ -667,7 +677,7 @@
                                             label="Preis je Einheit (€)"
                                             inputmode="numeric"
                                             clearable
-                                            :placeholder="edit_licence_item ? String(edit_licence_item.school_extra_storage_step_price ?? '') : ''"
+                                            :placeholder="edit_licence_item ? editablePriceInputValue(edit_licence_item.school_extra_storage_step_price) : ''"
                                             hint="Leer lassen = Standardpreis, 0 = EUR 0"
                                             persistent-hint />
                                     </v-col>
@@ -720,6 +730,12 @@
                                         </span>
                                         <span class="admin-user-row__email">{{ user.email }}</span>
                                         <span class="admin-user-row__meta">{{ adminUserLicenceRuntimeLabel(user) }}</span>
+                                        <span class="admin-user-row__meta" v-if="adminUserBillingTotalForUser(user) !== null || adminUserStorageTotalGbForUser(user) !== null">
+                                            Gesamt / Jahr: {{ formatPrice(adminUserBillingTotalForUser(user)) }}
+                                            <template v-if="adminUserStorageTotalGbForUser(user) !== null">
+                                                &nbsp;Summe Speicher: {{ formatStorage(adminUserStorageTotalGbForUser(user)) }}
+                                            </template>
+                                        </span>
                                     </div>
                                     <div class="admin-user-row__actions">
                                         <span v-if="edit_admin_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>
@@ -735,6 +751,9 @@
                                 </div>
 
                                 <div v-if="edit_admin_user_edit_id === user.id" class="admin-user-edit">
+                                    <div v-if="!edit_admin_user_price_editing" class="d-flex justify-end mb-2">
+                                        <v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeAdminUserEdit">Zurück</v-btn>
+                                    </div>
                                     <div class="edit-licence-price-grid mb-2">
                                         <div class="edit-licence-price-row">
                                             <span class="edit-licence-price-label">Gültig bis</span>
@@ -781,7 +800,7 @@
                                             <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
                                             <span class="d-flex align-center" style="gap: 8px;">
                                                 <span class="edit-licence-price-value">
-                                                    {{ overridePriceLabel(edit_admin_user_charged_price, edit_licence_item?.admin_price_per_year, 'Basis-Tarif') }}
+                                                    {{ overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel()) }}
                                                 </span>
                                                 <v-btn
                                                     v-if="!edit_admin_user_price_editing"
@@ -792,20 +811,74 @@
                                                     @click="edit_admin_user_price_editing = true" />
                                             </span>
                                         </div>
+                                        <template v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)">
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ overrideCountLabel(edit_admin_user_extra_storage_units, edit_licence_item?.admin_extra_storage_units, 'Tarif dieser Schule') }}
+                                                </span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Preis je Einheit</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ overridePriceLabel(edit_admin_user_extra_storage_unit_price, effectiveAdminUserExtraStorageUnitPrice(), adminBillingDefaultLabel()) }}
+                                                </span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(adminUserExtraStorageTotal()) }}</span>
+                                            </div>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Summe Speicher</span>
+                                                <span class="edit-licence-price-value">{{ formatStorage(adminUserStorageTotalGb()) }}</span>
+                                            </div>
+                                        </template>
+                                        <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                            <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                                            <span class="edit-licence-price-value">{{ formatPrice(adminUserBillingTotal()) }}</span>
+                                        </div>
                                     </div>
 
                                     <template v-if="edit_admin_user_price_editing">
                                         <v-text-field
-                                            v-model="edit_admin_user_charged_price"
+                                            v-model="edit_admin_user_charged_price_draft"
                                             label="Verrechneter Preis / Jahr (€)"
                                             inputmode="numeric"
                                             density="compact"
                                             variant="outlined"
                                             clearable
-                                            :placeholder="edit_licence_item ? String(edit_licence_item.admin_price_per_year ?? '') : ''"
-                                            hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
+                                            hint="Leer lassen = Standard-Tarif, 0 = EUR 0"
                                             persistent-hint
                                             class="mb-2" />
+                                        <v-row
+                                            v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)"
+                                            dense
+                                            class="mb-1">
+                                            <v-col cols="6">
+                                                <v-text-field
+                                                    v-model="edit_admin_user_extra_storage_units"
+                                                    label="Zusatz-Speicher Einheiten"
+                                                    inputmode="numeric"
+                                                    density="compact"
+                                                    variant="outlined"
+                                                    clearable
+                                                    :placeholder="edit_licence_item ? String(edit_licence_item.admin_extra_storage_units ?? '') : ''"
+                                                    :hint="edit_licence_item?.admin_extra_storage_step_gb ? `1 Einheit = ${edit_licence_item.admin_extra_storage_step_gb} GB` : 'Leer lassen = Tarif dieser Schule'"
+                                                    persistent-hint />
+                                            </v-col>
+                                            <v-col cols="6">
+                                                <v-text-field
+                                                    v-model="edit_admin_user_extra_storage_unit_price"
+                                                    label="Preis je Einheit (€)"
+                                                    inputmode="numeric"
+                                                    density="compact"
+                                                    variant="outlined"
+                                                    clearable
+                                                    :placeholder="effectiveAdminExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveAdminExtraStorageUnitPrice()) : ''"
+                                                    hint="Leer lassen = Standardpreis, 0 = EUR 0"
+                                                    persistent-hint />
+                                            </v-col>
+                                        </v-row>
                                         <div class="d-flex justify-space-between">
                                             <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_admin_user_price_editing = false">Abbrechen</v-btn>
                                             <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveAdminUserBilling(user)">Speichern</v-btn>
@@ -875,9 +948,8 @@
                 </v-tabs-window>
             </v-card-text>
 
-            <v-card-actions class="d-flex pa-4" :class="edit_admin_user_edit_id ? 'justify-end' : 'justify-space-between'">
-                <v-btn v-if="!editLicenceCloseLocked" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
-                <v-btn v-else-if="edit_admin_user_edit_id" color="warning" variant="tonal" rounded="lg" @click="closeAdminUserEdit">Benutzerlizenz schließen</v-btn>
+            <v-card-actions class="d-flex pa-4 justify-space-between">
+                <v-btn v-if="!(edit_licence_tab === 'admin' && edit_admin_user_edit_id)" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -938,6 +1010,9 @@ export default {
             edit_admin_user_valid_until: null,
             edit_admin_user_price_editing: false,
             edit_admin_user_charged_price: null,
+            edit_admin_user_charged_price_draft: null,
+            edit_admin_user_extra_storage_units: null,
+            edit_admin_user_extra_storage_unit_price: null,
             edit_valid_until: '',
             edit_no_date: false,
             school_licence_models: {},
@@ -1061,7 +1136,7 @@ export default {
         adminTeillizenzPreisLabel() {
             if (!this.effectiveEndDayMonth) return ''
             const prorated = this.proratedYearPrice(
-                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.edit_licence_item?.admin_price_per_year,
+                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             if (prorated === null) {
@@ -1072,16 +1147,16 @@ export default {
         billingTotal() {
             const base =
                 this.edit_school_charged_price != null
-                    ? parseFloat(this.edit_school_charged_price)
+                    ? this.normalizePriceToNumber(this.edit_school_charged_price)
                     : this.edit_licence_item?.school_price_per_year != null
-                      ? parseFloat(this.edit_licence_item.school_price_per_year)
+                      ? this.normalizePriceToNumber(this.edit_licence_item.school_price_per_year)
                       : 0
             const units = parseInt(this.edit_school_extra_storage_units) || 0
             const unitPrice =
                 this.edit_school_extra_storage_unit_price !== null && this.edit_school_extra_storage_unit_price !== undefined && this.edit_school_extra_storage_unit_price !== ''
-                    ? parseFloat(this.edit_school_extra_storage_unit_price)
+                    ? this.normalizePriceToNumber(this.edit_school_extra_storage_unit_price)
                     : this.edit_licence_item?.school_extra_storage_step_price != null
-                      ? parseFloat(this.edit_licence_item.school_extra_storage_step_price)
+                      ? this.normalizePriceToNumber(this.edit_licence_item.school_extra_storage_step_price)
                       : 0
             return (isNaN(base) ? 0 : base) + units * (isNaN(unitPrice) ? 0 : unitPrice)
         },
@@ -1236,6 +1311,95 @@ export default {
             if (!roleStatus || typeof roleStatus !== 'object') return true
             return roleStatus.is_active !== false
         },
+        userLicenceStatusesForUser(userId) {
+            if (!userId) return {}
+
+            const statusesByUser = this.school_licence_users_role_statuses || {}
+            return statusesByUser[String(userId)] || statusesByUser[userId] || {}
+        },
+        userLicencePlanForRole(roleName, roleStatus, licenceSource = null) {
+            const source = licenceSource || this.selectedUserLicencesSource || {}
+            const model = this.normalizeLicenceModel(source?.licence_model || source)
+            const plans = Array.isArray(model.user_licence_plans_by_role?.[roleName]) ? model.user_licence_plans_by_role[roleName] : []
+            const planId = Number(roleStatus?.plan_id)
+
+            if (Number.isInteger(planId) && planId > 0) {
+                const selectedPlan = plans.find((plan) => Number(plan?.id) === planId)
+                if (selectedPlan) {
+                    return selectedPlan
+                }
+            }
+
+            return plans.find((plan) => plan && typeof plan === 'object') || null
+        },
+        userLicenceSummaryEntries(user, licenceSource = null) {
+            const source = licenceSource || this.selectedUserLicencesSource || {}
+            const model = this.normalizeLicenceModel(source?.licence_model || source)
+            const userStatuses = this.userLicenceStatusesForUser(user?.id)
+            const userRoles = this.sortedRoleNames(user?.roles || [])
+
+            return userRoles
+                .filter((roleName) => !!model.user_licence_required_by_role?.[roleName])
+                .map((roleName) => {
+                    const roleStatus = userStatuses[roleName]
+
+                    if (!roleStatus || roleStatus.assigned !== true) {
+                        return null
+                    }
+
+                    const selectedPlan = this.userLicencePlanForRole(roleName, roleStatus, source)
+                    const includedStorageGb = source?.user_included_storage_gb != null ? parseInt(source.user_included_storage_gb, 10) : null
+                    const extraStorageStepGb = source?.user_extra_storage_step_gb != null ? parseInt(source.user_extra_storage_step_gb, 10) : null
+                    const extraStorageUnits = roleStatus?.extra_storage_units != null ? parseInt(roleStatus.extra_storage_units, 10) : 0
+                    const normalizedIncludedStorageGb = includedStorageGb !== null && !isNaN(includedStorageGb) ? includedStorageGb : null
+                    const normalizedExtraStorageStepGb = extraStorageStepGb !== null && !isNaN(extraStorageStepGb) ? extraStorageStepGb : null
+
+                    return {
+                        roleName,
+                        price:
+                            roleStatus?.charged_price ?? selectedPlan?.price_per_year ?? source?.user_price_per_year ?? null,
+                        storageGb:
+                            normalizedIncludedStorageGb !== null || normalizedExtraStorageStepGb !== null
+                                ? (normalizedIncludedStorageGb || 0) + (isNaN(extraStorageUnits) ? 0 : extraStorageUnits) * (normalizedExtraStorageStepGb || 0)
+                                : null,
+                    }
+                })
+                .filter(Boolean)
+        },
+        userLicenceListPriceTotal(user, licenceSource = null) {
+            const entries = this.userLicenceSummaryEntries(user, licenceSource)
+            let total = 0
+            let hasPrice = false
+
+            for (const entry of entries) {
+                const normalizedPrice = this.normalizePriceToNumber(entry?.price)
+
+                if (isNaN(normalizedPrice)) {
+                    continue
+                }
+
+                total += normalizedPrice
+                hasPrice = true
+            }
+
+            return hasPrice ? total : null
+        },
+        userLicenceListStorageTotalGb(user, licenceSource = null) {
+            const entries = this.userLicenceSummaryEntries(user, licenceSource)
+            let total = 0
+            let hasStorage = false
+
+            for (const entry of entries) {
+                if (entry?.storageGb === null || entry?.storageGb === undefined || isNaN(entry.storageGb)) {
+                    continue
+                }
+
+                total += entry.storageGb
+                hasStorage = true
+            }
+
+            return hasStorage ? total : null
+        },
         defaultValidUntil() {
             const date = new Date()
             date.setFullYear(date.getFullYear() + 1)
@@ -1251,7 +1415,7 @@ export default {
         proratedYearPrice(rawPrice, endDayMonth) {
             const daysRemaining = this.remainingDaysUntil(endDayMonth)
             if (rawPrice === null || rawPrice === undefined || rawPrice === '') return null
-            const fullYearPrice = parseFloat(rawPrice)
+            const fullYearPrice = this.normalizePriceToNumber(rawPrice)
             if (isNaN(fullYearPrice)) return null
             return Math.ceil((fullYearPrice * daysRemaining) / 365)
         },
@@ -1267,11 +1431,21 @@ export default {
         },
         formatPrice(value) {
             if (value === null || value === undefined || value === '') return '–'
-            const num = parseFloat(value)
+            const num = this.normalizePriceToNumber(value)
             if (isNaN(num)) return '–'
             return num % 1 === 0
                 ? `€ ${num.toFixed(0)}`
                 : `€ ${num.toFixed(2).replace('.', ',')}`
+        },
+        editablePriceInputValue(value) {
+            if (value === null || value === undefined || value === '') return ''
+            return String(value).trim().replace(/\./g, ',')
+        },
+        normalizedPriceInputValue(value) {
+            if (value === null || value === undefined) return null
+            const normalized = String(value).trim()
+            if (!normalized) return null
+            return normalized.replace(/,/g, '.')
         },
         overridePriceLabel(overridePrice, defaultPrice, defaultLabel = 'Basis-Tarif') {
             if (overridePrice !== null && overridePrice !== undefined && overridePrice !== '') {
@@ -1280,6 +1454,17 @@ export default {
 
             if (defaultPrice !== null && defaultPrice !== undefined && defaultPrice !== '') {
                 return `${this.formatPrice(defaultPrice)} (${defaultLabel})`
+            }
+
+            return '–'
+        },
+        overrideCountLabel(overrideValue, defaultValue, defaultLabel = 'Standard') {
+            if (overrideValue !== null && overrideValue !== undefined && overrideValue !== '') {
+                return `${overrideValue}`
+            }
+
+            if (defaultValue !== null && defaultValue !== undefined && defaultValue !== '') {
+                return `${defaultValue} (${defaultLabel})`
             }
 
             return '–'
@@ -1304,9 +1489,9 @@ export default {
             this.edit_licence_tab = allowedTabs.includes(requestedTab)
                 ? requestedTab
                 : allowedTabs[0] || null
-            this.edit_school_charged_price = licence.charged_school_price ?? null
+            this.edit_school_charged_price = this.editablePriceInputValue(licence.charged_school_price)
             this.edit_school_extra_storage_units = licence.extra_storage_units ?? null
-            this.edit_school_extra_storage_unit_price = licence.extra_storage_unit_price ?? null
+            this.edit_school_extra_storage_unit_price = this.editablePriceInputValue(licence.extra_storage_unit_price)
             this.edit_school_billing_editing = false
             this.edit_licence_dialog = true
             if (this.edit_licence_tab === 'admin') {
@@ -1331,11 +1516,14 @@ export default {
             this.edit_admin_user_valid_until = null
             this.edit_admin_user_price_editing = false
             this.edit_admin_user_charged_price = null
+            this.edit_admin_user_charged_price_draft = null
+            this.edit_admin_user_extra_storage_units = null
+            this.edit_admin_user_extra_storage_unit_price = null
         },
         cancelSchoolBillingEdit() {
-            this.edit_school_charged_price = this.edit_licence_item?.charged_school_price ?? null
+            this.edit_school_charged_price = this.editablePriceInputValue(this.edit_licence_item?.charged_school_price)
             this.edit_school_extra_storage_units = this.edit_licence_item?.extra_storage_units ?? null
-            this.edit_school_extra_storage_unit_price = this.edit_licence_item?.extra_storage_unit_price ?? null
+            this.edit_school_extra_storage_unit_price = this.editablePriceInputValue(this.edit_licence_item?.extra_storage_unit_price)
             this.edit_school_billing_editing = false
         },
         async refreshEditLicenceItem() {
@@ -1436,6 +1624,9 @@ export default {
             this.edit_admin_user_valid_until = null
             this.edit_admin_user_price_editing = false
             this.edit_admin_user_charged_price = null
+            this.edit_admin_user_charged_price_draft = null
+            this.edit_admin_user_extra_storage_units = null
+            this.edit_admin_user_extra_storage_unit_price = null
         },
         async searchAdminUsersToAdd() {
             if (!this.edit_licence_item?.school_licence_id) {
@@ -1531,6 +1722,210 @@ export default {
             }
             return `Benutzerlizenz läuft noch ${remainingDays} Tage (${this.formatValidUntil(validUntil)})`
         },
+        adminUserBasePriceForUser(user) {
+            const status = this.adminUserStatusForUser(user)
+
+            if (status?.charged_price !== null && status?.charged_price !== undefined && status?.charged_price !== '') {
+                return status.charged_price
+            }
+
+            return this.effectiveAdminBasePrice()
+        },
+        adminUserExtraStorageUnitPriceForUser(user) {
+            const status = this.adminUserStatusForUser(user)
+
+            if (status?.extra_storage_unit_price !== null && status?.extra_storage_unit_price !== undefined && status?.extra_storage_unit_price !== '') {
+                return status.extra_storage_unit_price
+            }
+
+            return this.effectiveAdminExtraStorageUnitPrice()
+        },
+        adminUserExtraStorageUnitsForUser(user) {
+            const status = this.adminUserStatusForUser(user)
+
+            if (status?.extra_storage_units !== null && status?.extra_storage_units !== undefined && status?.extra_storage_units !== '') {
+                return status.extra_storage_units
+            }
+
+            return this.defaultAdminUserExtraStorageUnits()
+        },
+        adminUserBillingTotalForUser(user) {
+            const basePrice = this.adminUserBasePriceForUser(user)
+            const unitPrice = this.adminUserExtraStorageUnitPriceForUser(user)
+            const units = this.adminUserExtraStorageUnitsForUser(user)
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = units !== null && units !== undefined && units !== '' && parsedUnits > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        adminUserStorageTotalGbForUser(user) {
+            const includedGb = this.edit_licence_item?.admin_included_storage_gb != null
+                ? parseInt(this.edit_licence_item.admin_included_storage_gb, 10)
+                : null
+            const stepGb = this.edit_licence_item?.admin_extra_storage_step_gb != null
+                ? parseInt(this.edit_licence_item.admin_extra_storage_step_gb, 10)
+                : null
+            const units = this.adminUserExtraStorageUnitsForUser(user)
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const normalizedIncludedGb = includedGb !== null && !isNaN(includedGb) ? includedGb : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncludedGb === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncludedGb || 0) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (normalizedStepGb || 0)
+        },
+        effectiveAdminBasePrice() {
+            if (this.edit_licence_item?.charged_admin_price !== null && this.edit_licence_item?.charged_admin_price !== undefined && this.edit_licence_item?.charged_admin_price !== '') {
+                return this.edit_licence_item.charged_admin_price
+            }
+
+            if (this.edit_licence_item?.admin_price_per_year !== null && this.edit_licence_item?.admin_price_per_year !== undefined && this.edit_licence_item?.admin_price_per_year !== '') {
+                return this.edit_licence_item.admin_price_per_year
+            }
+
+            return null
+        },
+        effectiveAdminExtraStorageUnitPrice() {
+            if (this.edit_licence_item?.admin_extra_storage_unit_price !== null && this.edit_licence_item?.admin_extra_storage_unit_price !== undefined && this.edit_licence_item?.admin_extra_storage_unit_price !== '') {
+                return this.edit_licence_item.admin_extra_storage_unit_price
+            }
+
+            if (this.edit_licence_item?.admin_extra_storage_step_price !== null && this.edit_licence_item?.admin_extra_storage_step_price !== undefined && this.edit_licence_item?.admin_extra_storage_step_price !== '') {
+                return this.edit_licence_item.admin_extra_storage_step_price
+            }
+
+            return null
+        },
+        effectiveAdminUserExtraStorageUnitPrice() {
+            if (this.edit_admin_user_extra_storage_unit_price !== null && this.edit_admin_user_extra_storage_unit_price !== undefined && this.edit_admin_user_extra_storage_unit_price !== '') {
+                return this.edit_admin_user_extra_storage_unit_price
+            }
+
+            return this.effectiveAdminExtraStorageUnitPrice()
+        },
+        defaultAdminUserExtraStorageUnits() {
+            if (this.edit_licence_item?.admin_extra_storage_units !== null && this.edit_licence_item?.admin_extra_storage_units !== undefined && this.edit_licence_item?.admin_extra_storage_units !== '') {
+                return this.edit_licence_item.admin_extra_storage_units
+            }
+
+            return null
+        },
+        effectiveAdminUserExtraStorageUnits() {
+            if (this.edit_admin_user_extra_storage_units !== null && this.edit_admin_user_extra_storage_units !== undefined && this.edit_admin_user_extra_storage_units !== '') {
+                return this.edit_admin_user_extra_storage_units
+            }
+
+            return this.defaultAdminUserExtraStorageUnits()
+        },
+        adminBillingTotal() {
+            const basePrice = this.effectiveAdminBasePrice()
+            const unitPrice = this.effectiveAdminExtraStorageUnitPrice()
+            const units = this.edit_licence_item?.admin_extra_storage_units
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = units !== null && units !== undefined && units !== '' && parsedUnits > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        adminUserBillingTotal() {
+            const basePrice = this.effectiveAdminBasePrice()
+            const unitPrice = this.effectiveAdminUserExtraStorageUnitPrice()
+            const units = this.effectiveAdminUserExtraStorageUnits()
+            const parsedBasePrice = basePrice !== null ? this.normalizePriceToNumber(basePrice) : 0
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+            const hasBasePrice = basePrice !== null
+            const hasExtraStorage = units !== null && units !== undefined && units !== '' && parsedUnits > 0
+
+            if (!hasBasePrice && !hasExtraStorage) {
+                return null
+            }
+
+            return (isNaN(parsedBasePrice) ? 0 : parsedBasePrice) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        adminUserExtraStorageTotal() {
+            const hasStorageOption =
+                this.edit_licence_item &&
+                (this.edit_licence_item.admin_extra_storage_step_gb != null || this.edit_licence_item.admin_extra_storage_step_price != null)
+
+            if (!hasStorageOption) {
+                return null
+            }
+
+            const unitPrice = this.effectiveAdminUserExtraStorageUnitPrice()
+            const units = this.effectiveAdminUserExtraStorageUnits()
+            const parsedUnitPrice = unitPrice !== null ? this.normalizePriceToNumber(unitPrice) : 0
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+
+            return (isNaN(parsedUnits) ? 0 : parsedUnits) * (isNaN(parsedUnitPrice) ? 0 : parsedUnitPrice)
+        },
+        adminUserStorageTotalGb() {
+            const includedGb = this.edit_licence_item?.admin_included_storage_gb != null
+                ? parseInt(this.edit_licence_item.admin_included_storage_gb, 10)
+                : null
+            const stepGb = this.edit_licence_item?.admin_extra_storage_step_gb != null
+                ? parseInt(this.edit_licence_item.admin_extra_storage_step_gb, 10)
+                : null
+            const units = this.effectiveAdminUserExtraStorageUnits()
+            const parsedUnits = units !== null && units !== undefined && units !== '' ? parseInt(units, 10) : 0
+
+            const normalizedIncludedGb = includedGb !== null && !isNaN(includedGb) ? includedGb : null
+            const normalizedStepGb = stepGb !== null && !isNaN(stepGb) ? stepGb : null
+
+            if (normalizedIncludedGb === null && normalizedStepGb === null) {
+                return null
+            }
+
+            return (normalizedIncludedGb || 0) + (isNaN(parsedUnits) ? 0 : parsedUnits) * (normalizedStepGb || 0)
+        },
+        adminBillingDefaultLabel() {
+            if (
+                (this.edit_licence_item?.charged_admin_price !== null && this.edit_licence_item?.charged_admin_price !== undefined && this.edit_licence_item?.charged_admin_price !== '') ||
+                (this.edit_licence_item?.admin_extra_storage_units !== null && this.edit_licence_item?.admin_extra_storage_units !== undefined && this.edit_licence_item?.admin_extra_storage_units !== '') ||
+                (this.edit_licence_item?.admin_extra_storage_unit_price !== null && this.edit_licence_item?.admin_extra_storage_unit_price !== undefined && this.edit_licence_item?.admin_extra_storage_unit_price !== '')
+            ) {
+                return 'Tarif dieser Schule'
+            }
+
+            return 'Basis-Tarif'
+        },
+        adminUserBillingDefaultLabel() {
+            const userUnits = this.effectiveAdminUserExtraStorageUnits()
+            const defaultUnits = this.defaultAdminUserExtraStorageUnits()
+            const normalizedUserUnits = userUnits !== null && userUnits !== undefined && userUnits !== '' ? parseInt(userUnits, 10) : null
+            const normalizedDefaultUnits = defaultUnits !== null && defaultUnits !== undefined && defaultUnits !== '' ? parseInt(defaultUnits, 10) : null
+
+            if (normalizedUserUnits !== null && normalizedUserUnits !== normalizedDefaultUnits) {
+                return 'Tarif mit Zusatz-Speicher'
+            }
+
+            return this.adminBillingDefaultLabel()
+        },
+        adminBillingPlaceholder() {
+            const total = this.adminBillingTotal()
+
+            return total !== null ? String(total) : ''
+        },
+        adminUserBillingPlaceholder() {
+            const total = this.adminUserBillingTotal()
+
+            return total !== null ? String(total) : ''
+        },
         toggleAdminUserEdit(user) {
             if (this.edit_admin_user_edit_id === user.id) {
                 this.closeAdminUserEdit()
@@ -1542,7 +1937,10 @@ export default {
             const status = this.adminUserStatusForUser(user)
             this.edit_admin_user_edit_id = user.id
             this.edit_admin_user_valid_until = status?.valid_until || null
-            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            this.edit_admin_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_admin_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveAdminBasePrice())
+            this.edit_admin_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_admin_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             this.edit_admin_user_price_editing = false
         },
         async saveAdminUserRoles(user, patchFn) {
@@ -1594,7 +1992,7 @@ export default {
         async applyAdminUserTeillizenz(user) {
             const validUntil = this.nextYearEndDate(this.effectiveEndDayMonth)
             const chargedPrice = this.proratedYearPrice(
-                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.edit_licence_item?.admin_price_per_year,
+                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
@@ -1603,12 +2001,17 @@ export default {
                 assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
                 valid_until: adminRoleNames.has(String(role?.name || '').trim()) ? validUntil : role.valid_until,
                 charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                extra_storage_units: adminRoleNames.has(String(role?.name || '').trim()) ? this.effectiveAdminUserExtraStorageUnits() : role.extra_storage_units,
+                extra_storage_unit_price: adminRoleNames.has(String(role?.name || '').trim()) ? this.effectiveAdminUserExtraStorageUnitPrice() : role.extra_storage_unit_price,
             }))
             if (!ok) return
             await this.loadAdminUsers()
             const status = this.adminUserStatusForUser(user)
             this.edit_admin_user_valid_until = status?.valid_until || null
-            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            this.edit_admin_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_admin_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveAdminBasePrice())
+            this.edit_admin_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_admin_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             this.edit_admin_user_price_editing = false
             await this.refreshEditLicenceItem()
         },
@@ -1619,6 +2022,8 @@ export default {
                 assigned: adminRoleNames.has(String(role?.name || '').trim()) ? false : !!role.assigned,
                 valid_until: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.valid_until,
                 charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.charged_price,
+                extra_storage_units: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.extra_storage_units,
+                extra_storage_unit_price: adminRoleNames.has(String(role?.name || '').trim()) ? null : role.extra_storage_unit_price,
             }))
             if (!ok) return
             this.closeAdminUserEdit()
@@ -1626,18 +2031,25 @@ export default {
             await this.refreshEditLicenceItem()
         },
         async saveAdminUserBilling(user) {
-            const chargedPrice = this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : null
+            const chargedPrice = this.normalizedPriceInputValue(this.edit_admin_user_charged_price_draft)
+            const extraStorageUnits = this.edit_admin_user_extra_storage_units !== '' ? this.edit_admin_user_extra_storage_units : null
+            const extraStorageUnitPrice = this.normalizedPriceInputValue(this.edit_admin_user_extra_storage_unit_price)
             const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
             const ok = await this.saveAdminUserRoles(user, (role) => ({
                 ...role,
                 assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
                 charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                extra_storage_units: adminRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnits : role.extra_storage_units,
+                extra_storage_unit_price: adminRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnitPrice : role.extra_storage_unit_price,
             }))
             if (!ok) return
             this.edit_admin_user_price_editing = false
             await this.loadAdminUsers()
             const status = this.adminUserStatusForUser(user)
-            this.edit_admin_user_charged_price = status?.charged_price ?? null
+            this.edit_admin_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_admin_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveAdminBasePrice())
+            this.edit_admin_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_admin_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             await this.refreshEditLicenceItem()
         },
         async deleteLicenceFromDialog() {
@@ -1649,9 +2061,9 @@ export default {
         async saveSchoolLicenceSchool() {
             if (!this.edit_licence_item?.school_licence_id) return
             const data = {
-                charged_school_price: this.edit_school_charged_price !== '' ? this.edit_school_charged_price : null,
+                charged_school_price: this.normalizedPriceInputValue(this.edit_school_charged_price),
                 extra_storage_units: this.edit_school_extra_storage_units !== '' ? this.edit_school_extra_storage_units : null,
-                extra_storage_unit_price: this.edit_school_extra_storage_unit_price !== '' ? this.edit_school_extra_storage_unit_price : null,
+                extra_storage_unit_price: this.normalizedPriceInputValue(this.edit_school_extra_storage_unit_price),
             }
             if (!(await this.schoolStore.saveSchoolLicenceSchool(this.edit_licence_item.school_licence_id, data))) return
             this.edit_school_billing_editing = false
@@ -2413,6 +2825,11 @@ export default {
     font-size: 0.78rem;
     font-weight: 500;
     color: rgba(16, 38, 58, 0.6);
+}
+
+.assignment-school-licence-row__counter-expired.is-highlighted {
+    color: rgb(var(--v-theme-error));
+    font-weight: 700;
 }
 
 .edit-licence-tabs {
