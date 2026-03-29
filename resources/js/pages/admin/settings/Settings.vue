@@ -136,6 +136,10 @@
                         <Groups :embedded="true" embedded-filter="materials" />
                     </div>
 
+                    <div v-else-if="isMaterialsTab && sub_action === 'material_settings'" class="settings-materials-wrap">
+                        <MaterialsSettingsView />
+                    </div>
+
                     <div v-else-if="isTeachingTab && sub_action === 'teaching_admin'" class="settings-teaching-admin-wrap">
                         <TeachingAdmin />
                     </div>
@@ -206,10 +210,11 @@ import TutoringSettings from '@/pages/admin/tutoring/components/Settings.vue'
 import TutoringSubjects from '@/pages/admin/tutoring/components/Subjects.vue'
 import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
 import TeachingAdmin from '@/pages/admin/teaching/admin/Admin.vue'
+import MaterialsSettingsView from '@/pages/admin/materials/components/views/MaterialsSettingsView.vue'
 import Groups from '@/pages/admin/groups/Groups.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, Groups },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -327,7 +332,7 @@ export default {
             if (this.main_action === 'register') return 'users'
             if (this.main_action === 'teaching') return 'teachers'
             if (this.main_action === 'tutoring') return 'tutoring_settings'
-            if (this.main_action === 'materials') return 'material_groups'
+            if (this.main_action === 'materials') return 'material_settings'
             if (this.main_action === 'groups') return 'groups_overview'
             return 'schools'
         },
@@ -393,6 +398,7 @@ export default {
 
             if (this.isMaterialsTab) {
                 return [
+                    { key: 'material_settings', label: 'Einstellungen', meta: 'Materialien', icon: 'mdi-cog-outline' },
                     { key: 'material_groups', label: 'Materialgruppen', meta: 'Gruppen', icon: 'mdi-folder-multiple-outline' },
                 ]
             }
@@ -501,8 +507,8 @@ export default {
                 keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
                 fallback = 'tutoring_settings'
             } else if (resolvedTab === 'materials') {
-                keys = ['material_groups']
-                fallback = 'material_groups'
+                keys = ['material_settings', 'material_groups']
+                fallback = 'material_settings'
             } else if (resolvedTab === 'register') {
                 keys = ['users']
                 fallback = 'users'
@@ -751,6 +757,12 @@ export default {
 
 .settings-groups-wrap {
     width: 100%;
+}
+
+.settings-materials-wrap {
+    width: 520px;
+    max-width: 100%;
+    margin: 0;
 }
 
 .settings-empty-card {

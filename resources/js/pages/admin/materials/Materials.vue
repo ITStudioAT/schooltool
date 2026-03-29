@@ -44,11 +44,6 @@
                     <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
                     <MaterialsFreigabeView v-if="main_action === 'shared'" />
                     <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
-                    <MaterialsSettingsView
-                        v-if="main_action === 'settings'"
-                        :initial-selected-action="initialSettingsAction"
-                        :initial-selected-subject-action="initialSubjectAction"
-                        @menu-lock-change="setMenuLocked" />
                 </v-col>
             </v-row>
         </template>
@@ -86,7 +81,6 @@ import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
 import MaterialsFreigabeView from './components/views/MaterialsFreigabeView.vue'
 import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
 import MaterialsNewView from './components/views/MaterialsNewView.vue'
-import MaterialsSettingsView from './components/views/MaterialsSettingsView.vue'
 
 export default {
     name: 'Materials',
@@ -95,7 +89,6 @@ export default {
         MaterialsFreigabeView,
         MaterialsOverviewView,
         MaterialsNewView,
-        MaterialsSettingsView,
     },
     data() {
         return {
@@ -129,7 +122,7 @@ export default {
             },
         },
         main_action(value) {
-            if (value !== 'new_material' && value !== 'settings') {
+            if (value !== 'new_material') {
                 this.setMenuLocked(false)
             }
 
@@ -212,18 +205,25 @@ export default {
             if (this.$route?.path !== '/admin/materials') return
             const queryValue = String(this.$route?.query?.main_action || '').trim()
             const normalizedQueryValue = queryValue === 'teilen' ? 'shared' : queryValue
-            const allowed = ['overview', 'shared', 'new_material', 'settings']
+            if (normalizedQueryValue === 'settings') {
+                this.redirectLegacySettingsRoute()
+                return
+            }
+
+            const allowed = ['overview', 'shared', 'new_material']
             if (allowed.includes(normalizedQueryValue)) {
                 this.main_action = normalizedQueryValue
                 if (queryValue !== normalizedQueryValue) {
                     this.syncRouteMainAction(normalizedQueryValue)
                 }
+            } else {
+                this.main_action = 'overview'
             }
         },
         syncRouteMainAction(value) {
             if (this.$route?.path !== '/admin/materials') return
 
-            const allowed = ['overview', 'shared', 'new_material', 'settings']
+            const allowed = ['overview', 'shared', 'new_material']
             const normalized = allowed.includes(String(value || '').trim()) ? String(value || '').trim() : 'overview'
             const current = String(this.$route?.query?.main_action || '').trim()
             if (current === normalized) return
@@ -235,6 +235,31 @@ export default {
 
             const navigation = this.$router?.replace?.({
                 path: '/admin/materials',
+                query: nextQuery,
+            })
+
+            if (navigation && typeof navigation.catch === 'function') {
+                navigation.catch(() => {})
+            }
+        },
+        redirectLegacySettingsRoute() {
+            const nextQuery = {
+                tab: 'materials',
+                panel: 'material_settings',
+            }
+
+            const settingsAction = String(this.$route?.query?.settings_action || '').trim()
+            if (settingsAction) {
+                nextQuery.settings_action = settingsAction
+            }
+
+            const subjectAction = String(this.$route?.query?.subject_action || '').trim()
+            if (subjectAction) {
+                nextQuery.subject_action = subjectAction
+            }
+
+            const navigation = this.$router?.replace?.({
+                path: '/admin/settings',
                 query: nextQuery,
             })
 

@@ -24,17 +24,6 @@
             Geteilt
         </v-btn>
 
-        <v-btn
-            class="materials-menu-btn"
-            :class="{ 'materials-menu-btn--active': modelValue === 'settings' }"
-            rounded="pill"
-            size="large"
-            variant="flat"
-            prepend-icon="mdi-cog-outline"
-            :disabled="disabled"
-            @click="$emit('update:modelValue', 'settings')">
-            Einstellungen
-        </v-btn>
     </v-card>
 </template>
 

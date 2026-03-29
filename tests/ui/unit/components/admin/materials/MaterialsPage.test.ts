@@ -58,6 +58,32 @@ describe('Materials page navigation', () => {
         expect(ctxSubjectsBlocked.syncRouteMainAction).not.toHaveBeenCalled()
     })
 
+    it('redirects legacy standalone settings route to admin settings', () => {
+        const method = (Materials as any).methods.applyRouteSelection
+        const redirectLegacySettingsRoute = vi.fn()
+        const syncRouteMainAction = vi.fn()
+
+        const ctx: any = {
+            $route: {
+                path: '/admin/materials',
+                query: {
+                    main_action: 'settings',
+                    settings_action: 'overview_settings',
+                    subject_action: 'subjects_groups',
+                },
+            },
+            main_action: 'overview',
+            redirectLegacySettingsRoute,
+            syncRouteMainAction,
+        }
+
+        method.call(ctx)
+
+        expect(redirectLegacySettingsRoute).toHaveBeenCalledTimes(1)
+        expect(syncRouteMainAction).not.toHaveBeenCalled()
+        expect(ctx.main_action).toBe('overview')
+    })
+
     it('initializes stores and applies route selection in beforeMount', async () => {
         const adminStoreMock = { is_navigation_locked: false }
         const materialCardStoreMock = {
@@ -118,6 +144,36 @@ describe('Materials page navigation', () => {
             query: {
                 settings_action: 'overview_settings',
                 main_action: 'shared',
+            },
+        })
+    })
+
+    it('redirects removed standalone materials settings to settings tab while preserving sub-actions', () => {
+        const method = (Materials as any).methods.redirectLegacySettingsRoute
+        const replace = vi.fn(async () => undefined)
+
+        const ctx: any = {
+            $route: {
+                query: {
+                    main_action: 'settings',
+                    settings_action: 'overview_settings',
+                    subject_action: 'subjects_groups',
+                },
+            },
+            $router: {
+                replace,
+            },
+        }
+
+        method.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/settings',
+            query: {
+                tab: 'materials',
+                panel: 'material_settings',
+                settings_action: 'overview_settings',
+                subject_action: 'subjects_groups',
             },
         })
     })
@@ -190,7 +246,6 @@ describe('Materials page navigation', () => {
                     MaterialsOverviewView: { template: '<div />' },
                     MaterialsFreigabeView: { template: '<div />' },
                     MaterialsNewView: { template: '<div />' },
-                    MaterialsSettingsView: { template: '<div />' },
                 },
             },
         })

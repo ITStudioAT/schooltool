@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { createTestingPinia } from '@pinia/testing'
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { defineComponent, h, inject, provide } from 'vue'
@@ -96,7 +97,7 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Benutzer'])
     })
 
-    it('builds the materials sub navigation with material groups only', () => {
+    it('builds the materials sub navigation with settings first and material groups second', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isMaterialsTab: true,
             isAdminTab: false,
@@ -106,8 +107,8 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['material_groups'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Materialgruppen'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['material_settings', 'material_groups'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Einstellungen', 'Materialgruppen'])
     })
 
     it('builds the groups sub navigation with overview and own groups', () => {
@@ -358,7 +359,7 @@ describe('Admin settings page', () => {
         expect(screen.queryByText('Users Component')).not.toBeInTheDocument()
     })
 
-    it('renders the overtaken material groups view on the materials settings tab', async () => {
+    it('renders the materials settings tab with Einstellungen first and Materialgruppen second', async () => {
         const GroupsStub = defineComponent({
             props: ['embedded', 'embeddedFilter'],
             template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter }}</div>',
@@ -395,18 +396,33 @@ describe('Admin settings page', () => {
                     ...vuetifyStubs,
                     AdminSectionHero: { template: '<div>Admin Hero</div>' },
                     Groups: GroupsStub,
+                    MaterialsSettingsView: { template: '<div>Materials Settings Component</div>' },
                 },
             },
         })
 
         expect(container.querySelector('.settings-subnav')).not.toBeNull()
+        expect(screen.getByText('Einstellungen')).toBeInTheDocument()
         expect(screen.getAllByText('Materialgruppen').length).toBeGreaterThan(0)
+
+        await waitFor(() => {
+            expect(screen.getByText('Materials Settings Component')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-materials-wrap')).not.toBeNull()
+
+        await fireEvent.click(screen.getByText('Materialgruppen'))
 
         await waitFor(() => {
             expect(screen.getByText('Groups Component embedded materials')).toBeInTheDocument()
         })
 
         expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
+
+        const source = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
+        expect(source).toContain('.settings-materials-wrap {')
+        expect(source).toContain('width: 520px;')
+        expect(source).toContain('margin: 0;')
     })
 
     it('renders the groups settings tab with overview and own-groups sub navigation', async () => {
