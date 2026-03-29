@@ -2316,6 +2316,58 @@ describe('MaterialsOverviewView', () => {
         expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
     })
 
+    it('uses source material options for shared create dialogs', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const computed = MaterialsOverviewView?.computed || {}
+        const sharedStatusOptions = [
+            { value: 'shared_review', label: 'Freigabeprüfung', color: '#1565c0' },
+        ]
+        const sharedTypeOptions = [
+            { value: 'Quelltyp', label: 'Quelltyp', color: '#00897b', icon: 'mdi-source-branch' },
+        ]
+        const vm: Record<string, any> = {
+            ...methods,
+            sharedObjectsForMeCards: [
+                {
+                    ruleId: 88,
+                    materialOptions: {
+                        statusOptions: sharedStatusOptions,
+                        typeOptions: sharedTypeOptions,
+                    },
+                },
+            ],
+            createSharedContext: {
+                ruleId: 88,
+                nodeId: 301,
+                nodeLevel: 'subject',
+            },
+            typeOptions: [{ value: 'Lokal', label: 'Lokal' }],
+            statusOptions: [{ value: 'inbox', label: 'Neu/Idee' }],
+            canManageTypeValues: true,
+        }
+
+        Object.defineProperty(vm, 'createSharedRuleCard', {
+            get: () => computed.createSharedRuleCard.call(vm),
+        })
+        Object.defineProperty(vm, 'createTypeOptions', {
+            get: () => computed.createTypeOptions.call(vm),
+        })
+        Object.defineProperty(vm, 'createStatusOptions', {
+            get: () => computed.createStatusOptions.call(vm),
+        })
+        Object.defineProperty(vm, 'createCanManageTypeValues', {
+            get: () => computed.createCanManageTypeValues.call(vm),
+        })
+        Object.defineProperty(vm, 'defaultStatusValue', {
+            get: () => computed.defaultStatusValue.call(vm),
+        })
+
+        expect(vm.createTypeOptions).toEqual(sharedTypeOptions)
+        expect(vm.createStatusOptions).toEqual(sharedStatusOptions)
+        expect(vm.createCanManageTypeValues).toBe(false)
+        expect(computed.createDefaultStatusValue.call(vm)).toBe('shared_review')
+    })
+
     it('restores shared material detail after closing the shared edit dialog', async () => {
         const methods = MaterialsOverviewView?.methods || {}
         const cleanupPendingTempUploads = vi.fn().mockResolvedValue(undefined)

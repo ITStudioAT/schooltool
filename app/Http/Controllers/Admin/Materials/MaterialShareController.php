@@ -7,7 +7,6 @@ use App\Http\Requests\Admin\Materials\MaterialCardAttachmentTextUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardAttachmentUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardFileAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardLinkAttachmentStoreRequest;
-use App\Http\Requests\Admin\Materials\MaterialCardQuickStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardRemoteImageAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardTempAttachmentStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialCardUpdateRequest;
@@ -85,6 +84,7 @@ class MaterialShareController extends Controller
 
     public function __construct(
         private readonly MaterialWorkspaceService $workspaceService,
+        private readonly MaterialService $materialService,
     ) {}
 
     public function index(Request $request)
@@ -247,6 +247,7 @@ class MaterialShareController extends Controller
                     'last_name' => (string) ($creator->last_name ?? ''),
                     'email' => (string) ($creator->email ?? ''),
                     'school_label' => $schoolLabel !== '' ? $schoolLabel : null,
+                    'material_options' => $this->sharedMaterialOptionsPayload($creator),
                     'shared_rules_count' => (int) $creatorRules->count(),
                     'shared_items' => $sharedItems,
                     'last_shared_at' => $lastSharedAt ? $lastSharedAt->toIso8601String() : null,
@@ -744,7 +745,7 @@ class MaterialShareController extends Controller
     }
 
     public function storeInboxSubjectMaterial(
-        MaterialCardQuickStoreRequest $request,
+        Request $request,
         MaterialSubject $material_subject,
         MaterialService $service
     ) {
@@ -758,11 +759,11 @@ class MaterialShareController extends Controller
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxSubjectAccessContext($authUser, $ruleId, $material_subject);
         $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
-        $validated = $request->validated()['data'];
-        $validated['classifications'] = $this->subjectClassificationPayload($material_subject);
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
+        $validated = $this->validateSharedQuickStorePayload($request, $sourceOwner);
+        $validated['classifications'] = $this->subjectClassificationPayload($material_subject);
         $createdCard = $service->createCard(
             $sourceOwner,
             $validated,
@@ -775,7 +776,7 @@ class MaterialShareController extends Controller
     }
 
     public function storeInboxTopicMaterial(
-        MaterialCardQuickStoreRequest $request,
+        Request $request,
         MaterialTopic $material_topic,
         MaterialService $service
     ) {
@@ -789,8 +790,6 @@ class MaterialShareController extends Controller
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxTopicAccessContext($authUser, $ruleId, $material_topic);
         $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
-        $validated = $request->validated()['data'];
-        $validated['classifications'] = $this->topicClassificationPayload($material_topic);
 
         $subject = $material_topic->subject()->first();
         if (! $subject instanceof MaterialSubject) {
@@ -799,6 +798,8 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
+        $validated = $this->validateSharedQuickStorePayload($request, $sourceOwner);
+        $validated['classifications'] = $this->topicClassificationPayload($material_topic);
         $createdCard = $service->createCard(
             $sourceOwner,
             $validated,
@@ -811,7 +812,7 @@ class MaterialShareController extends Controller
     }
 
     public function storeInboxUnitMaterial(
-        MaterialCardQuickStoreRequest $request,
+        Request $request,
         MaterialUnit $material_unit,
         MaterialService $service
     ) {
@@ -825,8 +826,6 @@ class MaterialShareController extends Controller
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $context = $this->resolveInboxUnitAccessContext($authUser, $ruleId, $material_unit);
         $permission = (string) ($context['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
-        $validated = $request->validated()['data'];
-        $validated['classifications'] = $this->unitClassificationPayload($material_unit);
 
         $subject = $material_unit->topic?->subject;
         if (! $subject instanceof MaterialSubject) {
@@ -839,6 +838,8 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
+        $validated = $this->validateSharedQuickStorePayload($request, $sourceOwner);
+        $validated['classifications'] = $this->unitClassificationPayload($material_unit);
         $createdCard = $service->createCard(
             $sourceOwner,
             $validated,
@@ -2370,6 +2371,85 @@ class MaterialShareController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    private function sharedMaterialOptionsPayload(User $user): array
+    {
+        return [
+            'status_values' => $this->materialService->statusValuesForUser($user),
+            'type_values' => $this->materialService->typeValuesForUser($user),
+        ];
+    }
+
+    private function validateSharedQuickStorePayload(Request $request, User $sourceOwner): array
+    {
+        $validated = $request->validate([
+            'data.title' => ['required', 'string', 'max:255'],
+            'data.source_url' => ['nullable', 'string', 'max:2048'],
+            'data.source_text' => ['nullable', 'string', 'max:10000'],
+            'data.type' => $this->sharedQuickStoreTypeRules($sourceOwner),
+            'data.status' => $this->sharedQuickStoreStatusRules($sourceOwner),
+            'data.subject' => ['nullable', 'string', 'max:255'],
+            'data.classifications' => ['nullable', 'array'],
+            'data.classifications.*' => ['array'],
+            'data.classifications.*.subject' => ['nullable', 'string', 'max:255'],
+            'data.classifications.*.topic' => ['nullable', 'string', 'max:255'],
+            'data.classifications.*.unit' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        return is_array($validated['data'] ?? null) ? $validated['data'] : [];
+    }
+
+    private function sharedQuickStoreTypeRules(User $sourceOwner): array
+    {
+        $base = ['nullable', 'string', 'max:255'];
+        $schoolId = (int) ($sourceOwner->school_id ?? 0);
+
+        if ($schoolId <= 0 || ! Schema::hasTable('material_types')) {
+            return $base;
+        }
+
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $base[] = Rule::exists('material_types', 'name')->where(
+                fn ($query) => $query->where('user_id', (int) $sourceOwner->id)
+            );
+
+            return $base;
+        }
+
+        $base[] = Rule::exists('material_types', 'name')->where(
+            fn ($query) => $query->where('school_id', $schoolId)
+        );
+
+        return $base;
+    }
+
+    private function sharedQuickStoreStatusRules(User $sourceOwner): array
+    {
+        $base = ['nullable', 'string', 'max:255'];
+        $schoolId = (int) ($sourceOwner->school_id ?? 0);
+
+        if ($schoolId <= 0 || ! Schema::hasTable('material_statuses')) {
+            $base[] = Rule::in(MaterialCard::statusValues());
+
+            return $base;
+        }
+
+        $hasRows = DB::table('material_statuses')
+            ->where('school_id', $schoolId)
+            ->exists();
+
+        if (! $hasRows) {
+            $base[] = Rule::in(MaterialCard::statusValues());
+
+            return $base;
+        }
+
+        $base[] = Rule::exists('material_statuses', 'value')->where(
+            fn ($query) => $query->where('school_id', $schoolId)
+        );
+
+        return $base;
     }
 
     private function findExistingTargetCardForSubjectTreeInsert(

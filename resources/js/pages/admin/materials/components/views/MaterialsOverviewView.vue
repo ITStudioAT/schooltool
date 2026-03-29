@@ -908,10 +908,10 @@
             :material-type="createForm.type"
             :pending-attachments="createForm.pendingAttachments"
             :max-upload-size-kb="maxUploadSizeKb"
-            :type-options="typeOptions"
-            :can-manage-types="canManageTypeValues"
+            :type-options="createTypeOptions"
+            :can-manage-types="createCanManageTypeValues"
             :status="createForm.status"
-            :status-options="statusOptions"
+            :status-options="createStatusOptions"
             :classifications="createForm.classifications"
             :classification-tree="classificationTree"
             :classification-editor-visible="createClassificationEditorVisible"
@@ -2040,6 +2040,25 @@ export default {
             if (!parts.length) return 'Gib einen Titel ein, dann kann gespeichert werden.'
             return `Vorausgewählte Zuordnung: ${parts.join(' / ')}`
         },
+        createSharedRuleCard() {
+            const ruleId = Number(this.createSharedContext?.ruleId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return null
+            return this.sharedRuleCard(ruleId)
+        },
+        createTypeOptions() {
+            const items = this.createSharedRuleCard?.materialOptions?.typeOptions
+            return Array.isArray(items) && items.length ? items : this.typeOptions
+        },
+        createStatusOptions() {
+            const items = this.createSharedRuleCard?.materialOptions?.statusOptions
+            return Array.isArray(items) && items.length ? items : this.statusOptions
+        },
+        createCanManageTypeValues() {
+            return !this.createSharedContext && this.canManageTypeValues
+        },
+        createDefaultStatusValue() {
+            return String(this.createStatusOptions?.[0]?.value || '').trim() || this.defaultStatusValue
+        },
         defaultStatusValue() {
             return String(this.statusOptions?.[0]?.value || '').trim() || 'inbox'
         },
@@ -2944,17 +2963,18 @@ export default {
             const sharedRuleId = Number(payload?.sharedRuleId || 0)
             const sharedNodeId = Number(payload?.sharedNodeId || 0)
             const sharedNodeLevel = String(payload?.sharedNodeLevel || '').trim()
-
-            this.createForm = createDefaultEditForm()
-            this.createForm.status = this.defaultStatusValue
-            this.createForm.classifications = [{ subject, topic, unit }]
-            this.createSharedContext = Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
+            const nextSharedContext = Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
                 ? {
                     ruleId: sharedRuleId,
                     nodeId: sharedNodeId,
                     nodeLevel: sharedNodeLevel,
                 }
                 : null
+
+            this.createForm = createDefaultEditForm()
+            this.createSharedContext = nextSharedContext
+            this.createForm.status = this.createDefaultStatusValue
+            this.createForm.classifications = [{ subject, topic, unit }]
             this.createClassificationEditorVisible = false
             this.createDialogOpen = true
         },
@@ -3019,6 +3039,19 @@ export default {
             if (!Number.isFinite(id) || id <= 0) return null
             const cards = Array.isArray(this.sharedObjectsForMeCards) ? this.sharedObjectsForMeCards : []
             return cards.find((card) => Number(card?.ruleId || 0) === id) || null
+        },
+        normalizeSharedMaterialOptions(materialOptions) {
+            const statusValues = Array.isArray(materialOptions?.status_values)
+                ? materialOptions.status_values.map((option) => ({ ...option }))
+                : []
+            const typeValues = Array.isArray(materialOptions?.type_values)
+                ? materialOptions.type_values.map((option) => ({ ...option }))
+                : []
+
+            return {
+                statusOptions: statusValues,
+                typeOptions: typeValues,
+            }
         },
         sharedInboxContextForCard(card, fallbackRuleId = null) {
             const ruleId = Number(card?.shared_rule_id || fallbackRuleId || 0)
@@ -3363,6 +3396,7 @@ export default {
                     'Benutzer'
                 const fromSchoolLabel = String(userRow?.school_label || '').trim()
                 const fallbackSharedAt = String(userRow?.last_shared_at || '').trim()
+                const materialOptions = this.normalizeSharedMaterialOptions(userRow?.material_options)
                 const sharedItems = Array.isArray(userRow?.shared_items) ? userRow.shared_items : []
 
                 for (const item of sharedItems) {
@@ -3395,6 +3429,7 @@ export default {
                         sharedAt,
                         fromUserLabel,
                         fromSchoolLabel,
+                        materialOptions,
                         hierarchy,
                         materialsCount,
                     })

@@ -864,6 +864,119 @@ test('inbox full access creates original materials under subject topic and unit'
     expect((string) ($cards[2]->classifications->first()?->topic?->name ?? ''))->toBe('Algebra');
 });
 
+test('shared inbox create uses source material options for type and status', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'creator-source-options@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Geteilter Fachraum',
+        'is_default' => true,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Mathematik',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'workspace_id' => $workspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    $typeName = 'Quelltyp';
+    if (Schema::hasTable('material_types')) {
+        $typeData = [
+            'school_id' => $this->school->id,
+            'name' => $typeName,
+        ];
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $typeData['user_id'] = $creator->id;
+        }
+        if (Schema::hasColumn('material_types', 'icon')) {
+            $typeData['icon'] = 'mdi-source-branch';
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            $typeData['color'] = '#00897b';
+        }
+
+        MaterialType::query()->create($typeData);
+    }
+
+    $statusValue = 'shared_review';
+    if (Schema::hasTable('material_statuses')) {
+        $statusData = [
+            'school_id' => $this->school->id,
+            'value' => $statusValue,
+            'label' => 'Freigabeprüfung',
+        ];
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            $statusData['color'] = '#1565c0';
+        }
+
+        MaterialStatus::query()->create($statusData);
+    }
+
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+
+    $inboxResponse = $this->getJson('/api/admin/materials/shares/inbox-users')
+        ->assertOk();
+
+    if (Schema::hasTable('material_types')) {
+        $inboxResponse->assertJsonFragment([
+            'value' => $typeName,
+            'label' => $typeName,
+        ]);
+    }
+
+    if (Schema::hasTable('material_statuses')) {
+        $inboxResponse->assertJsonFragment([
+            'value' => $statusValue,
+            'label' => 'Freigabeprüfung',
+        ]);
+    }
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id.'/materials', [
+        'rule_id' => (int) $rule->id,
+        'data' => [
+            'title' => 'Geteiltes Quellmaterial',
+            'type' => Schema::hasTable('material_types') ? $typeName : null,
+            'status' => Schema::hasTable('material_statuses') ? $statusValue : MaterialCard::STATUS_INBOX,
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Geteiltes Quellmaterial')
+        ->assertJsonPath('data.type', Schema::hasTable('material_types') ? $typeName : null)
+        ->assertJsonPath('data.status', Schema::hasTable('material_statuses') ? $statusValue : MaterialCard::STATUS_INBOX)
+        ->assertJsonPath('data.shared_rule_id', (int) $rule->id);
+
+    $createdCardId = (int) $response->json('data.id');
+    expect($createdCardId)->toBeGreaterThan(0);
+
+    $this->assertDatabaseHas('material_cards', [
+        'id' => $createdCardId,
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Geteiltes Quellmaterial',
+        'type' => Schema::hasTable('material_types') ? $typeName : null,
+        'status' => Schema::hasTable('material_statuses') ? $statusValue : MaterialCard::STATUS_INBOX,
+    ]);
+});
+
 test('inbox full access creates original subject in shared workspace with next sort order', function () {
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
@@ -4285,6 +4398,165 @@ test('link then copy of same shared material keeps linked card flagged as link',
     expect((bool) $copyShow->json('is_linked'))->toBeFalse();
     expect($copyShow->json('linked_permission'))->toBeNull();
     expect($copyShow->json('linked_permission_label'))->toBeNull();
+});
+
+test('shared item material insert creates missing target type and status definitions', function () {
+    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($materialsLicence)->not->toBeNull();
+
+    $recipientSchool = School::factory()->create(['is_selectable' => true]);
+    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
+    SchoolLicence::query()->create([
+        'school_id' => $recipientSchool->id,
+        'licence_id' => $materialsLicence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $recipient = User::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'schoolyear_id' => $recipientYear->id,
+        'email' => 'recipient-missing-type-status@test.local',
+    ]);
+    $recipient->assignRole('materials_admin');
+
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-missing-type-status@test.local',
+    ]);
+
+    $typeName = 'Quelltyp Einordnen';
+    if (Schema::hasTable('material_types')) {
+        $sourceTypeData = [
+            'school_id' => $this->school->id,
+            'name' => $typeName,
+        ];
+        if (Schema::hasColumn('material_types', 'user_id')) {
+            $sourceTypeData['user_id'] = $creator->id;
+        }
+        if (Schema::hasColumn('material_types', 'icon')) {
+            $sourceTypeData['icon'] = 'mdi-book-open-page-variant-outline';
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            $sourceTypeData['color'] = '#1f6f8b';
+        }
+
+        MaterialType::query()->create($sourceTypeData);
+    }
+
+    $statusValue = 'shared_insert_review';
+    if (Schema::hasTable('material_statuses')) {
+        $sourceStatusData = [
+            'school_id' => $this->school->id,
+            'value' => $statusValue,
+            'label' => 'Einordnen Review',
+        ];
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            $sourceStatusData['color'] = '#2e7d32';
+        }
+
+        MaterialStatus::query()->create($sourceStatusData);
+    }
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Geteiltes Einordnen Material',
+        'source_text' => 'Quelle',
+        'type' => Schema::hasTable('material_types') ? $typeName : null,
+        'status' => Schema::hasTable('material_statuses') ? $statusValue : MaterialCard::STATUS_INBOX,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    if (Schema::hasTable('material_types')) {
+        $existingTargetType = MaterialType::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('name', $typeName)
+            ->when(Schema::hasColumn('material_types', 'user_id'), fn ($query) => $query->where('user_id', $recipient->id))
+            ->first();
+        expect($existingTargetType)->toBeNull();
+    }
+
+    if (Schema::hasTable('material_statuses')) {
+        $existingTargetStatus = MaterialStatus::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('value', $statusValue)
+            ->first();
+        expect($existingTargetStatus)->toBeNull();
+    }
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+    ])
+        ->assertStatus(200)
+        ->assertJsonPath('data.title', 'Geteiltes Einordnen Material');
+
+    $createdCardId = (int) $response->json('data.id');
+    expect($createdCardId)->toBeGreaterThan(0);
+
+    $this->assertDatabaseHas('material_cards', [
+        'id' => $createdCardId,
+        'user_id' => $recipient->id,
+        'title' => 'Geteiltes Einordnen Material',
+        'type' => Schema::hasTable('material_types') ? $typeName : null,
+        'status' => Schema::hasTable('material_statuses') ? $statusValue : MaterialCard::STATUS_INBOX,
+    ]);
+
+    if (Schema::hasTable('material_types')) {
+        $targetType = MaterialType::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('name', $typeName)
+            ->when(Schema::hasColumn('material_types', 'user_id'), fn ($query) => $query->where('user_id', $recipient->id))
+            ->first();
+        expect($targetType)->not->toBeNull();
+        if (Schema::hasColumn('material_types', 'icon')) {
+            expect((string) ($targetType->icon ?? ''))->toBe('mdi-book-open-page-variant-outline');
+        }
+        if (Schema::hasColumn('material_types', 'color')) {
+            expect((string) ($targetType->color ?? ''))->toBe('#1f6f8b');
+        }
+    }
+
+    if (Schema::hasTable('material_statuses')) {
+        $targetStatus = MaterialStatus::query()
+            ->where('school_id', $recipientSchool->id)
+            ->where('value', $statusValue)
+            ->first();
+        expect($targetStatus)->not->toBeNull();
+        expect((string) ($targetStatus->label ?? ''))->toBe('Einordnen Review');
+        if (Schema::hasColumn('material_statuses', 'color')) {
+            expect((string) ($targetStatus->color ?? ''))->toBe('#2e7d32');
+        }
+    }
 });
 
 test('copy as original keeps existing target type and status definitions', function () {
