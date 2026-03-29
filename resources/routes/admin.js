@@ -20,7 +20,6 @@ const Tutoring = () => import('@/pages/admin/tutoring/Tutoring.vue')
 const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
 const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
-const Groups = () => import('@/pages/admin/groups/Groups.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
@@ -48,7 +47,6 @@ export const routes = [
     { path: '/admin/tutoring', component: Tutoring, meta: { capability: 'tutoring' } },
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
-    { path: '/admin/groups', component: Groups, meta: { capability: 'groups' } },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
     { path: '/admin/restaurant', component: Restaurant, meta: { capability: 'restaurant' } },
     { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },

@@ -288,8 +288,8 @@ export default {
                 register: ['super_admin', 'admin', 'register_admin'],
                 teaching: ['super_admin', 'admin', 'teaching_admin'],
                 tutoring: ['super_admin', 'admin', 'tutoring_admin'],
-                materials: ['super_admin', 'admin', 'materials_admin'],
-                groups: ['super_admin', 'admin'],
+                materials: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
+                groups: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
                 restaurant: ['super_admin', 'admin'],
                 profile: ['Jede/r'],
             }
@@ -312,6 +312,12 @@ export default {
         },
         canAccessRegisterSettingsTab() {
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        canAccessMaterialsSettingsTab() {
+            return ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        canAccessGroupsSettingsTab() {
+            return ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
             return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups'].includes(this.main_action)
@@ -393,8 +399,8 @@ export default {
 
             if (this.isGroupsTab) {
                 return [
-                    { key: 'groups_overview', label: 'Überblick', meta: 'Gruppen', icon: 'mdi-view-dashboard-outline' },
-                    { key: 'groups_own', label: 'Eigene Gruppen', meta: 'Persönlich', icon: 'mdi-account-multiple-outline' },
+                    { key: 'groups_overview', label: 'Überblick', meta: 'Alle Gruppentypen', icon: 'mdi-view-dashboard-outline' },
+                    { key: 'groups_own', label: 'Eigene Gruppen', meta: 'Verwalten', icon: 'mdi-account-multiple-outline' },
                 ]
             }
 
@@ -438,8 +444,8 @@ export default {
                 { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group' },
                 { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant' },
-                { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed' },
-                { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline' },
+                { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed', visible: this.canAccessMaterialsSettingsTab },
+                { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline', visible: this.canAccessGroupsSettingsTab },
                 { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife' },
                 { key: 'profile', label: 'Profil', icon: 'mdi-account-circle' },
             ].filter((item) => item.visible !== false)
@@ -447,15 +453,15 @@ export default {
     },
 
     methods: {
-        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab) {
+        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
                 canAccessAdminTab ? 'admin' : null,
                 canAccessRegisterTab ? 'register' : null,
                 'tutoring',
                 'teaching',
-                'materials',
-                'groups',
+                canAccessMaterialsTab ? 'materials' : null,
+                canAccessGroupsTab ? 'groups' : null,
                 'restaurant',
                 'profile',
             ].filter(Boolean)
@@ -467,7 +473,9 @@ export default {
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
-            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)
+            const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
+            const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
+            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab)
 
             return keys.includes(tab) ? tab : keys[0]
         },
@@ -479,9 +487,12 @@ export default {
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
-            const resolvedTab = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab).includes(tab)
+            const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
+            const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
+            const availableTabs = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab)
+            const resolvedTab = availableTabs.includes(tab)
                 ? tab
-                : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)[0]
+                : availableTabs[0]
             let keys, fallback
             if (resolvedTab === 'admin') {
                 keys = ['schoolyears', 'users', 'school_groups', 'log']

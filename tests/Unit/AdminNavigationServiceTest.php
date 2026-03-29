@@ -236,9 +236,10 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(9)
+            ->toHaveCount(8)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Einstellungen', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Gruppen', 'Restaurant', 'Abmelden');
+            ->toContain('Home', 'Einstellungen', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'Abmelden')
+            ->not->toContain('Gruppen');
     });
 
     it('keeps module active when expired school licence is not required by model', function () {
@@ -935,7 +936,7 @@ describe('routeCapabilities', function () {
             ->and($capabilities['teaching'])->toBeTrue()
             ->and($capabilities['tutoring'])->toBeFalse()
             ->and($capabilities['materials'])->toBeFalse()
-            ->and($capabilities['groups'])->toBeTrue()
+            ->and($capabilities['groups'])->toBeFalse()
             ->and($capabilities['restaurant'])->toBeTrue()
             ->and($capabilities['aba'])->toBeFalse();
     });

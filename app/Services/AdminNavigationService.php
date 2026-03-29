@@ -45,8 +45,6 @@ class AdminNavigationService
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
         $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
         $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', ['aba_teacher']);
-        $groupsFeatureLicensed = in_array($teachingLicenceStatus, ['active'], true) || in_array($materialsLicenceStatus, ['active'], true);
-
         // ANMELDESYSTEM
         if ($this->userHasRole(['admin', 'register_admin'])) {
             if ($registerLicenceStatus !== 'missing') {
@@ -106,16 +104,6 @@ class AdminNavigationService
             }
         }
 
-        // GROUPS (visible if at least one valid licence exists: Lehrertool OR Materialientool)
-        if ($this->userHasRole(['admin', 'materials_admin', 'materials_moderator']) && $groupsFeatureLicensed) {
-            $menu[] = [
-                'title' => 'Gruppen',
-                'icon' => 'mdi-account-group-outline',
-                'to' => '/admin/groups',
-                'is_active' => true,
-            ];
-        }
-
         // RESTAURANT
         if ($this->userHasRole(['admin', 'lunch_admin'])) {
             $menu[] = [
@@ -168,7 +156,7 @@ class AdminNavigationService
         $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', ['admin', 'tutoring_admin', 'teacher']);
         $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', ['admin', 'teaching_admin', 'teacher']);
         $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', ['admin', 'materials_admin', 'materials_moderator']);
-        $capabilities['groups'] = $this->menuRouteCapability($user, $menuByPath, '/admin/groups', ['admin', 'materials_admin', 'materials_moderator']);
+        $capabilities['groups'] = false;
         $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', ['admin', 'lunch_admin']);
         $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', ['aba_teacher'], false);
 

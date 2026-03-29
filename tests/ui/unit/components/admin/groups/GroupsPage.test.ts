@@ -63,6 +63,66 @@ describe('Groups page header', () => {
         expect(shouldShowGroupCards.call(filteredEmbedContext)).toBe(true)
     })
 
+    it('treats the unfiltered embedded settings view as the read-only overview explorer', () => {
+        const isEmbeddedOverview = (Groups as any).computed.isEmbeddedOverview
+        const activeEmbeddedGroupSection = (Groups as any).computed.activeEmbeddedGroupSection
+        const visibleGroupSections = [
+            { type: 'school', label: 'Schulgruppen' },
+            { type: 'materials', label: 'Materialgruppen' },
+            { type: 'own', label: 'Eigene Gruppen' },
+        ]
+
+        expect(isEmbeddedOverview.call({ embedded: true, embeddedFilter: '' })).toBe(true)
+        expect(isEmbeddedOverview.call({ embedded: true, embeddedFilter: 'school' })).toBe(false)
+        expect(isEmbeddedOverview.call({ embedded: false, embeddedFilter: '' })).toBe(false)
+
+        expect(activeEmbeddedGroupSection.call({
+            visibleGroupSections,
+            embeddedSelectedGroupType: 'materials',
+        })).toEqual({ type: 'materials', label: 'Materialgruppen' })
+
+        expect(activeEmbeddedGroupSection.call({
+            visibleGroupSections,
+            embeddedSelectedGroupType: 'missing',
+        })).toEqual({ type: 'school', label: 'Schulgruppen' })
+    })
+
+    it('builds embedded group type buttons with counts and keeps materials in one foldable category', () => {
+        const methods = (Groups as any).methods
+        const ctx = {
+            visibleGroupSections: [
+                { type: 'school', label: 'Schulgruppen', eyebrow: 'System' },
+                { type: 'materials', label: 'Materialgruppen', eyebrow: 'Materialientool' },
+                { type: 'own', label: 'Eigene Gruppen', eyebrow: 'Persönlich' },
+            ],
+            groups: [
+                { id: 1, type: 'school', name: '1A' },
+                { id: 2, type: 'school', name: '1B' },
+                { id: 3, type: 'materials', name: 'Redaktion' },
+                { id: 4, type: 'own', name: 'Freie Gruppe' },
+            ],
+            groupsByType(type: string) {
+                return this.groups.filter((group: any) => group.type === type)
+            },
+        }
+
+        expect(methods.embeddedGroupTypeButtons.call(ctx)).toEqual([
+            { type: 'school', label: 'Schulgruppen', eyebrow: 'System', count: 2 },
+            { type: 'materials', label: 'Materialgruppen', eyebrow: 'Materialientool', count: 1 },
+            { type: 'own', label: 'Eigene Gruppen', eyebrow: 'Persönlich', count: 1 },
+        ])
+
+        expect(methods.materialsSectionPanels.call(ctx)).toEqual([
+            {
+                key: 'materials-groups',
+                title: 'Materialgruppen',
+                metaLabel: null,
+                icon: 'mdi-folder-multiple-outline',
+                groups: [{ id: 3, type: 'materials', name: 'Redaktion' }],
+            },
+        ])
+    })
+
     it('opens members dialog in read-only mode when clicking a group row', () => {
         const methods = (Groups as any).methods
         const openAssignUsersDialog = vi.fn()
@@ -1078,6 +1138,15 @@ describe('Groups page header', () => {
         expect(source).toContain('syncStatus.in_progress')
         expect(source).toContain('scheduleSyncStatusReload()')
         expect(source).toContain('clearSyncStatusReload()')
+        expect(source).toContain('groups-embedded-explorer')
+        expect(source).toContain('embeddedSelectedGroupType')
+        expect(source).toContain('embeddedGroupTypeButtons()')
+        expect(source).toContain('activeEmbeddedGroupPanels()')
+        expect(source).toContain('embeddedPanelsOpen(activeEmbeddedGroupSection.type)')
+        expect(source).toContain('updateEmbeddedPanelsOpen(activeEmbeddedGroupSection.type, $event)')
+        expect(source).toContain('Alle Gruppen lesen')
+        expect(source).toContain('Nur lesbar')
+        expect(source).toContain('Materialgruppen')
         expect(source).toContain('memberAssignmentPayload(member)')
         expect(source).toContain('memberSelectionValue(memberOrValue)')
         expect(source).toContain('buildSelectedAssignableMemberPayloads(rows = [], selectedValues = [])')

@@ -110,6 +110,80 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Materialgruppen'])
     })
 
+    it('builds the groups sub navigation with overview and own groups', () => {
+        const items = (Settings as any).computed.subNavigationItems.call({
+            isGroupsTab: true,
+            isAdminTab: false,
+            isRegisterTab: false,
+            isTeachingTab: false,
+            isMaterialsTab: false,
+            isTutoringTab: false,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['groups_overview', 'groups_own'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Überblick', 'Eigene Gruppen'])
+    })
+
+    it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
+        const allowedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: true,
+        })
+        const deniedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: false,
+        })
+
+        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('groups')
+        expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('groups')
+
+        const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
+        expect(tabRoleMap.groups).toEqual(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])
+    })
+
+    it('includes the groups settings tab in available tabs only for authorized roles', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.availableTabKeys(true, true, true, true, true)).toContain('groups')
+        expect(methods.availableTabKeys(true, true, true, true, false)).not.toContain('groups')
+    })
+
+    it('shows the materials settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
+        const allowedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: true,
+            canAccessGroupsSettingsTab: false,
+        })
+        const deniedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: false,
+        })
+
+        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('materials')
+        expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('materials')
+
+        const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
+        expect(tabRoleMap.materials).toEqual(['super_admin', 'admin', 'materials_admin', 'materials_moderator'])
+    })
+
+    it('includes the materials settings tab in available tabs only for authorized roles', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.availableTabKeys(true, true, true, true, true)).toContain('materials')
+        expect(methods.availableTabKeys(true, true, true, false, true)).not.toContain('materials')
+    })
+
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
         const allowedItems = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: true,
@@ -333,6 +407,63 @@ describe('Admin settings page', () => {
         })
 
         expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
+    })
+
+    it('renders the groups settings tab with overview and own-groups sub navigation', async () => {
+        const GroupsStub = defineComponent({
+            props: ['embedded', 'embeddedFilter'],
+            template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter || "overview" }}</div>',
+        })
+
+        const { container } = render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['admin'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=groups',
+                        query: {
+                            tab: 'groups',
+                        },
+                    },
+                    $router: {
+                        replace: () => {},
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Groups: GroupsStub,
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText('Groups Component embedded overview')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
+        expect(container.querySelector('.settings-subnav')).not.toBeNull()
+        expect(screen.getByText('Überblick')).toBeInTheDocument()
+        expect(screen.getByText('Eigene Gruppen')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByText('Eigene Gruppen'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Groups Component embedded own')).toBeInTheDocument()
+        })
     })
 
     it('redirects unauthorized users away from the admin settings tab and hides super-admin', () => {

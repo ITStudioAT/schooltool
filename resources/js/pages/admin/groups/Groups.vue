@@ -12,6 +12,128 @@
                 focus-label="Gruppentypen" />
 
             <div class="super-admin-overview-shell super-admin-overview-shell--active">
+                <div v-if="isEmbeddedOverview" class="groups-embedded-explorer">
+                    <section class="sa-card groups-embedded-types-card">
+                        <div class="sa-card-head">
+                            <div>
+                                <div class="sa-card-eyebrow">Gruppentypen</div>
+                                <h2 class="sa-card-title">Alle Gruppen lesen</h2>
+                                <div class="sa-item-sub mt-1">Gruppentyp wählen, Kategorie aufklappen, Gruppe öffnen.</div>
+                            </div>
+                            <v-chip color="secondary" variant="flat" class="groups-embedded-status-chip">
+                                Nur lesbar
+                            </v-chip>
+                        </div>
+
+                        <div class="groups-embedded-type-list">
+                            <button
+                                v-for="section in embeddedGroupTypeButtons()"
+                                :key="`embedded-type-${section.type}`"
+                                type="button"
+                                class="groups-embedded-type-button"
+                                :class="{ 'is-active': activeEmbeddedGroupSection?.type === section.type }"
+                                @click="selectEmbeddedGroupType(section.type)">
+                                <span class="groups-embedded-type-copy">
+                                    <span class="groups-embedded-type-label">{{ section.label }}</span>
+                                    <span class="groups-embedded-type-meta">{{ section.eyebrow }}</span>
+                                </span>
+                                <span class="groups-embedded-type-count">{{ section.count }}</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <section v-if="activeEmbeddedGroupSection" class="sa-card groups-embedded-detail-card">
+                        <div class="sa-card-head">
+                            <div>
+                                <div class="sa-card-eyebrow">Gruppentyp</div>
+                                <h2 class="sa-card-title">{{ activeEmbeddedGroupSection.label }}</h2>
+                                <div class="sa-item-sub mt-1">Kategorien bleiben aufklappbar. Gruppen öffnen die Mitgliederansicht.</div>
+                            </div>
+                            <v-chip color="secondary" variant="flat" class="groups-embedded-status-chip">
+                                Gruppenmitglieder
+                            </v-chip>
+                        </div>
+
+                        <div class="groups-school-panels">
+                            <v-expansion-panels
+                                :model-value="embeddedPanelsOpen(activeEmbeddedGroupSection.type)"
+                                @update:model-value="updateEmbeddedPanelsOpen(activeEmbeddedGroupSection.type, $event)"
+                                multiple
+                                variant="accordion">
+                                <v-expansion-panel
+                                    v-for="panel in activeEmbeddedGroupPanels()"
+                                    :key="`${activeEmbeddedGroupSection.type}-${panel.key}`"
+                                    :value="panel.key">
+                                    <v-expansion-panel-title>
+                                        <div class="d-flex align-center justify-space-between w-100 ga-3">
+                                            <div class="d-flex align-center ga-2">
+                                                <v-icon size="18">{{ panel.icon }}</v-icon>
+                                                <div class="groups-panel-title-wrap">
+                                                    <span>{{ panel.title }}</span>
+                                                    <span v-if="panel.metaLabel" class="groups-panel-title-meta">{{ panel.metaLabel }}</span>
+                                                </div>
+                                            </div>
+                                            <v-chip color="secondary" variant="flat" size="x-small">
+                                                {{ panel.groups.length }}
+                                            </v-chip>
+                                        </div>
+                                    </v-expansion-panel-title>
+                                    <v-expansion-panel-text>
+                                        <div class="sa-empty" v-if="panel.groups.length === 0">
+                                            Keine Gruppen vorhanden.
+                                        </div>
+                                        <div class="groups-table-wrap" v-else>
+                                            <v-table density="comfortable" class="groups-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Name</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr
+                                                        v-for="group in panel.groups"
+                                                        :key="group.id"
+                                                        class="groups-row"
+                                                        :class="{ 'is-selected': isSelectedGroup(activeEmbeddedGroupSection.type, group.id) }"
+                                                        @click="onGroupRowClick(activeEmbeddedGroupSection.type, group)">
+                                                        <td>
+                                                            <div class="groups-row-main">
+                                                                <div class="groups-row-title">
+                                                                    <div class="font-weight-bold text-body-1">{{ group.name }}</div>
+                                                                </div>
+                                                                <div class="groups-row-meta">
+                                                                    <v-chip
+                                                                        class="groups-row-counter-chip"
+                                                                        :color="group.type === 'school' ? 'info' : (group.members_count > 0 ? 'warning' : 'secondary')"
+                                                                        variant="flat"
+                                                                        size="small">
+                                                                        <template v-if="showSourceUsersCounter(group)">
+                                                                            {{ Number(group.source_users_count || 0) }}/{{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                        <template v-else>
+                                                                            {{ Number(group.members_count || 0) }}
+                                                                        </template>
+                                                                    </v-chip>
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                v-if="String(group.description || '').trim() !== ''"
+                                                                class="text-caption text-medium-emphasis groups-desc-cell">
+                                                                {{ group.description }}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </v-table>
+                                        </div>
+                                    </v-expansion-panel-text>
+                                </v-expansion-panel>
+                            </v-expansion-panels>
+                        </div>
+                    </section>
+                </div>
+
+                <template v-else>
                 <section v-if="!embeddedFilter" class="sa-card sa-card-school mb-3">
                     <div class="sa-card-head">
                         <div>
@@ -359,6 +481,7 @@
                     </v-col>
                     </v-row>
                 </div>
+                </template>
             </div>
         </v-container>
 
@@ -1264,6 +1387,8 @@ export default {
             },
             schoolSectionPanelsOpen: [],
             ownSectionPanelsOpen: [],
+            materialsSectionPanelsOpen: [],
+            embeddedSelectedGroupType: 'school',
             editDialog: {
                 open: false,
                 mode: 'create',
@@ -1365,6 +1490,14 @@ export default {
                 return this.groupSections.filter((s) => s.type === this.embeddedFilter)
             }
             return this.groupSections
+        },
+        isEmbeddedOverview() {
+            return this.embedded && !this.embeddedFilter
+        },
+        activeEmbeddedGroupSection() {
+            return this.visibleGroupSections.find((section) => section.type === this.embeddedSelectedGroupType)
+                || this.visibleGroupSections[0]
+                || null
         },
         shouldShowGroupCards() {
             return !this.embedded || this.visibleGroupSections.length > 0
@@ -1502,6 +1635,84 @@ export default {
                     groups: ownGroups.filter((group) => !this.isAutomaticOwnCourseGroup(group)),
                 },
             ]
+        },
+
+        materialsSectionPanels() {
+            return [
+                {
+                    key: 'materials-groups',
+                    title: 'Materialgruppen',
+                    metaLabel: null,
+                    icon: 'mdi-folder-multiple-outline',
+                    groups: this.groupsByType('materials'),
+                },
+            ]
+        },
+
+        embeddedGroupTypeButtons() {
+            return this.visibleGroupSections.map((section) => ({
+                ...section,
+                count: this.groupsByType(section.type).length,
+            }))
+        },
+
+        selectEmbeddedGroupType(type) {
+            if (!this.visibleGroupSections.some((section) => section.type === type)) {
+                return
+            }
+
+            this.embeddedSelectedGroupType = type
+        },
+
+        activeEmbeddedGroupPanels() {
+            const type = this.activeEmbeddedGroupSection?.type
+            if (type === 'school') {
+                return this.schoolSectionPanels()
+            }
+
+            if (type === 'own') {
+                return this.ownSectionPanels()
+            }
+
+            if (type === 'materials') {
+                return this.materialsSectionPanels()
+            }
+
+            return []
+        },
+
+        embeddedPanelsOpen(type) {
+            if (type === 'school') {
+                return this.schoolSectionPanelsOpen
+            }
+
+            if (type === 'own') {
+                return this.ownSectionPanelsOpen
+            }
+
+            if (type === 'materials') {
+                return this.materialsSectionPanelsOpen
+            }
+
+            return []
+        },
+
+        updateEmbeddedPanelsOpen(type, value) {
+            const normalizedValue = Array.isArray(value) ? value : []
+
+            if (type === 'school') {
+                this.schoolSectionPanelsOpen = normalizedValue
+                return
+            }
+
+            if (type === 'own') {
+                this.ownSectionPanelsOpen = normalizedValue
+                return
+            }
+
+            if (type === 'materials') {
+                this.materialsSectionPanelsOpen = normalizedValue
+            }
         },
 
         schoolSourceGroupsPanels() {
@@ -3118,6 +3329,82 @@ export default {
     min-height: 100vh;
 }
 
+.groups-embedded-explorer {
+    display: grid;
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+
+.groups-embedded-types-card,
+.groups-embedded-detail-card {
+    min-width: 0;
+}
+
+.groups-embedded-type-list {
+    display: grid;
+    gap: 10px;
+}
+
+.groups-embedded-type-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    border: 1px solid rgba(16, 38, 58, 0.12);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.7);
+    color: #10263a;
+    padding: 14px 16px;
+    text-align: left;
+    transition: border-color 0.12s ease, background-color 0.12s ease, transform 0.12s ease;
+}
+
+.groups-embedded-type-button:hover {
+    border-color: rgba(47, 65, 168, 0.38);
+    background: rgba(255, 255, 255, 0.82);
+    transform: translateY(-1px);
+}
+
+.groups-embedded-type-button.is-active {
+    border-color: rgba(47, 65, 168, 0.62);
+    background: rgba(79, 94, 181, 0.12);
+    box-shadow: inset 3px 0 0 rgba(47, 65, 168, 0.88);
+}
+
+.groups-embedded-type-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.groups-embedded-type-label {
+    font-weight: 700;
+}
+
+.groups-embedded-type-meta {
+    font-size: 0.78rem;
+    color: rgba(16, 38, 58, 0.68);
+}
+
+.groups-embedded-type-count {
+    flex: 0 0 auto;
+    min-width: 34px;
+    border-radius: 999px;
+    background: rgba(16, 38, 58, 0.1);
+    color: #10263a;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    text-align: center;
+}
+
+.groups-embedded-status-chip {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
 .groups-cards-shell {
     width: calc(100% + ((100vw - 100%) / 2));
     max-width: none;
@@ -3287,6 +3574,10 @@ export default {
 }
 
 @media (max-width: 1200px) {
+    .groups-embedded-explorer {
+        grid-template-columns: 1fr;
+    }
+
     .groups-cards-shell {
         width: 100%;
         max-width: 100%;

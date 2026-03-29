@@ -33,4 +33,8 @@ describe('admin route access metadata', () => {
     it('returns null for unknown admin routes', () => {
         expect(resolveAdminRouteAccess('/admin/unknown')).toBeNull()
     })
+
+    it('treats the removed groups dashboard route as unknown', () => {
+        expect(resolveAdminRouteAccess('/admin/groups')).toBeNull()
+    })
 })
