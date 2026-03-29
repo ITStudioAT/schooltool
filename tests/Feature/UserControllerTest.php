@@ -39,7 +39,7 @@ beforeEach(function () {
         'name' => '2024/2025',
     ]);
 
-    collect(['super_admin', 'admin', 'user', 'teacher', 'register_admin'])->each(
+    collect(['super_admin', 'admin', 'user', 'teacher', 'register_admin', 'lunch_admin'])->each(
         fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
@@ -69,6 +69,15 @@ beforeEach(function () {
         'email' => 'standard@test.com',
     ]);
     $this->standardUser->assignRole('user');
+
+    $this->lunchAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'last_name' => 'Lunch',
+        'first_name' => 'Admin',
+        'email' => 'lunch@test.com',
+    ]);
+    $this->lunchAdmin->assignRole('lunch_admin');
 });
 
 // ============================================================================
@@ -797,4 +806,27 @@ test('admin can complete 2FA with code', function () {
     $refreshed = $this->adminUser->fresh();
     expect((bool) $refreshed->is_2fa)->toBeTrue();
     expect($refreshed->email_2fa)->toBe('secure@test.com');
+});
+
+test('lunch admin can load own profile through admin profile endpoint', function () {
+    $this->actingAs($this->lunchAdmin, 'sanctum');
+
+    $this->getJson("/api/admin/users/{$this->lunchAdmin->id}")
+        ->assertStatus(200)
+        ->assertJsonFragment([
+            'email' => 'lunch@test.com',
+        ]);
+});
+
+test('lunch admin can start 2FA setup for own profile', function () {
+    Notification::fake();
+
+    $this->actingAs($this->lunchAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users/save_2fa', [
+        'id' => $this->lunchAdmin->id,
+        'is_2fa' => true,
+        'email_2fa' => 'lunch-2fa@example.com',
+    ])->assertStatus(200)
+        ->assertJsonFragment(['result' => TwoFaResult::TWO_FA_EMAIL_IS_NEW]);
 });

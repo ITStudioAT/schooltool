@@ -9,14 +9,11 @@ class NavigationController extends Controller
 {
     public function profileMenu()
     {
-        $navigationService = new AdminNavigationService();
+        $navigationService = new AdminNavigationService;
 
-
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+        if (! auth()->user()?->hasAdminShellAccess()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-
-
 
         $data = [
             'menu' => $navigationService->profileMenu(),
@@ -27,14 +24,11 @@ class NavigationController extends Controller
 
     public function userMenu()
     {
-        $navigationService = new AdminNavigationService();
-
+        $navigationService = new AdminNavigationService;
 
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
-
-
 
         $data = [
             'menu' => $navigationService->userMenu(),

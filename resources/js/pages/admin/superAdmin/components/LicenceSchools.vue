@@ -1466,7 +1466,7 @@ export default {
         teillizenzPreisLabel() {
             if (!this.effectiveEndDayMonth) return ''
             const prorated = this.proratedYearPrice(
-                this.edit_school_charged_price != null ? this.edit_school_charged_price : this.edit_licence_item?.school_price_per_year,
+                this.edit_school_charged_price !== null && this.edit_school_charged_price !== undefined && this.edit_school_charged_price !== '' ? this.edit_school_charged_price : this.edit_licence_item?.school_price_per_year,
                 this.effectiveEndDayMonth
             )
             if (prorated === null) {
@@ -1477,7 +1477,7 @@ export default {
         adminTeillizenzPreisLabel() {
             if (!this.effectiveEndDayMonth) return ''
             const prorated = this.proratedYearPrice(
-                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
+                this.edit_admin_user_charged_price !== null && this.edit_admin_user_charged_price !== undefined && this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             if (prorated === null) {
@@ -1487,7 +1487,7 @@ export default {
         },
         billingTotal() {
             const base =
-                this.edit_school_charged_price != null
+                this.edit_school_charged_price !== null && this.edit_school_charged_price !== undefined && this.edit_school_charged_price !== ''
                     ? this.normalizePriceToNumber(this.edit_school_charged_price)
                     : this.edit_licence_item?.school_price_per_year != null
                       ? this.normalizePriceToNumber(this.edit_licence_item.school_price_per_year)
@@ -1545,7 +1545,7 @@ export default {
         userLicenceTeillizenzPreisLabel() {
             if (!this.effectiveEndDayMonth) return ''
             const prorated = this.proratedYearPrice(
-                this.edit_user_licence_user_charged_price != null ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
+                this.edit_user_licence_user_charged_price !== null && this.edit_user_licence_user_charged_price !== undefined && this.edit_user_licence_user_charged_price !== '' ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             if (prorated === null) {
@@ -2696,7 +2696,7 @@ export default {
         async applyUserLicenceUserTeillizenz(user) {
             const validUntil = this.nextYearEndDate(this.effectiveEndDayMonth)
             const chargedPrice = this.proratedYearPrice(
-                this.edit_user_licence_user_charged_price != null ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
+                this.edit_user_licence_user_charged_price !== null && this.edit_user_licence_user_charged_price !== undefined && this.edit_user_licence_user_charged_price !== '' ? this.edit_user_licence_user_charged_price : this.userLicenceUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
@@ -2828,7 +2828,7 @@ export default {
         async applyAdminUserTeillizenz(user) {
             const validUntil = this.nextYearEndDate(this.effectiveEndDayMonth)
             const chargedPrice = this.proratedYearPrice(
-                this.edit_admin_user_charged_price != null ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
+                this.edit_admin_user_charged_price !== null && this.edit_admin_user_charged_price !== undefined && this.edit_admin_user_charged_price !== '' ? this.edit_admin_user_charged_price : this.adminUserBillingTotal(),
                 this.effectiveEndDayMonth
             )
             const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))

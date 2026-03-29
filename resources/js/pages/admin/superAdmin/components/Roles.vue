@@ -49,9 +49,22 @@
                                 :class="{ 'is-selected': isSelectedRole(item.id) }">
                                 <template #title>
                                     <div class="person-row crud-item-row">
-                                        <div class="d-flex align-start" style="min-width: 0">
+                                        <div class="d-flex align-start justify-space-between ga-3 w-100" style="min-width: 0">
                                             <div class="person-body" style="min-width: 0">
                                                 <div class="person-name">{{ item.name }}</div>
+                                                <div v-if="item.is_admin" class="kpi-sub mt-1">
+                                                    Zugang zu <code>/admin</code>
+                                                </div>
+                                            </div>
+                                            <div class="d-flex align-center" @click.stop>
+                                                <v-switch
+                                                    :model-value="!!item.is_admin"
+                                                    color="success"
+                                                    density="compact"
+                                                    hide-details
+                                                    inset
+                                                    :label="item.is_admin ? 'aktiv' : 'inaktiv'"
+                                                    @update:modelValue="toggleRoleAdminAccess(item, $event)" />
                                             </div>
                                         </div>
                                     </div>
@@ -133,6 +146,17 @@
                             <v-row dense>
                                 <v-col cols="12">
                                     <v-text-field autofocus v-model="data.name" label="Rollenname" :rules="[required(), maxLength(255)]" />
+                                </v-col>
+                                <v-col cols="12">
+                                    <v-checkbox
+                                        v-model="data.is_admin"
+                                        color="primary"
+                                        label="Admin-Zugang (/admin)"
+                                        hide-details />
+                                    <div class="kpi-sub mt-1">
+                                        Wenn diese Eigenschaft aktiv ist, dürfen Benutzer mit dieser Rolle den Adminbereich unter
+                                        <code>/admin</code> öffnen.
+                                    </div>
                                 </v-col>
                             </v-row>
                         </div>
@@ -250,8 +274,22 @@ export default {
             this.action = ''
         },
 
+        async toggleRoleAdminAccess(role, nextValue) {
+            const previousValue = !!role.is_admin
+            role.is_admin = !!nextValue
+
+            const updated = await this.roleStore.update({
+                ...role,
+                is_admin: !!nextValue,
+            })
+
+            if (!updated) {
+                role.is_admin = previousValue
+            }
+        },
+
         createRole() {
-            this.data = {}
+            this.data = { is_admin: false }
             this.action = 'create_role'
         },
 

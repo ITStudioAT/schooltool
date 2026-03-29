@@ -17,9 +17,11 @@ use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
 use App\Http\Requests\Admin\RegisterStep3Request;
 use App\Http\Resources\Admin\RegisterResource;
+use App\Http\Resources\Admin\RoleResource;
 use App\Http\Resources\Admin\SchoolResource;
 use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Models\Role;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Teacher;
@@ -327,9 +329,9 @@ class AdminController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $roles = DB::table('roles')->orderBy('name')->get();
+        $roles = Role::query()->orderBy('name')->get();
 
-        return response()->json($roles, 200);
+        return response()->json(RoleResource::collection($roles), 200);
     }
 
     public function newTeacherStepEmail(AdminNewTeacherStepEmailRequest $request, TeacherListService $service)

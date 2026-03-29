@@ -179,12 +179,6 @@ export default {
                     meta: 'Personen verwalten',
                     icon: 'mdi-account-multiple-outline',
                 },
-                {
-                    key: 'settings',
-                    label: 'Einstellungen',
-                    meta: 'Grundlagen verwalten',
-                    icon: 'mdi-cog-outline',
-                },
             ]
         },
     },

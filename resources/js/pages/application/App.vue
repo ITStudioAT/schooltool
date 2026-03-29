@@ -127,7 +127,7 @@ export default {
                     impersonator: null,
                     current_user: null,
                 };
-                window.location.href = '/admin/super_admin';
+                window.location.href = '/admin';
             } catch (error) {
                 // do nothing
             }

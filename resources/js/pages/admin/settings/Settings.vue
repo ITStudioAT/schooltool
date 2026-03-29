@@ -181,6 +181,10 @@
                         <Groups :embedded="true" embedded-filter="own" />
                     </div>
 
+                    <div v-else-if="isRestaurantTab" class="settings-restaurant-wrap">
+                        <RestaurantSettings :embedded="true" :panel="sub_action" />
+                    </div>
+
                     <div v-else-if="isProfileTab" class="settings-profile-wrap">
                         <Profile :embedded="true" />
                     </div>
@@ -228,9 +232,10 @@ import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
 import TeachingAdmin from '@/pages/admin/teaching/admin/Admin.vue'
 import MaterialsSettingsView from '@/pages/admin/materials/components/views/MaterialsSettingsView.vue'
 import Groups from '@/pages/admin/groups/Groups.vue'
+import RestaurantSettings from '@/pages/admin/restaurant/components/Settings.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -311,7 +316,7 @@ export default {
                 tutoring: ['super_admin', 'admin', 'tutoring_admin'],
                 materials: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
                 groups: ['super_admin', 'admin', 'materials_admin', 'materials_moderator'],
-                restaurant: ['super_admin', 'admin'],
+                restaurant: ['super_admin', 'admin', 'lunch_admin'],
                 profile: ['Jede/r'],
             }
         },
@@ -321,6 +326,9 @@ export default {
         activeSection() {
             const item = this.navigationItems.find((i) => i.key === this.main_action)
             return item ? item.label : ''
+        },
+        configuredCapabilities() {
+            return this.config?.capabilities || {}
         },
         configuredRoleNames() {
             return Array.isArray(this.config?.roles) ? this.config.roles : []
@@ -340,8 +348,32 @@ export default {
         canAccessGroupsSettingsTab() {
             return ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => this.configuredRoleNames.includes(role))
         },
+        canAccessRestaurantSettingsTab() {
+            return ['super_admin', 'admin', 'lunch_admin'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        canAccessTutoringSettingsTab() {
+            if (typeof this.configuredCapabilities.tutoring === 'boolean') {
+                return this.configuredCapabilities.tutoring
+            }
+
+            return ['super_admin', 'admin', 'tutoring_admin'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        canAccessTeachingSettingsTab() {
+            if (typeof this.configuredCapabilities.teaching === 'boolean') {
+                return this.configuredCapabilities.teaching
+            }
+
+            return ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => this.configuredRoleNames.includes(role))
+        },
+        canAccessProfileTab() {
+            if (typeof this.configuredCapabilities.profile === 'boolean') {
+                return this.configuredCapabilities.profile
+            }
+
+            return ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'].some((role) => this.configuredRoleNames.includes(role))
+        },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups', 'restaurant'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
@@ -350,6 +382,7 @@ export default {
             if (this.main_action === 'tutoring') return 'tutoring_settings'
             if (this.main_action === 'materials') return 'material_settings'
             if (this.main_action === 'groups') return 'groups_overview'
+            if (this.main_action === 'restaurant') return 'general'
             return 'general'
         },
         isSuperAdminTab() {
@@ -372,6 +405,9 @@ export default {
         },
         isGroupsTab() {
             return this.main_action === 'groups'
+        },
+        isRestaurantTab() {
+            return this.main_action === 'restaurant'
         },
         isProfileTab() {
             return this.main_action === 'profile'
@@ -426,6 +462,17 @@ export default {
                 ]
             }
 
+            if (this.isRestaurantTab) {
+                return [
+                    { key: 'general', label: 'Allgemein', meta: 'Schulweite Einstellungen', icon: 'mdi-tune-variant' },
+                    { key: 'categories', label: 'Kategorien', meta: 'Speisen strukturieren', icon: 'mdi-shape-outline' },
+                    { key: 'ingredient-icons', label: 'Zutaten-Symbole', meta: 'Kennzeichnungen', icon: 'mdi-image-multiple-outline' },
+                    { key: 'free-days', label: 'Freie Tage', meta: 'Schließzeiten', icon: 'mdi-calendar-remove-outline' },
+                    { key: 'eating-times', label: 'Speisezeiten', meta: 'Ausgabe planen', icon: 'mdi-clock-outline' },
+                    { key: 'online', label: 'Online', meta: 'Bestellung & Sichtbarkeit', icon: 'mdi-web' },
+                ]
+            }
+
             if (this.isAdminTab) {
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
@@ -465,54 +512,106 @@ export default {
                 { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
                 { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
                 { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
-                { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group' },
-                { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant' },
+                { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group', visible: this.canAccessTutoringSettingsTab },
+                { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant', visible: this.canAccessTeachingSettingsTab },
                 { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed', visible: this.canAccessMaterialsSettingsTab },
                 { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline', visible: this.canAccessGroupsSettingsTab },
-                { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife' },
-                { key: 'profile', label: 'Profil', icon: 'mdi-account-circle' },
+                { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife', visible: this.canAccessRestaurantSettingsTab },
+                { key: 'profile', label: 'Profil', icon: 'mdi-account-circle', visible: this.canAccessProfileTab },
             ].filter((item) => item.visible !== false)
         },
     },
 
     methods: {
-        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab) {
+        availableTabKeys(
+            canAccessSuperAdminTab,
+            canAccessAdminTab,
+            canAccessRegisterTab,
+            canAccessTutoringTab,
+            canAccessTeachingTab,
+            canAccessMaterialsTab,
+            canAccessGroupsTab,
+            canAccessRestaurantTab,
+            canAccessProfileTab,
+        ) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
                 canAccessAdminTab ? 'admin' : null,
                 canAccessRegisterTab ? 'register' : null,
-                'tutoring',
-                'teaching',
+                canAccessTutoringTab ? 'tutoring' : null,
+                canAccessTeachingTab ? 'teaching' : null,
                 canAccessMaterialsTab ? 'materials' : null,
                 canAccessGroupsTab ? 'groups' : null,
-                'restaurant',
-                'profile',
+                canAccessRestaurantTab ? 'restaurant' : null,
+                canAccessProfileTab ? 'profile' : null,
             ].filter(Boolean)
         },
         initialTab() {
             const tab = this.$route?.query?.tab || 'super_admin'
             const adminStore = useAdminStore()
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
+            const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
+                ? configuredCapabilities.tutoring
+                : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
+                ? configuredCapabilities.teaching
+                : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab)
+            const canAccessRestaurantTab = ['super_admin', 'admin', 'lunch_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessProfileTab = typeof configuredCapabilities.profile === 'boolean'
+                ? configuredCapabilities.profile
+                : ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'].some((role) => configuredRoleNames.includes(role))
+            const keys = this.availableTabKeys(
+                canAccessSuperAdminTab,
+                canAccessAdminTab,
+                canAccessRegisterTab,
+                canAccessTutoringTab,
+                canAccessTeachingTab,
+                canAccessMaterialsTab,
+                canAccessGroupsTab,
+                canAccessRestaurantTab,
+                canAccessProfileTab,
+            )
 
             return keys.includes(tab) ? tab : keys[0]
         },
         initialSubAction() {
-            const panel = this.$route?.query?.panel || 'schools'
+            const panel = this.$route?.query?.panel || 'general'
             const tab = this.$route?.query?.tab || 'super_admin'
             const adminStore = useAdminStore()
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
+            const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
+                ? configuredCapabilities.tutoring
+                : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessTeachingTab = typeof configuredCapabilities.teaching === 'boolean'
+                ? configuredCapabilities.teaching
+                : ['super_admin', 'admin', 'teaching_admin', 'teacher'].some((role) => configuredRoleNames.includes(role))
             const canAccessMaterialsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
             const canAccessGroupsTab = ['super_admin', 'admin', 'materials_admin', 'materials_moderator'].some((role) => configuredRoleNames.includes(role))
-            const availableTabs = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab, canAccessMaterialsTab, canAccessGroupsTab)
+            const canAccessRestaurantTab = ['super_admin', 'admin', 'lunch_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessProfileTab = typeof configuredCapabilities.profile === 'boolean'
+                ? configuredCapabilities.profile
+                : ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'].some((role) => configuredRoleNames.includes(role))
+            const availableTabs = this.availableTabKeys(
+                canAccessSuperAdminTab,
+                canAccessAdminTab,
+                canAccessRegisterTab,
+                canAccessTutoringTab,
+                canAccessTeachingTab,
+                canAccessMaterialsTab,
+                canAccessGroupsTab,
+                canAccessRestaurantTab,
+                canAccessProfileTab,
+            )
             const resolvedTab = availableTabs.includes(tab)
                 ? tab
                 : availableTabs[0]
@@ -535,9 +634,12 @@ export default {
             } else if (resolvedTab === 'groups') {
                 keys = ['groups_overview', 'groups_own']
                 fallback = 'groups_overview'
+            } else if (resolvedTab === 'restaurant') {
+                keys = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'online']
+                fallback = 'general'
             } else {
-                keys = ['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
-                fallback = 'schools'
+                keys = ['general', 'schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
+                fallback = 'general'
             }
 
             return keys.includes(panel) ? panel : fallback
@@ -730,6 +832,11 @@ export default {
 }
 
 .settings-tutoring-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-restaurant-wrap {
     width: 1000px;
     max-width: 100%;
 }

@@ -364,6 +364,8 @@ test('load roles returns roles for super admin', function () {
         Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     }
 
+    Role::firstOrCreate(['name' => 'custom_admin_shell', 'guard_name' => 'web', 'is_admin' => true]);
+
     $this->user->syncRoles(['super_admin']);
     $this->actingAs($this->user);
 
@@ -371,8 +373,10 @@ test('load roles returns roles for super admin', function () {
 
     $response->assertStatus(200)
         ->assertJsonStructure([
-            '*' => ['id', 'name'],
+            '*' => ['id', 'name', 'is_admin'],
         ]);
+
+    expect(collect($response->json())->firstWhere('name', 'custom_admin_shell')['is_admin'])->toBeTrue();
 });
 
 test('load roles denies access for non-super admin', function () {
@@ -536,6 +540,6 @@ test('authenticated admin config includes backend route capabilities', function 
         ->assertJsonPath('capabilities.teaching', false)
         ->assertJsonPath('capabilities.materials', false)
         ->assertJsonPath('capabilities.groups', false)
-        ->assertJsonPath('capabilities.restaurant', true)
+        ->assertJsonPath('capabilities.restaurant', false)
         ->assertJsonPath('capabilities.aba', false);
 });

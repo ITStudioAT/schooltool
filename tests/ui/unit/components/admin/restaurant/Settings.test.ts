@@ -34,14 +34,16 @@ const componentStubs = {
     'v-img': { template: '<img />' },
 }
 
-function mountSettings(options: { initialState?: Record<string, unknown>, routeQuery?: Record<string, string>, routerReplace?: ReturnType<typeof vi.fn> } = {}) {
+function mountSettings(options: { initialState?: Record<string, unknown>, routeQuery?: Record<string, string>, routerReplace?: ReturnType<typeof vi.fn>, props?: Record<string, unknown> } = {}) {
     const {
         initialState = {},
         routeQuery = {},
         routerReplace = vi.fn(() => Promise.resolve()),
+        props = {},
     } = options
 
     const wrapper = mount(Settings, {
+        props,
         global: {
             plugins: [
                 createTestingPinia({
@@ -164,6 +166,24 @@ describe('Restaurant settings component', () => {
         })
 
         expect((wrapper.vm as any).selectedPanel).toBe('general')
+    })
+
+    it('uses the embedded panel prop and hides the internal sub navigation', async () => {
+        const { wrapper, routerReplace } = mountSettings({
+            props: {
+                embedded: true,
+                panel: 'online',
+            },
+        })
+
+        expect((wrapper.vm as any).selectedPanel).toBe('online')
+        expect(wrapper.findAll('button').some((button) => button.text() === 'Allgemein')).toBe(false)
+
+        await wrapper.setProps({ panel: 'categories' })
+
+        expect((wrapper.vm as any).selectedPanel).toBe('categories')
+        expect(wrapper.find('.grid-title').text()).toBe('Kategorien')
+        expect(routerReplace).not.toHaveBeenCalled()
     })
 
     it('shows the general settings panel when selected explicitly', async () => {

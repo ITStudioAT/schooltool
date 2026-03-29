@@ -2,6 +2,21 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import IndexPage from '@/pages/admin/index/Index.vue'
+import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useHealthStore } from '@/stores/admin/HealthStore'
+import { useSchoolStore } from '@/stores/admin/SchoolStore'
+
+vi.mock('@/stores/admin/AdminStore', () => ({
+    useAdminStore: vi.fn(),
+}))
+
+vi.mock('@/stores/admin/HealthStore', () => ({
+    useHealthStore: vi.fn(),
+}))
+
+vi.mock('@/stores/admin/SchoolStore', () => ({
+    useSchoolStore: vi.fn(),
+}))
 
 describe('Index runTests', () => {
     it('shows abgelaufen for expired entries in the Meine Lizenzen card', () => {
@@ -53,6 +68,40 @@ describe('Index runTests', () => {
         expect(source).toContain('Queues neu starten')
         expect(source).toContain('Tests prüfen')
         expect(source).not.toContain(`v-if="isAllowed(['super_admin'])" class="mt-3"`)
+    })
+
+    it('loads school infos but skips automatic health checks for lunch_admin on beforeMount', async () => {
+        globalThis.axios = {
+            get: vi.fn().mockResolvedValue({}),
+        } as never
+
+        const loadSchoolInfos = vi.fn().mockResolvedValue(true)
+        vi.mocked(useAdminStore).mockReturnValue({
+            is_loading: 0,
+        } as never)
+        vi.mocked(useHealthStore).mockReturnValue({} as never)
+        vi.mocked(useSchoolStore).mockReturnValue({
+            loadSchoolInfos,
+        } as never)
+
+        const runTests = vi.fn()
+        const context: Record<string, any> = {
+            config: {
+                is_auth: true,
+                selected_school: { id: 42 },
+                user: { roles: ['lunch_admin', 'lunch_user'] },
+            },
+            isAllowed(roles: string[]) {
+                return this.config.user.roles.some((role: string) => roles.includes(role))
+            },
+            runTests,
+        }
+
+        await (IndexPage as any).beforeMount.call(context)
+
+        expect(globalThis.axios.get).toHaveBeenCalledWith('/sanctum/csrf-cookie')
+        expect(loadSchoolInfos).toHaveBeenCalledWith(42)
+        expect(runTests).not.toHaveBeenCalled()
     })
 
     it('treats a valid role as active even when the legacy activation flag is false', () => {

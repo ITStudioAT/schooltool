@@ -184,6 +184,10 @@ class UserController extends Controller
 
     public function show(User $user)
     {
+        if ($this->canAccessOwnAdminProfile($user)) {
+            return response()->json(new UserResource($user), 200);
+        }
+
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -274,8 +278,7 @@ class UserController extends Controller
 
     public function updateProfile(UpdateProfileRequest $request, User $user, AdminService $adminService)
     {
-
-        if (! $auth_user = $this->userHasAtLeastOneRole()) {
+        if (! $auth_user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -307,7 +310,7 @@ class UserController extends Controller
 
     public function updateWithCode(UpdateUserWithCodeRequest $request)
     {
-        if (! $user = $this->userHasAtLeastOneRole()) {
+        if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -328,7 +331,7 @@ class UserController extends Controller
 
     public function savePassword(SavePasswordRequest $request, AdminService $adminService)
     {
-        if (! $user = $this->userHasAtLeastOneRole()) {
+        if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -343,7 +346,7 @@ class UserController extends Controller
 
     public function savePasswordWithCode(SavePasswordWithCodeRequest $request, AdminService $adminService)
     {
-        if (! $user = $this->userHasAtLeastOneRole()) {
+        if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
         $validated = $request->validated();
@@ -367,7 +370,7 @@ class UserController extends Controller
 
     public function save2Fa(Save2FaRequest $request)
     {
-        if (! $user = $this->userHasRole(['admin', 'tutoring_admin', 'register_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+        if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -398,7 +401,7 @@ class UserController extends Controller
 
     public function save2FaWithCode(Save2FaWithCodeRequest $request)
     {
-        if (! $user = $this->userHasRole(['admin', 'tutoring_admin', 'register_admin', 'teaching_admin', 'materials_admin', 'teacher'])) {
+        if (! $user = $this->authorizedProfileUser()) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
@@ -573,5 +576,25 @@ class UserController extends Controller
             'selected_count' => $users->count(),
             'ids' => $users->pluck('id')->values(),
         ], 200);
+    }
+
+    private function authorizedProfileUser(): User|false
+    {
+        $user = $this->userHasAtLeastOneRole();
+        if (! $user) {
+            return false;
+        }
+
+        return $user->hasAdminShellAccess() ? $user : false;
+    }
+
+    private function canAccessOwnAdminProfile(User $user): bool
+    {
+        $authUser = $this->authorizedProfileUser();
+        if (! $authUser) {
+            return false;
+        }
+
+        return (int) $authUser->id === (int) $user->id;
     }
 }

@@ -34,7 +34,7 @@ beforeEach(function () {
         'name' => '2024/2025',
     ]);
 
-    collect(['super_admin', 'admin', 'register_admin'])->each(
+    collect(['super_admin', 'admin', 'register_admin', 'lunch_admin'])->each(
         fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
@@ -58,6 +58,13 @@ beforeEach(function () {
         'email' => 'register.admin@test.com',
     ]);
     $this->registerAdmin->assignRole('register_admin');
+
+    $this->lunchAdmin = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'lunch.admin@test.com',
+    ]);
+    $this->lunchAdmin->assignRole('lunch_admin');
 });
 
 // ============================================================================
@@ -514,6 +521,27 @@ test('admin can load school infos and queues background job', function () {
     });
 
     $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/schools/load_school_infos', ['school_id' => $this->school->id])
+        ->assertStatus(200)
+        ->assertJson($expectedData);
+});
+
+test('lunch admin can load school infos for dashboard licences', function () {
+    Queue::fake();
+
+    $expectedData = [
+        'licences' => [],
+        'admins' => [],
+    ];
+
+    $this->mock(SchoolService::class, function ($mock) use ($expectedData) {
+        $mock->shouldReceive('schoolInfos')
+            ->once()
+            ->andReturn($expectedData);
+    });
+
+    $this->actingAs($this->lunchAdmin, 'sanctum');
 
     $this->postJson('/api/admin/schools/load_school_infos', ['school_id' => $this->school->id])
         ->assertStatus(200)

@@ -86,7 +86,7 @@ export default {
     methods: {
         async stopImpersonationAndReturn() {
             if (!(await this.homepageStore.stopImpersonation())) return
-            window.location.href = '/admin/super_admin'
+            window.location.href = '/admin'
         },
         openCookiePrefs() {
             if (typeof window.showHideToggleCookiePreferencesModal === 'function') {

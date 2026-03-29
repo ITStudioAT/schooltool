@@ -60,6 +60,14 @@ class RecordsCreateService
                 'price_per_year' => 200,
             ]
         );
+
+        Licence::firstOrCreate(
+            ['name' => 'Restaurant'],
+            [
+                'long_name' => 'Tool zum Verwalten des Restaurants',
+                'price_per_year' => 200,
+            ]
+        );
     }
 
     private function firstOrCreateSchool(): School
@@ -135,7 +143,7 @@ class RecordsCreateService
         $toYear = $this->extractYear($schoolyear['to'] ?? null);
 
         if ($fromYear !== null && $toYear !== null) {
-            return $fromYear . '/' . substr((string) $toYear, -2);
+            return $fromYear.'/'.substr((string) $toYear, -2);
         }
 
         return null;

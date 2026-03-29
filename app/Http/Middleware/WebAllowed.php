@@ -38,6 +38,10 @@ class WebAllowed
                 return $next($request);
             }
 
+            if (in_array('scope:admin_shell_access', $allowedRoles, true) && $user->hasAdminShellAccess()) {
+                return $next($request);
+            }
+
             if (! $this->userHasRole($allowedRoles)) {
                 return redirect('/admin/login');
             }

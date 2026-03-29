@@ -298,7 +298,7 @@ class SchoolController extends Controller
     public function loadSchoolInfos(SchoolLoadSchoolLicencesRequest $request, SchoolService $service)
     {
 
-        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'])) {
+        if (! $auth_user = $this->userHasRole(['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

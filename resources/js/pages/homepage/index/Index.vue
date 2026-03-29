@@ -22,7 +22,7 @@
                             </h1>
                         </div>
                         <nav class="cloud-header-nav" aria-label="Dummy Navigation">
-                            <button type="button" class="cloud-nav-item" @click="scrollToProducts">Produkte</button>
+                            <router-link to="/homepage/products" class="cloud-nav-item">Produkte</router-link>
                         </nav>
                     </div>
                 </header>
@@ -154,143 +154,6 @@
                     </a>
                 </div>
                 -->
-            </div>
-        </section>
-
-        <section class="products-showcase" v-if="step === ''" ref="productsStart">
-            <div class="products-shell st-shell-1440">
-                <div class="products-intro">
-                    <div class="products-eyebrow">Produkte</div>
-                    <h3 class="products-heading">Fünf starke Bereiche.</h3>
-                    <p class="products-lead">SchoolTool verbindet Organisation, Unterricht und Zusammenarbeit in einer Oberfläche.</p>
-                </div>
-
-                <article class="product-section product-section--register">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-calendar-check</v-icon>
-                            <span>Anmeldetool</span>
-                        </div>
-                        <h4 class="product-title">Termine und Veranstaltungen</h4>
-                        <p class="product-text">Planen Sie Schulanmeldungen und Veranstaltungen mit klaren Zeitslots, Kapazitäten und nachvollziehbaren Buchungen.</p>
-                        <div class="product-tags">
-                            <span>Zeitslots</span>
-                            <span>Buchungen</span>
-                            <span>Export</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-register">
-                        <img
-                            class="product-illustration product-illustration-register"
-                            src="/images/illustrations/date-picker-animated-v2.svg"
-                            alt="Illustration für Anmeldetool" />
-                    </div>
-                </article>
-
-                <article class="product-section product-section--teaching">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-rocket-launch-outline</v-icon>
-                            <span>Unterricht</span>
-                        </div>
-                        <h4 class="product-title">Unterricht. Das digitale Klassenzimmer</h4>
-                        <p class="product-text">
-                            Lehrer:innen verwalten Ihren Unterricht und Schüler:innen sehen ihre Kurse, Aufgaben und Termine in einer klaren Oberfläche. Schnell, mobil und auf das
-                            Wesentliche reduziert.
-                        </p>
-                        <div class="product-tags">
-                            <span>Unterricht</span>
-                            <span>Aufgaben</span>
-                            <span>Termine</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-teaching">
-                        <img
-                            class="product-illustration product-illustration-teaching"
-                            src="/images/illustrations/online-learning-animated.svg"
-                            alt="Illustration für Unterricht" />
-                    </div>
-                </article>
-
-                <article class="product-section product-section--tutoring">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-account-group</v-icon>
-                            <span>{{ tutoringDisplayName }}</span>
-                        </div>
-                        <h4 class="product-title">Nachhilfe-Tool transparent organisiert</h4>
-                        <p class="product-text">Nachhilfe-Angebote übersichtlich verwaltet. Zuständigkeiten und Status bleiben jederzeit sichtbar.</p>
-                        <div class="product-tags">
-                            <span>Nachhilfe</span>
-                            <span>Anfragen</span>
-                            <span>Status</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-tutoring">
-                        <img class="product-illustration product-illustration-tutoring" src="/images/illustrations/notebook-animated.svg" alt="Illustration für Nachhilfe" />
-                    </div>
-                </article>
-
-                <article class="product-section product-section--materials">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-folder-multiple-outline</v-icon>
-                            <span>Materialien</span>
-                        </div>
-                        <h4 class="product-title">Materialien zentral verwalten</h4>
-                        <p class="product-text">Arbeitsblätter, Präsentationen und Vorlagen strukturiert organisieren.</p>
-                        <div class="product-tags">
-                            <span>Dateien</span>
-                            <span>Ordner</span>
-                            <span>Organisation</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-materials">
-                        <img class="product-illustration product-illustration-materials" src="/images/illustrations/bookshelves-animated.svg" alt="Illustration für Materialien" />
-                    </div>
-                </article>
-
-                <article class="product-section product-section--admin">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-food</v-icon>
-                            <span>Restaurant</span>
-                        </div>
-                        <h4 class="product-title">Restaurant digital organisiert</h4>
-                        <p class="product-text">
-                            Speisepläne, Bestellungen und wichtige Hinweise für die Ausgabe in einer klaren Oberfläche bündeln.
-                        </p>
-                        <div class="product-tags">
-                            <span>Speisepläne</span>
-                            <span>Bestellung</span>
-                            <span>Abholung</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-admin">
-                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/eating-pasta-animated.svg" alt="Illustration für Restaurant" />
-                    </div>
-                </article>
-
-                <article v-if="false" class="product-section product-section--admin">
-                    <div class="product-copy">
-                        <div class="product-label">
-                            <v-icon size="18">mdi-food</v-icon>
-                            <span>Mittagsmenü</span>
-                        </div>
-                        <h4 class="product-title">Essen einfach bestellen</h4>
-                        <p class="product-text">
-                            Bestellungen für das Schulbuffet schnell und übersichtlich verwalten. Einfach auswählen, bestellen und den Überblick über Menüs behalten.
-                        </p>
-                        <div class="product-tags">
-                            <span>Menüs</span>
-                            <span>Bestellung</span>
-                            <span>Übersicht</span>
-                        </div>
-                    </div>
-                    <div class="product-visual visual-admin">
-                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/eating-pasta-animated.svg" alt="Illustration für Mittagsmenü" />
-                    </div>
-                </article>
             </div>
         </section>
 
@@ -448,14 +311,7 @@ export default {
             alert('1')
         },
         scrollToProducts() {
-            if (this.step !== '') return
-            const targetRef = this.$refs.productsStart
-            const target = Array.isArray(targetRef) ? targetRef[0] : targetRef?.$el || targetRef
-            if (!target || typeof window === 'undefined') return
-            target.scrollIntoView({
-                behavior: 'auto',
-                block: 'start',
-            })
+            this.$router.push('/homepage/products')
         },
         openUnterricht() {
             if (!this.canShowTeaching || this.teachingStatus !== 'active') {

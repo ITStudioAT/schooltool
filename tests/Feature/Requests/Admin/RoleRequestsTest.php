@@ -30,9 +30,10 @@ beforeEach(function () {
     $this->role = Role::firstOrCreate(['name' => 'test_role', 'guard_name' => 'web']);
 });
 
-function validateRoleRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateRoleRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -42,7 +43,7 @@ function validateRoleRequest(string $requestClass, array $data): \Illuminate\Val
 
 describe('IndexRoleRequest', function () {
     it('authorizes all requests', function () {
-        $request = new IndexRoleRequest();
+        $request = new IndexRoleRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -53,13 +54,14 @@ describe('IndexRoleRequest', function () {
 
 describe('StoreRoleRequest', function () {
     it('authorizes all requests', function () {
-        $request = new StoreRoleRequest();
+        $request = new StoreRoleRequest;
         expect($request->authorize())->toBeTrue();
     });
 
     it('passes with valid data', function () {
         $validator = validateRoleRequest(StoreRoleRequest::class, [
             'name' => 'new_role',
+            'is_admin' => true,
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -88,6 +90,16 @@ describe('StoreRoleRequest', function () {
         expect($validator->fails())->toBeTrue()
             ->and($validator->errors()->has('name'))->toBeTrue();
     });
+
+    it('fails when is_admin is not boolean', function () {
+        $validator = validateRoleRequest(StoreRoleRequest::class, [
+            'name' => 'another_role',
+            'is_admin' => 'yes',
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('is_admin'))->toBeTrue();
+    });
 });
 
 // ============================================================================
@@ -96,7 +108,7 @@ describe('StoreRoleRequest', function () {
 
 describe('UpdateRoleRequest', function () {
     it('authorizes all requests', function () {
-        $request = new UpdateRoleRequest();
+        $request = new UpdateRoleRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -104,6 +116,7 @@ describe('UpdateRoleRequest', function () {
         $validator = validateRoleRequest(UpdateRoleRequest::class, [
             'id' => $this->role->id,
             'name' => 'updated_role_name',
+            'is_admin' => false,
         ]);
 
         expect($validator->passes())->toBeTrue();
@@ -113,5 +126,16 @@ describe('UpdateRoleRequest', function () {
         $validator = validateRoleRequest(UpdateRoleRequest::class, []);
 
         expect($validator->fails())->toBeTrue();
+    });
+
+    it('fails when is_admin is not boolean', function () {
+        $validator = validateRoleRequest(UpdateRoleRequest::class, [
+            'id' => $this->role->id,
+            'name' => 'updated_role_name',
+            'is_admin' => 'yes',
+        ]);
+
+        expect($validator->fails())->toBeTrue()
+            ->and($validator->errors()->has('is_admin'))->toBeTrue();
     });
 });

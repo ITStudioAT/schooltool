@@ -222,13 +222,18 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/aba/uploads/chunk/{upload_id}', [AbaChunkUploadController::class, 'destroy']);
     });
 
-    /* SANCTUM - user */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_user_profile_access'])->group(function () {
+    /* SANCTUM - admin shell profile */
+    Route::middleware(['auth:sanctum'])->group(function () {
         Route::put('/admin/users/update_profile/{user}', [UserController::class, 'updateProfile']);
         Route::post('/admin/users/update_with_code', [UserController::class, 'updateWithCode']);
         Route::post('/admin/users/save_password', [UserController::class, 'savePassword']);
         Route::post('/admin/users/save_password_with_code', [UserController::class, 'savePasswordWithCode']);
+        Route::post('/admin/users/save_2fa', [UserController::class, 'save2Fa']);
+        Route::post('/admin/users/save_2fa_with_code', [UserController::class, 'save2FaWithCode']);
+    });
 
+    /* SANCTUM - user */
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_user_profile_access'])->group(function () {
         // RegisterUsers
         Route::get('/admin/register_users', [RegisterUserController::class, 'index'])->middleware('tool-licensed:Anmeldetool,auto,scope:admin_user_profile_access');
         Route::post('/admin/register_users/delete_register_users', [RegisterUserController::class, 'deleteRegisterUsers'])->middleware('tool-licensed:Anmeldetool,auto,scope:admin_user_profile_access');
@@ -512,7 +517,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/load_switchable_schools', [SchoolController::class, 'loadSwitchableSchools']);
         Route::post('/admin/schools/search_switch_users', [SchoolController::class, 'searchSwitchUsers']);
         Route::post('/admin/schools/switch_school', [SchoolController::class, 'switchSchool']);
-        Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
         Route::post('/admin/schools/add_licence', [SchoolController::class, 'addLicence']);
         Route::post('/admin/schools/delete_licence', [SchoolController::class, 'deleteLicence']);
         Route::put('/admin/school_licences/{school_licence}/save_school', [SchoolController::class, 'saveSchoolLicenceSchool']);
@@ -526,10 +530,6 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/school_licences/{school_licence}/deactivate_user_licence', [SchoolController::class, 'deactivateCurrentUserLicence']);
         Route::post('/admin/schools/add_admin', [SchoolController::class, 'addAdmin']);
         Route::post('/admin/schools/delete_admin', [SchoolController::class, 'deleteAdmin']);
-
-        // Profile
-        Route::post('/admin/users/save_2fa', [UserController::class, 'save2Fa']);
-        Route::post('/admin/users/save_2fa_with_code', [UserController::class, 'save2FaWithCode']);
 
         // schoolyears
         Route::apiResource('/admin/schoolyears', SchoolyearController::class);
@@ -559,6 +559,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/register_date_bookings/get_user_with_email', [RegisterDateBookingController::class, 'getUserWithEmail'])->middleware('tool-licensed:Anmeldetool,auto,scope:staff_admin_access');
         Route::post('/admin/register_date_bookings/update_or_create_user', [RegisterDateBookingController::class, 'updateOrCreateUser'])->middleware('tool-licensed:Anmeldetool,auto,scope:staff_admin_access');
         Route::post('/admin/register_date_bookings/delete_bookings', [RegisterDateBookingController::class, 'deleteBookings'])->middleware('tool-licensed:Anmeldetool,auto,scope:staff_admin_access');
+    });
+
+    /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
+    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher,lunch_admin'])->group(function () {
+        Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
     });
 
     /* SANCTUM - admin */

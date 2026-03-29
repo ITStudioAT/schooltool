@@ -49,10 +49,10 @@ describe('Restaurant page navigation', () => {
         expect(restaurantStoreMock.loadSettings).toHaveBeenCalledTimes(1)
     })
 
-    it('builds the navigation items with users after menu plans', () => {
+    it('builds the navigation items without the old settings entry', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'users', 'settings'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'users'])
     })
 
     it('builds hero chips from selected school and role context', () => {

@@ -29,7 +29,7 @@
                                 <p class="online-settings__panel-eyebrow">Bestellung</p>
                                 <h3 class="online-settings__panel-title">Bestellbar</h3>
                             </div>
-                            <span class="online-settings__panel-status">{{ startStatusLabel }} / {{ endStatusLabel }}</span>
+                            <span class="online-settings__panel-status">{{ orderPanelStatusLabel }}</span>
                         </div>
 
                         <div class="online-settings__panel-block">
@@ -102,7 +102,7 @@
                                 <p class="online-settings__panel-eyebrow">Sichtbarkeit</p>
                                 <h3 class="online-settings__panel-title">Sichtbar</h3>
                             </div>
-                            <span class="online-settings__panel-status">{{ visibilityStartStatusLabel }} / {{ visibilityStatusLabel }}</span>
+                            <span class="online-settings__panel-status">{{ visibilityPanelStatusLabel }}</span>
                         </div>
 
                         <div class="online-settings__panel-block">
@@ -231,7 +231,7 @@
                                 <strong>Men&uuml;pl&auml;ne im gezeigten Zeitraum</strong>
                                 <div class="online-settings__preview-range">{{ previewRangeLabel }}</div>
                             </div>
-                            <span class="online-settings__panel-status">{{ menuPlansInPreviewRange.length }} Plan{{ menuPlansInPreviewRange.length === 1 ? '' : 'e' }}</span>
+                            <span class="online-settings__panel-status">{{ menuPlansInPreviewRange.length }} {{ menuPlansInPreviewRange.length === 1 ? 'Plan' : 'Pläne' }}</span>
                         </div>
 
                         <div v-if="menuPlansInPreviewRange.length" class="online-settings__status-list">
@@ -621,6 +621,9 @@ export default {
         startStatusLabel() {
             return this.form.order_start_mode === 'scheduled' ? this.startSummary : 'Automatisch'
         },
+        orderPanelStatusLabel() {
+            return `${this.startStatusLabel} bis ${this.endStatusLabel}`
+        },
         endStatusLabel() {
             return this.endSummary
         },
@@ -628,6 +631,11 @@ export default {
             return this.form.visibility_end_mode === 'week_end'
                 ? 'Bis zum Ende der Woche'
                 : 'Bis zum letzten Tag des Men\u00fcplans'
+        },
+        visibilityPanelStatusLabel() {
+            return this.form.visibility_end_mode === 'week_end'
+                ? `${this.visibilityStartStatusLabel} bis zum Ende der Woche`
+                : `${this.visibilityStartStatusLabel} bis zum letzten Tag des Men\u00fcplans`
         },
         visibilitySelectionExceedsOrderStart() {
             if (this.form.visibility_start_mode !== 'scheduled') {

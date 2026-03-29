@@ -205,7 +205,7 @@ export default {
         async stopImpersonationAndReturn() {
             if (!(await this.adminStore.stopImpersonation())) return
             await this.$nextTick()
-            this.$router.replace('/admin/super_admin')
+            this.$router.replace('/admin')
         },
         callItemClick(item) {
             const fnName = item.click

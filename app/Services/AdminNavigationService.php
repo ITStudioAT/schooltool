@@ -44,6 +44,7 @@ class AdminNavigationService
         $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
         $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
+        $restaurantLicenceStatus = $this->toolAccessStatus($user, 'Restaurant', ['admin', 'lunch_admin']);
         $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', ['aba_teacher']);
         // ANMELDESYSTEM
         if ($this->userHasRole(['admin', 'register_admin'])) {
@@ -106,12 +107,14 @@ class AdminNavigationService
 
         // RESTAURANT
         if ($this->userHasRole(['admin', 'lunch_admin'])) {
-            $menu[] = [
-                'title' => 'Restaurant',
-                'icon' => 'mdi-silverware-fork-knife',
-                'to' => '/admin/restaurant',
-                'is_active' => true,
-            ];
+            if ($restaurantLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'Restaurant',
+                    'icon' => 'mdi-silverware-fork-knife',
+                    'to' => '/admin/restaurant',
+                    'is_active' => $restaurantLicenceStatus === 'active',
+                ] + $this->moduleStatusMeta($restaurantLicenceStatus, 'Restaurant');
+            }
         }
 
         // ABMELDEN
@@ -146,8 +149,8 @@ class AdminNavigationService
             ->filter(fn (array $item) => isset($item['to']) && is_string($item['to']))
             ->keyBy('to');
 
-        $capabilities['home'] = $user->hasAnyRole(self::ADMIN_SHELL_ROLES) || $user->hasRole('super_admin');
-        $capabilities['settings'] = $user->hasAnyRole(self::ADMIN_SHELL_ROLES) || $user->hasRole('super_admin');
+        $capabilities['home'] = $user->hasAdminShellAccess();
+        $capabilities['settings'] = $user->hasAdminShellAccess();
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');
@@ -167,7 +170,7 @@ class AdminNavigationService
     public function profileMenu(): array
     {
         $menu = [];
-        if ($this->userHasRole(['admin', 'user', 'register_user', 'register_admin'])) {
+        if (auth()->user()?->hasAdminShellAccess()) {
             $menu[] = ['title' => '', 'subtitle' => 'Home', 'icon' => 'mdi-home', 'color' => 'secondary',  'to' => '/admin'];
             $menu[] = ['title' => '', 'subtitle' => 'Kennwort ändern', 'icon' => 'mdi-form-textbox-password', 'color' => 'secondary',  'action' => 'wantToChangePassword'];
             $menu[] = ['title' => '', 'subtitle' => '2-FA-Authentifizierung', 'icon' => 'mdi-two-factor-authentication', 'color' => 'secondary',  'action' => 'wantToChange2Fa'];

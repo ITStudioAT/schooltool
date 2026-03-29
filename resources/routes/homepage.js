@@ -14,9 +14,11 @@ import StudentProfile from '@/pages/homepage/student/profile/Profile.vue'
 import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.vue'
 import Cashier from '@/pages/homepage/cashier/Cashier.vue'
 import Restaurant from '@/pages/homepage/index/Restaurant.vue'
+import Products from '@/pages/homepage/index/Products.vue'
 
 const routes = [
     { path: '/', component: Index },
+    { path: '/homepage/products', component: Products },
     { path: '/homepage/impressum', component: Impressum },
     { path: '/homepage/register', component: Register },
     { path: '/homepage/register2', component: Register_Part2 },

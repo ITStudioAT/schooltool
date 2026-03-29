@@ -1,5 +1,5 @@
 ﻿import { describe, expect, it } from 'vitest'
-import router from '../../../../resources/routes/admin.js'
+import router, { routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {
     it('registers the restaurant menu plans route', () => {
@@ -14,5 +14,11 @@ describe('admin routes', () => {
 
         expect(resolvedRoute.matched).toHaveLength(1)
         expect(resolvedRoute.matched[0]?.path).toBe('/admin/menu-plans')
+    })
+
+    it('redirects the legacy super admin route to the admin dashboard', () => {
+        const legacyRoute = routes.find((route) => route.path === '/admin/super_admin/:section?')
+
+        expect(legacyRoute?.redirect).toBe('/admin')
     })
 })

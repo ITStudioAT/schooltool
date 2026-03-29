@@ -63,7 +63,7 @@ describe('index', function () {
             ->assertJsonStructure([
                 'pagination' => ['current_page', 'last_page', 'per_page', 'total'],
                 'items' => [
-                    '*' => ['id', 'name'],
+                    '*' => ['id', 'name', 'is_admin'],
                 ],
             ]);
     });
@@ -159,6 +159,7 @@ describe('store', function () {
 
         $roleData = [
             'name' => 'new_custom_role',
+            'is_admin' => true,
         ];
 
         $response = $this->postJson('/api/admin/roles', $roleData);
@@ -166,11 +167,13 @@ describe('store', function () {
         $response->assertStatus(200)
             ->assertJson([
                 'name' => 'new_custom_role',
+                'is_admin' => true,
             ]);
 
         $this->assertDatabaseHas('roles', [
             'name' => 'new_custom_role',
             'guard_name' => 'web',
+            'is_admin' => true,
         ]);
     });
 
@@ -179,6 +182,7 @@ describe('store', function () {
 
         $roleData = [
             'name' => 'test_role',
+            'is_admin' => false,
         ];
 
         $response = $this->postJson('/api/admin/roles', $roleData);
@@ -301,16 +305,19 @@ describe('update', function () {
         $response = $this->putJson("/api/admin/roles/{$role->id}", [
             'id' => $role->id,
             'name' => 'updated_role_name',
+            'is_admin' => true,
         ]);
 
         $response->assertStatus(200)
             ->assertJson([
                 'name' => 'updated_role_name',
+                'is_admin' => true,
             ]);
 
         $this->assertDatabaseHas('roles', [
             'id' => $role->id,
             'name' => 'updated_role_name',
+            'is_admin' => true,
         ]);
     });
 
@@ -535,4 +542,3 @@ describe('destroyMultiple', function () {
         $response->assertStatus(204);
     });
 });
-

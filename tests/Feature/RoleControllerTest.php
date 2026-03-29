@@ -35,9 +35,10 @@ beforeEach(function () {
         'super_admin',
         'register_admin',
         'student',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
+        'is_admin' => in_array($role, ['teacher', 'admin', 'register_admin'], true),
     ]));
 
     $this->superAdmin = User::factory()->create([
@@ -80,7 +81,7 @@ test('super admin can load roles ordered alphabetically', function () {
 
     $response->assertStatus(200)
         ->assertJsonStructure([
-            ['id', 'name'],
+            ['id', 'name', 'is_admin'],
         ])
         ->assertJsonCount(5);
 
@@ -93,6 +94,9 @@ test('super admin can load roles ordered alphabetically', function () {
         'super_admin',
         'teacher',
     ]);
+
+    expect(collect($response->json())->firstWhere('name', 'admin')['is_admin'])->toBeTrue();
+    expect(collect($response->json())->firstWhere('name', 'student')['is_admin'])->toBeFalse();
 });
 
 test('admin without super admin role can load roles', function () {
@@ -120,4 +124,3 @@ test('guest receives 401 when loading roles', function () {
     $this->getJson('/api/admin/roles/load_roles')
         ->assertStatus(401);
 });
-

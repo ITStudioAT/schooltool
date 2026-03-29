@@ -55,17 +55,21 @@ const vuetifyStubs = {
 }
 
 describe('Admin settings page', () => {
-    it('builds the updated super-admin sub navigation with licence models and roles', () => {
+    it('builds the updated super-admin sub navigation with grundeinstellungen first', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isAdminTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation'])
-        expect(items[1]).toMatchObject({
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation'])
+        expect(items[0]).toMatchObject({
+            key: 'general',
+            label: 'Grundeinstellungen',
+        })
+        expect(items[2]).toMatchObject({
             key: 'licence_models',
             label: 'Lizenzen Modelle',
         })
-        expect(items[2]).toMatchObject({
+        expect(items[3]).toMatchObject({
             key: 'roles',
             label: 'Rollen',
         })
@@ -125,6 +129,21 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Überblick', 'Eigene Gruppen'])
     })
 
+    it('builds the restaurant sub navigation with the overtaken settings sections', () => {
+        const items = (Settings as any).computed.subNavigationItems.call({
+            isRestaurantTab: true,
+            isAdminTab: false,
+            isRegisterTab: false,
+            isTeachingTab: false,
+            isMaterialsTab: false,
+            isGroupsTab: false,
+            isTutoringTab: false,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'online'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Online'])
+    })
+
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
         const allowedItems = (Settings as any).computed.navigationItems.call({
             canAccessSuperAdminSettingsTab: false,
@@ -151,8 +170,8 @@ describe('Admin settings page', () => {
     it('includes the groups settings tab in available tabs only for authorized roles', () => {
         const methods = (Settings as any).methods
 
-        expect(methods.availableTabKeys(true, true, true, true, true)).toContain('groups')
-        expect(methods.availableTabKeys(true, true, true, true, false)).not.toContain('groups')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('groups')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, false, true, true)).not.toContain('groups')
     })
 
     it('shows the materials settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
@@ -181,8 +200,40 @@ describe('Admin settings page', () => {
     it('includes the materials settings tab in available tabs only for authorized roles', () => {
         const methods = (Settings as any).methods
 
-        expect(methods.availableTabKeys(true, true, true, true, true)).toContain('materials')
-        expect(methods.availableTabKeys(true, true, true, false, true)).not.toContain('materials')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('materials')
+        expect(methods.availableTabKeys(true, true, true, true, true, false, true, true, true)).not.toContain('materials')
+    })
+
+    it('shows the restaurant settings tab only for super_admin, admin, and lunch_admin', () => {
+        const allowedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: false,
+            canAccessRestaurantSettingsTab: true,
+        })
+        const deniedItems = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: false,
+            canAccessRestaurantSettingsTab: false,
+        })
+
+        expect(allowedItems.map((item: { key: string }) => item.key)).toContain('restaurant')
+        expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('restaurant')
+
+        const tabRoleMap = (Settings as any).computed.tabRoleMap.call({})
+        expect(tabRoleMap.restaurant).toEqual(['super_admin', 'admin', 'lunch_admin'])
+    })
+
+    it('includes the restaurant settings tab in available tabs only for authorized roles', () => {
+        const methods = (Settings as any).methods
+
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, true, true)).toContain('restaurant')
+        expect(methods.availableTabKeys(true, true, true, true, true, true, true, false, true)).not.toContain('restaurant')
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
@@ -207,7 +258,7 @@ describe('Admin settings page', () => {
         expect(deniedItems.map((item: { key: string }) => item.key)).not.toContain('admin')
     })
 
-    it('renders the overtaken licence and role views from the super-admin settings destination', async () => {
+    it('renders the grundeinstellungen view first on the super-admin settings destination', async () => {
         const { container } = render(Settings, {
             global: {
                 plugins: [
@@ -247,8 +298,16 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.getByText('Schools Component')).toBeInTheDocument()
+        expect(screen.getAllByText('Grundeinstellungen').length).toBeGreaterThan(0)
+        expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
+        expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()
         expect(screen.getByText('Lizenzen Modelle')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByText('Schulen'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Schools Component')).toBeInTheDocument()
+        })
 
         await fireEvent.click(screen.getByText('Lizenzen Modelle'))
 
@@ -482,6 +541,141 @@ describe('Admin settings page', () => {
         })
     })
 
+    it('renders the restaurant settings tab with overtaken settings sub navigation', async () => {
+        const { container } = render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['lunch_admin'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=restaurant&panel=online',
+                        query: {
+                            tab: 'restaurant',
+                            panel: 'online',
+                        },
+                    },
+                    $router: {
+                        replace: () => {},
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RestaurantSettings: {
+                        props: ['embedded', 'panel'],
+                        template: '<div>RestaurantSettings {{ embedded ? "embedded" : "full" }} {{ panel }}</div>',
+                    },
+                },
+            },
+        })
+
+        expect(container.querySelector('.settings-subnav')).not.toBeNull()
+        expect(screen.getByText('Allgemein')).toBeInTheDocument()
+        expect(screen.getByText('Kategorien')).toBeInTheDocument()
+        expect(screen.getByText('Zutaten-Symbole')).toBeInTheDocument()
+        expect(screen.getByText('Freie Tage')).toBeInTheDocument()
+        expect(screen.getByText('Speisezeiten')).toBeInTheDocument()
+        expect(screen.getByText('Online')).toBeInTheDocument()
+        expect(screen.getByText('RestaurantSettings embedded online')).toBeInTheDocument()
+        expect(container.querySelector('.settings-restaurant-wrap')).not.toBeNull()
+    })
+
+    it('allows lunch_admin to open the restaurant settings tab directly', () => {
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['lunch_admin'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=restaurant',
+                        query: {
+                            tab: 'restaurant',
+                        },
+                    },
+                    $router: {
+                        replace: vi.fn(),
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                },
+            },
+        })
+
+        expect(screen.getByText('Restaurant')).toBeInTheDocument()
+        expect(screen.getByText('Profil')).toBeInTheDocument()
+        expect(screen.queryByText('Nachhilfe')).not.toBeInTheDocument()
+        expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
+        expect(screen.getByText('lunch_admin')).toBeInTheDocument()
+    })
+
+    it('allows lunch_admin to open the profile settings tab directly', () => {
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['lunch_admin'],
+                                    capabilities: {
+                                        profile: true,
+                                    },
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=profile',
+                        query: {
+                            tab: 'profile',
+                        },
+                    },
+                    $router: {
+                        replace: vi.fn(),
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Profile: { template: '<div>Profile Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.getByText('Profile Component')).toBeInTheDocument()
+    })
+
     it('redirects unauthorized users away from the admin settings tab and hides super-admin', () => {
         const replace = vi.fn()
         const { container } = render(Settings, {
@@ -528,8 +722,49 @@ describe('Admin settings page', () => {
         expect(screen.queryByText('Admin')).not.toBeInTheDocument()
         expect(screen.queryByText('Super-Admin')).not.toBeInTheDocument()
         expect(container.querySelector('.settings-subnav')).toBeNull()
-        expect(screen.getAllByText('Nachhilfe').length).toBeGreaterThan(0)
-        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=tutoring')
+        expect(screen.getAllByText('Unterricht').length).toBeGreaterThan(0)
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
+    })
+
+    it('redirects unauthorized users away from the restaurant settings tab', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['teacher'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=restaurant',
+                        query: {
+                            tab: 'restaurant',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                },
+            },
+        })
+
+        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
     })
 
     it('redirects removed register panels back to the register users settings view', () => {

@@ -221,6 +221,14 @@ describe('Restaurant online settings component', () => {
         expect(wrapper.find('[data-testid="plan-status-2"]').exists()).toBe(false)
     })
 
+    it('shows the empty plan card with the correct plural label', () => {
+        const wrapper = mountOnlineSettings({
+            plans: [],
+        })
+
+        expect(wrapper.get('[data-testid="plan-status-card"]').text()).toContain('0 Pläne')
+    })
+
     it('labels menu plans as visible orderable upcoming or already past', () => {
         const wrapper = mountOnlineSettings()
         const currentPlan = { id: 2, start_date: '2026-03-30', end_date: '2026-04-03', is_available: true }
@@ -434,6 +442,18 @@ describe('Restaurant online settings component', () => {
         expect(visibilityPanel.text()).toContain('Sichbarkeitsende')
         expect(visibilityPanel.text()).toContain('Bis zum letzten Tag des Men\u00fcplans')
         expect(visibilityPanel.text()).toContain('Bis zum Ende der Woche')
+    })
+
+    it('renders combined header labels for automatic ordering and availability visibility', () => {
+        const wrapper = mountOnlineSettings({
+            onlineSettings: {
+                visibility_start_mode: 'when_available',
+                order_start_mode: 'when_available',
+            },
+        })
+
+        expect(wrapper.get('[data-testid="order-panel"]').text()).toContain('Automatisch bis Freitag 17:00 vor der Men\u00fcwoche')
+        expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Sobald verf\u00fcgbar bis zum letzten Tag des Men\u00fcplans')
     })
 
     it('saves online settings through the restaurant store', async () => {

@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
 use App\Notifications\StandardEmail;
+use App\Services\AccessScopeService;
 use App\Traits\UserTrait;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Collection;
@@ -373,5 +374,15 @@ class User extends Authenticatable
     public function canBeImpersonated(): bool
     {
         return true;
+    }
+
+    public function hasAdminShellAccess(): bool
+    {
+        if ($this->hasRole('super_admin')) {
+            return true;
+        }
+
+        return $this->roles()->where('is_admin', true)->exists()
+            || $this->hasAnyRole(app(AccessScopeService::class)->roleNamesForScope('admin_shell_access'));
     }
 }

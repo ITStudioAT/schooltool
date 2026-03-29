@@ -230,7 +230,7 @@ describe('dashboardMenu', function () {
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool', 'Materialientool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Lehrertool', 'Materialientool', 'Restaurant']);
 
         $result = $this->service->dashboardMenu();
 
@@ -362,6 +362,72 @@ describe('dashboardMenu', function () {
             ->and($materialsItem['is_active'])->toBeFalse()
             ->and($materialsItem['status_icon'])->toBe('mdi-clock-alert-outline')
             ->and($materialsItem['status_color'])->toBe('warning');
+    });
+
+    it('includes restaurant menu item for lunch_admin with active Restaurant licence', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Restaurant',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $role = Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $restaurantItem = collect($result)->firstWhere('title', 'Restaurant');
+
+        expect($restaurantItem)
+            ->not->toBeNull()
+            ->and($restaurantItem['to'])->toBe('/admin/restaurant')
+            ->and($restaurantItem['is_active'])->toBeTrue();
+    });
+
+    it('adds expired status metadata for restaurant menu item when Restaurant licence is expired', function () {
+        $school = School::factory()->create();
+        $licence = Licence::create([
+            'name' => 'Restaurant',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->subDay()->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $role = Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $restaurantItem = collect($result)->firstWhere('title', 'Restaurant');
+
+        expect($restaurantItem)
+            ->not->toBeNull()
+            ->and($restaurantItem['is_active'])->toBeFalse()
+            ->and($restaurantItem['status_icon'])->toBe('mdi-clock-alert-outline')
+            ->and($restaurantItem['status_color'])->toBe('warning');
+    });
+
+    it('hides restaurant menu item when Restaurant licence is missing', function () {
+        $school = School::factory()->create();
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $role = Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $restaurantItem = collect($result)->firstWhere('title', 'Restaurant');
+
+        expect($restaurantItem)->toBeNull();
     });
 
     it('keeps teaching menu active when school override disables template user licence requirement', function () {
@@ -520,7 +586,7 @@ describe('profileMenu', function () {
             ->toHaveCount(3);
     });
 
-    it('returns menu items for user role', function () {
+    it('returns no menu items for user role', function () {
         $user = User::factory()->create();
         $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
         $user->assignRole($role);
@@ -532,10 +598,10 @@ describe('profileMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(3);
+            ->toBeEmpty();
     });
 
-    it('returns menu items for register_user role', function () {
+    it('returns no menu items for register_user role', function () {
         $user = User::factory()->create();
         $role = Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
         $user->assignRole($role);
@@ -547,7 +613,7 @@ describe('profileMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(3);
+            ->toBeEmpty();
     });
 
     it('returns menu items for register_admin role', function () {
@@ -565,9 +631,24 @@ describe('profileMenu', function () {
             ->toHaveCount(3);
     });
 
+    it('returns menu items for lunch_admin role', function () {
+        $user = User::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->profileMenu();
+
+        expect($result)
+            ->toBeArray()
+            ->toHaveCount(3);
+    });
+
     it('includes home menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -586,7 +667,7 @@ describe('profileMenu', function () {
 
     it('includes password change menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -605,7 +686,7 @@ describe('profileMenu', function () {
 
     it('includes 2FA menu item with correct properties', function () {
         $user = User::factory()->create();
-        $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $user->assignRole($role);
 
         Auth::shouldReceive('check')->andReturn(true);
@@ -919,7 +1000,7 @@ describe('routeCapabilities', function () {
         $user = User::factory()->create(['school_id' => $school->id]);
         $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
 
-        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool']);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool', 'Restaurant']);
 
         Auth::shouldReceive('check')->andReturn(true);
         Auth::shouldReceive('user')->andReturn($user);
@@ -976,6 +1057,23 @@ describe('routeCapabilities', function () {
         expect($capabilities['home'])->toBeTrue()
             ->and($capabilities['settings'])->toBeTrue()
             ->and($capabilities['profile'])->toBeTrue();
+    });
+
+    it('allows home capability for a custom role marked as admin', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::create([
+            'name' => 'custom_admin_shell',
+            'guard_name' => 'web',
+            'is_admin' => true,
+        ]));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+        ]);
+
+        expect($capabilities['home'])->toBeTrue()
+            ->and($capabilities['profile'])->toBeTrue()
+            ->and($capabilities['settings'])->toBeTrue();
     });
 
     it('disables module routes when the dashboard item is shown but disabled', function () {

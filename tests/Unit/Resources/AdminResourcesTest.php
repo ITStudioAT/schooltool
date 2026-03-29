@@ -208,14 +208,15 @@ test('admin register user resource includes bookings relation', function () {
     expect($data['registerDateBookings'])->toHaveCount(1);
 });
 
-test('role resource returns id and name', function () {
-    $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+test('role resource returns id, name, and is_admin', function () {
+    $role = Role::create(['name' => 'admin', 'guard_name' => 'web', 'is_admin' => true]);
 
     $data = (new RoleResource($role))->toArray(request());
 
     expect($data)->toMatchArray([
         'id' => $role->id,
         'name' => 'admin',
+        'is_admin' => true,
     ]);
 });
 

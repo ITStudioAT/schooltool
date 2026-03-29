@@ -17,6 +17,7 @@ class RoleResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'is_admin' => (bool) $this->is_admin,
         ];
     }
 }

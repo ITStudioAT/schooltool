@@ -232,6 +232,24 @@ describe('handle method - scope parameters', function () {
 
         expect($response->getContent())->toBe('Materials Page');
     });
+
+    it('allows access to admin shell scope when user has a custom role marked as admin', function () {
+        $user = User::factory()->create();
+        $role = Role::create([
+            'name' => 'custom_dashboard_role',
+            'guard_name' => 'web',
+            'is_admin' => true,
+        ]);
+        $user->assignRole($role);
+        Auth::login($user);
+
+        $request = Request::create('/admin', 'GET');
+        $next = fn ($req) => response('Admin Dashboard');
+
+        $response = $this->middleware->handle($request, $next, 'scope:admin_shell_access');
+
+        expect($response->getContent())->toBe('Admin Dashboard');
+    });
 });
 
 describe('handle method - variadic role parameters', function () {

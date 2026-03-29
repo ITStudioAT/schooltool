@@ -1,7 +1,7 @@
 <template>
     <v-col cols="12">
         <v-row dense>
-            <v-col cols="12">
+            <v-col v-if="!embedded" cols="12">
                 <v-sheet rounded="xl" class="settings-subnav pa-2 mb-3">
                     <div class="d-flex flex-wrap ga-2">
                         <v-btn
@@ -460,11 +460,22 @@ export default {
         return useValidationRulesSetup()
     },
 
+    props: {
+        embedded: {
+            type: Boolean,
+            default: false,
+        },
+        panel: {
+            type: String,
+            default: null,
+        },
+    },
+
     components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings },
 
     data() {
         return {
-            selectedPanel: 'general',
+            selectedPanel: this.resolveInitialPanel(),
             isEditingGeneralSettings: false,
             isGeneralFormValid: false,
             categoryDialog: false,
@@ -498,13 +509,19 @@ export default {
     },
 
     created() {
-        this.syncPanelFromRoute()
         this.resetGeneralSettingsForm()
     },
 
     watch: {
         '$route.query.panel'() {
-            this.syncPanelFromRoute()
+            if (! this.embedded) {
+                this.syncPanelFromRoute()
+            }
+        },
+        panel() {
+            if (this.embedded) {
+                this.syncPanelFromEmbeddedPanel()
+            }
         },
         generalSettings: {
             handler() {
@@ -515,6 +532,13 @@ export default {
     },
 
     methods: {
+        resolveInitialPanel() {
+            if (this.embedded) {
+                return this.normalizePanel(this.panel)
+            }
+
+            return this.normalizePanel(this.$route?.query?.panel)
+        },
         activatePanel(panel) {
             const normalizedPanel = this.normalizePanel(panel)
 
@@ -523,6 +547,11 @@ export default {
             }
 
             this.selectedPanel = normalizedPanel
+
+            if (this.embedded) {
+                return
+            }
+
             this.$router.replace({
                 query: {
                     ...(this.$route?.query || {}),
@@ -535,6 +564,9 @@ export default {
         },
         isPanelNavigationDisabled(panel) {
             return this.isEditingGeneralSettings && panel !== this.selectedPanel
+        },
+        syncPanelFromEmbeddedPanel() {
+            this.selectedPanel = this.normalizePanel(this.panel)
         },
         syncPanelFromRoute() {
             this.selectedPanel = this.normalizePanel(this.$route?.query?.panel)
