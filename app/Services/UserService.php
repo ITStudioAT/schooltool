@@ -88,9 +88,13 @@ class UserService
             if ($role['name'] === 'super_admin') {
                 if ($isProtectedSuperAdminUser) {
                     $user->assignRole('super_admin');
+
                     continue;
                 }
                 if (! $canManageSuperAdminRole) {
+                    continue;
+                }
+                if ($actingUser && $actingUser->id === $user->id) {
                     continue;
                 }
                 if ($role['checked']) {
@@ -98,12 +102,16 @@ class UserService
                 } else {
                     $user->removeRole('super_admin');
                 }
+
                 continue;
             }
 
             if ($role['checked']) {
                 $user->assignRole($role['name']);
             } else {
+                if (in_array($role['name'], ['super_admin', 'admin']) && $actingUser && $actingUser->id === $user->id) {
+                    continue;
+                }
                 if ($role['name'] === 'register_user' && RegisterDateBooking::where('user_id', $user->id)->exists()) {
                     continue;
                 }
@@ -120,7 +128,6 @@ class UserService
 
         return $user;
     }
-
 
     public function setSchoolyearToNull(Schoolyear $schoolyear): bool
     {
@@ -199,6 +206,7 @@ class UserService
                 if ($roleId['name'] === 'super_admin') {
                     if ($isProtectedSuperAdminUser) {
                         $user->assignRole('super_admin');
+
                         continue;
                     }
                     if (! $canManageSuperAdminRole) {
@@ -296,7 +304,7 @@ class UserService
         $mail = [
             'from_address' => env('MAIL_FROM_ADDRESS'),
             'from_name' => env('MAIL_FROM_NAME'),
-            'logo' => asset('/storage/images/' . config('schooltool.logo')),
+            'logo' => asset('/storage/images/'.config('schooltool.logo')),
             'subject' => 'Code zum Bestätigen der E-Mail',
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $token2fa,
@@ -364,7 +372,7 @@ class UserService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/' . $school->logo),
+            'logo' => asset('/storage/images/'.$school->logo),
             'subject' => $subject,
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token2fa,
@@ -391,7 +399,7 @@ class UserService
 
     public function confirmTutoringUsers(array $data): void
     {
-        $tutoringService = new TutoringService();
+        $tutoringService = new TutoringService;
 
         foreach ($data as $id) {
             $user = User::findOrFail($id);

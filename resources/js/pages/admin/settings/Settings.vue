@@ -81,6 +81,10 @@
                         <Roles />
                     </div>
 
+                    <div v-else-if="isRegisterTab && sub_action === 'users'" class="settings-users-wrap">
+                        <RegisterUsers />
+                    </div>
+
                     <v-col v-else cols="12">
                         <v-sheet rounded="xl" class="pa-6 settings-empty-card">
                             <div class="settings-empty-icon">
@@ -111,9 +115,10 @@ import Users from '@/pages/admin/superAdmin/components/Users.vue'
 import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
 import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
 import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
+import RegisterUsers from '@/pages/admin/settings/components/RegisterUsers.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, RegisterUsers },
 
     mounted() {
         this.syncRouteQuery()
@@ -197,17 +202,25 @@ export default {
         canAccessAdminSettingsTab() {
             return ['super_admin', 'admin'].some((role) => this.configuredRoleNames.includes(role))
         },
+        canAccessRegisterSettingsTab() {
+            return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
+        },
         showsSubNavigation() {
-            return ['super_admin', 'admin'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register'].includes(this.main_action)
         },
         defaultSubAction() {
-            return this.main_action === 'admin' ? 'schoolyears' : 'schools'
+            if (this.main_action === 'admin') return 'schoolyears'
+            if (this.main_action === 'register') return 'users'
+            return 'schools'
         },
         isSuperAdminTab() {
             return this.main_action === 'super_admin'
         },
         isAdminTab() {
             return this.main_action === 'admin'
+        },
+        isRegisterTab() {
+            return this.main_action === 'register'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -221,11 +234,18 @@ export default {
             return item ? item.label : ''
         },
         subNavigationItems() {
+            if (this.isRegisterTab) {
+                return [
+                    { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
+                    { key: 'notifications', label: 'Benachrichtigungen', meta: 'E-Mails', icon: 'mdi-bell-outline' },
+                    { key: 'templates', label: 'Vorlagen', meta: 'Dokumente', icon: 'mdi-file-document-outline' },
+                ]
+            }
+
             if (this.isAdminTab) {
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
                     { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
-                    { key: 'display', label: 'Anzeige', meta: 'Darstellung', icon: 'mdi-palette-outline' },
                 ]
             }
 
@@ -255,7 +275,7 @@ export default {
             return [
                 { key: 'super_admin', label: 'Super-Admin', icon: 'mdi-shield-crown', visible: this.canAccessSuperAdminSettingsTab },
                 { key: 'admin', label: 'Admin', icon: 'mdi-shield-account', visible: this.canAccessAdminSettingsTab },
-                { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check' },
+                { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group' },
                 { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant' },
                 { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline' },
@@ -266,11 +286,11 @@ export default {
     },
 
     methods: {
-        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab) {
+        availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab) {
             return [
                 canAccessSuperAdminTab ? 'super_admin' : null,
                 canAccessAdminTab ? 'admin' : null,
-                'register',
+                canAccessRegisterTab ? 'register' : null,
                 'tutoring',
                 'teaching',
                 'groups',
@@ -284,7 +304,8 @@ export default {
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab)
+            const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const keys = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)
 
             return keys.includes(tab) ? tab : keys[0]
         },
@@ -295,14 +316,23 @@ export default {
             const configuredRoleNames = Array.isArray(adminStore?.config?.roles) ? adminStore.config.roles : []
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const resolvedTab = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab).includes(tab)
+            const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const resolvedTab = this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab).includes(tab)
                 ? tab
-                : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab)[0]
-            const keys = resolvedTab === 'admin'
-                ? ['schoolyears', 'users', 'display']
-                : ['schools', 'licence_models', 'roles']
+                : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)[0]
+            let keys, fallback
+            if (resolvedTab === 'admin') {
+                keys = ['schoolyears', 'users']
+                fallback = 'schoolyears'
+            } else if (resolvedTab === 'register') {
+                keys = ['users', 'notifications', 'templates']
+                fallback = 'users'
+            } else {
+                keys = ['schools', 'licence_models', 'roles']
+                fallback = 'schools'
+            }
 
-            return keys.includes(panel) ? panel : (resolvedTab === 'admin' ? 'schoolyears' : 'schools')
+            return keys.includes(panel) ? panel : fallback
         },
         initialLicenceModelsAction() {
             const tab = this.$route?.query?.licence_tab || 'overview'

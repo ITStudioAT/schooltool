@@ -3,8 +3,8 @@
         <section class="crud-shell admin-card ai-glass-panel" :class="{ 'is-disabled': action != '' }">
             <div class="admin-card-head crud-head mb-4">
                 <div>
-                    <div class="admin-card-eyebrow">Verwaltung</div>
-                    <h2 class="admin-card-title crud-title">Benutzer Accounts</h2>
+                    <div class="admin-card-eyebrow">Anmeldetool</div>
+                    <h2 class="admin-card-title crud-title">Benutzer</h2>
                 </div>
 
                 <div class="admin-kpi-grid crud-kpis">
@@ -20,27 +20,6 @@
                     <div class="d-grid ga-3 mb-3">
                         <div class="empty-state crud-search-panel">
                             <SearchField :store="userStore" selected_field="selected_users" />
-                        </div>
-
-                        <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
-                            <v-btn
-                                :color="selected_role == null ? 'primary' : 'secondary'"
-                                variant="tonal"
-                                rounded="lg"
-                                class="text-caption"
-                                @click="selected_role = null">
-                                Alle
-                            </v-btn>
-                            <v-btn
-                                v-for="role in roles"
-                                :key="role.name"
-                                :color="selected_role == role.name ? 'primary' : 'secondary'"
-                                variant="tonal"
-                                rounded="lg"
-                                class="text-caption"
-                                @click="changeSelectedRole(role.name)">
-                                {{ role.name }}
-                            </v-btn>
                         </div>
 
                         <div class="d-flex flex-wrap ga-2" :disabled="action != ''">
@@ -75,27 +54,6 @@
                                                 <div class="person-name d-flex align-center ga-1">
                                                     <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
                                                     {{ item.last_name }} {{ item.first_name }}
-                                                </div>
-                                                <div class="person-roles person-roles-chips">
-                                                    <v-chip
-                                                        v-for="roleName in normalizeRoleNames(item.roles)"
-                                                        :key="`${item.id}-${roleName}`"
-                                                        size="x-small"
-                                                        rounded="lg"
-                                                        class="person-role-chip"
-                                                        color="primary"
-                                                        variant="tonal">
-                                                        {{ formatRoleLabel(roleName) }}
-                                                    </v-chip>
-                                                    <v-chip
-                                                        v-if="normalizeRoleNames(item.roles).length === 0"
-                                                        size="x-small"
-                                                        rounded="lg"
-                                                        class="person-role-chip"
-                                                        color="primary"
-                                                        variant="outlined">
-                                                        Keine Rolle
-                                                    </v-chip>
                                                 </div>
                                                 <div class="person-email">{{ item.email }}</div>
                                             </div>
@@ -216,32 +174,6 @@
                             </v-row>
                         </div>
 
-                        <div class="empty-state crud-form-section mt-3">
-                            <div class="admin-card-eyebrow">Rollen</div>
-                            <template v-if="canManageRoles()">
-                                <div class="kpi-sub mt-1 mb-2">
-                                    <template v-if="isCurrentUserSuperAdmin()">
-                                        Hinweis: Bei der Vergabe von Rollen gibt es Einschränkungen. Zum Beispiel kann einem Benutzer, der im Anmeldetool registriert ist, der register_user nicht entzogen werden.
-                                    </template>
-                                    <template v-else>
-                                        Mit der Rolle <code>admin</code> können alle Rollen außer <code>super_admin</code> vergeben oder entzogen werden.
-                                    </template>
-                                </div>
-                                <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                    <v-checkbox
-                                        v-for="role in data.roles"
-                                        :key="role.name"
-                                        v-model="role.checked"
-                                        :label="role.name"
-                                        :disabled="isRoleLocked(role)"
-                                        hide-details
-                                        color="success"
-                                        dense />
-                                </div>
-                            </template>
-                            <div class="kpi-sub mt-1" v-else>Rollen dürfen nur von <code>admin</code> oder <code>super_admin</code> verwaltet werden.</div>
-                        </div>
-
                         <div class="crud-form-actions d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" variant="text" rounded="lg" @click="abort">Abbruch</v-btn>
                             <v-btn color="success" variant="flat" rounded="lg" type="submit" :loading="is_uploading">Speichern</v-btn>
@@ -280,7 +212,8 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import SearchField from '@/pages/components/SearchField.vue'
 import Pagination from '@/pages/components/Pagination.vue'
 import { useUserStore } from '@/stores/admin/UserStore20'
-import { useRoleStore } from '@/stores/admin/RoleStore'
+
+const FORCED_ROLE = 'register_user'
 
 export default {
     setup() {
@@ -292,16 +225,19 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.userStore = useUserStore()
-        this.roleStore = useRoleStore()
+        this.userStore.role = FORCED_ROLE
         await this.userStore.index()
-        await this.roleStore.loadRoles()
+    },
+
+    beforeUnmount() {
+        this.userStore.role = ''
+        this.userStore.selected_users = []
     },
 
     data() {
         return {
             adminStore: null,
             userStore: null,
-            roleStore: null,
             is_valid: false,
             is_uploading: false,
         }
@@ -309,8 +245,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useUserStore, ['users', 'meta', 'selected_users', 'search_string', 'data', 'answer', 'role']),
-        ...mapWritableState(useRoleStore, ['roles', 'selected_role']),
+        ...mapWritableState(useUserStore, ['users', 'meta', 'selected_users', 'search_string', 'data', 'answer']),
         userDialogOpen: {
             get() {
                 return ['create_user', 'edit_user', 'delete_user'].includes(this.action)
@@ -334,19 +269,7 @@ export default {
         },
     },
 
-    watch: {
-        async selected_role() {
-            this.userStore.role = this.selected_role
-            await this.userStore.index()
-        },
-    },
-
     methods: {
-        changeSelectedRole(role_name) {
-            this.selected_users = []
-            this.selected_role = role_name
-        },
-
         async toggleIsActive(user_id) {
             await this.userStore.toggleIsActive(user_id)
             await this.userStore.index(this.meta.current_page)
@@ -360,33 +283,13 @@ export default {
             return this.selected_users.includes(id)
         },
 
-        normalizeRoleNames(roles) {
-            const rawRoles = Array.isArray(roles) ? roles : typeof roles === 'string' ? roles.split(',') : []
-            const names = rawRoles
-                .map((role) => (typeof role === 'string' ? role : role?.name))
-                .map((name) => (name || '').toString().trim())
-                .filter((name) => name.length > 0)
-
-            return [...new Set(names)]
-        },
-
-        formatRoleLabel(roleName) {
-            return roleName
-                .toString()
-                .replaceAll('_', ' ')
-                .replace(/\b\w/g, (char) => char.toUpperCase())
-        },
-
         async saveUser(data) {
             if (this.is_uploading) { return }
             this.is_valid = false
             await this.$refs.form.validate()
             if (!this.is_valid) { return }
-            if (this.canManageRoles()) {
-                this.enforceProtectedSuperAdminRole(data)
-            } else {
-                delete data.roles
-            }
+
+            data.roles = [{ name: FORCED_ROLE, checked: true }]
 
             if (data.id) {
                 if (!(await this.userStore.update(data))) { return }
@@ -402,10 +305,6 @@ export default {
 
         createUser() {
             this.data = { is_selectable: true }
-            if (this.canManageRoles()) {
-                this.data.roles = this.roles.map((role) => ({ ...role }))
-                this.enforceProtectedSuperAdminRole(this.data)
-            }
             this.action = 'create_user'
         },
 
@@ -423,52 +322,7 @@ export default {
         editUser(user_id) {
             const user = this.users.find((s) => s.id === user_id)
             this.data = JSON.parse(JSON.stringify(user))
-
-            if (this.canManageRoles()) {
-                this.data.roles = this.roles.map((role) => ({
-                    ...role,
-                    checked: user.roles.includes(role.name),
-                }))
-                this.enforceProtectedSuperAdminRole(this.data)
-            }
-
             this.action = 'edit_user'
-        },
-
-        isCurrentUserSuperAdmin() {
-            return (this.config?.roles || []).includes('super_admin')
-        },
-        canManageRoles() {
-            return (this.config?.roles || []).some((role) => ['super_admin', 'admin'].includes(role))
-        },
-
-        isProtectedSuperAdminUser(userData = this.data) {
-            return (userData?.email || '').toString().trim().toLowerCase() === 'kron@naturwelt.at'
-        },
-
-        isEditingSelf() {
-            return this.data?.id && this.data.id === this.config?.user?.id
-        },
-
-        isSuperAdminRoleLocked(role) {
-            if (role?.name !== 'super_admin') { return false }
-            if (!this.isCurrentUserSuperAdmin()) { return true }
-            return this.isProtectedSuperAdminUser()
-        },
-
-        isRoleLocked(role) {
-            if (this.isSuperAdminRoleLocked(role)) { return true }
-            if (['super_admin', 'admin'].includes(role?.name) && this.isEditingSelf()) { return true }
-            return false
-        },
-
-        enforceProtectedSuperAdminRole(userData = this.data) {
-            if (!Array.isArray(userData?.roles)) { return }
-            if (!this.isProtectedSuperAdminUser(userData)) { return }
-            const superAdminRole = userData.roles.find((role) => role.name === 'super_admin')
-            if (superAdminRole) {
-                superAdminRole.checked = true
-            }
         },
 
         abort() {
@@ -488,20 +342,3 @@ export default {
 
 <style scoped src="../../../../../css/admin-index-page.css"></style>
 <style scoped src="../../../../../css/admin-crud-panel.css"></style>
-<style scoped>
-.person-roles-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 2px;
-}
-
-.person-role-chip {
-    font-size: 0.69rem;
-    font-weight: 400;
-    letter-spacing: 0.03em;
-    border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
-    background-color: color-mix(in srgb, currentColor 14%, transparent);
-    opacity: 0.98;
-}
-</style>

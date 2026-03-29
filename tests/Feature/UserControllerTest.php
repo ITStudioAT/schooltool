@@ -598,6 +598,41 @@ test('kron@naturwelt.at remains super_admin even when unchecked in users20 updat
     expect($target->fresh()->hasRole('super_admin'))->toBeTrue();
 });
 
+test('admin cannot remove admin role from themselves via users20 update', function () {
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $this->adminUser->id,
+        'last_name' => $this->adminUser->last_name,
+        'first_name' => $this->adminUser->first_name,
+        'email' => $this->adminUser->email,
+        'roles' => [
+            ['name' => 'admin', 'checked' => false],
+        ],
+    ])->assertStatus(200);
+
+    expect($this->adminUser->fresh()->hasRole('admin'))->toBeTrue();
+});
+
+test('super_admin cannot remove super_admin role from themselves via users20 update', function () {
+    $this->superAdmin->assignRole('admin');
+    $this->actingAs($this->superAdmin, 'sanctum');
+
+    $this->postJson('/api/admin/users20/update', [
+        'id' => $this->superAdmin->id,
+        'last_name' => $this->superAdmin->last_name,
+        'first_name' => $this->superAdmin->first_name,
+        'email' => $this->superAdmin->email,
+        'roles' => [
+            ['name' => 'super_admin', 'checked' => false],
+            ['name' => 'admin', 'checked' => false],
+        ],
+    ])->assertStatus(200);
+
+    expect($this->superAdmin->fresh()->hasRole('super_admin'))->toBeTrue();
+    expect($this->superAdmin->fresh()->hasRole('admin'))->toBeTrue();
+});
+
 // ============================================================================
 // index (admin/user) with filters
 // ============================================================================
