@@ -85,6 +85,10 @@
                         <RegisterUsers />
                     </div>
 
+                    <div v-else-if="isProfileTab" class="settings-profile-wrap">
+                        <Profile :embedded="true" />
+                    </div>
+
                     <v-col v-else cols="12">
                         <v-sheet rounded="xl" class="pa-6 settings-empty-card">
                             <div class="settings-empty-icon">
@@ -116,9 +120,10 @@ import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
 import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
 import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
 import RegisterUsers from '@/pages/admin/settings/components/RegisterUsers.vue'
+import Profile from '@/pages/admin/profile/Profile.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, RegisterUsers },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, RegisterUsers, Profile },
 
     mounted() {
         this.syncRouteQuery()
@@ -221,6 +226,9 @@ export default {
         },
         isRegisterTab() {
             return this.main_action === 'register'
+        },
+        isProfileTab() {
+            return this.main_action === 'profile'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -480,6 +488,10 @@ export default {
 .settings-roles-wrap {
     width: 1000px;
     max-width: 100%;
+}
+
+.settings-profile-wrap {
+    width: 100%;
 }
 
 .settings-licence-subnav {

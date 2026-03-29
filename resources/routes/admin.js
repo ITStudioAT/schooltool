@@ -5,7 +5,6 @@ const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
 const Auth_UnknownPassword = () => import('@/pages/admin/auth/UnknownPassword.vue')
 const Auth_Register = () => import('@/pages/admin/auth/Register.vue')
 const Auth_EmailVerification = () => import('@/pages/admin/auth/EmailVerification.vue')
-const Profile = () => import('@/pages/admin/profile/Profile.vue')
 const Users = () => import('@/pages/admin/users/Users.vue')
 const Users_AllUsers = () => import('@/pages/admin/users/AllUsers/Items.vue')
 const Users_Roles = () => import('@/pages/admin/users/Roles/Items.vue')
@@ -38,7 +37,7 @@ export const routes = [
     { path: '/admin/unknown_password', component: Auth_UnknownPassword, meta: { public: true } },
     { path: '/admin/register', component: Auth_Register, meta: { public: true } },
     { path: '/admin/email_verification', component: Auth_EmailVerification, meta: { public: true } },
-    { path: '/admin/profile', component: Profile, meta: { capability: 'profile' } },
+    { path: '/admin/profile', redirect: '/admin/settings?tab=profile' },
     { path: '/admin/users', component: Users, meta: { capability: 'users' } },
     { path: '/admin/users/all_users', component: Users_AllUsers, meta: { capability: 'users' } },
     { path: '/admin/users/roles', component: Users_Roles, meta: { capability: 'user_roles' } },

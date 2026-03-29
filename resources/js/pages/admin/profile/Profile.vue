@@ -1,7 +1,8 @@
 <template>
-    <v-container fluid class="profile-page ma-0 w-100 pa-2" v-if="config && config.user">
+    <v-container fluid class="profile-page ma-0 w-100 pa-2" :class="{ 'profile-page--embedded': embedded }" v-if="config && config.user">
 
         <AdminSectionHero
+            v-if="!embedded"
             class="mb-3"
             eyebrow="Konto"
             title="Benutzerprofil & Sicherheit"
@@ -413,6 +414,10 @@ export default {
 
     components: { AdminSectionHero },
 
+    props: {
+        embedded: { type: Boolean, default: false },
+    },
+
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.adminStore.initialize(this.$router)
@@ -581,6 +586,11 @@ export default {
 .profile-page {
     background: #0f172a;
     min-height: 100vh;
+}
+
+.profile-page--embedded {
+    background: transparent;
+    min-height: 0;
 }
 
 .profile-nav {

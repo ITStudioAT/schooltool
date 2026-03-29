@@ -136,9 +136,6 @@ class AdminNavigationService
             ];
         }
 
-        // PROFILE
-        $menu[] = ['title' => $user_name, 'icon' => 'mdi-account', 'to' => '/admin/profile', 'is_active' => true];
-
         // ABMELDEN
         $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
 
