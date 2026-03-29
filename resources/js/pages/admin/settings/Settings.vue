@@ -23,6 +23,19 @@
                 </v-tabs>
             </v-sheet>
 
+            <div v-if="activeRoles.length > 0" class="settings-roles-bar mb-2">
+                <v-icon size="14" color="rgba(255,255,255,0.4)" class="mr-1">mdi-shield-account</v-icon>
+                <v-chip
+                    v-for="role in activeRoles"
+                    :key="role"
+                    size="x-small"
+                    variant="tonal"
+                    color="indigo-lighten-3"
+                    class="settings-role-chip">
+                    {{ role }}
+                </v-chip>
+            </div>
+
             <v-sheet v-if="showsSubNavigation" rounded="xl" class="settings-subnav mb-2">
                 <div class="settings-subnav__buttons">
                     <v-btn
@@ -103,6 +116,22 @@
                         <RegisterUsers />
                     </div>
 
+                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_settings'" class="settings-tutoring-wrap">
+                        <TutoringSettings />
+                    </div>
+
+                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_subjects'" class="settings-tutoring-wrap">
+                        <TutoringSubjects />
+                    </div>
+
+                    <div v-else-if="isTutoringTab && sub_action === 'tutoring_users'" class="settings-tutoring-wrap">
+                        <TutoringUsers />
+                    </div>
+
+                    <div v-else-if="isTeachingTab && sub_action === 'teaching_admin'" class="settings-teaching-admin-wrap">
+                        <TeachingAdmin />
+                    </div>
+
                     <div v-else-if="isTeachingTab && sub_action === 'teachers'" class="settings-teachers-wrap">
                         <Teachers v-if="teachers_action === 'teachers'" :hide-back-button="true" />
                         <TeachersList v-else-if="teachers_action === 'teachers_list'" :hide-back-button="true" />
@@ -157,9 +186,13 @@ import ActiveSchool from '@/pages/admin/superAdmin/components/ActiveSchool.vue'
 import UserImpersonation from '@/pages/admin/superAdmin/components/UserImpersonation.vue'
 import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
 import TeachersList from '@/pages/admin/superAdmin/components/TeachersList.vue'
+import TutoringSettings from '@/pages/admin/tutoring/components/Settings.vue'
+import TutoringSubjects from '@/pages/admin/tutoring/components/Subjects.vue'
+import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
+import TeachingAdmin from '@/pages/admin/teaching/admin/Admin.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin },
 
     mounted() {
         this.syncRouteQuery()
@@ -231,6 +264,21 @@ export default {
             }
             return chips
         },
+        tabRoleMap() {
+            return {
+                super_admin: ['super_admin'],
+                admin: ['super_admin', 'admin'],
+                register: ['super_admin', 'admin', 'register_admin'],
+                teaching: ['super_admin', 'admin', 'teaching_admin'],
+                tutoring: ['super_admin', 'admin', 'tutoring_admin'],
+                groups: ['super_admin', 'admin'],
+                restaurant: ['super_admin', 'admin'],
+                profile: ['Jede/r'],
+            }
+        },
+        activeRoles() {
+            return this.tabRoleMap[this.main_action] || []
+        },
         activeSection() {
             const item = this.navigationItems.find((i) => i.key === this.main_action)
             return item ? item.label : ''
@@ -248,12 +296,13 @@ export default {
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register', 'teaching'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'register') return 'users'
             if (this.main_action === 'teaching') return 'teachers'
+            if (this.main_action === 'tutoring') return 'tutoring_settings'
             return 'schools'
         },
         isSuperAdminTab() {
@@ -264,6 +313,9 @@ export default {
         },
         isRegisterTab() {
             return this.main_action === 'register'
+        },
+        isTutoringTab() {
+            return this.main_action === 'tutoring'
         },
         isTeachingTab() {
             return this.main_action === 'teaching'
@@ -286,6 +338,14 @@ export default {
             return item ? item.label : ''
         },
         subNavigationItems() {
+            if (this.isTutoringTab) {
+                return [
+                    { key: 'tutoring_settings', label: 'Einstellungen', meta: 'Nachhilfe', icon: 'mdi-cog-outline' },
+                    { key: 'tutoring_subjects', label: 'Fächer', meta: 'Fächer verwalten', icon: 'mdi-television-shimmer' },
+                    { key: 'tutoring_users', label: 'Benutzer', meta: 'Nachhilfe', icon: 'mdi-account-multiple-outline' },
+                ]
+            }
+
             if (this.isRegisterTab) {
                 return [
                     { key: 'users', label: 'Benutzer', meta: 'Anmeldetool', icon: 'mdi-account-group-outline' },
@@ -295,6 +355,7 @@ export default {
             if (this.isTeachingTab) {
                 return [
                     { key: 'teachers', label: 'Lehrer', meta: 'Lehrerliste', icon: 'mdi-account-tie' },
+                    { key: 'teaching_admin', label: 'Admin', meta: 'Import, Ferien, Stunden', icon: 'mdi-import' },
                 ]
             }
 
@@ -383,11 +444,14 @@ export default {
             if (resolvedTab === 'admin') {
                 keys = ['schoolyears', 'users', 'log']
                 fallback = 'schoolyears'
+            } else if (resolvedTab === 'tutoring') {
+                keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
+                fallback = 'tutoring_settings'
             } else if (resolvedTab === 'register') {
                 keys = ['users']
                 fallback = 'users'
             } else if (resolvedTab === 'teaching') {
-                keys = ['teachers']
+                keys = ['teachers', 'teaching_admin']
                 fallback = 'teachers'
             } else {
                 keys = ['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
@@ -482,6 +546,30 @@ export default {
     color: rgba(255, 255, 255, 0.45) !important;
 }
 
+.settings-roles-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+}
+
+.settings-roles-label {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 2px;
+}
+
+.settings-role-chip {
+    font-size: 0.7rem !important;
+    font-weight: 600;
+}
+
 .settings-subnav {
     background: rgba(255, 255, 255, 0.06) !important;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -556,6 +644,16 @@ export default {
 
 .settings-user-impersonation-wrap {
     width: 1000px;
+    max-width: 100%;
+}
+
+.settings-tutoring-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-teaching-admin-wrap {
+    width: 100%;
     max-width: 100%;
 }
 

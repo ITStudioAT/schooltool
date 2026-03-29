@@ -360,20 +360,6 @@ export default {
                     visible: true,
                 },
                 {
-                    key: 'admin',
-                    label: 'Admin',
-                    meta: 'Import & Ferien',
-                    icon: 'mdi-shield-crown-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
-                },
-                {
-                    key: 'settings',
-                    label: 'Einstellungen',
-                    meta: 'Schema & Regeln',
-                    icon: 'mdi-cog-outline',
-                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
-                },
-                {
                     key: 'search',
                     label: 'Suche',
                     meta: 'Personen & Klassen',
@@ -385,6 +371,13 @@ export default {
                     label: 'Schuljahr',
                     meta: this.selectedSchoolyearLabel,
                     icon: 'mdi-calendar-month-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                },
+                {
+                    key: 'settings',
+                    label: 'Einstellungen',
+                    meta: 'Schema & Regeln',
+                    icon: 'mdi-cog-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
             ].filter((item) => item.visible)

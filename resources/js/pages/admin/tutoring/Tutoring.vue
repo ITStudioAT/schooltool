@@ -140,27 +140,6 @@ export default {
                     icon: 'mdi-home',
                     visible: true,
                 },
-                {
-                    key: 'settings',
-                    label: 'Einstellungen',
-                    meta: 'Konfiguration',
-                    icon: 'mdi-cog-outline',
-                    visible: isAdmin,
-                },
-                {
-                    key: 'subjects',
-                    label: 'Fächer',
-                    meta: 'Fächer verwalten',
-                    icon: 'mdi-television-shimmer',
-                    visible: isAdmin,
-                },
-                {
-                    key: 'users',
-                    label: 'Benutzer',
-                    meta: 'Benutzer verwalten',
-                    icon: 'mdi-account-multiple-outline',
-                    visible: isAdmin,
-                },
             ].filter((item) => item.visible)
         },
     },
