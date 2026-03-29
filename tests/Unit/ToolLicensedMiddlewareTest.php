@@ -4,6 +4,7 @@ use App\Http\Middleware\ToolLicensed;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\User;
 use App\Services\AccessScopeService;
 use App\Services\LicenceService;
@@ -198,6 +199,128 @@ it('redirects blocked admin web routes to /admin instead of /', function () {
         'Lehrertool',
         'auth',
         'scope:tool_web_access'
+    );
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(url('/admin'));
+});
+
+it('denies access when a module is set to coming soon', function () {
+    $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_user' => false,
+        'teaching_user_test_mode' => false,
+        'teaching_user_comming_soon' => true,
+    ]);
+
+    $user = User::factory()->create(['school_id' => $school->id]);
+    Role::findOrCreate('teaching_admin', 'web');
+    $user->assignRole('teaching_admin');
+
+    $licence = Licence::create([
+        'name' => 'Lehrertool',
+        'long_name' => 'Lehrertool',
+    ]);
+
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $request = Request::create('/admin/teaching', 'GET');
+    $request->setRouteResolver(fn () => new IlluminateRoute('GET', '/admin/teaching/{any?}', []));
+
+    $this->actingAs($user);
+
+    $response = app(ToolLicensed::class)->handle(
+        $request,
+        fn () => response('ok'),
+        'Lehrertool',
+        'auth',
+        'scope:teaching_access'
+    );
+
+    expect($response->getStatusCode())->toBe(302)
+        ->and($response->headers->get('Location'))->toBe(url('/admin'));
+});
+
+it('allows access when a module is set to test modus', function () {
+    $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => false,
+        'teaching_user_test_mode' => true,
+        'teaching_user_comming_soon' => false,
+    ]);
+
+    $user = User::factory()->create(['school_id' => $school->id]);
+    Role::findOrCreate('teaching_admin', 'web');
+    $user->assignRole('teaching_admin');
+
+    $licence = Licence::create([
+        'name' => 'Lehrertool',
+        'long_name' => 'Lehrertool',
+    ]);
+
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $request = Request::create('/admin/teaching', 'GET');
+    $request->setRouteResolver(fn () => new IlluminateRoute('GET', '/admin/teaching/{any?}', []));
+
+    $this->actingAs($user);
+
+    $response = app(ToolLicensed::class)->handle(
+        $request,
+        fn () => response('ok'),
+        'Lehrertool',
+        'auth',
+        'scope:teaching_access'
+    );
+
+    expect($response->getStatusCode())->toBe(200);
+});
+
+it('denies admin access when admin visibility is disabled', function () {
+    $school = School::factory()->create();
+    SchoolTool::factory()->create([
+        'school_id' => $school->id,
+        'teaching_visible_admin' => false,
+        'teaching_visible_user' => true,
+    ]);
+
+    $user = User::factory()->create(['school_id' => $school->id]);
+    Role::findOrCreate('teaching_admin', 'web');
+    $user->assignRole('teaching_admin');
+
+    $licence = Licence::create([
+        'name' => 'Lehrertool',
+        'long_name' => 'Lehrertool',
+    ]);
+
+    SchoolLicence::create([
+        'school_id' => $school->id,
+        'licence_id' => $licence->id,
+        'valid_until' => now()->addYear(),
+    ]);
+
+    $request = Request::create('/admin/teaching', 'GET');
+    $request->setRouteResolver(fn () => new IlluminateRoute('GET', '/admin/teaching/{any?}', []));
+
+    $this->actingAs($user);
+
+    $response = app(ToolLicensed::class)->handle(
+        $request,
+        fn () => response('ok'),
+        'Lehrertool',
+        'auth',
+        'scope:teaching_access'
     );
 
     expect($response->getStatusCode())->toBe(302)

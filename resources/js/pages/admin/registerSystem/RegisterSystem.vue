@@ -14,6 +14,20 @@
             left-orb-color="#4ade80"
             right-orb-color="#86efac" />
 
+        <v-sheet rounded="xl" class="register-system-nav mb-2">
+            <v-spacer />
+            <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="grey"
+                class="register-system-nav__settings-btn"
+                title="Anmeldetool-Einstellungen"
+                @click="$router.push('/admin/settings?tab=register')">
+                <v-icon size="20">mdi-cog-outline</v-icon>
+            </v-btn>
+        </v-sheet>
+
         <Schoolyears />
         <ActiveRegisters />
         <Registers v-if="selected_schoolyear" />
@@ -103,5 +117,23 @@ export default {
 .register-system-page {
     background: #0f172a;
     min-height: 100vh;
+}
+
+.register-system-nav {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(30, 41, 59, 0.8);
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+}
+
+.register-system-nav__settings-btn {
+    flex-shrink: 0;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.register-system-nav__settings-btn:hover {
+    opacity: 1;
 }
 </style>

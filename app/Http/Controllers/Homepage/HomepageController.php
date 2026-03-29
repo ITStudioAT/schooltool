@@ -12,6 +12,7 @@ use App\Models\SchoolTool;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantService;
+use App\Services\SchoolToolModuleStatusService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -23,12 +24,7 @@ class HomepageController extends Controller
 
     public function routing(HomepageRoutingRequest $request, HomepageRoutingService $service)
     {
-
         $validated = $request->validated();
-
-        if (! config('schooltool.tutoring_active', false) && $request->is('homepage/tutoring*')) {
-            return redirect('/');
-        }
 
         // SPA entry on hard refresh (e.g. /homepage/student) without route params.
         // Avoid redirect loops by directly returning the homepage shell.
@@ -92,6 +88,7 @@ class HomepageController extends Controller
     {
         $school_short = $request->query('school');
         $app = $request->query('app');
+        $moduleStatusService = app(SchoolToolModuleStatusService::class);
 
         // Prüfen, ob Schule existiert
         $isSchoolValid = ($school = School::where('short_name', $school_short)->first()) != null;
@@ -127,6 +124,12 @@ class HomepageController extends Controller
             }
         }
 
+        $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $school);
+        $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $school);
+        $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $school);
+        $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $school);
+        $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $school);
+
         $data = [
             'schooltool_logo' => config('schooltool.logo'),
             'logo' => $school ? $school->logo : null,
@@ -139,9 +142,18 @@ class HomepageController extends Controller
             'licence' => $isLicenceValid ? new LicenceResource($licence) : null,
             'selectableSchools' => SchoolResource::collection($schools),
             'schoolLicences' => $school ? LicenceResource::collection($schoolLicences) : [],
-            'register_active' => config('schooltool.register_active', true),
-            'tutoring_active' => config('schooltool.tutoring_active', false),
-            'teaching_active' => config('schooltool.teaching_active', false),
+            'register_active' => $moduleStatusService->allowsUserAccess($registerModuleStatus),
+            'tutoring_active' => $moduleStatusService->allowsUserAccess($tutoringModuleStatus),
+            'teaching_active' => $moduleStatusService->allowsUserAccess($teachingModuleStatus),
+            'materials_active' => $moduleStatusService->allowsUserAccess($materialsModuleStatus),
+            'restaurant_active' => $moduleStatusService->allowsUserAccess($restaurantModuleStatus),
+            'tool_module_statuses' => [
+                'register' => $registerModuleStatus,
+                'tutoring' => $tutoringModuleStatus,
+                'teaching' => $teachingModuleStatus,
+                'materials' => $materialsModuleStatus,
+                'restaurant' => $restaurantModuleStatus,
+            ],
             'tool_licence_statuses' => [
                 'Anmeldetool' => $this->toolLicenceStatus('Anmeldetool', $licenceService),
                 'Nachhilfetool' => $this->toolLicenceStatus('Nachhilfetool', $licenceService),

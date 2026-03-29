@@ -12,7 +12,7 @@
         <header class="pnav">
             <router-link to="/" class="pnav-brand">
                 <span class="pnav-logo">
-                    <v-icon size="16" color="white">mdi-school</v-icon>
+                    <span class="picon picon--brand" aria-hidden="true">⌂</span>
                 </span>
                 <span class="pnav-wordmark">
                     <span class="wm-school">School</span><span class="wm-tool">Tool</span>
@@ -31,7 +31,7 @@
                 </button>
             </nav>
             <router-link to="/" class="pnav-back">
-                <v-icon size="16">mdi-arrow-left</v-icon>
+                <span class="picon picon--nav" aria-hidden="true">←</span>
                 <span>Startseite</span>
             </router-link>
         </header>
@@ -87,14 +87,14 @@
                 <div class="psection-copy" :class="{ 'is-visible': visibleSections.has(index + 1) }">
                     <div class="psection-number">{{ String(index + 1).padStart(2, '0') }}</div>
                     <div class="psection-label">
-                        <v-icon size="20" :color="product.accent">{{ product.icon }}</v-icon>
+                        <span class="picon picon--chip" :style="{ '--icon-color': product.accent }" aria-hidden="true">{{ product.symbol }}</span>
                         <span>{{ product.name }}</span>
                     </div>
                     <h2 class="psection-title">{{ product.title }}</h2>
                     <p class="psection-text">{{ product.text }}</p>
                     <div class="psection-features">
                         <div class="feature-pill" v-for="f in product.features" :key="f.label">
-                            <v-icon size="16" :color="product.accent">{{ f.icon }}</v-icon>
+                            <span class="picon picon--chip picon--feature" :style="{ '--icon-color': product.accent }" aria-hidden="true">{{ f.symbol }}</span>
                             <span>{{ f.label }}</span>
                         </div>
                     </div>
@@ -122,7 +122,7 @@
                 <p class="pcta-text">Entdecken Sie, wie SchoolTool Ihren Schulalltag transformieren kann.</p>
                 <router-link to="/" class="pcta-button">
                     <span>Zur Startseite</span>
-                    <v-icon size="20">mdi-arrow-right</v-icon>
+                    <span class="picon picon--cta" aria-hidden="true">→</span>
                 </router-link>
             </div>
         </section>
@@ -148,7 +148,7 @@ export default {
                 {
                     key: 'register',
                     name: 'Anmeldetool',
-                    icon: 'mdi-calendar-check',
+                    symbol: '📅',
                     title: 'Termine und Veranstaltungen organisiert',
                     text: 'Planen Sie Schulanmeldungen und Veranstaltungen mit klaren Zeitslots, Kapazitäten und nachvollziehbaren Buchungen. Elternabende, Sprechtage und Aufnahmetage werden zum Kinderspiel.',
                     accent: '#f59120',
@@ -156,16 +156,16 @@ export default {
                     accentGlow: 'rgba(245, 145, 32, 0.25)',
                     image: '/images/illustrations/date-picker-animated-v2.svg',
                     features: [
-                        { icon: 'mdi-clock-outline', label: 'Zeitslot-Verwaltung' },
-                        { icon: 'mdi-account-multiple-check', label: 'Kapazitätskontrolle' },
-                        { icon: 'mdi-file-export-outline', label: 'CSV / PDF Export' },
+                        { symbol: '⏱', label: 'Zeitslot-Verwaltung' },
+                        { symbol: '👥', label: 'Kapazitätskontrolle' },
+                        { symbol: '📄', label: 'CSV / PDF Export' },
                     ],
                     tags: ['Zeitslots', 'Buchungen', 'Export', 'Kalender'],
                 },
                 {
                     key: 'teaching',
                     name: 'Unterricht',
-                    icon: 'mdi-rocket-launch-outline',
+                    symbol: '🚀',
                     title: 'Das digitale Klassenzimmer',
                     text: 'Lehrer:innen verwalten ihren Unterricht und Schüler:innen sehen ihre Kurse, Aufgaben und Termine in einer klaren Oberfläche. Schnell, mobil und auf das Wesentliche reduziert.',
                     accent: '#5b9cf5',
@@ -173,16 +173,16 @@ export default {
                     accentGlow: 'rgba(91, 156, 245, 0.25)',
                     image: '/images/illustrations/online-learning-animated.svg',
                     features: [
-                        { icon: 'mdi-book-open-variant', label: 'Kursverwaltung' },
-                        { icon: 'mdi-clipboard-text-outline', label: 'Aufgaben & Abgaben' },
-                        { icon: 'mdi-cellphone-link', label: 'Mobile-first Design' },
+                        { symbol: '📚', label: 'Kursverwaltung' },
+                        { symbol: '📝', label: 'Aufgaben & Abgaben' },
+                        { symbol: '📱', label: 'Mobile-first Design' },
                     ],
                     tags: ['Unterricht', 'Aufgaben', 'Termine', 'Kurse'],
                 },
                 {
                     key: 'tutoring',
                     name: 'Schüler helfen Schülern',
-                    icon: 'mdi-account-group',
+                    symbol: '🤝',
                     title: 'Nachhilfe transparent organisiert',
                     text: 'Nachhilfe-Angebote übersichtlich verwaltet. Zuständigkeiten und Status bleiben jederzeit sichtbar. Schüler:innen unterstützen sich gegenseitig — koordiniert und nachvollziehbar.',
                     accent: '#f0873a',
@@ -190,16 +190,16 @@ export default {
                     accentGlow: 'rgba(240, 135, 58, 0.25)',
                     image: '/images/illustrations/notebook-animated.svg',
                     features: [
-                        { icon: 'mdi-handshake-outline', label: 'Matching-System' },
-                        { icon: 'mdi-chart-timeline-variant', label: 'Status-Tracking' },
-                        { icon: 'mdi-bell-outline', label: 'Benachrichtigungen' },
+                        { symbol: '🤝', label: 'Matching-System' },
+                        { symbol: '📈', label: 'Status-Tracking' },
+                        { symbol: '🔔', label: 'Benachrichtigungen' },
                     ],
                     tags: ['Nachhilfe', 'Anfragen', 'Status', 'Peer-Learning'],
                 },
                 {
                     key: 'materials',
                     name: 'Materialien',
-                    icon: 'mdi-folder-multiple-outline',
+                    symbol: '📁',
                     title: 'Wissen zentral verwalten',
                     text: 'Arbeitsblätter, Präsentationen und Vorlagen strukturiert organisieren und teilen. Ein zentraler Ort für alle Unterrichtsmaterialien — durchsuchbar, versioniert und immer griffbereit.',
                     accent: '#3ebb82',
@@ -207,16 +207,16 @@ export default {
                     accentGlow: 'rgba(62, 187, 130, 0.25)',
                     image: '/images/illustrations/bookshelves-animated.svg',
                     features: [
-                        { icon: 'mdi-file-search-outline', label: 'Volltextsuche' },
-                        { icon: 'mdi-share-variant-outline', label: 'Teilen & Freigabe' },
-                        { icon: 'mdi-folder-zip-outline', label: 'Gruppenordner' },
+                        { symbol: '🔎', label: 'Volltextsuche' },
+                        { symbol: '🔗', label: 'Teilen & Freigabe' },
+                        { symbol: '🗂', label: 'Gruppenordner' },
                     ],
                     tags: ['Dateien', 'Ordner', 'Organisation', 'Suche'],
                 },
                 {
                     key: 'restaurant',
                     name: 'Restaurant',
-                    icon: 'mdi-silverware-fork-knife',
+                    symbol: '🍽',
                     title: 'Schulverpflegung digital organisiert',
                     text: 'Speisepläne, Bestellungen und wichtige Hinweise für die Ausgabe in einer klaren Oberfläche bündeln. Vom Menüplan bis zur Abholung — alles an einem Ort.',
                     accent: '#8b8cf5',
@@ -224,9 +224,9 @@ export default {
                     accentGlow: 'rgba(139, 140, 245, 0.25)',
                     image: '/images/illustrations/eating-pasta-animated.svg',
                     features: [
-                        { icon: 'mdi-calendar-month-outline', label: 'Speiseplan-Editor' },
-                        { icon: 'mdi-cart-outline', label: 'Online-Bestellung' },
-                        { icon: 'mdi-food-variant', label: 'Allergen-Info' },
+                        { symbol: '📆', label: 'Speiseplan-Editor' },
+                        { symbol: '🛒', label: 'Online-Bestellung' },
+                        { symbol: '⚠', label: 'Allergen-Info' },
                     ],
                     tags: ['Speisepläne', 'Bestellung', 'Abholung', 'Allergene'],
                 },
@@ -287,8 +287,16 @@ export default {
 }
 </script>
 
+<style>
+.products-page,
+.products-page *,
+.products-page *::before,
+.products-page *::after {
+    font-family: 'Outfit', sans-serif;
+}
+</style>
+
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Outfit:wght@300;400;500;600&display=swap');
 
 /* ============================================
    FOUNDATIONS
@@ -308,9 +316,50 @@ export default {
     min-height: 100vh;
     background: var(--c-bg);
     color: var(--c-text);
-    font-family: var(--font-body);
+    font-family: 'Outfit', sans-serif !important;
     overflow-x: hidden;
     position: relative;
+}
+
+.picon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-style: normal;
+}
+
+.picon--brand {
+    font-size: 0.9rem;
+    transform: translateY(-1px);
+}
+
+.picon--nav,
+.picon--cta {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.picon--chip {
+    width: 1.1rem;
+    min-width: 1.1rem;
+    color: var(--icon-color, currentColor);
+    font-size: 0.95rem;
+}
+
+.picon--feature {
+    font-size: 0.9rem;
+}
+
+.phero-title-line,
+.psection-title,
+.pcta-title {
+    font-family: 'Outfit', sans-serif !important;
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
 /* ============================================
@@ -409,7 +458,7 @@ export default {
 }
 
 .pnav-wordmark {
-    font-family: var(--font-display);
+    font-family: 'Syne', sans-serif !important;
     font-size: 1.1rem;
     font-weight: 800;
     letter-spacing: -0.3px;
@@ -517,11 +566,7 @@ export default {
 }
 
 .phero-title {
-    font-family: var(--font-display);
     font-size: clamp(2.8rem, 7vw, 5.5rem);
-    font-weight: 800;
-    line-height: 1.02;
-    letter-spacing: -0.03em;
     margin: 0 0 28px;
     opacity: 0;
     transform: translateY(30px);
@@ -530,7 +575,7 @@ export default {
 
 .phero-title.is-visible {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
 }
 
 .phero-title-line {
@@ -584,7 +629,7 @@ export default {
 }
 
 .stat-value {
-    font-family: var(--font-display);
+    font-family: 'Syne', sans-serif !important;
     font-size: 2.4rem;
     font-weight: 800;
     color: var(--c-text-bright);
@@ -708,11 +753,11 @@ export default {
 
 .psection-copy.is-visible {
     opacity: 1;
-    transform: translateY(0);
+    transform: none;
 }
 
 .psection-number {
-    font-family: var(--font-display);
+    font-family: 'Syne', sans-serif !important;
     font-size: 0.82rem;
     font-weight: 700;
     color: var(--accent);
@@ -736,11 +781,7 @@ export default {
 }
 
 .psection-title {
-    font-family: var(--font-display);
     font-size: clamp(1.6rem, 3.2vw, 2.6rem);
-    font-weight: 800;
-    line-height: 1.08;
-    letter-spacing: -0.025em;
     color: var(--c-text-bright);
     margin: 0 0 18px;
 }
@@ -887,9 +928,7 @@ export default {
 }
 
 .pcta-title {
-    font-family: var(--font-display);
     font-size: clamp(2rem, 4vw, 3.2rem);
-    font-weight: 800;
     line-height: 1.08;
     letter-spacing: -0.02em;
     color: var(--c-text-bright);
@@ -911,7 +950,7 @@ export default {
     padding: 14px 32px;
     background: linear-gradient(135deg, var(--c-brand), #e07a0e);
     color: white;
-    font-family: var(--font-body);
+    font-family: 'Outfit', sans-serif !important;
     font-size: 0.95rem;
     font-weight: 600;
     border-radius: 14px;

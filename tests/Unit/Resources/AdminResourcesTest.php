@@ -325,6 +325,26 @@ test('admin school resource exposes admin billing overrides for school licences'
 test('school tool resource maps tutoring settings', function () {
     $schoolTool = SchoolTool::create([
         'school_id' => School::factory()->create()->id,
+        'register_visible_admin' => true,
+        'register_visible_user' => false,
+        'register_user_test_mode' => false,
+        'register_user_comming_soon' => true,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => false,
+        'tutoring_user_test_mode' => true,
+        'tutoring_user_comming_soon' => false,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
+        'teaching_user_test_mode' => false,
+        'teaching_user_comming_soon' => false,
+        'materials_visible_admin' => false,
+        'materials_visible_user' => false,
+        'materials_user_test_mode' => false,
+        'materials_user_comming_soon' => false,
+        'restaurant_visible_admin' => true,
+        'restaurant_visible_user' => true,
+        'restaurant_user_test_mode' => false,
+        'restaurant_user_comming_soon' => false,
         'tutoring_student_must_be_confirmed' => 1,
         'tutoring_confirmer_email' => 'mentor@example.test',
         'tutoring_max_offers_per_student' => 3,
@@ -334,6 +354,13 @@ test('school tool resource maps tutoring settings', function () {
     $data = (new SchoolToolResource($schoolTool))->toArray(request());
 
     expect($data['tutoring_student_must_be_confirmed'])->toBeTrue()
+        ->and($data['register_visible_admin'])->toBeTrue()
+        ->and($data['register_visible_user'])->toBeFalse()
+        ->and($data['register_user_comming_soon'])->toBeTrue()
+        ->and($data['tutoring_user_test_mode'])->toBeTrue()
+        ->and($data['teaching_visible_user'])->toBeTrue()
+        ->and($data['materials_visible_admin'])->toBeFalse()
+        ->and($data['restaurant_visible_user'])->toBeTrue()
         ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test')
         ->and($data['may_visible_for_other_schools'])->toBeTrue();
 });

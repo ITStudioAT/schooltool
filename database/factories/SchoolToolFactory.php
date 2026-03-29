@@ -3,10 +3,11 @@
 namespace Database\Factories;
 
 use App\Models\School;
+use App\Models\SchoolTool;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\SchoolTool>
+ * @extends Factory<SchoolTool>
  */
 class SchoolToolFactory extends Factory
 {
@@ -19,6 +20,26 @@ class SchoolToolFactory extends Factory
     {
         return [
             'school_id' => School::factory(),
+            'register_visible_admin' => true,
+            'register_visible_user' => true,
+            'register_user_test_mode' => false,
+            'register_user_comming_soon' => false,
+            'tutoring_visible_admin' => false,
+            'tutoring_visible_user' => false,
+            'tutoring_user_test_mode' => false,
+            'tutoring_user_comming_soon' => false,
+            'teaching_visible_admin' => false,
+            'teaching_visible_user' => false,
+            'teaching_user_test_mode' => false,
+            'teaching_user_comming_soon' => false,
+            'materials_visible_admin' => false,
+            'materials_visible_user' => false,
+            'materials_user_test_mode' => false,
+            'materials_user_comming_soon' => false,
+            'restaurant_visible_admin' => false,
+            'restaurant_visible_user' => false,
+            'restaurant_user_test_mode' => false,
+            'restaurant_user_comming_soon' => false,
             'tutoring_student_must_be_confirmed' => false,
             'tutoring_confirmer_email' => null,
             'tutoring_max_offers_per_student' => 0,

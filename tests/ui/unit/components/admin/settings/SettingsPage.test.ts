@@ -82,6 +82,16 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Alle Lizenzen', 'Lizenzvergaben'])
     })
 
+    it('builds the general sub navigation with the module visibility entry', () => {
+        const items = (Settings as any).computed.generalNavigationItems.call({})
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['module_visibility'])
+        expect(items[0]).toMatchObject({
+            key: 'module_visibility',
+            label: 'Sichtbarkeit Modul',
+        })
+    })
+
     it('builds the admin sub navigation with schoolyears and remaining placeholders', () => {
         const items = (Settings as any).computed.subNavigationItems.call({
             isAdminTab: true,
@@ -290,6 +300,7 @@ describe('Admin settings page', () => {
                     Schools: { template: '<div>Schools Component</div>' },
                     Schoolyears: { template: '<div>Schoolyears Component</div>' },
                     Users: { template: '<div>Users Component</div>' },
+                    ModuleStatusesCard: { template: '<div>ModuleStatusesCard Component</div>' },
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
@@ -300,6 +311,9 @@ describe('Admin settings page', () => {
 
         expect(screen.getAllByText('Grundeinstellungen').length).toBeGreaterThan(0)
         expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
+        expect(container.querySelector('.settings-general-subnav')).not.toBeNull()
+        expect(screen.getByText('Sichtbarkeit Modul')).toBeInTheDocument()
+        expect(screen.getByText('ModuleStatusesCard Component')).toBeInTheDocument()
         expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()
         expect(screen.getByText('Lizenzen Modelle')).toBeInTheDocument()
 
@@ -332,6 +346,15 @@ describe('Admin settings page', () => {
         })
 
         expect(container.querySelector('.settings-roles-wrap')).not.toBeNull()
+    })
+
+    it('includes the module status card on the super-admin general panel source', () => {
+        const source = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
+
+        expect(source).toContain('<ModuleStatusesCard />')
+        expect(source).toContain("import ModuleStatusesCard from '@/pages/admin/settings/components/ModuleStatusesCard.vue'")
+        expect(source).toContain('generalNavigationItems')
+        expect(source).toContain('Sichtbarkeit Modul')
     })
 
     it('renders the overtaken schoolyears and users views on the admin settings tab', async () => {
@@ -765,6 +788,22 @@ describe('Admin settings page', () => {
 
         expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
+    })
+
+    it('hides the register settings tab when the register capability is disabled', () => {
+        const items = (Settings as any).computed.navigationItems.call({
+            canAccessSuperAdminSettingsTab: false,
+            canAccessAdminSettingsTab: false,
+            canAccessRegisterSettingsTab: false,
+            canAccessTutoringSettingsTab: false,
+            canAccessTeachingSettingsTab: false,
+            canAccessMaterialsSettingsTab: false,
+            canAccessGroupsSettingsTab: false,
+            canAccessRestaurantSettingsTab: false,
+            canAccessProfileTab: true,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).not.toContain('register')
     })
 
     it('redirects removed register panels back to the register users settings view', () => {

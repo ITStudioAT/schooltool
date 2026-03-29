@@ -3,6 +3,7 @@
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\SchoolUserLicence;
 use App\Models\User;
 use App\Services\AdminNavigationService;
@@ -116,7 +117,7 @@ describe('dashboardMenu', function () {
         expect($adminItem)->toBeNull();
     });
 
-    it('includes register system menu item for admin role', function () {
+    it('hides register system menu item for admin role without register_admin', function () {
         $school = School::factory()->create();
         $licence = Licence::create([
             'name' => 'Anmeldetool',
@@ -141,10 +142,7 @@ describe('dashboardMenu', function () {
 
         $registerItem = collect($result)->firstWhere('title', 'Anmeldetool');
 
-        expect($registerItem)
-            ->not->toBeNull()
-            ->and($registerItem['icon'])->toBe('mdi-calendar-cursor')
-            ->and($registerItem['to'])->toBe('/admin/register_system');
+        expect($registerItem)->toBeNull();
     });
 
     it('includes register system menu item for register_admin role', function () {
@@ -176,6 +174,36 @@ describe('dashboardMenu', function () {
             ->not->toBeNull()
             ->and($registerItem['icon'])->toBe('mdi-calendar-cursor')
             ->and($registerItem['to'])->toBe('/admin/register_system');
+    });
+
+    it('hides register system menu item when admin visibility is disabled', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'register_visible_admin' => false,
+            'register_visible_user' => true,
+        ]);
+
+        $licence = Licence::create([
+            'name' => 'Anmeldetool',
+            'long_name' => 'Test licence',
+            'price_per_year' => 200,
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create([
+            'first_name' => 'Admin',
+            'last_name' => 'Hidden',
+            'school_id' => $school->id,
+        ]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect(collect($result)->firstWhere('title', 'Anmeldetool'))->toBeNull();
     });
 
     it('includes settings menu item for admin shell roles such as teacher', function () {
@@ -219,7 +247,7 @@ describe('dashboardMenu', function () {
         expect($profileItem)->toBeNull();
     });
 
-    it('includes all menu items for user with multiple roles', function () {
+    it('hides module menu items for user with only admin and super_admin roles', function () {
         $user = User::factory()->create([
             'first_name' => 'Multi',
             'last_name' => 'Role',
@@ -236,9 +264,10 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(8)
+            ->toHaveCount(3)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Einstellungen', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'Abmelden')
+            ->toContain('Home', 'Einstellungen', 'Abmelden')
+            ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA')
             ->not->toContain('Gruppen');
     });
 
@@ -251,7 +280,7 @@ describe('dashboardMenu', function () {
             'first_name' => 'Model',
             'last_name' => 'Aware',
         ]);
-        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+        $user->assignRole(Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']));
 
         $licence = Licence::create([
             'name' => 'Lehrertool',
@@ -428,6 +457,60 @@ describe('dashboardMenu', function () {
         $restaurantItem = collect($result)->firstWhere('title', 'Restaurant');
 
         expect($restaurantItem)->toBeNull();
+    });
+
+    it('shows teaching as active for admins when admin visibility is enabled', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => false,
+            'teaching_user_comming_soon' => true,
+        ]);
+
+        $licence = Licence::create([
+            'name' => 'Lehrertool',
+            'long_name' => 'Lehrertool',
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']));
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+        $teachingItem = collect($result)->firstWhere('title', 'Unterricht');
+
+        expect($teachingItem)
+            ->not->toBeNull()
+            ->and($teachingItem['is_active'])->toBeTrue();
+    });
+
+    it('hides materials menu item when admin visibility is disabled', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'materials_visible_admin' => false,
+            'materials_visible_user' => true,
+        ]);
+
+        $licence = Licence::create([
+            'name' => 'Materialientool',
+            'long_name' => 'Materialientool',
+        ]);
+        $school->licences()->attach($licence->id, ['valid_until' => now()->addDays(10)->toDateString()]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole(Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']));
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        expect(collect($result)->firstWhere('title', 'Materialien'))->toBeNull();
     });
 
     it('keeps teaching menu active when school override disables template user licence requirement', function () {
@@ -998,7 +1081,12 @@ describe('routeCapabilities', function () {
 
         $school = School::factory()->create();
         $user = User::factory()->create(['school_id' => $school->id]);
-        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+        $user->assignRole([
+            Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']),
+        ]);
 
         ($this->attachActiveLicences)($user, ['Anmeldetool', 'Lehrertool', 'Restaurant']);
 
@@ -1032,6 +1120,18 @@ describe('routeCapabilities', function () {
         ]);
 
         expect($capabilities['super_admin'])->toBeTrue();
+    });
+
+    it('disables register system capability when the dashboard item is hidden', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+            ['title' => 'Einstellungen', 'to' => '/admin/settings', 'is_active' => true],
+        ]);
+
+        expect($capabilities['register_system'])->toBeFalse();
     });
 
     it('disables module routes when the dashboard item is hidden', function () {
@@ -1098,5 +1198,20 @@ describe('routeCapabilities', function () {
 
         expect($capabilities['materials'])->toBeFalse()
             ->and($capabilities['teaching'])->toBeTrue();
+    });
+
+    it('does not allow module routes for super_admin without the specific module role', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Materialien', 'to' => '/admin/materials', 'is_active' => true],
+            ['title' => 'Restaurant', 'to' => '/admin/restaurant', 'is_active' => true],
+            ['title' => 'ABA', 'to' => '/admin/aba', 'is_active' => true],
+        ]);
+
+        expect($capabilities['materials'])->toBeFalse()
+            ->and($capabilities['restaurant'])->toBeFalse()
+            ->and($capabilities['aba'])->toBeFalse();
     });
 });

@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\School;
 use App\Services\AccessScopeService;
 use App\Services\LicenceService;
+use App\Services\SchoolToolModuleStatusService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,13 +16,23 @@ class ToolLicensed
     public function handle(Request $request, Closure $next, string $licenceName, string $schoolSource = 'auto', ...$candidateRoleNames): Response
     {
         $licenceService = app(LicenceService::class);
-
-        $configFlag = $this->configFlagForLicence($licenceName);
-        if ($configFlag && ! config($configFlag, false)) {
-            return $this->deny($request, 'missing');
-        }
+        $moduleStatusService = app(SchoolToolModuleStatusService::class);
 
         $school = $this->resolveSchool($request, $schoolSource);
+        $moduleKey = $moduleStatusService->moduleKeyForLicence($licenceName);
+        if ($moduleKey) {
+            if ($request->is('admin/*') || $request->is('api/admin/*')) {
+                if (! $moduleStatusService->adminVisibleForModule($moduleKey, $school)) {
+                    return $this->deny($request, SchoolToolModuleStatusService::INACTIVE);
+                }
+            } else {
+                $moduleStatus = $moduleStatusService->userStatusForModule($moduleKey, $school);
+                if (! $moduleStatusService->allowsUserAccess($moduleStatus)) {
+                    return $this->deny($request, $moduleStatus);
+                }
+            }
+        }
+
         $candidateRoleNames = $this->normalizeCandidateRoleNames($candidateRoleNames);
         $status = $licenceService->toolAccessStatusForUser(Auth::user(), $school, $licenceName, $candidateRoleNames);
         if ($status !== 'active') {
@@ -70,6 +81,8 @@ class ToolLicensed
     {
         $message = match ($status) {
             'expired' => 'Lizenz abgelaufen.',
+            'comming_soon' => 'Dieses Modul ist bald verfügbar.',
+            'inactive' => 'Dieses Modul ist derzeit nicht verfügbar.',
             default => 'Lizenz nicht vorhanden.',
         };
 
@@ -88,16 +101,6 @@ class ToolLicensed
         }
 
         return redirect('/');
-    }
-
-    private function configFlagForLicence(string $licenceName): ?string
-    {
-        return match ($licenceName) {
-            'Nachhilfetool' => 'schooltool.tutoring_active',
-            'Lehrertool' => 'schooltool.teaching_active',
-            'Materialientool' => 'schooltool.materials_active',
-            default => null,
-        };
     }
 
     private function normalizeCandidateRoleNames(array $candidateRoleNames): array

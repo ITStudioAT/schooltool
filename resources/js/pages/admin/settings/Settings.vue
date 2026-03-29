@@ -85,22 +85,31 @@
                 </v-btn-toggle>
             </v-sheet>
 
+            <v-sheet
+                v-if="showsGeneralSubNavigation"
+                rounded="xl"
+                class="settings-general-subnav mb-2">
+                <div class="settings-general-subnav__inner">
+                    <div class="settings-general-subnav__items">
+                        <v-btn
+                            v-for="item in generalNavigationItems"
+                            :key="item.key"
+                            size="small"
+                            rounded="xl"
+                            :variant="general_action === item.key ? 'flat' : 'tonal'"
+                            :class="general_action === item.key ? 'settings-general-subnav__item--active' : 'settings-general-subnav__item--idle'"
+                            class="settings-general-subnav__item"
+                            @click="general_action = item.key">
+                            {{ item.label }}
+                        </v-btn>
+                    </div>
+                </div>
+            </v-sheet>
+
             <div class="settings-content">
                 <v-row class="w-100 ma-0" dense>
                     <div v-if="isSuperAdminTab && sub_action === 'general'" class="settings-general-wrap">
-                        <v-sheet rounded="xl" class="pa-6 settings-empty-card">
-                            <div class="d-flex align-center mb-4">
-                                <v-icon size="32" color="indigo-lighten-2" class="mr-3">mdi-tune-variant</v-icon>
-                                <div>
-                                    <div class="text-h6 font-weight-bold" style="color: rgba(255,255,255,0.9)">Grundeinstellungen</div>
-                                    <div class="text-body-2" style="color: rgba(255,255,255,0.5)">Allgemeine Konfiguration der Anwendung</div>
-                                </div>
-                            </div>
-                            <v-divider class="mb-4" style="border-color: rgba(255,255,255,0.08)" />
-                            <div class="text-body-2" style="color: rgba(255,255,255,0.4)">
-                                Dieser Bereich wird in Kürze verfügbar sein.
-                            </div>
-                        </v-sheet>
+                        <ModuleStatusesCard v-if="general_action === 'module_visibility'" />
                     </div>
 
                     <div v-else-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
@@ -221,6 +230,7 @@ import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.v
 import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
 import Log from '@/pages/admin/superAdmin/components/Log.vue'
 import RegisterUsers from '@/pages/admin/settings/components/RegisterUsers.vue'
+import ModuleStatusesCard from '@/pages/admin/settings/components/ModuleStatusesCard.vue'
 import Profile from '@/pages/admin/profile/Profile.vue'
 import ActiveSchool from '@/pages/admin/superAdmin/components/ActiveSchool.vue'
 import UserImpersonation from '@/pages/admin/superAdmin/components/UserImpersonation.vue'
@@ -235,7 +245,7 @@ import Groups from '@/pages/admin/groups/Groups.vue'
 import RestaurantSettings from '@/pages/admin/restaurant/components/Settings.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -246,6 +256,7 @@ export default {
             main_action: this.initialTab(),
             sub_action: this.initialSubAction(),
             licence_models_action: this.initialLicenceModelsAction(),
+            general_action: this.initialGeneralAction(),
             teachers_action: 'teachers',
         }
     },
@@ -254,16 +265,25 @@ export default {
         main_action() {
             this.sub_action = this.defaultSubAction
             this.licence_models_action = 'overview'
+            this.general_action = 'module_visibility'
             this.syncRouteQuery()
         },
         sub_action(val) {
             if (!this.showsLicenceSubNavigation || val !== 'licence_models') {
                 this.licence_models_action = 'overview'
             }
+            if (!this.showsGeneralSubNavigation || val !== 'general') {
+                this.general_action = 'module_visibility'
+            }
             this.syncRouteQuery()
         },
         licence_models_action() {
             if (this.showsLicenceSubNavigation && this.sub_action === 'licence_models') {
+                this.syncRouteQuery()
+            }
+        },
+        general_action() {
+            if (this.showsGeneralSubNavigation && this.sub_action === 'general') {
                 this.syncRouteQuery()
             }
         },
@@ -291,6 +311,16 @@ export default {
             const licenceTab = val || 'overview'
             if (this.visibleLicenceNavigationItems.some((i) => i.key === licenceTab)) {
                 this.licence_models_action = licenceTab
+            }
+        },
+        '$route.query.general_panel'(val) {
+            if (!this.showsGeneralSubNavigation) {
+                return
+            }
+
+            const generalPanel = val || 'module_visibility'
+            if (this.generalNavigationItems.some((i) => i.key === generalPanel)) {
+                this.general_action = generalPanel
             }
         },
     },
@@ -340,6 +370,10 @@ export default {
             return ['super_admin', 'admin'].some((role) => this.configuredRoleNames.includes(role))
         },
         canAccessRegisterSettingsTab() {
+            if (typeof this.configuredCapabilities.register_system === 'boolean') {
+                return this.configuredCapabilities.register_system
+            }
+
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
         },
         canAccessMaterialsSettingsTab() {
@@ -417,6 +451,17 @@ export default {
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
+        },
+        showsGeneralSubNavigation() {
+            return this.isSuperAdminTab && this.sub_action === 'general'
+        },
+        generalNavigationItems() {
+            return [
+                {
+                    key: 'module_visibility',
+                    label: 'Sichtbarkeit Modul',
+                },
+            ]
         },
         activeSubSection() {
             if (!this.showsSubNavigation) {
@@ -553,7 +598,9 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessRegisterTab = typeof configuredCapabilities.register_system === 'boolean'
+                ? configuredCapabilities.register_system
+                : ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
                 ? configuredCapabilities.tutoring
                 : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
@@ -588,7 +635,9 @@ export default {
             const configuredCapabilities = adminStore?.config?.capabilities || {}
             const canAccessSuperAdminTab = configuredRoleNames.includes('super_admin')
             const canAccessAdminTab = ['super_admin', 'admin'].some((role) => configuredRoleNames.includes(role))
-            const canAccessRegisterTab = ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
+            const canAccessRegisterTab = typeof configuredCapabilities.register_system === 'boolean'
+                ? configuredCapabilities.register_system
+                : ['super_admin', 'admin', 'register_admin'].some((role) => configuredRoleNames.includes(role))
             const canAccessTutoringTab = typeof configuredCapabilities.tutoring === 'boolean'
                 ? configuredCapabilities.tutoring
                 : ['super_admin', 'admin', 'tutoring_admin'].some((role) => configuredRoleNames.includes(role))
@@ -649,6 +698,12 @@ export default {
             const keys = ['overview', 'schools']
             return keys.includes(tab) ? tab : 'overview'
         },
+        initialGeneralAction() {
+            const panel = this.$route?.query?.general_panel || 'module_visibility'
+            const keys = ['module_visibility']
+
+            return keys.includes(panel) ? panel : 'module_visibility'
+        },
         syncRouteQuery() {
             const query = {}
 
@@ -662,6 +717,10 @@ export default {
 
             if (this.isSuperAdminTab && this.sub_action === 'licence_models' && this.licence_models_action !== 'overview') {
                 query.licence_tab = this.licence_models_action
+            }
+
+            if (this.isSuperAdminTab && this.sub_action === 'general' && this.general_action !== 'module_visibility') {
+                query.general_panel = this.general_action
             }
 
             const search = new URLSearchParams(query).toString()
@@ -801,6 +860,11 @@ export default {
     max-width: 100%;
 }
 
+.settings-general-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
 .settings-users-wrap {
     width: 1000px;
     max-width: 100%;
@@ -859,6 +923,52 @@ export default {
     background: rgba(255, 255, 255, 0.06) !important;
     border: 1px solid rgba(255, 255, 255, 0.08);
     padding: 8px;
+}
+
+.settings-general-subnav {
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: rgba(15, 23, 42, 0.7) !important;
+    padding: 8px 12px;
+}
+
+.settings-general-subnav__inner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+}
+
+.settings-general-subnav__items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+}
+
+.settings-general-subnav__item {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    font-weight: 600;
+    height: 30px !important;
+    font-size: 0.82rem;
+}
+
+.settings-general-subnav__item--idle {
+    background: rgba(99, 102, 241, 0.15) !important;
+    color: #a5b4fc !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+}
+
+.settings-general-subnav__item--idle:hover {
+    background: rgba(99, 102, 241, 0.28) !important;
+    color: #c7d2fe !important;
+}
+
+.settings-general-subnav__item--active {
+    background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+    color: #fff !important;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.45) !important;
 }
 
 .settings-licence-subnav__switcher {

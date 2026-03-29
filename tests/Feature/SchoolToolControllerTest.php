@@ -6,6 +6,7 @@
  * Tests the SchoolTool management controller including:
  * - loadConfig (load school tool configuration)
  * - saveTutoringSettings (save tutoring-specific settings)
+ * - saveModuleStatuses (save school module visibility states)
  *
  * Endpoints require admin, tutoring_admin, or register_admin roles
  */
@@ -16,9 +17,36 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+function moduleVisibilityKeys(): array
+{
+    return [
+        'register_visible_admin',
+        'register_visible_user',
+        'register_user_test_mode',
+        'register_user_comming_soon',
+        'tutoring_visible_admin',
+        'tutoring_visible_user',
+        'tutoring_user_test_mode',
+        'tutoring_user_comming_soon',
+        'teaching_visible_admin',
+        'teaching_visible_user',
+        'teaching_user_test_mode',
+        'teaching_user_comming_soon',
+        'materials_visible_admin',
+        'materials_visible_user',
+        'materials_user_test_mode',
+        'materials_user_comming_soon',
+        'restaurant_visible_admin',
+        'restaurant_visible_user',
+        'restaurant_user_test_mode',
+        'restaurant_user_comming_soon',
+    ];
+}
 
 beforeEach(function () {
     $this->school = School::factory()->create();
@@ -40,9 +68,29 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
     // Create school tool with ID 1 using DB insert to force the ID
-    \Illuminate\Support\Facades\DB::table('school_tools')->insert([
+    DB::table('school_tools')->insert([
         'id' => 1,
         'school_id' => $this->school->id,
+        'register_visible_admin' => true,
+        'register_visible_user' => true,
+        'register_user_test_mode' => false,
+        'register_user_comming_soon' => false,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
+        'tutoring_user_test_mode' => false,
+        'tutoring_user_comming_soon' => false,
+        'teaching_visible_admin' => false,
+        'teaching_visible_user' => false,
+        'teaching_user_test_mode' => false,
+        'teaching_user_comming_soon' => false,
+        'materials_visible_admin' => false,
+        'materials_visible_user' => false,
+        'materials_user_test_mode' => false,
+        'materials_user_comming_soon' => false,
+        'restaurant_visible_admin' => false,
+        'restaurant_visible_user' => false,
+        'restaurant_user_test_mode' => false,
+        'restaurant_user_comming_soon' => false,
         'tutoring_student_must_be_confirmed' => 0,
         'tutoring_confirmer_email' => 'admin@test.com',
         'tutoring_max_offers_per_student' => 0,
@@ -85,12 +133,12 @@ describe('loadConfig', function () {
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
         $response->assertStatus(200)
-            ->assertJsonStructure([
+            ->assertJsonStructure(array_merge([
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
-            ])
+            ], moduleVisibilityKeys()))
             ->assertJson([
                 'id' => 1,
             ]);
@@ -102,12 +150,12 @@ describe('loadConfig', function () {
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
         $response->assertStatus(200)
-            ->assertJsonStructure([
+            ->assertJsonStructure(array_merge([
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
-            ]);
+            ], moduleVisibilityKeys()));
     });
 
     test('register admin can load school tool config', function () {
@@ -116,12 +164,12 @@ describe('loadConfig', function () {
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
         $response->assertStatus(200)
-            ->assertJsonStructure([
+            ->assertJsonStructure(array_merge([
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
-            ]);
+            ], moduleVisibilityKeys()));
     });
 
     test('load config returns school tool of authenticated users school', function () {
@@ -169,6 +217,7 @@ describe('loadConfig', function () {
             'tutoring_student_must_be_confirmed',
             'tutoring_confirmer_email',
             'may_visible_for_other_schools',
+            ...moduleVisibilityKeys(),
         ]);
     });
 
@@ -194,16 +243,222 @@ describe('loadConfig', function () {
         $response = $this->getJson('/api/admin/school_tools/load_config');
 
         $response->assertStatus(200)
-            ->assertJsonStructure([
+            ->assertJsonStructure(array_merge([
                 'id',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
-            ]);
+            ], moduleVisibilityKeys()));
 
         $this->assertDatabaseHas('school_tools', [
             'id' => $response->json('id'),
             'school_id' => $this->school->id,
+        ]);
+    });
+});
+
+describe('saveModuleStatuses', function () {
+    test('admin can save module statuses', function () {
+        $this->actingAs($this->admin);
+
+        $payload = [
+            'data' => [
+                'id' => 1,
+                'register_visible_admin' => true,
+                'register_visible_user' => false,
+                'register_user_test_mode' => false,
+                'register_user_comming_soon' => true,
+                'tutoring_visible_admin' => true,
+                'tutoring_visible_user' => false,
+                'tutoring_user_test_mode' => true,
+                'tutoring_user_comming_soon' => false,
+                'teaching_visible_admin' => true,
+                'teaching_visible_user' => true,
+                'teaching_user_test_mode' => false,
+                'teaching_user_comming_soon' => false,
+                'materials_visible_admin' => false,
+                'materials_visible_user' => false,
+                'materials_user_test_mode' => false,
+                'materials_user_comming_soon' => false,
+                'restaurant_visible_admin' => true,
+                'restaurant_visible_user' => true,
+                'restaurant_user_test_mode' => false,
+                'restaurant_user_comming_soon' => false,
+            ],
+        ];
+
+        $response = $this->postJson('/api/admin/school_tools/save_module_statuses', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('register_visible_user', false)
+            ->assertJsonPath('register_user_comming_soon', true)
+            ->assertJsonPath('tutoring_user_test_mode', true)
+            ->assertJsonPath('restaurant_visible_admin', true)
+            ->assertJsonPath('restaurant_visible_user', true);
+
+        $this->assertDatabaseHas('school_tools', [
+            'id' => 1,
+            'register_visible_admin' => true,
+            'register_visible_user' => false,
+            'register_user_test_mode' => false,
+            'register_user_comming_soon' => true,
+            'tutoring_visible_admin' => true,
+            'tutoring_visible_user' => false,
+            'tutoring_user_test_mode' => true,
+            'tutoring_user_comming_soon' => false,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+            'materials_visible_admin' => false,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
+    });
+
+    test('save module statuses updates all school rows app wide', function () {
+        $otherSchool = School::factory()->create();
+        $otherSchoolTool = SchoolTool::factory()->create([
+            'school_id' => $otherSchool->id,
+            'register_visible_admin' => false,
+            'register_visible_user' => false,
+        ]);
+
+        $this->actingAs($this->admin);
+
+        $this->postJson('/api/admin/school_tools/save_module_statuses', [
+            'data' => [
+                'id' => 1,
+                'register_visible_admin' => true,
+                'register_visible_user' => true,
+                'register_user_test_mode' => false,
+                'register_user_comming_soon' => false,
+                'tutoring_visible_admin' => false,
+                'tutoring_visible_user' => false,
+                'tutoring_user_test_mode' => false,
+                'tutoring_user_comming_soon' => false,
+                'teaching_visible_admin' => false,
+                'teaching_visible_user' => false,
+                'teaching_user_test_mode' => false,
+                'teaching_user_comming_soon' => false,
+                'materials_visible_admin' => false,
+                'materials_visible_user' => false,
+                'materials_user_test_mode' => false,
+                'materials_user_comming_soon' => false,
+                'restaurant_visible_admin' => false,
+                'restaurant_visible_user' => false,
+                'restaurant_user_test_mode' => false,
+                'restaurant_user_comming_soon' => false,
+            ],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('school_tools', [
+            'id' => $otherSchoolTool->id,
+            'register_visible_admin' => true,
+            'register_visible_user' => true,
+        ]);
+    });
+
+    test('save module statuses denies tutoring admin', function () {
+        $this->actingAs($this->tutoringAdmin);
+
+        $response = $this->postJson('/api/admin/school_tools/save_module_statuses', [
+            'data' => [
+                'id' => 1,
+                'register_visible_admin' => true,
+                'register_visible_user' => true,
+                'register_user_test_mode' => false,
+                'register_user_comming_soon' => false,
+                'tutoring_visible_admin' => true,
+                'tutoring_visible_user' => true,
+                'tutoring_user_test_mode' => false,
+                'tutoring_user_comming_soon' => false,
+                'teaching_visible_admin' => true,
+                'teaching_visible_user' => true,
+                'teaching_user_test_mode' => false,
+                'teaching_user_comming_soon' => false,
+                'materials_visible_admin' => true,
+                'materials_visible_user' => true,
+                'materials_user_test_mode' => false,
+                'materials_user_comming_soon' => false,
+                'restaurant_visible_admin' => true,
+                'restaurant_visible_user' => true,
+                'restaurant_user_test_mode' => false,
+                'restaurant_user_comming_soon' => false,
+            ],
+        ]);
+
+        $response->assertStatus(403);
+    });
+
+    test('save module statuses validates booleans', function () {
+        $this->actingAs($this->admin);
+
+        $response = $this->postJson('/api/admin/school_tools/save_module_statuses', [
+            'data' => [
+                'id' => 1,
+                'register_visible_admin' => 'beta',
+                'register_visible_user' => true,
+                'register_user_test_mode' => false,
+                'register_user_comming_soon' => false,
+                'tutoring_visible_admin' => true,
+                'tutoring_visible_user' => true,
+                'tutoring_user_test_mode' => false,
+                'tutoring_user_comming_soon' => false,
+                'teaching_visible_admin' => true,
+                'teaching_visible_user' => true,
+                'teaching_user_test_mode' => false,
+                'teaching_user_comming_soon' => false,
+                'materials_visible_admin' => true,
+                'materials_visible_user' => true,
+                'materials_user_test_mode' => false,
+                'materials_user_comming_soon' => false,
+                'restaurant_visible_admin' => true,
+                'restaurant_visible_user' => true,
+                'restaurant_user_test_mode' => false,
+                'restaurant_user_comming_soon' => false,
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['data.register_visible_admin']);
+    });
+
+    test('save module statuses forces user visibility off when admin visibility is off', function () {
+        $this->actingAs($this->admin);
+
+        $response = $this->postJson('/api/admin/school_tools/save_module_statuses', [
+            'data' => [
+                'id' => 1,
+                'register_visible_admin' => false,
+                'register_visible_user' => true,
+                'register_user_test_mode' => false,
+                'register_user_comming_soon' => false,
+                'tutoring_visible_admin' => true,
+                'tutoring_visible_user' => true,
+                'tutoring_user_test_mode' => false,
+                'tutoring_user_comming_soon' => false,
+                'teaching_visible_admin' => true,
+                'teaching_visible_user' => true,
+                'teaching_user_test_mode' => false,
+                'teaching_user_comming_soon' => false,
+                'materials_visible_admin' => true,
+                'materials_visible_user' => true,
+                'materials_user_test_mode' => false,
+                'materials_user_comming_soon' => false,
+                'restaurant_visible_admin' => true,
+                'restaurant_visible_user' => true,
+                'restaurant_user_test_mode' => false,
+                'restaurant_user_comming_soon' => false,
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('register_visible_admin', false)
+            ->assertJsonPath('register_visible_user', false);
+
+        $this->assertDatabaseHas('school_tools', [
+            'id' => 1,
+            'register_visible_admin' => false,
+            'register_visible_user' => false,
         ]);
     });
 });

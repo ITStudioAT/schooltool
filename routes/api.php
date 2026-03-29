@@ -266,7 +266,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, lunch_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,lunch_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
@@ -310,6 +310,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:scope:school_tool_access'])->group(function () {
         Route::get('/admin/school_tools/load_config', [SchoolToolController::class, 'loadConfig']);
         Route::post('/admin/users20/toggle_is_active', [UserController::class, 'toggleIsActive']);
+    });
+
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_or_super_admin_access'])->group(function () {
+        Route::post('/admin/school_tools/save_module_statuses', [SchoolToolController::class, 'saveModuleStatuses']);
     });
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
@@ -562,7 +566,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher, lunch_admin */
-    Route::middleware(['auth:sanctum', 'api-allowed:admin,register_admin,tutoring_admin,teaching_admin,materials_admin,materials_moderator,teacher,lunch_admin'])->group(function () {
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_shell_access'])->group(function () {
         Route::post('/admin/schools/load_school_infos', [SchoolController::class, 'loadSchoolInfos']);
     });
 

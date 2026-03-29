@@ -49,7 +49,7 @@
                         <!-- Anmeldetool Card -->
                         <div
                             class="tool-card card-register"
-                            :class="{ 'card-disabled': registerStatus === 'expired' }"
+                            :class="{ 'card-disabled': isRegisterDisabled }"
                             @click="handleToolCardClick('Anmeldetool')"
                             v-if="canShowRegister">
                             <div class="card-glow"></div>
@@ -63,9 +63,9 @@
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
-                                <div class="card-badge" v-if="registerStatus === 'expired'">
-                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
-                                    <span>Lizenz abgelaufen</span>
+                                <div class="card-badge" v-if="registerBadge">
+                                    <v-icon size="16">{{ registerBadge.icon }}</v-icon>
+                                    <span>{{ registerBadge.label }}</span>
                                 </div>
                             </div>
                         </div>
@@ -73,7 +73,7 @@
                         <!-- Nachhilfetool Card -->
                         <div
                             class="tool-card card-tutoring"
-                            :class="{ 'card-disabled': tutoringStatus === 'expired' }"
+                            :class="{ 'card-disabled': isTutoringDisabled }"
                             @click="handleToolCardClick('Nachhilfetool')"
                             v-if="canShowTutoring">
                             <div class="card-glow"></div>
@@ -87,15 +87,15 @@
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
-                                <div class="card-badge" v-if="tutoringStatus === 'expired'">
-                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
-                                    <span>Lizenz abgelaufen</span>
+                                <div class="card-badge" v-if="tutoringBadge">
+                                    <v-icon size="16">{{ tutoringBadge.icon }}</v-icon>
+                                    <span>{{ tutoringBadge.label }}</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': teachingStatus === 'expired' }" @click="openUnterricht()" v-if="canShowTeaching">
+                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': isTeachingDisabled }" @click="openUnterricht()" v-if="canShowTeaching">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -107,15 +107,19 @@
                                     <span class="action-text">Starten</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
-                                <div class="card-badge" v-if="teachingStatus === 'expired'">
-                                    <v-icon size="16">mdi-clock-alert-outline</v-icon>
-                                    <span>Lizenz abgelaufen</span>
+                                <div class="card-badge" v-if="teachingBadge">
+                                    <v-icon size="16">{{ teachingBadge.icon }}</v-icon>
+                                    <span>{{ teachingBadge.label }}</span>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Mittagsmenüs Card -->
-                        <router-link to="/homepage/restaurant" class="tool-card card-lunch">
+                        <div
+                            class="tool-card card-lunch"
+                            :class="{ 'card-disabled': isRestaurantDisabled }"
+                            @click="openRestaurant()"
+                            v-if="canShowRestaurant">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -127,8 +131,12 @@
                                     <span class="action-text">Zum Restaurant</span>
                                     <v-icon size="20">mdi-arrow-right</v-icon>
                                 </div>
+                                <div class="card-badge" v-if="restaurantBadge">
+                                    <v-icon size="16">{{ restaurantBadge.icon }}</v-icon>
+                                    <span>{{ restaurantBadge.label }}</span>
+                                </div>
                             </div>
-                        </router-link>
+                        </div>
                         <a v-if="false" href="/homepage/restaurant" class="tool-card card-lunch">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -274,26 +282,68 @@ export default {
         toolStatuses() {
             return this.config?.tool_licence_statuses || {}
         },
+        moduleStatuses() {
+            return this.config?.tool_module_statuses || {}
+        },
+        registerModuleStatus() {
+            return this.moduleStatuses.register || 'active'
+        },
         registerStatus() {
             return this.toolStatuses['Anmeldetool'] || 'missing'
+        },
+        tutoringModuleStatus() {
+            return this.moduleStatuses.tutoring || 'inactive'
         },
         tutoringStatus() {
             return this.toolStatuses['Nachhilfetool'] || 'missing'
         },
         tutoringDisplayName() {
-            return 'Schüler helfen Schülern (Testversion)'
+            return 'Schüler helfen Schülern'
+        },
+        teachingModuleStatus() {
+            return this.moduleStatuses.teaching || 'inactive'
         },
         teachingStatus() {
             return this.toolStatuses['Lehrertool'] || 'missing'
         },
+        restaurantModuleStatus() {
+            return this.moduleStatuses.restaurant || 'inactive'
+        },
         canShowRegister() {
-            return Boolean(this.config?.register_active ?? true) && this.registerStatus !== 'missing'
+            return this.isModuleVisible(this.registerModuleStatus) && this.registerStatus !== 'missing'
         },
         canShowTutoring() {
-            return Boolean(this.config?.tutoring_active) && this.tutoringStatus !== 'missing'
+            return this.isModuleVisible(this.tutoringModuleStatus) && this.tutoringStatus !== 'missing'
         },
         canShowTeaching() {
-            return Boolean(this.config?.teaching_active) && this.teachingStatus !== 'missing'
+            return this.isModuleVisible(this.teachingModuleStatus) && this.teachingStatus !== 'missing'
+        },
+        canShowRestaurant() {
+            return this.isModuleVisible(this.restaurantModuleStatus)
+        },
+        isRegisterDisabled() {
+            return this.registerStatus === 'expired' || !this.moduleAllowsAccess(this.registerModuleStatus)
+        },
+        isTutoringDisabled() {
+            return this.tutoringStatus === 'expired' || !this.moduleAllowsAccess(this.tutoringModuleStatus)
+        },
+        isTeachingDisabled() {
+            return this.teachingStatus === 'expired' || !this.moduleAllowsAccess(this.teachingModuleStatus)
+        },
+        isRestaurantDisabled() {
+            return !this.moduleAllowsAccess(this.restaurantModuleStatus)
+        },
+        registerBadge() {
+            return this.buildBadge(this.registerStatus, this.registerModuleStatus)
+        },
+        tutoringBadge() {
+            return this.buildBadge(this.tutoringStatus, this.tutoringModuleStatus)
+        },
+        teachingBadge() {
+            return this.buildBadge(this.teachingStatus, this.teachingModuleStatus)
+        },
+        restaurantBadge() {
+            return this.buildBadge('active', this.restaurantModuleStatus)
         },
     },
 
@@ -314,22 +364,54 @@ export default {
             this.$router.push('/homepage/products')
         },
         openUnterricht() {
-            if (!this.canShowTeaching || this.teachingStatus !== 'active') {
+            if (!this.canShowTeaching || this.teachingStatus !== 'active' || !this.moduleAllowsAccess(this.teachingModuleStatus)) {
                 this.notifyToolUnavailable('Lehrertool', this.teachingStatus)
                 return
             }
             this.$router.push('/homepage/student')
         },
-        notifyToolUnavailable(tool, status) {
+        openRestaurant() {
+            if (!this.canShowRestaurant || !this.moduleAllowsAccess(this.restaurantModuleStatus)) {
+                this.notifyToolUnavailable('Restaurant', 'active', this.restaurantModuleStatus)
+                return
+            }
+
+            this.$router.push('/homepage/restaurant')
+        },
+        isModuleVisible(status) {
+            return status !== 'inactive'
+        },
+        moduleAllowsAccess(status) {
+            return ['active', 'test_modus'].includes(status)
+        },
+        buildBadge(licenceStatus, moduleStatus) {
+            if (licenceStatus === 'expired') {
+                return { icon: 'mdi-clock-alert-outline', label: 'Lizenz abgelaufen' }
+            }
+
+            if (moduleStatus === 'test_modus') {
+                return { icon: 'mdi-flask-outline', label: 'Testmodus' }
+            }
+
+            if (moduleStatus === 'comming_soon') {
+                return { icon: 'mdi-progress-clock', label: 'Kommt bald' }
+            }
+
+            return null
+        },
+        notifyToolUnavailable(tool, status, moduleStatus = null) {
             const notification = useNotificationStore()
             const toolLabel = {
                 Anmeldetool: 'Anmeldetool',
                 Nachhilfetool: this.tutoringDisplayName,
                 Lehrertool: 'Unterricht',
+                Restaurant: 'Restaurant',
             }[tool] || tool
 
             const message =
-                status === 'expired'
+                moduleStatus === 'comming_soon'
+                    ? `${toolLabel}: kommt bald.`
+                    : status === 'expired'
                     ? `${toolLabel}: Lizenz abgelaufen.`
                     : `${toolLabel}: Lizenz nicht vorhanden.`
 
@@ -342,8 +424,14 @@ export default {
         },
         async handleToolCardClick(tool) {
             const status = this.toolStatuses?.[tool] || 'missing'
-            if (status !== 'active') {
-                this.notifyToolUnavailable(tool, status)
+            const moduleStatus = {
+                Anmeldetool: this.registerModuleStatus,
+                Nachhilfetool: this.tutoringModuleStatus,
+                Lehrertool: this.teachingModuleStatus,
+            }[tool] || 'inactive'
+
+            if (!this.moduleAllowsAccess(moduleStatus) || status !== 'active') {
+                this.notifyToolUnavailable(tool, status, moduleStatus)
                 return
             }
 
@@ -928,7 +1016,7 @@ export default {
     border-radius: 20px;
     font-size: 0.85rem;
     font-weight: 500;
-    margin-top: auto;
+    margin-top: 12px;
 }
 
 /* Documentation Section */

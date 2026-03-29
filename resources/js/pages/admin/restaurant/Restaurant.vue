@@ -29,6 +29,16 @@
                     </span>
                 </v-btn>
             </div>
+            <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="grey"
+                class="restaurant-nav__settings-btn"
+                title="Restaurant-Einstellungen"
+                @click="$router.push('/admin/settings?tab=restaurant')">
+                <v-icon size="20">mdi-cog-outline</v-icon>
+            </v-btn>
         </v-sheet>
 
         <div class="restaurant-content">
@@ -216,12 +226,26 @@ export default {
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(30, 41, 59, 0.8);
     padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .restaurant-nav__buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    flex: 1;
+}
+
+.restaurant-nav__settings-btn {
+    flex-shrink: 0;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.restaurant-nav__settings-btn:hover {
+    opacity: 1;
 }
 
 .restaurant-nav__button {

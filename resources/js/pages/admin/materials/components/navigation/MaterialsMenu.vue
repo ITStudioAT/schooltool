@@ -24,6 +24,19 @@
             Geteilt
         </v-btn>
 
+        <v-spacer />
+
+        <v-btn
+            icon
+            size="small"
+            variant="text"
+            color="grey"
+            class="materials-menu__settings-btn"
+            title="Materialien-Einstellungen"
+            @click="$router.push('/admin/settings?tab=materials')">
+            <v-icon size="20">mdi-cog-outline</v-icon>
+        </v-btn>
+
     </v-card>
 </template>
 
@@ -66,6 +79,16 @@ export default {
     background: linear-gradient(155deg, #fd802e 0%, #ff8f42 100%);
     color: #233d4c;
     box-shadow: 0 8px 20px rgba(253, 128, 46, 0.3);
+}
+
+.materials-menu__settings-btn {
+    flex-shrink: 0;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.materials-menu__settings-btn:hover {
+    opacity: 1;
 }
 
 @media (max-width: 640px) {

@@ -90,21 +90,18 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         return view('homepage');
     })->middleware('tool-licensed:Anmeldetool');
 
-    if (config('schooltool.tutoring_active') === true) {
+    Route::prefix('homepage')->group(function () {
+        Route::get('tutoring_response', fn () => view('homepage'));
+        Route::get('tutoring_overview', fn () => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
+        Route::get('tutoring', fn () => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
+    });
 
-        Route::prefix('homepage')->group(function () {
-            Route::get('tutoring_response', fn () => view('homepage'));
-            Route::get('tutoring_overview', fn () => view('homepage'))->middleware('tool-licensed:Nachhilfetool');
-            Route::get('tutoring', fn () => view('homepage'))->middleware(['auth:sanctum', 'tool-licensed:Nachhilfetool']);
-        });
-
-        Route::prefix('homepage/tutoring')->group(function () {
-            Route::get('confirm-user', [TutoringController::class, 'confirmUser']);
-            Route::get('refuse-user', [TutoringController::class, 'refuseUser']);
-            Route::get('offer', [OfferController::class, 'offerConfirmRefuse']);
-            Route::get('offer_request', [OfferRequestController::class, 'offerRequest']);
-        });
-    }
+    Route::prefix('homepage/tutoring')->group(function () {
+        Route::get('confirm-user', [TutoringController::class, 'confirmUser']);
+        Route::get('refuse-user', [TutoringController::class, 'refuseUser']);
+        Route::get('offer', [OfferController::class, 'offerConfirmRefuse']);
+        Route::get('offer_request', [OfferRequestController::class, 'offerRequest']);
+    });
 
     Route::get('/homepage/cashier/', function () {
         return view('homepage');

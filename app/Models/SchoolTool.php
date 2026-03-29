@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -40,6 +41,31 @@ class SchoolTool extends Model
     protected $fillable = [
         'school_id',
         'active_schoolyear_id',
+        'register_visible_admin',
+        'register_visible_user',
+        'register_user_test_mode',
+        'register_user_comming_soon',
+        'tutoring_visible_admin',
+        'tutoring_visible_user',
+        'tutoring_user_test_mode',
+        'tutoring_user_comming_soon',
+        'teaching_visible_admin',
+        'teaching_visible_user',
+        'teaching_user_test_mode',
+        'teaching_user_comming_soon',
+        'materials_visible_admin',
+        'materials_visible_user',
+        'materials_user_test_mode',
+        'materials_user_comming_soon',
+        'restaurant_visible_admin',
+        'restaurant_visible_user',
+        'restaurant_user_test_mode',
+        'restaurant_user_comming_soon',
+        'register_status',
+        'tutoring_status',
+        'teaching_status',
+        'materials_status',
+        'restaurant_status',
         'tutoring_student_must_be_confirmed',
         'tutoring_confirmer_email',
         'tutoring_max_offers_per_student',
@@ -68,6 +94,26 @@ class SchoolTool extends Model
     protected $casts = [
         'health_at' => 'datetime',
         'import_166_at' => 'datetime',
+        'register_visible_admin' => 'boolean',
+        'register_visible_user' => 'boolean',
+        'register_user_test_mode' => 'boolean',
+        'register_user_comming_soon' => 'boolean',
+        'tutoring_visible_admin' => 'boolean',
+        'tutoring_visible_user' => 'boolean',
+        'tutoring_user_test_mode' => 'boolean',
+        'tutoring_user_comming_soon' => 'boolean',
+        'teaching_visible_admin' => 'boolean',
+        'teaching_visible_user' => 'boolean',
+        'teaching_user_test_mode' => 'boolean',
+        'teaching_user_comming_soon' => 'boolean',
+        'materials_visible_admin' => 'boolean',
+        'materials_visible_user' => 'boolean',
+        'materials_user_test_mode' => 'boolean',
+        'materials_user_comming_soon' => 'boolean',
+        'restaurant_visible_admin' => 'boolean',
+        'restaurant_visible_user' => 'boolean',
+        'restaurant_user_test_mode' => 'boolean',
+        'restaurant_user_comming_soon' => 'boolean',
         'tutoring_student_must_be_confirmed' => 'boolean',
         'may_visible_for_other_schools' => 'boolean',
         'material_max_file_upload_size' => 'integer',
@@ -79,4 +125,9 @@ class SchoolTool extends Model
         'restaurant_menu_order_end_day_of_week' => 'integer',
         'restaurant_new_users_must_confirm_email' => 'boolean',
     ];
+
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class, 'school_id');
+    }
 }

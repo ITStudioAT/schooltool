@@ -11,6 +11,18 @@ class AdminNavigationService
 {
     use HasRoleTrait;
 
+    private const REGISTER_DASHBOARD_ROLES = ['register_admin'];
+
+    private const TUTORING_DASHBOARD_ROLES = ['tutoring_admin', 'teacher'];
+
+    private const TEACHING_DASHBOARD_ROLES = ['teaching_admin', 'teacher'];
+
+    private const MATERIALS_DASHBOARD_ROLES = ['materials_admin', 'materials_moderator'];
+
+    private const RESTAURANT_DASHBOARD_ROLES = ['lunch_admin'];
+
+    private const ABA_DASHBOARD_ROLES = ['aba_teacher'];
+
     private const ADMIN_SHELL_ROLES = [
         'admin',
         'register_admin',
@@ -34,86 +46,94 @@ class AdminNavigationService
         $user = User::findOrFail(Auth::user()->id);
         $user_name = substr($user->last_name.' '.$user->first_name, 0, 17);
         $isSuperAdmin = $this->userHasRole(['super_admin']);
+        $moduleStatusService = app(SchoolToolModuleStatusService::class);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
         if ($isSuperAdmin || $user->hasAnyRole(self::ADMIN_SHELL_ROLES)) {
             $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'is_active' => true];
         }
 
-        $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', ['admin', 'register_admin']);
-        $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
-        $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
-        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', ['admin', 'materials_admin', 'materials_moderator']);
-        $restaurantLicenceStatus = $this->toolAccessStatus($user, 'Restaurant', ['admin', 'lunch_admin']);
-        $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', ['aba_teacher']);
+        $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', self::REGISTER_DASHBOARD_ROLES);
+        $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', self::TUTORING_DASHBOARD_ROLES);
+        $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', self::TEACHING_DASHBOARD_ROLES);
+        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', self::MATERIALS_DASHBOARD_ROLES);
+        $restaurantLicenceStatus = $this->toolAccessStatus($user, 'Restaurant', self::RESTAURANT_DASHBOARD_ROLES);
+        $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', self::ABA_DASHBOARD_ROLES);
+        $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $user->selectedSchool);
+        $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $user->selectedSchool);
+        $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $user->selectedSchool);
+        $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $user->selectedSchool);
+        $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $user->selectedSchool);
         // ANMELDESYSTEM
-        if ($this->userHasRole(['admin', 'register_admin'])) {
-            if ($registerLicenceStatus !== 'missing') {
+        if ($user->hasAnyRole(self::REGISTER_DASHBOARD_ROLES)) {
+            if ($registerLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('register', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'Anmeldetool',
                     'icon' => 'mdi-calendar-cursor',
                     'to' => '/admin/register_system',
-                    'is_active' => ($registerLicenceStatus === 'active' && config('schooltool.register_active', true)),
-                ] + $this->moduleStatusMeta($registerLicenceStatus, 'Anmeldetool');
+                    'is_active' => ($registerLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($registerLicenceStatus, $registerModuleStatus, 'Anmeldetool');
             }
         }
 
         // TUTORING
-        if ($this->userHasRole(['admin', 'tutoring_admin', 'teacher'])) {
-            if ($tutoringLicenceStatus !== 'missing') {
+        if ($user->hasAnyRole(self::TUTORING_DASHBOARD_ROLES)) {
+            if ($tutoringLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('tutoring', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'Nachhilfe',
                     'icon' => 'mdi-cast-education',
                     'to' => '/admin/tutoring',
-                    'is_active' => ($tutoringLicenceStatus === 'active' && config('schooltool.tutoring_active', false)),
-                ] + $this->moduleStatusMeta($tutoringLicenceStatus, 'Nachhilfe');
+                    'is_active' => ($tutoringLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($tutoringLicenceStatus, $tutoringModuleStatus, 'Nachhilfe');
             }
         }
 
         // TEACHER
 
-        if ($this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
-            if ($teachingLicenceStatus !== 'missing') {
+        if ($user->hasAnyRole(self::TEACHING_DASHBOARD_ROLES)) {
+            if ($teachingLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('teaching', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
                     'to' => '/admin/teaching',
-                    'is_active' => ($teachingLicenceStatus === 'active' && config('schooltool.teaching_active', false)),
-                ] + $this->moduleStatusMeta($teachingLicenceStatus, 'Unterricht');
+                    'is_active' => ($teachingLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht');
             }
         }
 
         // ABA
-        if ($this->userHasRole(['aba_teacher']) && $abaLicenceStatus === 'active') {
-            $menu[] = [
-                'title' => 'ABA',
-                'icon' => 'mdi-certificate-outline',
-                'to' => '/admin/aba',
-                'is_active' => true,
-            ];
+        if ($user->hasAnyRole(self::ABA_DASHBOARD_ROLES)) {
+            if ($abaLicenceStatus !== 'missing') {
+                $menu[] = [
+                    'title' => 'ABA',
+                    'icon' => 'mdi-certificate-outline',
+                    'to' => '/admin/aba',
+                    'is_active' => ($abaLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($abaLicenceStatus, '', 'ABA');
+            }
         }
 
         // MATERIALS
-        if ($this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
-            if ($materialsLicenceStatus !== 'missing') {
+        if ($user->hasAnyRole(self::MATERIALS_DASHBOARD_ROLES)) {
+            if ($materialsLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('materials', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'Materialien',
                     'icon' => 'mdi-folder-multiple-outline',
                     'to' => '/admin/materials',
-                    'is_active' => ($materialsLicenceStatus === 'active' && config('schooltool.materials_active', false)),
-                ] + $this->moduleStatusMeta($materialsLicenceStatus, 'Materialien');
+                    'is_active' => ($materialsLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($materialsLicenceStatus, $materialsModuleStatus, 'Materialien');
             }
         }
 
         // RESTAURANT
-        if ($this->userHasRole(['admin', 'lunch_admin'])) {
-            if ($restaurantLicenceStatus !== 'missing') {
+        if ($user->hasAnyRole(self::RESTAURANT_DASHBOARD_ROLES)) {
+            if ($restaurantLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('restaurant', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'Restaurant',
                     'icon' => 'mdi-silverware-fork-knife',
                     'to' => '/admin/restaurant',
-                    'is_active' => $restaurantLicenceStatus === 'active',
-                ] + $this->moduleStatusMeta($restaurantLicenceStatus, 'Restaurant');
+                    'is_active' => ($restaurantLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($restaurantLicenceStatus, $restaurantModuleStatus, 'Restaurant');
             }
         }
 
@@ -155,13 +175,13 @@ class AdminNavigationService
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');
         $capabilities['super_admin'] = $user->hasAnyRole(['admin', 'super_admin']);
-        $capabilities['register_system'] = $this->menuRouteCapability($user, $menuByPath, '/admin/register_system', ['admin', 'register_admin']);
-        $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', ['admin', 'tutoring_admin', 'teacher']);
-        $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', ['admin', 'teaching_admin', 'teacher']);
-        $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', ['admin', 'materials_admin', 'materials_moderator']);
+        $capabilities['register_system'] = $this->menuRouteCapability($user, $menuByPath, '/admin/register_system', self::REGISTER_DASHBOARD_ROLES);
+        $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', self::TUTORING_DASHBOARD_ROLES);
+        $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', self::TEACHING_DASHBOARD_ROLES);
+        $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', self::MATERIALS_DASHBOARD_ROLES);
         $capabilities['groups'] = false;
-        $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', ['admin', 'lunch_admin']);
-        $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', ['aba_teacher'], false);
+        $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', self::RESTAURANT_DASHBOARD_ROLES);
+        $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', self::ABA_DASHBOARD_ROLES);
 
         return $capabilities;
     }
@@ -214,9 +234,9 @@ class AdminNavigationService
         return app(LicenceService::class)->toolAccessStatusForUser($user, $user->selectedSchool, $licenceName, $allowedRoles);
     }
 
-    private function moduleStatusMeta(string $status, string $moduleLabel): array
+    private function dashboardStatusMeta(string $licenceStatus, string $moduleStatus, string $moduleLabel): array
     {
-        if ($status === 'expired') {
+        if ($licenceStatus === 'expired') {
             return [
                 'status_icon' => 'mdi-clock-alert-outline',
                 'status_color' => 'warning',
@@ -224,7 +244,7 @@ class AdminNavigationService
             ];
         }
 
-        if ($status === 'missing') {
+        if ($licenceStatus === 'missing') {
             return [
                 'status_icon' => 'mdi-alert-circle-outline',
                 'status_color' => 'error',
@@ -242,7 +262,7 @@ class AdminNavigationService
      * - shown and enabled item => route allowed
      * Additionally require the correct role for the module.
      */
-    private function menuRouteCapability(User $user, Collection $menuByPath, string $path, array $allowedRoles, bool $allowSuperAdmin = true): bool
+    private function menuRouteCapability(User $user, Collection $menuByPath, string $path, array $allowedRoles): bool
     {
         $dashboardShow = $menuByPath->has($path);
         $dashboardDisabled = ! (bool) data_get($menuByPath->get($path), 'is_active', false);
@@ -250,10 +270,6 @@ class AdminNavigationService
 
         if ($disableAllWebRoutes) {
             return false;
-        }
-
-        if ($allowSuperAdmin && $user->hasRole('super_admin')) {
-            return true;
         }
 
         return $user->hasAnyRole($allowedRoles);

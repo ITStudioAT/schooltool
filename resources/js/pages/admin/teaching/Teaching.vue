@@ -30,6 +30,16 @@
                     </span>
                 </v-btn>
             </div>
+            <v-btn
+                icon
+                size="small"
+                variant="text"
+                color="grey"
+                class="teaching-nav__settings-btn"
+                title="Unterricht-Einstellungen"
+                @click="$router.push('/admin/settings?tab=teaching')">
+                <v-icon size="20">mdi-cog-outline</v-icon>
+            </v-btn>
         </v-sheet>
 
         <v-sheet v-if="courses.length && main_action === 'overview'" rounded="xl" class="teaching-subnav mb-2">
@@ -521,12 +531,26 @@ export default {
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(30, 41, 59, 0.8);
     padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .teaching-nav__buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    flex: 1;
+}
+
+.teaching-nav__settings-btn {
+    flex-shrink: 0;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+
+.teaching-nav__settings-btn:hover {
+    opacity: 1;
 }
 
 .teaching-nav__button {

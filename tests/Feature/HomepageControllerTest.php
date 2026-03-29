@@ -186,6 +186,13 @@ describe('config', function () {
                 'licence',
                 'selectableSchools',
                 'schoolLicences',
+                'tool_module_statuses' => [
+                    'register',
+                    'tutoring',
+                    'teaching',
+                    'materials',
+                    'restaurant',
+                ],
                 'tutoring_active',
                 'teaching_active',
                 'restaurant' => [
@@ -247,17 +254,34 @@ describe('config', function () {
             ]);
     });
 
-    test('config includes teaching_active and tutoring_active flags from config', function () {
-        config(['schooltool.teaching_active' => true]);
-        config(['schooltool.tutoring_active' => false]);
+    test('config derives module statuses and booleans from school tools', function () {
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'register_visible_user' => true,
+            'tutoring_visible_user' => false,
+            'tutoring_user_test_mode' => false,
+            'tutoring_user_comming_soon' => true,
+            'teaching_visible_user' => false,
+            'teaching_user_test_mode' => true,
+            'teaching_user_comming_soon' => false,
+            'materials_visible_user' => false,
+            'materials_user_test_mode' => false,
+            'materials_user_comming_soon' => false,
+            'restaurant_visible_user' => true,
+        ]);
 
-        $response = $this->getJson('/api/homepage/config');
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJson([
-                'teaching_active' => true,
+                'register_active' => true,
                 'tutoring_active' => false,
-            ]);
+                'teaching_active' => true,
+                'restaurant_active' => true,
+            ])
+            ->assertJsonPath('tool_module_statuses.tutoring', 'comming_soon')
+            ->assertJsonPath('tool_module_statuses.teaching', 'test_modus')
+            ->assertJsonPath('tool_module_statuses.materials', 'inactive');
     });
 
     test('config includes the restaurant user information intro html for the selected school', function () {
