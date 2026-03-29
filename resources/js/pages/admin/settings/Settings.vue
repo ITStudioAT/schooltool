@@ -99,6 +99,10 @@
                         <Users />
                     </div>
 
+                    <div v-else-if="isAdminTab && sub_action === 'school_groups'" class="settings-groups-wrap">
+                        <Groups :embedded="true" embedded-filter="school" />
+                    </div>
+
                     <div v-else-if="isAdminTab && sub_action === 'log'" class="settings-log-wrap">
                         <Log :embedded="true" />
                     </div>
@@ -128,6 +132,10 @@
                         <TutoringUsers />
                     </div>
 
+                    <div v-else-if="isMaterialsTab && sub_action === 'material_groups'" class="settings-groups-wrap">
+                        <Groups :embedded="true" embedded-filter="materials" />
+                    </div>
+
                     <div v-else-if="isTeachingTab && sub_action === 'teaching_admin'" class="settings-teaching-admin-wrap">
                         <TeachingAdmin />
                     </div>
@@ -143,6 +151,14 @@
 
                     <div v-else-if="isSuperAdminTab && sub_action === 'user_impersonation'" class="settings-user-impersonation-wrap">
                         <UserImpersonation />
+                    </div>
+
+                    <div v-else-if="isGroupsTab && sub_action === 'groups_overview'" class="settings-groups-wrap">
+                        <Groups :embedded="true" />
+                    </div>
+
+                    <div v-else-if="isGroupsTab && sub_action === 'groups_own'" class="settings-groups-wrap">
+                        <Groups :embedded="true" embedded-filter="own" />
                     </div>
 
                     <div v-else-if="isProfileTab" class="settings-profile-wrap">
@@ -190,9 +206,10 @@ import TutoringSettings from '@/pages/admin/tutoring/components/Settings.vue'
 import TutoringSubjects from '@/pages/admin/tutoring/components/Subjects.vue'
 import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
 import TeachingAdmin from '@/pages/admin/teaching/admin/Admin.vue'
+import Groups from '@/pages/admin/groups/Groups.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, Groups },
 
     mounted() {
         this.syncRouteQuery()
@@ -271,6 +288,7 @@ export default {
                 register: ['super_admin', 'admin', 'register_admin'],
                 teaching: ['super_admin', 'admin', 'teaching_admin'],
                 tutoring: ['super_admin', 'admin', 'tutoring_admin'],
+                materials: ['super_admin', 'admin', 'materials_admin'],
                 groups: ['super_admin', 'admin'],
                 restaurant: ['super_admin', 'admin'],
                 profile: ['Jede/r'],
@@ -296,13 +314,15 @@ export default {
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register', 'teaching', 'tutoring', 'materials', 'groups'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'register') return 'users'
             if (this.main_action === 'teaching') return 'teachers'
             if (this.main_action === 'tutoring') return 'tutoring_settings'
+            if (this.main_action === 'materials') return 'material_groups'
+            if (this.main_action === 'groups') return 'groups_overview'
             return 'schools'
         },
         isSuperAdminTab() {
@@ -317,8 +337,14 @@ export default {
         isTutoringTab() {
             return this.main_action === 'tutoring'
         },
+        isMaterialsTab() {
+            return this.main_action === 'materials'
+        },
         isTeachingTab() {
             return this.main_action === 'teaching'
+        },
+        isGroupsTab() {
+            return this.main_action === 'groups'
         },
         isProfileTab() {
             return this.main_action === 'profile'
@@ -359,10 +385,24 @@ export default {
                 ]
             }
 
+            if (this.isMaterialsTab) {
+                return [
+                    { key: 'material_groups', label: 'Materialgruppen', meta: 'Gruppen', icon: 'mdi-folder-multiple-outline' },
+                ]
+            }
+
+            if (this.isGroupsTab) {
+                return [
+                    { key: 'groups_overview', label: 'Überblick', meta: 'Gruppen', icon: 'mdi-view-dashboard-outline' },
+                    { key: 'groups_own', label: 'Eigene Gruppen', meta: 'Persönlich', icon: 'mdi-account-multiple-outline' },
+                ]
+            }
+
             if (this.isAdminTab) {
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
                     { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
+                    { key: 'school_groups', label: 'Schulgruppen', meta: 'Gruppen', icon: 'mdi-account-multiple-outline' },
                     { key: 'log', label: 'Log', meta: 'System', icon: 'mdi-file-document-outline' },
                 ]
             }
@@ -398,6 +438,7 @@ export default {
                 { key: 'register', label: 'Anmeldetool', icon: 'mdi-calendar-check', visible: this.canAccessRegisterSettingsTab },
                 { key: 'tutoring', label: 'Nachhilfe', icon: 'mdi-account-group' },
                 { key: 'teaching', label: 'Unterricht', icon: 'mdi-book-open-variant' },
+                { key: 'materials', label: 'Materialien', icon: 'mdi-package-variant-closed' },
                 { key: 'groups', label: 'Gruppen', icon: 'mdi-account-multiple-outline' },
                 { key: 'restaurant', label: 'Restaurant', icon: 'mdi-silverware-fork-knife' },
                 { key: 'profile', label: 'Profil', icon: 'mdi-account-circle' },
@@ -413,6 +454,7 @@ export default {
                 canAccessRegisterTab ? 'register' : null,
                 'tutoring',
                 'teaching',
+                'materials',
                 'groups',
                 'restaurant',
                 'profile',
@@ -442,17 +484,23 @@ export default {
                 : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)[0]
             let keys, fallback
             if (resolvedTab === 'admin') {
-                keys = ['schoolyears', 'users', 'log']
+                keys = ['schoolyears', 'users', 'school_groups', 'log']
                 fallback = 'schoolyears'
             } else if (resolvedTab === 'tutoring') {
                 keys = ['tutoring_settings', 'tutoring_subjects', 'tutoring_users']
                 fallback = 'tutoring_settings'
+            } else if (resolvedTab === 'materials') {
+                keys = ['material_groups']
+                fallback = 'material_groups'
             } else if (resolvedTab === 'register') {
                 keys = ['users']
                 fallback = 'users'
             } else if (resolvedTab === 'teaching') {
                 keys = ['teachers', 'teaching_admin']
                 fallback = 'teachers'
+            } else if (resolvedTab === 'groups') {
+                keys = ['groups_overview', 'groups_own']
+                fallback = 'groups_overview'
             } else {
                 keys = ['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
                 fallback = 'schools'
@@ -688,6 +736,10 @@ export default {
     letter-spacing: 0 !important;
     font-size: 0.78rem !important;
     padding: 0 12px !important;
+}
+
+.settings-groups-wrap {
+    width: 100%;
 }
 
 .settings-empty-card {

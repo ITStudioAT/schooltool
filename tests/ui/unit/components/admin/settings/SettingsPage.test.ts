@@ -82,8 +82,8 @@ describe('Admin settings page', () => {
             isAdminTab: true,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'users', 'log'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Benutzer', 'Log'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'users', 'school_groups', 'log'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Benutzer', 'Schulgruppen', 'Log'])
     })
 
     it('builds the register sub navigation with users only', () => {
@@ -94,6 +94,20 @@ describe('Admin settings page', () => {
 
         expect(items.map((item: { key: string }) => item.key)).toEqual(['users'])
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Benutzer'])
+    })
+
+    it('builds the materials sub navigation with material groups only', () => {
+        const items = (Settings as any).computed.subNavigationItems.call({
+            isMaterialsTab: true,
+            isAdminTab: false,
+            isRegisterTab: false,
+            isTeachingTab: false,
+            isGroupsTab: false,
+            isTutoringTab: false,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['material_groups'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Materialgruppen'])
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
@@ -187,6 +201,11 @@ describe('Admin settings page', () => {
     })
 
     it('renders the overtaken schoolyears and users views on the admin settings tab', async () => {
+        const GroupsStub = defineComponent({
+            props: ['embedded', 'embeddedFilter'],
+            template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter }}</div>',
+        })
+
         const { container } = render(Settings, {
             global: {
                 plugins: [
@@ -220,6 +239,7 @@ describe('Admin settings page', () => {
                     Schools: { template: '<div>Schools Component</div>' },
                     Schoolyears: { template: '<div>Schoolyears Component</div>' },
                     Users: { template: '<div>Users Component</div>' },
+                    Groups: GroupsStub,
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
@@ -245,6 +265,15 @@ describe('Admin settings page', () => {
         expect(container.querySelector('.settings-users-wrap')).not.toBeNull()
         expect(screen.queryByText('Schoolyears Component')).not.toBeInTheDocument()
 
+        await fireEvent.click(screen.getByText('Schulgruppen'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Groups Component embedded school')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
+        expect(screen.queryByText('Users Component')).not.toBeInTheDocument()
+
         await fireEvent.click(screen.getByText('Log'))
 
         await waitFor(() => {
@@ -253,6 +282,57 @@ describe('Admin settings page', () => {
 
         expect(container.querySelector('.settings-log-wrap')).not.toBeNull()
         expect(screen.queryByText('Users Component')).not.toBeInTheDocument()
+    })
+
+    it('renders the overtaken material groups view on the materials settings tab', async () => {
+        const GroupsStub = defineComponent({
+            props: ['embedded', 'embeddedFilter'],
+            template: '<div>Groups Component {{ embedded ? "embedded" : "full" }} {{ embeddedFilter }}</div>',
+        })
+
+        const { container } = render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['materials_admin'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=materials',
+                        query: {
+                            tab: 'materials',
+                        },
+                    },
+                    $router: {
+                        replace: () => {},
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    Groups: GroupsStub,
+                },
+            },
+        })
+
+        expect(container.querySelector('.settings-subnav')).not.toBeNull()
+        expect(screen.getAllByText('Materialgruppen').length).toBeGreaterThan(0)
+
+        await waitFor(() => {
+            expect(screen.getByText('Groups Component embedded materials')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-groups-wrap')).not.toBeNull()
     })
 
     it('redirects unauthorized users away from the admin settings tab and hides super-admin', () => {

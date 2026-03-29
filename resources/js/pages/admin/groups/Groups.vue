@@ -2,6 +2,7 @@
     <div class="groups-page">
         <v-container fluid class="ma-0 w-100 pa-2">
             <AdminSectionHero
+                v-if="!embedded"
                 class="mb-3"
                 eyebrow="Verwaltung"
                 title="Gruppen"
@@ -11,7 +12,7 @@
                 focus-label="Gruppentypen" />
 
             <div class="super-admin-overview-shell super-admin-overview-shell--active">
-                <section class="sa-card sa-card-school mb-3">
+                <section v-if="!embeddedFilter" class="sa-card sa-card-school mb-3">
                     <div class="sa-card-head">
                         <div>
                             <div class="sa-card-eyebrow">Übersicht</div>
@@ -42,9 +43,9 @@
                     </div>
                 </section>
 
-                <div class="groups-cards-shell">
+                <div v-if="shouldShowGroupCards" class="groups-cards-shell">
                     <v-row class="w-100 ma-0 groups-cards-row" dense>
-                    <v-col cols="12" md="6" xl="4" v-for="section in groupSections" :key="section.type">
+                    <v-col cols="12" md="6" xl="4" v-for="section in visibleGroupSections" :key="section.type">
                     <section class="sa-card h-100">
                         <div class="sa-card-head">
                             <div>
@@ -1200,6 +1201,17 @@ import { useNotificationStore } from '@/stores/spa/NotificationStore'
 export default {
     components: { AdminSectionHero },
 
+    props: {
+        embedded: {
+            type: Boolean,
+            default: false,
+        },
+        embeddedFilter: {
+            type: String,
+            default: '',
+        },
+    },
+
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.notificationStore = useNotificationStore()
@@ -1347,6 +1359,15 @@ export default {
         },
         requiredRule() {
             return (v) => (!!String(v || '').trim() ? true : 'Pflichtfeld')
+        },
+        visibleGroupSections() {
+            if (this.embeddedFilter) {
+                return this.groupSections.filter((s) => s.type === this.embeddedFilter)
+            }
+            return this.groupSections
+        },
+        shouldShowGroupCards() {
+            return !this.embedded || this.visibleGroupSections.length > 0
         },
     },
 

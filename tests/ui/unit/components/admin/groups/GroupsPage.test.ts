@@ -27,6 +27,42 @@ describe('Groups page header', () => {
         })
     })
 
+    it('keeps all group cards visible for the embedded overview and narrows filtered embeds only', () => {
+        const visibleGroupSections = (Groups as any).computed.visibleGroupSections
+        const shouldShowGroupCards = (Groups as any).computed.shouldShowGroupCards
+        const groupSections = [
+            { type: 'school' },
+            { type: 'materials' },
+            { type: 'own' },
+        ]
+
+        const embeddedOverviewContext = {
+            embedded: true,
+            embeddedFilter: '',
+            groupSections,
+        }
+
+        embeddedOverviewContext.visibleGroupSections = visibleGroupSections.call(embeddedOverviewContext)
+
+        expect(embeddedOverviewContext.visibleGroupSections.map((section: { type: string }) => section.type)).toEqual([
+            'school',
+            'materials',
+            'own',
+        ])
+        expect(shouldShowGroupCards.call(embeddedOverviewContext)).toBe(true)
+
+        const filteredEmbedContext = {
+            embedded: true,
+            embeddedFilter: 'own',
+            groupSections,
+        }
+
+        filteredEmbedContext.visibleGroupSections = visibleGroupSections.call(filteredEmbedContext)
+
+        expect(filteredEmbedContext.visibleGroupSections.map((section: { type: string }) => section.type)).toEqual(['own'])
+        expect(shouldShowGroupCards.call(filteredEmbedContext)).toBe(true)
+    })
+
     it('opens members dialog in read-only mode when clicking a group row', () => {
         const methods = (Groups as any).methods
         const openAssignUsersDialog = vi.fn()
