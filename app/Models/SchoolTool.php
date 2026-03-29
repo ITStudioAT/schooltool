@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -11,8 +12,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $tutoring_student_must_be_confirmed
  * @property string|null $tutoring_confirmer_email
  * @property int $tutoring_max_offers_per_student
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool query()
@@ -24,8 +26,11 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereTutoringStudentMustBeConfirmed($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereUpdatedAt($value)
  * @method static \Database\Factories\SchoolToolFactory factory($count = null, $state = [])
- * @property \Illuminate\Support\Carbon|null $health_at
+ *
+ * @property Carbon|null $health_at
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|SchoolTool whereHealthAt($value)
+ *
  * @mixin \Eloquent
  */
 class SchoolTool extends Model
@@ -42,6 +47,22 @@ class SchoolTool extends Model
         'material_max_file_upload_size',
         'health_at',
         'import_166_at',
+        'restaurant_menu_visibility_start_mode',
+        'restaurant_menu_visibility_start_week_offset',
+        'restaurant_menu_visibility_start_day_of_week',
+        'restaurant_menu_visibility_start_time',
+        'restaurant_menu_order_start_mode',
+        'restaurant_menu_order_start_week_offset',
+        'restaurant_menu_order_start_day_of_week',
+        'restaurant_menu_order_start_time',
+        'restaurant_menu_order_end_week_offset',
+        'restaurant_menu_order_end_day_of_week',
+        'restaurant_menu_order_end_time',
+        'restaurant_menu_visibility_end_mode',
+        'restaurant_service_email',
+        'restaurant_new_users_must_confirm_email',
+        'restaurant_new_users_confirmer_email',
+        'restaurant_user_information_intro_html',
     ];
 
     protected $casts = [
@@ -50,5 +71,12 @@ class SchoolTool extends Model
         'tutoring_student_must_be_confirmed' => 'boolean',
         'may_visible_for_other_schools' => 'boolean',
         'material_max_file_upload_size' => 'integer',
+        'restaurant_menu_visibility_start_week_offset' => 'integer',
+        'restaurant_menu_visibility_start_day_of_week' => 'integer',
+        'restaurant_menu_order_start_week_offset' => 'integer',
+        'restaurant_menu_order_start_day_of_week' => 'integer',
+        'restaurant_menu_order_end_week_offset' => 'integer',
+        'restaurant_menu_order_end_day_of_week' => 'integer',
+        'restaurant_new_users_must_confirm_email' => 'boolean',
     ];
 }

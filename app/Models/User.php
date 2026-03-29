@@ -39,6 +39,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $last_name
  * @property string|null $first_name
  * @property string|null $phone
+ * @property Carbon|null $sepa_at
  * @property string|null $login_at
  * @property string|null $login_ip
  * @property int|null $is_2fa
@@ -169,6 +170,7 @@ class User extends Authenticatable
         'teaching_notifications_by_schoolyear',
         'teaching_show_behaviour',
         'materials_pagination_number',
+        'restaurant_foods_pagination_number',
     ];
 
     // Protected fields that should NOT be mass assignable:
@@ -196,6 +198,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
+            'sepa_at' => 'datetime',
             'tutoring_filter' => 'array',
             'teaching_behaviour' => 'array',
             'teaching_behaviour_by_schoolyear' => 'array',

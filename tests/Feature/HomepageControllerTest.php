@@ -11,17 +11,22 @@
  */
 
 use App\Models\Licence;
+use App\Models\RestaurantMenuPlan;
 use App\Models\School;
 use App\Models\SchoolLicence;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\HomepageRoutingService;
-use App\Services\LicenceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
+
+afterEach(function () {
+    Carbon::setTestNow();
+});
 
 beforeEach(function () {
     $this->school = School::factory()->create([
@@ -118,9 +123,17 @@ describe('loadSchoolsForTool', function () {
     });
 });
 
+describe('routing', function () {
+    test('restaurant page hard refresh returns the homepage shell', function () {
+        $this->get('/homepage/restaurant')
+            ->assertOk()
+            ->assertViewIs('homepage');
+    });
+});
+
 describe('config', function () {
     test('config returns valid school and licence when both exist', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name . '&app=Anmeldetool');
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name.'&app=Anmeldetool');
 
         $response->assertStatus(200)
             ->assertJson([
@@ -132,7 +145,7 @@ describe('config', function () {
     });
 
     test('config returns school info when only school parameter provided', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJson([
@@ -145,7 +158,7 @@ describe('config', function () {
         // Create another school so auto-selection doesn't kick in
         School::factory()->create([
             'short_name' => 'OTHER',
-            'is_selectable' => true
+            'is_selectable' => true,
         ]);
 
         $response = $this->getJson('/api/homepage/config?school=INVALID');
@@ -158,9 +171,9 @@ describe('config', function () {
     });
 
     test('config returns configuration structure', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
-        $response->assertStatus(200)
+        $response->assertOk()
             ->assertJsonStructure([
                 'schooltool_logo',
                 'logo',
@@ -175,6 +188,11 @@ describe('config', function () {
                 'schoolLicences',
                 'tutoring_active',
                 'teaching_active',
+                'restaurant' => [
+                    'user_information_intro_html',
+                    'visible_menu_plans_count',
+                    'orderable_menu_plans_count',
+                ],
             ]);
     });
 
@@ -198,7 +216,7 @@ describe('config', function () {
     });
 
     test('config auto selects single licence when school has one licence', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200)
             ->assertJson([
@@ -208,7 +226,7 @@ describe('config', function () {
     });
 
     test('config returns school licences for valid school', function () {
-        $response = $this->getJson('/api/homepage/config?school=' . $this->school->short_name);
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
 
         $response->assertStatus(200);
 
@@ -240,6 +258,63 @@ describe('config', function () {
                 'teaching_active' => true,
                 'tutoring_active' => false,
             ]);
+    });
+
+    test('config includes the restaurant user information intro html for the selected school', function () {
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_user_information_intro_html' => '<p><strong>Willkommen</strong> im Restaurant.</p>',
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.user_information_intro_html', '<p><strong>Willkommen</strong> im Restaurant.</p>');
+    });
+
+    test('config includes current visible and orderable restaurant menu plan counts', function () {
+        Carbon::setTestNow('2026-03-23 16:00:00');
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_menu_visibility_start_mode' => 'scheduled',
+            'restaurant_menu_visibility_start_week_offset' => 2,
+            'restaurant_menu_visibility_start_day_of_week' => 1,
+            'restaurant_menu_visibility_start_time' => '09:00:00',
+            'restaurant_menu_order_start_mode' => 'scheduled',
+            'restaurant_menu_order_start_week_offset' => 2,
+            'restaurant_menu_order_start_day_of_week' => 1,
+            'restaurant_menu_order_start_time' => '10:00:00',
+            'restaurant_menu_order_end_week_offset' => 1,
+            'restaurant_menu_order_end_day_of_week' => 5,
+            'restaurant_menu_order_end_time' => '17:00:00',
+            'restaurant_menu_visibility_end_mode' => 'plan_end',
+        ]);
+
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-03-23',
+            'end_date' => '2026-03-27',
+            'is_available' => true,
+        ]);
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-04-06',
+            'end_date' => '2026-04-10',
+            'is_available' => true,
+        ]);
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-04-13',
+            'end_date' => '2026-04-17',
+            'is_available' => false,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.visible_menu_plans_count', 2)
+            ->assertJsonPath('restaurant.orderable_menu_plans_count', 1);
     });
 
     test('config keeps tool status active when school licence is expired but not required', function () {
@@ -305,4 +380,3 @@ describe('logout', function () {
         expect(Auth::check())->toBeFalse();
     });
 });
-

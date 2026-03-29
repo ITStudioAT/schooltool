@@ -21,6 +21,7 @@ const Teaching = () => import('@/pages/admin/teaching/Teaching.vue')
 const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
+const MenuPlans = () => import('@/pages/admin/menuPlans/MenuPlans.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
@@ -48,7 +49,8 @@ export const routes = [
     { path: '/admin/teaching/:section?', component: Teaching, meta: { capability: 'teaching' } },
     { path: '/admin/materials', component: Materials, meta: { capability: 'materials' } },
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
-    { path: '/admin/restaurant', component: Restaurant, meta: { capability: 'restaurant' } },
+    { path: '/admin/restaurant/:section?', component: Restaurant, meta: { capability: 'restaurant' } },
+    { path: '/admin/menu-plans', component: MenuPlans, meta: { capability: 'restaurant' } },
     { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },
     { path: '/admin/aba/results/:abaId', component: AbaResults, meta: { capability: 'aba' } },
     { path: '/admin/aba/ai-settings', component: AbaAiSettings, meta: { capability: 'aba' } },

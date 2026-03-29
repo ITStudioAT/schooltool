@@ -115,7 +115,21 @@
                         </div>
 
                         <!-- Mittagsmenüs Card -->
-                        <a href="https://cdgym.info/lunch" target="_blank" class="tool-card card-lunch">
+                        <router-link to="/homepage/restaurant" class="tool-card card-lunch">
+                            <div class="card-glow"></div>
+                            <div class="card-content">
+                                <div class="card-icon">
+                                    <v-icon size="40">mdi-food</v-icon>
+                                </div>
+                                <h3 class="card-title">Restaurant</h3>
+                                <p class="card-description">Speisepläne, Bestellungen und Abholinfos an einem Ort. Direkt in SchoolTool.</p>
+                                <div class="card-action">
+                                    <span class="action-text">Zum Restaurant</span>
+                                    <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                            </div>
+                        </router-link>
+                        <a v-if="false" href="/homepage/restaurant" class="tool-card card-lunch">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -237,6 +251,27 @@
                 </article>
 
                 <article class="product-section product-section--admin">
+                    <div class="product-copy">
+                        <div class="product-label">
+                            <v-icon size="18">mdi-food</v-icon>
+                            <span>Restaurant</span>
+                        </div>
+                        <h4 class="product-title">Restaurant digital organisiert</h4>
+                        <p class="product-text">
+                            Speisepläne, Bestellungen und wichtige Hinweise für die Ausgabe in einer klaren Oberfläche bündeln.
+                        </p>
+                        <div class="product-tags">
+                            <span>Speisepläne</span>
+                            <span>Bestellung</span>
+                            <span>Abholung</span>
+                        </div>
+                    </div>
+                    <div class="product-visual visual-admin">
+                        <img class="product-illustration product-illustration-lunch" src="/images/illustrations/eating-pasta-animated.svg" alt="Illustration für Restaurant" />
+                    </div>
+                </article>
+
+                <article v-if="false" class="product-section product-section--admin">
                     <div class="product-copy">
                         <div class="product-label">
                             <v-icon size="18">mdi-food</v-icon>

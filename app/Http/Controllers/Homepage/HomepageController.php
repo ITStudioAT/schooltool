@@ -11,6 +11,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
+use App\Services\RestaurantService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -87,7 +88,7 @@ class HomepageController extends Controller
         return response()->json($data, 200);
     }
 
-    public function config(Request $request, LicenceService $licenceService)
+    public function config(Request $request, LicenceService $licenceService, RestaurantService $restaurantService)
     {
         $school_short = $request->query('school');
         $app = $request->query('app');
@@ -148,6 +149,10 @@ class HomepageController extends Controller
             ],
             'health' => [
                 'queue_working' => $this->isQueueWorking(),
+            ],
+            'restaurant' => [
+                'user_information_intro_html' => trim((string) ($school?->schoolTool?->restaurant_user_information_intro_html ?? '')),
+                ...$restaurantService->homepageSummaryForSchool($school),
             ],
         ];
 
