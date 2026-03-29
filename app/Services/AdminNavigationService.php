@@ -40,16 +40,6 @@ class AdminNavigationService
             $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'is_active' => true];
         }
 
-        // SUPERADMIN
-        if ($isSuperAdmin) {
-            $menu[] = ['title' => 'Super-Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
-        } else {
-            // ADMIN
-            if ($this->userHasRole(['admin'])) {
-                $menu[] = ['title' => 'Admin', 'icon' => 'mdi-shield-crown', 'to' => '/admin/super_admin', 'is_active' => true];
-            }
-        }
-
         $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', ['admin', 'register_admin']);
         $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', ['admin', 'tutoring_admin', 'teacher']);
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', ['admin', 'teaching_admin', 'teacher']);
@@ -173,7 +163,7 @@ class AdminNavigationService
         $capabilities['profile'] = $capabilities['home'];
         $capabilities['users'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['user_roles'] = $user->hasRole('super_admin');
-        $capabilities['super_admin'] = $this->menuRouteCapability($user, $menuByPath, '/admin/super_admin', ['admin']);
+        $capabilities['super_admin'] = $user->hasAnyRole(['admin', 'super_admin']);
         $capabilities['register_system'] = $this->menuRouteCapability($user, $menuByPath, '/admin/register_system', ['admin', 'register_admin']);
         $capabilities['tutoring'] = $this->menuRouteCapability($user, $menuByPath, '/admin/tutoring', ['admin', 'tutoring_admin', 'teacher']);
         $capabilities['teaching'] = $this->menuRouteCapability($user, $menuByPath, '/admin/teaching', ['admin', 'teaching_admin', 'teacher']);

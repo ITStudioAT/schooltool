@@ -32,7 +32,7 @@
                         </div>
                     </div>
 
-                    <div class="sa-kpi-grid">
+                    <div class="sa-kpi-grid" v-if="!hideDetails">
                         <div class="sa-kpi-card">
                             <div class="sa-kpi-label">Lizenzen aktiv</div>
                             <div class="sa-kpi-value">{{ activeLicenceCount }}</div>
@@ -109,7 +109,7 @@
                 </div>
             </section>
 
-            <section class="sa-card sa-card-licences" v-if="action == ''">
+            <section class="sa-card sa-card-licences" v-if="action == '' && !hideDetails">
                 <div class="sa-card-head">
                     <div>
                         <div class="sa-card-eyebrow">Abrechnung / Zugriff</div>
@@ -136,7 +136,7 @@
                 <div v-else class="sa-empty">Keine gültigen Lizenzen</div>
             </section>
 
-            <section class="sa-card sa-card-admins" v-if="action == ''">
+            <section class="sa-card sa-card-admins" v-if="action == '' && !hideDetails">
                 <div class="sa-card-head">
                     <div>
                         <div class="sa-card-eyebrow">Team</div>
@@ -172,6 +172,13 @@ import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useLicenceStore } from '@/stores/admin/LicenceStore'
 
 export default {
+    props: {
+        hideDetails: {
+            type: Boolean,
+            default: false,
+        },
+    },
+
     setup() {
         return useValidationRulesSetup()
     },

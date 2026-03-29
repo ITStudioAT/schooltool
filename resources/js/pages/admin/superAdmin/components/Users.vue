@@ -97,6 +97,9 @@
                                                         Keine Rolle
                                                     </v-chip>
                                                 </div>
+                                                <div v-if="normalizedSchoolclass(item.schoolclass)" class="person-schoolclass">
+                                                    Klasse {{ normalizedSchoolclass(item.schoolclass) }}
+                                                </div>
                                                 <div class="person-email">{{ item.email }}</div>
                                             </div>
                                         </div>
@@ -377,6 +380,10 @@ export default {
                 .replace(/\b\w/g, (char) => char.toUpperCase())
         },
 
+        normalizedSchoolclass(schoolclass) {
+            return (schoolclass || '').toString().trim()
+        },
+
         async saveUser(data) {
             if (this.is_uploading) { return }
             this.is_valid = false
@@ -503,5 +510,12 @@ export default {
     border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
     background-color: color-mix(in srgb, currentColor 14%, transparent);
     opacity: 0.98;
+}
+
+.person-schoolclass {
+    margin-top: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: rgb(var(--v-theme-primary));
 }
 </style>

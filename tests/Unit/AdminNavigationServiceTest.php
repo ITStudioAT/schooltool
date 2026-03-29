@@ -63,7 +63,7 @@ describe('dashboardMenu', function () {
 
         $result = $this->service->dashboardMenu();
 
-        expect($result)->toBeArray()->toHaveCount(3);
+        expect($result)->toBeArray()->toHaveCount(2);
 
         expect($result[0])
             ->toMatchArray([
@@ -74,20 +74,13 @@ describe('dashboardMenu', function () {
 
         expect($result[1])
             ->toMatchArray([
-                'title' => 'Doe John',
-                'icon' => 'mdi-account',
-                'to' => '/admin/profile',
-            ]);
-
-        expect($result[2])
-            ->toMatchArray([
                 'title' => 'Abmelden',
                 'icon' => 'mdi-power-cycle',
                 'click' => 'logout',
             ]);
     });
 
-    it('includes super admin menu item for super_admin role', function () {
+    it('does not include super admin dashboard menu item for super_admin role', function () {
         $user = User::factory()->create([
             'first_name' => 'Admin',
             'last_name' => 'Super',
@@ -102,10 +95,25 @@ describe('dashboardMenu', function () {
 
         $superAdminItem = collect($result)->firstWhere('title', 'Super-Admin');
 
-        expect($superAdminItem)
-            ->not->toBeNull()
-            ->and($superAdminItem['icon'])->toBe('mdi-shield-crown')
-            ->and($superAdminItem['to'])->toBe('/admin/super_admin');
+        expect($superAdminItem)->toBeNull();
+    });
+
+    it('does not include admin dashboard menu item for admin role', function () {
+        $user = User::factory()->create([
+            'first_name' => 'Admin',
+            'last_name' => 'Regular',
+        ]);
+        $role = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        $user->assignRole($role);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+
+        $result = $this->service->dashboardMenu();
+
+        $adminItem = collect($result)->firstWhere('title', 'Admin');
+
+        expect($adminItem)->toBeNull();
     });
 
     it('includes register system menu item for admin role', function () {
@@ -194,7 +202,7 @@ describe('dashboardMenu', function () {
             ->and($settingsItem['to'])->toBe('/admin/settings');
     });
 
-    it('truncates long user names to 17 characters', function () {
+    it('does not add a profile menu item to the dashboard menu', function () {
         $user = User::factory()->create([
             'first_name' => 'VeryLongFirstName',
             'last_name' => 'VeryLongLastName',
@@ -208,9 +216,7 @@ describe('dashboardMenu', function () {
 
         $profileItem = collect($result)->firstWhere('to', '/admin/profile');
 
-        expect($profileItem)
-            ->not->toBeNull()
-            ->and(strlen($profileItem['title']))->toBeLessThanOrEqual(17);
+        expect($profileItem)->toBeNull();
     });
 
     it('includes all menu items for user with multiple roles', function () {
@@ -230,9 +236,9 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(11)
+            ->toHaveCount(9)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Einstellungen', 'Super-Admin', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Gruppen', 'Restaurant', 'Role Multi', 'Abmelden');
+            ->toContain('Home', 'Einstellungen', 'Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Gruppen', 'Restaurant', 'Abmelden');
     });
 
     it('keeps module active when expired school licence is not required by model', function () {
@@ -932,6 +938,18 @@ describe('routeCapabilities', function () {
             ->and($capabilities['groups'])->toBeTrue()
             ->and($capabilities['restaurant'])->toBeTrue()
             ->and($capabilities['aba'])->toBeFalse();
+    });
+
+    it('keeps super admin route capability without a dashboard menu item', function () {
+        $user = User::factory()->create();
+        $user->assignRole(Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']));
+
+        $capabilities = $this->service->routeCapabilities($user, [
+            ['title' => 'Home', 'to' => '/admin', 'is_active' => true],
+            ['title' => 'Einstellungen', 'to' => '/admin/settings', 'is_active' => true],
+        ]);
+
+        expect($capabilities['super_admin'])->toBeTrue();
     });
 
     it('disables module routes when the dashboard item is hidden', function () {

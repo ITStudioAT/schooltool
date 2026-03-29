@@ -63,8 +63,6 @@
             </div>
         </v-container>
 
-        <Log v-model="log_dialog" v-if="hasAnyConfiguredRole(['super_admin', 'admin'])" />
-
         <v-dialog v-model="impersonation_dialog" max-width="720" persistent>
             <v-card>
                 <v-card-title class="d-flex align-center justify-space-between">
@@ -188,10 +186,8 @@ import TeachersList from './components/TeachersList.vue'
 
 import ActiveSchool from './components/ActiveSchool.vue'
 
-import Log from './components/Log.vue'
-
 export default {
-    components: { AdminSectionHero, Schools, ActiveSchool, Log, Teachers, TeachersList },
+    components: { AdminSectionHero, Schools, ActiveSchool, Teachers, TeachersList },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -216,7 +212,6 @@ export default {
     data() {
         return {
             adminStore: null,
-            log_dialog: false,
             impersonation_dialog: false,
             selected_impersonation_school_id: null,
             impersonation_user_search_string: '',
@@ -291,30 +286,6 @@ export default {
                     meta: 'Dashboard',
                     icon: 'mdi-home',
                     targetAction: '',
-                    visible: hasAnyRole(['super_admin', 'admin']),
-                },
-                {
-                    key: 'teachers',
-                    label: 'Lehrer',
-                    meta: 'Lehrerliste',
-                    icon: 'mdi-account-tie',
-                    targetAction: 'teachers',
-                    visible: hasAnyRole(['super_admin', 'admin']),
-                },
-                {
-                    key: 'impersonation',
-                    label: 'Benutzer wechseln',
-                    meta: 'Übernahme',
-                    icon: 'mdi-account-switch',
-                    action: 'impersonation',
-                    visible: roles.includes('super_admin') && !this.isImpersonating,
-                },
-                {
-                    key: 'log',
-                    label: 'Log',
-                    meta: 'System',
-                    icon: 'mdi-file-document',
-                    action: 'log',
                     visible: hasAnyRole(['super_admin', 'admin']),
                 },
             ].filter((item) => item.visible)
@@ -394,8 +365,16 @@ export default {
                 this.redirectRolesToSettings()
                 return
             }
+            if (section === 'log') {
+                this.redirectLogToSettings()
+                return
+            }
+            if (section === 'teachers' || section === 'teachers_list') {
+                this.redirectTeachersToSettings()
+                return
+            }
 
-            const validSections = ['', 'schools', 'teachers', 'teachers_list']
+            const validSections = ['', 'schools']
             this.main_action = validSections.includes(section) ? section : ''
         },
         async handleNavigation(item) {
@@ -405,11 +384,6 @@ export default {
 
             if (item.action === 'impersonation') {
                 await this.openImpersonationDialog()
-                return
-            }
-
-            if (item.action === 'log') {
-                this.log_dialog = true
                 return
             }
 
@@ -440,6 +414,12 @@ export default {
         },
         redirectRolesToSettings() {
             this.$router.replace('/admin/settings?panel=roles')
+        },
+        redirectLogToSettings() {
+            this.$router.replace('/admin/settings?tab=admin&panel=log')
+        },
+        redirectTeachersToSettings() {
+            this.$router.replace('/admin/settings?tab=teaching&panel=teachers')
         },
         async openImpersonationDialog() {
             this.impersonation_dialog = true

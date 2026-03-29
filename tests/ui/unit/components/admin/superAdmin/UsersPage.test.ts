@@ -64,6 +64,7 @@ describe('Users roles list item UI helpers', () => {
                                         first_name: 'Anna',
                                         last_name: 'Muster',
                                         email: 'anna@test.local',
+                                        schoolclass: '7B',
                                         is_active: true,
                                         roles: ['super_admin', 'teaching_admin'],
                                     },
@@ -72,6 +73,7 @@ describe('Users roles list item UI helpers', () => {
                                         first_name: 'Ben',
                                         last_name: 'Leer',
                                         email: 'ben@test.local',
+                                        schoolclass: '   ',
                                         is_active: true,
                                         roles: [],
                                     },
@@ -103,6 +105,8 @@ describe('Users roles list item UI helpers', () => {
         })
         expect(screen.getByText('Teaching Admin')).toBeInTheDocument()
         expect(screen.getByText('Keine Rolle')).toBeInTheDocument()
+        expect(screen.getByText('Klasse 7B')).toBeInTheDocument()
+        expect(screen.queryByText(/^Klasse\s+$/)).not.toBeInTheDocument()
     })
 
     it('normalizes role names from arrays and comma-separated strings', () => {
@@ -118,6 +122,14 @@ describe('Users roles list item UI helpers', () => {
 
         expect(methods.formatRoleLabel('teaching_admin')).toBe('Teaching Admin')
         expect(methods.formatRoleLabel('super_admin')).toBe('Super Admin')
+    })
+
+    it('normalizes school classes before rendering them', () => {
+        const methods = (Users as any).methods
+
+        expect(methods.normalizedSchoolclass(' 7B ')).toBe('7B')
+        expect(methods.normalizedSchoolclass('')).toBe('')
+        expect(methods.normalizedSchoolclass(null)).toBe('')
     })
 
     it('lets admin manage regular roles while keeping super_admin locked', async () => {

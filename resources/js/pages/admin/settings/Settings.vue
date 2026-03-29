@@ -43,6 +43,20 @@
             </v-sheet>
 
             <v-sheet
+                v-if="showsTeacherSubNavigation"
+                rounded="xl"
+                class="settings-licence-subnav mb-2">
+                <v-btn-toggle v-model="teachers_action" mandatory class="settings-licence-subnav__switcher" color="primary" divided>
+                    <v-btn value="teachers" class="settings-teacher-subnav__button" prepend-icon="mdi-account-tie" size="small">
+                        Lehrer
+                    </v-btn>
+                    <v-btn value="teachers_list" class="settings-teacher-subnav__button" prepend-icon="mdi-view-list" size="small">
+                        Lehrerliste
+                    </v-btn>
+                </v-btn-toggle>
+            </v-sheet>
+
+            <v-sheet
                 v-if="showsLicenceSubNavigation"
                 rounded="xl"
                 class="settings-licence-subnav mb-2">
@@ -72,6 +86,10 @@
                         <Users />
                     </div>
 
+                    <div v-else-if="isAdminTab && sub_action === 'log'" class="settings-log-wrap">
+                        <Log :embedded="true" />
+                    </div>
+
                     <div v-else-if="isSuperAdminTab && sub_action === 'licence_models'" class="settings-licences-wrap">
                         <Licences v-if="licence_models_action === 'overview'" />
                         <LicenceSchools v-else-if="licence_models_action === 'schools'" />
@@ -83,6 +101,19 @@
 
                     <div v-else-if="isRegisterTab && sub_action === 'users'" class="settings-users-wrap">
                         <RegisterUsers />
+                    </div>
+
+                    <div v-else-if="isTeachingTab && sub_action === 'teachers'" class="settings-teachers-wrap">
+                        <Teachers v-if="teachers_action === 'teachers'" :hide-back-button="true" />
+                        <TeachersList v-else-if="teachers_action === 'teachers_list'" :hide-back-button="true" />
+                    </div>
+
+                    <div v-else-if="isSuperAdminTab && sub_action === 'school_switch'" class="settings-school-switch-wrap">
+                        <ActiveSchool :hide-details="true" />
+                    </div>
+
+                    <div v-else-if="isSuperAdminTab && sub_action === 'user_impersonation'" class="settings-user-impersonation-wrap">
+                        <UserImpersonation />
                     </div>
 
                     <div v-else-if="isProfileTab" class="settings-profile-wrap">
@@ -119,11 +150,16 @@ import Users from '@/pages/admin/superAdmin/components/Users.vue'
 import Licences from '@/pages/admin/superAdmin/components/Licences.vue'
 import LicenceSchools from '@/pages/admin/superAdmin/components/LicenceSchools.vue'
 import Roles from '@/pages/admin/superAdmin/components/Roles.vue'
+import Log from '@/pages/admin/superAdmin/components/Log.vue'
 import RegisterUsers from '@/pages/admin/settings/components/RegisterUsers.vue'
 import Profile from '@/pages/admin/profile/Profile.vue'
+import ActiveSchool from '@/pages/admin/superAdmin/components/ActiveSchool.vue'
+import UserImpersonation from '@/pages/admin/superAdmin/components/UserImpersonation.vue'
+import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
+import TeachersList from '@/pages/admin/superAdmin/components/TeachersList.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, RegisterUsers, Profile },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList },
 
     mounted() {
         this.syncRouteQuery()
@@ -134,6 +170,7 @@ export default {
             main_action: this.initialTab(),
             sub_action: this.initialSubAction(),
             licence_models_action: this.initialLicenceModelsAction(),
+            teachers_action: 'teachers',
         }
     },
 
@@ -211,11 +248,12 @@ export default {
             return ['super_admin', 'admin', 'register_admin'].some((role) => this.configuredRoleNames.includes(role))
         },
         showsSubNavigation() {
-            return ['super_admin', 'admin', 'register'].includes(this.main_action)
+            return ['super_admin', 'admin', 'register', 'teaching'].includes(this.main_action)
         },
         defaultSubAction() {
             if (this.main_action === 'admin') return 'schoolyears'
             if (this.main_action === 'register') return 'users'
+            if (this.main_action === 'teaching') return 'teachers'
             return 'schools'
         },
         isSuperAdminTab() {
@@ -227,8 +265,14 @@ export default {
         isRegisterTab() {
             return this.main_action === 'register'
         },
+        isTeachingTab() {
+            return this.main_action === 'teaching'
+        },
         isProfileTab() {
             return this.main_action === 'profile'
+        },
+        showsTeacherSubNavigation() {
+            return this.isTeachingTab && this.sub_action === 'teachers'
         },
         showsLicenceSubNavigation() {
             return this.isSuperAdminTab && this.sub_action === 'licence_models'
@@ -244,9 +288,13 @@ export default {
         subNavigationItems() {
             if (this.isRegisterTab) {
                 return [
-                    { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
-                    { key: 'notifications', label: 'Benachrichtigungen', meta: 'E-Mails', icon: 'mdi-bell-outline' },
-                    { key: 'templates', label: 'Vorlagen', meta: 'Dokumente', icon: 'mdi-file-document-outline' },
+                    { key: 'users', label: 'Benutzer', meta: 'Anmeldetool', icon: 'mdi-account-group-outline' },
+                ]
+            }
+
+            if (this.isTeachingTab) {
+                return [
+                    { key: 'teachers', label: 'Lehrer', meta: 'Lehrerliste', icon: 'mdi-account-tie' },
                 ]
             }
 
@@ -254,6 +302,7 @@ export default {
                 return [
                     { key: 'schoolyears', label: 'Schuljahre', meta: 'Kalender', icon: 'mdi-calendar-multiple' },
                     { key: 'users', label: 'Benutzer', meta: 'Organisation', icon: 'mdi-account-group-outline' },
+                    { key: 'log', label: 'Log', meta: 'System', icon: 'mdi-file-document-outline' },
                 ]
             }
 
@@ -261,6 +310,8 @@ export default {
                 { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
                 { key: 'licence_models', label: 'Lizenzen Modelle', meta: 'Lizenzverwaltung', icon: 'mdi-card-account-details' },
                 { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
+                { key: 'school_switch', label: 'Schule wechseln', meta: 'Aktive Schule', icon: 'mdi-swap-horizontal' },
+                { key: 'user_impersonation', label: 'Benutzer wechseln', meta: 'Übernahme', icon: 'mdi-account-switch' },
             ]
         },
         visibleLicenceNavigationItems() {
@@ -330,13 +381,16 @@ export default {
                 : this.availableTabKeys(canAccessSuperAdminTab, canAccessAdminTab, canAccessRegisterTab)[0]
             let keys, fallback
             if (resolvedTab === 'admin') {
-                keys = ['schoolyears', 'users']
+                keys = ['schoolyears', 'users', 'log']
                 fallback = 'schoolyears'
             } else if (resolvedTab === 'register') {
-                keys = ['users', 'notifications', 'templates']
+                keys = ['users']
                 fallback = 'users'
+            } else if (resolvedTab === 'teaching') {
+                keys = ['teachers']
+                fallback = 'teachers'
             } else {
-                keys = ['schools', 'licence_models', 'roles']
+                keys = ['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
                 fallback = 'schools'
             }
 
@@ -480,12 +534,32 @@ export default {
     max-width: 100%;
 }
 
+.settings-log-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
 .settings-licences-wrap {
     width: 1000px;
     max-width: 100%;
 }
 
 .settings-roles-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-school-switch-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-user-impersonation-wrap {
+    width: 1000px;
+    max-width: 100%;
+}
+
+.settings-teachers-wrap {
     width: 1000px;
     max-width: 100%;
 }
@@ -509,6 +583,13 @@ export default {
 .settings-licence-subnav__button {
     text-transform: none !important;
     letter-spacing: 0 !important;
+}
+
+.settings-teacher-subnav__button {
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    font-size: 0.78rem !important;
+    padding: 0 12px !important;
 }
 
 .settings-empty-card {

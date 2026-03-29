@@ -34,10 +34,10 @@ describe('Super admin page navigation', () => {
 
         const items = (SuperAdmin as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'teachers', 'log'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'teachers'])
     })
 
-    it('omits the migrated schoolyears, users, licences, and roles entries from the super admin navigation', () => {
+    it('omits the migrated schoolyears, users, licences, roles, and log entries from the super admin navigation', () => {
         const ctx = {
             config: {
                 roles: ['super_admin'],
@@ -51,7 +51,6 @@ describe('Super admin page navigation', () => {
             'overview',
             'teachers',
             'impersonation',
-            'log',
         ])
     })
 
@@ -80,9 +79,11 @@ describe('Super admin page navigation', () => {
 
         const active = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { targetAction: 'teachers' })
         const inactive = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { action: 'log' })
+        const overviewInactive = (SuperAdmin as any).methods.isNavigationItemActive.call(ctx, { targetAction: '' })
 
         expect(active).toBe(true)
         expect(inactive).toBe(false)
+        expect(overviewInactive).toBe(false)
     })
 
     it('keeps the teacher navigation item active for both teacher sub-sections', () => {
@@ -102,22 +103,16 @@ describe('Super admin page navigation', () => {
 
     it('prevents navigation when controls are locked', async () => {
         const openImpersonationDialog = vi.fn()
-        const openTeachersOverview = vi.fn()
         const ctx = {
             isNavigationLocked: true,
             main_action: '',
-            log_dialog: false,
             openImpersonationDialog,
-            openTeachersOverview,
         }
 
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'teachers' })
-        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'log' })
 
         expect(ctx.main_action).toBe('')
-        expect(ctx.log_dialog).toBe(false)
         expect(openImpersonationDialog).not.toHaveBeenCalled()
-        expect(openTeachersOverview).not.toHaveBeenCalled()
     })
 
     it('routes remaining special navigation actions to dedicated handlers', async () => {
@@ -126,20 +121,17 @@ describe('Super admin page navigation', () => {
         const ctx = {
             isNavigationLocked: false,
             main_action: '',
-            log_dialog: false,
             openImpersonationDialog,
             $router: { push },
         }
 
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'impersonation' })
-        await (SuperAdmin as any).methods.handleNavigation.call(ctx, { action: 'log' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: 'teachers' })
         await (SuperAdmin as any).methods.handleNavigation.call(ctx, { targetAction: '' })
 
         expect(openImpersonationDialog).toHaveBeenCalledTimes(1)
         expect(push).toHaveBeenNthCalledWith(1, '/admin/super_admin/teachers')
         expect(push).toHaveBeenNthCalledWith(2, '/admin/super_admin')
-        expect(ctx.log_dialog).toBe(true)
     })
 
     it('redirects legacy schoolyears routes to the admin settings destination', () => {
@@ -204,6 +196,22 @@ describe('Super admin page navigation', () => {
         ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
 
         expect(replace).toHaveBeenCalledWith('/admin/settings?panel=roles')
+    })
+
+    it('redirects legacy log routes to the admin settings destination', () => {
+        const replace = vi.fn()
+        const ctx = {
+            $route: {
+                params: { section: 'log' },
+                query: {},
+            },
+            $router: { replace },
+            redirectLogToSettings: (SuperAdmin as any).methods.redirectLogToSettings,
+        }
+
+        ;(SuperAdmin as any).methods.syncFromRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=admin&panel=log')
     })
 
     it('uses homepage redirect target when impersonated user has no admin-capable roles', () => {

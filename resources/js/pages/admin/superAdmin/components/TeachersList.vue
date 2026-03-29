@@ -164,12 +164,14 @@
                             </template>
                         </template>
 
-                        <v-divider class="crud-actions-divider" />
-                        <div class="crud-actions-secondary">
-                            <v-btn block color="secondary" variant="tonal" rounded="lg" prepend-icon="mdi-arrow-left" @click="abortReturn">
-                                Zur Übersicht
-                            </v-btn>
-                        </div>
+                        <template v-if="!hideBackButton">
+                            <v-divider class="crud-actions-divider" />
+                            <div class="crud-actions-secondary">
+                                <v-btn block color="secondary" variant="tonal" rounded="lg" prepend-icon="mdi-arrow-left" @click="abortReturn">
+                                    Zur Übersicht
+                                </v-btn>
+                            </div>
+                        </template>
                     </section>
                 </aside>
             </div>
@@ -250,6 +252,13 @@ import Pagination from '@/pages/components/Pagination.vue'
 import { useTeachersListStore } from '@/stores/admin/TeachersListStore'
 
 export default {
+    props: {
+        hideBackButton: {
+            type: Boolean,
+            default: false,
+        },
+    },
+
     setup() {
         return useValidationRulesSetup()
     },

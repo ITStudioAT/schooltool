@@ -1,9 +1,9 @@
 <template>
-    <v-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" persistent max-width="1300">
+    <component :is="wrapperComponent" v-bind="wrapperProps" v-on="wrapperListeners" class="log-panel-shell">
         <v-card>
             <v-card-title class="d-flex justify-space-between align-center py-3 px-4">
                 <span>Log-Dateien</span>
-                <v-btn icon variant="text" size="small" @click="$emit('update:modelValue', false)">
+                <v-btn v-if="!embedded" icon variant="text" size="small" @click="$emit('update:modelValue', false)">
                     <v-icon>mdi-close</v-icon>
                 </v-btn>
             </v-card-title>
@@ -104,7 +104,7 @@
                 </v-row>
             </v-card-text>
         </v-card>
-    </v-dialog>
+    </component>
 </template>
 
 <script>
@@ -114,6 +114,10 @@ import { useLogStore } from '@/stores/admin/LogStore'
 
 export default {
     props: {
+        embedded: {
+            type: Boolean,
+            default: false,
+        },
         modelValue: {
             type: Boolean,
             default: false,
@@ -141,6 +145,29 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
         ...mapWritableState(useLogStore, ['logs', 'log']),
+        wrapperComponent() {
+            return this.embedded ? 'div' : 'v-dialog'
+        },
+        wrapperListeners() {
+            if (this.embedded) {
+                return {}
+            }
+
+            return {
+                'update:modelValue': (value) => this.$emit('update:modelValue', value),
+            }
+        },
+        wrapperProps() {
+            if (this.embedded) {
+                return {}
+            }
+
+            return {
+                modelValue: this.modelValue,
+                persistent: true,
+                maxWidth: 1300,
+            }
+        },
     },
 
     methods: {

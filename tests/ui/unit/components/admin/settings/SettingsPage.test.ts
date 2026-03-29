@@ -59,7 +59,7 @@ describe('Admin settings page', () => {
             isAdminTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['schools', 'licence_models', 'roles'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation'])
         expect(items[1]).toMatchObject({
             key: 'licence_models',
             label: 'Lizenzen Modelle',
@@ -82,8 +82,18 @@ describe('Admin settings page', () => {
             isAdminTab: true,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'users', 'display'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Benutzer', 'Anzeige'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['schoolyears', 'users', 'log'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Schuljahre', 'Benutzer', 'Log'])
+    })
+
+    it('builds the register sub navigation with users only', () => {
+        const items = (Settings as any).computed.subNavigationItems.call({
+            isRegisterTab: true,
+            isAdminTab: false,
+        })
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['users'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Benutzer'])
     })
 
     it('shows the top-level admin and super-admin tabs only for allowed roles', () => {
@@ -143,6 +153,7 @@ describe('Admin settings page', () => {
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
+                    Log: { template: '<div>Log Component</div>' },
                 },
             },
         })
@@ -212,6 +223,7 @@ describe('Admin settings page', () => {
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
+                    Log: { template: '<div>Log Component</div>' },
                 },
             },
         })
@@ -232,6 +244,15 @@ describe('Admin settings page', () => {
 
         expect(container.querySelector('.settings-users-wrap')).not.toBeNull()
         expect(screen.queryByText('Schoolyears Component')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByText('Log'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Log Component')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-log-wrap')).not.toBeNull()
+        expect(screen.queryByText('Users Component')).not.toBeInTheDocument()
     })
 
     it('redirects unauthorized users away from the admin settings tab and hides super-admin', () => {
@@ -272,6 +293,7 @@ describe('Admin settings page', () => {
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
+                    Log: { template: '<div>Log Component</div>' },
                 },
             },
         })
@@ -279,7 +301,52 @@ describe('Admin settings page', () => {
         expect(screen.queryByText('Admin')).not.toBeInTheDocument()
         expect(screen.queryByText('Super-Admin')).not.toBeInTheDocument()
         expect(container.querySelector('.settings-subnav')).toBeNull()
-        expect(screen.getAllByText('Anmeldetool').length).toBeGreaterThan(0)
+        expect(screen.getAllByText('Nachhilfe').length).toBeGreaterThan(0)
+        expect(replace).toHaveBeenCalledWith('/admin/settings?tab=tutoring')
+    })
+
+    it('redirects removed register panels back to the register users settings view', () => {
+        const replace = vi.fn()
+
+        render(Settings, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    roles: ['register_admin'],
+                                    selected_school: { long_name: 'Testschule' },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                mocks: {
+                    $route: {
+                        fullPath: '/admin/settings?tab=register&panel=notifications',
+                        query: {
+                            tab: 'register',
+                            panel: 'notifications',
+                        },
+                    },
+                    $router: {
+                        replace,
+                    },
+                },
+                stubs: {
+                    ...vuetifyStubs,
+                    AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RegisterUsers: { template: '<div>RegisterUsers Component</div>' },
+                },
+            },
+        })
+
+        expect(screen.getByText('RegisterUsers Component')).toBeInTheDocument()
+        expect(screen.queryByText('Benachrichtigungen')).not.toBeInTheDocument()
+        expect(screen.queryByText('Vorlagen')).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=register')
     })
 })
