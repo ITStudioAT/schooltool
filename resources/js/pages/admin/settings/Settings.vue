@@ -87,7 +87,23 @@
 
             <div class="settings-content">
                 <v-row class="w-100 ma-0" dense>
-                    <div v-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
+                    <div v-if="isSuperAdminTab && sub_action === 'general'" class="settings-general-wrap">
+                        <v-sheet rounded="xl" class="pa-6 settings-empty-card">
+                            <div class="d-flex align-center mb-4">
+                                <v-icon size="32" color="indigo-lighten-2" class="mr-3">mdi-tune-variant</v-icon>
+                                <div>
+                                    <div class="text-h6 font-weight-bold" style="color: rgba(255,255,255,0.9)">Grundeinstellungen</div>
+                                    <div class="text-body-2" style="color: rgba(255,255,255,0.5)">Allgemeine Konfiguration der Anwendung</div>
+                                </div>
+                            </div>
+                            <v-divider class="mb-4" style="border-color: rgba(255,255,255,0.08)" />
+                            <div class="text-body-2" style="color: rgba(255,255,255,0.4)">
+                                Dieser Bereich wird in Kürze verfügbar sein.
+                            </div>
+                        </v-sheet>
+                    </div>
+
+                    <div v-else-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
                         <Schools />
                     </div>
 
@@ -334,7 +350,7 @@ export default {
             if (this.main_action === 'tutoring') return 'tutoring_settings'
             if (this.main_action === 'materials') return 'material_settings'
             if (this.main_action === 'groups') return 'groups_overview'
-            return 'schools'
+            return 'general'
         },
         isSuperAdminTab() {
             return this.main_action === 'super_admin'
@@ -420,6 +436,7 @@ export default {
             }
 
             return [
+                { key: 'general', label: 'Grundeinstellungen', meta: 'Allgemein', icon: 'mdi-tune-variant' },
                 { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
                 { key: 'licence_models', label: 'Lizenzen Modelle', meta: 'Lizenzverwaltung', icon: 'mdi-card-account-details' },
                 { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
