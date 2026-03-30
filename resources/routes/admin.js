@@ -22,11 +22,7 @@ const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const MenuPlans = () => import('@/pages/admin/menuPlans/MenuPlans.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
-const AbaResults = () => import('@/pages/admin/aba/AbaAnalysisResults.vue')
-const AbaAiSettings = () => import('@/pages/admin/aba/AbaAiSettings.vue')
-const AbaPandocDebug = () => import('@/pages/admin/aba/AbaPandocDebug.vue')
-const AbaSeedReport = () => import('@/pages/admin/aba/AbaSeedReport.vue')
-const AbaSeedReview = () => import('@/pages/admin/aba/AbaSeedReview.vue')
+const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
 
 export const routes = [
     { path: '/admin', component: Index, meta: { capability: 'home' } },
@@ -50,11 +46,7 @@ export const routes = [
     { path: '/admin/restaurant/:section?', component: Restaurant, meta: { capability: 'restaurant' } },
     { path: '/admin/menu-plans', component: MenuPlans, meta: { capability: 'restaurant' } },
     { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },
-    { path: '/admin/aba/results/:abaId', component: AbaResults, meta: { capability: 'aba' } },
-    { path: '/admin/aba/ai-settings', component: AbaAiSettings, meta: { capability: 'aba' } },
-    { path: '/admin/aba/ai-settings/pandoc-debug', component: AbaPandocDebug, meta: { capability: 'aba' } },
-    { path: '/admin/aba/ai-settings/seed-report', component: AbaSeedReport, meta: { capability: 'aba' } },
-    { path: '/admin/aba/ai-settings/seed-report/review', component: AbaSeedReview, meta: { capability: 'aba' } },
+    { path: '/admin/aba/details/:abaId', component: AbaDetails, meta: { capability: 'aba' } },
 ]
 
 export function resolveAdminRouteAccess(path) {

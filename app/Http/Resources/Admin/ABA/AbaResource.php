@@ -15,7 +15,6 @@ class AbaResource extends JsonResource
         $additionalAttachments = $attachments
             ->where('document_kind', AbaAttachment::DOCUMENT_KIND_ADDITIONAL)
             ->values();
-        $latestAnalysisRun = $this->relationLoaded('latestAnalysisRun') ? $this->latestAnalysisRun : null;
 
         return [
             'id' => $this->id,
@@ -31,7 +30,11 @@ class AbaResource extends JsonResource
             'attachments' => AbaAttachmentResource::collection($attachments),
             'main_attachment' => $mainAttachment ? new AbaAttachmentResource($mainAttachment) : null,
             'additional_attachments_count' => $additionalAttachments->count(),
-            'latest_analysis_run' => $latestAnalysisRun ? new AbaAnalysisRunResource($latestAnalysisRun) : null,
+            'latest_extraction' => $this->whenLoaded('latestExtractionRun', function () use ($request) {
+                $run = $this->latestExtractionRun;
+
+                return $run ? (new AbaExtractionResource($run))->toArray($request) : null;
+            }),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

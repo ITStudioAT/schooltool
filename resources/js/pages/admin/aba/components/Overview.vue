@@ -71,39 +71,14 @@
                                         {{ documentName }}
                                     </v-chip>
                                 </v-list-item-subtitle>
-                                <v-list-item-subtitle class="aba-meta-text mt-1 d-flex align-center ga-2 flex-wrap">
-                                    <span>EXTRAKTION:</span>
-                                    <span>{{ analysisStatusLine(aba) }}</span>
-                                    <span v-if="analysisStatusMessage(aba) && ['failed', 'aborted'].includes(analysisStatusFor(aba))">
-                                        · {{ analysisStatusMessage(aba) }}
-                                    </span>
-                                </v-list-item-subtitle>
                             </template>
                             <template #default>
                                 <div class="mt-2 mb-1 d-flex align-center ga-2 flex-wrap">
                                     <v-btn size="small" variant="flat" color="primary" prepend-icon="mdi-file-multiple-outline" :disabled="isRefreshing" @click="openFilesDialog(aba)">
                                         Dateien
                                     </v-btn>
-                                    <v-btn
-                                        v-if="mainAttachmentFor(aba)"
-                                        size="small"
-                                        :variant="isAnalysisRunning(aba) ? 'flat' : 'outlined'"
-                                        color="primary"
-                                        prepend-icon="mdi-brain"
-                                        :loading="startingAnalysisAbaId === aba.id || isAnalysisRunning(aba)"
-                                        :disabled="startingAnalysisAbaId === aba.id || isAnalysisRunning(aba) || isRefreshing"
-                                        @click="requestAnalysis(aba)">
-                                        {{ isAnalysisRunning(aba) ? 'Läuft...' : 'Analyse' }}
-                                    </v-btn>
-                                    <v-btn
-                                        v-if="latestAnalysisRunFor(aba)"
-                                        size="small"
-                                        variant="tonal"
-                                        color="info"
-                                        prepend-icon="mdi-poll"
-                                        :disabled="isResultsDisabled(aba)"
-                                        @click="openResults(aba)">
-                                        Ergebnisse
+                                    <v-btn size="small" variant="tonal" color="info" prepend-icon="mdi-arrow-right-circle-outline" :disabled="isRefreshing" @click="openDetails(aba)">
+                                        Details
                                     </v-btn>
                                 </div>
                             </template>
@@ -343,33 +318,6 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="analysisConfirmDialogOpen" persistent max-width="480">
-            <v-card>
-                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                    <v-icon size="18" color="primary">mdi-brain</v-icon>
-                    Analyse wirklich starten?
-                </v-card-title>
-                <v-divider />
-                <v-card-text>
-                    <div class="text-body-2 mb-2">
-                        Für diese ABA wird eine neue Analyse gestartet:
-                    </div>
-                    <div class="text-body-2 font-weight-bold">
-                        {{ pendingAnalysisAba?.title || '-' }}
-                    </div>
-                </v-card-text>
-                <v-divider />
-                <v-card-actions>
-                    <v-btn variant="tonal" color="warning" @click="cancelAnalysis">
-                        Abbrechen
-                    </v-btn>
-                    <v-spacer />
-                    <v-btn variant="flat" color="primary" @click="confirmAnalysis">
-                        Analyse starten
-                    </v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
     </v-col>
 </template>
 
@@ -400,14 +348,6 @@ export default {
         await Promise.all([this.initializeCsrfToken(), this.loadSchoolyears(), this.loadAbas()])
     },
 
-    mounted() {
-        this.startStatusPolling()
-    },
-
-    unmounted() {
-        this.stopStatusPolling()
-    },
-
     data() {
         const rules = useValidationRulesSetup()
 
@@ -421,9 +361,6 @@ export default {
             isUploadSaving: false,
             uploadProcessCounter: 0,
             isDeletingAttachment: false,
-            startingAnalysisAbaId: null,
-            statusPollTimer: null,
-            statusPollInFlight: false,
             isSchoolyearsLoading: false,
             loadError: '',
             csrfToken: null,
@@ -438,8 +375,6 @@ export default {
             selectedFilesAba: null,
             deleteAttachmentDialogOpen: false,
             pendingDeleteAttachmentId: null,
-            analysisConfirmDialogOpen: false,
-            pendingAnalysisAba: null,
             schoolyearOptions: [],
             required: rules.required,
             maxLength: rules.maxLength,
@@ -560,39 +495,6 @@ export default {
             }
             return date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
-        formatTime(dateValue) {
-            if (!dateValue) {
-                return '--:--:--'
-            }
-            const date = new Date(dateValue)
-            if (Number.isNaN(date.getTime())) {
-                return '--:--:--'
-            }
-            return date.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        },
-        formatDuration(totalSeconds) {
-            const seconds = Number(totalSeconds)
-            if (!Number.isFinite(seconds) || seconds < 0) {
-                return null
-            }
-
-            const days = Math.floor(seconds / 86400)
-            const hours = Math.floor((seconds % 86400) / 3600)
-            const minutes = Math.floor((seconds % 3600) / 60)
-            const secs = seconds % 60
-
-            const parts = []
-            if (days > 0) {
-                parts.push(`${days}d`)
-            }
-            if (hours > 0 || days > 0) {
-                parts.push(`${hours}h`)
-            }
-            parts.push(`${minutes}m`)
-            parts.push(`${secs}s`)
-
-            return parts.join(' ')
-        },
         formatFileSize(sizeBytes) {
             const bytes = Number(sizeBytes || 0)
             if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -631,110 +533,13 @@ export default {
             const mainAttachment = this.mainAttachmentFor(aba)
             return mainAttachment?.original_name || 'nicht vorhanden'
         },
-        latestAnalysisRunFor(aba) {
-            return aba?.latest_analysis_run || null
-        },
-        analysisStatusFor(aba) {
-            return this.latestAnalysisRunFor(aba)?.status || null
-        },
-        analysisStatusLabel(aba) {
-            const status = this.analysisStatusFor(aba)
-            if (status === 'started') return 'gestartet'
-            if (status === 'running') return 'läuft'
-            if (status === 'completed') return 'abgeschlossen'
-            if (status === 'aborted') return 'abgebrochen'
-            if (status === 'failed') return 'Fehler'
-            return 'nicht gestartet'
-        },
-        analysisStatusTimestamp(aba) {
-            const run = this.latestAnalysisRunFor(aba)
-            if (!run) {
-                return null
-            }
-
-            return run.completed_at || run.failed_at || run.aborted_at || run.running_at || run.started_at || run.updated_at || null
-        },
-        analysisDuration(aba) {
-            const run = this.latestAnalysisRunFor(aba)
-            if (!run) {
-                return null
-            }
-
-            const startRaw = run.started_at || run.running_at || run.created_at || null
-            if (!startRaw) {
-                return null
-            }
-
-            const start = new Date(startRaw)
-            if (Number.isNaN(start.getTime())) {
-                return null
-            }
-
-            const endRaw = run.completed_at || run.failed_at || run.aborted_at || null
-            const end = endRaw ? new Date(endRaw) : null
-            if (end && Number.isNaN(end.getTime())) {
-                return null
-            }
-
-            const durationSeconds = Math.max(0, Math.floor(((end ?? new Date()).getTime() - start.getTime()) / 1000))
-            return this.formatDuration(durationSeconds)
-        },
-        analysisStatusLine(aba) {
-            const timestamp = this.analysisStatusTimestamp(aba)
-            const statusLabel = this.analysisStatusLabel(aba)
-            if (!timestamp) {
-                return statusLabel === 'nicht gestartet' ? 'nicht gestartet' : `Analyse ${statusLabel}`
-            }
-
-            const duration = this.analysisDuration(aba)
-            const durationPart = duration ? ` (${duration})` : ''
-            return `${this.formatDate(timestamp)} · ${this.formatTime(timestamp)} · Analyse ${statusLabel}${durationPart}`
-        },
-        analysisStatusMessage(aba) {
-            const run = this.latestAnalysisRunFor(aba)
-            return run?.status_message || run?.error_message || null
-        },
-        isAnalysisRunning(aba) {
-            const status = this.analysisStatusFor(aba)
-            return status === 'started' || status === 'running'
-        },
-        isResultsDisabled(aba) {
+        openDetails(aba) {
             const abaId = Number(aba?.id || 0)
-            return this.isRefreshing || this.startingAnalysisAbaId === abaId || this.isAnalysisRunning(aba)
-        },
-        hasPendingAnalysis() {
-            return this.abas.some((aba) => {
-                const status = this.analysisStatusFor(aba)
-                return status === 'started' || status === 'running'
-            })
-        },
-        startStatusPolling() {
-            this.stopStatusPolling()
-            this.statusPollTimer = window.setInterval(() => {
-                this.pollAnalysisStatus()
-            }, 4000)
-        },
-        stopStatusPolling() {
-            if (this.statusPollTimer) {
-                clearInterval(this.statusPollTimer)
-                this.statusPollTimer = null
-            }
-        },
-        async pollAnalysisStatus() {
-            if (this.statusPollInFlight) {
+            if (!abaId) {
                 return
             }
 
-            if (!this.hasPendingAnalysis()) {
-                return
-            }
-
-            this.statusPollInFlight = true
-            try {
-                await this.loadAbas(true)
-            } finally {
-                this.statusPollInFlight = false
-            }
+            this.$router.push(`/admin/aba/details/${abaId}`)
         },
         async loadSchoolyears() {
             this.isSchoolyearsLoading = true
@@ -822,6 +627,7 @@ export default {
             const payload = {
                 title: this.form.title,
                 student_name: this.form.student_name,
+                student_class: this.form.student_class,
                 schoolyear_id: this.form.schoolyear_id,
             }
 
@@ -852,57 +658,6 @@ export default {
             } finally {
                 this.isSaving = false
             }
-        },
-        requestAnalysis(aba) {
-            this.pendingAnalysisAba = aba
-            this.analysisConfirmDialogOpen = true
-        },
-        cancelAnalysis() {
-            this.analysisConfirmDialogOpen = false
-            this.pendingAnalysisAba = null
-        },
-        async confirmAnalysis() {
-            const aba = this.pendingAnalysisAba
-            this.analysisConfirmDialogOpen = false
-            this.pendingAnalysisAba = null
-            await this.startAnalysis(aba)
-        },
-        async startAnalysis(aba) {
-            const abaId = Number(aba?.id || 0)
-            if (!abaId) {
-                return
-            }
-
-            this.startingAnalysisAbaId = abaId
-            try {
-                const response = await axios.post(`/api/admin/abas/${abaId}/analysis`)
-                await this.loadAbas(true)
-
-                useNotificationStore().notify({
-                    message: response?.data?.message || 'Analyselauf wurde gestartet.',
-                    type: response?.status === 422 ? 'warning' : 'success',
-                    timeout: 3000,
-                })
-            } catch (error) {
-                await this.loadAbas(true)
-                const status = error.response?.status || 500
-                useNotificationStore().notify({
-                    status,
-                    message: error.response?.data?.message || 'Analyselauf konnte nicht gestartet werden.',
-                    type: status === 422 ? 'warning' : 'error',
-                    timeout: this.config?.timeout,
-                })
-            } finally {
-                this.startingAnalysisAbaId = null
-            }
-        },
-        openResults(aba) {
-            const abaId = Number(aba?.id || 0)
-            if (!abaId) {
-                return
-            }
-
-            this.$router.push(`/admin/aba/results/${abaId}`)
         },
         openUploadDialog(aba) {
             this.selectedUploadAba = aba

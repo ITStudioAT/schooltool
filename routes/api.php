@@ -1,14 +1,10 @@
 <?php
 
-use App\Http\Controllers\Admin\ABA\AbaAiSettingsController;
-use App\Http\Controllers\Admin\ABA\AbaAnalysisRunController;
 use App\Http\Controllers\Admin\ABA\AbaAttachmentController;
 use App\Http\Controllers\Admin\ABA\AbaChunkUploadController;
 use App\Http\Controllers\Admin\ABA\AbaController;
-use App\Http\Controllers\Admin\ABA\AbaKnowledgeQueryController;
-use App\Http\Controllers\Admin\ABA\AbaSeedHardeningController;
-use App\Http\Controllers\Admin\ABA\AbaSeedReportController;
-use App\Http\Controllers\Admin\ABA\AbaSeedReviewController;
+use App\Http\Controllers\Admin\ABA\AbaExtractionController;
+use App\Http\Controllers\Admin\ABA\AbaSettingsController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\GroupController;
 use App\Http\Controllers\Admin\HealthController;
@@ -166,40 +162,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/test-cron/check', [HealthController::class, 'testCron']);
     });
 
-    /* SANCTUM - aba ai-settings + seed-report (admin/super_admin only) */
-    Route::middleware(['auth:sanctum', 'api-allowed:scope:admin_or_super_admin_access'])->group(function () {
-        Route::get('/admin/aba/ai-settings', [AbaAiSettingsController::class, 'index']);
-        Route::post('/admin/aba/ai-settings/check-freshness', [AbaAiSettingsController::class, 'checkFreshness']);
-        Route::post('/admin/aba/ai-settings/check-freshness-online', [AbaAiSettingsController::class, 'checkFreshnessOnline']);
-        Route::post('/admin/aba/ai-settings/propose-update', [AbaAiSettingsController::class, 'proposeSeedUpdate']);
-        Route::post('/admin/aba/ai-settings/rebuild', [AbaAiSettingsController::class, 'rebuildFromSeed']);
-        Route::post('/admin/aba/ai-settings/pandoc-debug/run', [AbaAiSettingsController::class, 'runPandocDebug']);
-        Route::post('/admin/aba/ai-settings/pdf-openai-debug/run', [AbaAiSettingsController::class, 'runPdfOpenAiDebug']);
-        Route::get('/admin/aba/seed-report', [AbaSeedReportController::class, 'index']);
-
-        // Seed Hardening Pipeline
-        Route::get('/admin/aba/seed-hardening/status', [AbaSeedHardeningController::class, 'status']);
-        Route::post('/admin/aba/seed-hardening/scan', [AbaSeedHardeningController::class, 'scan']);
-        Route::post('/admin/aba/seed-hardening/run', [AbaSeedHardeningController::class, 'run']);
-        Route::post('/admin/aba/seed-hardening/run-ai', [AbaSeedHardeningController::class, 'runAi']);
-        Route::post('/admin/aba/seed-hardening/analyze-and-propose', [AbaSeedHardeningController::class, 'analyzeAndPropose']);
-        Route::post('/admin/aba/seed-hardening/cleanup', [AbaSeedHardeningController::class, 'cleanup']);
-
-        // Knowledge Query (lokale Wissensbasis abfragen)
-        Route::get('/admin/aba/knowledge', [AbaKnowledgeQueryController::class, 'index']);
-        Route::post('/admin/aba/knowledge/query', [AbaKnowledgeQueryController::class, 'query']);
-
-        // Seed Review / Diff
-        Route::get('/admin/aba/seed-review/proposals', [AbaSeedReviewController::class, 'proposals']);
-        Route::get('/admin/aba/seed-review/diff/{filename}', [AbaSeedReviewController::class, 'diff'])->where('filename', '[a-zA-Z0-9_\-\.]+');
-        Route::get('/admin/aba/seed-review/content/{filename}', [AbaSeedReviewController::class, 'content'])->where('filename', '[a-zA-Z0-9_\-\.]+');
-        Route::put('/admin/aba/seed-review/content/{filename}', [AbaSeedReviewController::class, 'updateContent'])->where('filename', '[a-zA-Z0-9_\-\.]+');
-        Route::post('/admin/aba/seed-review/generate-replacement', [AbaSeedReviewController::class, 'generateReplacement']);
-        Route::post('/admin/aba/seed-review/apply', [AbaSeedReviewController::class, 'applyReplacement']);
-    });
-
     /* SANCTUM - aba_teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:aba_teacher_access', 'tool-licensed:ABA,auth,scope:aba_teacher_access'])->group(function () {
+        Route::get('/admin/aba/settings', [AbaSettingsController::class, 'index']);
         Route::get('/admin/aba/schoolyears', [SchoolyearController::class, 'index']);
         Route::post('/admin/aba/schoolyears/set_active', [SchoolyearController::class, 'setActiveSchoolyear']);
 
@@ -209,10 +174,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/abas/{aba}', [AbaController::class, 'show']);
         Route::put('/admin/abas/{aba}', [AbaController::class, 'update']);
         Route::delete('/admin/abas/{aba}', [AbaController::class, 'destroy']);
-        Route::post('/admin/abas/{aba}/analysis', [AbaAnalysisRunController::class, 'store']);
-        Route::get('/admin/abas/{aba}/analysis/results', [AbaAnalysisRunController::class, 'showLatest']);
-        Route::get('/admin/abas/{aba}/analysis/document-review', [AbaAnalysisRunController::class, 'showDocumentReview']);
-        Route::get('/admin/abas/{aba}/analysis/document-review/logo-asset', [AbaAnalysisRunController::class, 'showDocumentReviewLogoAsset']);
+        Route::get('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'show']);
+        Route::post('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'store']);
         Route::post('/admin/abas/{aba}/attachments/from-temp', [AbaAttachmentController::class, 'storeFromTemp']);
         Route::delete('/admin/abas/{aba}/attachments/{attachment}', [AbaAttachmentController::class, 'destroy']);
 

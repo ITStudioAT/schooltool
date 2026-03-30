@@ -21,4 +21,13 @@ describe('admin routes', () => {
 
         expect(legacyRoute?.redirect).toBe('/admin')
     })
+
+    it('does not register removed aba legacy routes', () => {
+        expect(routes.some((route) => route.path === '/admin/aba/results/:abaId')).toBe(false)
+        expect(routes.some((route) => route.path === '/admin/aba/ai-settings')).toBe(false)
+    })
+
+    it('registers the aba detail route', () => {
+        expect(routes.some((route) => route.path === '/admin/aba/details/:abaId')).toBe(true)
+    })
 })

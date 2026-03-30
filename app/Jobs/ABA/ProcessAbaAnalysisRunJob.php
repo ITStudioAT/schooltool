@@ -2,7 +2,7 @@
 
 namespace App\Jobs\ABA;
 
-use App\Services\AbaAnalysisService;
+use App\Services\AbaDocumentExtractionService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -20,8 +20,8 @@ class ProcessAbaAnalysisRunJob implements ShouldQueue
 
     public function __construct(public int $runId) {}
 
-    public function handle(AbaAnalysisService $analysisService): void
+    public function handle(AbaDocumentExtractionService $extractionService): void
     {
-        $analysisService->processRun($this->runId);
+        $extractionService->processRun($this->runId);
     }
 }

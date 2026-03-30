@@ -236,23 +236,56 @@ it('keeps overview content as the existing aba main view', function () {
         ->toContain('Neue ABA erstellen')
         ->toContain('mdi-pencil')
         ->toContain('Upload')
+        ->toContain('Details')
         ->toContain('Dateien')
-        ->toContain('Ergebnisse')
         ->toContain("await axios.get('/api/admin/abas')")
         ->toContain("await axios.post('/api/admin/abas'")
         ->toContain('await axios.put(`/api/admin/abas/${this.editingAbaId}`')
         ->toContain('/api/admin/aba/uploads/chunk')
         ->toContain('/attachments/from-temp')
         ->toContain('/attachments/${attachment.id}')
-        ->toContain('file-pond');
+        ->toContain('file-pond')
+        ->toContain('/admin/aba/details/${abaId}')
+        ->not->toContain('Analyse')
+        ->not->toContain('Ergebnisse')
+        ->not->toContain('/api/admin/abas/${abaId}/analysis')
+        ->not->toContain('/admin/aba/results/${abaId}');
 });
 
-it('registers aba results route in admin router', function () {
+it('keeps aba router reduced to overview and detail page', function () {
     $routerContent = file_get_contents(resource_path('routes/admin.js'));
 
     expect($routerContent)
-        ->toContain('/admin/aba/results/:abaId')
-        ->toContain('AbaAnalysisResults.vue');
+        ->toContain("{ path: '/admin/aba', component: Aba, meta: { capability: 'aba' } }")
+        ->toContain("{ path: '/admin/aba/details/:abaId', component: AbaDetails, meta: { capability: 'aba' } }")
+        ->not->toContain('/admin/aba/results/:abaId')
+        ->not->toContain('/admin/aba/ai-settings');
+});
+
+it('keeps aba navigation focused on overview and schoolyear', function () {
+    $abaPageContent = file_get_contents(resource_path('js/pages/admin/aba/Aba.vue'));
+
+    expect($abaPageContent)
+        ->toContain("key: 'overview'")
+        ->toContain("key: 'schoolyear'");
+});
+
+it('ships an aba detail page with extraction access and back navigation', function () {
+    $detailPageContent = file_get_contents(resource_path('js/pages/admin/aba/AbaDetails.vue'));
+
+    expect($detailPageContent)
+        ->toContain('ABA Details')
+        ->toContain('aba.title')
+        ->toContain('aba.student_name')
+        ->toContain('aba.student_class')
+        ->toContain('aba.schoolyear_name')
+        ->toContain('Hauptdokument')
+        ->toContain('Weitere Dokumente')
+        ->toContain('Extraktion starten')
+        ->toContain('await axios.get(`/api/admin/abas/${this.abaId}`)')
+        ->toContain('await axios.get(`/api/admin/abas/${this.abaId}/extraction`)')
+        ->toContain('await axios.post(`/api/admin/abas/${this.abaId}/extraction`)')
+        ->toContain("\$router.push('/admin/aba')");
 });
 
 it('opens upload from files dialog instead of aba list row', function () {

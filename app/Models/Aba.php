@@ -72,8 +72,22 @@ class Aba extends Model
         return $this->hasMany(AbaAnalysisRun::class)->orderByDesc('id');
     }
 
+    public function extractionRuns(): HasMany
+    {
+        return $this->hasMany(AbaAnalysisRun::class)
+            ->extraction()
+            ->orderByDesc('id');
+    }
+
     public function latestAnalysisRun(): HasOne
     {
         return $this->hasOne(AbaAnalysisRun::class)->latestOfMany();
+    }
+
+    public function latestExtractionRun(): HasOne
+    {
+        return $this->hasOne(AbaAnalysisRun::class)
+            ->extraction()
+            ->latestOfMany();
     }
 }

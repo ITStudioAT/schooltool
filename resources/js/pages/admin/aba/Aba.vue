@@ -46,7 +46,8 @@
         </v-sheet>
 
         <v-row class="w-100 ma-0" dense>
-            <Overview ref="overview" :is-refreshing="isRefreshing" />
+            <Overview v-if="activeNavKey === 'overview'" ref="overview" :is-refreshing="isRefreshing" />
+            <Settings v-if="activeNavKey === 'settings'" />
         </v-row>
 
         <v-dialog v-model="schoolyearDialogOpen" persistent max-width="620">
@@ -104,9 +105,10 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 import Overview from '@/pages/admin/aba/components/Overview.vue'
+import Settings from '@/pages/admin/aba/components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview },
+    components: { AdminSectionHero, Overview, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -115,6 +117,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            mainAction: 'overview',
             isRefreshing: false,
             schoolyearDialogOpen: false,
             schoolyearDialogLoading: false,
@@ -159,19 +162,23 @@ export default {
                 },
             ]
         },
-        isAdminOrSuperAdmin() {
-            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
-            return roles.some((r) => r === 'admin' || r === 'super_admin')
-        },
         activeNavKey() {
-            return 'overview'
+            return this.mainAction
         },
         activeSection() {
-            return {
-                label: 'Überblick',
-                icon: 'mdi-view-dashboard-outline',
-                note: 'Aktuelle ABA-Hauptansicht.',
+            const sections = {
+                overview: {
+                    label: 'Überblick',
+                    icon: 'mdi-view-dashboard-outline',
+                    note: 'Aktuelle ABA-Hauptansicht.',
+                },
+                settings: {
+                    label: 'Einstellungen',
+                    icon: 'mdi-cog-outline',
+                    note: 'Konfiguration des ABA-Tools.',
+                },
             }
+            return sections[this.mainAction] || sections.overview
         },
         navigationItems() {
             return [
@@ -180,6 +187,12 @@ export default {
                     label: 'Überblick',
                     meta: 'Meine ABAs',
                     icon: 'mdi-view-dashboard-outline',
+                },
+                {
+                    key: 'settings',
+                    label: 'Einstellungen',
+                    meta: 'Konfiguration',
+                    icon: 'mdi-cog-outline',
                 },
                 {
                     key: 'schoolyear',
@@ -219,6 +232,8 @@ export default {
                 await this.openSchoolyearDialog()
             } else if (target === 'ai-settings') {
                 this.$router.push('/admin/aba/ai-settings')
+            } else {
+                this.mainAction = target
             }
         },
         async openSchoolyearDialog() {

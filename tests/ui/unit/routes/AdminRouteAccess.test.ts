@@ -16,8 +16,13 @@ describe('admin route access metadata', () => {
         })
     })
 
-    it('maps aba nested routes to the aba capability', () => {
-        expect(resolveAdminRouteAccess('/admin/aba/ai-settings/seed-report/review')).toEqual({
+    it('treats removed aba legacy routes as unknown', () => {
+        expect(resolveAdminRouteAccess('/admin/aba/results/1')).toBeNull()
+        expect(resolveAdminRouteAccess('/admin/aba/ai-settings/seed-report/review')).toBeNull()
+    })
+
+    it('maps aba detail routes to the aba capability', () => {
+        expect(resolveAdminRouteAccess('/admin/aba/details/42')).toEqual({
             public: false,
             capability: 'aba',
         })

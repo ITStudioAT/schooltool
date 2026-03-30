@@ -13,6 +13,7 @@ class AbaLocalDocumentTextExtractor
 {
     public function __construct(
         private readonly AbaDocxPageMapper $pageMapper,
+        private readonly AbaDocxPageImageCounter $pageImageCounter,
         private readonly AbaDocumentRuleService $documentRuleService,
     ) {}
 
@@ -213,6 +214,7 @@ class AbaLocalDocumentTextExtractor
         }
 
         $pageMap = $this->pageMapper->buildPageMap($absolutePath);
+        $pageImageMap = $this->pageImageCounter->countByPage($absolutePath);
 
         return [
             'text' => $text,
@@ -223,6 +225,11 @@ class AbaLocalDocumentTextExtractor
             'metadata' => [
                 'path_type' => 'docx_hybrid',
                 'selected_score' => (int) ($selected['score'] ?? 0),
+                'page_image_counts' => is_array($pageImageMap['page_image_counts'] ?? null)
+                    ? $pageImageMap['page_image_counts']
+                    : [],
+                'total_image_count' => (int) ($pageImageMap['total_image_count'] ?? 0),
+                'image_count_method' => $pageImageMap['method'] ?? null,
             ],
             'page_map' => $pageMap,
         ];

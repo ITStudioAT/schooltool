@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Aba;
+use App\Models\AbaAnalysisRun;
 use App\Models\AbaAttachment;
 use App\Models\Licence;
 use App\Models\School;
@@ -172,18 +173,21 @@ it('updates an existing aba through edit endpoint', function () {
         'user_id' => $user->id,
         'title' => 'Vorher',
         'student_name' => 'Alt',
+        'student_class' => '7A',
     ]);
 
     $this->putJson("/api/admin/abas/{$aba->id}", [
         'data' => [
             'title' => 'Nachher',
             'student_name' => 'Neu',
+            'student_class' => '8B',
             'schoolyear_id' => $this->schoolyearB->id,
             'created_on' => '2026-03-10',
             'evaluated_on' => '2026-03-21',
         ],
     ])->assertSuccessful()
         ->assertJsonPath('title', 'Nachher')
+        ->assertJsonPath('student_class', '8B')
         ->assertJsonPath('schoolyear_id', $this->schoolyearB->id)
         ->assertJsonPath('evaluated_on', '2026-03-21');
 
@@ -191,6 +195,7 @@ it('updates an existing aba through edit endpoint', function () {
         'id' => $aba->id,
         'title' => 'Nachher',
         'student_name' => 'Neu',
+        'student_class' => '8B',
         'schoolyear_id' => $this->schoolyearB->id,
     ]);
 });
@@ -471,4 +476,36 @@ it('forbids aba endpoints for users without aba_teacher role', function () {
         'Upload-Length' => '100',
         'Upload-Name' => 'blocked.pdf',
     ])->post('/api/admin/aba/uploads/chunk')->assertForbidden();
+});
+
+it('does not expose legacy analysis runs as latest extraction on aba details', function () {
+    $user = createAbaTeacherUser($this->school, $this->schoolyearA);
+    $this->actingAs($user, 'sanctum');
+
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title' => 'ABA mit Legacy-Run',
+    ]);
+
+    AbaAnalysisRun::query()->create([
+        'aba_id' => $aba->id,
+        'created_by_user_id' => $user->id,
+        'status' => 'completed',
+        'status_message' => 'Analyse abgeschlossen (Review erforderlich).',
+        'source_original_name' => 'legacy-analysis.docx',
+        'started_at' => now()->subMinutes(2),
+        'completed_at' => now()->subMinute(),
+        'summary' => [
+            'analysis_stats' => [
+                'document_type' => 'aba',
+                'detected_record_count' => 40,
+            ],
+        ],
+    ]);
+
+    $this->getJson("/api/admin/abas/{$aba->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('latest_extraction', null);
 });

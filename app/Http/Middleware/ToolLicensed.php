@@ -50,10 +50,17 @@ class ToolLicensed
             return $user?->selectedSchool;
         }
 
-        if ($user?->selectedSchool) {
-            return $user->selectedSchool;
+        $schoolFromRequest = $this->resolveSchoolFromRequest($request);
+
+        if ($request->is('homepage/*') || $request->is('api/homepage/*')) {
+            return $schoolFromRequest ?? $user?->selectedSchool;
         }
 
+        return $user?->selectedSchool ?? $schoolFromRequest;
+    }
+
+    private function resolveSchoolFromRequest(Request $request): ?School
+    {
         $schoolId = $request->input('school_id') ?? $request->input('data.school_id');
         if ($schoolId) {
             $school = School::find((int) $schoolId);

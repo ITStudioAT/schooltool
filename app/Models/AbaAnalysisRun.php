@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class AbaAnalysisRun extends Model
 {
     use HasFactory;
+
+    public const EXTRACTION_STATUS_MESSAGE_PREFIX = 'Extraktion';
 
     public const STATUS_STARTED = 'started';
 
@@ -77,6 +80,11 @@ class AbaAnalysisRun extends Model
     public function results(): HasMany
     {
         return $this->hasMany(AbaAnalysisResult::class)->orderBy('sort_order');
+    }
+
+    public function scopeExtraction(Builder $query): Builder
+    {
+        return $query->where('status_message', 'like', self::EXTRACTION_STATUS_MESSAGE_PREFIX.'%');
     }
 
     public static function statusLabel(string $status): string
