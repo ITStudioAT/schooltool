@@ -27,13 +27,14 @@ class RegisterController extends Controller
 {
     public function config(Request $request, RegisterService $service)
     {
+        $school_short = $request->query('school');
 
-        if (Auth::check()) {
-            $user = Auth::user();
-            $school = School::findOrFail($user->school_id);
-            $school_short = $school->short_name;
-        } else {
-            $school_short = $request->query('school');
+        if (! is_string($school_short) || trim($school_short) === '') {
+            if (Auth::check()) {
+                $user = Auth::user();
+                $school = School::findOrFail($user->school_id);
+                $school_short = $school->short_name;
+            }
         }
 
         $app = 'Anmeldetool';

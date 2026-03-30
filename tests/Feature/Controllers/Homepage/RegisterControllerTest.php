@@ -96,6 +96,32 @@ describe('config', function () {
             ->assertJsonPath('school.short_name', 'TEST');
     });
 
+    it('prefers requested school over authenticated user school', function () {
+        $otherSchool = School::factory()->create([
+            'short_name' => 'BGZ',
+            'long_name' => 'BG Zaunergasse',
+            'is_selectable' => true,
+            'logo' => 'bgz-logo.png',
+        ]);
+
+        $otherSchoolyear = Schoolyear::factory()->create(['school_id' => $otherSchool->id]);
+        $otherSchool->licences()->attach($this->licence->id);
+
+        Register::factory()->create([
+            'school_id' => $otherSchool->id,
+            'schoolyear_id' => $otherSchoolyear->id,
+            'name' => 'BGZ Register',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->user)->getJson('/api/homepage/register/config?school=BGZ');
+
+        $response->assertSuccessful()
+            ->assertJsonPath('school.short_name', 'BGZ')
+            ->assertJsonPath('school.long_name', 'BG Zaunergasse')
+            ->assertJsonPath('registers.0.name', 'BGZ Register');
+    });
+
     it('returns active registers for school', function () {
         // Create inactive register
         $inactiveRegister = Register::factory()->create([
@@ -555,7 +581,7 @@ describe('book', function () {
 
         $response->assertStatus(200);
 
-        $booking = \App\Models\RegisterDateBooking::where('user_id', $this->user->id)
+        $booking = RegisterDateBooking::where('user_id', $this->user->id)
             ->where('student_last_name', 'Muster')
             ->first();
 
