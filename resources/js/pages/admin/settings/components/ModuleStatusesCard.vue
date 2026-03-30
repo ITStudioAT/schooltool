@@ -78,29 +78,51 @@
 <script>
 import { useSchoolToolStore } from '@/stores/admin/SchoolToolStore'
 
-const MODULE_ROWS = [
-    { key: 'register', label: 'Anmeldetool', meta: 'Events und Anmeldungen' },
-    { key: 'tutoring', label: 'Nachhilfe', meta: 'Schüler helfen Schülern' },
-    { key: 'teaching', label: 'Unterricht', meta: 'Lehrer- und Schülerbereich' },
-    { key: 'materials', label: 'Materialien', meta: 'Materialverwaltung und Freigaben' },
-    { key: 'restaurant', label: 'Restaurant', meta: 'Menüpläne und Bestellungen' },
-]
+const normalizeModuleRows = (rows) =>
+    Array.isArray(rows)
+        ? rows
+              .filter((item) => item && typeof item === 'object')
+              .map((item) => ({
+                  key: item.key,
+                  label: item.label,
+                  meta: item.meta || 'Lizenz aus Tabelle',
+                  adminVisibleField: item.adminVisibleField,
+                  userVisibleField: item.userVisibleField,
+                  userTestModeField: item.userTestModeField,
+                  userComingSoonField: item.userComingSoonField,
+              }))
+              .filter(
+                  (item) =>
+                      item.key &&
+                      item.label &&
+                      item.adminVisibleField &&
+                      item.userVisibleField &&
+                      item.userTestModeField &&
+                      item.userComingSoonField
+              )
+        : []
 
-const moduleRows = () => MODULE_ROWS.map((item) => ({
-    ...item,
-    adminVisibleField: `${item.key}_visible_admin`,
-    userVisibleField: `${item.key}_visible_user`,
-    userTestModeField: `${item.key}_user_test_mode`,
-    userComingSoonField: `${item.key}_user_comming_soon`,
-}))
+const defaultForm = (data = null, rows = []) => {
+    const fieldNames = new Set()
 
-const defaultForm = () => moduleRows().reduce((form, item) => ({
-    ...form,
-    [item.adminVisibleField]: false,
-    [item.userVisibleField]: false,
-    [item.userTestModeField]: false,
-    [item.userComingSoonField]: false,
-}), {})
+    rows.forEach((item) => {
+        fieldNames.add(item.adminVisibleField)
+        fieldNames.add(item.userVisibleField)
+        fieldNames.add(item.userTestModeField)
+        fieldNames.add(item.userComingSoonField)
+    })
+
+    Object.keys(data || {}).forEach((key) => {
+        if (/(?:_visible_admin|_visible_user|_user_test_mode|_user_comming_soon)$/.test(key)) {
+            fieldNames.add(key)
+        }
+    })
+
+    return Array.from(fieldNames).reduce((form, field) => {
+        form[field] = Boolean(data?.[field])
+        return form
+    }, {})
+}
 
 export default {
     name: 'ModuleStatusesCard',
@@ -112,6 +134,7 @@ export default {
             await this.schoolToolStore.loadConfig()
         }
 
+        this.syncModuleRowsFromStore(this.schoolToolStore.data)
         this.syncFormFromStore(this.schoolToolStore.data)
     },
 
@@ -119,13 +142,14 @@ export default {
         return {
             schoolToolStore: null,
             form: defaultForm(),
-            moduleRows: moduleRows(),
+            moduleRows: [],
         }
     },
 
     watch: {
         'schoolToolStore.data': {
             handler(value) {
+                this.syncModuleRowsFromStore(value)
                 this.syncFormFromStore(value)
             },
             deep: true,
@@ -133,23 +157,27 @@ export default {
     },
 
     methods: {
+        syncModuleRowsFromStore(data) {
+            this.moduleRows = normalizeModuleRows(data?.module_rows)
+        },
+
         syncFormFromStore(data) {
-            if (! data) {
+            if (!data) {
                 this.form = defaultForm()
                 return
             }
 
-            this.form = this.moduleRows.reduce((form, item) => {
-                const adminVisible = Boolean(data[item.adminVisibleField])
+            const form = defaultForm(data, this.moduleRows)
 
-                return {
-                    ...form,
-                    [item.adminVisibleField]: adminVisible,
-                    [item.userVisibleField]: adminVisible ? Boolean(data[item.userVisibleField]) : false,
-                    [item.userTestModeField]: Boolean(data[item.userTestModeField]),
-                    [item.userComingSoonField]: Boolean(data[item.userComingSoonField]),
-                }
-            }, {})
+            this.moduleRows.forEach((item) => {
+                const adminVisible = Boolean(form[item.adminVisibleField])
+                form[item.adminVisibleField] = adminVisible
+                form[item.userVisibleField] = adminVisible ? Boolean(data[item.userVisibleField]) : false
+                form[item.userTestModeField] = Boolean(data[item.userTestModeField])
+                form[item.userComingSoonField] = Boolean(data[item.userComingSoonField])
+            })
+
+            this.form = form
         },
 
         setAdminVisible(item, value) {

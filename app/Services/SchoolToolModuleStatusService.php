@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use Illuminate\Support\Facades\Schema;
@@ -25,7 +26,37 @@ class SchoolToolModuleStatusService
         'teaching',
         'materials',
         'restaurant',
+        'aba',
     ];
+
+    /**
+     * @var array<string, bool>
+     */
+    private const MODULE_DEFAULT_VISIBILITY = [
+        'register' => true,
+        'tutoring' => false,
+        'teaching' => false,
+        'materials' => false,
+        'restaurant' => false,
+        'aba' => true,
+    ];
+
+    /**
+     * @var array<string, string>
+     */
+    private const MODULE_FALLBACK_META = [
+        'register' => 'Lizenz aus Tabelle',
+        'tutoring' => 'Lizenz aus Tabelle',
+        'teaching' => 'Lizenz aus Tabelle',
+        'materials' => 'Lizenz aus Tabelle',
+        'restaurant' => 'Lizenz aus Tabelle',
+        'aba' => 'Lizenz aus Tabelle',
+    ];
+
+    public static function moduleEnabledByDefault(string $moduleKey): bool
+    {
+        return self::MODULE_DEFAULT_VISIBILITY[$moduleKey] ?? false;
+    }
 
     /**
      * @return array<string, bool>
@@ -35,7 +66,7 @@ class SchoolToolModuleStatusService
         $defaults = [];
 
         foreach (self::MODULE_KEYS as $moduleKey) {
-            $isActive = (bool) config(sprintf('schooltool.%s_active', $moduleKey), false);
+            $isActive = self::moduleEnabledByDefault($moduleKey);
 
             $defaults[$this->adminVisibleField($moduleKey)] = $isActive;
             $defaults[$this->userVisibleField($moduleKey)] = $isActive;
@@ -66,6 +97,35 @@ class SchoolToolModuleStatusService
         }
 
         return $fields;
+    }
+
+    /**
+     * @return array<int, array{
+     *     key:string,
+     *     label:string,
+     *     meta:string,
+     *     licence_id:int,
+     *     licence_name:string,
+     *     adminVisibleField:string,
+     *     userVisibleField:string,
+     *     userTestModeField:string,
+     *     userComingSoonField:string
+     * }>
+     */
+    public function configurableModuleRows(): array
+    {
+        if (! Schema::hasTable('licences')) {
+            return [];
+        }
+
+        return Licence::query()
+            ->select(['id', 'name', 'long_name'])
+            ->orderByRaw('COALESCE(long_name, name)')
+            ->get()
+            ->map(fn (Licence $licence): ?array => $this->mapLicenceToModuleRow($licence))
+            ->filter()
+            ->values()
+            ->all();
     }
 
     public function adminVisibleForModule(string $moduleKey, ?School $school = null): bool
@@ -132,8 +192,63 @@ class SchoolToolModuleStatusService
             'Lehrertool' => 'teaching',
             'Materialientool' => 'materials',
             'Restaurant' => 'restaurant',
+            'ABA', 'Auswerten von ABAs' => 'aba',
             default => null,
         };
+    }
+
+    /**
+     * @return array{
+     *     key:string,
+     *     label:string,
+     *     meta:string,
+     *     licence_id:int,
+     *     licence_name:string,
+     *     adminVisibleField:string,
+     *     userVisibleField:string,
+     *     userTestModeField:string,
+     *     userComingSoonField:string
+     * }|null
+     */
+    private function mapLicenceToModuleRow(Licence $licence): ?array
+    {
+        $moduleKey = $this->moduleKeyForLicence((string) ($licence->name ?? ''))
+            ?? $this->moduleKeyForLicence((string) ($licence->long_name ?? ''));
+        if ($moduleKey === null) {
+            return null;
+        }
+
+        $adminVisibleField = $this->adminVisibleField($moduleKey);
+        $userVisibleField = $this->userVisibleField($moduleKey);
+        $userTestModeField = $this->userTestModeField($moduleKey);
+        $userComingSoonField = $this->userComingSoonField($moduleKey);
+
+        if (
+            ! Schema::hasColumn('school_tools', $adminVisibleField)
+            || ! Schema::hasColumn('school_tools', $userVisibleField)
+            || ! Schema::hasColumn('school_tools', $userTestModeField)
+            || ! Schema::hasColumn('school_tools', $userComingSoonField)
+        ) {
+            return null;
+        }
+
+        $label = trim((string) ($licence->long_name ?: $licence->name));
+        $licenceName = trim((string) ($licence->name ?? ''));
+        $meta = $licenceName !== '' && $licenceName !== $label
+            ? $licenceName
+            : (self::MODULE_FALLBACK_META[$moduleKey] ?? 'Lizenz aus Tabelle');
+
+        return [
+            'key' => $moduleKey,
+            'label' => $label,
+            'meta' => $meta,
+            'licence_id' => (int) $licence->id,
+            'licence_name' => $licenceName,
+            'adminVisibleField' => $adminVisibleField,
+            'userVisibleField' => $userVisibleField,
+            'userTestModeField' => $userTestModeField,
+            'userComingSoonField' => $userComingSoonField,
+        ];
     }
 
     /**

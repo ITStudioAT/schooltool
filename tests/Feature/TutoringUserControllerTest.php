@@ -11,9 +11,9 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -24,7 +24,6 @@ uses(RefreshDatabase::class);
 
 beforeEach(function () {
     Notification::fake();
-    config(['schooltool.tutoring_active' => true]);
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
@@ -35,6 +34,11 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($tutoringLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
     ]);
 
     Role::firstOrCreate(['name' => 'tutoring_user', 'guard_name' => 'web']);

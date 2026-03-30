@@ -272,9 +272,12 @@ describe('dashboardMenu', function () {
     });
 
     it('keeps module active when expired school licence is not required by model', function () {
-        config(['schooltool.teaching_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+        ]);
         $user = User::factory()->create([
             'school_id' => $school->id,
             'first_name' => 'Model',
@@ -339,9 +342,12 @@ describe('dashboardMenu', function () {
     });
 
     it('includes materials menu item for materials_admin with active Materialientool licence', function () {
-        config(['schooltool.materials_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'materials_visible_admin' => true,
+            'materials_visible_user' => true,
+        ]);
         $licence = Licence::create([
             'name' => 'Materialientool',
             'long_name' => 'Test licence',
@@ -366,9 +372,12 @@ describe('dashboardMenu', function () {
     });
 
     it('adds expired status metadata for materials menu item when Materialientool licence is expired', function () {
-        config(['schooltool.materials_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'materials_visible_admin' => true,
+            'materials_visible_user' => true,
+        ]);
         $licence = Licence::create([
             'name' => 'Materialientool',
             'long_name' => 'Test licence',
@@ -395,6 +404,11 @@ describe('dashboardMenu', function () {
 
     it('includes restaurant menu item for lunch_admin with active Restaurant licence', function () {
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
         $licence = Licence::create([
             'name' => 'Restaurant',
             'long_name' => 'Test licence',
@@ -420,6 +434,11 @@ describe('dashboardMenu', function () {
 
     it('adds expired status metadata for restaurant menu item when Restaurant licence is expired', function () {
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
         $licence = Licence::create([
             'name' => 'Restaurant',
             'long_name' => 'Test licence',
@@ -514,9 +533,12 @@ describe('dashboardMenu', function () {
     });
 
     it('keeps teaching menu active when school override disables template user licence requirement', function () {
-        config(['schooltool.teaching_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+        ]);
         $user = User::factory()->create([
             'school_id' => $school->id,
             'first_name' => 'Teacher',
@@ -563,9 +585,12 @@ describe('dashboardMenu', function () {
     });
 
     it('keeps teaching menu active when a valid structured assignment exists but is marked inactive', function () {
-        config(['schooltool.teaching_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+        ]);
         $user = User::factory()->create([
             'school_id' => $school->id,
             'first_name' => 'Teacher',
@@ -614,9 +639,12 @@ describe('dashboardMenu', function () {
     });
 
     it('hides teaching menu item when the user has the role but no teaching licence assignment remains', function () {
-        config(['schooltool.teaching_active' => true]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+        ]);
         $user = User::factory()->create([
             'school_id' => $school->id,
             'first_name' => 'Teacher',
@@ -1074,12 +1102,16 @@ describe('routeCapabilities', function () {
     });
 
     it('derives capabilities from the active dashboard menu and roles', function () {
-        config([
-            'schooltool.register_active' => true,
-            'schooltool.teaching_active' => true,
-        ]);
-
         $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'register_visible_admin' => true,
+            'register_visible_user' => true,
+            'teaching_visible_admin' => true,
+            'teaching_visible_user' => true,
+            'restaurant_visible_admin' => true,
+            'restaurant_visible_user' => true,
+        ]);
         $user = User::factory()->create(['school_id' => $school->id]);
         $user->assignRole([
             Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']),

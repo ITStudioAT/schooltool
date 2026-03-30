@@ -517,6 +517,108 @@ test('extracts schoolyear separately from date on titlepage metadata', function 
         ->and($titleSection['detail_lines'] ?? [])->toContain('Datum: --');
 });
 
+test('strips trailing school metadata from titlepage titles and recognizes betreuer slash in', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+
+    $blocks = [
+        [
+            'type' => 'heading',
+            'order' => 1,
+            'plain_text' => 'Die Bedeutung von monoklonalen Antikörpern als Therapeutika in Österreich Christian-Doppler-Gymnasium Franz-Josef-Kai 41 5020 Salzburg',
+            'heading_level' => 1,
+            'is_usable_heading' => false,
+            'problem_tags' => ['document_title_candidate'],
+            'classification' => ['confidence' => 'medium', 'strategy' => 'heuristic', 'signals' => ['document_title_signal']],
+            'section_hint' => ['section_type' => 'title_page', 'reason' => 'document_title_signal'],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'medium'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 2,
+            'plain_text' => 'Vorwissenschaftliche Arbeit verfasst von',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 3,
+            'plain_text' => 'Hanna Danninger',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 4,
+            'plain_text' => 'Klasse 8B',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 5,
+            'plain_text' => 'Betreuer/in: Mag. Gerhild Ungeringer-Kron',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 6,
+            'plain_text' => 'Februar 2024',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 7,
+            'plain_text' => 'Christian-Doppler-Gymnasium',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 8,
+            'plain_text' => 'Franz-Josef-Kai 41',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+        [
+            'type' => 'paragraph',
+            'order' => 9,
+            'plain_text' => '5020 Salzburg',
+            'problem_tags' => [],
+            'classification' => ['confidence' => 'high', 'strategy' => 'deterministic', 'signals' => ['pandoc_paragraph_block']],
+            'document_zone' => ['zone' => 'title_page', 'label' => 'Titelblatt', 'confidence' => 'high'],
+        ],
+    ];
+
+    $review = $service->buildReview($blocks);
+    $titlePageDetails = is_array($review['title_page_details'] ?? null) ? $review['title_page_details'] : [];
+
+    expect($titlePageDetails['title'] ?? null)->toBe('Die Bedeutung von monoklonalen Antikörpern als Therapeutika in Österreich')
+        ->and($titlePageDetails['advisor'] ?? null)->toBe('Mag. Gerhild Ungeringer-Kron')
+        ->and($titlePageDetails['submitter'] ?? null)->toBe('Hanna Danninger')
+        ->and($titlePageDetails['class'] ?? null)->toBe('8B')
+        ->and($titlePageDetails['date'] ?? null)->toBe('Februar 2024')
+        ->and($titlePageDetails['school_full'] ?? null)->toBe('Christian-Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg');
+});
+
+test('sanitizes a trailing location-prefixed date from titlepage title candidates', function () {
+    $service = app(AbaPandocReviewBuilderService::class);
+    $reflection = new ReflectionClass($service);
+    $method = $reflection->getMethod('sanitizeTitlePageTitleCandidate');
+    $method->setAccessible(true);
+
+    expect($method->invoke($service, 'Der Einfluss ionisierender Strahlung auf den menschlichen Körper Salzburg, 24.02.2023'))
+        ->toBe('Der Einfluss ionisierender Strahlung auf den menschlichen Körper');
+});
+
 test('normalizes numbering and compare keys for tightly glued chapter headings', function () {
     $service = app(AbaPandocReviewBuilderService::class);
 

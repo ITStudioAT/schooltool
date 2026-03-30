@@ -31,11 +31,24 @@
                     :color="activeTab === item.key ? 'primary' : 'secondary'"
                     :variant="activeTab === item.key ? 'flat' : 'tonal'"
                     class="aba-details-nav__button"
-                    @click="activeTab = item.key">
+                    @click="selectTab(item.key)">
                     <v-icon size="18" :icon="item.icon" class="mr-2" />
                     <span class="aba-details-nav__button-copy">
                         <span class="aba-details-nav__button-title">{{ item.label }}</span>
                         <span class="aba-details-nav__button-meta">{{ item.meta }}</span>
+                    </span>
+                </v-btn>
+                <v-btn
+                    v-if="nextAba"
+                    rounded="xl"
+                    color="secondary"
+                    variant="tonal"
+                    class="aba-details-nav__button"
+                    @click="goToNextAba">
+                    <v-icon size="18" icon="mdi-chevron-right-circle-outline" class="mr-2" />
+                    <span class="aba-details-nav__button-copy">
+                        <span class="aba-details-nav__button-title">Nächste ABA</span>
+                        <span class="aba-details-nav__button-meta">{{ nextAba.title || `ABA #${nextAba.id}` }}</span>
                     </span>
                 </v-btn>
             </div>
@@ -106,6 +119,15 @@
                         </div>
                     </div>
                     <div class="basis-field">
+                        <div class="basis-field__icon-wrap" :class="latestExtraction ? 'basis-field__icon-wrap--cyan' : 'basis-field__icon-wrap--grey'">
+                            <v-icon size="16">mdi-text-box-search-outline</v-icon>
+                        </div>
+                        <div>
+                            <div class="basis-field__label">Extraktion am</div>
+                            <div class="basis-field__value">{{ formatDateTime(latestExtraction?.completed_at || latestExtraction?.started_at) || 'Noch nicht extrahiert' }}</div>
+                        </div>
+                    </div>
+                    <div class="basis-field">
                         <div class="basis-field__icon-wrap" :class="aba.evaluated_on ? 'basis-field__icon-wrap--green' : 'basis-field__icon-wrap--grey'">
                             <v-icon size="16">mdi-calendar-check-outline</v-icon>
                         </div>
@@ -154,11 +176,19 @@
                             Dokumentinhalte aus dem Hauptdokument extrahieren
                         </div>
                     </div>
-                    <div class="basis-card__header-badge d-flex align-center ga-2 flex-wrap">
-                        <v-chip v-if="currentExtraction" size="small" :color="extractionStatusColor" variant="tonal">
-                            <v-icon start size="14">{{ extractionStatusIcon }}</v-icon>
-                            {{ extractionStatusLabel }}
-                        </v-chip>
+                    <div class="basis-card__header-badge extraction-header-actions">
+                        <v-switch
+                            v-model="overwriteExistingExtractionFields"
+                            density="compact"
+                            hide-details
+                            inset
+                            color="primary"
+                            class="extraction-overwrite-switch"
+                            :disabled="isExtractionBusy">
+                            <template #label>
+                                <span class="extraction-overwrite-switch__label">Felder überschreiben</span>
+                            </template>
+                        </v-switch>
                         <v-btn
                             variant="flat"
                             color="primary"
@@ -168,6 +198,14 @@
                             @click="startExtraction">
                             Extraktion starten
                         </v-btn>
+                        <v-chip
+                            v-if="currentExtraction"
+                            size="small"
+                            variant="tonal"
+                            :color="extractionStatusColor"
+                            :prepend-icon="extractionStatusIcon">
+                            Status: {{ extractionStatusLabel }}
+                        </v-chip>
                     </div>
                 </div>
 
@@ -186,15 +224,13 @@
 
                     <div class="extraction-note mb-4">
                         <v-icon size="16" color="#60a5fa" class="mr-2">mdi-file-word-outline</v-icon>
-                        DOCX-Hauptdokumente werden gegen das ABA-Regelwerk geprüft und in strukturierte Bereiche zerlegt.
+                        <div class="extraction-note__content">
+                            <div class="extraction-note__title">{{ savedAbaTitle }}</div>
+                            <div class="extraction-note__meta">Verfasser:in: {{ savedAbaStudentName }}</div>
+                        </div>
                     </div>
 
                     <div v-if="currentExtraction" class="extraction-last-run">
-                        <div class="extraction-last-run__header">
-                            <v-icon size="16" color="#60a5fa" class="mr-2">mdi-history</v-icon>
-                            <span class="extraction-last-run__title">Letzte Extraktion</span>
-                        </div>
-
                         <div class="extraction-fields">
                             <div class="extraction-field">
                                 <div class="basis-field__icon-wrap basis-field__icon-wrap--blue">
@@ -268,20 +304,41 @@
                                         </div>
                                     </div>
 
-                                    <v-chip
-                                        size="small"
-                                        :color="sectionChipColor(section)"
-                                        variant="tonal">
-                                        {{ sectionChipLabel(section) }}
-                                    </v-chip>
+                                    <div class="extraction-section-card__chips">
+                                        <v-chip
+                                            size="small"
+                                            :color="sectionChipColor(section)"
+                                            variant="tonal">
+                                            {{ sectionChipLabel(section) }}
+                                        </v-chip>
+                                    </div>
                                 </div>
 
                                 <div v-if="section.key === 'title_page' && section.title_page" class="title-page-details">
                                     <div class="title-page-details__hero">
-                                        <div class="title-page-details__hero-label">Titel</div>
-                                        <div class="title-page-details__hero-title">{{ section.title_page.title || '–' }}</div>
-                                        <div v-if="section.title_page.subtitle" class="title-page-details__hero-subtitle">
-                                            {{ section.title_page.subtitle }}
+                                        <div class="title-page-details__hero-header">
+                                            <div class="title-page-details__hero-label">Titel</div>
+                                            <v-btn
+                                                icon="mdi-pencil"
+                                                size="x-small"
+                                                color="primary"
+                                                variant="tonal"
+                                                @click="openTitlePageEditDialog('title', titlePageHeroTitle(section))" />
+                                        </div>
+                                        <div class="title-page-details__hero-title">{{ titlePageHeroTitle(section) || '–' }}</div>
+                                        <div class="title-page-details__hero-subtitle-block">
+                                            <div class="title-page-details__hero-subtitle-header">
+                                                <div class="title-page-details__hero-subtitle-label">Untertitel</div>
+                                                <v-btn
+                                                    icon="mdi-pencil"
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="tonal"
+                                                    @click="openTitlePageEditDialog('subtitle', titlePageHeroSubtitle(section))" />
+                                            </div>
+                                            <div class="title-page-details__hero-subtitle">
+                                                {{ titlePageHeroSubtitle(section) || '–' }}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -290,33 +347,70 @@
                                             v-for="item in titlePageDetailItems(section)"
                                             :key="`${section.key}-${item.key}`"
                                             class="title-page-details__item">
-                                            <div class="title-page-details__item-label">{{ item.label }}</div>
-                                            <div class="title-page-details__item-value">{{ item.value }}</div>
+                                            <div class="title-page-details__item-header">
+                                                <div class="title-page-details__item-label">{{ item.label }}</div>
+                                                <v-btn
+                                                    v-if="item.editable"
+                                                    icon="mdi-pencil"
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="tonal"
+                                                    @click="openTitlePageEditDialog(item.editKey, item.editValue)" />
+                                            </div>
+                                            <div v-if="item.value !== null" class="title-page-details__item-value">{{ item.value }}</div>
+                                            <div v-if="item.lines?.length" class="title-page-details__item-lines">
+                                                <div
+                                                    v-for="line in item.lines"
+                                                    :key="`${section.key}-${item.key}-${line.label}`"
+                                                    class="title-page-details__item-line">
+                                                    <span class="title-page-details__item-line-label">{{ line.label }}</span>
+                                                    <span class="title-page-details__item-line-value">{{ line.value }}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div v-if="titlePageOtherThings(section).length" class="title-page-details__extras">
-                                        <div class="title-page-details__extras-label">Weitere Angaben vom Titelblatt</div>
-                                        <div class="title-page-details__extras-list">
-                                            <v-chip
-                                                v-for="item in titlePageOtherThings(section)"
-                                                :key="`${section.key}-${item.label}-${item.value}`"
-                                                size="small"
-                                                color="secondary"
-                                                variant="tonal">
-                                                {{ item.label }}: {{ item.value }}
-                                            </v-chip>
+                                    <div v-if="titlePageImages(section).length" class="title-page-details__images">
+                                        <div class="title-page-details__extras-label">Erkannte Bilder</div>
+                                        <div class="title-page-details__image-grid">
+                                            <div
+                                                v-for="image in titlePageImages(section)"
+                                                :key="`${section.key}-${image.asset_index}-${image.url}`"
+                                                class="title-page-details__image-card">
+                                                <div
+                                                    class="title-page-details__image-surface"
+                                                    :style="titlePageImageSurfaceStyle(image)">
+                                                    <img
+                                                        :src="image.url"
+                                                        :alt="image.alt_text || image.description || 'Titelblatt-Bild'"
+                                                        class="title-page-details__image"
+                                                        loading="lazy"
+                                                        @load="handleTitlePageImageLoad(image, $event)">
+                                                </div>
+                                            </div>
                                         </div>
+                                    </div>
+
+                                </div>
+
+                                <div
+                                    v-if="section.key === 'table_of_contents' && tableOfContentsEntries(section).length"
+                                    class="toc-details">
+                                    <div
+                                        v-for="entry in tableOfContentsEntries(section)"
+                                        :key="`${section.key}-${entry}`"
+                                        class="toc-details__entry">
+                                        {{ entry }}
                                     </div>
                                 </div>
 
-                                <div v-if="section.preview_text && section.key !== 'title_page'" class="extraction-section-card__preview">
+                                <div v-if="section.preview_text && !['title_page', 'table_of_contents'].includes(section.key)" class="extraction-section-card__preview">
                                     {{ section.preview_text }}
                                 </div>
 
-                                <div v-if="section.warnings?.length" class="extraction-section-card__warnings">
+                                <div v-if="visibleSectionWarnings(section).length" class="extraction-section-card__warnings">
                                     <v-chip
-                                        v-for="warning in section.warnings"
+                                        v-for="warning in visibleSectionWarnings(section)"
                                         :key="`${section.key}-${warning}`"
                                         size="x-small"
                                         color="warning"
@@ -346,6 +440,48 @@
                 </div>
             </div>
         </template>
+
+        <v-dialog v-model="titlePageEditDialog.open" persistent max-width="560">
+            <v-card>
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                    <v-icon size="18">mdi-pencil-outline</v-icon>
+                    {{ titlePageEditDialog.label }} bearbeiten
+                </v-card-title>
+                <v-divider />
+                <v-card-text>
+                    <v-textarea
+                        v-if="titlePageEditDialog.multiline"
+                        v-model="titlePageEditDialog.value"
+                        :label="titlePageEditDialog.label"
+                        variant="outlined"
+                        density="comfortable"
+                        auto-grow
+                        rows="3"
+                        :counter="titlePageEditDialog.maxLength"
+                        :maxlength="titlePageEditDialog.maxLength"
+                        :disabled="isTitlePageSaving" />
+                    <v-text-field
+                        v-else
+                        v-model="titlePageEditDialog.value"
+                        :label="titlePageEditDialog.label"
+                        variant="outlined"
+                        density="comfortable"
+                        :counter="titlePageEditDialog.maxLength"
+                        :maxlength="titlePageEditDialog.maxLength"
+                        :disabled="isTitlePageSaving" />
+                </v-card-text>
+                <v-divider />
+                <v-card-actions>
+                    <v-btn variant="tonal" color="warning" :disabled="isTitlePageSaving" @click="closeTitlePageEditDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-spacer />
+                    <v-btn variant="flat" color="primary" :loading="isTitlePageSaving" :disabled="isTitlePageSaving" @click="saveTitlePageEdit">
+                        Speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-container>
 </template>
 
@@ -360,6 +496,7 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.applyRouteTabSelection()
     },
 
     data() {
@@ -370,10 +507,23 @@ export default {
             isLoading: false,
             isExtractionLoading: false,
             isExtractionSubmitting: false,
+            isTitlePageSaving: false,
             error: '',
             extractionLoadError: '',
             extractionPollTimer: null,
             activeTab: 'basis',
+            titlePageImageStyles: {},
+            overwriteExistingExtractionFields: false,
+            pendingOverwriteExtractionRunId: null,
+            titlePageEditDialog: {
+                open: false,
+                fieldKey: '',
+                label: '',
+                value: '',
+                maxLength: 255,
+                multiline: false,
+                required: false,
+            },
         }
     },
 
@@ -383,6 +533,25 @@ export default {
 
     beforeUnmount() {
         this.clearExtractionPoll()
+    },
+
+    watch: {
+        abaId(value, previousValue) {
+            if (value === previousValue) {
+                return
+            }
+
+            this.handleAbaNavigationChange()
+        },
+        '$route.query': {
+            deep: true,
+            handler() {
+                this.applyRouteTabSelection()
+            },
+        },
+        activeTab(value) {
+            this.syncRouteTab(value)
+        },
     },
 
     computed: {
@@ -423,6 +592,26 @@ export default {
         },
         latestExtraction() {
             return this.aba?.latest_extraction || null
+        },
+        titlePageOverrides() {
+            const overrides = this.aba?.title_page_overrides
+
+            return overrides && typeof overrides === 'object' ? overrides : {}
+        },
+        savedAbaTitle() {
+            const title = String(this.aba?.title || '').trim()
+
+            return title || 'Ohne Titel'
+        },
+        savedAbaStudentName() {
+            const studentName = String(this.aba?.student_name || '').trim()
+
+            return studentName || '–'
+        },
+        nextAba() {
+            const nextAba = this.aba?.next_aba || null
+
+            return Number(nextAba?.id || 0) > 0 ? nextAba : null
         },
         extractionNavMeta() {
             if (!this.currentExtraction) return 'Nicht durchgeführt'
@@ -472,6 +661,84 @@ export default {
     },
 
     methods: {
+        normalizeTab(value) {
+            const normalized = String(value || '').trim().toLowerCase()
+            const allowed = ['basis', 'extraction']
+
+            return allowed.includes(normalized) ? normalized : 'basis'
+        },
+        applyRouteTabSelection() {
+            const routeValue = String(this.$route?.query?.tab || '').trim().toLowerCase()
+            const normalized = this.normalizeTab(routeValue)
+
+            if (this.activeTab !== normalized) {
+                this.activeTab = normalized
+                return
+            }
+
+            if (routeValue && routeValue !== normalized) {
+                this.syncRouteTab(normalized)
+            }
+        },
+        syncRouteTab(value) {
+            if (!this.$route || !this.$router) {
+                return
+            }
+
+            const normalized = this.normalizeTab(value)
+            const current = String(this.$route?.query?.tab || '').trim().toLowerCase()
+
+            if (current === normalized) {
+                return
+            }
+
+            const navigation = this.$router.replace({
+                path: this.$route.path,
+                query: {
+                    ...(this.$route.query || {}),
+                    tab: normalized,
+                },
+            })
+
+            if (navigation && typeof navigation.catch === 'function') {
+                navigation.catch(() => {})
+            }
+        },
+        selectTab(value) {
+            const normalized = this.normalizeTab(value)
+
+            if (this.activeTab !== normalized) {
+                this.activeTab = normalized
+                return
+            }
+
+            this.syncRouteTab(normalized)
+        },
+        goToNextAba() {
+            if (!this.nextAba?.id || !this.$router) {
+                return
+            }
+
+            const navigation = this.$router.push({
+                path: `/admin/aba/details/${this.nextAba.id}`,
+                query: {
+                    tab: this.activeTab,
+                },
+            })
+
+            if (navigation && typeof navigation.catch === 'function') {
+                navigation.catch(() => {})
+            }
+        },
+        handleAbaNavigationChange() {
+            this.clearExtractionPoll()
+            this.error = ''
+            this.extractionLoadError = ''
+            this.extractionResult = null
+            this.titlePageImageStyles = {}
+            this.closeTitlePageEditDialog()
+            this.loadAba()
+        },
         formatDate(value) {
             if (!value) return ''
             const d = new Date(value)
@@ -521,6 +788,17 @@ export default {
                 },
             }
         },
+        async refreshAbaAfterOverwriteExtractionIfNeeded() {
+            const currentRunId = Number(this.currentExtraction?.id || 0)
+            const pendingRunId = Number(this.pendingOverwriteExtractionRunId || 0)
+
+            if (!pendingRunId || currentRunId !== pendingRunId || !this.isTerminalExtractionStatus(this.currentExtraction?.status)) {
+                return
+            }
+
+            this.pendingOverwriteExtractionRunId = null
+            await this.loadAba()
+        },
         scheduleExtractionPoll() {
             this.clearExtractionPoll()
             if (!this.isRunningExtraction) {
@@ -542,6 +820,7 @@ export default {
                 const response = await axios.get(`/api/admin/abas/${this.abaId}/extraction`)
                 this.extractionResult = response?.data?.data || null
                 this.syncAbaLatestExtraction()
+                await this.refreshAbaAfterOverwriteExtractionIfNeeded()
                 this.scheduleExtractionPoll()
             } catch (error) {
                 this.extractionResult = null
@@ -558,9 +837,17 @@ export default {
             this.extractionLoadError = ''
 
             try {
-                const response = await axios.post(`/api/admin/abas/${this.abaId}/extraction`)
+                const response = await axios.post(`/api/admin/abas/${this.abaId}/extraction`, {
+                    data: {
+                        overwrite_existing_fields: this.overwriteExistingExtractionFields,
+                    },
+                })
                 this.extractionResult = response?.data?.data || null
+                this.pendingOverwriteExtractionRunId = this.overwriteExistingExtractionFields
+                    ? Number(this.extractionResult?.id || 0) || null
+                    : null
                 this.syncAbaLatestExtraction()
+                await this.refreshAbaAfterOverwriteExtractionIfNeeded()
                 this.scheduleExtractionPoll()
 
                 const successMessage = this.isRunningExtraction
@@ -599,22 +886,441 @@ export default {
             if (section?.uncertain) return 'Unsicher'
             return section?.required ? 'Fehlt' : 'Nicht gefunden'
         },
-        titlePageDetailItems(section) {
+        visibleSectionWarnings(section) {
+            const warnings = Array.isArray(section?.warnings) ? section.warnings : []
+            const hiddenWarnings = new Set([
+                'Mehrere ähnliche Abschnittskandidaten erkannt.',
+            ])
+
+            if (section?.key === 'table_of_contents') {
+                warnings.forEach((warning) => {
+                    if (String(warning || '').includes('Inhaltsverzeichnisse erkannt; angezeigt wird die passendste Variante.')) {
+                        hiddenWarnings.add(String(warning))
+                    }
+                })
+            }
+
+            return warnings.filter((warning) => !hiddenWarnings.has(String(warning)))
+        },
+        tableOfContentsEntries(section) {
+            const entries = section?.table_of_contents?.entries
+
+            return Array.isArray(entries)
+                ? entries.filter((entry) => String(entry || '').trim() !== '')
+                : []
+        },
+        titlePageFieldConfig(fieldKey) {
+            const fields = {
+                title: { label: 'Titel', maxLength: 255, multiline: true, required: true },
+                subtitle: { label: 'Untertitel', maxLength: 500, multiline: true, required: false },
+                author: { label: 'Verfasser:in', maxLength: 255, multiline: false, required: true },
+                class: { label: 'Klasse', maxLength: 100, multiline: false, required: false },
+                advisor: { label: 'Betreuer:in', maxLength: 255, multiline: false, required: false },
+                school_full: { label: 'Schule (vollständig)', maxLength: 500, multiline: true, required: false },
+                date: { label: 'Datum', maxLength: 255, multiline: false, required: false },
+            }
+
+            return fields[fieldKey] || { label: 'Feld', maxLength: 255, multiline: false, required: false }
+        },
+        titlePageHeroTitle(section) {
+            return this.resolveTitlePageFieldValue(section, 'title')
+        },
+        titlePageHeroSubtitle(section) {
+            return this.resolveTitlePageFieldValue(section, 'subtitle')
+        },
+        resolveTitlePageFieldValue(section, fieldKey) {
             const titlePage = section?.title_page || {}
 
+            const values = {
+                title: [this.aba?.title, titlePage.title],
+                subtitle: [this.titlePageOverrides.subtitle, titlePage.subtitle],
+                author: [this.aba?.student_name, titlePage.author],
+                class: [this.aba?.student_class, titlePage.class],
+                advisor: [this.titlePageOverrides.advisor, titlePage.advisor],
+                school_full: [this.titlePageOverrides.school_full, titlePage.school_full, this.aba?.school_name],
+                date: [this.titlePageOverrides.date, titlePage.date],
+            }
+
+            return (values[fieldKey] || [])
+                .map((value) => this.normalizeOptionalDetail(value))
+                .find(Boolean) || null
+        },
+        titlePageDetailItems(section) {
+            const schoolItem = this.titlePageSchoolDetailItem(section)
+
             return [
-                { key: 'author', label: 'Verfasser', value: titlePage.author || '–' },
-                { key: 'class', label: 'Klasse', value: titlePage.class || '–' },
-                { key: 'advisor', label: 'Betreuer', value: titlePage.advisor || '–' },
-                { key: 'date', label: 'Datum', value: titlePage.date || '–' },
-                { key: 'images', label: 'Gefundene Bilder', value: this.formatFoundImages(titlePage.found_images_count) },
-                { key: 'page', label: 'Seitenzahl', value: this.titlePagePageLabel(titlePage) },
+                this.buildEditableTitlePageItem(section, 'author'),
+                this.buildEditableTitlePageItem(section, 'class'),
+                this.buildEditableTitlePageItem(section, 'advisor'),
+                schoolItem,
+                this.buildEditableTitlePageItem(section, 'date'),
+                { key: 'images', label: 'Gefundene Bilder', value: this.formatFoundImages(section?.title_page?.found_images_count), editable: false },
+                { key: 'page', label: 'Seitenzahl', value: this.titlePagePageLabel(section?.title_page || {}), editable: false },
             ]
         },
-        titlePageOtherThings(section) {
-            const items = Array.isArray(section?.title_page?.other_things) ? section.title_page.other_things : []
+        buildEditableTitlePageItem(section, fieldKey) {
+            const config = this.titlePageFieldConfig(fieldKey)
+            const value = this.resolveTitlePageFieldValue(section, fieldKey)
 
-            return items.filter((item) => String(item?.label || '').trim() !== '' && String(item?.value || '').trim() !== '')
+            return {
+                key: fieldKey,
+                editKey: fieldKey,
+                label: config.label,
+                value: value || '–',
+                editValue: value || '',
+                editable: true,
+            }
+        },
+        titlePageSchoolDetailItem(section) {
+            const school = this.resolveTitlePageSchoolParts(section)
+            const lines = [
+                { label: 'Name', value: school.name },
+                { label: 'Straße', value: school.street },
+                { label: 'Ort', value: school.city },
+            ].filter((line) => String(line.value || '').trim() !== '')
+
+            return {
+                key: 'school',
+                label: 'Schule (vollständig)',
+                value: lines.length ? null : (school.full || '–'),
+                editKey: 'school_full',
+                editValue: school.full || '',
+                editable: true,
+                lines,
+            }
+        },
+        resolveTitlePageSchoolParts(section) {
+            const titlePage = section?.title_page || {}
+            const overrideSchoolFull = this.normalizeOptionalDetail(this.titlePageOverrides.school_full)
+            const schoolName = this.normalizeOptionalDetail(titlePage?.school) || this.normalizeOptionalDetail(this.aba?.school_name)
+            const schoolStreet = this.normalizeOptionalDetail(titlePage?.school_address)
+            const schoolCity = this.normalizeOptionalDetail(titlePage?.school_city || titlePage?.school_location)
+            const schoolFull = overrideSchoolFull || this.normalizeOptionalDetail(titlePage?.school_full)
+
+            if (overrideSchoolFull) {
+                const overrideSegments = overrideSchoolFull
+                    .split(',')
+                    .map((segment) => this.normalizeOptionalDetail(segment))
+                    .filter(Boolean)
+
+                return {
+                    name: overrideSegments[0] || null,
+                    street: overrideSegments[1] || null,
+                    city: overrideSegments.slice(2).join(', ') || null,
+                    full: overrideSchoolFull,
+                }
+            }
+
+            if (schoolName || schoolStreet || schoolCity) {
+                return {
+                    name: schoolName,
+                    street: schoolStreet,
+                    city: schoolCity,
+                    full: schoolFull || [schoolName, schoolStreet, schoolCity].filter(Boolean).join(', '),
+                }
+            }
+
+            if (!schoolFull) {
+                return {
+                    name: null,
+                    street: null,
+                    city: null,
+                    full: schoolName,
+                }
+            }
+
+            const segments = schoolFull
+                .split(',')
+                .map((segment) => this.normalizeOptionalDetail(segment))
+                .filter(Boolean)
+
+            return {
+                name: segments[0] || null,
+                street: segments[1] || null,
+                city: segments.slice(2).join(', ') || null,
+                full: schoolFull,
+            }
+        },
+        normalizeOptionalDetail(value) {
+            const normalized = String(value || '').trim()
+
+            return normalized !== '' && normalized !== '–' ? normalized : null
+        },
+        openTitlePageEditDialog(fieldKey, currentValue) {
+            const config = this.titlePageFieldConfig(fieldKey)
+
+            this.titlePageEditDialog = {
+                open: true,
+                fieldKey,
+                label: config.label,
+                value: currentValue || '',
+                maxLength: config.maxLength,
+                multiline: config.multiline,
+                required: config.required,
+            }
+        },
+        closeTitlePageEditDialog(force = false) {
+            if (this.isTitlePageSaving && !force) {
+                return
+            }
+
+            this.titlePageEditDialog = {
+                open: false,
+                fieldKey: '',
+                label: '',
+                value: '',
+                maxLength: 255,
+                multiline: false,
+                required: false,
+            }
+        },
+        titlePageEditPayload(fieldKey, value) {
+            switch (fieldKey) {
+            case 'title':
+                return { title: value }
+            case 'subtitle':
+                return { title_page_overrides: { subtitle: value || null } }
+            case 'author':
+                return { student_name: value }
+            case 'class':
+                return { student_class: value || null }
+            case 'advisor':
+                return { title_page_overrides: { advisor: value || null } }
+            case 'school_full':
+                return { title_page_overrides: { school_full: value || null } }
+            case 'date':
+                return { title_page_overrides: { date: value || null } }
+            default:
+                return {}
+            }
+        },
+        async saveTitlePageEdit() {
+            const fieldKey = this.titlePageEditDialog.fieldKey
+            const config = this.titlePageFieldConfig(fieldKey)
+            const value = String(this.titlePageEditDialog.value || '').trim()
+
+            if (config.required && value === '') {
+                useNotificationStore().notify({
+                    message: `${config.label} darf nicht leer sein.`,
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            this.isTitlePageSaving = true
+
+            try {
+                const response = await axios.put(`/api/admin/abas/${this.abaId}`, {
+                    data: this.titlePageEditPayload(fieldKey, value),
+                })
+
+                this.aba = response?.data || this.aba
+                this.closeTitlePageEditDialog(true)
+
+                useNotificationStore().notify({
+                    message: `${config.label} wurde gespeichert.`,
+                    type: 'success',
+                    timeout: 3000,
+                })
+            } catch (error) {
+                const message = error?.response?.data?.message || `${config.label} konnte nicht gespeichert werden.`
+
+                useNotificationStore().notify({
+                    status: error?.response?.status || 500,
+                    message,
+                    type: 'error',
+                    timeout: this.config?.timeout,
+                })
+            } finally {
+                this.isTitlePageSaving = false
+            }
+        },
+        titlePageImages(section) {
+            const images = Array.isArray(section?.title_page?.images) ? section.title_page.images : []
+
+            return images.filter((image) => String(image?.url || '').trim() !== '')
+        },
+        titlePageImageStyleKey(image) {
+            return `${String(image?.url || '').trim()}|${String(image?.asset_index ?? '')}`
+        },
+        titlePageImageSurfaceStyle(image) {
+            const presentation = this.titlePageImageStyles[this.titlePageImageStyleKey(image)] || null
+
+            return {
+                '--title-page-image-surface-background': presentation?.background || 'linear-gradient(135deg, rgba(241, 245, 249, 0.96) 0%, rgba(226, 232, 240, 0.94) 48%, rgba(15, 23, 42, 0.92) 52%, rgba(2, 6, 23, 0.96) 100%)',
+                '--title-page-image-surface-border': presentation?.borderColor || 'rgba(148, 163, 184, 0.22)',
+                '--title-page-image-surface-shadow': presentation?.shadow || 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+            }
+        },
+        handleTitlePageImageLoad(image, event) {
+            const imageElement = event?.target
+            const presentation = this.analyzeTitlePageImageElement(imageElement)
+            if (!presentation) {
+                return
+            }
+
+            const key = this.titlePageImageStyleKey(image)
+            this.titlePageImageStyles = {
+                ...this.titlePageImageStyles,
+                [key]: presentation,
+            }
+        },
+        analyzeTitlePageImageElement(imageElement) {
+            if (
+                typeof window === 'undefined'
+                || typeof document === 'undefined'
+                || !(imageElement instanceof HTMLImageElement)
+                || !imageElement.naturalWidth
+                || !imageElement.naturalHeight
+            ) {
+                return null
+            }
+
+            const canvas = document.createElement('canvas')
+            const sampleSize = 36
+            canvas.width = sampleSize
+            canvas.height = sampleSize
+
+            const context = canvas.getContext('2d', { willReadFrequently: true })
+            if (!context) {
+                return null
+            }
+
+            try {
+                context.clearRect(0, 0, sampleSize, sampleSize)
+                context.drawImage(imageElement, 0, 0, sampleSize, sampleSize)
+                const pixels = context.getImageData(0, 0, sampleSize, sampleSize).data
+
+                let weightedPixelCount = 0
+                let weightedRed = 0
+                let weightedGreen = 0
+                let weightedBlue = 0
+                let weightedLuminance = 0
+                let darkWeight = 0
+                let lightWeight = 0
+
+                for (let index = 0; index < pixels.length; index += 4) {
+                    const alpha = pixels[index + 3] / 255
+                    if (alpha < 0.08) {
+                        continue
+                    }
+
+                    const red = pixels[index]
+                    const green = pixels[index + 1]
+                    const blue = pixels[index + 2]
+                    const luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+
+                    weightedPixelCount += alpha
+                    weightedRed += red * alpha
+                    weightedGreen += green * alpha
+                    weightedBlue += blue * alpha
+                    weightedLuminance += luminance * alpha
+
+                    if (luminance < 96) {
+                        darkWeight += alpha
+                    }
+                    if (luminance > 190) {
+                        lightWeight += alpha
+                    }
+                }
+
+                if (weightedPixelCount <= 0) {
+                    return null
+                }
+
+                const averageRed = weightedRed / weightedPixelCount
+                const averageGreen = weightedGreen / weightedPixelCount
+                const averageBlue = weightedBlue / weightedPixelCount
+                const averageLuminance = weightedLuminance / weightedPixelCount
+                const coverage = weightedPixelCount / (sampleSize * sampleSize)
+                const darkRatio = darkWeight / weightedPixelCount
+                const lightRatio = lightWeight / weightedPixelCount
+
+                return this.buildTitlePageImagePresentation({
+                    red: averageRed,
+                    green: averageGreen,
+                    blue: averageBlue,
+                    luminance: averageLuminance,
+                    coverage,
+                    darkRatio,
+                    lightRatio,
+                })
+            } catch {
+                return null
+            }
+        },
+        buildTitlePageImagePresentation({ red, green, blue, luminance, coverage, darkRatio, lightRatio }) {
+            const { hue, saturation } = this.rgbToHsl(red, green, blue)
+            const normalizedHue = Number.isFinite(hue) ? Math.round(hue) : 212
+            const tintedSaturation = this.clamp((saturation * 0.48) + 8, 8, 42)
+            const mostlyDark = luminance < 118 || darkRatio > 0.62
+            const mostlyLight = luminance > 182 || lightRatio > 0.62
+
+            if (mostlyDark) {
+                const endLightness = coverage < 0.18 ? 92 : 86
+
+                return {
+                    background: `linear-gradient(135deg, hsla(${normalizedHue}, ${tintedSaturation}%, 97%, 0.98) 0%, hsla(${normalizedHue}, ${this.clamp(tintedSaturation * 0.7, 10, 28)}%, ${endLightness}%, 0.96) 100%)`,
+                    borderColor: `hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 18, 36)}%, 70%, 0.42)`,
+                    shadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.52)',
+                }
+            }
+
+            if (mostlyLight) {
+                return {
+                    background: `linear-gradient(135deg, hsla(${normalizedHue}, ${this.clamp(tintedSaturation * 0.85, 10, 32)}%, 11%, 0.98) 0%, hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 12, 36)}%, 18%, 0.96) 100%)`,
+                    borderColor: `hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 16, 34)}%, 48%, 0.38)`,
+                    shadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+                }
+            }
+
+            if (luminance < 148) {
+                return {
+                    background: `linear-gradient(135deg, hsla(${normalizedHue}, ${this.clamp(tintedSaturation * 0.75, 10, 28)}%, 95%, 0.98) 0%, hsla(${normalizedHue}, ${this.clamp(tintedSaturation * 0.9, 10, 32)}%, 84%, 0.95) 100%)`,
+                    borderColor: `hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 16, 34)}%, 68%, 0.36)`,
+                    shadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.4)',
+                }
+            }
+
+            return {
+                background: `linear-gradient(135deg, hsla(${normalizedHue}, ${this.clamp(tintedSaturation * 0.9, 10, 34)}%, 14%, 0.98) 0%, hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 12, 36)}%, 24%, 0.96) 100%)`,
+                borderColor: `hsla(${normalizedHue}, ${this.clamp(tintedSaturation, 16, 34)}%, 52%, 0.36)`,
+                shadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08)',
+            }
+        },
+        rgbToHsl(red, green, blue) {
+            const normalizedRed = this.clamp(red / 255, 0, 1)
+            const normalizedGreen = this.clamp(green / 255, 0, 1)
+            const normalizedBlue = this.clamp(blue / 255, 0, 1)
+            const max = Math.max(normalizedRed, normalizedGreen, normalizedBlue)
+            const min = Math.min(normalizedRed, normalizedGreen, normalizedBlue)
+            const delta = max - min
+
+            let hue = 0
+            if (delta !== 0) {
+                if (max === normalizedRed) {
+                    hue = 60 * (((normalizedGreen - normalizedBlue) / delta) % 6)
+                } else if (max === normalizedGreen) {
+                    hue = 60 * (((normalizedBlue - normalizedRed) / delta) + 2)
+                } else {
+                    hue = 60 * (((normalizedRed - normalizedGreen) / delta) + 4)
+                }
+            }
+
+            const lightness = (max + min) / 2
+            const saturation = delta === 0
+                ? 0
+                : delta / (1 - Math.abs((2 * lightness) - 1))
+
+            return {
+                hue: hue < 0 ? hue + 360 : hue,
+                saturation: saturation * 100,
+                lightness: lightness * 100,
+            }
+        },
+        clamp(value, min, max) {
+            return Math.min(Math.max(value, min), max)
         },
         formatFoundImages(value) {
             if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -702,6 +1408,24 @@ export default {
 .aba-details-nav__button-meta {
     font-size: 0.72rem;
     opacity: 0.85;
+}
+
+.extraction-overwrite-switch {
+    margin-inline-end: 0;
+    align-self: flex-start;
+}
+
+.extraction-header-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.extraction-overwrite-switch__label {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.94);
 }
 
 /* Basis Card */
@@ -842,6 +1566,11 @@ export default {
     color: #2dd4bf;
 }
 
+.basis-field__icon-wrap--cyan {
+    background: rgba(34, 211, 238, 0.12);
+    color: #67e8f9;
+}
+
 .basis-field__icon-wrap--green {
     background: rgba(34, 197, 94, 0.12);
     color: #4ade80;
@@ -940,7 +1669,8 @@ export default {
 
 .extraction-note {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    gap: 10px;
     border: 1px solid rgba(96, 165, 250, 0.18);
     border-radius: 14px;
     padding: 12px 14px;
@@ -949,18 +1679,22 @@ export default {
     font-size: 0.84rem;
 }
 
-.extraction-last-run__header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 16px;
+.extraction-note__content {
+    display: grid;
+    gap: 4px;
 }
 
-.extraction-last-run__title {
-    font-size: 0.82rem;
+.extraction-note__title {
+    font-size: 0.9rem;
     font-weight: 700;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    line-height: 1.35;
+    color: #f8fafc;
+}
+
+.extraction-note__meta {
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #cbd5e1;
 }
 
 .extraction-fields {
@@ -1026,6 +1760,13 @@ export default {
     gap: 12px;
 }
 
+.extraction-section-card__chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
 .extraction-section-card__title {
     font-size: 0.9rem;
     font-weight: 700;
@@ -1045,6 +1786,19 @@ export default {
     color: #cbd5e1;
 }
 
+.toc-details {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.toc-details__entry {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #dbeafe;
+    white-space: pre-wrap;
+}
+
 .title-page-details {
     display: grid;
     gap: 14px;
@@ -1056,6 +1810,13 @@ export default {
     border-radius: 14px;
     padding: 14px;
     background: rgba(30, 41, 59, 0.45);
+}
+
+.title-page-details__hero-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
 }
 
 .title-page-details__hero-label {
@@ -1072,6 +1833,25 @@ export default {
     font-weight: 800;
     line-height: 1.35;
     color: #f8fafc;
+}
+
+.title-page-details__hero-subtitle-block {
+    margin-top: 10px;
+}
+
+.title-page-details__hero-subtitle-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.title-page-details__hero-subtitle-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    color: #94a3b8;
 }
 
 .title-page-details__hero-subtitle {
@@ -1094,6 +1874,13 @@ export default {
     background: rgba(15, 23, 42, 0.35);
 }
 
+.title-page-details__item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .title-page-details__item-label {
     font-size: 0.68rem;
     font-weight: 700;
@@ -1110,9 +1897,29 @@ export default {
     color: #f1f5f9;
 }
 
-.title-page-details__extras {
+.title-page-details__item-lines {
     display: grid;
-    gap: 8px;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.title-page-details__item-line {
+    display: grid;
+    gap: 2px;
+}
+
+.title-page-details__item-line-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+.title-page-details__item-line-value {
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: #dbeafe;
 }
 
 .title-page-details__extras-label {
@@ -1123,10 +1930,43 @@ export default {
     color: #94a3b8;
 }
 
-.title-page-details__extras-list {
-    display: flex;
-    flex-wrap: wrap;
+.title-page-details__images {
+    display: grid;
     gap: 8px;
+}
+
+.title-page-details__image-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.title-page-details__image-card {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(15, 23, 42, 0.38);
+}
+
+.title-page-details__image-surface {
+    height: 180px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--title-page-image-surface-background);
+    box-shadow: var(--title-page-image-surface-shadow);
+    border-bottom: 1px solid var(--title-page-image-surface-border);
+}
+
+.title-page-details__image {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: transparent;
 }
 
 .extraction-section-card__warnings {
@@ -1179,6 +2019,10 @@ export default {
 
     .basis-card__header-badge {
         width: 100%;
+    }
+
+    .extraction-header-actions {
+        align-items: stretch;
     }
 
     .extraction-stats {

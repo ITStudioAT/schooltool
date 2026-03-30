@@ -10,7 +10,10 @@ use Illuminate\Support\Facades\DB;
 
 class AbaExtractionPersister
 {
-    public function startRun(User $user, Aba $aba, ?AbaAttachment $attachment): AbaAnalysisRun
+    /**
+     * @param  array<string,mixed>  $summary
+     */
+    public function startRun(User $user, Aba $aba, ?AbaAttachment $attachment, array $summary = []): AbaAnalysisRun
     {
         return AbaAnalysisRun::query()->create([
             'aba_id' => $aba->id,
@@ -22,6 +25,7 @@ class AbaExtractionPersister
             'source_mime_type' => $attachment?->mime_type,
             'status_message' => 'Extraktion wurde gestartet.',
             'started_at' => now(),
+            'summary' => $summary !== [] ? $summary : null,
         ]);
     }
 
@@ -78,7 +82,7 @@ class AbaExtractionPersister
                     'aba_attachment_id' => $run->aba_attachment_id,
                     'parent_result_id' => null,
                     'section_type' => trim((string) ($section['section_type'] ?? 'other_section')) ?: 'other_section',
-                    'section_title' => $this->nullableString($section['section_title'] ?? null),
+                    'section_title' => $this->nullableSectionTitle($section['section_title'] ?? null),
                     'extracted_text' => $this->nullableString($section['extracted_text'] ?? null),
                     'sort_order' => $sortOrder,
                     'hierarchy_level' => is_numeric($section['hierarchy_level'] ?? null) ? (int) $section['hierarchy_level'] : null,
@@ -133,5 +137,15 @@ class AbaExtractionPersister
         $normalized = trim((string) $value);
 
         return $normalized === '' ? null : $normalized;
+    }
+
+    private function nullableSectionTitle(mixed $value): ?string
+    {
+        $normalized = $this->nullableString($value);
+        if ($normalized === null) {
+            return null;
+        }
+
+        return mb_substr($normalized, 0, 255);
     }
 }

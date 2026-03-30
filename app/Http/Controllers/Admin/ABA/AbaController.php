@@ -71,7 +71,8 @@ class AbaController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $aba->load(['attachments', 'schoolyear', 'latestExtractionRun']);
+        $aba->load(['attachments', 'school', 'schoolyear', 'latestExtractionRun']);
+        $aba->setRelation('nextNavigationAba', $this->resolveNextAba($aba));
 
         return response()->json(new AbaResource($aba));
     }
@@ -95,8 +96,13 @@ class AbaController extends Controller
             }
         }
 
+        if (array_key_exists('title_page_overrides', $validated)) {
+            $validated['title_page_overrides'] = $this->mergeTitlePageOverrides($aba, $validated['title_page_overrides']);
+        }
+
         $aba->update($validated);
-        $aba->load(['attachments', 'schoolyear']);
+        $aba->load(['attachments', 'school', 'schoolyear', 'latestExtractionRun']);
+        $aba->setRelation('nextNavigationAba', $this->resolveNextAba($aba));
 
         return response()->json(new AbaResource($aba));
     }
@@ -127,5 +133,49 @@ class AbaController extends Controller
             ->where('id', $schoolyearId)
             ->where('school_id', $schoolId)
             ->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, string>|null
+     */
+    private function mergeTitlePageOverrides(Aba $aba, array $overrides): ?array
+    {
+        $current = is_array($aba->title_page_overrides) ? $aba->title_page_overrides : [];
+        $merged = array_merge($current, $overrides);
+        $normalized = [];
+
+        foreach (['subtitle', 'advisor', 'school_full', 'date'] as $key) {
+            $value = trim((string) ($merged[$key] ?? ''));
+
+            if ($value === '') {
+                continue;
+            }
+
+            $normalized[$key] = $value;
+        }
+
+        return $normalized !== [] ? $normalized : null;
+    }
+
+    private function resolveNextAba(Aba $aba): ?Aba
+    {
+        $baseQuery = Aba::query()
+            ->where('school_id', $aba->school_id)
+            ->where('schoolyear_id', $aba->schoolyear_id)
+            ->where('user_id', $aba->user_id);
+
+        $nextAba = (clone $baseQuery)
+            ->where('id', '>', $aba->id)
+            ->orderBy('id')
+            ->first(['id', 'title']);
+
+        if ($nextAba) {
+            return $nextAba;
+        }
+
+        return (clone $baseQuery)
+            ->orderBy('id')
+            ->first(['id', 'title']);
     }
 }

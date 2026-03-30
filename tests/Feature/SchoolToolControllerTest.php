@@ -45,12 +45,30 @@ function moduleVisibilityKeys(): array
         'restaurant_visible_user',
         'restaurant_user_test_mode',
         'restaurant_user_comming_soon',
+        'aba_visible_admin',
+        'aba_visible_user',
+        'aba_user_test_mode',
+        'aba_user_comming_soon',
     ];
 }
 
 beforeEach(function () {
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+
+    foreach ([
+        ['name' => 'ABA', 'long_name' => 'ABA'],
+        ['name' => 'Anmeldetool', 'long_name' => 'Anmeldetool'],
+        ['name' => 'Nachhilfetool', 'long_name' => 'Nachhilfetool'],
+        ['name' => 'Lehrertool', 'long_name' => 'Lehrertool'],
+        ['name' => 'Materialientool', 'long_name' => 'Materialientool'],
+        ['name' => 'Restaurant', 'long_name' => 'Restaurant'],
+    ] as $licenceData) {
+        Licence::firstOrCreate(
+            ['name' => $licenceData['name']],
+            ['long_name' => $licenceData['long_name'], 'is_selectable' => true]
+        );
+    }
 
     $this->tutoringLicence = Licence::firstOrCreate(
         ['name' => 'Nachhilfetool'],
@@ -91,6 +109,10 @@ beforeEach(function () {
         'restaurant_visible_user' => false,
         'restaurant_user_test_mode' => false,
         'restaurant_user_comming_soon' => false,
+        'aba_visible_admin' => true,
+        'aba_visible_user' => true,
+        'aba_user_test_mode' => false,
+        'aba_user_comming_soon' => false,
         'tutoring_student_must_be_confirmed' => 0,
         'tutoring_confirmer_email' => 'admin@test.com',
         'tutoring_max_offers_per_student' => 0,
@@ -135,6 +157,7 @@ describe('loadConfig', function () {
         $response->assertStatus(200)
             ->assertJsonStructure(array_merge([
                 'id',
+                'module_rows',
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
@@ -142,6 +165,9 @@ describe('loadConfig', function () {
             ->assertJson([
                 'id' => 1,
             ]);
+
+        expect(collect($response->json('module_rows'))->pluck('key')->all())
+            ->toBe(['aba', 'register', 'teaching', 'materials', 'tutoring', 'restaurant']);
     });
 
     test('tutoring admin can load school tool config', function () {
@@ -248,11 +274,27 @@ describe('loadConfig', function () {
                 'tutoring_student_must_be_confirmed',
                 'tutoring_confirmer_email',
                 'may_visible_for_other_schools',
-            ], moduleVisibilityKeys()));
+            ], moduleVisibilityKeys()))
+            ->assertJson([
+                'aba_visible_admin' => true,
+                'aba_visible_user' => true,
+                'register_visible_admin' => true,
+                'register_visible_user' => true,
+                'tutoring_visible_admin' => false,
+                'tutoring_visible_user' => false,
+                'teaching_visible_admin' => false,
+                'teaching_visible_user' => false,
+            ]);
 
         $this->assertDatabaseHas('school_tools', [
             'id' => $response->json('id'),
             'school_id' => $this->school->id,
+            'aba_visible_admin' => true,
+            'aba_visible_user' => true,
+            'register_visible_admin' => true,
+            'register_visible_user' => true,
+            'tutoring_visible_admin' => false,
+            'tutoring_visible_user' => false,
         ]);
     });
 });
@@ -284,6 +326,10 @@ describe('saveModuleStatuses', function () {
                 'restaurant_visible_user' => true,
                 'restaurant_user_test_mode' => false,
                 'restaurant_user_comming_soon' => false,
+                'aba_visible_admin' => true,
+                'aba_visible_user' => true,
+                'aba_user_test_mode' => false,
+                'aba_user_comming_soon' => false,
             ],
         ];
 
@@ -311,6 +357,8 @@ describe('saveModuleStatuses', function () {
             'materials_visible_admin' => false,
             'restaurant_visible_admin' => true,
             'restaurant_visible_user' => true,
+            'aba_visible_admin' => true,
+            'aba_visible_user' => true,
         ]);
     });
 
@@ -347,6 +395,10 @@ describe('saveModuleStatuses', function () {
                 'restaurant_visible_user' => false,
                 'restaurant_user_test_mode' => false,
                 'restaurant_user_comming_soon' => false,
+                'aba_visible_admin' => true,
+                'aba_visible_user' => true,
+                'aba_user_test_mode' => false,
+                'aba_user_comming_soon' => false,
             ],
         ])->assertOk();
 
@@ -383,6 +435,10 @@ describe('saveModuleStatuses', function () {
                 'restaurant_visible_user' => true,
                 'restaurant_user_test_mode' => false,
                 'restaurant_user_comming_soon' => false,
+                'aba_visible_admin' => true,
+                'aba_visible_user' => true,
+                'aba_user_test_mode' => false,
+                'aba_user_comming_soon' => false,
             ],
         ]);
 
@@ -415,6 +471,10 @@ describe('saveModuleStatuses', function () {
                 'restaurant_visible_user' => true,
                 'restaurant_user_test_mode' => false,
                 'restaurant_user_comming_soon' => false,
+                'aba_visible_admin' => true,
+                'aba_visible_user' => true,
+                'aba_user_test_mode' => false,
+                'aba_user_comming_soon' => false,
             ],
         ]);
 
@@ -448,15 +508,23 @@ describe('saveModuleStatuses', function () {
                 'restaurant_visible_user' => true,
                 'restaurant_user_test_mode' => false,
                 'restaurant_user_comming_soon' => false,
+                'aba_visible_admin' => false,
+                'aba_visible_user' => true,
+                'aba_user_test_mode' => false,
+                'aba_user_comming_soon' => false,
             ],
         ]);
 
         $response->assertOk()
+            ->assertJsonPath('aba_visible_admin', false)
+            ->assertJsonPath('aba_visible_user', false)
             ->assertJsonPath('register_visible_admin', false)
             ->assertJsonPath('register_visible_user', false);
 
         $this->assertDatabaseHas('school_tools', [
             'id' => 1,
+            'aba_visible_admin' => false,
+            'aba_visible_user' => false,
             'register_visible_admin' => false,
             'register_visible_user' => false,
         ]);

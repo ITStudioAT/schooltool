@@ -7,9 +7,15 @@
     "herd_mcp": false,
     "mcp": true,
     "nightwatch_mcp": false,
+    "packages": [
+        "laravel/ai",
+        "spatie/laravel-pdf"
+    ],
     "sail": false,
     "skills": [
         "pest-testing",
+        "ai-sdk-development",
+        "laravel-pdf",
         "laravel-api"
     ]
 }

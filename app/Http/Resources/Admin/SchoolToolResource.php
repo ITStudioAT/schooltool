@@ -24,6 +24,7 @@ class SchoolToolResource extends JsonResource
         return [
             'id' => $this->id,
             'active_schoolyear_id' => $this->active_schoolyear_id,
+            'module_rows' => $moduleStatusService->configurableModuleRows(),
             ...$moduleVisibilityFields,
             'tutoring_student_must_be_confirmed' => $this->tutoring_student_must_be_confirmed ? true : false,
             'tutoring_confirmer_email' => $this->tutoring_confirmer_email,

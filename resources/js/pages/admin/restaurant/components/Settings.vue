@@ -95,7 +95,6 @@
                                 color="primary"
                                 variant="flat"
                                 prepend-icon="mdi-pencil"
-                                :disabled="!canManageGeneralSettings"
                                 @click="beginGeneralSettingsEdit">
                                 Bearbeiten
                             </v-btn>
@@ -109,9 +108,6 @@
                             Diese Angaben gelten schulweit für das Restaurant und werden für Kommunikation und Benutzer-Informationen verwendet.
                         </div>
 
-                        <v-alert v-if="!canManageGeneralSettings" type="warning" variant="tonal" class="mb-4">
-                            Allgemeine Restaurant-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.
-                        </v-alert>
 
                         <div v-if="!isEditingGeneralSettings" class="general-settings-summary">
                             <div class="general-settings-row">
@@ -508,7 +504,11 @@ export default {
         },
     },
 
-    created() {
+    async created() {
+        const restaurantStore = useRestaurantStore()
+        if (! restaurantStore.settings) {
+            await restaurantStore.loadSettings()
+        }
         this.resetGeneralSettingsForm()
     },
 
@@ -581,10 +581,6 @@ export default {
             this.isGeneralFormValid = false
         },
         beginGeneralSettingsEdit() {
-            if (! this.canManageGeneralSettings) {
-                return
-            }
-
             this.resetGeneralSettingsForm()
             this.isEditingGeneralSettings = true
         },
@@ -596,7 +592,7 @@ export default {
             this.isGeneralFormValid = false
             await this.$refs.generalForm?.validate()
 
-            if (! this.isGeneralFormValid || ! this.canManageGeneralSettings) {
+            if (! this.isGeneralFormValid) {
                 return
             }
 
@@ -605,7 +601,7 @@ export default {
                 restaurant_new_users_must_confirm_email: this.generalSettingsForm.new_users_must_confirm_email,
                 restaurant_new_users_confirmer_email: this.generalSettingsForm.new_users_must_confirm_email
                     ? this.generalSettingsForm.new_users_confirmer_email
-                    : '',
+                    : null,
                 restaurant_user_information_intro_html: this.generalSettingsForm.user_information_intro_html,
             })
 

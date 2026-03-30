@@ -229,7 +229,7 @@ export default {
             const items = [
                 { key: 'title', label: 'Titel', value: resolveValue(details.title, metadata.title_page_title) },
                 { key: 'submitter', label: 'Einreicher:in (Verfasst von)', value: resolveValue(details.submitter, metadata.title_page_submitter) },
-                { key: 'advisor', label: 'Betreuer', value: resolveValue(details.advisor, metadata.title_page_advisor) },
+                { key: 'advisor', label: 'Betreuer:in', value: resolveValue(details.advisor, metadata.title_page_advisor) },
                 { key: 'class', label: 'Klasse', value: resolveValue(details.class, metadata.title_page_class) },
                 { key: 'year', label: 'Jahr', value: resolveValue(details.year, metadata.title_page_year) || '--' },
             ]

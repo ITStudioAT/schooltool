@@ -64,6 +64,7 @@ class AdminNavigationService
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $user->selectedSchool);
         $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $user->selectedSchool);
         $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $user->selectedSchool);
+        $abaModuleStatus = $moduleStatusService->userStatusForModule('aba', $user->selectedSchool);
         // ANMELDESYSTEM
         if ($user->hasAnyRole(self::REGISTER_DASHBOARD_ROLES)) {
             if ($registerLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('register', $user->selectedSchool)) {
@@ -103,13 +104,13 @@ class AdminNavigationService
 
         // ABA
         if ($user->hasAnyRole(self::ABA_DASHBOARD_ROLES)) {
-            if ($abaLicenceStatus !== 'missing') {
+            if ($abaLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('aba', $user->selectedSchool)) {
                 $menu[] = [
                     'title' => 'ABA',
                     'icon' => 'mdi-certificate-outline',
                     'to' => '/admin/aba',
                     'is_active' => ($abaLicenceStatus === 'active'),
-                ] + $this->dashboardStatusMeta($abaLicenceStatus, '', 'ABA');
+                ] + $this->dashboardStatusMeta($abaLicenceStatus, $abaModuleStatus, 'ABA');
             }
         }
 

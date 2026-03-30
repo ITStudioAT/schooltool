@@ -21,6 +21,7 @@ class Aba extends Model
         'title',
         'student_name',
         'student_class',
+        'title_page_overrides',
         'created_on',
         'evaluated_on',
     ];
@@ -30,6 +31,7 @@ class Aba extends Model
         return [
             'created_on' => 'date',
             'evaluated_on' => 'date',
+            'title_page_overrides' => 'array',
         ];
     }
 

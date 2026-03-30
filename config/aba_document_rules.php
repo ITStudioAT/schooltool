@@ -29,7 +29,7 @@ return [
     ],
     'detection' => [
         'section_type_patterns' => [
-            'title_page' => '/^\s*(titelblatt|deckblatt)\b/iu',
+            'title_page' => '/^\s*(titelblatt|titelseite|deckblatt)\b/iu',
             'abstract' => '/^\s*(abstract|zusammenfassung|kurzfassung|summary|executive summary|management summary|kurz[üu]berblick)(?:\s*(?:\(|\[)?\s*(deutsch|german|englisch|english)\s*(?:\)|\])?)?\s*(?:$|[:\-–]\s*[^.!?]{0,120}$|(?:(?:\.{2,}|…+)\s*)?\d+(?:\s*[-–]\s*\d+)?\s*$)/iu',
             'foreword' => '/^\s*(vorwort|vorbemerkung|preface|foreword|prefazione)\b/iu',
             'table_of_contents' => '/^\s*(inhaltsverzeichnis|table of contents)\b/iu',
@@ -48,7 +48,7 @@ return [
                 'assessment_class' => 'verbindlich_pruefbar',
                 'maps_to_section_type' => 'title_page',
                 'school_specific' => false,
-                'accepted_headings' => ['Titelblatt', 'Deckblatt'],
+                'accepted_headings' => ['Titelblatt', 'Titelseite', 'Deckblatt'],
             ],
             'table_of_contents' => [
                 'label' => 'Inhaltsverzeichnis',

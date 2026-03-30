@@ -9,6 +9,9 @@ class DocxMainDocumentExtractor
     public function __construct(
         private readonly AbaLocalDocumentTextExtractor $textExtractor,
         private readonly AbaLocalDocumentStructureExtractor $structureExtractor,
+        private readonly AbaPandocDocxExtractionService $pandocDocxExtractionService,
+        private readonly AbaPandocAstNormalizerService $pandocAstNormalizerService,
+        private readonly AbaPandocReviewBuilderService $pandocReviewBuilderService,
     ) {}
 
     public function supports(AbaAttachment $attachment): bool
@@ -25,15 +28,17 @@ class DocxMainDocumentExtractor
     }
 
     /**
+     * @param  array<string,mixed>  $options
      * @return array<string,mixed>
      */
-    public function extract(AbaAttachment $attachment): array
+    public function extract(AbaAttachment $attachment, array $options = []): array
     {
         if (! $this->supports($attachment)) {
             throw new \RuntimeException('Für die ABA-Extraktion wird derzeit ein DOCX-Hauptdokument benötigt.');
         }
 
         $document = $this->textExtractor->extractDocument($attachment);
+        $titlePageProcessing = $this->extractTitlePageProcessing($attachment, $options);
         $text = trim((string) ($document['text'] ?? ''));
         if ($text === '') {
             throw new \RuntimeException('Aus dem Hauptdokument konnte kein auswertbarer Text extrahiert werden.');
@@ -69,7 +74,77 @@ class DocxMainDocumentExtractor
             'candidates' => is_array($document['candidates'] ?? null) ? array_values($document['candidates']) : [],
             'diagnostics' => $this->structureExtractor->lastDiagnostics(),
             'sections' => array_values($sections),
+            'title_page_processing' => $titlePageProcessing,
         ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $options
+     * @return array<string,mixed>
+     */
+    private function extractTitlePageProcessing(AbaAttachment $attachment, array $options): array
+    {
+        $prepared = $this->textExtractor->prepareLocalFile($attachment);
+        $absolutePath = (string) ($prepared['absolute_path'] ?? '');
+        $isTemp = (bool) ($prepared['is_temp'] ?? false);
+
+        try {
+            if ($absolutePath === '' || ! is_file($absolutePath)) {
+                return [];
+            }
+
+            $pandocExtraction = $this->pandocDocxExtractionService->extractFromPath($absolutePath);
+            if (($pandocExtraction['ok'] ?? false) !== true || ! is_array($pandocExtraction['ast'] ?? null)) {
+                return [];
+            }
+
+            $normalized = $this->pandocAstNormalizerService->normalizeAst($pandocExtraction['ast']);
+            if (($normalized['ok'] ?? false) !== true) {
+                return [];
+            }
+
+            $review = $this->pandocReviewBuilderService->buildReview(
+                is_array($normalized['blocks'] ?? null) ? array_values($normalized['blocks']) : [],
+                [
+                    'source_docx_path' => $absolutePath,
+                    'logo_asset_disk' => 'local',
+                    'logo_asset_base_dir' => $this->titlePageAssetBaseDir($attachment, $options),
+                ],
+            );
+
+            return is_array($review['title_page_processing'] ?? null)
+                ? $review['title_page_processing']
+                : [];
+        } catch (\Throwable) {
+            return [];
+        } finally {
+            if ($isTemp) {
+                @unlink($absolutePath);
+            }
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $options
+     */
+    private function titlePageAssetBaseDir(AbaAttachment $attachment, array $options): string
+    {
+        $abaId = is_numeric($options['aba_id'] ?? null)
+            ? (int) $options['aba_id']
+            : (is_numeric($attachment->aba_id ?? null) ? (int) $attachment->aba_id : 0);
+        $runId = is_numeric($options['run_id'] ?? null)
+            ? (int) $options['run_id']
+            : 0;
+
+        $segments = ['aba', 'titlepage-assets'];
+        if ($abaId > 0) {
+            $segments[] = 'aba-'.$abaId;
+        }
+        if ($runId > 0) {
+            $segments[] = 'run-'.$runId;
+        }
+
+        return implode('/', $segments);
     }
 
     private function resolveExtension(AbaAttachment $attachment): string

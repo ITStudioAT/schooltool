@@ -82,6 +82,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /***** HOMEPAGE ROUTES *****/
     Route::get('/homepage/config', [HomepageController::class, 'config']);
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
+    Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/
@@ -176,6 +177,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/abas/{aba}', [AbaController::class, 'destroy']);
         Route::get('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'show']);
         Route::post('/admin/abas/{aba}/extraction', [AbaExtractionController::class, 'store']);
+        Route::get('/admin/abas/{aba}/extraction-runs/{run}/title-page-assets/{assetIndex}', [AbaExtractionController::class, 'titlePageAsset'])->whereNumber('assetIndex');
         Route::post('/admin/abas/{aba}/attachments/from-temp', [AbaAttachmentController::class, 'storeFromTemp']);
         Route::delete('/admin/abas/{aba}/attachments/{attachment}', [AbaAttachmentController::class, 'destroy']);
 

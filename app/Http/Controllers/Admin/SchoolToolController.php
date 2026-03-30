@@ -156,7 +156,7 @@ class SchoolToolController extends Controller
      */
     private function normalizeModuleVisibilityFlags(array $values): array
     {
-        foreach (['register', 'tutoring', 'teaching', 'materials', 'restaurant'] as $moduleKey) {
+        foreach (['register', 'tutoring', 'teaching', 'materials', 'restaurant', 'aba'] as $moduleKey) {
             $adminVisibleField = sprintf('%s_visible_admin', $moduleKey);
             $userVisibleField = sprintf('%s_visible_user', $moduleKey);
 

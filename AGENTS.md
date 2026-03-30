@@ -9,9 +9,9 @@ The Laravel Boost guidelines are specifically curated by Laravel maintainers for
 
 This application is a Laravel application and its main Laravel ecosystems package & versions are below. You are an expert with them all. Ensure you abide by these specific packages & versions.
 
-- php - 8.3.16
+- php - 8.3
 - laravel/ai (AI) - v0
-- laravel/framework (LARAVEL) - v12
+- laravel/framework (LARAVEL) - v13
 - laravel/prompts (PROMPTS) - v0
 - laravel/sanctum (SANCTUM) - v4
 - laravel/boost (BOOST) - v2
@@ -22,21 +22,23 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - pestphp/pest (PEST) - v4
 - phpunit/phpunit (PHPUNIT) - v12
 - vue (VUE) - v3
+- @laravel/echo-vue (ECHO_VUE) - v2
 - laravel-echo (ECHO) - v2
 
 ## Skills Activation
 
 This project has domain-specific skills available. You MUST activate the relevant skill whenever you work in that domain—don't wait until you're stuck.
 
-- `pest-testing` — Tests applications using the Pest 4 PHP framework. Activates when writing tests, creating unit or feature tests, adding assertions, testing Livewire components, browser testing, debugging test failures, working with datasets or mocking; or when the user mentions test, spec, TDD, expects, assertion, coverage, or needs to verify functionality works.
-- `laravel-api` — Build production-grade Laravel REST APIs using opinionated architecture patterns with Laravel best practices. Use when building, scaffoling, or reviewing Laravel APIs with specifications for stateless design, versioned endpoints, invokable controllers, Form Request DTOs, Action classes, JWT authentication, and PSR-12 code quality standards. Triggers on &quot;build a Laravel API&quot;, &quot;create Laravel endpoints&quot;, &quot;add API authentication&quot;, &quot;review Laravel API code&quot;, &quot;refactor Laravel API&quot;, or &quot;improve Laravel code quality&quot;.
+- `pest-testing` — Use this skill for Pest PHP testing in Laravel projects only. Trigger whenever any test is being written, edited, fixed, or refactored — including fixing tests that broke after a code change, adding assertions, converting PHPUnit to Pest, adding datasets, and TDD workflows. Always activate when the user asks how to write something in Pest, mentions test files or directories (tests/Feature, tests/Unit, tests/Browser), or needs browser testing, smoke testing multiple pages for JS errors, or architecture tests. Covers: it()/expect() syntax, datasets, mocking, browser testing (visit/click/fill), smoke testing, arch(), Livewire component tests, RefreshDatabase, and all Pest 4 features. Do not use for factories, seeders, migrations, controllers, models, or non-test PHP code.
+- `ai-sdk-development` — Builds AI agents, generates text and chat responses, produces images, synthesizes audio, transcribes speech, generates vector embeddings, reranks documents, and manages files and vector stores using the Laravel AI SDK (laravel/ai). Supports structured output, streaming, tools, conversation memory, middleware, queueing, broadcasting, and provider failover. Use when building, editing, updating, debugging, or testing any AI functionality, including agents, LLMs, chatbots, text generation, image generation, audio, transcription, embeddings, RAG, similarity search, vector stores, prompting, structured output, or any AI provider (OpenAI, Anthropic, Gemini, Cohere, Groq, xAI, ElevenLabs, Jina, OpenRouter).
+- `laravel-pdf` — Generate PDFs from Blade views or HTML using spatie/laravel-pdf. Covers creating, formatting, saving, downloading, and testing PDFs with the Browsershot, Cloudflare, or DOMPDF driver.
+- `laravel-api` — Build production-grade Laravel REST APIs using opinionated architecture patterns with Laravel best practices. Use when building, scaffoling, or reviewing Laravel APIs with specifications for stateless design, versioned endpoints, invokable controllers, Form Request DTOs, Action classes, JWT authentication, and PSR-12 code quality standards. Triggers on "build a Laravel API", "create Laravel endpoints", "add API authentication", "review Laravel API code", "refactor Laravel API", or "improve Laravel code quality".
 
 ## Conventions
 
 - You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
 - Use descriptive names for variables and methods. For example, `isRegisteredForDiscounts`, not `discount()`.
 - Check for existing components to reuse before writing a new one.
-- Shown text in the UI is by default German. Always use real UTF-8 characters such as ä, ö, ü, ß and never mojibake or transliterations like ae, oe, ue.
 
 ## Verification Scripts
 
@@ -46,11 +48,7 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 - Stick to existing directory structure; don't create new base folders without approval.
 - Do not change the application's dependencies without approval.
-
-## UI
-
-- show Umlauts and ß
-- decimals are , and not .
+- For document extraction, parsing, or conversion tasks, prefer the already installed packages when they fit the problem: `phpoffice/phpword`, `smalot/pdfparser`, `spatie/laravel-pdf`, and `spatie/pdf-to-text`.
 
 ## Frontend Bundling
 
@@ -63,7 +61,6 @@ This project has domain-specific skills available. You MUST activate the relevan
 ## Replies
 
 - Be concise in your explanations - focus on what's important rather than explaining obvious details.
-- When a coding task is finished, play the completion sound before the final user-facing completion message by running: `powershell -c "(New-Object Media.SoundPlayer 'C:\Windows\Media\Ring08.wav').PlaySync()"`.
 
 === boost rules ===
 
@@ -71,19 +68,23 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 - Laravel Boost is an MCP server that comes with powerful tools designed specifically for this application. Use them.
 
-## Artisan
+## Artisan Commands
 
-- Use the `list-artisan-commands` tool when you need to call an Artisan command to double-check the available parameters.
+- Run Artisan commands directly via the command line (e.g., `php artisan route:list`, `php artisan tinker --execute "..."`).
+- Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
 
 ## URLs
 
 - Whenever you share a project URL with the user, you should use the `get-absolute-url` tool to ensure you're using the correct scheme, domain/IP, and port.
 
-## Tinker / Debugging
+## Debugging
 
-- You should use the `tinker` tool when you need to execute PHP to debug code or query Eloquent models directly.
 - Use the `database-query` tool when you only need to read from the database.
 - Use the `database-schema` tool to inspect table structure before writing migrations or models.
+- To execute PHP code for debugging, run `php artisan tinker --execute "your code here"` directly.
+- To read configuration values, read the config files directly or run `php artisan config:show [key]`.
+- To inspect routes, run `php artisan route:list` directly.
+- To check environment variables, read the `.env` file directly.
 
 ## Searching Documentation (Critically Important)
 
@@ -118,7 +119,6 @@ This project has domain-specific skills available. You MUST activate the relevan
 - Use appropriate PHP type hints for method parameters.
 
 <!-- Explicit Return Types and Method Params -->
-
 ```php
 protected function isAccessible(User $user, ?string $path = null): bool
 {
@@ -138,18 +138,11 @@ protected function isAccessible(User $user, ?string $path = null): bool
 
 - Add useful array shape type definitions when appropriate.
 
-=== tests rules ===
-
-# Test Enforcement
-
-- Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
-
 === laravel/core rules ===
 
 # Do Things the Laravel Way
 
-- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using the `list-artisan-commands` tool.
+- Use `php artisan make:` commands to create new files (i.e. migrations, controllers, models, etc.). You can list available Artisan commands using `php artisan list` and check their parameters with `php artisan [command] --help`.
 - If you're creating a generic PHP class, use `php artisan make:class`.
 - Pass `--no-interaction` to all Artisan commands to ensure they work without user input. You should also pass the correct `--options` to ensure correct behavior.
 
@@ -163,7 +156,7 @@ protected function isAccessible(User $user, ?string $path = null): bool
 
 ### Model Creation
 
-- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `list-artisan-commands` to check the available options to `php artisan make:model`.
+- When creating new models, create useful factories and seeders for them too. Ask the user if they need any other things, using `php artisan make:model --help` to check the available options.
 
 ### APIs & Eloquent Resources
 
@@ -200,31 +193,6 @@ protected function isAccessible(User $user, ?string $path = null): bool
 
 - If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
 
-=== laravel/v12 rules ===
-
-# Laravel 12
-
-- CRITICAL: ALWAYS use `search-docs` tool for version-specific Laravel documentation and updated code examples.
-- Since Laravel 11, Laravel has a new streamlined file structure which this project uses.
-
-## Laravel 12 Structure
-
-- In Laravel 12, middleware are no longer registered in `app/Http/Kernel.php`.
-- Middleware are configured declaratively in `bootstrap/app.php` using `Application::configure()->withMiddleware()`.
-- `bootstrap/app.php` is the file to register middleware, exceptions, and routing files.
-- `bootstrap/providers.php` contains application specific service providers.
-- The `app\Console\Kernel.php` file no longer exists; use `bootstrap/app.php` or `routes/console.php` for console configuration.
-- Console commands in `app/Console/Commands/` are automatically available and do not require manual registration.
-
-## Database
-
-- When modifying a column, the migration must include all of the attributes that were previously defined on the column. Otherwise, they will be dropped and lost.
-- Laravel 12 allows limiting eagerly loaded records natively, without external packages: `$query->latest()->limit(10);`.
-
-### Models
-
-- Casts can and likely should be set in a `casts()` method on a model rather than the `$casts` property. Follow existing conventions from other models.
-
 === pint/core rules ===
 
 # Laravel Pint Code Formatter
@@ -239,90 +207,12 @@ protected function isAccessible(User $user, ?string $path = null): bool
 - This project uses Pest for testing. Create tests: `php artisan make:test --pest {name}`.
 - Run tests: `php artisan test --compact` or filter: `php artisan test --compact --filter=testName`.
 - Do NOT delete tests without approval.
-- CRITICAL: ALWAYS use `search-docs` tool for version-specific Pest documentation and updated code examples.
-- IMPORTANT: Activate `pest-testing` every time you're working with a Pest or testing-related task.
 
-=== aba project rules ===
+=== laravel/ai rules ===
 
-# ABA Project Activation
+## Laravel AI SDK
 
-- If the user says `ABA`, `we are working on ABA`, or otherwise clearly indicates that the current task belongs to the ABA subproject, treat that as an activation signal for the ABA workflow.
-- On ABA activation, do not start with generic output, pure analysis, or a detached specification. First align on the repository reality, then implement changes in the existing codebase.
-
-## ABA Working Mode
-
-When ABA is activated, follow this order:
-
-1. Inspect the existing repository structure relevant to the task.
-2. Identify the existing Laravel backend and Vue frontend integration points.
-3. Reuse existing architecture, conventions, components, services, and data flow.
-4. Make concrete code changes in the repository.
-5. Add or update tests.
-6. Run the minimum relevant verification commands.
-7. Report changed files, implemented logic, and remaining open points.
-
-## ABA Baseline Assumptions
-
-- ABA work happens inside the existing Laravel/Vue application.
-- Backend changes must fit the Laravel 12 structure already used in this repository.
-- Frontend changes must fit the existing Vue 3 patterns already used in this repository.
-- Do not create a parallel architecture for ABA unless the user explicitly asks for it.
-- Prefer extending existing import, parsing, normalization, rendering, preview, asset, or document-processing flows over inventing new ones.
-
-## ABA Default Technical Focus
-
-Unless the user explicitly says otherwise, ABA tasks commonly involve one or more of these areas:
-
-- document import or extraction
-- normalization of imported text
-- Pandoc-compatible text transformation
-- cleanup of OCR/conversion artifacts
-- preservation or correction of semantic formatting
-- UI preview/rendering in Vue
-- backend/frontend consistency for structured document content
-- asset handling for document-related graphics such as logos
-- tests for extraction, normalization, rendering, and regression prevention
-
-## ABA Output Rules
-
-When ABA is activated:
-
-- Do not stop at a conceptual answer if code changes are possible.
-- Do not answer with only JSON, only prose, or only a mock result unless the user explicitly asks for that.
-- Assume the user wants implementation in the existing repository.
-- If the task is ambiguous, infer the most likely integration point from the repository and proceed carefully.
-- Prefer small, well-integrated, production-appropriate changes.
-
-## ABA Repository Check
-
-Before coding for ABA, always check:
-
-- where the relevant Laravel controllers, services, actions, DTOs, resources, models, or jobs are
-- where the relevant Vue components, views, stores, or composables are
-- whether there is existing logic for document import, parsing, Pandoc, OCR cleanup, preview rendering, or asset handling
-- which tests already cover nearby functionality
-
-## ABA Done Definition
-
-A task in ABA is not done until, where applicable:
-
-- the code has been changed in the existing Laravel/Vue codebase
-- the implementation follows existing project conventions
-- affected tests are added or updated
-- the minimum relevant tests have been run
-- formatting has been applied where required
-- the final report includes:
-    - changed files
-    - what was implemented
-    - what was verified
-    - any remaining limitations or follow-up items
-
-## ABA Guardrails
-
-- Do not replace repository-specific behavior with generic text transformation if the project already has a structured pipeline.
-- Do not silently invent document structure that is not supported by the existing code.
-- Do not move business logic into Vue if it belongs in backend normalization or shared transformation layers.
-- Do not add documentation files unless explicitly requested.
-- Do not change dependencies without approval.
+- This application uses the Laravel AI SDK (`laravel/ai`) for all AI functionality.
+- Activate the `developing-with-ai-sdk` skill when building, editing, updating, debugging, or testing AI agents, text generation, chat, streaming, structured output, tools, image generation, audio, transcription, embeddings, reranking, vector stores, files, conversation memory, or any AI provider integration (OpenAI, Anthropic, Gemini, Cohere, Groq, xAI, ElevenLabs, Jina, OpenRouter).
 
 </laravel-boost-guidelines>

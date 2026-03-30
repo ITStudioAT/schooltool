@@ -10,6 +10,7 @@ class AbaExtractionResource extends JsonResource
     public function toArray(Request $request): array
     {
         $summary = is_array($this->summary ?? null) ? $this->summary : [];
+        $sections = is_array($summary['sections'] ?? null) ? array_values($summary['sections']) : [];
 
         return [
             'id' => (int) $this->id,
@@ -29,7 +30,7 @@ class AbaExtractionResource extends JsonResource
             'rule_domain' => $summary['rule_domain'] ?? null,
             'scope' => is_array($summary['scope'] ?? null) ? $summary['scope'] : [],
             'document' => is_array($summary['document'] ?? null) ? $summary['document'] : [],
-            'sections' => is_array($summary['sections'] ?? null) ? array_values($summary['sections']) : [],
+            'sections' => $this->transformSections($sections),
             'found_required_section_keys' => is_array($summary['found_required_section_keys'] ?? null)
                 ? array_values($summary['found_required_section_keys'])
                 : [],
@@ -47,5 +48,53 @@ class AbaExtractionResource extends JsonResource
             'errors' => is_array($summary['errors'] ?? null) ? array_values($summary['errors']) : [],
             'raw_structure' => is_array($summary['raw_structure'] ?? null) ? $summary['raw_structure'] : [],
         ];
+    }
+
+    /**
+     * @param  array<int, array<string,mixed>>  $sections
+     * @return array<int, array<string,mixed>>
+     */
+    private function transformSections(array $sections): array
+    {
+        return array_values(array_map(
+            fn (array $section): array => $this->transformSection($section),
+            $sections,
+        ));
+    }
+
+    /**
+     * @param  array<string,mixed>  $section
+     * @return array<string,mixed>
+     */
+    private function transformSection(array $section): array
+    {
+        if ((string) ($section['key'] ?? '') !== 'title_page') {
+            return $section;
+        }
+
+        $titlePage = is_array($section['title_page'] ?? null) ? $section['title_page'] : [];
+        $images = is_array($titlePage['images'] ?? null) ? array_values($titlePage['images']) : [];
+        $titlePage['images'] = array_values(array_map(
+            fn (array $image, int $index): array => $this->transformTitlePageImage($image, $index),
+            $images,
+            array_keys($images),
+        ));
+        $section['title_page'] = $titlePage;
+
+        return $section;
+    }
+
+    /**
+     * @param  array<string,mixed>  $image
+     * @return array<string,mixed>
+     */
+    private function transformTitlePageImage(array $image, int $index): array
+    {
+        $path = trim((string) ($image['asset_path'] ?? ''));
+        $image['url'] = $path !== '' && (bool) ($image['asset_available'] ?? false) && (bool) ($image['ui_displayable'] ?? false)
+            ? '/api/admin/abas/'.$this->aba_id.'/extraction-runs/'.$this->id.'/title-page-assets/'.$index
+            : null;
+
+        return $image;
     }
 }

@@ -3,11 +3,11 @@
 namespace Database\Seeders;
 
 use App\Models\Licence;
+use App\Models\Register;
+use App\Models\RegisterDate;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
-use App\Models\Register;
-use App\Models\RegisterDate;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudentEntry;
@@ -74,6 +74,12 @@ class E2eSeeder extends Seeder
             ['school_id' => $school->id],
             [
                 'active_schoolyear_id' => $schoolyear->id,
+                'register_visible_admin' => true,
+                'register_visible_user' => true,
+                'tutoring_visible_admin' => true,
+                'tutoring_visible_user' => true,
+                'teaching_visible_admin' => true,
+                'teaching_visible_user' => true,
                 'tutoring_student_must_be_confirmed' => false,
                 'tutoring_confirmer_email' => null,
                 'tutoring_max_offers_per_student' => 0,

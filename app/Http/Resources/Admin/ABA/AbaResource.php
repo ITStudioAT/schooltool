@@ -19,11 +19,14 @@ class AbaResource extends JsonResource
         return [
             'id' => $this->id,
             'school_id' => $this->school_id,
+            'school_name' => $this->school?->long_name,
+            'school_short_name' => $this->school?->short_name,
             'schoolyear_id' => $this->schoolyear_id,
             'user_id' => $this->user_id,
             'title' => $this->title,
             'student_name' => $this->student_name,
             'student_class' => $this->student_class,
+            'title_page_overrides' => is_array($this->title_page_overrides) ? $this->title_page_overrides : [],
             'schoolyear_name' => $this->schoolyear?->name,
             'created_on' => $this->created_on?->toDateString(),
             'evaluated_on' => $this->evaluated_on?->toDateString(),
@@ -35,6 +38,21 @@ class AbaResource extends JsonResource
 
                 return $run ? (new AbaExtractionResource($run))->toArray($request) : null;
             }),
+            'next_aba' => $this->when(
+                $this->relationLoaded('nextNavigationAba'),
+                function () {
+                    $nextAba = $this->getRelation('nextNavigationAba');
+
+                    if (! $nextAba) {
+                        return null;
+                    }
+
+                    return [
+                        'id' => (int) $nextAba->id,
+                        'title' => $nextAba->title,
+                    ];
+                }
+            ),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

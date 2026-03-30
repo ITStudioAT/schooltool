@@ -18,21 +18,59 @@ describe('ModuleStatusesCard', () => {
         expect(source).toContain('module-status-card__toggle--test')
         expect(source).toContain('module-status-card__toggle--soon')
         expect(source).not.toContain('>Speichern<')
+        expect(source).toContain('module_rows')
+        expect(source).not.toContain('const MODULE_ROWS = [')
+    })
+
+    it('builds visible rows from the stored module rows payload', () => {
+        const methods = (ModuleStatusesCard as any).methods
+        const context = {
+            moduleRows: [],
+        }
+
+        methods.syncModuleRowsFromStore.call(context, {
+            module_rows: [
+                {
+                    key: 'aba',
+                    label: 'ABA',
+                    meta: 'Auswerten von ABAs',
+                    adminVisibleField: 'aba_visible_admin',
+                    userVisibleField: 'aba_visible_user',
+                    userTestModeField: 'aba_user_test_mode',
+                    userComingSoonField: 'aba_user_comming_soon',
+                },
+            ],
+        })
+
+        expect(context.moduleRows).toEqual([
+            {
+                key: 'aba',
+                label: 'ABA',
+                meta: 'Auswerten von ABAs',
+                adminVisibleField: 'aba_visible_admin',
+                userVisibleField: 'aba_visible_user',
+                userTestModeField: 'aba_user_test_mode',
+                userComingSoonField: 'aba_user_comming_soon',
+            },
+        ])
     })
 
     it('keeps the user switches mutually exclusive', () => {
         const methods = (ModuleStatusesCard as any).methods
         const item = {
+            adminVisibleField: 'register_visible_admin',
             userVisibleField: 'register_visible_user',
             userTestModeField: 'register_user_test_mode',
             userComingSoonField: 'register_user_comming_soon',
         }
         const context = {
             form: {
+                register_visible_admin: true,
                 register_visible_user: false,
                 register_user_test_mode: false,
                 register_user_comming_soon: false,
             },
+            save: vi.fn(),
         }
 
         methods.setUserVisible.call(context, item, true)

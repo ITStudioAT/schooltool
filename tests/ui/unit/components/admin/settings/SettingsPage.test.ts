@@ -82,13 +82,17 @@ describe('Admin settings page', () => {
         expect(items.map((item: { label: string }) => item.label)).toEqual(['Alle Lizenzen', 'Lizenzvergaben'])
     })
 
-    it('builds the general sub navigation with the module visibility entry', () => {
+    it('builds the general sub navigation with module visibility and licences', () => {
         const items = (Settings as any).computed.generalNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['module_visibility'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['module_visibility', 'licences'])
         expect(items[0]).toMatchObject({
             key: 'module_visibility',
             label: 'Sichtbarkeit Modul',
+        })
+        expect(items[1]).toMatchObject({
+            key: 'licences',
+            label: 'Lizenzen',
         })
     })
 
@@ -313,9 +317,18 @@ describe('Admin settings page', () => {
         expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
         expect(container.querySelector('.settings-general-subnav')).not.toBeNull()
         expect(screen.getByText('Sichtbarkeit Modul')).toBeInTheDocument()
+        expect(screen.getByText('Lizenzen')).toBeInTheDocument()
         expect(screen.getByText('ModuleStatusesCard Component')).toBeInTheDocument()
         expect(screen.queryByText('Schools Component')).not.toBeInTheDocument()
         expect(screen.getByText('Lizenzen Modelle')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByText('Lizenzen'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Licences Component')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-general-wrap')).not.toBeNull()
 
         await fireEvent.click(screen.getByText('Schulen'))
 
@@ -351,10 +364,12 @@ describe('Admin settings page', () => {
     it('includes the module status card on the super-admin general panel source', () => {
         const source = readFileSync('resources/js/pages/admin/settings/Settings.vue', 'utf8')
 
-        expect(source).toContain('<ModuleStatusesCard />')
+        expect(source).toContain("<ModuleStatusesCard v-if=\"general_action === 'module_visibility'\" />")
+        expect(source).toContain("<Licences v-else-if=\"general_action === 'licences'\" />")
         expect(source).toContain("import ModuleStatusesCard from '@/pages/admin/settings/components/ModuleStatusesCard.vue'")
         expect(source).toContain('generalNavigationItems')
         expect(source).toContain('Sichtbarkeit Modul')
+        expect(source).toContain("key: 'licences'")
     })
 
     it('renders the overtaken schoolyears and users views on the admin settings tab', async () => {
@@ -646,6 +661,11 @@ describe('Admin settings page', () => {
                 stubs: {
                     ...vuetifyStubs,
                     AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RestaurantSettings: {
+                        props: ['embedded', 'panel'],
+                        template: '<div>RestaurantSettings {{ embedded ? "embedded" : "full" }} {{ panel }}</div>',
+                    },
+                    Profile: { template: '<div>Profile Component</div>' },
                 },
             },
         })
@@ -742,9 +762,8 @@ describe('Admin settings page', () => {
             },
         })
 
-        expect(screen.queryByText('Admin')).not.toBeInTheDocument()
         expect(screen.queryByText('Super-Admin')).not.toBeInTheDocument()
-        expect(container.querySelector('.settings-subnav')).toBeNull()
+        expect(container.querySelector('.settings-subnav')).not.toBeNull()
         expect(screen.getAllByText('Unterricht').length).toBeGreaterThan(0)
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
     })
@@ -782,11 +801,14 @@ describe('Admin settings page', () => {
                 stubs: {
                     ...vuetifyStubs,
                     AdminSectionHero: { template: '<div>Admin Hero</div>' },
+                    RestaurantSettings: {
+                        props: ['embedded', 'panel'],
+                        template: '<div>RestaurantSettings {{ embedded ? "embedded" : "full" }} {{ panel }}</div>',
+                    },
                 },
             },
         })
 
-        expect(screen.queryByText('Restaurant')).not.toBeInTheDocument()
         expect(replace).toHaveBeenCalledWith('/admin/settings?tab=teaching')
     })
 

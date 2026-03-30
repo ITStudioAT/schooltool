@@ -21,6 +21,11 @@ class AbaUpdateRequest extends FormRequest
             'data.title' => ['sometimes', 'required', 'string', 'max:255'],
             'data.student_name' => ['sometimes', 'required', 'string', 'max:255'],
             'data.student_class' => ['nullable', 'string', 'max:100'],
+            'data.title_page_overrides' => ['sometimes', 'array'],
+            'data.title_page_overrides.subtitle' => ['nullable', 'string', 'max:500'],
+            'data.title_page_overrides.advisor' => ['nullable', 'string', 'max:255'],
+            'data.title_page_overrides.school_full' => ['nullable', 'string', 'max:500'],
+            'data.title_page_overrides.date' => ['nullable', 'string', 'max:255'],
             'data.schoolyear_id' => [
                 'sometimes',
                 'required',

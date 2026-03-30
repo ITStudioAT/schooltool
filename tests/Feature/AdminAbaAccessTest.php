@@ -2,6 +2,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -115,6 +116,26 @@ it('shows and allows aba for aba_teacher with active aba licence', function () {
     $menuTitles = collect($config['menu'])->pluck('title');
     expect($menuTitles)->toContain('ABA');
     expect((bool) data_get($config, 'capabilities.aba'))->toBeTrue();
+});
+
+it('hides and denies aba when module visibility is disabled app-wide', function () {
+    attachActiveAbaLicence($this->school, $this->abaLicence);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'aba_visible_admin' => false,
+        'aba_visible_user' => true,
+    ]);
+
+    $user = createAbaUser($this->school, $this->schoolyearA, 'aba_teacher');
+
+    $this->actingAs($user);
+
+    $this->get('/admin/aba')->assertForbidden();
+
+    $config = $this->getJson('/api/admin/config')->assertSuccessful()->json();
+    $menuTitles = collect($config['menu'])->pluck('title');
+    expect($menuTitles)->not->toContain('ABA');
+    expect((bool) data_get($config, 'capabilities.aba'))->toBeFalse();
 });
 
 it('returns the current selected schoolyear in admin config', function () {
@@ -284,7 +305,8 @@ it('ships an aba detail page with extraction access and back navigation', functi
         ->toContain('Extraktion starten')
         ->toContain('await axios.get(`/api/admin/abas/${this.abaId}`)')
         ->toContain('await axios.get(`/api/admin/abas/${this.abaId}/extraction`)')
-        ->toContain('await axios.post(`/api/admin/abas/${this.abaId}/extraction`)')
+        ->toContain('overwrite_existing_fields: this.overwriteExistingExtractionFields')
+        ->toContain('await axios.post(`/api/admin/abas/${this.abaId}/extraction`, {')
         ->toContain("\$router.push('/admin/aba')");
 });
 

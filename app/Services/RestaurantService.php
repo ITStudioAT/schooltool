@@ -15,7 +15,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -77,11 +76,11 @@ class RestaurantService
             'allergen_options' => $this->configuredAllergenOptions(),
             'allergen_suggestions' => $this->extractAllergenSuggestions($foods),
             'general_settings' => $this->generalSettingsForUser($authUser),
-            'can_manage_general_settings' => $this->supportsRestaurantGeneralSettings(),
+            'can_manage_general_settings' => true,
             'user_settings' => $this->userSettingsForUser($authUser),
-            'can_manage_user_settings' => $this->supportsRestaurantFoodsPaginationSettings(),
+            'can_manage_user_settings' => true,
             'online_settings' => $this->onlineSettingsForUser($authUser),
-            'can_manage_online_settings' => $this->supportsRestaurantOnlineSettings(),
+            'can_manage_online_settings' => true,
             'stats' => [
                 'foods_count' => $foods->count(),
                 'categories_count' => $categories->count(),
@@ -103,18 +102,11 @@ class RestaurantService
 
     public function generalSettingsForUser(User $user): array
     {
-        if (! $this->supportsRestaurantGeneralSettings()) {
-            return self::DEFAULT_GENERAL_SETTINGS;
-        }
-
         return $this->normalizeGeneralSettings($this->schoolToolForUser($user));
     }
 
     public function updateGeneralSettings(User $user, array $settings): array
     {
-        if (! $this->supportsRestaurantGeneralSettings()) {
-            abort(500, 'Allgemeine Restaurant-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
-        }
 
         $mustConfirmNewUsers = (bool) ($settings['restaurant_new_users_must_confirm_email'] ?? false);
         $schoolTool = $this->schoolToolForUser($user);
@@ -132,10 +124,6 @@ class RestaurantService
 
     public function updateUserSettings(User $user, int $restaurantFoodsPaginationNumber): array
     {
-        if (! $this->supportsRestaurantFoodsPaginationSettings()) {
-            abort(500, 'Benutzereinstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
-        }
-
         $normalized = max(1, min(200, $restaurantFoodsPaginationNumber));
         $user->restaurant_foods_pagination_number = $normalized;
         $user->save();
@@ -145,20 +133,11 @@ class RestaurantService
 
     public function onlineSettingsForUser(User $user): array
     {
-        if (! $this->supportsRestaurantOnlineSettings()) {
-            return self::DEFAULT_ONLINE_SETTINGS;
-        }
-
-        $schoolTool = $this->schoolToolForUser($user);
-
-        return $this->normalizeOnlineSettings($schoolTool);
+        return $this->normalizeOnlineSettings($this->schoolToolForUser($user));
     }
 
     public function updateOnlineSettings(User $user, array $settings): array
     {
-        if (! $this->supportsRestaurantOnlineSettings()) {
-            abort(500, 'Online-Einstellungen sind noch nicht verfügbar. Bitte Migration ausführen.');
-        }
 
         $normalized = [
             'visibility_start_mode' => $this->normalizeVisibilityStartMode($settings['visibility_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode']),
@@ -216,6 +195,31 @@ class RestaurantService
             'visible_menu_plans_count' => $plans->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanVisibleNow($plan, $onlineSettings, $now))->count(),
             'orderable_menu_plans_count' => $plans->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now))->count(),
         ];
+    }
+
+    public function visibleMenuPlansForSchool(?School $school): Collection
+    {
+        if (! $school) {
+            return collect();
+        }
+
+        $onlineSettings = $this->normalizeOnlineSettings($school->schoolTool);
+        $now = now();
+
+        $plans = RestaurantMenuPlan::query()
+            ->where('school_id', $school->id)
+            ->where('is_available', true)
+            ->with(['entries' => fn ($q) => $q->orderBy('plan_date'), 'entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
+            ->orderBy('start_date')
+            ->get();
+
+        return $plans->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanVisibleNow($plan, $onlineSettings, $now)
+            || $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now)
+        )->each(function (RestaurantMenuPlan $plan) use ($onlineSettings, $now): void {
+            $isOrderable = $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now);
+            $plan->setAttribute('is_orderable', $isOrderable);
+            $plan->setAttribute('orderable_until', $isOrderable ? $this->orderEndDateTime($plan, $onlineSettings)->toIso8601String() : null);
+        })->values();
     }
 
     public function foodsForUser(User $authUser): Collection
@@ -672,7 +676,13 @@ class RestaurantService
     {
         $normalized = trim((string) $value);
 
-        return $normalized === '' ? null : $normalized;
+        if ($normalized === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/<a[^>]*href=["\']mailto:[^"\']*["\'][^>]*>(.*?)<\/a>/i', '$1', $normalized);
+
+        return $normalized;
     }
 
     private function normalizePrice(mixed $value): ?string
@@ -684,59 +694,13 @@ class RestaurantService
         return number_format((float) $value, 1, '.', '');
     }
 
-    private function supportsRestaurantFoodsPaginationSettings(): bool
-    {
-        return Schema::hasTable('users') && Schema::hasColumn('users', 'restaurant_foods_pagination_number');
-    }
-
     private function restaurantFoodsPaginationNumberForUser(User $user): int
     {
         $configValue = (int) config('schooltool.pagination', self::DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER);
         $fallback = $configValue > 0 ? $configValue : self::DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER;
-
-        if (! $this->supportsRestaurantFoodsPaginationSettings()) {
-            return $fallback;
-        }
-
         $value = (int) ($user->restaurant_foods_pagination_number ?? 0);
 
         return $value > 0 ? min(200, $value) : $fallback;
-    }
-
-    private function supportsRestaurantOnlineSettings(): bool
-    {
-        if (! Schema::hasTable('school_tools')) {
-            return false;
-        }
-
-        return collect([
-            'restaurant_menu_visibility_start_mode',
-            'restaurant_menu_visibility_start_week_offset',
-            'restaurant_menu_visibility_start_day_of_week',
-            'restaurant_menu_visibility_start_time',
-            'restaurant_menu_order_start_mode',
-            'restaurant_menu_order_start_week_offset',
-            'restaurant_menu_order_start_day_of_week',
-            'restaurant_menu_order_start_time',
-            'restaurant_menu_order_end_week_offset',
-            'restaurant_menu_order_end_day_of_week',
-            'restaurant_menu_order_end_time',
-            'restaurant_menu_visibility_end_mode',
-        ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
-    }
-
-    private function supportsRestaurantGeneralSettings(): bool
-    {
-        if (! Schema::hasTable('school_tools')) {
-            return false;
-        }
-
-        return collect([
-            'restaurant_service_email',
-            'restaurant_new_users_must_confirm_email',
-            'restaurant_new_users_confirmer_email',
-            'restaurant_user_information_intro_html',
-        ])->every(fn (string $column): bool => Schema::hasColumn('school_tools', $column));
     }
 
     private function schoolToolForUser(User $user): SchoolTool

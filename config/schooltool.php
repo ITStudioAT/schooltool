@@ -13,11 +13,6 @@ return [
     'sa_email' => env('SA_EMAIL', ''),
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
-    'register_active' => (bool) env('REGISTER_ACTIVE', true),
-    'tutoring_active' => (bool) env('TUTORING_ACTIVE', false),
-    'teaching_active' => (bool) env('TEACHING_ACTIVE', false),
-    'materials_active' => (bool) env('MATERIALS_ACTIVE', false),
-    'restaurant_active' => (bool) env('RESTAURANT_ACTIVE', false),
     'materials_restore_deleted_cards_limit' => (int) env('MATERIALS_RESTORE_DELETED_CARDS_LIMIT', 5),
     'materials_default_types' => [
         'Arbeitsblatt',

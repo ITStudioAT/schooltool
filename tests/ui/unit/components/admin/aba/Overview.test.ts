@@ -8,6 +8,11 @@ describe('ABA overview list actions', () => {
         const overviewContent = fs.readFileSync(overviewPath, 'utf8')
 
         expect(overviewContent).toContain('#{{ aba.id }}')
+        expect(overviewContent.indexOf('#{{ aba.id }}')).toBeLessThan(overviewContent.indexOf('{{ aba.title }}'))
+        expect(overviewContent).toContain('class="aba-title-main"')
+        expect(overviewContent).toContain('class="aba-title-value"')
+        expect(overviewContent).toContain('justify-content: flex-start;')
+        expect(overviewContent).toContain('text-align: left;')
     })
 
     it('keeps file management actions and removes legacy analysis actions', () => {
@@ -16,6 +21,7 @@ describe('ABA overview list actions', () => {
 
         expect(overviewContent).toContain('Details')
         expect(overviewContent).toContain('Dateien')
+        expect(overviewContent).toContain(":color=\"mainAttachmentFor(aba) ? 'primary' : 'error'\"")
         expect(overviewContent).toContain('Upload')
         expect(overviewContent).toContain('/admin/aba/details/${abaId}')
         expect(overviewContent).toContain('/api/admin/aba/uploads/chunk')

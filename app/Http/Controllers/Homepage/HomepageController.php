@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Homepage;
 
 use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
+use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\Licence;
@@ -184,6 +185,18 @@ class HomepageController extends Controller
         }
 
         return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+    }
+
+    public function restaurantMenuPlans(Request $request, RestaurantService $restaurantService)
+    {
+        $schoolShort = $request->query('school');
+        $school = $schoolShort ? School::where('short_name', $schoolShort)->first() : null;
+
+        $plans = $restaurantService->visibleMenuPlansForSchool($school);
+
+        return response()->json([
+            'plans' => RestaurantMenuPlanResource::collection($plans),
+        ]);
     }
 
     public function logout()

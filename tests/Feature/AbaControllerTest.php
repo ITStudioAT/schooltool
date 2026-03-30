@@ -200,6 +200,41 @@ it('updates an existing aba through edit endpoint', function () {
     ]);
 });
 
+it('merges title page overrides when updating an existing aba', function () {
+    $user = createAbaTeacherUser($this->school, $this->schoolyearA);
+    $this->actingAs($user, 'sanctum');
+
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title_page_overrides' => [
+            'advisor' => 'Mag. Erika Muster',
+        ],
+    ]);
+
+    $this->putJson("/api/admin/abas/{$aba->id}", [
+        'data' => [
+            'title_page_overrides' => [
+                'subtitle' => 'Eine Dokumentation über den einzigen südkoreanischen Regisseur mit einem Oscar',
+                'school_full' => 'Christian Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg',
+                'date' => 'März 2026',
+            ],
+        ],
+    ])->assertSuccessful()
+        ->assertJsonPath('title_page_overrides.advisor', 'Mag. Erika Muster')
+        ->assertJsonPath('title_page_overrides.subtitle', 'Eine Dokumentation über den einzigen südkoreanischen Regisseur mit einem Oscar')
+        ->assertJsonPath('title_page_overrides.school_full', 'Christian Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg')
+        ->assertJsonPath('title_page_overrides.date', 'März 2026');
+
+    expect($aba->fresh()->title_page_overrides)->toMatchArray([
+        'advisor' => 'Mag. Erika Muster',
+        'subtitle' => 'Eine Dokumentation über den einzigen südkoreanischen Regisseur mit einem Oscar',
+        'school_full' => 'Christian Doppler-Gymnasium, Franz-Josef-Kai 41, 5020 Salzburg',
+        'date' => 'März 2026',
+    ]);
+});
+
 it('uploads a main document via chunk flow', function () {
     $user = createAbaTeacherUser($this->school, $this->schoolyearA);
     $this->actingAs($user, 'sanctum');
@@ -508,4 +543,66 @@ it('does not expose legacy analysis runs as latest extraction on aba details', f
     $this->getJson("/api/admin/abas/{$aba->id}")
         ->assertSuccessful()
         ->assertJsonPath('latest_extraction', null);
+});
+
+it('exposes the next aba by ascending id and wraps to the first aba when reaching the end', function () {
+    $user = createAbaTeacherUser($this->school, $this->schoolyearA);
+    $this->actingAs($user, 'sanctum');
+
+    $firstAba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title' => 'Erste ABA',
+    ]);
+    $nextAba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title' => 'Nächste ABA',
+    ]);
+    $lastAba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title' => 'Letzte ABA',
+    ]);
+    Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearB->id,
+        'user_id' => $user->id,
+        'title' => 'Anderes Schuljahr',
+    ]);
+
+    $this->getJson("/api/admin/abas/{$firstAba->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('next_aba.id', $nextAba->id)
+        ->assertJsonPath('next_aba.title', 'Nächste ABA');
+
+    $this->getJson("/api/admin/abas/{$nextAba->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('next_aba.id', $lastAba->id)
+        ->assertJsonPath('next_aba.title', 'Letzte ABA');
+
+    $this->getJson("/api/admin/abas/{$lastAba->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('next_aba.id', $firstAba->id)
+        ->assertJsonPath('next_aba.title', 'Erste ABA');
+});
+
+it('wraps next aba navigation to the current aba when it is the only visible entry', function () {
+    $user = createAbaTeacherUser($this->school, $this->schoolyearA);
+    $this->actingAs($user, 'sanctum');
+
+    $aba = Aba::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyearA->id,
+        'user_id' => $user->id,
+        'title' => 'Einzige ABA',
+    ]);
+
+    $this->getJson("/api/admin/abas/{$aba->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('next_aba.id', $aba->id)
+        ->assertJsonPath('next_aba.title', 'Einzige ABA');
 });

@@ -323,6 +323,22 @@ test('admin school resource exposes admin billing overrides for school licences'
 });
 
 test('school tool resource maps tutoring settings', function () {
+    Licence::query()->create([
+        'name' => 'ABA',
+        'long_name' => 'ABA',
+        'is_selectable' => true,
+    ]);
+    Licence::query()->create([
+        'name' => 'Anmeldetool',
+        'long_name' => 'Anmeldetool',
+        'is_selectable' => true,
+    ]);
+    Licence::query()->create([
+        'name' => 'Nachhilfetool',
+        'long_name' => 'Nachhilfetool',
+        'is_selectable' => true,
+    ]);
+
     $schoolTool = SchoolTool::create([
         'school_id' => School::factory()->create()->id,
         'register_visible_admin' => true,
@@ -345,6 +361,10 @@ test('school tool resource maps tutoring settings', function () {
         'restaurant_visible_user' => true,
         'restaurant_user_test_mode' => false,
         'restaurant_user_comming_soon' => false,
+        'aba_visible_admin' => true,
+        'aba_visible_user' => true,
+        'aba_user_test_mode' => false,
+        'aba_user_comming_soon' => false,
         'tutoring_student_must_be_confirmed' => 1,
         'tutoring_confirmer_email' => 'mentor@example.test',
         'tutoring_max_offers_per_student' => 3,
@@ -354,6 +374,8 @@ test('school tool resource maps tutoring settings', function () {
     $data = (new SchoolToolResource($schoolTool))->toArray(request());
 
     expect($data['tutoring_student_must_be_confirmed'])->toBeTrue()
+        ->and($data['module_rows'])->toBeArray()
+        ->and(collect($data['module_rows'])->pluck('key')->all())->toBe(['aba', 'register', 'tutoring'])
         ->and($data['register_visible_admin'])->toBeTrue()
         ->and($data['register_visible_user'])->toBeFalse()
         ->and($data['register_user_comming_soon'])->toBeTrue()
@@ -361,6 +383,9 @@ test('school tool resource maps tutoring settings', function () {
         ->and($data['teaching_visible_user'])->toBeTrue()
         ->and($data['materials_visible_admin'])->toBeFalse()
         ->and($data['restaurant_visible_user'])->toBeTrue()
+        ->and($data['aba_visible_admin'])->toBeTrue()
+        ->and(collect($data['module_rows'])->firstWhere('key', 'register')['label'] ?? null)->toBe('Anmeldetool')
+        ->and(collect($data['module_rows'])->firstWhere('key', 'aba')['label'] ?? null)->toBe('ABA')
         ->and($data['tutoring_confirmer_email'])->toBe('mentor@example.test')
         ->and($data['may_visible_for_other_schools'])->toBeTrue();
 });

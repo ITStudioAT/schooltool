@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -104,7 +105,7 @@ return new class extends Migration
 
     private function defaultIsActive(string $moduleKey): bool
     {
-        return (bool) config(sprintf('schooltool.%s_active', $moduleKey), false);
+        return SchoolToolModuleStatusService::moduleEnabledByDefault($moduleKey);
     }
 
     /**

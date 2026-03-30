@@ -300,10 +300,12 @@ class AbaLocalDocumentTextExtractor
                 return $candidate;
             }
 
+            $numberingDefinitions = $this->extractWordNumberingDefinitions($zip);
             $lines = [];
             $outline = [];
             $tocLines = [];
             $lineNumber = 0;
+            $numberingState = [];
 
             foreach ($blocks as $block) {
                 $localName = mb_strtolower((string) ($block->localName ?? $block->nodeName));
@@ -324,6 +326,8 @@ class AbaLocalDocumentTextExtractor
                     outline: $outline,
                     tocLines: $tocLines,
                     lineNumber: $lineNumber,
+                    numberingDefinitions: $numberingDefinitions,
+                    numberingState: $numberingState,
                 );
             }
 
@@ -347,6 +351,8 @@ class AbaLocalDocumentTextExtractor
      * @param  array<int, string>  $lines
      * @param  array<int, array<string,mixed>>  $outline
      * @param  array<int, int>  $tocLines
+     * @param  array<string,mixed>  $numberingDefinitions
+     * @param  array<string,array<int,int>>  $numberingState
      */
     private function appendWordParagraphLine(
         \DOMXPath $xpath,
@@ -355,6 +361,8 @@ class AbaLocalDocumentTextExtractor
         array &$outline,
         array &$tocLines,
         int &$lineNumber,
+        array $numberingDefinitions,
+        array &$numberingState,
     ): void {
         $rawText = trim($this->extractTextFromWordParagraph($xpath, $paragraph));
         if ($rawText === '') {
@@ -364,11 +372,13 @@ class AbaLocalDocumentTextExtractor
         $lineNumber++;
         $styleValue = trim((string) $xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraph));
         $outlineLevelValue = trim((string) $xpath->evaluate('string(w:pPr/w:outlineLvl/@w:val)', $paragraph));
-        $listLevel = $this->resolveParagraphListLevel($xpath, $paragraph);
+        $listInfo = $this->resolveParagraphListInfo($xpath, $paragraph, $numberingDefinitions, $numberingState);
+        $listLevel = is_numeric($listInfo['level'] ?? null) ? (int) ($listInfo['level'] ?? null) : null;
+        $listPrefix = is_string($listInfo['prefix'] ?? null) ? trim((string) ($listInfo['prefix'] ?? null)) : null;
         $hasHeadingStyle = $this->paragraphUsesHeadingStyle($styleValue, $outlineLevelValue);
         $preserveAsListLine = $listLevel !== null && ! $hasHeadingStyle;
         $text = $preserveAsListLine
-            ? $this->applyListPrefixToText($rawText, $listLevel)
+            ? $this->applyListPrefixToText($rawText, $listLevel, $listPrefix)
             : $rawText;
         $alignment = $this->resolveParagraphAlignment($xpath, $paragraph);
         $indentLeftTwips = $this->resolveParagraphIndentLeftTwips($xpath, $paragraph);
@@ -384,7 +394,7 @@ class AbaLocalDocumentTextExtractor
         );
         $knownType = $preserveAsListLine ? null : $this->knownSectionType($rawText);
         $isTocStyle = $this->isWordTocStyle($styleValue);
-        $isTocEntry = $this->looksLikeTocEntry($rawText);
+        $isTocEntry = $this->looksLikeTocEntry($text);
         $isTocLine = $isTocStyle || $isTocEntry;
 
         if ($isTocLine) {
@@ -1064,8 +1074,17 @@ class AbaLocalDocumentTextExtractor
         return trim($text);
     }
 
-    private function resolveParagraphListLevel(\DOMXPath $xpath, \DOMNode $paragraph): ?int
-    {
+    /**
+     * @param  array<string,mixed>  $numberingDefinitions
+     * @param  array<string,array<int,int>>  $numberingState
+     * @return array{level:int,prefix:string|null}|null
+     */
+    private function resolveParagraphListInfo(
+        \DOMXPath $xpath,
+        \DOMNode $paragraph,
+        array $numberingDefinitions,
+        array &$numberingState,
+    ): ?array {
         $numId = trim((string) $xpath->evaluate('string(w:pPr/w:numPr/w:numId/@w:val)', $paragraph));
         if ($numId === '') {
             return null;
@@ -1073,10 +1092,15 @@ class AbaLocalDocumentTextExtractor
 
         $levelValue = trim((string) $xpath->evaluate('string(w:pPr/w:numPr/w:ilvl/@w:val)', $paragraph));
         if (! is_numeric($levelValue)) {
-            return 0;
+            $level = 0;
+        } else {
+            $level = max(0, min(8, (int) $levelValue));
         }
 
-        return max(0, min(8, (int) $levelValue));
+        return [
+            'level' => $level,
+            'prefix' => $this->resolveWordListPrefix($numId, $level, $numberingDefinitions, $numberingState),
+        ];
     }
 
     private function paragraphUsesHeadingStyle(string $styleValue, string $outlineLevelValue): bool
@@ -1094,7 +1118,7 @@ class AbaLocalDocumentTextExtractor
             || preg_match('/^h[1-9]$/iu', $styleNormalized) === 1;
     }
 
-    private function applyListPrefixToText(string $text, int $listLevel): string
+    private function applyListPrefixToText(string $text, int $listLevel, ?string $prefix = null): string
     {
         $value = trim($text);
         if ($value === '') {
@@ -1105,7 +1129,263 @@ class AbaLocalDocumentTextExtractor
             return $value;
         }
 
+        $resolvedPrefix = trim((string) $prefix);
+        if ($resolvedPrefix !== '') {
+            return str_repeat('  ', max(0, min(8, $listLevel))).$resolvedPrefix.' '.$value;
+        }
+
         return str_repeat('  ', max(0, min(8, $listLevel))).'- '.$value;
+    }
+
+    /**
+     * @return array{
+     *   abstract_nums:array<string, array<int, array{start:int,num_fmt:string,lvl_text:string}>>,
+     *   nums:array<string, array{abstract_num_id:string,levels:array<int, array{start:int,num_fmt:string,lvl_text:string}>}>
+     * }
+     */
+    private function extractWordNumberingDefinitions(\ZipArchive $zip): array
+    {
+        $definitions = [
+            'abstract_nums' => [],
+            'nums' => [],
+        ];
+
+        $xml = $zip->getFromName('word/numbering.xml');
+        if (! is_string($xml) || trim($xml) === '') {
+            return $definitions;
+        }
+
+        $document = new \DOMDocument('1.0', 'UTF-8');
+        if (! @$document->loadXML($xml, LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING)) {
+            return $definitions;
+        }
+
+        $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+        foreach ($xpath->query('//w:abstractNum') ?: [] as $abstractNumNode) {
+            $abstractNumId = trim((string) $xpath->evaluate('string(@w:abstractNumId)', $abstractNumNode));
+            if ($abstractNumId === '') {
+                continue;
+            }
+
+            $levels = [];
+            foreach ($xpath->query('./w:lvl', $abstractNumNode) ?: [] as $levelNode) {
+                $levelIndex = trim((string) $xpath->evaluate('string(@w:ilvl)', $levelNode));
+                if (! is_numeric($levelIndex)) {
+                    continue;
+                }
+
+                $levels[(int) $levelIndex] = [
+                    'start' => $this->resolveWordNumberingStartValue($xpath, $levelNode, 'string(w:start/@w:val)'),
+                    'num_fmt' => trim((string) $xpath->evaluate('string(w:numFmt/@w:val)', $levelNode)) ?: 'decimal',
+                    'lvl_text' => trim((string) $xpath->evaluate('string(w:lvlText/@w:val)', $levelNode)),
+                ];
+            }
+
+            if ($levels !== []) {
+                $definitions['abstract_nums'][$abstractNumId] = $levels;
+            }
+        }
+
+        foreach ($xpath->query('//w:num') ?: [] as $numNode) {
+            $numId = trim((string) $xpath->evaluate('string(@w:numId)', $numNode));
+            if ($numId === '') {
+                continue;
+            }
+
+            $levels = [];
+            foreach ($xpath->query('./w:lvlOverride', $numNode) ?: [] as $overrideNode) {
+                $levelIndex = trim((string) $xpath->evaluate('string(@w:ilvl)', $overrideNode));
+                if (! is_numeric($levelIndex)) {
+                    continue;
+                }
+
+                $level = (int) $levelIndex;
+                $start = $this->resolveWordNumberingStartValue($xpath, $overrideNode, 'string(w:startOverride/@w:val)');
+                $numFmt = trim((string) $xpath->evaluate('string(w:lvl/w:numFmt/@w:val)', $overrideNode));
+                $lvlText = trim((string) $xpath->evaluate('string(w:lvl/w:lvlText/@w:val)', $overrideNode));
+
+                if ($start === 1 && $numFmt === '' && $lvlText === '') {
+                    continue;
+                }
+
+                $levels[$level] = [
+                    'start' => $start,
+                    'num_fmt' => $numFmt !== '' ? $numFmt : 'decimal',
+                    'lvl_text' => $lvlText,
+                ];
+            }
+
+            $definitions['nums'][$numId] = [
+                'abstract_num_id' => trim((string) $xpath->evaluate('string(w:abstractNumId/@w:val)', $numNode)),
+                'levels' => $levels,
+            ];
+        }
+
+        return $definitions;
+    }
+
+    private function resolveWordNumberingStartValue(\DOMXPath $xpath, \DOMNode $node, string $expression): int
+    {
+        $startValue = trim((string) $xpath->evaluate($expression, $node));
+
+        return is_numeric($startValue) ? max(1, (int) $startValue) : 1;
+    }
+
+    /**
+     * @param  array<string,mixed>  $numberingDefinitions
+     * @param  array<string,array<int,int>>  $numberingState
+     */
+    private function resolveWordListPrefix(
+        string $numId,
+        int $level,
+        array $numberingDefinitions,
+        array &$numberingState,
+    ): ?string {
+        $numDefinition = is_array($numberingDefinitions['nums'][$numId] ?? null)
+            ? $numberingDefinitions['nums'][$numId]
+            : null;
+        $levelDefinition = $this->resolveWordNumberingLevelDefinition($numDefinition, $level, $numberingDefinitions);
+        if (! is_array($levelDefinition)) {
+            return null;
+        }
+
+        $numberingState[$numId] = is_array($numberingState[$numId] ?? null)
+            ? $numberingState[$numId]
+            : [];
+
+        $start = max(1, (int) ($levelDefinition['start'] ?? 1));
+        $currentValue = $numberingState[$numId][$level] ?? null;
+        $numberingState[$numId][$level] = is_numeric($currentValue)
+            ? ((int) $currentValue + 1)
+            : $start;
+
+        foreach (array_keys($numberingState[$numId]) as $trackedLevel) {
+            if ((int) $trackedLevel > $level) {
+                unset($numberingState[$numId][$trackedLevel]);
+            }
+        }
+
+        $levelText = trim((string) ($levelDefinition['lvl_text'] ?? ''));
+        if ($levelText === '') {
+            $segments = [];
+            for ($index = 0; $index <= $level; $index++) {
+                if (! isset($numberingState[$numId][$index])) {
+                    continue;
+                }
+
+                $segments[] = (string) $numberingState[$numId][$index];
+            }
+
+            $fallback = implode('.', $segments);
+
+            return $fallback !== '' ? $fallback.'.' : null;
+        }
+
+        $resolved = preg_replace_callback(
+            '/%(\d+)/',
+            function (array $matches) use ($numDefinition, $numberingDefinitions, $numberingState, $numId): string {
+                $placeholderLevel = max(0, ((int) ($matches[1] ?? 1)) - 1);
+                if (! isset($numberingState[$numId][$placeholderLevel])) {
+                    return '';
+                }
+
+                $placeholderDefinition = $this->resolveWordNumberingLevelDefinition(
+                    $numDefinition,
+                    $placeholderLevel,
+                    $numberingDefinitions,
+                );
+                $numberFormat = is_array($placeholderDefinition)
+                    ? (string) ($placeholderDefinition['num_fmt'] ?? 'decimal')
+                    : 'decimal';
+
+                return $this->formatWordNumberingCounter((int) $numberingState[$numId][$placeholderLevel], $numberFormat);
+            },
+            $levelText,
+        );
+
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', $resolved ?? $levelText));
+
+        return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $numDefinition
+     * @param  array<string,mixed>  $numberingDefinitions
+     * @return array{start:int,num_fmt:string,lvl_text:string}|null
+     */
+    private function resolveWordNumberingLevelDefinition(?array $numDefinition, int $level, array $numberingDefinitions): ?array
+    {
+        if (is_array($numDefinition['levels'][$level] ?? null)) {
+            return $numDefinition['levels'][$level];
+        }
+
+        $abstractNumId = trim((string) ($numDefinition['abstract_num_id'] ?? ''));
+        if ($abstractNumId === '') {
+            return null;
+        }
+
+        return is_array($numberingDefinitions['abstract_nums'][$abstractNumId][$level] ?? null)
+            ? $numberingDefinitions['abstract_nums'][$abstractNumId][$level]
+            : null;
+    }
+
+    private function formatWordNumberingCounter(int $value, string $format): string
+    {
+        $normalizedFormat = mb_strtolower(trim($format));
+
+        return match ($normalizedFormat) {
+            'upperroman', 'roman' => $this->convertToRomanNumeral($value),
+            'lowerroman' => mb_strtolower($this->convertToRomanNumeral($value)),
+            'upperletter', 'alpha', 'upperalpha' => $this->convertToAlphabeticCounter($value, true),
+            'lowerletter', 'loweralpha' => $this->convertToAlphabeticCounter($value, false),
+            default => (string) max(1, $value),
+        };
+    }
+
+    private function convertToRomanNumeral(int $value): string
+    {
+        $number = max(1, $value);
+        $map = [
+            1000 => 'M',
+            900 => 'CM',
+            500 => 'D',
+            400 => 'CD',
+            100 => 'C',
+            90 => 'XC',
+            50 => 'L',
+            40 => 'XL',
+            10 => 'X',
+            9 => 'IX',
+            5 => 'V',
+            4 => 'IV',
+            1 => 'I',
+        ];
+
+        $result = '';
+        foreach ($map as $arabic => $roman) {
+            while ($number >= $arabic) {
+                $result .= $roman;
+                $number -= $arabic;
+            }
+        }
+
+        return $result;
+    }
+
+    private function convertToAlphabeticCounter(int $value, bool $uppercase): string
+    {
+        $number = max(1, $value);
+        $characters = '';
+
+        while ($number > 0) {
+            $number--;
+            $characters = chr(65 + ($number % 26)).$characters;
+            $number = intdiv($number, 26);
+        }
+
+        return $uppercase ? $characters : mb_strtolower($characters);
     }
 
     private function nodeIsInsideMarkupCompatibilityFallback(\DOMNode $node): bool

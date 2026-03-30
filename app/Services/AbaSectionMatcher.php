@@ -148,6 +148,12 @@ class AbaSectionMatcher
         usort($candidates, fn (array $left, array $right): int => $right['score'] <=> $left['score']);
 
         $best = $candidates[0];
+        $duplicateMatchCount = $this->duplicateMatchCount($rule, $candidates);
+        if ($duplicateMatchCount > 1) {
+            $best['detected_matches_count'] = $duplicateMatchCount;
+            $best['warnings'][] = $duplicateMatchCount.' Inhaltsverzeichnisse erkannt; angezeigt wird die passendste Variante.';
+        }
+
         $runnerUp = $candidates[1] ?? null;
         if (is_array($runnerUp) && abs((float) $best['score'] - (float) $runnerUp['score']) < 0.08) {
             $best['warnings'][] = 'Mehrere ähnliche Abschnittskandidaten erkannt.';
@@ -189,6 +195,7 @@ class AbaSectionMatcher
             'start_index' => $candidate['start_index'] ?? null,
             'end_index' => $candidate['end_index'] ?? null,
             'matched_section_keys' => $candidate['section_keys'] ?? [],
+            'detected_matches_count' => (int) ($candidate['detected_matches_count'] ?? ($candidate !== null ? 1 : 0)),
             'warnings' => $warnings,
         ];
     }
@@ -348,8 +355,36 @@ class AbaSectionMatcher
             'start_index' => $section['index'] ?? null,
             'end_index' => $section['index'] ?? null,
             'section_keys' => [$section['section_key']],
+            'section_type' => $section['section_type'] ?? null,
             'warnings' => array_values(array_unique($warnings)),
         ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $rule
+     * @param  array<int, array<string,mixed>>  $candidates
+     */
+    private function duplicateMatchCount(array $rule, array $candidates): int
+    {
+        if ((string) ($rule['key'] ?? '') !== 'table_of_contents') {
+            return 0;
+        }
+
+        $sectionKeys = [];
+        foreach ($candidates as $candidate) {
+            if ((string) ($candidate['section_type'] ?? '') !== 'table_of_contents') {
+                continue;
+            }
+
+            foreach ($candidate['section_keys'] ?? [] as $sectionKey) {
+                $key = trim((string) $sectionKey);
+                if ($key !== '') {
+                    $sectionKeys[$key] = true;
+                }
+            }
+        }
+
+        return count($sectionKeys);
     }
 
     /**

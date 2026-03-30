@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Services\LicenceService;
+use App\Services\SchoolToolModuleStatusService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,6 +20,10 @@ class AbaAccess
         $user = Auth::user();
         if (! $user || ! $user->hasRole('aba_teacher')) {
             return $this->deny($request, 'Sie haben keine Berechtigung für den ABA-Bereich.');
+        }
+
+        if (! app(SchoolToolModuleStatusService::class)->adminVisibleForModule('aba', $user->selectedSchool)) {
+            return $this->deny($request, 'Dieses Modul ist derzeit nicht verfügbar.');
         }
 
         $licenceStatus = app(LicenceService::class)->toolAccessStatusForUser(

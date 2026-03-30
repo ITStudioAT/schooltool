@@ -36,6 +36,10 @@ class SchoolToolSaveModuleStatusesRequest extends FormRequest
             'data.restaurant_visible_user' => ['required', 'boolean'],
             'data.restaurant_user_test_mode' => ['required', 'boolean'],
             'data.restaurant_user_comming_soon' => ['required', 'boolean'],
+            'data.aba_visible_admin' => ['required', 'boolean'],
+            'data.aba_visible_user' => ['required', 'boolean'],
+            'data.aba_user_test_mode' => ['required', 'boolean'],
+            'data.aba_user_comming_soon' => ['required', 'boolean'],
         ];
     }
 }

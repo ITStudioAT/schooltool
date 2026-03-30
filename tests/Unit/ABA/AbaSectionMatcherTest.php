@@ -74,3 +74,74 @@ test('matches extracted sections to aba rules and detects missing required areas
         ->and($result['missing_required_section_keys'])->toContain('table_of_contents')
         ->and($result['unmatched_blocks_count'])->toBe(0);
 });
+
+test('marks duplicate table of contents matches and keeps the best candidate selected', function () {
+    $rules = app(AbaSectionRuleProvider::class)->sections();
+    $matcher = app(AbaSectionMatcher::class);
+
+    $result = $matcher->match($rules, [
+        [
+            'section_key' => 'section-title',
+            'section_type' => 'title_page',
+            'section_title' => 'Titelblatt',
+            'extracted_text' => 'Titel der Arbeit',
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-toc-manual',
+            'section_type' => 'table_of_contents',
+            'section_title' => 'Inhaltsverzeichnis',
+            'extracted_text' => "Inhaltsverzeichnis\nAbstract\n1. Einleitung\n2. Hauptteil",
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-toc-word',
+            'section_type' => 'table_of_contents',
+            'section_title' => 'Inhaltsverzeichnis',
+            'extracted_text' => "Inhaltsverzeichnis\n1. Einleitung 5\n2. Hauptteil 9\nLiteraturverzeichnis 20",
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-introduction',
+            'section_type' => 'chapter',
+            'section_title' => 'Einleitung',
+            'extracted_text' => 'Einleitungstext',
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-main',
+            'section_type' => 'chapter',
+            'section_title' => 'Methodik',
+            'extracted_text' => 'Ausarbeitung und Ergebnisse.',
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-conclusion',
+            'section_type' => 'chapter',
+            'section_title' => 'Fazit',
+            'extracted_text' => 'Schlussfolgerungen.',
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-bibliography',
+            'section_type' => 'bibliography',
+            'section_title' => 'Literaturverzeichnis',
+            'extracted_text' => 'Quelle A',
+            'metadata' => [],
+        ],
+        [
+            'section_key' => 'section-declaration',
+            'section_type' => 'consent_declaration',
+            'section_title' => 'Eigenständigkeitserklärung',
+            'extracted_text' => 'Hiermit erkläre ich...',
+            'metadata' => [],
+        ],
+    ]);
+
+    $tableOfContents = collect($result['sections'] ?? [])->firstWhere('key', 'table_of_contents');
+
+    expect($tableOfContents)->toBeArray()
+        ->and($tableOfContents['found'] ?? null)->toBeTrue()
+        ->and($tableOfContents['detected_matches_count'] ?? null)->toBe(2)
+        ->and($tableOfContents['warnings'] ?? [])->toContain('2 Inhaltsverzeichnisse erkannt; angezeigt wird die passendste Variante.');
+});

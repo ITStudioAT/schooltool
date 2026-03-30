@@ -16,6 +16,8 @@ class RestaurantMenuPlanResource extends JsonResource
             'start_date' => $this->start_date?->format('Y-m-d'),
             'end_date' => $this->end_date?->format('Y-m-d'),
             'is_available' => (bool) $this->is_available,
+            'is_orderable' => $this->when($this->getAttribute('is_orderable') !== null, (bool) $this->getAttribute('is_orderable')),
+            'orderable_until' => $this->when($this->getAttribute('orderable_until') !== null, $this->getAttribute('orderable_until')),
             'entries' => $this->whenLoaded('entries', fn () => $this->entries->map(fn (RestaurantMenuPlanEntry $entry) => [
                 'id' => $entry->id,
                 'plan_date' => $entry->plan_date?->format('Y-m-d'),

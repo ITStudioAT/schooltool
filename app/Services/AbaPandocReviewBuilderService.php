@@ -2495,14 +2495,21 @@ class AbaPandocReviewBuilderService
             if ($submitter === '') {
                 $inlineSubmitter = $this->extractLabeledTitlePageValue(
                     $text,
-                    '(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?)'
+                    '(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\s*(?:\*|\/|:)\s*in|in)?)'
                 );
                 if ($inlineSubmitter !== null) {
                     $submitter = $inlineSubmitter;
                     $submitterLabel = $this->extractSubmitterLabelFromTitlePageLine($text) ?? $submitterLabel;
                 }
             }
-            if ($submitter === '' && @preg_match('/^(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?)$/iu', $text) === 1) {
+            if ($submitter === '' && @preg_match('/^(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\s*(?:\*|\/|:)\s*in|in)?)$/iu', $text) === 1) {
+                $nextSubmitter = $this->findNextTitlePageMetadataValue($contentLines, $index);
+                if ($nextSubmitter !== null) {
+                    $submitter = $nextSubmitter;
+                    $submitterLabel = $this->extractSubmitterLabelFromTitlePageLine($text) ?? $submitterLabel;
+                }
+            }
+            if ($submitter === '' && @preg_match('/(?:eingereicht von|verfasst von|vorgelegt von|verfasser(?:\s*(?:\*|\/|:)\s*in|in)?)\s*$/iu', $text) === 1) {
                 $nextSubmitter = $this->findNextTitlePageMetadataValue($contentLines, $index);
                 if ($nextSubmitter !== null) {
                     $submitter = $nextSubmitter;
@@ -2516,13 +2523,13 @@ class AbaPandocReviewBuilderService
             if ($advisor === '') {
                 $inlineAdvisor = $this->extractLabeledTitlePageValue(
                     $text,
-                    '(?:betreuer(?:\*?in)?|betreut von)'
+                    '(?:betreuer(?:\s*(?:\*|\/|:)\s*in|in)?|betreut von)'
                 );
                 if ($inlineAdvisor !== null) {
                     $advisor = $inlineAdvisor;
                 }
             }
-            if ($advisor === '' && @preg_match('/^(?:betreuer(?:\*?in)?|betreut von)$/iu', $text) === 1) {
+            if ($advisor === '' && @preg_match('/^(?:betreuer(?:\s*(?:\*|\/|:)\s*in|in)?|betreut von)$/iu', $text) === 1) {
                 $nextAdvisor = $this->findNextTitlePageMetadataValue($contentLines, $index);
                 if ($nextAdvisor !== null) {
                     $advisor = $nextAdvisor;
@@ -2605,6 +2612,9 @@ class AbaPandocReviewBuilderService
         foreach ($titlePageLines as $index => $line) {
             $text = trim((string) ($line['text'] ?? ''));
             if ($text === '' || $this->isLikelyTitlePageArtifactText($text)) {
+                continue;
+            }
+            if ($this->sanitizeTitlePageTitleCandidate($text) !== $text) {
                 continue;
             }
 
@@ -2704,7 +2714,7 @@ class AbaPandocReviewBuilderService
 
     private function isTitlePageMetadataHeaderLine(string $text): bool
     {
-        return @preg_match('/^(eingereicht von|verfasst von|vorgelegt von|verfasser(?:\*?in)?\b|betreuer(?:\*?in)?\b|betreut von\b|klasse\b|schuljahr\b|ort,?\s*datum\b|datum\b|unterschrift\b|titel\b|thema\b)/iu', trim($text)) === 1;
+        return @preg_match('/^(eingereicht von|verfasst von|vorgelegt von|verfasser(?:\s*(?:\*|\/|:)\s*in|in)?\b|betreuer(?:\s*(?:\*|\/|:)\s*in|in)?\b|betreut von\b|klasse\b|schuljahr\b|ort,?\s*datum\b|datum\b|unterschrift\b|titel\b|thema\b)/iu', trim($text)) === 1;
     }
 
     private function extractSubmitterLabelFromTitlePageLine(string $text): ?string
@@ -2723,7 +2733,7 @@ class AbaPandocReviewBuilderService
         if (@preg_match('/\bvorgelegt von\b/iu', $normalized) === 1) {
             return 'Vorgelegt von';
         }
-        if (@preg_match('/\bverfasser(?:\*?in)?\b/iu', $normalized) === 1) {
+        if (@preg_match('/\bverfasser(?:\s*(?:\*|\/|:)\s*in|in)?\b/iu', $normalized) === 1) {
             return 'Verfasser*in';
         }
 
@@ -2868,7 +2878,7 @@ class AbaPandocReviewBuilderService
         $documentTypeCandidates = [];
 
         foreach ($titleCandidates as $candidate) {
-            $text = trim((string) ($candidate['text'] ?? ''));
+            $text = $this->sanitizeTitlePageTitleCandidate((string) ($candidate['text'] ?? ''));
             if ($text === '' || $this->isLikelyTitlePageArtifactText($text)) {
                 continue;
             }
@@ -3191,6 +3201,92 @@ class AbaPandocReviewBuilderService
         }
 
         return @preg_match('/^[\p{L}\-\'\.]{2,}(?:\s+[\p{L}\-\'\.]{2,}){1,3}$/u', $trimmed) === 1;
+    }
+
+    private function sanitizeTitlePageTitleCandidate(string $text): string
+    {
+        $normalized = $this->stripTrailingTitlePageDateSuffix(
+            trim((string) preg_replace('/\s+/u', ' ', trim($text))),
+        );
+        if ($normalized === '') {
+            return '';
+        }
+
+        $schoolKeywordMatch = [];
+        if (@preg_match('/\b(?:gymnasium|lyzeum|college|akademie|htl|hak|hblw|berufsschule|mittelschule|volksschule|universit[aä]t|university|institut|borg|brg)\b/iu', $normalized, $schoolKeywordMatch, PREG_OFFSET_CAPTURE) !== 1) {
+            return $normalized;
+        }
+
+        $keywordOffset = (int) ($schoolKeywordMatch[0][1] ?? 0);
+        $tokenBoundary = strrpos(substr($normalized, 0, $keywordOffset), ' ');
+        $schoolStart = $tokenBoundary === false ? 0 : ($tokenBoundary + 1);
+        $title = trim(substr($normalized, 0, $schoolStart));
+        $schoolTail = trim(substr($normalized, $schoolStart));
+        if ($title === '' || mb_strlen($title) < 20) {
+            return $normalized;
+        }
+
+        $titleWordCount = preg_match_all('/\p{L}+/u', $title);
+        if (! is_int($titleWordCount) || $titleWordCount < 5) {
+            return $normalized;
+        }
+
+        $looksLikeAddressTail = @preg_match('/\b(stra(?:ß|ss)e|gasse|weg|platz|kai|allee|ring|ufer)\b/iu', $schoolTail) === 1
+            || @preg_match('/\b\d{4,5}\s+[\p{L}]/u', $schoolTail) === 1
+            || @preg_match('/\b\d{1,4}[a-z]?\b/u', $schoolTail) === 1;
+
+        return $looksLikeAddressTail ? $title : $normalized;
+    }
+
+    private function stripTrailingTitlePageDateSuffix(string $value): string
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', trim($value)));
+        if ($normalized === '') {
+            return '';
+        }
+
+        $monthPattern = $this->titlePageMonthPattern();
+        $locationPattern = '[\p{Lu}][\p{L}\p{M}\.\'\-]{1,40}';
+        $datePatterns = [
+            '[0-3]?\d\.[01]?\d\.(?:\d{2}|\d{4})',
+            '(?:'.$monthPattern.')\s+(?:19|20)\d{2}',
+            '(?:19|20)\d{2}\s*[-\/\.]\s*(?:0?[1-9]|1[0-2])',
+        ];
+        $patterns = [
+            '/^(?<title>.+?)\s+(?<location>'.$locationPattern.')\s*,\s*(?<date>'.implode('|', $datePatterns).')$/iu',
+            '/^(?<title>.+?)\s+(?<date>'.implode('|', $datePatterns).')$/iu',
+        ];
+
+        foreach ($patterns as $pattern) {
+            $matches = [];
+            if (@preg_match($pattern, $normalized, $matches) !== 1) {
+                continue;
+            }
+
+            $title = trim((string) ($matches['title'] ?? ''));
+            if ($title === '' || mb_strlen($title) < 20) {
+                return $normalized;
+            }
+
+            $titleWordCount = preg_match_all('/\p{L}+/u', $title);
+            if (! is_int($titleWordCount) || $titleWordCount < 4) {
+                return $normalized;
+            }
+
+            return $title;
+        }
+
+        return $normalized;
+    }
+
+    private function titlePageMonthPattern(): string
+    {
+        return '(?:januar|jan\.?|februar|feb\.?|märz|maerz|mrz\.?|april|apr\.?|mai|juni|jun\.?|juli|jul\.?|august|aug\.?|september|sept?\.?|oktober|okt\.?|november|nov\.?|dezember|dez\.?|january|jan\.?|february|feb\.?|march|mar\.?|may|june|jun\.?|july|jul\.?|october|oct\.?|december|dec\.?)';
+    }
+
+    private function titlePageDateLocationPrefixPattern(): string
+    {
+        return '(?:[\p{Lu}][\p{L}\p{M}\.\'\-]{1,40}(?:\s+[\p{Lu}][\p{L}\p{M}\.\'\-]{1,40}){0,2},\s*)?';
     }
 
     private function isLikelyTitlePageSchoolLine(string $text): bool

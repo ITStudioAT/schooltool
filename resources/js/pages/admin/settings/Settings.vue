@@ -110,6 +110,7 @@
                 <v-row class="w-100 ma-0" dense>
                     <div v-if="isSuperAdminTab && sub_action === 'general'" class="settings-general-wrap">
                         <ModuleStatusesCard v-if="general_action === 'module_visibility'" />
+                        <Licences v-else-if="general_action === 'licences'" />
                     </div>
 
                     <div v-else-if="isSuperAdminTab && sub_action === 'schools'" class="settings-schools-wrap">
@@ -461,6 +462,10 @@ export default {
                     key: 'module_visibility',
                     label: 'Sichtbarkeit Modul',
                 },
+                {
+                    key: 'licences',
+                    label: 'Lizenzen',
+                },
             ]
         },
         activeSubSection() {
@@ -700,7 +705,7 @@ export default {
         },
         initialGeneralAction() {
             const panel = this.$route?.query?.general_panel || 'module_visibility'
-            const keys = ['module_visibility']
+            const keys = ['module_visibility', 'licences']
 
             return keys.includes(panel) ? panel : 'module_visibility'
         },

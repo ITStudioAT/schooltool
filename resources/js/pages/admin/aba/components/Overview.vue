@@ -36,10 +36,12 @@
                         <v-list-item v-for="aba in abas" :key="aba.id" class="aba-list-item">
                             <template #title>
                                 <v-list-item-title class="aba-title-row aba-title-text">
-                                    <span>{{ aba.title }}</span>
-                                    <v-chip size="x-small" color="primary" variant="tonal" class="aba-id-chip">
-                                        #{{ aba.id }}
-                                    </v-chip>
+                                    <div class="aba-title-main">
+                                        <v-chip size="x-small" color="primary" variant="tonal" class="aba-id-chip">
+                                            #{{ aba.id }}
+                                        </v-chip>
+                                        <span class="aba-title-value">{{ aba.title }}</span>
+                                    </div>
                                     <v-btn
                                         icon="mdi-pencil"
                                         size="x-small"
@@ -74,7 +76,13 @@
                             </template>
                             <template #default>
                                 <div class="mt-2 mb-1 d-flex align-center ga-2 flex-wrap">
-                                    <v-btn size="small" variant="flat" color="primary" prepend-icon="mdi-file-multiple-outline" :disabled="isRefreshing" @click="openFilesDialog(aba)">
+                                    <v-btn
+                                        size="small"
+                                        variant="flat"
+                                        :color="mainAttachmentFor(aba) ? 'primary' : 'error'"
+                                        prepend-icon="mdi-file-multiple-outline"
+                                        :disabled="isRefreshing"
+                                        @click="openFilesDialog(aba)">
                                         Dateien
                                     </v-btn>
                                     <v-btn size="small" variant="tonal" color="info" prepend-icon="mdi-arrow-right-circle-outline" :disabled="isRefreshing" @click="openDetails(aba)">
@@ -835,10 +843,24 @@ export default {
     gap: 8px;
 }
 
+.aba-title-main {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
 .aba-title-text {
     font-size: 1.08rem;
     font-weight: 600;
     line-height: 1.35;
+}
+
+.aba-title-value {
+    min-width: 0;
+    text-align: left;
 }
 
 .aba-info-text {
