@@ -83,6 +83,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/config', [HomepageController::class, 'config']);
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
     Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);
+    Route::post('/homepage/restaurant/check_email', [HomepageController::class, 'restaurantCheckEmail'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/

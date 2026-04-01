@@ -2,23 +2,26 @@
     <div class="restaurant-page">
         <section class="restaurant-hero">
             <div class="restaurant-shell">
-                <router-link to="/" class="restaurant-back-link">
-                    <v-icon size="18">mdi-arrow-left</v-icon>
-                    <span>Zur Startseite</span>
-                </router-link>
+                <div class="restaurant-top-bar">
+                    <router-link to="/" class="restaurant-back-link">
+                        <v-icon size="18">mdi-arrow-left</v-icon>
+                        <span>Zur Startseite</span>
+                    </router-link>
+                    <a href="/admin/restaurant/menu-plans" class="restaurant-action-text">Zur Verwaltung</a>
+                </div>
 
                 <div class="restaurant-hero-card">
                     <div class="restaurant-hero-copy">
                         <div class="restaurant-eyebrow">SchoolTool Restaurant</div>
                         <h1 class="restaurant-title">Restaurant</h1>
-                        <div class="restaurant-school-selector">
-                            <label class="restaurant-school-selector__label">Schule auswählen</label>
+                        <div v-if="currentSchoolShortName" class="restaurant-school-selector">
+                            <label class="restaurant-school-selector__label">Schule ausw?hlen</label>
                             <v-select
                                 v-model="selectedSchoolShortName"
                                 :items="selectableSchools"
                                 item-title="long_name"
                                 item-value="short_name"
-                                placeholder="Schule wählen…"
+                                placeholder="Schule w?hlen..."
                                 variant="outlined"
                                 density="compact"
                                 hide-details
@@ -27,13 +30,12 @@
                             />
                         </div>
 
-                        <div class="restaurant-actions">
-                            <router-link to="/" class="restaurant-action restaurant-action--secondary">Zur Übersicht</router-link>
-                            <a href="/admin/restaurant/menu-plans" class="restaurant-action-text">Zur Verwaltung</a>
+                        <div v-if="currentSchoolShortName" class="restaurant-actions">
+                            <router-link to="/" class="restaurant-action restaurant-action--secondary">Zur ?bersicht</router-link>
                         </div>
                     </div>
 
-                    <div class="restaurant-status-card">
+                    <div v-if="currentSchoolShortName" class="restaurant-status-card">
                         <div class="restaurant-status-card__label">{{ schoolInfoName }}</div>
                         <div
                             v-if="restaurantIntroHtml"
@@ -47,7 +49,45 @@
             </div>
         </section>
 
-        <section class="restaurant-auth">
+        <section v-if="!currentSchoolShortName" class="restaurant-no-school">
+            <div class="restaurant-shell">
+                <div class="restaurant-no-school-card">
+                    <v-icon icon="mdi-school-outline" size="48" class="restaurant-no-school-card__icon" />
+                    <h2 class="restaurant-no-school-card__title">Bitte w?hlen Sie Ihre Schule</h2>
+                    <p class="restaurant-no-school-card__text">W?hlen Sie Ihre Schule, um den Speiseplan und die Bestellm?glichkeiten zu sehen.</p>
+
+                    <div v-if="selectableSchools.length > 10" class="restaurant-school-search">
+                        <v-text-field
+                            v-model="schoolSearch"
+                            placeholder="Schule suchen..."
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                            prepend-inner-icon="mdi-magnify"
+                            class="restaurant-school-search__input"
+                        />
+                    </div>
+
+                    <div class="restaurant-school-list">
+                        <button
+                            v-for="school in (selectableSchools.length > 10 ? filteredSchools : selectableSchools)"
+                            :key="school.short_name"
+                            class="restaurant-school-item"
+                            @click="onSchoolSelected(school.short_name)"
+                        >
+                            <v-icon icon="mdi-domain" size="20" class="restaurant-school-item__icon" />
+                            <span class="restaurant-school-item__name">{{ school.long_name || school.short_name }}</span>
+                            <v-icon icon="mdi-chevron-right" size="18" class="restaurant-school-item__arrow" />
+                        </button>
+                        <p v-if="selectableSchools.length > 10 && filteredSchools.length === 0" class="restaurant-school-list__empty">
+                            Keine Schule gefunden.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section v-if="currentSchoolShortName" class="restaurant-auth">
             <div class="restaurant-shell">
                 <div class="restaurant-auth-card">
                     <div class="restaurant-auth-card__icon">
@@ -58,25 +98,25 @@
                         <p class="restaurant-auth-card__text">Melden Sie sich an, um Bestellungen aufzugeben und Ihren Speiseplan einzusehen.</p>
                     </div>
                     <div class="restaurant-auth-card__actions">
-                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="showLoginDialog = true">Anmelden</v-btn>
-                        <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="showRegisterDialog = true">Registrieren</v-btn>
+                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openLoginDialog">Anmelden</v-btn>
+                        <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="openRegisterDialog">Registrieren</v-btn>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section v-if="menuPlans.length" class="restaurant-plans">
+        <section v-if="currentSchoolShortName && menuPlans.length" class="restaurant-plans">
             <div class="restaurant-shell">
                 <div class="rp-section-header">
                     <v-icon icon="mdi-silverware-fork-knife" size="22" class="rp-section-header__icon" />
-                    <h2 class="rp-section-header__title">Aktuelle Speisepläne</h2>
+                    <h2 class="rp-section-header__title">Aktuelle Speisepl?ne</h2>
                 </div>
 
                 <div v-for="plan in menuPlans" :key="plan.id" class="rp-plan" :class="{ 'rp-plan--orderable': plan.is_orderable }">
                     <div class="rp-plan__header">
                         <div class="rp-plan__header-left">
-                            <div class="rp-plan__title">{{ plan.title || 'Menüplan' }}</div>
-                            <div class="rp-plan__range">{{ formatDate(plan.start_date) }} – {{ formatDate(plan.end_date) }}</div>
+                            <div class="rp-plan__title">{{ plan.title || "Menüplan" }}</div>
+                            <div class="rp-plan__range">{{ formatDate(plan.start_date) }} - {{ formatDate(plan.end_date) }}</div>
                         </div>
                         <div v-if="plan.is_orderable" class="rp-plan__badge-group">
                             <div class="rp-plan__badge">
@@ -103,7 +143,7 @@
                             <div class="rp-day__menus">
                                 <div v-for="entry in group.entries" :key="entry.id" class="rp-menu">
                                     <div class="rp-menu__top">
-                                        <div class="rp-menu__title">{{ entry.menu_title || entry.menu?.title || 'Menü' }}</div>
+                                        <div class="rp-menu__title">{{ entry.menu_title || entry.menu?.title || "Menü" }}</div>
                                         <div v-if="entry.price" class="rp-menu__price">{{ formatPrice(entry.price) }}</div>
                                     </div>
 
@@ -117,7 +157,7 @@
                                     <div v-if="entry.eating_times?.length" class="rp-menu__times">
                                         <v-icon icon="mdi-clock-outline" size="13" class="rp-menu__times-icon" />
                                         <span v-for="(et, i) in entry.eating_times" :key="et.id">
-                                            {{ et.eating_time }} Uhr<span v-if="i < entry.eating_times.length - 1">, </span>
+                                            {{ formatEatingTime(et.eating_time) }} Uhr<span v-if="i < entry.eating_times.length - 1">, </span>
                                         </span>
                                     </div>
 
@@ -130,11 +170,11 @@
             </div>
         </section>
 
-        <section v-else class="restaurant-content">
+        <section v-else-if="currentSchoolShortName" class="restaurant-content">
             <div class="restaurant-shell">
                 <div class="rp-empty">
                     <v-icon icon="mdi-silverware-fork-knife" size="40" class="rp-empty__icon" />
-                    <p class="rp-empty__text">Derzeit sind keine Speisepläne verfügbar.</p>
+                    <p class="rp-empty__text">Derzeit sind keine Speisepl?ne verf?gbar.</p>
                 </div>
             </div>
         </section>
@@ -142,13 +182,85 @@
             <v-card rounded="xl">
                 <v-card-title class="pt-5 px-6 font-weight-bold">Anmelden</v-card-title>
                 <v-card-text class="px-6">
-                    <v-text-field label="E-Mail" variant="outlined" density="compact" class="mb-3" />
-                    <v-text-field label="Passwort" type="password" variant="outlined" density="compact" />
+                    <div v-if="schoolInfoName" class="restaurant-login-school">
+                        <v-icon icon="mdi-domain" size="16" class="restaurant-login-school__icon" />
+                        <span>{{ schoolInfoName }}</span>
+                    </div>
+
+                    <p class="restaurant-login-intro">Bitte geben Sie Ihre E-Mail-Adresse ein, um fortzufahren.</p>
+
+                    <v-form ref="loginEmailForm" @submit.prevent="submitLoginEmailCheck">
+                        <v-text-field
+                            v-model="loginEmail"
+                            autofocus
+                            label="E-Mail"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            :disabled="loginCheckLoading || loginCheckResult?.status === 'REGISTER_REQUIRED'"
+                            :rules="[required(), mail(), maxLength(255)]"
+                            @keyup.enter="submitLoginEmailCheck" />
+                    </v-form>
+
+                    <v-alert
+                        v-if="loginCheckError"
+                        type="error"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ loginCheckError }}
+                    </v-alert>
+
+                    <div v-if="loginCheckResult?.status === 'USER_FOUND'" class="restaurant-login-state">
+                        <p class="restaurant-login-state__text">
+                            <template v-if="loginCheckResult.match_source === 'parent'">
+                                Die E-Mail-Adresse wurde ?ber einen Elternkontakt gefunden.
+                            </template>
+                            <template v-else>
+                                Die E-Mail-Adresse geh?rt zu einem Mittagskonto.
+                            </template>
+                            M?chten Sie sich per Code oder per Passwort anmelden?
+                        </p>
+
+                        <div
+                            v-if="loginCheckResult.matched_users?.length"
+                            class="restaurant-login-state__matches">
+                            <div
+                                v-for="user in loginCheckResult.matched_users"
+                                :key="user.id"
+                                class="restaurant-login-state__match">
+                                <strong>{{ user.name }}</strong>
+                                <span v-if="user.schoolclass">{{ user.schoolclass }}</span>
+                                <span v-if="user.matched_children?.length">
+                                    {{ user.matched_children.join(', ') }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="restaurant-login-state__actions">
+                            <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold">Mit Code</v-btn>
+                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold">Mit Passwort</v-btn>
+                        </div>
+                    </div>
+
+                    <div v-else-if="loginCheckResult?.status === 'REGISTER_REQUIRED'" class="restaurant-login-state">
+                        <p class="restaurant-login-state__text">
+                            Diese E-Mail-Adresse wurde noch nicht f?r das Restaurant gefunden. M?chten Sie sich registrieren?
+                        </p>
+                    </div>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
-                    <v-btn variant="text" color="secondary" @click="showLoginDialog = false">Abbrechen</v-btn>
-                    <v-btn variant="flat" color="#ea580c" class="text-none font-weight-bold" @click="showLoginDialog = false">Anmelden</v-btn>
+                    <v-btn variant="text" color="secondary" @click="closeLoginDialog">Abbrechen</v-btn>
+                    <v-btn
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="loginCheckLoading"
+                        :disabled="!canSubmitLoginEmail"
+                        @click="handleLoginPrimaryAction">
+                        {{ loginCheckResult?.status === 'REGISTER_REQUIRED' ? 'Registrieren' : 'Weiter' }}
+                    </v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -157,15 +269,93 @@
             <v-card rounded="xl">
                 <v-card-title class="pt-5 px-6 font-weight-bold">Registrieren</v-card-title>
                 <v-card-text class="px-6">
-                    <v-text-field label="Vorname" variant="outlined" density="compact" class="mb-3" />
-                    <v-text-field label="Nachname" variant="outlined" density="compact" class="mb-3" />
-                    <v-text-field label="E-Mail" variant="outlined" density="compact" class="mb-3" />
-                    <v-text-field label="Passwort" type="password" variant="outlined" density="compact" />
+                    <div v-if="schoolInfoName" class="restaurant-login-school">
+                        <v-icon icon="mdi-domain" size="16" class="restaurant-login-school__icon" />
+                        <span>{{ schoolInfoName }}</span>
+                    </div>
+
+                    <p class="restaurant-login-intro">{{ registerIntroText }}</p>
+
+                    <v-form
+                        v-if="!registerResult"
+                        ref="registerForm"
+                        @submit.prevent="submitRestaurantRegistration">
+                        <v-text-field
+                            :model-value="registerEmail"
+                            label="E-Mail"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            readonly />
+
+                        <div v-if="registerSourceInfoText" class="restaurant-login-state mb-3">
+                            <p class="restaurant-login-state__text">
+                                {{ registerSourceInfoText }}
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="loginCheckResult?.parent_contact?.children?.length"
+                            class="restaurant-login-state__matches mb-3">
+                            <div
+                                v-for="child in loginCheckResult.parent_contact.children"
+                                :key="child"
+                                class="restaurant-login-state__match">
+                                <strong>{{ child }}</strong>
+                            </div>
+                        </div>
+
+                        <v-text-field
+                            v-if="registerRequiresManualNameFields"
+                            v-model="registerLastName"
+                            label="Nachname"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            :rules="[required(), maxLength(255)]" />
+
+                        <v-text-field
+                            v-if="registerRequiresManualNameFields"
+                            v-model="registerFirstName"
+                            label="Vorname"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            :rules="[required(), maxLength(255)]" />
+                    </v-form>
+
+                    <v-alert
+                        v-if="registerError"
+                        type="error"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ registerError }}
+                    </v-alert>
+
+                    <v-alert
+                        v-if="registerResult"
+                        :type="registerResult.status === 'CONFIRM_EMAIL' ? 'info' : 'success'"
+                        variant="tonal"
+                        density="comfortable">
+                        {{ registerResult.message }}
+                    </v-alert>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
-                    <v-btn variant="text" color="secondary" @click="showRegisterDialog = false">Abbrechen</v-btn>
-                    <v-btn variant="flat" color="#ea580c" class="text-none font-weight-bold" @click="showRegisterDialog = false">Registrieren</v-btn>
+                    <v-btn variant="text" color="secondary" @click="closeRegisterDialog">
+                        {{ registerResult ? 'Schließen' : 'Abbrechen' }}
+                    </v-btn>
+                    <v-btn
+                        v-if="!registerResult"
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="registerLoading"
+                        :disabled="!canSubmitRegister"
+                        @click="submitRestaurantRegistration">
+                        Registrieren
+                    </v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -174,6 +364,7 @@
 
 <script>
 import { mapWritableState } from 'pinia'
+import { useValidationRulesSetup } from '@/helpers/rules'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 
 export default {
@@ -193,6 +384,11 @@ export default {
         }
 
         await this.homepageStore.loadSchoolsForTool('Restaurant')
+
+        if (!this.currentSchoolShortName && this.selectableSchools.length === 1) {
+            await this.onSchoolSelected(this.selectableSchools[0].short_name)
+        }
+
         await this.loadMenuPlans()
     },
 
@@ -203,6 +399,16 @@ export default {
             menuPlans: [],
             showLoginDialog: false,
             showRegisterDialog: false,
+            loginEmail: '',
+            loginCheckLoading: false,
+            loginCheckResult: null,
+            loginCheckError: '',
+            registerFirstName: '',
+            registerLastName: '',
+            registerLoading: false,
+            registerResult: null,
+            registerError: '',
+            schoolSearch: '',
             tickNow: Date.now(),
             tickInterval: null,
         }
@@ -222,7 +428,7 @@ export default {
             return this.config?.restaurant?.user_information_intro_html || ''
         },
         schoolInfoName() {
-            return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
+            return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgew?hlt'
         },
         orderableMenuPlansCount() {
             return Number(this.config?.restaurant?.orderable_menu_plans_count || 0)
@@ -233,17 +439,108 @@ export default {
         selectableSchools() {
             return this.homepageStore?.schools || []
         },
+        filteredSchools() {
+            if (!this.schoolSearch) return this.selectableSchools
+            const q = this.schoolSearch.toLowerCase()
+            return this.selectableSchools.filter(s =>
+                (s.long_name || '').toLowerCase().includes(q) ||
+                (s.short_name || '').toLowerCase().includes(q)
+            )
+        },
         currentSchoolShortName() {
             return this.config?.school?.short_name || null
+        },
+        currentSchoolId() {
+            return Number(this.config?.school?.id || 0) || null
+        },
+        canSubmitLoginEmail() {
+            return !!this.currentSchoolId && this.loginEmail.trim() !== ''
+        },
+        registerEmail() {
+            return (this.loginCheckResult?.email || this.loginEmail || '').trim()
+        },
+        registerSource() {
+            return this.loginCheckResult?.registration_source || null
+        },
+        registerRequiresManualNameFields() {
+            return this.registerSource === 'new_user'
+        },
+        canSubmitRegister() {
+            if (!this.currentSchoolId || !this.registerEmail || this.registerLoading || this.registerResult) {
+                return false
+            }
+
+            if (!this.registerRequiresManualNameFields) {
+                return true
+            }
+
+            return this.registerFirstName.trim() !== '' && this.registerLastName.trim() !== ''
+        },
+        registerIntroText() {
+            if (this.registerResult?.status === 'CONFIRM_EMAIL') {
+                return 'Die Registrierung ist gespeichert. Die E-Mail-Best?tigung ist der n?chste Schritt.'
+            }
+
+            if (this.registerResult?.status === 'REGISTERED') {
+                return 'Das Restaurantkonto wurde angelegt oder freigeschaltet.'
+            }
+
+            return 'Bitte pr?fen Sie die Angaben f?r die Registrierung.'
+        },
+        registerSourceInfoText() {
+            switch (this.registerSource) {
+            case 'existing_user':
+                return 'Das bestehende Benutzerkonto dieser Schule wird f?r das Restaurant freigeschaltet.'
+            case 'teacher_list':
+                return 'Die E-Mail-Adresse wurde in der Lehrerliste gefunden und wird in die Benutzerverwaltung ?bernommen.'
+            case 'import116_student':
+                return 'Die E-Mail-Adresse wurde in den Import116-Sch?lerdaten gefunden und wird in die Benutzerverwaltung ?bernommen.'
+            case 'import116_parent':
+                return 'Die E-Mail-Adresse wurde als Elternkontakt im Import116 gefunden. Es wird ein eigenes Restaurantkonto f?r diesen Elternkontakt angelegt.'
+            case 'new_user':
+                return 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Bitte erg?nzen Sie Nachname und Vorname.'
+            default:
+                return ''
+            }
         },
     },
 
     methods: {
+        ...useValidationRulesSetup(),
+
+        openLoginDialog() {
+            this.resetLoginDialogState()
+            this.showLoginDialog = true
+        },
+
+        closeLoginDialog() {
+            this.showLoginDialog = false
+            this.resetLoginDialogState()
+        },
+
+        openRegisterDialog() {
+            this.openLoginDialog()
+        },
+
+        closeRegisterDialog() {
+            this.showRegisterDialog = false
+            this.resetRegisterDialogState()
+        },
+
+        switchToRegisterDialog() {
+            this.showLoginDialog = false
+            this.resetRegisterDialogState()
+            this.showRegisterDialog = true
+        },
+
         async onSchoolSelected(shortName) {
             if (shortName) {
                 this.$router.replace({ query: { ...this.$route.query, school: shortName } })
                 await this.homepageStore.loadConfig(shortName, 'restaurant')
                 this.selectedSchoolShortName = this.config?.school?.short_name || null
+                this.resetLoginDialogState()
+                this.resetRegisterDialogState()
+                this.showRegisterDialog = false
                 await this.loadMenuPlans()
             }
         },
@@ -301,6 +598,100 @@ export default {
             return isNaN(num) ? value : `€ ${num.toFixed(2).replace('.', ',')}`
         },
 
+        formatEatingTime(value) {
+            const normalized = (value || '').toString().trim()
+            if (! normalized) return ''
+
+            const parts = normalized.split(':')
+            if (parts.length < 2) return normalized
+
+            return parts.slice(0, 2).join(':')
+        },
+
+        async submitLoginEmailCheck() {
+            const form = this.$refs.loginEmailForm
+            const validationResult = await form?.validate?.()
+            const isValid = validationResult?.valid ?? false
+
+            if (!isValid || ! this.canSubmitLoginEmail || this.loginCheckLoading) {
+                return
+            }
+
+            this.loginCheckLoading = true
+            this.loginCheckError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/check_email', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.loginEmail.trim(),
+                    },
+                })
+
+                this.loginCheckResult = response.data || null
+            } catch (error) {
+                this.loginCheckResult = null
+                this.loginCheckError = error.response?.data?.message || 'Die E-Mail-Adresse konnte nicht gepr?ft werden.'
+            } finally {
+                this.loginCheckLoading = false
+            }
+        },
+
+        async handleLoginPrimaryAction() {
+            if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
+                this.switchToRegisterDialog()
+                return
+            }
+
+            await this.submitLoginEmailCheck()
+        },
+
+        async submitRestaurantRegistration() {
+            const form = this.$refs.registerForm
+            const validationResult = await form?.validate?.()
+            const isValid = validationResult?.valid ?? true
+
+            if (!isValid || !this.canSubmitRegister) {
+                return
+            }
+
+            this.registerLoading = true
+            this.registerError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/register', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.registerEmail,
+                        first_name: this.registerRequiresManualNameFields ? this.registerFirstName.trim() : null,
+                        last_name: this.registerRequiresManualNameFields ? this.registerLastName.trim() : null,
+                    },
+                })
+
+                this.registerResult = response.data || null
+            } catch (error) {
+                this.registerResult = null
+                this.registerError = error.response?.data?.message || 'Die Registrierung konnte nicht gespeichert werden.'
+            } finally {
+                this.registerLoading = false
+            }
+        },
+
+        resetLoginDialogState() {
+            this.loginEmail = ''
+            this.loginCheckLoading = false
+            this.loginCheckResult = null
+            this.loginCheckError = ''
+        },
+
+        resetRegisterDialogState() {
+            this.registerFirstName = ''
+            this.registerLastName = ''
+            this.registerLoading = false
+            this.registerResult = null
+            this.registerError = ''
+        },
+
         countdownFor(plan) {
             if (! plan.orderable_until) return null
 
@@ -325,6 +716,7 @@ export default {
 .restaurant-page {
     min-height: 100vh;
     background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220' viewBox='0 0 220 220'%3E%3Cg fill='none' stroke='%23c2410c' stroke-width='0.8' stroke-linecap='round' stroke-linejoin='round' opacity='0.32'%3E%3C!-- fork --%3E%3Cg transform='translate(20,20)'%3E%3Cline x1='10' y1='0' x2='10' y2='28'/%3E%3Cline x1='6' y1='0' x2='6' y2='12'/%3E%3Cline x1='14' y1='0' x2='14' y2='12'/%3E%3Cline x1='6' y1='12' x2='14' y2='12'/%3E%3C/g%3E%3C!-- knife --%3E%3Cg transform='translate(80,30)'%3E%3Cline x1='8' y1='0' x2='8' y2='28'/%3E%3Cpath d='M8 0 Q14 4 14 14 L8 14'/%3E%3C/g%3E%3C!-- plate --%3E%3Cg transform='translate(150,18)'%3E%3Ccircle cx='14' cy='14' r='14'/%3E%3Ccircle cx='14' cy='14' r='9'/%3E%3C/g%3E%3C!-- chef hat --%3E%3Cg transform='translate(40,100)'%3E%3Cpath d='M4 22 L4 14 Q4 4 12 4 Q20 4 20 14 L20 22'/%3E%3Cline x1='4' y1='22' x2='20' y2='22'/%3E%3C/g%3E%3C!-- steam --%3E%3Cg transform='translate(115,95)'%3E%3Cpath d='M6 20 Q2 14 6 10 Q10 6 6 0'/%3E%3Cpath d='M14 20 Q10 14 14 10 Q18 6 14 0'/%3E%3C/g%3E%3C!-- spoon --%3E%3Cg transform='translate(175,100)'%3E%3Cellipse cx='8' cy='6' rx='6' ry='8'/%3E%3Cline x1='8' y1='14' x2='8' y2='30'/%3E%3C/g%3E%3C!-- glass --%3E%3Cg transform='translate(25,175)'%3E%3Cpath d='M4 0 L6 18 L14 18 L16 0 Z'/%3E%3Cline x1='10' y1='18' x2='10' y2='24'/%3E%3Cline x1='5' y1='24' x2='15' y2='24'/%3E%3C/g%3E%3C!-- cloche --%3E%3Cg transform='translate(90,170)'%3E%3Cpath d='M2 22 Q2 8 16 8 Q30 8 30 22'/%3E%3Cline x1='0' y1='22' x2='32' y2='22'/%3E%3Cline x1='16' y1='4' x2='16' y2='8'/%3E%3Ccircle cx='16' cy='3' r='2'/%3E%3C/g%3E%3C!-- rolling pin --%3E%3Cg transform='translate(165,175)'%3E%3Crect x='6' y='4' width='20' height='8' rx='4'/%3E%3Cline x1='2' y1='8' x2='6' y2='8'/%3E%3Cline x1='26' y1='8' x2='30' y2='8'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") repeat,
         radial-gradient(circle at top left, rgba(255, 213, 128, 0.55), transparent 34%),
         radial-gradient(circle at top right, rgba(255, 247, 237, 0.7), transparent 28%),
         linear-gradient(180deg, #fff7ed 0%, #ffedd5 26%, #fff 100%);
@@ -340,6 +732,13 @@ export default {
     padding: 32px 0 36px;
 }
 
+.restaurant-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
 .restaurant-back-link {
     display: inline-flex;
     align-items: center;
@@ -347,7 +746,6 @@ export default {
     color: #9a3412;
     font-weight: 700;
     text-decoration: none;
-    margin-bottom: 18px;
 }
 
 .restaurant-hero-card {
@@ -459,6 +857,108 @@ export default {
     max-width: 380px;
 }
 
+.restaurant-no-school {
+    padding: 0 0 24px;
+}
+
+.restaurant-no-school-card {
+    text-align: center;
+    padding: 48px 24px;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 2px dashed rgba(251, 146, 60, 0.4);
+    box-shadow: 0 10px 30px rgba(120, 53, 15, 0.06);
+}
+
+.restaurant-no-school-card__icon {
+    color: #c2410c;
+    margin-bottom: 16px;
+}
+
+.restaurant-no-school-card__title {
+    margin: 0 0 8px;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #9a3412;
+}
+
+.restaurant-no-school-card__text {
+    margin: 0 auto 28px;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #6b7280;
+    max-width: 48ch;
+}
+
+.restaurant-school-search {
+    max-width: 400px;
+    margin: 0 auto 20px;
+}
+
+.restaurant-school-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.restaurant-school-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: rgba(255, 247, 237, 0.7);
+    border: 1px solid rgba(251, 146, 60, 0.18);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: #1f2937;
+}
+
+.restaurant-school-item:hover {
+    background: rgba(251, 146, 60, 0.15);
+    border-color: rgba(251, 146, 60, 0.4);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(120, 53, 15, 0.1);
+}
+
+.restaurant-school-item__icon {
+    color: #c2410c;
+    flex-shrink: 0;
+}
+
+.restaurant-school-item__name {
+    flex: 1;
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.restaurant-school-item__arrow {
+    color: #9ca3af;
+    flex-shrink: 0;
+    transition: color 0.15s ease;
+}
+
+.restaurant-school-item:hover .restaurant-school-item__arrow {
+    color: #c2410c;
+}
+
+.restaurant-school-list__empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.9rem;
+    padding: 12px 0;
+    margin: 0;
+}
+
 .restaurant-auth {
     padding: 0 0 24px;
 }
@@ -509,6 +1009,66 @@ export default {
     display: flex;
     gap: 10px;
     flex-shrink: 0;
+}
+
+.restaurant-login-intro {
+    margin: 0 0 12px;
+    color: #4b5563;
+    line-height: 1.55;
+}
+
+.restaurant-login-school {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(251, 146, 60, 0.12);
+    color: #9a3412;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.restaurant-login-school__icon {
+    color: #c2410c;
+}
+
+.restaurant-login-state {
+    display: grid;
+    gap: 12px;
+}
+
+.restaurant-login-state__text {
+    margin: 0;
+    color: #4b5563;
+    line-height: 1.55;
+}
+
+.restaurant-login-state__matches {
+    display: grid;
+    gap: 8px;
+}
+
+.restaurant-login-state__match {
+    display: grid;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 247, 237, 0.8);
+    border: 1px solid rgba(251, 146, 60, 0.16);
+    color: #6b7280;
+    font-size: 0.85rem;
+}
+
+.restaurant-login-state__match strong {
+    color: #1f2937;
+}
+
+.restaurant-login-state__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .restaurant-status-card {

@@ -3,6 +3,20 @@
         <ItsGridBox variant="overview" color="primary" title="Benutzer" icon="mdi-account-multiple-outline">
             <template #header-actions>
                 <div class="d-flex ga-2 align-center flex-wrap">
+                    <div class="restaurant-users-header-count" :class="{ 'is-attention': pendingConfirmationCount > 0 }">
+                        <span class="restaurant-users-header-count__label">Zu bestätigen</span>
+                        <span class="restaurant-users-header-count__value">{{ pendingConfirmationCount }}</span>
+                    </div>
+
+                    <v-btn
+                        size="small"
+                        :color="only_pending_confirmation ? 'error' : 'secondary'"
+                        :variant="only_pending_confirmation ? 'flat' : 'tonal'"
+                        prepend-icon="mdi-filter-check-outline"
+                        @click="togglePendingConfirmationFilter">
+                        {{ only_pending_confirmation ? 'Alle Benutzer' : 'Nur zu bestätigen' }}
+                    </v-btn>
+
                     <v-btn
                         size="small"
                         color="warning"
@@ -44,6 +58,25 @@
                         Suchen
                     </v-btn>
                 </div>
+            </div>
+
+            <div v-if="only_pending_confirmation" class="restaurant-users-filter-banner mb-4">
+                <div class="restaurant-users-filter-banner__copy">
+                    <div class="restaurant-users-filter-banner__eyebrow">Filter aktiv</div>
+                    <div class="restaurant-users-filter-banner__title">Es werden nur Benutzer angezeigt, die noch bestätigt werden müssen.</div>
+                    <div class="restaurant-users-filter-banner__meta">
+                        Aktuell offen: {{ pendingConfirmationCount }}
+                    </div>
+                </div>
+
+                <v-btn
+                    size="small"
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-close-circle-outline"
+                    @click="togglePendingConfirmationFilter">
+                    Filter aufheben
+                </v-btn>
             </div>
 
             <div class="restaurant-users-toolbar mb-4">
@@ -104,10 +137,14 @@
 
                                     <v-chip
                                         size="x-small"
-                                        :color="user.is_confirmed ? 'success' : 'secondary'"
+                                        :color="user.is_restaurant_confirmed ? 'success' : 'secondary'"
                                         variant="tonal">
                                         {{ user.is_confirmed ? 'Bestätigt' : 'Offen' }}
                                     </v-chip>
+
+                                    <span class="text-caption text-medium-emphasis">
+                                        {{ user.is_restaurant_confirmed ? 'Restaurant bestaetigt' : 'Restaurant offen' }}
+                                    </span>
                                 </div>
 
                                 <v-btn
@@ -124,6 +161,23 @@
                         </div>
 
                         <div class="restaurant-users-card__meta">
+                            <div class="restaurant-users-card__meta-item restaurant-users-card__meta-item--origins">
+                                <v-icon size="16" icon="mdi-source-branch" />
+                                <div class="restaurant-users-card__origins">
+                                    <span class="restaurant-users-card__origins-label">Herkunft</span>
+                                    <div class="restaurant-users-card__origins-list">
+                                        <v-chip
+                                            v-for="originLabel in originLabels(user)"
+                                            :key="`${user.id}-${originLabel}`"
+                                            size="x-small"
+                                            variant="tonal"
+                                            color="info">
+                                            {{ originLabel }}
+                                        </v-chip>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="restaurant-users-card__meta-item" v-if="user.import116_id">
                                 <v-icon size="16" icon="mdi-database-import-outline" />
                                 <span>Import116 #{{ user.import116_id }}</span>
@@ -192,6 +246,7 @@ export default {
     async beforeMount() {
         this.restaurantUserStore = useRestaurantUserStore()
         this.searchDraft = this.search_string || ''
+        this.syncPendingConfirmationFilterFromRoute()
         await this.restaurantUserStore.index()
     },
 
@@ -204,7 +259,7 @@ export default {
     },
 
     computed: {
-        ...mapState(useRestaurantUserStore, ['users', 'meta', 'search_string']),
+        ...mapState(useRestaurantUserStore, ['users', 'meta', 'search_string', 'only_pending_confirmation']),
         currentPage() {
             return Number(this.meta?.current_page || 1)
         },
@@ -226,6 +281,15 @@ export default {
 
             return normalized === '' ? '' : `"${normalized}"`
         },
+        pendingConfirmationCount() {
+            return Number(this.meta?.pending_confirmation_total || 0)
+        },
+    },
+
+    watch: {
+        '$route.query.only_pending_confirmation'() {
+            this.syncPendingConfirmationFilterFromRoute()
+        },
     },
 
     methods: {
@@ -235,6 +299,11 @@ export default {
             const fullName = `${lastName} ${firstName}`.trim()
 
             return fullName === '' ? user?.email || 'Unbekannt' : fullName
+        },
+        originLabels(user) {
+            const labels = Array.isArray(user?.origin_labels) ? user.origin_labels : []
+
+            return labels.length > 0 ? labels : ['Extern']
         },
         async applySearch() {
             this.restaurantUserStore.search_string = String(this.searchDraft || '').trim()
@@ -251,6 +320,11 @@ export default {
         async handlePageChange(page) {
             await this.restaurantUserStore.index(page)
         },
+        async togglePendingConfirmationFilter() {
+            this.restaurantUserStore.only_pending_confirmation = ! this.restaurantUserStore.only_pending_confirmation
+            this.syncPendingConfirmationFilterRoute()
+            await this.restaurantUserStore.index(1)
+        },
         async toggleSepa(user) {
             this.sepaUserId = user?.id ?? null
 
@@ -259,6 +333,26 @@ export default {
             } finally {
                 this.sepaUserId = null
             }
+        },
+        syncPendingConfirmationFilterFromRoute() {
+            const rawValue = this.$route?.query?.only_pending_confirmation
+
+            this.restaurantUserStore.only_pending_confirmation = rawValue === '1' || rawValue === 1 || rawValue === true || rawValue === 'true'
+        },
+        syncPendingConfirmationFilterRoute() {
+            const query = {
+                ...(this.$route?.query || {}),
+            }
+
+            if (this.restaurantUserStore.only_pending_confirmation) {
+                query.only_pending_confirmation = '1'
+            } else {
+                delete query.only_pending_confirmation
+            }
+
+            this.$router.replace({
+                query,
+            }).catch(() => {})
         },
     },
 }
@@ -278,6 +372,74 @@ export default {
         radial-gradient(circle at top left, rgba(224, 242, 254, 0.78), transparent 36%),
         linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
     box-shadow: 0 16px 32px -28px rgba(15, 23, 42, 0.42);
+}
+
+.restaurant-users-filter-banner {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 0.95rem 1rem;
+    border: 1px solid rgba(220, 38, 38, 0.18);
+    border-radius: 1.1rem;
+    background:
+        radial-gradient(circle at top left, rgba(254, 202, 202, 0.72), transparent 38%),
+        linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(254, 226, 226, 0.94));
+    box-shadow: 0 16px 32px -28px rgba(127, 29, 29, 0.28);
+}
+
+.restaurant-users-filter-banner__copy {
+    display: grid;
+    gap: 0.12rem;
+}
+
+.restaurant-users-filter-banner__eyebrow {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgb(185, 28, 28);
+}
+
+.restaurant-users-filter-banner__title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: rgb(127, 29, 29);
+}
+
+.restaurant-users-filter-banner__meta {
+    font-size: 0.9rem;
+    color: rgba(127, 29, 29, 0.88);
+}
+
+.restaurant-users-header-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(255, 255, 255, 0.92);
+    color: rgba(15, 23, 42, 0.96);
+}
+
+.restaurant-users-header-count.is-attention {
+    border-color: rgba(220, 38, 38, 0.24);
+    background: rgba(254, 226, 226, 0.92);
+    color: rgb(153, 27, 27);
+}
+
+.restaurant-users-header-count__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.restaurant-users-header-count__value {
+    font-size: 0.94rem;
+    font-weight: 800;
 }
 
 .restaurant-users-search-panel__copy {
@@ -424,6 +586,31 @@ export default {
     display: inline-flex;
     align-items: center;
     gap: 0.32rem;
+}
+
+.restaurant-users-card__meta-item--origins {
+    align-items: flex-start;
+}
+
+.restaurant-users-card__origins {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+.restaurant-users-card__origins-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(71, 85, 105, 0.92);
+}
+
+.restaurant-users-card__origins-list {
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
 }
 
 .restaurant-users-card__children {

@@ -7,6 +7,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
         users: [],
         meta: {},
         search_string: '',
+        only_pending_confirmation: false,
         error: null,
     }),
 
@@ -21,6 +22,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                 const response = await axios.get('/api/admin/restaurant/users', {
                     params: {
                         search_string: this.search_string || '',
+                        only_pending_confirmation: this.only_pending_confirmation ? 1 : 0,
                         page,
                     },
                 })

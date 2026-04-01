@@ -67,6 +67,10 @@ class RestaurantService
         $lunchUsersCount = User::query()
             ->bySchoolAndRole($authUser->school_id, 'lunch_user')
             ->count();
+        $lunchUsersPendingConfirmationCount = User::query()
+            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
+            ->whereNull('restaurant_confirmed_at')
+            ->count();
 
         $foods = $this->foodsForUser($authUser);
 
@@ -87,6 +91,7 @@ class RestaurantService
                 'ingredient_icons_count' => $ingredientIcons->count(),
                 'menus_count' => $menusCount,
                 'lunch_users_count' => $lunchUsersCount,
+                'lunch_users_pending_confirmation_count' => $lunchUsersPendingConfirmationCount,
                 'foods_with_image_count' => $foods->filter(fn (RestaurantFood $food): bool => filled($food->food_image_path))->count(),
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
             ],

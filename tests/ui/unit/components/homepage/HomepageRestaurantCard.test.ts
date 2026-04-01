@@ -7,7 +7,8 @@ describe('homepage restaurant entry', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Index.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('<router-link to="/homepage/restaurant" class="tool-card card-lunch">')
+        expect(source).toContain('class="tool-card card-lunch"')
+        expect(source).toContain('@click="openRestaurant()"')
         expect(source).toContain('<h3 class="card-title">Restaurant</h3>')
         expect(source).toContain('<span class="action-text">Zum Restaurant</span>')
         expect(source).not.toContain('https://cdgym.info/lunch')
@@ -25,13 +26,20 @@ describe('homepage restaurant entry', () => {
         const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Restaurant.vue')
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('School-Info')
-        expect(source).toContain('Menüpläne aktuell bestellbar')
-        expect(source).toContain('Menüpläne aktuell sichtbar')
-        expect(source).toContain("this.homepageStore.loadConfig(this.$route?.query?.school ?? null, this.$route?.query?.app ?? null)")
+        expect(source).toContain('SchoolTool Restaurant')
+        expect(source).toContain('Aktuelle Speisepl')
+        expect(source).toContain("await this.homepageStore.loadConfig(schoolFromUrl, this.$route?.query?.app ?? null)")
         expect(source).toContain("return this.config?.restaurant?.user_information_intro_html || ''")
         expect(source).toContain("return Number(this.config?.restaurant?.orderable_menu_plans_count || 0)")
         expect(source).toContain("return Number(this.config?.restaurant?.visible_menu_plans_count || 0)")
         expect(source).not.toContain('Diese Seite ist aktuell eine interne Vorschau.')
+    })
+
+    it('renders restaurant eating times without seconds on the homepage', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Restaurant.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('{{ formatEatingTime(et.eating_time) }} Uhr')
+        expect(source).toContain("return parts.slice(0, 2).join(':')")
     })
 })

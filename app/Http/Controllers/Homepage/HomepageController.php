@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Homepage;
 
 use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
+use App\Http\Requests\Homepage\RestaurantCheckEmailRequest;
+use App\Http\Requests\Homepage\RestaurantRegisterUserRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
@@ -12,6 +14,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
+use App\Services\RestaurantHomepageAuthService;
 use App\Services\RestaurantService;
 use App\Services\SchoolToolModuleStatusService;
 use Carbon\Carbon;
@@ -197,6 +200,24 @@ class HomepageController extends Controller
         return response()->json([
             'plans' => RestaurantMenuPlanResource::collection($plans),
         ]);
+    }
+
+    public function restaurantCheckEmail(
+        RestaurantCheckEmailRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->checkEmail($request->validated()['data'])
+        );
+    }
+
+    public function restaurantRegisterUser(
+        RestaurantRegisterUserRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->register($request->validated()['data'])
+        );
     }
 
     public function logout()

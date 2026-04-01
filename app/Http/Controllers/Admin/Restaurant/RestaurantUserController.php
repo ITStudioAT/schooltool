@@ -8,6 +8,7 @@ use App\Http\Requests\Admin\Restaurant\RestaurantUserSepaUpdateRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Models\Import116;
+use App\Models\Teacher;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -22,10 +23,18 @@ class RestaurantUserController extends Controller
 
         $validated = $request->validated();
         $searchString = $validated['search_string'] ?? null;
+        $onlyPendingConfirmation = (bool) ($validated['only_pending_confirmation'] ?? false);
+        $pendingConfirmationTotal = User::query()
+            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
+            ->whereNull('restaurant_confirmed_at')
+            ->count();
 
         $users = User::query()
             ->bySchoolAndRole($authUser->school_id, 'lunch_user')
             ->with('roles')
+            ->when($onlyPendingConfirmation, function ($query): void {
+                $query->whereNull('restaurant_confirmed_at');
+            })
             ->when($searchString, function ($query, $searchString) {
                 $query->where(function ($nestedQuery) use ($searchString): void {
                     $nestedQuery
@@ -41,6 +50,8 @@ class RestaurantUserController extends Controller
             ->paginate(config('schooltool.pagination'));
 
         $childrenByEmail = $this->import116ChildrenByParentEmail($authUser->school_id, $users->getCollection()->pluck('email'));
+        $teacherEmails = $this->teacherEmailsBySchool($authUser->school_id, $users->getCollection()->pluck('email'));
+        $parentEmails = $this->parentEmailsBySchool($authUser->school_id, $users->getCollection()->pluck('email'));
 
         $users->getCollection()->transform(function (User $user) use ($childrenByEmail): User {
             $normalizedEmail = mb_strtolower(trim((string) $user->email));
@@ -48,10 +59,42 @@ class RestaurantUserController extends Controller
 
             return $user;
         });
+        $users->getCollection()->transform(function (User $user) use ($teacherEmails, $parentEmails): User {
+            $normalizedEmail = mb_strtolower(trim((string) $user->email));
+            $originKeys = [];
+
+            if (isset($teacherEmails[$normalizedEmail])) {
+                $originKeys[] = 'teacher_list';
+            }
+
+            if ((int) ($user->import116_id ?? 0) > 0) {
+                $originKeys[] = 'import116_student';
+            }
+
+            if (isset($parentEmails[$normalizedEmail])) {
+                $originKeys[] = 'import116_parent';
+            }
+
+            if ($originKeys === []) {
+                $originKeys[] = 'external';
+            }
+
+            $user->setAttribute('origin_keys', $originKeys);
+            $user->setAttribute('origin_labels', array_map(
+                fn (string $key): string => $this->originLabelForKey($key),
+                $originKeys
+            ));
+
+            return $user;
+        });
 
         return response()->json([
             'data' => UserResource::collection($users),
-            'meta' => new PaginateResource($users),
+            'meta' => [
+                ...(new PaginateResource($users))->toArray($request),
+                'pending_confirmation_total' => $pendingConfirmationTotal,
+                'only_pending_confirmation' => $onlyPendingConfirmation,
+            ],
         ]);
     }
 
@@ -134,5 +177,83 @@ class RestaurantUserController extends Controller
             });
 
         return $childrenByEmail;
+    }
+
+    /**
+     * @param  Collection<int, string|null>  $emails
+     * @return array<string, true>
+     */
+    private function teacherEmailsBySchool(int $schoolId, Collection $emails): array
+    {
+        $normalizedEmails = $this->normalizedEmails($emails);
+
+        if ($normalizedEmails->isEmpty()) {
+            return [];
+        }
+
+        return Teacher::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('email', $normalizedEmails->all())
+            ->get(['email'])
+            ->map(fn (Teacher $teacher): string => mb_strtolower(trim((string) $teacher->email)))
+            ->filter(fn (string $email): bool => $email !== '')
+            ->unique()
+            ->mapWithKeys(fn (string $email): array => [$email => true])
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, string|null>  $emails
+     * @return array<string, true>
+     */
+    private function parentEmailsBySchool(int $schoolId, Collection $emails): array
+    {
+        $normalizedEmails = $this->normalizedEmails($emails);
+
+        if ($normalizedEmails->isEmpty()) {
+            return [];
+        }
+
+        return Import116::query()
+            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($normalizedEmails): void {
+                $query->whereIn('mother_email', $normalizedEmails->all())
+                    ->orWhereIn('father_email', $normalizedEmails->all());
+            })
+            ->get(['mother_email', 'father_email'])
+            ->flatMap(function (Import116 $import): array {
+                return [
+                    mb_strtolower(trim((string) $import->mother_email)),
+                    mb_strtolower(trim((string) $import->father_email)),
+                ];
+            })
+            ->filter(fn (string $email): bool => $email !== '')
+            ->unique()
+            ->mapWithKeys(fn (string $email): array => [$email => true])
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, string|null>  $emails
+     * @return Collection<int, string>
+     */
+    private function normalizedEmails(Collection $emails): Collection
+    {
+        return $emails
+            ->filter(fn (?string $email): bool => filled($email))
+            ->map(fn (string $email): string => mb_strtolower(trim($email)))
+            ->filter(fn (string $email): bool => $email !== '')
+            ->unique()
+            ->values();
+    }
+
+    private function originLabelForKey(string $originKey): string
+    {
+        return match ($originKey) {
+            'teacher_list' => 'Lehrerliste',
+            'import116_student' => 'Import116',
+            'import116_parent' => 'Eltern',
+            default => 'Extern',
+        };
     }
 }

@@ -54,6 +54,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $register_started_at
  * @property string|null $register_as
  * @property string|null $confirmed_at
+ * @property Carbon|null $restaurant_confirmed_at
  * @property string|null $uuid
  * @property string|null $uuid_at
  * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
@@ -94,6 +95,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterAs($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRegisterStartedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRestaurantConfirmedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereRememberToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereSchoolyearId($value)
@@ -198,6 +200,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'restaurant_confirmed_at' => 'datetime',
             'token_2fa_expires_at' => 'datetime',
             'sepa_at' => 'datetime',
             'tutoring_filter' => 'array',

@@ -57,6 +57,7 @@ describe('RestaurantUserStore', () => {
 
         const store = useRestaurantUserStore()
         store.search_string = 'Anna'
+        store.only_pending_confirmation = true
 
         const result = await store.index(2)
 
@@ -66,6 +67,7 @@ describe('RestaurantUserStore', () => {
         expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/restaurant/users', {
             params: {
                 search_string: 'Anna',
+                only_pending_confirmation: 1,
                 page: 2,
             },
         })

@@ -166,3 +166,12 @@ This project has domain-specific skills available. You MUST activate the relevan
 - Activate the `developing-with-ai-sdk` skill when building, editing, updating, debugging, or testing AI agents, text generation, chat, streaming, structured output, tools, image generation, audio, transcription, embeddings, reranking, vector stores, files, conversation memory, or any AI provider integration (OpenAI, Anthropic, Gemini, Cohere, Groq, xAI, ElevenLabs, Jina, OpenRouter).
 
 </laravel-boost-guidelines>
+
+## Encoding Rules
+
+- All source files must be UTF-8 without BOM.
+- Never change file encoding.
+- Preserve all non-ASCII characters exactly.
+- Never replace umlauts with mojibake or broken multi-byte sequences.
+- Do not convert umlauts to HTML entities unless required by the existing file context.
+- Before saving edited files, verify that all original special characters are preserved exactly.

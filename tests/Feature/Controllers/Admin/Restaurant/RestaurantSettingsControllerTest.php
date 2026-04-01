@@ -41,8 +41,18 @@ test('settings creates default categories for empty school', function () {
     $lunchUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => null,
+        'confirmed_at' => now(),
+        'restaurant_confirmed_at' => now(),
     ]);
     $lunchUser->assignRole('lunch_user');
+
+    $pendingLunchUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'confirmed_at' => null,
+        'restaurant_confirmed_at' => null,
+    ]);
+    $pendingLunchUser->assignRole('lunch_user');
 
     $this->actingAs($this->admin, 'sanctum');
 
@@ -83,6 +93,8 @@ test('settings creates default categories for empty school', function () {
         ->and($response->json('online_settings.visibility_end_mode'))
         ->toBe('plan_end')
         ->and($response->json('stats.lunch_users_count'))
+        ->toBe(2)
+        ->and($response->json('stats.lunch_users_pending_confirmation_count'))
         ->toBe(1)
         ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
         ->toEqual(['Fisch', 'Schwein'])
