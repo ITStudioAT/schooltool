@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Homepage;
 use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
 use App\Http\Requests\Homepage\RestaurantCheckEmailRequest;
+use App\Http\Requests\Homepage\RestaurantConfirmEmailRequest;
 use App\Http\Requests\Homepage\RestaurantRegisterUserRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
@@ -217,6 +218,15 @@ class HomepageController extends Controller
     ) {
         return response()->json(
             $authService->register($request->validated()['data'])
+        );
+    }
+
+    public function restaurantConfirmEmail(
+        RestaurantConfirmEmailRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->confirmEmail($request->validated()['data'])
         );
     }
 

@@ -17,6 +17,9 @@ function mountMenuPlans(
     plans: Array<Record<string, unknown>> = [
         { id: 'mp-2026-03-23', start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
     ],
+    options: {
+        onlineSettings?: Record<string, unknown>
+    } = {},
 ) {
     const routerPush = vi.fn()
     const normalizedPlans = plans.map((plan) => ({ ...plan }))
@@ -39,6 +42,7 @@ function mountMenuPlans(
                 order_end_week_offset: 0,
                 order_end_day_of_week: 5,
                 order_end_time: '17:00',
+                ...(options.onlineSettings || {}),
             },
         },
         onlineSettings: {
@@ -49,6 +53,7 @@ function mountMenuPlans(
             order_end_week_offset: 0,
             order_end_day_of_week: 5,
             order_end_time: '17:00',
+            ...(options.onlineSettings || {}),
         },
         loadSettings: vi.fn(),
     } as never)
@@ -201,6 +206,98 @@ describe('Restaurant menu plans component', () => {
         expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-29"]').exists()).toBe(false)
         expect(wrapper.text()).toContain('Sichtbarer Men')
         expect(wrapper.text()).toContain('Bestellbarer Men')
+    })
+
+    it('uses the current online settings for orderable markers when no individual values are enabled', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 0,
+                order_start_day_of_week: 1,
+                order_start_time: '11:00',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 2,
+                order_end_time: '12:00',
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-03-25T12:00:00')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-25"]').exists()).toBe(true)
+    })
+
+    it('prefers individual schedule values for orderable markers when they are enabled', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                use_individual_schedule_values: true,
+                visible_start_at: '2026-03-23T08:00',
+                visible_end_at: '2026-03-27T23:59',
+                order_start_at: '2026-03-23T08:00',
+                order_end_at: '2026-03-24T12:00',
+                order_start_mode: 'when_available',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 5,
+                order_end_time: '17:00',
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-03-25T12:00:00')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-25"]').exists()).toBe(false)
+    })
+
+    it('does not show visible or orderable icons before the current online schedule opens the plan', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-04-13',
+                start_date: '2026-04-13',
+                end_date: '2026-04-16',
+                is_available: true,
+                use_individual_schedule_values: false,
+                visibility_start_mode: 'when_orderable',
+                order_start_mode: 'when_available',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 4,
+                order_end_time: '16:00',
+                visibility_end_mode: 'plan_end',
+            },
+        ], {
+            onlineSettings: {
+                visibility_start_mode: 'when_orderable',
+                visibility_start_week_offset: 2,
+                visibility_start_day_of_week: 0,
+                visibility_start_time: '15:00',
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 2,
+                order_start_day_of_week: 0,
+                order_start_time: '15:00',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 4,
+                order_end_time: '16:00',
+                visibility_end_mode: 'plan_end',
+            },
+        })
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-04-13'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-04-01T20:42:22')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-04-13"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-04-13"]').exists()).toBe(false)
     })
 
     it('combines existing menu-plan periods into connected start middle and end day classes', () => {

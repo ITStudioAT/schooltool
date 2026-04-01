@@ -344,7 +344,7 @@ export default {
         },
         availablePlanCountForDay(isoString) {
             return useMenuPlanStore().plans.filter((plan) => {
-                return plan.is_available === true && this.isWithinRange(isoString, plan.start_date, plan.end_date)
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanVisibleNow(plan)
             }).length
         },
         orderablePlanCountForDay(isoString) {
@@ -487,6 +487,38 @@ export default {
                 ...(useRestaurantStore().onlineSettings || {}),
             }
         },
+        planScheduleSettings(plan) {
+            const settings = this.onlineSettings()
+
+            return {
+                ...settings,
+                visibility_start_mode: settings.visibility_start_mode,
+                visibility_start_week_offset: Number(settings.visibility_start_week_offset),
+                visibility_start_day_of_week: Number(settings.visibility_start_day_of_week),
+                visibility_start_time: String(settings.visibility_start_time),
+                order_start_mode: settings.order_start_mode,
+                order_start_week_offset: Number(settings.order_start_week_offset),
+                order_start_day_of_week: Number(settings.order_start_day_of_week),
+                order_start_time: String(settings.order_start_time),
+                order_end_week_offset: Number(settings.order_end_week_offset),
+                order_end_day_of_week: Number(settings.order_end_day_of_week),
+                order_end_time: String(settings.order_end_time),
+                visibility_end_mode: settings.visibility_end_mode,
+            }
+        },
+        individualScheduleDateTime(plan, field) {
+            if (plan?.use_individual_schedule_values !== true) {
+                return null
+            }
+
+            const value = String(plan?.[field] || '').trim()
+
+            if (! value) {
+                return null
+            }
+
+            return value.includes('T') ? new Date(value) : this.toDate(value)
+        },
         currentDateTimeValue() {
             return this.currentDateTime instanceof Date ? this.currentDateTime : new Date(this.currentDateTime)
         },
@@ -514,13 +546,73 @@ export default {
 
             return this.isoAtTime(targetIso, timeString)
         },
+        visibilityStartDateTime(plan) {
+            const individualValue = this.individualScheduleDateTime(plan, 'visible_start_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            if (schedule.visibility_start_mode === 'scheduled') {
+                return this.scheduledDateTime(plan, schedule.visibility_start_week_offset, schedule.visibility_start_day_of_week, schedule.visibility_start_time)
+            }
+
+            if (schedule.visibility_start_mode === 'when_orderable') {
+                return this.orderStartDateTime(plan)
+            }
+
+            return new Date(0)
+        },
+        visibilityEndDateTime(plan) {
+            const individualValue = this.individualScheduleDateTime(plan, 'visible_end_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+            const visibilityEndIso = schedule.visibility_end_mode === 'week_end'
+                ? this.addDaysIso(this.startOfWeekIso(plan.end_date), 6)
+                : plan.end_date
+
+            return this.isoAtTime(visibilityEndIso, '23:59', true)
+        },
         orderStartDateTime(plan) {
-            return this.onlineSettings().order_start_mode === 'scheduled'
-                ? this.scheduledDateTime(plan, this.onlineSettings().order_start_week_offset, this.onlineSettings().order_start_day_of_week, this.onlineSettings().order_start_time)
+            const individualValue = this.individualScheduleDateTime(plan, 'order_start_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            return schedule.order_start_mode === 'scheduled'
+                ? this.scheduledDateTime(plan, schedule.order_start_week_offset, schedule.order_start_day_of_week, schedule.order_start_time)
                 : new Date(0)
         },
         orderEndDateTime(plan) {
-            return this.scheduledDateTime(plan, this.onlineSettings().order_end_week_offset, this.onlineSettings().order_end_day_of_week, this.onlineSettings().order_end_time)
+            const individualValue = this.individualScheduleDateTime(plan, 'order_end_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            return this.scheduledDateTime(plan, schedule.order_end_week_offset, schedule.order_end_day_of_week, schedule.order_end_time)
+        },
+        isPlanVisibleNow(plan) {
+            if (plan?.is_available !== true) {
+                return false
+            }
+
+            const now = this.currentDateTimeValue()
+            const visibilityStart = this.visibilityStartDateTime(plan)
+            const visibilityEnd = this.visibilityEndDateTime(plan)
+
+            return visibilityStart <= now && now <= visibilityEnd
         },
         isPlanOrderableNow(plan) {
             if (plan?.is_available !== true) {

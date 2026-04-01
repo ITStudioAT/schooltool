@@ -38,6 +38,7 @@ beforeEach(function () {
         'active_schoolyear_id' => $this->schoolyear->id,
     ]);
 
+    Role::firstOrCreate(['name' => 'lunch_candidate', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'lunch_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 });
@@ -287,8 +288,42 @@ it('adds lunch_user to an existing same-school user during registration', functi
         ->assertJsonPath('requires_email_confirmation', false);
 
     expect($user->fresh()->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->fresh()->hasRole('lunch_candidate'))->toBeFalse()
         ->and($user->fresh()->restaurant_confirmed_at)->not->toBeNull();
     Notification::assertNothingSent();
+});
+
+it('keeps an existing lunch candidate pending when email confirmation is still required', function () {
+    $schoolTool = SchoolTool::query()->where('school_id', $this->school->id)->firstOrFail();
+    $schoolTool->restaurant_new_users_must_confirm_email = true;
+    $schoolTool->save();
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'candidate@test.local',
+        'email_verified_at' => null,
+        'confirmed_at' => null,
+        'restaurant_confirmed_at' => null,
+    ]);
+    $user->assignRole('lunch_candidate');
+
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'candidate@test.local',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('status', 'CONFIRM_EMAIL')
+        ->assertJsonPath('registration_source', 'existing_user')
+        ->assertJsonPath('requires_email_confirmation', true);
+
+    expect($user->fresh()->hasRole('lunch_candidate'))->toBeTrue()
+        ->and($user->fresh()->hasRole('lunch_user'))->toBeFalse()
+        ->and($user->fresh()->restaurant_confirmed_at)->toBeNull();
+
+    Notification::assertSentOnDemand(StandardEmail::class);
 });
 
 it('creates a lunch user from the teacher list when registration is confirmed immediately', function () {
@@ -314,6 +349,7 @@ it('creates a lunch user from the teacher list when registration is confirmed im
 
     expect($user)->not->toBeNull()
         ->and($user->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->hasRole('lunch_candidate'))->toBeFalse()
         ->and($user->short)->toBe('TT')
         ->and($user->confirmed_at)->not->toBeNull()
         ->and($user->restaurant_confirmed_at)->not->toBeNull();
@@ -344,6 +380,7 @@ it('creates a lunch user from import116 student data when registration is confir
 
     expect($user)->not->toBeNull()
         ->and($user->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->hasRole('lunch_candidate'))->toBeFalse()
         ->and((int) $user->import116_id)->toBe($import->id)
         ->and($user->schoolclass)->toBe('3B')
         ->and($user->restaurant_confirmed_at)->not->toBeNull();
@@ -386,19 +423,66 @@ it('creates a dedicated parent lunch user from import116 contact data', function
 
     expect($user)->not->toBeNull()
         ->and($user->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->hasRole('lunch_candidate'))->toBeFalse()
         ->and($user->first_name)->toBe('Eva')
         ->and($user->last_name)->toBe('Muster')
         ->and($user->import116_id)->toBeNull()
         ->and($user->restaurant_confirmed_at)->not->toBeNull();
 });
 
-it('creates a manual lunch user when the email is not known anywhere', function () {
+it('sends a confirmation code for an unknown manual registration without saving the user', function () {
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'manual-create@test.local',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('status', 'CONFIRM_EMAIL')
+        ->assertJsonPath('registration_source', 'new_user')
+        ->assertJsonPath('requires_email_confirmation', true);
+
+    expect(User::query()->where('school_id', $this->school->id)->where('email', 'manual-create@test.local')->doesntExist())->toBeTrue();
+    Notification::assertSentOnDemand(StandardEmail::class);
+});
+
+it('creates a lunch candidate for an unknown email only after email confirmation and name entry', function () {
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'manual-create@test.local',
+        ],
+    ])->assertOk();
+
+    $emailToken = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$emailToken): bool {
+        $emailToken = (string) ($notification->data['token_2fa'] ?? '');
+
+        return $emailToken !== '';
+    });
+
+    $confirmResponse = $this->postJson('/api/homepage/restaurant/confirm_email', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'manual-create@test.local',
+            'token_2fa' => $emailToken,
+        ],
+    ]);
+
+    $confirmResponse
+        ->assertOk()
+        ->assertJsonPath('status', 'ENTER_USER_DATA')
+        ->assertJsonPath('registration_source', 'new_user');
+
+    expect(User::query()->where('school_id', $this->school->id)->where('email', 'manual-create@test.local')->doesntExist())->toBeTrue();
+
     $this->postJson('/api/homepage/restaurant/register', [
         'data' => [
             'school_id' => $this->school->id,
             'email' => 'manual-create@test.local',
             'first_name' => 'Mia',
             'last_name' => 'Muster',
+            'confirmation_token' => $confirmResponse->json('confirmation_token'),
         ],
     ])
         ->assertOk()
@@ -408,35 +492,62 @@ it('creates a manual lunch user when the email is not known anywhere', function 
     $user = User::query()->where('school_id', $this->school->id)->where('email', 'manual-create@test.local')->first();
 
     expect($user)->not->toBeNull()
-        ->and($user->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->hasRole('lunch_candidate'))->toBeTrue()
+        ->and($user->hasRole('lunch_user'))->toBeFalse()
         ->and($user->first_name)->toBe('Mia')
         ->and($user->last_name)->toBe('Muster')
         ->and((int) $user->schoolyear_id)->toBe($this->schoolyear->id)
-        ->and($user->restaurant_confirmed_at)->not->toBeNull();
+        ->and($user->email_verified_at)->not->toBeNull()
+        ->and($user->confirmed_at)->toBeNull()
+        ->and($user->restaurant_confirmed_at)->toBeNull();
 });
 
-it('requires first and last name for manual restaurant registration', function () {
+it('requires first and last name after an unknown email was confirmed', function () {
     $this->postJson('/api/homepage/restaurant/register', [
         'data' => [
             'school_id' => $this->school->id,
             'email' => 'manual-missing@test.local',
+        ],
+    ])->assertOk();
+
+    $emailToken = null;
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification) use (&$emailToken): bool {
+        $emailToken = (string) ($notification->data['token_2fa'] ?? '');
+
+        return $emailToken !== '';
+    });
+
+    $confirmResponse = $this->postJson('/api/homepage/restaurant/confirm_email', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'manual-missing@test.local',
+            'token_2fa' => $emailToken,
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'manual-missing@test.local',
+            'confirmation_token' => $confirmResponse->json('confirmation_token'),
         ],
     ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['data.first_name', 'data.last_name']);
 });
 
-it('keeps newly created restaurant users pending when email confirmation is required', function () {
-    $schoolTool = SchoolTool::query()->where('school_id', $this->school->id)->firstOrFail();
-    $schoolTool->restaurant_new_users_must_confirm_email = true;
-    $schoolTool->save();
+it('resends the email confirmation code for unknown manual registrations without saving the user', function () {
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'confirm-create@test.local',
+        ],
+    ])->assertOk();
 
     $this->postJson('/api/homepage/restaurant/register', [
         'data' => [
             'school_id' => $this->school->id,
             'email' => 'confirm-create@test.local',
-            'first_name' => 'Klara',
-            'last_name' => 'Kontrolle',
         ],
     ])
         ->assertOk()
@@ -444,13 +555,6 @@ it('keeps newly created restaurant users pending when email confirmation is requ
         ->assertJsonPath('registration_source', 'new_user')
         ->assertJsonPath('requires_email_confirmation', true);
 
-    $user = User::query()->where('school_id', $this->school->id)->where('email', 'confirm-create@test.local')->first();
-
-    expect($user)->not->toBeNull()
-        ->and($user->hasRole('lunch_user'))->toBeTrue()
-        ->and($user->email_verified_at)->toBeNull()
-        ->and($user->confirmed_at)->toBeNull()
-        ->and($user->restaurant_confirmed_at)->toBeNull();
-
-    Notification::assertSentOnDemand(StandardEmail::class);
+    expect(User::query()->where('school_id', $this->school->id)->where('email', 'confirm-create@test.local')->doesntExist())->toBeTrue();
+    Notification::assertSentOnDemand(StandardEmail::class, 2);
 });

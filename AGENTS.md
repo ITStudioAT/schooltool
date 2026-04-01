@@ -167,11 +167,36 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 </laravel-boost-guidelines>
 
-## Encoding Rules
+## Encoding Policy
 
 - All source files must be UTF-8 without BOM.
 - Never change file encoding.
 - Preserve all non-ASCII characters exactly.
-- Never replace umlauts with mojibake or broken multi-byte sequences.
+- Never replace umlauts or special characters with mojibake or placeholders.
+- Never turn correct characters like `ä`, `ö`, `ü`, `ß` into `?`, `�`, `Ã¤`, `Ã¶`, `Ã¼`, `ÃŸ`.
 - Do not convert umlauts to HTML entities unless required by the existing file context.
 - Before saving edited files, verify that all original special characters are preserved exactly.
+- If existing text appears corrupted, repair only clearly reconstructable strings and report ambiguous cases.
+
+## Editing Rules
+
+- Make the smallest safe change.
+- Do not perform unrelated refactors.
+- Do not rewrite files unnecessarily.
+- Preserve user-facing text carefully, especially German UI strings, emails, translations, labels, and templates.
+
+## Validation
+
+- After edits, scan changed files for `?`, `�`, `Ã¤`, `Ã¶`, `Ã¼`, `ÃŸ` in suspicious contexts.
+- Keep `encoding-smoke-test.txt` with German umlauts and punctuation.
+- Report pre-existing corruption separately from newly prevented issues.
+
+## Axios Security Rules
+
+- Never use axios versions `1.14.1` or `0.30.4`.
+- Treat `plain-crypto-js` as malicious and forbidden.
+- Prefer pinned safe dependency versions.
+- Preserve lockfile integrity.
+- Use `npm ci` in CI when npm is the package manager.
+- Make the smallest safe change only.
+- Do not perform unrelated refactors.

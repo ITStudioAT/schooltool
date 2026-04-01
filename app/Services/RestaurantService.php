@@ -10,6 +10,7 @@ use App\Models\RestaurantMenuPlan;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -64,12 +65,9 @@ class RestaurantService
         $menusCount = RestaurantMenu::query()
             ->where('school_id', $authUser->school_id)
             ->count();
-        $lunchUsersCount = User::query()
-            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
+        $lunchUsersCount = $this->restaurantUsersQuery($authUser->school_id)
             ->count();
-        $lunchUsersPendingConfirmationCount = User::query()
-            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
-            ->whereNull('restaurant_confirmed_at')
+        $lunchUsersPendingConfirmationCount = $this->restaurantCandidateUsersQuery($authUser->school_id)
             ->count();
 
         $foods = $this->foodsForUser($authUser);
@@ -194,7 +192,29 @@ class RestaurantService
         $plans = RestaurantMenuPlan::query()
             ->where('school_id', $school->id)
             ->where('is_available', true)
-            ->get(['id', 'start_date', 'end_date', 'is_available']);
+            ->get([
+                'id',
+                'start_date',
+                'end_date',
+                'is_available',
+                'visibility_start_mode',
+                'visibility_start_week_offset',
+                'visibility_start_day_of_week',
+                'visibility_start_time',
+                'order_start_mode',
+                'order_start_week_offset',
+                'order_start_day_of_week',
+                'order_start_time',
+                'order_end_week_offset',
+                'order_end_day_of_week',
+                'order_end_time',
+                'visibility_end_mode',
+                'visible_start_at',
+                'visible_end_at',
+                'order_start_at',
+                'order_end_at',
+                'use_individual_schedule_values',
+            ]);
 
         return [
             'visible_menu_plans_count' => $plans->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanVisibleNow($plan, $onlineSettings, $now))->count(),
@@ -811,17 +831,23 @@ class RestaurantService
 
     private function visibilityStartDateTime(RestaurantMenuPlan $plan, array $onlineSettings): Carbon
     {
-        if (($onlineSettings['visibility_start_mode'] ?? 'when_available') === 'scheduled') {
+        if ($individualValue = $this->individualScheduleValue($plan, 'visible_start_at')) {
+            return $individualValue;
+        }
+
+        $schedule = $this->menuPlanScheduleSettings($plan, $onlineSettings);
+
+        if (($schedule['visibility_start_mode'] ?? 'when_available') === 'scheduled') {
             return $this->scheduledDateTime(
                 $plan,
-                $onlineSettings['visibility_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset'],
-                $onlineSettings['visibility_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week'],
-                $onlineSettings['visibility_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_time'],
+                $schedule['visibility_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset'],
+                $schedule['visibility_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week'],
+                $schedule['visibility_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_time'],
             );
         }
 
-        if (($onlineSettings['visibility_start_mode'] ?? 'when_available') === 'when_orderable') {
-            return $this->orderStartDateTime($plan, $onlineSettings);
+        if (($schedule['visibility_start_mode'] ?? 'when_available') === 'when_orderable') {
+            return $this->orderStartDateTime($plan, $schedule);
         }
 
         return $this->distantPast();
@@ -829,7 +855,13 @@ class RestaurantService
 
     private function visibilityEndDateTime(RestaurantMenuPlan $plan, array $onlineSettings): Carbon
     {
-        $visibilityEndDate = ($onlineSettings['visibility_end_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode']) === 'week_end'
+        if ($individualValue = $this->individualScheduleValue($plan, 'visible_end_at')) {
+            return $individualValue;
+        }
+
+        $schedule = $this->menuPlanScheduleSettings($plan, $onlineSettings);
+
+        $visibilityEndDate = ($schedule['visibility_end_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode']) === 'week_end'
             ? Carbon::parse($plan->end_date)->startOfWeek(Carbon::MONDAY)->addDays(6)
             : Carbon::parse($plan->end_date);
 
@@ -838,26 +870,85 @@ class RestaurantService
 
     private function orderStartDateTime(RestaurantMenuPlan $plan, array $onlineSettings): Carbon
     {
-        if (($onlineSettings['order_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_mode']) !== 'scheduled') {
+        if ($individualValue = $this->individualScheduleValue($plan, 'order_start_at')) {
+            return $individualValue;
+        }
+
+        $schedule = $this->menuPlanScheduleSettings($plan, $onlineSettings);
+
+        if (($schedule['order_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_mode']) !== 'scheduled') {
             return $this->distantPast();
         }
 
         return $this->scheduledDateTime(
             $plan,
-            $onlineSettings['order_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset'],
-            $onlineSettings['order_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week'],
-            $onlineSettings['order_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_time'],
+            $schedule['order_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset'],
+            $schedule['order_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week'],
+            $schedule['order_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_time'],
         );
     }
 
     private function orderEndDateTime(RestaurantMenuPlan $plan, array $onlineSettings): Carbon
     {
+        if ($individualValue = $this->individualScheduleValue($plan, 'order_end_at')) {
+            return $individualValue;
+        }
+
+        $schedule = $this->menuPlanScheduleSettings($plan, $onlineSettings);
+
         return $this->scheduledDateTime(
             $plan,
-            $onlineSettings['order_end_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset'],
-            $onlineSettings['order_end_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week'],
-            $onlineSettings['order_end_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time'],
+            $schedule['order_end_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset'],
+            $schedule['order_end_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week'],
+            $schedule['order_end_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time'],
         );
+    }
+
+    private function menuPlanScheduleSettings(RestaurantMenuPlan $plan, array $onlineSettings): array
+    {
+        // Standard menu plans follow the current online settings.
+        // Only the four explicit individual timestamps override these rules.
+        $settings = [
+            ...self::DEFAULT_ONLINE_SETTINGS,
+            ...$onlineSettings,
+        ];
+
+        return [
+            ...$settings,
+            'visibility_start_mode' => $this->normalizeVisibilityStartMode($settings['visibility_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_mode']),
+            'visibility_start_week_offset' => $this->normalizeWeekOffset($settings['visibility_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_week_offset']),
+            'visibility_start_day_of_week' => $this->normalizeDayOfWeek($settings['visibility_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_day_of_week']),
+            'visibility_start_time' => $this->normalizeTimeString($settings['visibility_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_start_time']),
+            'order_start_mode' => ($settings['order_start_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_mode']) === 'scheduled'
+                ? 'scheduled'
+                : 'when_available',
+            'order_start_week_offset' => $this->normalizeWeekOffset($settings['order_start_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_week_offset']),
+            'order_start_day_of_week' => $this->normalizeDayOfWeek($settings['order_start_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_day_of_week']),
+            'order_start_time' => $this->normalizeTimeString($settings['order_start_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_start_time']),
+            'order_end_week_offset' => $this->normalizeWeekOffset($settings['order_end_week_offset'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_week_offset']),
+            'order_end_day_of_week' => $this->normalizeDayOfWeek($settings['order_end_day_of_week'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_day_of_week']),
+            'order_end_time' => $this->normalizeTimeString($settings['order_end_time'] ?? self::DEFAULT_ONLINE_SETTINGS['order_end_time']),
+            'visibility_end_mode' => $this->normalizeVisibilityEndMode($settings['visibility_end_mode'] ?? self::DEFAULT_ONLINE_SETTINGS['visibility_end_mode']),
+        ];
+    }
+
+    private function individualScheduleValue(RestaurantMenuPlan $plan, string $attribute): ?Carbon
+    {
+        if ($plan->use_individual_schedule_values !== true) {
+            return null;
+        }
+
+        $value = $plan->getAttribute($attribute);
+
+        if ($value instanceof Carbon) {
+            return $value->copy();
+        }
+
+        if (blank($value)) {
+            return null;
+        }
+
+        return Carbon::parse($value, config('app.timezone'));
     }
 
     private function scheduledDateTime(RestaurantMenuPlan $plan, mixed $weekOffset, mixed $dayOfWeek, mixed $timeString): Carbon
@@ -937,5 +1028,23 @@ class RestaurantService
         if ((int) $menu->school_id !== (int) $authUser->school_id) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
+    }
+
+    private function restaurantUsersQuery(int $schoolId): Builder
+    {
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->whereIn('name', ['lunch_user', 'lunch_candidate']);
+            });
+    }
+
+    private function restaurantCandidateUsersQuery(int $schoolId): Builder
+    {
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->where('name', 'lunch_candidate');
+            });
     }
 }

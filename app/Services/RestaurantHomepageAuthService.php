@@ -3,12 +3,18 @@
 namespace App\Services;
 
 use App\Models\Import116;
+use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\StandardEmail;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class RestaurantHomepageAuthService
@@ -76,7 +82,7 @@ class RestaurantHomepageAuthService
     }
 
     /**
-     * @param  array{school_id:int|string, email:string, first_name?:?string, last_name?:?string}  $data
+     * @param  array{school_id:int|string, email:string, first_name?:?string, last_name?:?string, confirmation_token?:?string}  $data
      * @return array<string, mixed>
      */
     public function register(array $data): array
@@ -85,13 +91,48 @@ class RestaurantHomepageAuthService
         $normalizedEmail = $this->normalizeEmail($data['email']);
         $normalizedFirstName = $this->normalizeNullableString($data['first_name'] ?? null);
         $normalizedLastName = $this->normalizeNullableString($data['last_name'] ?? null);
+        $confirmationToken = $this->normalizeNullableString($data['confirmation_token'] ?? null);
         $context = $this->resolveRegistrationContext($schoolId, $normalizedEmail);
 
-        return DB::transaction(function () use ($context, $schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName): array {
+        return DB::transaction(function () use ($context, $schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName, $confirmationToken): array {
             $registrationSource = (string) $context['registration_source'];
 
+            if ($confirmationToken !== null && $registrationSource !== 'new_user') {
+                throw ValidationException::withMessages([
+                    'data.email' => 'Die Registrierung muss neu gestartet werden.',
+                ]);
+            }
+
             if ($registrationSource === 'new_user') {
+                if ($confirmationToken === null) {
+                    $this->sendManualRegistrationCode($schoolId, $normalizedEmail);
+
+                    return [
+                        'status' => 'CONFIRM_EMAIL',
+                        'school_id' => $schoolId,
+                        'email' => $normalizedEmail,
+                        'registration_source' => $registrationSource,
+                        'requires_email_confirmation' => true,
+                        'message' => 'Wir haben einen 6-stelligen Code an Ihre E-Mail-Adresse gesendet. Bitte bestaetigen Sie zuerst Ihre E-Mail-Adresse.',
+                    ];
+                }
+
                 $this->ensureManualNameInput($normalizedFirstName, $normalizedLastName);
+                $this->ensureManualRegistrationConfirmed($schoolId, $normalizedEmail, $confirmationToken);
+
+                $user = $this->registerManualUser($schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName);
+                $this->completeVerifiedManualRestaurantRegistration($user);
+                $this->forgetManualRegistration($schoolId, $normalizedEmail);
+
+                return [
+                    'status' => 'REGISTERED',
+                    'school_id' => $schoolId,
+                    'email' => $normalizedEmail,
+                    'user_id' => (int) $user->id,
+                    'registration_source' => $registrationSource,
+                    'requires_email_confirmation' => false,
+                    'message' => 'Das Mittagskonto wurde angelegt und wartet jetzt auf die Freischaltung.',
+                ];
             }
 
             $user = match ($registrationSource) {
@@ -104,6 +145,35 @@ class RestaurantHomepageAuthService
                     'data.email' => 'Die E-Mail-Adresse kann nicht verarbeitet werden.',
                 ]),
             };
+
+            if ($registrationSource === 'existing_user' && $user->hasRole('lunch_candidate') && ! $user->hasRole('lunch_user')) {
+                if ($this->newUsersMustConfirmEmail($schoolId)) {
+                    $this->preparePendingRestaurantUser($user);
+                    $this->userService->sendCode($user, 'E-Mail bestaetigen', (string) $user->email);
+
+                    return [
+                        'status' => 'CONFIRM_EMAIL',
+                        'school_id' => $schoolId,
+                        'email' => $normalizedEmail,
+                        'user_id' => (int) $user->id,
+                        'registration_source' => $registrationSource,
+                        'requires_email_confirmation' => true,
+                        'message' => 'Die Registrierung wartet bereits auf Ihre E-Mail-Bestaetigung. Wir haben einen neuen Code gesendet.',
+                    ];
+                }
+
+                $this->activateRestaurantUser($user);
+
+                return [
+                    'status' => 'REGISTERED',
+                    'school_id' => $schoolId,
+                    'email' => $normalizedEmail,
+                    'user_id' => (int) $user->id,
+                    'registration_source' => $registrationSource,
+                    'requires_email_confirmation' => false,
+                    'message' => 'Das bestehende Benutzerkonto wurde fuer das Restaurant freigeschaltet.',
+                ];
+            }
 
             if ($registrationSource === 'existing_user') {
                 $this->confirmRestaurantUser($user);
@@ -146,6 +216,57 @@ class RestaurantHomepageAuthService
                 'message' => 'Das Mittagskonto wurde erfolgreich registriert.',
             ];
         });
+    }
+
+    /**
+     * @param  array{school_id:int|string, email:string, token_2fa:string}  $data
+     * @return array<string, mixed>
+     */
+    public function confirmEmail(array $data): array
+    {
+        $schoolId = (int) $data['school_id'];
+        $normalizedEmail = $this->normalizeEmail($data['email']);
+        $token = trim((string) $data['token_2fa']);
+
+        $payload = $this->manualRegistrationPayload($schoolId, $normalizedEmail);
+
+        if (! $payload || ($payload['status'] ?? null) !== 'pending_email_confirmation') {
+            abort(401, 'Der Code ist falsch oder abgelaufen.');
+        }
+
+        if (($payload['token_2fa'] ?? null) !== $token) {
+            abort(401, 'Der Code ist falsch oder abgelaufen.');
+        }
+
+        $expiresAt = $payload['token_2fa_expires_at'] ?? null;
+        if (! is_string($expiresAt) || now()->greaterThan(Carbon::parse($expiresAt))) {
+            $this->forgetManualRegistration($schoolId, $normalizedEmail);
+            abort(401, 'Der Code ist falsch oder abgelaufen.');
+        }
+
+        $confirmationToken = Str::random(40);
+
+        $this->storeManualRegistrationPayload(
+            $schoolId,
+            $normalizedEmail,
+            [
+                'status' => 'email_confirmed',
+                'token_2fa' => null,
+                'token_2fa_expires_at' => null,
+                'confirmation_token' => $confirmationToken,
+                'confirmation_token_expires_at' => now()->addMinutes($this->manualRegistrationTtlMinutes())->toIso8601String(),
+            ]
+        );
+
+        return [
+            'status' => 'ENTER_USER_DATA',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'registration_source' => 'new_user',
+            'confirmation_token' => $confirmationToken,
+            'requires_email_confirmation' => false,
+            'message' => 'Die E-Mail-Adresse wurde bestaetigt. Bitte geben Sie jetzt Nachname und Vorname ein.',
+        ];
     }
 
     /**
@@ -291,6 +412,17 @@ class RestaurantHomepageAuthService
         ]);
     }
 
+    private function completeVerifiedManualRestaurantRegistration(User $user): void
+    {
+        $user->email_verified_at = now();
+        $user->confirmed_at = null;
+        $user->restaurant_confirmed_at = null;
+        $user->is_active = 1;
+        $user->save();
+
+        $this->assignPendingRestaurantRole($user);
+    }
+
     private function activateRestaurantUser(User $user): void
     {
         $user->email_verified_at = $user->email_verified_at ?? now();
@@ -299,9 +431,7 @@ class RestaurantHomepageAuthService
         $user->is_active = 1;
         $user->save();
 
-        if (! $user->hasRole('lunch_user')) {
-            $user->assignRole('lunch_user');
-        }
+        $this->assignConfirmedRestaurantRole($user);
     }
 
     private function confirmRestaurantUser(User $user): void
@@ -310,9 +440,7 @@ class RestaurantHomepageAuthService
         $user->is_active = 1;
         $user->save();
 
-        if (! $user->hasRole('lunch_user')) {
-            $user->assignRole('lunch_user');
-        }
+        $this->assignConfirmedRestaurantRole($user);
     }
 
     private function preparePendingRestaurantUser(User $user): void
@@ -323,8 +451,28 @@ class RestaurantHomepageAuthService
         $user->is_active = 1;
         $user->save();
 
+        $this->assignPendingRestaurantRole($user);
+    }
+
+    private function assignConfirmedRestaurantRole(User $user): void
+    {
+        if ($user->hasRole('lunch_candidate')) {
+            $user->removeRole('lunch_candidate');
+        }
+
         if (! $user->hasRole('lunch_user')) {
             $user->assignRole('lunch_user');
+        }
+    }
+
+    private function assignPendingRestaurantRole(User $user): void
+    {
+        if ($user->hasRole('lunch_user')) {
+            $user->removeRole('lunch_user');
+        }
+
+        if (! $user->hasRole('lunch_candidate')) {
+            $user->assignRole('lunch_candidate');
         }
     }
 
@@ -343,6 +491,93 @@ class RestaurantHomepageAuthService
         if ($messages !== []) {
             throw ValidationException::withMessages($messages);
         }
+    }
+
+    private function ensureManualRegistrationConfirmed(int $schoolId, string $normalizedEmail, string $confirmationToken): void
+    {
+        $payload = $this->manualRegistrationPayload($schoolId, $normalizedEmail);
+
+        if (! $payload || ($payload['status'] ?? null) !== 'email_confirmed') {
+            throw ValidationException::withMessages([
+                'data.email' => 'Bitte bestaetigen Sie zuerst Ihre E-Mail-Adresse.',
+            ]);
+        }
+
+        $payloadToken = $payload['confirmation_token'] ?? null;
+        $expiresAt = $payload['confirmation_token_expires_at'] ?? null;
+
+        if (! is_string($payloadToken) || ! hash_equals($payloadToken, $confirmationToken) || ! is_string($expiresAt) || now()->greaterThan(Carbon::parse($expiresAt))) {
+            $this->forgetManualRegistration($schoolId, $normalizedEmail);
+
+            throw ValidationException::withMessages([
+                'data.confirmation_token' => 'Die E-Mail-Bestaetigung ist abgelaufen. Bitte fordern Sie einen neuen Code an.',
+            ]);
+        }
+    }
+
+    private function sendManualRegistrationCode(int $schoolId, string $normalizedEmail): void
+    {
+        $school = School::query()->findOrFail($schoolId);
+        $token = (string) random_int(100000, 999999);
+
+        $this->storeManualRegistrationPayload(
+            $schoolId,
+            $normalizedEmail,
+            [
+                'status' => 'pending_email_confirmation',
+                'token_2fa' => $token,
+                'token_2fa_expires_at' => now()->addMinutes($this->manualRegistrationTtlMinutes())->toIso8601String(),
+                'confirmation_token' => null,
+                'confirmation_token_expires_at' => null,
+            ]
+        );
+
+        Notification::route('mail', $normalizedEmail)->notify(new StandardEmail([
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/'.$school->logo),
+            'subject' => 'Code zur E-Mail-Bestaetigung',
+            'markdown' => 'mails.homepage.sendCode',
+            'token_2fa' => $token,
+            'token-expire-time' => config('schooltool.token_expire_time'),
+        ]));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function manualRegistrationPayload(int $schoolId, string $normalizedEmail): ?array
+    {
+        $payload = Cache::get($this->manualRegistrationCacheKey($schoolId, $normalizedEmail));
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function storeManualRegistrationPayload(int $schoolId, string $normalizedEmail, array $payload): void
+    {
+        Cache::put(
+            $this->manualRegistrationCacheKey($schoolId, $normalizedEmail),
+            $payload,
+            now()->addMinutes($this->manualRegistrationTtlMinutes())
+        );
+    }
+
+    private function forgetManualRegistration(int $schoolId, string $normalizedEmail): void
+    {
+        Cache::forget($this->manualRegistrationCacheKey($schoolId, $normalizedEmail));
+    }
+
+    private function manualRegistrationCacheKey(int $schoolId, string $normalizedEmail): string
+    {
+        return 'restaurant:manual-registration:'.$schoolId.':'.sha1($normalizedEmail);
+    }
+
+    private function manualRegistrationTtlMinutes(): int
+    {
+        return (int) config('schooltool.token_expire_time', 15);
     }
 
     private function activeSchoolyearIdForSchool(int $schoolId): ?int

@@ -88,5 +88,43 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                 adminStore.is_loading--
             }
         },
+
+        async confirmUser(userId) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+            this.error = null
+
+            try {
+                const response = await axios.put(`/api/admin/restaurant/users/${userId}/confirm`)
+                const updatedUser = response?.data?.data || null
+
+                if (updatedUser) {
+                    this.users = this.users.map((user) => {
+                        return Number(user.id) === Number(userId) ? updatedUser : user
+                    })
+                }
+
+                notification.notify({
+                    message: 'Restaurant-Benutzer bestätigt.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return updatedUser
+            } catch (error) {
+                this.error = error
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Bestätigen des Restaurant-Benutzers.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })

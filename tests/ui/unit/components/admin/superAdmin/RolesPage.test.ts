@@ -81,7 +81,9 @@ describe('Roles admin access flag UI', () => {
 
         expect(screen.getByText('custom_admin_shell')).toBeInTheDocument()
         expect(screen.getByText('simple_role')).toBeInTheDocument()
-        expect(screen.getByText('Zugang zu /admin')).toBeInTheDocument()
+        expect(screen.getByText((content, element) => {
+            return element?.textContent === ' Darf /admin öffnen '
+        })).toBeInTheDocument()
     })
 
     it('shows the admin access checkbox and explanation in the role dialog', () => {
@@ -112,7 +114,7 @@ describe('Roles admin access flag UI', () => {
             },
         })
 
-        expect(screen.getByText('Admin-Zugang (/admin)')).toBeInTheDocument()
+        expect(screen.getByText('Dashboard (/admin)')).toBeInTheDocument()
         expect(screen.getByText(/dürfen Benutzer mit dieser Rolle den Adminbereich unter/i)).toBeInTheDocument()
     })
 
@@ -148,7 +150,7 @@ describe('Roles admin access flag UI', () => {
 
         const roleStore = useSuperAdminRoleStore()
 
-        await fireEvent.click(screen.getByRole('button', { name: 'aktiv' }))
+        await fireEvent.click(screen.getByText('Dashboard'))
 
         expect(roleStore.update).toHaveBeenCalledWith({
             id: 1,

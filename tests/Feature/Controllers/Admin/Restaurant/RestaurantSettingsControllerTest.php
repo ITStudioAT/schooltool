@@ -17,7 +17,7 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    collect(['super_admin', 'admin', 'lunch_admin', 'lunch_user'])->each(function (string $role): void {
+    collect(['super_admin', 'admin', 'lunch_admin', 'lunch_candidate', 'lunch_user'])->each(function (string $role): void {
         Role::firstOrCreate([
             'name' => $role,
             'guard_name' => 'web',
@@ -52,7 +52,7 @@ test('settings creates default categories for empty school', function () {
         'confirmed_at' => null,
         'restaurant_confirmed_at' => null,
     ]);
-    $pendingLunchUser->assignRole('lunch_user');
+    $pendingLunchUser->assignRole('lunch_candidate');
 
     $this->actingAs($this->admin, 'sanctum');
 

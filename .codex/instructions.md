@@ -2,6 +2,13 @@
 
 For any Laravel/project questions, DO NOT guess. Always inspect the real project state first using Laravel Boost MCP tools and/or local project commands.
 
+## Encoding and text handling
+
+- Treat the repository as UTF-8 without BOM.
+- Preserve German umlauts and other non-ASCII characters exactly as stored.
+- Never replace correct characters with `?`, `�`, `Ã¤`, `Ã¶`, `Ã¼`, `ÃŸ`, or similar mojibake.
+- If text appears corrupted, only repair strings that are clearly reconstructable.
+
 Use Boost tools by default for:
 
 - routing (route definitions, middleware stacks, route groups)

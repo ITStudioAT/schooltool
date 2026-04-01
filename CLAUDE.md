@@ -25,7 +25,7 @@ SchoolTool is a German-language Laravel application providing administrative too
 ### Setup
 
 ```bash
-composer setup  # Runs: install, .env copy, key:generate, migrate, npm install, npm run build
+composer setup  # Runs: install, .env copy, key:generate, migrate, npm ci, npm run build
 ```
 
 ### Development Server

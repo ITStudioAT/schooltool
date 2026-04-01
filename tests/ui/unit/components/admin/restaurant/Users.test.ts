@@ -50,6 +50,7 @@ function mountUsers(storeOverrides: Record<string, unknown> = {}, routeQuery: Re
         only_pending_confirmation: false,
         index: vi.fn().mockResolvedValue(true),
         updateSepa: vi.fn().mockResolvedValue(true),
+        confirmUser: vi.fn().mockResolvedValue(true),
         ...storeOverrides,
     }
 
@@ -186,5 +187,28 @@ describe('Restaurant users component', () => {
         await (wrapper.vm as any).toggleSepa(store.users[0])
 
         expect(store.updateSepa).toHaveBeenCalledWith(1, false)
+    })
+
+    it('confirms a pending restaurant user from the list', async () => {
+        const { wrapper, store } = mountUsers({
+            users: [
+                {
+                    id: 1,
+                    first_name: 'Anna',
+                    last_name: 'Mittag',
+                    email: 'anna@example.test',
+                    has_sepa: false,
+                    is_verified: true,
+                    is_confirmed: false,
+                    is_restaurant_confirmed: false,
+                    roles: ['lunch_candidate'],
+                },
+            ],
+        })
+        ;(wrapper.vm as any).restaurantUserStore = store
+
+        await (wrapper.vm as any).confirmRestaurantUser(store.users[0])
+
+        expect(store.confirmUser).toHaveBeenCalledWith(1)
     })
 })

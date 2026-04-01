@@ -113,4 +113,47 @@ describe('RestaurantUserStore', () => {
             },
         })
     })
+
+    it('confirms a restaurant user locally', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: {
+                    id: 7,
+                    first_name: 'Anna',
+                    last_name: 'Mittag',
+                    email: 'anna@example.test',
+                    is_confirmed: true,
+                    is_restaurant_confirmed: true,
+                    roles: ['lunch_user'],
+                },
+            },
+        })
+
+        const store = useRestaurantUserStore()
+        store.users = [
+            {
+                id: 7,
+                first_name: 'Anna',
+                last_name: 'Mittag',
+                email: 'anna@example.test',
+                is_confirmed: false,
+                is_restaurant_confirmed: false,
+                roles: ['lunch_candidate'],
+            },
+        ]
+
+        const result = await store.confirmUser(7)
+
+        expect(result).toEqual({
+            id: 7,
+            first_name: 'Anna',
+            last_name: 'Mittag',
+            email: 'anna@example.test',
+            is_confirmed: true,
+            is_restaurant_confirmed: true,
+            roles: ['lunch_user'],
+        })
+        expect(store.users[0].roles).toEqual(['lunch_user'])
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/users/7/confirm')
+    })
 })

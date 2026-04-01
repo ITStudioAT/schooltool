@@ -148,12 +148,24 @@
                                 </div>
 
                                 <v-btn
+                                    v-if="user.roles?.includes('lunch_candidate')"
+                                    size="small"
+                                    color="primary"
+                                    variant="flat"
+                                    prepend-icon="mdi-check-decagram-outline"
+                                    :loading="confirmUserId === user.id"
+                                    :disabled="confirmUserId === user.id || !user.is_verified"
+                                    @click="confirmRestaurantUser(user)">
+                                    Bestätigen
+                                </v-btn>
+
+                                <v-btn
                                     size="small"
                                     :color="user.has_sepa ? 'warning' : 'success'"
                                     :variant="user.has_sepa ? 'outlined' : 'flat'"
                                     :prepend-icon="user.has_sepa ? 'mdi-close-circle-outline' : 'mdi-check-circle-outline'"
                                     :loading="sepaUserId === user.id"
-                                    :disabled="sepaUserId === user.id"
+                                    :disabled="sepaUserId === user.id || user.roles?.includes('lunch_candidate')"
                                     @click="toggleSepa(user)">
                                     {{ user.has_sepa ? 'SEPA entfernen' : 'SEPA bestätigen' }}
                                 </v-btn>
@@ -255,6 +267,7 @@ export default {
             restaurantUserStore: null,
             searchDraft: '',
             sepaUserId: null,
+            confirmUserId: null,
         }
     },
 
@@ -332,6 +345,19 @@ export default {
                 await this.restaurantUserStore.updateSepa(user.id, ! user.has_sepa)
             } finally {
                 this.sepaUserId = null
+            }
+        },
+        async confirmRestaurantUser(user) {
+            this.confirmUserId = user?.id ?? null
+
+            try {
+                const confirmedUser = await this.restaurantUserStore.confirmUser(user.id)
+
+                if (confirmedUser && this.restaurantUserStore.only_pending_confirmation) {
+                    await this.restaurantUserStore.index(this.currentPage)
+                }
+            } finally {
+                this.confirmUserId = null
             }
         },
         syncPendingConfirmationFilterFromRoute() {

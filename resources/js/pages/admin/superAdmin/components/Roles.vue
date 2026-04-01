@@ -53,7 +53,7 @@
                                             <div class="person-body" style="min-width: 0">
                                                 <div class="person-name">{{ item.name }}</div>
                                                 <div v-if="item.is_admin" class="kpi-sub mt-1">
-                                                    Zugang zu <code>/admin</code>
+                                                    Darf <code>/admin</code> öffnen
                                                 </div>
                                             </div>
                                             <div class="d-flex align-center" @click.stop>
@@ -63,7 +63,7 @@
                                                     density="compact"
                                                     hide-details
                                                     inset
-                                                    :label="item.is_admin ? 'aktiv' : 'inaktiv'"
+                                                    :label="item.is_admin ? 'Dashboard' : 'Kein Dashboard'"
                                                     @update:modelValue="toggleRoleAdminAccess(item, $event)" />
                                             </div>
                                         </div>
@@ -151,7 +151,7 @@
                                     <v-checkbox
                                         v-model="data.is_admin"
                                         color="primary"
-                                        label="Admin-Zugang (/admin)"
+                                        label="Dashboard (/admin)"
                                         hide-details />
                                     <div class="kpi-sub mt-1">
                                         Wenn diese Eigenschaft aktiv ist, dürfen Benutzer mit dieser Rolle den Adminbereich unter

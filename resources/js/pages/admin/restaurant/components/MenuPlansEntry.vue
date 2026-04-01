@@ -41,6 +41,17 @@
                                         Speichern
                                     </v-btn>
                                     <v-btn
+                                        v-if="planId"
+                                        color="warning"
+                                        rounded="xl"
+                                        variant="tonal"
+                                        prepend-icon="mdi-delete-outline"
+                                        :disabled="!canDeletePlan"
+                                        data-testid="delete-menu-plan-button"
+                                        @click="requestDeletePlan">
+                                        {{ deletePlanButtonLabel }}
+                                    </v-btn>
+                                    <v-btn
                                         v-if="printHref"
                                         color="white"
                                         rounded="xl"
@@ -61,6 +72,12 @@
                                         Zurück
                                     </v-btn>
                                 </div>
+                                <div
+                                    v-if="planId && hasPlanBookings"
+                                    class="mpe-header__hint"
+                                    data-testid="delete-menu-plan-hint">
+                                    {{ deletePlanHint }}
+                                </div>
                             </div>
                         </div>
 
@@ -73,6 +90,46 @@
                                 density="comfortable"
                                 hide-details
                                 placeholder="z. B. Frühlingswoche" />
+                        </div>
+
+                        <div v-if="rangeBounds" class="mpe-schedule-preview" data-testid="plan-schedule-preview">
+                            <div class="mpe-schedule-preview__header">
+                                <div>
+                                    <div class="mpe-schedule-preview__eyebrow">Berechnete Termine</div>
+                                    <div class="mpe-schedule-preview__title">Wirksame Sichtbarkeit und Bestellbarkeit</div>
+                                </div>
+
+                                <label class="mpe-schedule-preview__toggle" data-testid="individual-schedule-toggle">
+                                    <input
+                                        v-model="useIndividualScheduleValues"
+                                        type="checkbox"
+                                        class="mpe-schedule-preview__toggle-input"
+                                        @change="handleIndividualScheduleToggle">
+                                    <span class="mpe-schedule-preview__toggle-copy">
+                                        Individuelle Zeitpunkte verwenden
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="mpe-schedule-preview__grid">
+                                <div
+                                    v-for="item in calculatedScheduleItems"
+                                    :key="item.key"
+                                    class="mpe-schedule-preview__item">
+                                    <span class="mpe-schedule-preview__label">{{ item.label }}</span>
+                                    <template v-if="useIndividualScheduleValues">
+                                        <input
+                                            v-model="individualScheduleForm[item.modelKey]"
+                                            type="datetime-local"
+                                            class="mpe-schedule-preview__input"
+                                            :data-testid="`individual-schedule-${item.modelKey}`">
+                                    </template>
+                                    <template v-else>
+                                        <strong class="mpe-schedule-preview__value">{{ item.value }}</strong>
+                                    </template>
+                                    <span v-if="item.note" class="mpe-schedule-preview__note">{{ item.note }}</span>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Summary stats strip -->
@@ -110,6 +167,7 @@
                                     class="mpe-availability-toggle"
                                     :class="{ 'is-active': isPlanAvailable }"
                                     :aria-pressed="isPlanAvailable ? 'true' : 'false'"
+                                    :disabled="isSaving"
                                     data-testid="availability-toggle"
                                     @click="togglePlanAvailability">
                                     Verfügbar
@@ -705,6 +763,34 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="deletePlanDialog" max-width="520" persistent data-testid="delete-menu-plan-dialog">
+            <v-card rounded="xl">
+                <v-card-title>{{ deletePlanDialogTitle }}</v-card-title>
+
+                <v-card-text>
+                    <div class="text-body-1">
+                        {{ deletePlanDialogMessage }}
+                    </div>
+                    <div class="text-body-2 text-medium-emphasis mt-3">
+                        {{ deletePlanDialogDescription }}
+                    </div>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="isDeletingPlan" @click="cancelDeletePlan">Abbrechen</v-btn>
+                    <v-btn
+                        color="warning"
+                        variant="flat"
+                        :loading="isDeletingPlan"
+                        :disabled="isDeletingPlan"
+                        @click="confirmDeletePlan">
+                        {{ deletePlanConfirmLabel }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="saveReleaseDialog" max-width="560" persistent data-testid="save-release-dialog">
             <v-card rounded="xl" class="save-release-dialog">
                 <v-card-title>Menüplan freigeben?</v-card-title>
@@ -784,6 +870,211 @@ function emptyNewMenuForm() {
     }
 }
 
+function emptyIndividualScheduleForm() {
+    return {
+        visibleStartAt: '',
+        visibleEndAt: '',
+        orderStartAt: '',
+        orderEndAt: '',
+    }
+}
+
+function emptyPlanScheduleForm() {
+    return {
+        visibilityStartMode: 'when_available',
+        visibilityStartWeekOffset: 2,
+        visibilityStartDayOfWeek: 0,
+        visibilityStartTime: '15:00',
+        orderStartMode: 'when_available',
+        orderStartWeekOffset: 2,
+        orderStartDayOfWeek: 0,
+        orderStartTime: '15:00',
+        orderEndWeekOffset: 1,
+        orderEndDayOfWeek: 5,
+        orderEndTime: '17:00',
+        visibilityEndMode: 'plan_end',
+    }
+}
+
+const weekOptions = [
+    { value: 2, label: 'Vorvorwoche' },
+    { value: 1, label: 'Vorwoche' },
+    { value: 0, label: 'Menüwoche' },
+]
+
+const dayOptions = [
+    { value: 1, label: 'Montag', short: 'Mo' },
+    { value: 2, label: 'Dienstag', short: 'Di' },
+    { value: 3, label: 'Mittwoch', short: 'Mi' },
+    { value: 4, label: 'Donnerstag', short: 'Do' },
+    { value: 5, label: 'Freitag', short: 'Fr' },
+    { value: 6, label: 'Samstag', short: 'Sa' },
+    { value: 0, label: 'Sonntag', short: 'So' },
+]
+
+const visibilityEndModeOptions = [
+    { value: 'plan_end', label: 'Bis zum letzten Tag des Menüplans' },
+    { value: 'week_end', label: 'Bis zum Ende der Woche' },
+]
+
+function defaultOnlineSettings() {
+    return {
+        visibility_start_mode: 'when_available',
+        visibility_start_week_offset: 2,
+        visibility_start_day_of_week: 0,
+        visibility_start_time: '15:00',
+        order_start_mode: 'when_available',
+        order_start_week_offset: 2,
+        order_start_day_of_week: 0,
+        order_start_time: '15:00',
+        order_end_week_offset: 1,
+        order_end_day_of_week: 5,
+        order_end_time: '17:00',
+        visibility_end_mode: 'plan_end',
+    }
+}
+
+function createLocalDateFromIso(isoString) {
+    if (! isValidIsoDate(isoString)) {
+        return null
+    }
+
+    const [year, month, day] = isoString.split('-').map((part) => parseInt(part, 10))
+
+    return new Date(year, month - 1, day, 0, 0, 0, 0)
+}
+
+function toIsoDateString(date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+}
+
+function addDaysIsoValue(isoString, days) {
+    const date = createLocalDateFromIso(isoString)
+
+    if (! date) {
+        return ''
+    }
+
+    date.setDate(date.getDate() + Number(days || 0))
+
+    return toIsoDateString(date)
+}
+
+function startOfWeekIsoValue(isoString) {
+    const date = createLocalDateFromIso(isoString)
+
+    if (! date) {
+        return ''
+    }
+
+    const day = date.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    date.setDate(date.getDate() + diff)
+
+    return toIsoDateString(date)
+}
+
+function dayOffsetFromMonday(dayOfWeek) {
+    const normalized = Number(dayOfWeek)
+
+    return normalized === 0 ? 6 : Math.max(0, normalized - 1)
+}
+
+function isoAtTimeValue(isoString, timeString = '00:00', useEndOfDay = false) {
+    const date = createLocalDateFromIso(isoString)
+
+    if (! date) {
+        return ''
+    }
+
+    if (useEndOfDay) {
+        date.setHours(23, 59, 0, 0)
+    } else {
+        const [hours, minutes] = String(timeString || '00:00').split(':').map((part) => parseInt(part, 10) || 0)
+        date.setHours(hours, minutes, 0, 0)
+    }
+
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+function scheduledDateTimeLocal(rangeBounds, weekOffset, dayOfWeek, timeString) {
+    if (! rangeBounds?.start) {
+        return ''
+    }
+
+    const menuWeekStartIso = startOfWeekIsoValue(rangeBounds.start)
+    const targetIso = addDaysIsoValue(menuWeekStartIso, dayOffsetFromMonday(dayOfWeek) - (Number(weekOffset) * 7))
+
+    return isoAtTimeValue(targetIso, timeString)
+}
+
+function formatScheduleDateTimeValue(dateTimeValue) {
+    const [datePart, timePart = ''] = String(dateTimeValue || '').split('T')
+    const date = createLocalDateFromIso(datePart)
+
+    if (! date) {
+        return ''
+    }
+
+    return `${date.toLocaleDateString('de-AT', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    })} ${String(timePart).slice(0, 5)}`
+}
+
+function individualScheduleFormFromValues(values = {}) {
+    return {
+        visibleStartAt: String(values.visible_start_at || ''),
+        visibleEndAt: String(values.visible_end_at || ''),
+        orderStartAt: String(values.order_start_at || ''),
+        orderEndAt: String(values.order_end_at || ''),
+    }
+}
+
+function derivePlanScheduleForm(rangeBounds, onlineSettings, overrides = {}) {
+    if (! rangeBounds?.start || ! rangeBounds?.end) {
+        return emptyPlanScheduleForm()
+    }
+
+    const settings = {
+        ...defaultOnlineSettings(),
+        ...(onlineSettings || {}),
+        ...(overrides || {}),
+    }
+
+    return {
+        visibilityStartMode: settings.visibility_start_mode,
+        visibilityStartWeekOffset: Number(settings.visibility_start_week_offset),
+        visibilityStartDayOfWeek: Number(settings.visibility_start_day_of_week),
+        visibilityStartTime: String(settings.visibility_start_time || '15:00').slice(0, 5),
+        orderStartMode: settings.order_start_mode,
+        orderStartWeekOffset: Number(settings.order_start_week_offset),
+        orderStartDayOfWeek: Number(settings.order_start_day_of_week),
+        orderStartTime: String(settings.order_start_time || '15:00').slice(0, 5),
+        orderEndWeekOffset: Number(settings.order_end_week_offset),
+        orderEndDayOfWeek: Number(settings.order_end_day_of_week),
+        orderEndTime: String(settings.order_end_time || '17:00').slice(0, 5),
+        visibilityEndMode: settings.visibility_end_mode,
+    }
+}
+
+function nonEmptyScheduleOverrides(overrides = {}) {
+    return Object.fromEntries(
+        Object.entries(overrides).filter(([, value]) => value !== null && value !== undefined && value !== ''),
+    )
+}
+
 let keyCounter = 0
 
 function newEntryKey() {
@@ -801,6 +1092,7 @@ export default {
         return {
             newMenuLabel: NEW_MENU_LABEL,
             planTitle: '',
+            planScheduleForm: emptyPlanScheduleForm(),
             isPlanAvailable: false,
             activeRangeBounds: null,
             entriesByDate: {},   // { iso: [{ _key, menu, menuTitle, price, comments, eatingTimeIds, eatingTimes }] }
@@ -816,7 +1108,10 @@ export default {
             entryPreviewDialog: false,
             deleteEntryDialog: false,
             deleteBoundaryDayDialog: false,
+            deletePlanDialog: false,
             saveReleaseDialog: false,
+            isDeletingPlan: false,
+            hasPlanBookings: false,
             entryPreviewTarget: {
                 iso: '',
                 key: '',
@@ -837,6 +1132,8 @@ export default {
             },
             newMenuFoodSearch: '',
             newMenuForm: emptyNewMenuForm(),
+            useIndividualScheduleValues: false,
+            individualScheduleForm: emptyIndividualScheduleForm(),
         }
     },
 
@@ -860,7 +1157,7 @@ export default {
         ...mapState(useAdminStore, ['config']),
         ...mapState(useFoodStore, ['foods']),
         ...mapState(useFreeDayStore, ['freeDaysByDate']),
-        ...mapState(useRestaurantStore, ['categories', 'allergenOptions']),
+        ...mapState(useRestaurantStore, ['categories', 'allergenOptions', 'onlineSettings']),
 
         menus() {
             return useMenuStore().menus
@@ -868,6 +1165,101 @@ export default {
 
         eatingTimes() {
             return useEatingTimeStore().sortedEatingTimes
+        },
+
+        weekOptions() {
+            return weekOptions
+        },
+
+        dayOptions() {
+            return dayOptions
+        },
+
+        visibilityStartModeOptions() {
+            return [
+                { value: 'when_available', label: 'Sobald verfügbar' },
+                { value: 'when_orderable', label: 'Sobald bestellbar' },
+                { value: 'scheduled', label: 'Fixer Tag' },
+            ]
+        },
+
+        orderStartModeOptions() {
+            return [
+                { value: 'when_available', label: 'Sobald verfügbar' },
+                { value: 'scheduled', label: 'Fixer Tag' },
+            ]
+        },
+
+        visibilityEndOptions() {
+            return visibilityEndModeOptions
+        },
+
+        calculatedScheduleItems() {
+            if (!this.rangeBounds) {
+                return []
+            }
+
+            const resolved = this.resolvedPlanSchedulePayload()
+            const visibilityStartsWithOrderStart = this.planScheduleForm.visibilityStartMode === 'when_orderable'
+            const orderStartsAutomatically = this.planScheduleForm.orderStartMode !== 'scheduled'
+            const isIndividual = this.useIndividualScheduleValues === true
+
+            return [
+                {
+                    key: 'visibility-start',
+                    modelKey: 'visibleStartAt',
+                    label: 'Sichtbar ab',
+                    value: isIndividual
+                        ? this.formatCalculatedScheduleDateTime(this.individualScheduleForm.visibleStartAt)
+                        : this.planScheduleForm.visibilityStartMode === 'scheduled'
+                            ? this.formatCalculatedScheduleDateTime(resolved.visible_start_at)
+                            : 'Sofort',
+                    note: isIndividual
+                        ? 'Individueller Zeitpunkt'
+                        : this.planScheduleForm.visibilityStartMode === 'scheduled'
+                            ? ''
+                            : visibilityStartsWithOrderStart
+                                ? (orderStartsAutomatically ? 'automatisch mit Bestellstart' : 'mit Bestellstart gekoppelt')
+                                : 'automatisch bei Freigabe',
+                },
+                {
+                    key: 'order-start',
+                    modelKey: 'orderStartAt',
+                    label: 'Bestellstart',
+                    value: isIndividual
+                        ? this.formatCalculatedScheduleDateTime(this.individualScheduleForm.orderStartAt)
+                        : this.planScheduleForm.orderStartMode === 'scheduled'
+                            ? this.formatCalculatedScheduleDateTime(resolved.order_start_at)
+                            : 'Sofort',
+                    note: isIndividual
+                        ? 'Individueller Zeitpunkt'
+                        : this.planScheduleForm.orderStartMode === 'scheduled'
+                            ? ''
+                            : 'automatisch bei Freigabe',
+                },
+                {
+                    key: 'order-end',
+                    modelKey: 'orderEndAt',
+                    label: 'Bestellende',
+                    value: isIndividual
+                        ? this.formatCalculatedScheduleDateTime(this.individualScheduleForm.orderEndAt)
+                        : this.formatCalculatedScheduleDateTime(resolved.order_end_at),
+                    note: isIndividual ? 'Individueller Zeitpunkt' : '',
+                },
+                {
+                    key: 'visibility-end',
+                    modelKey: 'visibleEndAt',
+                    label: 'Sichtbar bis',
+                    value: isIndividual
+                        ? this.formatCalculatedScheduleDateTime(this.individualScheduleForm.visibleEndAt)
+                        : this.formatCalculatedScheduleDateTime(resolved.visible_end_at),
+                    note: isIndividual
+                        ? 'Individueller Zeitpunkt'
+                        : this.planScheduleForm.visibilityEndMode === 'week_end'
+                            ? 'bis Ende der Kalenderwoche'
+                            : 'bis Ende des Menuplans',
+                },
+            ]
         },
 
         newMenuFoodOptions() {
@@ -1026,6 +1418,29 @@ export default {
 
             return `/api/admin/restaurant/menu-plans/${this.planId}/print`
         },
+        canDeletePlan() {
+            return this.planId !== null && this.hasPlanBookings !== true && ! this.isDeletingPlan && ! this.isSaving
+        },
+        deletePlanButtonLabel() {
+            return this.hasPlanBookings ? 'L\u00f6schen gesperrt' : 'L\u00f6schen'
+        },
+        deletePlanHint() {
+            return 'Mit bestehenden Buchungen kann der Men\u00fcplan nicht gel\u00f6scht werden.'
+        },
+        deletePlanDialogTitle() {
+            return 'Men\u00fcplan l\u00f6schen'
+        },
+        deletePlanDialogMessage() {
+            const label = this.planTitle || this.rangeLabel || 'dieser Men\u00fcplan'
+
+            return `Soll ${label} wirklich vollst\u00e4ndig gel\u00f6scht werden?`
+        },
+        deletePlanDialogDescription() {
+            return 'Der gesamte Zeitraum und alle enthaltenen Men\u00fceintr\u00e4ge werden entfernt.'
+        },
+        deletePlanConfirmLabel() {
+            return 'L\u00f6schen'
+        },
         deleteBoundaryDayLabel() {
             return isValidIsoDate(this.deleteBoundaryDayTargetIso) ? this.formatDate(this.deleteBoundaryDayTargetIso) : ''
         },
@@ -1047,6 +1462,8 @@ export default {
             const menuStore = useMenuStore()
             const restaurantStore = useRestaurantStore()
             const eatingTimeStore = useEatingTimeStore()
+            this.deletePlanDialog = false
+            this.isDeletingPlan = false
             this.activeRangeBounds = this.routeRangeBounds
 
             const year = this.rangeBounds ? parseInt(this.rangeBounds.start.substring(0, 4), 10) : new Date().getFullYear()
@@ -1061,7 +1478,7 @@ export default {
             }
 
             if (! restaurantStore.settings) {
-                restaurantStore.loadSettings()
+                await restaurantStore.loadSettings()
             }
 
             if (! eatingTimeStore.isLoaded) {
@@ -1074,7 +1491,11 @@ export default {
                 this.entriesByDate = {}
                 this.searchStates = {}
                 this.planTitle = ''
+                this.planScheduleForm = this.defaultPlanScheduleForm()
+                this.useIndividualScheduleValues = false
+                this.individualScheduleForm = this.individualScheduleFormFromResolvedSchedule()
                 this.isPlanAvailable = false
+                this.hasPlanBookings = false
             }
         },
 
@@ -1087,7 +1508,13 @@ export default {
 
             this.planTitle = plan.title || ''
             this.isPlanAvailable = plan.is_available === true
+            this.hasPlanBookings = plan.has_bookings === true
             this.activeRangeBounds = normalizedRangeBounds(plan.start_date, plan.end_date)
+            this.planScheduleForm = this.planScheduleFormFromPlan(plan)
+            this.useIndividualScheduleValues = plan.use_individual_schedule_values === true
+            this.individualScheduleForm = this.useIndividualScheduleValues
+                ? this.individualScheduleFormFromPlan(plan)
+                : this.individualScheduleFormFromResolvedSchedule()
 
             const next = {}
 
@@ -1113,12 +1540,31 @@ export default {
             this.entriesByDate = next
         },
 
-        togglePlanAvailability() {
-            if (! this.canToggleAvailability) {
+        async togglePlanAvailability() {
+            if (! this.canToggleAvailability || this.isSaving) {
                 return
             }
 
-            this.isPlanAvailable = ! this.isPlanAvailable
+            const previousAvailability = this.isPlanAvailable
+            const previousScheduleForm = { ...this.planScheduleForm }
+            const nextAvailability = ! this.isPlanAvailable
+
+            if (nextAvailability) {
+                this.planScheduleForm = this.releasePlanScheduleForm()
+            }
+
+            this.isPlanAvailable = nextAvailability
+
+            if (! this.planId) {
+                return
+            }
+
+            const result = await this.persistPlan(nextAvailability)
+
+            if (! result) {
+                this.isPlanAvailable = previousAvailability
+                this.planScheduleForm = previousScheduleForm
+            }
         },
 
         // ── Entry management ─────────────────────────────────────────────
@@ -1366,6 +1812,14 @@ export default {
             this.deleteBoundaryDayDialog = true
         },
 
+        requestDeletePlan() {
+            if (! this.canDeletePlan) {
+                return
+            }
+
+            this.deletePlanDialog = true
+        },
+
         closeEditEntryDialog() {
             this.entryEditDialog = false
             this.entryEditTarget = {
@@ -1405,6 +1859,14 @@ export default {
             this.deleteBoundaryDayTargetIso = ''
         },
 
+        cancelDeletePlan() {
+            if (this.isDeletingPlan) {
+                return
+            }
+
+            this.deletePlanDialog = false
+        },
+
         confirmDeleteBoundaryDay() {
             const targetIso = this.deleteBoundaryDayTargetIso
 
@@ -1425,6 +1887,29 @@ export default {
             this.entriesByDate = remainingEntriesByDate
             this.searchStates = remainingSearchStates
             this.cancelDeleteBoundaryDay()
+        },
+
+        async confirmDeletePlan() {
+            if (! this.canDeletePlan || ! this.planId) {
+                return
+            }
+
+            this.isDeletingPlan = true
+
+            try {
+                const deleted = await useMenuPlanStore().destroy(this.planId)
+
+                if (! deleted) {
+                    await this.loadExistingPlan(this.planId)
+                    return
+                }
+
+                this.deletePlanDialog = false
+
+                this.$router.push(this.backTarget).catch(() => {})
+            } finally {
+                this.isDeletingPlan = false
+            }
         },
 
         closeCreateMenuDialog() {
@@ -1656,8 +2141,124 @@ export default {
 
         // ── Save plan ────────────────────────────────────────────────────
 
-        buildPayload() {
+        menuPlanOnlineSettings() {
+            return {
+                ...defaultOnlineSettings(),
+                ...(this.onlineSettings || {}),
+            }
+        },
+
+        individualScheduleFormFromPlan(plan) {
+            return individualScheduleFormFromValues({
+                visible_start_at: plan?.visible_start_at,
+                visible_end_at: plan?.visible_end_at,
+                order_start_at: plan?.order_start_at,
+                order_end_at: plan?.order_end_at,
+            })
+        },
+
+        individualScheduleFormFromResolvedSchedule() {
+            return individualScheduleFormFromValues(this.resolvedPlanSchedulePayload())
+        },
+
+        handleIndividualScheduleToggle() {
+            if (this.useIndividualScheduleValues !== true) {
+                return
+            }
+
+            const hasAnyValue = Object.values(this.individualScheduleForm).some((value) => String(value || '').trim() !== '')
+
+            if (!hasAnyValue) {
+                this.individualScheduleForm = this.individualScheduleFormFromResolvedSchedule()
+            }
+        },
+
+        formatCalculatedScheduleDateTime(dateTimeValue) {
+            return formatScheduleDateTimeValue(dateTimeValue) || 'Kein fester Zeitpunkt'
+        },
+
+        defaultPlanScheduleForm() {
+            return derivePlanScheduleForm(this.rangeBounds, this.menuPlanOnlineSettings())
+        },
+
+        planScheduleFormFromPlan(plan) {
+            return derivePlanScheduleForm(
+                normalizedRangeBounds(plan?.start_date, plan?.end_date),
+                this.menuPlanOnlineSettings(),
+            )
+        },
+
+        releasePlanScheduleForm() {
+            return { ...this.planScheduleForm }
+        },
+
+        resetPlanScheduleDefaults() {
+            this.planScheduleForm = this.defaultPlanScheduleForm()
+        },
+
+        resolvedPlanSchedulePayload() {
+            const scheduleForm = { ...this.planScheduleForm }
+
+            if (
+                scheduleForm.visibilityStartMode === 'scheduled'
+                && scheduleForm.orderStartMode === 'scheduled'
+                && this.scheduledPosition(
+                    scheduleForm.visibilityStartWeekOffset,
+                    scheduleForm.visibilityStartDayOfWeek,
+                    scheduleForm.visibilityStartTime,
+                ) > this.scheduledPosition(
+                    scheduleForm.orderStartWeekOffset,
+                    scheduleForm.orderStartDayOfWeek,
+                    scheduleForm.orderStartTime,
+                )
+            ) {
+                scheduleForm.visibilityStartWeekOffset = scheduleForm.orderStartWeekOffset
+                scheduleForm.visibilityStartDayOfWeek = scheduleForm.orderStartDayOfWeek
+                scheduleForm.visibilityStartTime = scheduleForm.orderStartTime
+            }
+
+            return {
+                visibility_start_mode: scheduleForm.visibilityStartMode,
+                visibility_start_week_offset: scheduleForm.visibilityStartMode === 'scheduled' ? Number(scheduleForm.visibilityStartWeekOffset) : null,
+                visibility_start_day_of_week: scheduleForm.visibilityStartMode === 'scheduled' ? Number(scheduleForm.visibilityStartDayOfWeek) : null,
+                visibility_start_time: scheduleForm.visibilityStartMode === 'scheduled' ? String(scheduleForm.visibilityStartTime || '').slice(0, 5) : null,
+                order_start_mode: scheduleForm.orderStartMode,
+                order_start_week_offset: scheduleForm.orderStartMode === 'scheduled' ? Number(scheduleForm.orderStartWeekOffset) : null,
+                order_start_day_of_week: scheduleForm.orderStartMode === 'scheduled' ? Number(scheduleForm.orderStartDayOfWeek) : null,
+                order_start_time: scheduleForm.orderStartMode === 'scheduled' ? String(scheduleForm.orderStartTime || '').slice(0, 5) : null,
+                order_end_week_offset: Number(scheduleForm.orderEndWeekOffset),
+                order_end_day_of_week: Number(scheduleForm.orderEndDayOfWeek),
+                order_end_time: String(scheduleForm.orderEndTime || '').slice(0, 5),
+                visibility_end_mode: scheduleForm.visibilityEndMode,
+                visible_start_at: scheduleForm.visibilityStartMode === 'scheduled'
+                    ? scheduledDateTimeLocal(this.rangeBounds, scheduleForm.visibilityStartWeekOffset, scheduleForm.visibilityStartDayOfWeek, scheduleForm.visibilityStartTime)
+                    : null,
+                visible_end_at: scheduleForm.visibilityEndMode === 'week_end'
+                    ? isoAtTimeValue(addDaysIsoValue(startOfWeekIsoValue(this.rangeBounds?.end), 6), '23:59')
+                    : isoAtTimeValue(this.rangeBounds?.end, '23:59'),
+                order_start_at: scheduleForm.orderStartMode === 'scheduled'
+                    ? scheduledDateTimeLocal(this.rangeBounds, scheduleForm.orderStartWeekOffset, scheduleForm.orderStartDayOfWeek, scheduleForm.orderStartTime)
+                    : null,
+                order_end_at: scheduledDateTimeLocal(this.rangeBounds, scheduleForm.orderEndWeekOffset, scheduleForm.orderEndDayOfWeek, scheduleForm.orderEndTime),
+            }
+        },
+
+        scheduledPosition(weekOffset, dayOfWeek, timeString) {
+            const [hours, minutes] = String(timeString || '00:00').split(':').map((value) => parseInt(value, 10) || 0)
+
+            return (dayOffsetFromMonday(dayOfWeek) * 1440)
+                - (Number(weekOffset) * 7 * 1440)
+                + (hours * 60)
+                + minutes
+        },
+
+        buildPayload(forcedAvailability = null) {
             const entries = []
+            const isAvailable = typeof forcedAvailability === 'boolean'
+                ? forcedAvailability
+                : (this.canToggleAvailability ? this.isPlanAvailable : false)
+            const resolvedSchedule = this.resolvedPlanSchedulePayload()
+            const useIndividualScheduleValues = this.useIndividualScheduleValues === true
 
             Object.entries(this.entriesByDate).forEach(([iso, dayEntries]) => {
                 dayEntries.forEach((entry) => {
@@ -1676,7 +2277,13 @@ export default {
                 title: this.planTitle || null,
                 start_date: this.rangeBounds?.start,
                 end_date: this.rangeBounds?.end,
-                is_available: this.canToggleAvailability ? this.isPlanAvailable : false,
+                is_available: isAvailable,
+                ...resolvedSchedule,
+                use_individual_schedule_values: useIndividualScheduleValues,
+                visible_start_at: useIndividualScheduleValues ? this.individualScheduleForm.visibleStartAt || null : null,
+                visible_end_at: useIndividualScheduleValues ? this.individualScheduleForm.visibleEndAt || null : null,
+                order_start_at: useIndividualScheduleValues ? this.individualScheduleForm.orderStartAt || null : null,
+                order_end_at: useIndividualScheduleValues ? this.individualScheduleForm.orderEndAt || null : null,
                 entries,
             }
         },
@@ -1701,6 +2308,7 @@ export default {
 
         async confirmSaveAndRelease() {
             this.saveReleaseDialog = false
+            this.planScheduleForm = this.releasePlanScheduleForm()
             await this.persistPlan(true)
         },
 
@@ -1709,10 +2317,7 @@ export default {
 
             try {
                 const store = useMenuPlanStore()
-                const payload = this.buildPayload()
-                if (typeof forcedAvailability === 'boolean') {
-                    payload.is_available = forcedAvailability
-                }
+                const payload = this.buildPayload(forcedAvailability)
                 let result
 
                 if (this.planId) {
@@ -1723,6 +2328,7 @@ export default {
 
                 if (result && result.id && result.start_date && result.end_date) {
                     this.isPlanAvailable = typeof result.is_available === 'boolean' ? result.is_available : payload.is_available === true
+                    this.hasPlanBookings = result.has_bookings === true
                     this.activeRangeBounds = normalizedRangeBounds(result.start_date, result.end_date)
 
                     this.$router.replace({
@@ -1735,6 +2341,8 @@ export default {
                         },
                     }).catch(() => {})
                 }
+
+                return result
             } finally {
                 this.isSaving = false
             }
@@ -1924,6 +2532,14 @@ export default {
     flex: 0 0 auto;
 }
 
+.mpe-header__hint {
+    max-width: 360px;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    color: rgba(248, 250, 252, 0.72);
+    text-align: right;
+}
+
 .mpe-badge {
     min-width: 96px;
     padding: 12px 14px;
@@ -1952,6 +2568,155 @@ export default {
 
 .mpe-plan-title-row {
     margin-bottom: 18px;
+}
+
+.mpe-schedule-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.mpe-schedule-actions__hint {
+    color: #64748b;
+    font-size: 0.92rem;
+}
+
+.mpe-schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.mpe-schedule-card {
+    padding: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.mpe-schedule-card__title {
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.mpe-schedule-card__fields {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.mpe-schedule-card__fields--always-open {
+    margin-top: 0;
+}
+
+.mpe-schedule-preview {
+    margin-bottom: 18px;
+    padding: 16px;
+    border: 1px solid rgba(59, 130, 246, 0.16);
+    border-radius: 18px;
+    background: linear-gradient(160deg, rgba(239, 246, 255, 0.94), rgba(248, 250, 252, 0.98));
+}
+
+.mpe-schedule-preview__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.mpe-schedule-preview__eyebrow {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+}
+
+.mpe-schedule-preview__title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.mpe-schedule-preview__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px;
+}
+
+.mpe-schedule-preview__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mpe-schedule-preview__label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #64748b;
+}
+
+.mpe-schedule-preview__value {
+    font-size: 0.98rem;
+    font-weight: 800;
+    line-height: 1.35;
+    color: #0f172a;
+}
+
+.mpe-schedule-preview__note {
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: #475569;
+}
+
+.mpe-schedule-preview__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    cursor: pointer;
+}
+
+.mpe-schedule-preview__toggle-input {
+    width: 18px;
+    height: 18px;
+    accent-color: #2563eb;
+}
+
+.mpe-schedule-preview__toggle-copy {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.mpe-schedule-preview__input {
+    width: 100%;
+    min-height: 44px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 12px;
+    font: inherit;
+    color: #0f172a;
 }
 
 /* ---- Summary Strip ---- */
@@ -2646,6 +3411,8 @@ export default {
     .mpe-header { flex-direction: column; }
     .mpe-header__right { width: 100%; flex-direction: row; align-items: center; flex-wrap: nowrap; justify-content: space-between; }
     .mpe-header__actions { max-width: 100%; overflow-x: auto; }
+    .mpe-schedule-actions { flex-direction: column; align-items: stretch; }
+    .mpe-schedule-preview__header { flex-direction: column; }
 }
 
 @media (max-width: 640px) {

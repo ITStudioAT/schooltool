@@ -10,7 +10,7 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    collect(['admin', 'lunch_admin', 'lunch_user'])->each(function (string $role): void {
+    collect(['admin', 'lunch_admin', 'lunch_candidate', 'lunch_user'])->each(function (string $role): void {
         Role::firstOrCreate([
             'name' => $role,
             'guard_name' => 'web',
@@ -227,7 +227,7 @@ test('restaurant users endpoint can filter only users that must be confirmed', f
         'confirmed_at' => null,
         'restaurant_confirmed_at' => null,
     ]);
-    $pendingUser->assignRole('lunch_user');
+    $pendingUser->assignRole('lunch_candidate');
 
     $this->actingAs($this->admin, 'sanctum');
 
@@ -238,6 +238,41 @@ test('restaurant users endpoint can filter only users that must be confirmed', f
         ->assertJsonPath('meta.pending_confirmation_total', 1)
         ->assertJsonPath('meta.only_pending_confirmation', true)
         ->assertJsonPath('data.0.email', 'offen@example.test');
+});
+
+test('restaurant users endpoint includes lunch candidates in the default listing', function () {
+    $candidateUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Kira',
+        'last_name' => 'Kandidat',
+        'email' => 'candidate@example.test',
+        'confirmed_at' => null,
+        'restaurant_confirmed_at' => null,
+    ]);
+    $candidateUser->assignRole('lunch_candidate');
+
+    $confirmedUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Lina',
+        'last_name' => 'Lunch',
+        'email' => 'lunch@example.test',
+        'confirmed_at' => now(),
+        'restaurant_confirmed_at' => now(),
+    ]);
+    $confirmedUser->assignRole('lunch_user');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $response = $this->getJson('/api/admin/restaurant/users');
+
+    $response->assertOk()
+        ->assertJsonPath('meta.total', 2)
+        ->assertJsonPath('meta.pending_confirmation_total', 1);
+
+    expect(collect($response->json('data'))->pluck('email')->all())
+        ->toContain('candidate@example.test', 'lunch@example.test');
 });
 
 test('restaurant users endpoint accepts false string for the pending confirmation filter', function () {
@@ -316,4 +351,49 @@ test('restaurant user sepa can be refused for a lunch user in the same school', 
         ->assertJsonPath('data.has_sepa', false);
 
     expect($user->fresh()->sepa_at)->toBeNull();
+});
+
+test('restaurant lunch candidate can be confirmed for the same school after email verification', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'email_verified_at' => now(),
+        'confirmed_at' => null,
+        'restaurant_confirmed_at' => null,
+    ]);
+    $user->assignRole('lunch_candidate');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson("/api/admin/restaurant/users/{$user->id}/confirm")
+        ->assertOk()
+        ->assertJsonPath('data.id', $user->id)
+        ->assertJsonPath('data.is_confirmed', true)
+        ->assertJsonPath('data.is_restaurant_confirmed', true);
+
+    expect($user->fresh()->hasRole('lunch_user'))->toBeTrue()
+        ->and($user->fresh()->hasRole('lunch_candidate'))->toBeFalse()
+        ->and($user->fresh()->confirmed_at)->not->toBeNull()
+        ->and($user->fresh()->restaurant_confirmed_at)->not->toBeNull();
+});
+
+test('restaurant lunch candidate confirmation requires a verified email', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'email_verified_at' => null,
+        'confirmed_at' => null,
+        'restaurant_confirmed_at' => null,
+    ]);
+    $user->assignRole('lunch_candidate');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson("/api/admin/restaurant/users/{$user->id}/confirm")
+        ->assertStatus(422);
+
+    expect($user->fresh()->hasRole('lunch_candidate'))->toBeTrue()
+        ->and($user->fresh()->hasRole('lunch_user'))->toBeFalse()
+        ->and($user->fresh()->confirmed_at)->toBeNull()
+        ->and($user->fresh()->restaurant_confirmed_at)->toBeNull();
 });

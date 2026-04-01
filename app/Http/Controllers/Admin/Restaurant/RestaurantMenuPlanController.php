@@ -83,8 +83,14 @@ class RestaurantMenuPlanController extends Controller
 
         $deleted = $service->deleteForUser($authUser, $id);
 
-        if (! $deleted) {
+        if ($deleted === null) {
             abort(404, 'Menüplan nicht gefunden.');
+        }
+
+        if ($deleted === false) {
+            return response()->json([
+                'message' => 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.',
+            ], 409);
         }
 
         return response()->json([

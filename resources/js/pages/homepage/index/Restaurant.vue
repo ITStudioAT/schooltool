@@ -15,13 +15,13 @@
                         <div class="restaurant-eyebrow">SchoolTool Restaurant</div>
                         <h1 class="restaurant-title">Restaurant</h1>
                         <div v-if="currentSchoolShortName" class="restaurant-school-selector">
-                            <label class="restaurant-school-selector__label">Schule ausw?hlen</label>
+                            <label class="restaurant-school-selector__label">Schule auswählen</label>
                             <v-select
                                 v-model="selectedSchoolShortName"
                                 :items="selectableSchools"
                                 item-title="long_name"
                                 item-value="short_name"
-                                placeholder="Schule w?hlen..."
+                                placeholder="Schule wählen..."
                                 variant="outlined"
                                 density="compact"
                                 hide-details
@@ -31,7 +31,7 @@
                         </div>
 
                         <div v-if="currentSchoolShortName" class="restaurant-actions">
-                            <router-link to="/" class="restaurant-action restaurant-action--secondary">Zur ?bersicht</router-link>
+                            <router-link to="/" class="restaurant-action restaurant-action--secondary">Zur Übersicht</router-link>
                         </div>
                     </div>
 
@@ -53,8 +53,8 @@
             <div class="restaurant-shell">
                 <div class="restaurant-no-school-card">
                     <v-icon icon="mdi-school-outline" size="48" class="restaurant-no-school-card__icon" />
-                    <h2 class="restaurant-no-school-card__title">Bitte w?hlen Sie Ihre Schule</h2>
-                    <p class="restaurant-no-school-card__text">W?hlen Sie Ihre Schule, um den Speiseplan und die Bestellm?glichkeiten zu sehen.</p>
+                    <h2 class="restaurant-no-school-card__title">Bitte wählen Sie Ihre Schule</h2>
+                    <p class="restaurant-no-school-card__text">Wählen Sie Ihre Schule, um den Speiseplan und die Bestellmöglichkeiten zu sehen.</p>
 
                     <div v-if="selectableSchools.length > 10" class="restaurant-school-search">
                         <v-text-field
@@ -109,7 +109,7 @@
             <div class="restaurant-shell">
                 <div class="rp-section-header">
                     <v-icon icon="mdi-silverware-fork-knife" size="22" class="rp-section-header__icon" />
-                    <h2 class="rp-section-header__title">Aktuelle Speisepl?ne</h2>
+                    <h2 class="rp-section-header__title">Aktuelle Speisepläne</h2>
                 </div>
 
                 <div v-for="plan in menuPlans" :key="plan.id" class="rp-plan" :class="{ 'rp-plan--orderable': plan.is_orderable }">
@@ -174,7 +174,7 @@
             <div class="restaurant-shell">
                 <div class="rp-empty">
                     <v-icon icon="mdi-silverware-fork-knife" size="40" class="rp-empty__icon" />
-                    <p class="rp-empty__text">Derzeit sind keine Speisepl?ne verf?gbar.</p>
+                    <p class="rp-empty__text">Derzeit sind keine Speisepläne verfügbar.</p>
                 </div>
             </div>
         </section>
@@ -214,12 +214,12 @@
                     <div v-if="loginCheckResult?.status === 'USER_FOUND'" class="restaurant-login-state">
                         <p class="restaurant-login-state__text">
                             <template v-if="loginCheckResult.match_source === 'parent'">
-                                Die E-Mail-Adresse wurde ?ber einen Elternkontakt gefunden.
+                                Die E-Mail-Adresse wurde über einen Elternkontakt gefunden.
                             </template>
                             <template v-else>
-                                Die E-Mail-Adresse geh?rt zu einem Mittagskonto.
+                                Die E-Mail-Adresse gehört zu einem Mittagskonto.
                             </template>
-                            M?chten Sie sich per Code oder per Passwort anmelden?
+                            Möchten Sie sich per Code oder per Passwort anmelden?
                         </p>
 
                         <div
@@ -245,7 +245,7 @@
 
                     <div v-else-if="loginCheckResult?.status === 'REGISTER_REQUIRED'" class="restaurant-login-state">
                         <p class="restaurant-login-state__text">
-                            Diese E-Mail-Adresse wurde noch nicht f?r das Restaurant gefunden. M?chten Sie sich registrieren?
+                            Diese E-Mail-Adresse wurde noch nicht für das Restaurant gefunden. Möchten Sie sich registrieren?
                         </p>
                     </div>
                 </v-card-text>
@@ -277,9 +277,9 @@
                     <p class="restaurant-login-intro">{{ registerIntroText }}</p>
 
                     <v-form
-                        v-if="!registerResult"
+                        v-if="registerResult?.status !== 'REGISTERED'"
                         ref="registerForm"
-                        @submit.prevent="submitRestaurantRegistration">
+                        @submit.prevent="handleRegisterPrimaryAction">
                         <v-text-field
                             :model-value="registerEmail"
                             label="E-Mail"
@@ -305,8 +305,26 @@
                             </div>
                         </div>
 
+                        <div v-if="registerIsWaitingForEmailConfirmation" class="mb-3">
+                            <v-otp-input
+                                v-model="registerEmailToken"
+                                autofocus
+                                class="mb-3" />
+
+                            <div class="d-flex justify-end">
+                                <v-btn
+                                    variant="text"
+                                    color="#ea580c"
+                                    class="text-none"
+                                    :disabled="registerLoading"
+                                    @click.prevent="retryRestaurantRegistrationEmail">
+                                    Code erneut senden
+                                </v-btn>
+                            </div>
+                        </div>
+
                         <v-text-field
-                            v-if="registerRequiresManualNameFields"
+                            v-if="registerRequiresManualNameFields && registerHasConfirmedEmail"
                             v-model="registerLastName"
                             label="Nachname"
                             variant="outlined"
@@ -315,7 +333,7 @@
                             :rules="[required(), maxLength(255)]" />
 
                         <v-text-field
-                            v-if="registerRequiresManualNameFields"
+                            v-if="registerRequiresManualNameFields && registerHasConfirmedEmail"
                             v-model="registerFirstName"
                             label="Vorname"
                             variant="outlined"
@@ -344,17 +362,17 @@
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
                     <v-btn variant="text" color="secondary" @click="closeRegisterDialog">
-                        {{ registerResult ? 'Schließen' : 'Abbrechen' }}
+                        {{ registerResult?.status === 'REGISTERED' ? 'Schließen' : 'Abbrechen' }}
                     </v-btn>
                     <v-btn
-                        v-if="!registerResult"
+                        v-if="registerResult?.status !== 'REGISTERED'"
                         variant="flat"
                         color="#ea580c"
                         class="text-none font-weight-bold"
                         :loading="registerLoading"
                         :disabled="!canSubmitRegister"
-                        @click="submitRestaurantRegistration">
-                        Registrieren
+                        @click="handleRegisterPrimaryAction">
+                        {{ registerPrimaryActionLabel }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -405,6 +423,8 @@ export default {
             loginCheckError: '',
             registerFirstName: '',
             registerLastName: '',
+            registerEmailToken: '',
+            registerConfirmationToken: '',
             registerLoading: false,
             registerResult: null,
             registerError: '',
@@ -428,7 +448,7 @@ export default {
             return this.config?.restaurant?.user_information_intro_html || ''
         },
         schoolInfoName() {
-            return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgew?hlt'
+            return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
         },
         orderableMenuPlansCount() {
             return Number(this.config?.restaurant?.orderable_menu_plans_count || 0)
@@ -465,40 +485,80 @@ export default {
         registerRequiresManualNameFields() {
             return this.registerSource === 'new_user'
         },
+        registerIsWaitingForEmailConfirmation() {
+            return this.registerSource === 'new_user' && this.registerResult?.status === 'CONFIRM_EMAIL'
+        },
+        registerHasConfirmedEmail() {
+            return this.registerSource === 'new_user'
+                && this.registerResult?.status === 'ENTER_USER_DATA'
+                && this.registerConfirmationToken.trim() !== ''
+        },
         canSubmitRegister() {
-            if (!this.currentSchoolId || !this.registerEmail || this.registerLoading || this.registerResult) {
+            if (!this.currentSchoolId || !this.registerEmail || this.registerLoading) {
                 return false
+            }
+
+            if (this.registerIsWaitingForEmailConfirmation) {
+                return this.registerEmailToken.trim().length === 6
             }
 
             if (!this.registerRequiresManualNameFields) {
                 return true
             }
 
+            if (!this.registerHasConfirmedEmail) {
+                return this.registerResult === null
+            }
+
             return this.registerFirstName.trim() !== '' && this.registerLastName.trim() !== ''
         },
         registerIntroText() {
+            if (this.registerSource === 'new_user' && !this.registerResult) {
+                return 'Bitte bestaetigen Sie zuerst Ihre E-Mail-Adresse.'
+            }
             if (this.registerResult?.status === 'CONFIRM_EMAIL') {
-                return 'Die Registrierung ist gespeichert. Die E-Mail-Best?tigung ist der n?chste Schritt.'
+                return 'Bitte geben Sie jetzt den 6-stelligen Code aus der E-Mail ein.'
+            }
+
+            if (this.registerResult?.status === 'ENTER_USER_DATA') {
+                return 'Die E-Mail-Adresse ist bestätigt. Bitte ergänzen Sie jetzt Nachname und Vorname.'
             }
 
             if (this.registerResult?.status === 'REGISTERED') {
                 return 'Das Restaurantkonto wurde angelegt oder freigeschaltet.'
             }
 
-            return 'Bitte pr?fen Sie die Angaben f?r die Registrierung.'
+            return 'Bitte prüfen Sie die Angaben für die Registrierung.'
+        },
+        registerPrimaryActionLabel() {
+            if (this.registerIsWaitingForEmailConfirmation) {
+                return 'Code bestaetigen'
+            }
+
+            if (this.registerSource === 'new_user' && !this.registerHasConfirmedEmail) {
+                return 'Code senden'
+            }
+
+            return 'Registrieren'
         },
         registerSourceInfoText() {
+            if (this.registerSource === 'new_user') {
+                return this.registerHasConfirmedEmail
+                    ? 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Nach dem Speichern wird ein neuer lunch_candidate angelegt.'
+                    : 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Vor dem Speichern muss die E-Mail-Adresse bestaetigt werden.'
+            }
+
             switch (this.registerSource) {
             case 'existing_user':
-                return 'Das bestehende Benutzerkonto dieser Schule wird f?r das Restaurant freigeschaltet.'
+                return 'Das bestehende Benutzerkonto dieser Schule wird für das Restaurant freigeschaltet.'
             case 'teacher_list':
-                return 'Die E-Mail-Adresse wurde in der Lehrerliste gefunden und wird in die Benutzerverwaltung ?bernommen.'
+                return 'Die E-Mail-Adresse wurde in der Lehrerliste gefunden und wird in die Benutzerverwaltung übernommen.'
             case 'import116_student':
-                return 'Die E-Mail-Adresse wurde in den Import116-Sch?lerdaten gefunden und wird in die Benutzerverwaltung ?bernommen.'
+                return 'Die E-Mail-Adresse wurde in den Import116-Schülerdaten gefunden und wird in die Benutzerverwaltung übernommen.'
             case 'import116_parent':
-                return 'Die E-Mail-Adresse wurde als Elternkontakt im Import116 gefunden. Es wird ein eigenes Restaurantkonto f?r diesen Elternkontakt angelegt.'
+                return 'Die E-Mail-Adresse wurde als Elternkontakt im Import116 gefunden. Es wird ein eigenes Restaurantkonto für diesen Elternkontakt angelegt.'
             case 'new_user':
-                return 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Bitte erg?nzen Sie Nachname und Vorname.'
+                return 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Bitte ergänzen Sie Nachname und Vorname.'
             default:
                 return ''
             }
@@ -527,10 +587,15 @@ export default {
             this.resetRegisterDialogState()
         },
 
-        switchToRegisterDialog() {
+        async switchToRegisterDialog() {
             this.showLoginDialog = false
             this.resetRegisterDialogState()
             this.showRegisterDialog = true
+
+            if (this.registerSource === 'new_user') {
+                await this.$nextTick()
+                await this.submitRestaurantRegistration()
+            }
         },
 
         async onSchoolSelected(shortName) {
@@ -631,7 +696,7 @@ export default {
                 this.loginCheckResult = response.data || null
             } catch (error) {
                 this.loginCheckResult = null
-                this.loginCheckError = error.response?.data?.message || 'Die E-Mail-Adresse konnte nicht gepr?ft werden.'
+                this.loginCheckError = error.response?.data?.message || 'Die E-Mail-Adresse konnte nicht geprüft werden.'
             } finally {
                 this.loginCheckLoading = false
             }
@@ -639,17 +704,26 @@ export default {
 
         async handleLoginPrimaryAction() {
             if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
-                this.switchToRegisterDialog()
+                await this.switchToRegisterDialog()
                 return
             }
 
             await this.submitLoginEmailCheck()
         },
 
+        async handleRegisterPrimaryAction() {
+            if (this.registerIsWaitingForEmailConfirmation) {
+                await this.confirmRestaurantRegistrationEmail()
+                return
+            }
+
+            await this.submitRestaurantRegistration()
+        },
+
         async submitRestaurantRegistration() {
             const form = this.$refs.registerForm
             const validationResult = await form?.validate?.()
-            const isValid = validationResult?.valid ?? true
+            const isValid = validationResult?.valid ?? !this.registerIsWaitingForEmailConfirmation
 
             if (!isValid || !this.canSubmitRegister) {
                 return
@@ -663,18 +737,59 @@ export default {
                     data: {
                         school_id: this.currentSchoolId,
                         email: this.registerEmail,
-                        first_name: this.registerRequiresManualNameFields ? this.registerFirstName.trim() : null,
-                        last_name: this.registerRequiresManualNameFields ? this.registerLastName.trim() : null,
+                        first_name: this.registerRequiresManualNameFields && this.registerHasConfirmedEmail ? this.registerFirstName.trim() : null,
+                        last_name: this.registerRequiresManualNameFields && this.registerHasConfirmedEmail ? this.registerLastName.trim() : null,
+                        confirmation_token: this.registerHasConfirmedEmail ? this.registerConfirmationToken : null,
                     },
                 })
 
                 this.registerResult = response.data || null
+                if (this.registerResult?.status === 'CONFIRM_EMAIL') {
+                    this.registerEmailToken = ''
+                    this.registerConfirmationToken = ''
+                }
             } catch (error) {
-                this.registerResult = null
+                if (!this.registerIsWaitingForEmailConfirmation && !this.registerHasConfirmedEmail) {
+                    this.registerResult = null
+                }
                 this.registerError = error.response?.data?.message || 'Die Registrierung konnte nicht gespeichert werden.'
             } finally {
                 this.registerLoading = false
             }
+        },
+
+        async confirmRestaurantRegistrationEmail() {
+            if (!this.registerIsWaitingForEmailConfirmation || this.registerEmailToken.trim().length !== 6) {
+                return
+            }
+
+            this.registerLoading = true
+            this.registerError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/confirm_email', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.registerEmail,
+                        token_2fa: this.registerEmailToken.trim(),
+                    },
+                })
+
+                this.registerResult = response.data || null
+                this.registerConfirmationToken = this.registerResult?.confirmation_token || ''
+            } catch (error) {
+                this.registerError = error.response?.data?.message || 'Die E-Mail-Adresse konnte nicht bestaetigt werden.'
+            } finally {
+                this.registerLoading = false
+            }
+        },
+
+        async retryRestaurantRegistrationEmail() {
+            this.registerResult = null
+            this.registerEmailToken = ''
+            this.registerConfirmationToken = ''
+
+            await this.submitRestaurantRegistration()
         },
 
         resetLoginDialogState() {
@@ -687,6 +802,8 @@ export default {
         resetRegisterDialogState() {
             this.registerFirstName = ''
             this.registerLastName = ''
+            this.registerEmailToken = ''
+            this.registerConfirmationToken = ''
             this.registerLoading = false
             this.registerResult = null
             this.registerError = ''

@@ -10,6 +10,7 @@ use App\Http\Resources\Admin\UserResource;
 use App\Models\Import116;
 use App\Models\Teacher;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 
@@ -24,16 +25,15 @@ class RestaurantUserController extends Controller
         $validated = $request->validated();
         $searchString = $validated['search_string'] ?? null;
         $onlyPendingConfirmation = (bool) ($validated['only_pending_confirmation'] ?? false);
-        $pendingConfirmationTotal = User::query()
-            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
-            ->whereNull('restaurant_confirmed_at')
+        $pendingConfirmationTotal = $this->restaurantCandidateUsersQuery($authUser->school_id)
             ->count();
 
-        $users = User::query()
-            ->bySchoolAndRole($authUser->school_id, 'lunch_user')
+        $users = $this->restaurantUsersQuery($authUser->school_id)
             ->with('roles')
             ->when($onlyPendingConfirmation, function ($query): void {
-                $query->whereNull('restaurant_confirmed_at');
+                $query->whereHas('roles', function (Builder $roleQuery): void {
+                    $roleQuery->where('name', 'lunch_candidate');
+                });
             })
             ->when($searchString, function ($query, $searchString) {
                 $query->where(function ($nestedQuery) use ($searchString): void {
@@ -98,6 +98,24 @@ class RestaurantUserController extends Controller
         ]);
     }
 
+    private function restaurantUsersQuery(int $schoolId): Builder
+    {
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->whereIn('name', ['lunch_user', 'lunch_candidate']);
+            });
+    }
+
+    private function restaurantCandidateUsersQuery(int $schoolId): Builder
+    {
+        return User::query()
+            ->where('school_id', $schoolId)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->where('name', 'lunch_candidate');
+            });
+    }
+
     public function updateSepa(RestaurantUserSepaUpdateRequest $request, User $user): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
@@ -113,6 +131,43 @@ class RestaurantUserController extends Controller
         $hasSepa = (bool) $request->validated()['data']['has_sepa'];
         $targetUser->sepa_at = $hasSepa ? ($targetUser->sepa_at ?? now()) : null;
         $targetUser->save();
+
+        return response()->json([
+            'data' => new UserResource($targetUser->fresh()->load('roles')),
+        ]);
+    }
+
+    public function confirm(User $user): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $targetUser = User::query()
+            ->whereKey($user->id)
+            ->where('school_id', $authUser->school_id)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->where('name', 'lunch_candidate');
+            })
+            ->with('roles')
+            ->firstOrFail();
+
+        if (! $targetUser->email_verified_at) {
+            abort(422, 'Die E-Mail-Adresse muss zuerst bestätigt werden.');
+        }
+
+        $targetUser->confirmed_at = $targetUser->confirmed_at ?? now();
+        $targetUser->restaurant_confirmed_at = $targetUser->restaurant_confirmed_at ?? now();
+        $targetUser->is_active = 1;
+        $targetUser->save();
+
+        if ($targetUser->hasRole('lunch_candidate')) {
+            $targetUser->removeRole('lunch_candidate');
+        }
+
+        if (! $targetUser->hasRole('lunch_user')) {
+            $targetUser->assignRole('lunch_user');
+        }
 
         return response()->json([
             'data' => new UserResource($targetUser->fresh()->load('roles')),
