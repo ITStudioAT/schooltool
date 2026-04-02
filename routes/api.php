@@ -88,6 +88,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Homepage;
 
 use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
+use App\Http\Requests\Homepage\RestaurantChangePasswordRequest;
 use App\Http\Requests\Homepage\RestaurantCheckEmailRequest;
 use App\Http\Requests\Homepage\RestaurantConfirmEmailRequest;
 use App\Http\Requests\Homepage\RestaurantConfirmUserRequest;
@@ -264,6 +265,15 @@ class HomepageController extends Controller
     ) {
         return response()->json(
             $authService->confirmEmail($request->validated()['data'])
+        );
+    }
+
+    public function restaurantChangePassword(
+        RestaurantChangePasswordRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->changePassword($request->validated()['data'])
         );
     }
 

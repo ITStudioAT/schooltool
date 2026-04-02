@@ -95,9 +95,11 @@
                     </div>
                     <div class="restaurant-auth-card__copy">
                         <h2 class="restaurant-auth-card__title">{{ restaurantAuthDisplayName }}</h2>
+                        <p v-if="restaurantAuthEmail" class="restaurant-auth-card__meta">E-Mail: {{ restaurantAuthEmail }}</p>
                         <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
                     </div>
                     <div class="restaurant-auth-card__actions">
+                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openRestaurantPasswordDialog">Passwort ändern</v-btn>
                         <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
                     </div>
                 </div>
@@ -173,6 +175,17 @@
                                     </div>
 
                                     <div v-if="entry.comments" class="rp-menu__comments">{{ entry.comments }}</div>
+
+                                    <div v-if="restaurantAuthUser && plan.is_orderable" class="rp-menu__actions">
+                                        <v-btn
+                                            color="#ea580c"
+                                            variant="flat"
+                                            size="small"
+                                            class="text-none font-weight-bold"
+                                            @click="bookMenu(entry)">
+                                            Buchen
+                                        </v-btn>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -189,6 +202,81 @@
                 </div>
             </div>
         </section>
+
+        <v-dialog v-model="showPasswordDialog" max-width="440">
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-6 font-weight-bold">Passwort ändern</v-card-title>
+                <v-card-text class="px-6">
+                    <div v-if="restaurantAuthEmail" class="restaurant-login-email mb-3">
+                        <div class="restaurant-login-email__label">E-Mail</div>
+                        <div class="restaurant-login-email__value">{{ restaurantAuthEmail }}</div>
+                    </div>
+
+                    <p class="restaurant-login-intro">Vergeben Sie ein neues Passwort für spätere Anmeldungen.</p>
+
+                    <v-alert
+                        v-if="restaurantPasswordSuccess"
+                        type="success"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ restaurantPasswordSuccess }}
+                    </v-alert>
+
+                    <v-alert
+                        v-if="restaurantPasswordError"
+                        type="error"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ restaurantPasswordError }}
+                    </v-alert>
+
+                    <v-form ref="restaurantPasswordForm" @submit.prevent="submitRestaurantPasswordChange">
+                        <v-text-field
+                            v-model="restaurantPassword"
+                            label="Neues Passwort"
+                            type="password"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            :disabled="restaurantPasswordLoading"
+                            :rules="[required(), minLength(8), maxLength(255)]" />
+
+                        <v-text-field
+                            v-model="restaurantPasswordConfirmation"
+                            label="Passwort wiederholen"
+                            type="password"
+                            variant="outlined"
+                            density="compact"
+                            :disabled="restaurantPasswordLoading"
+                            :rules="[required(), minLength(8), maxLength(255), restaurantPasswordMatchRule]" />
+                    </v-form>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        color="#9a3412"
+                        class="text-none"
+                        :disabled="restaurantPasswordLoading"
+                        @click="closeRestaurantPasswordDialog">
+                        Schließen
+                    </v-btn>
+                    <v-btn
+                        color="#ea580c"
+                        variant="flat"
+                        rounded="lg"
+                        class="text-none font-weight-bold"
+                        :loading="restaurantPasswordLoading"
+                        :disabled="!canSubmitRestaurantPasswordChange"
+                        @click="submitRestaurantPasswordChange">
+                        Passwort speichern
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="showLoginDialog" persistent max-width="440">
             <v-card rounded="xl">
                 <v-card-title class="pt-5 px-6 font-weight-bold">Anmelden</v-card-title>
@@ -575,6 +663,7 @@ export default {
             menuPlans: [],
             showLoginDialog: false,
             showRegisterDialog: false,
+            showPasswordDialog: false,
             loginEmail: '',
             loginCheckLoading: false,
             loginCheckResult: null,
@@ -596,6 +685,11 @@ export default {
             registerLoading: false,
             registerResult: null,
             registerError: '',
+            restaurantPassword: '',
+            restaurantPasswordConfirmation: '',
+            restaurantPasswordLoading: false,
+            restaurantPasswordError: '',
+            restaurantPasswordSuccess: '',
             schoolSearch: '',
             tickNow: Date.now(),
             tickInterval: null,
@@ -624,6 +718,9 @@ export default {
             const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
 
             return fullName || this.restaurantAuthUser?.email || ''
+        },
+        restaurantAuthEmail() {
+            return this.restaurantAuthUser?.email?.trim?.() || ''
         },
         schoolInfoName() {
             return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
@@ -662,6 +759,21 @@ export default {
         },
         canSubmitLoginPassword() {
             return !!this.selectedLoginUser && this.loginPassword.length >= 8 && !this.loginLoading
+        },
+        restaurantPasswordMatchRule() {
+            return () => {
+                if (this.restaurantPassword !== this.restaurantPasswordConfirmation) {
+                    return 'Die Passwörter stimmen nicht überein.'
+                }
+
+                return true
+            }
+        },
+        canSubmitRestaurantPasswordChange() {
+            return this.restaurantPassword.length >= 8
+                && this.restaurantPasswordConfirmation.length >= 8
+                && this.restaurantPassword === this.restaurantPasswordConfirmation
+                && !this.restaurantPasswordLoading
         },
         loginPrimaryActionLabel() {
             if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
@@ -832,6 +944,16 @@ export default {
             this.openLoginDialog()
         },
 
+        openRestaurantPasswordDialog() {
+            this.resetRestaurantPasswordDialogState()
+            this.showPasswordDialog = true
+        },
+
+        closeRestaurantPasswordDialog() {
+            this.showPasswordDialog = false
+            this.resetRestaurantPasswordDialogState()
+        },
+
         closeRegisterDialog() {
             this.showRegisterDialog = false
             this.resetRegisterDialogState()
@@ -855,7 +977,9 @@ export default {
                 this.selectedSchoolShortName = this.config?.school?.short_name || null
                 this.resetLoginDialogState()
                 this.resetRegisterDialogState()
+                this.resetRestaurantPasswordDialogState()
                 this.showRegisterDialog = false
+                this.showPasswordDialog = false
                 await this.loadMenuPlans()
             }
         },
@@ -865,8 +989,47 @@ export default {
             await this.homepageStore.loadConfig(this.currentSchoolShortName, 'restaurant')
             this.resetLoginDialogState()
             this.resetRegisterDialogState()
+            this.resetRestaurantPasswordDialogState()
             this.showLoginDialog = false
             this.showRegisterDialog = false
+            this.showPasswordDialog = false
+        },
+
+        async submitRestaurantPasswordChange() {
+            if (!this.canSubmitRestaurantPasswordChange) {
+                return
+            }
+
+            const form = this.$refs.restaurantPasswordForm
+            const validationResult = await form?.validate?.()
+            const isValid = validationResult?.valid ?? false
+
+            if (!isValid || !this.currentSchoolId) {
+                return
+            }
+
+            this.restaurantPasswordLoading = true
+            this.restaurantPasswordError = ''
+            this.restaurantPasswordSuccess = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/change_password', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        new_password: this.restaurantPassword,
+                        confirm_password: this.restaurantPasswordConfirmation,
+                    },
+                })
+
+                this.restaurantPasswordSuccess = response.data?.message || 'Passwort erfolgreich geändert.'
+                this.restaurantPassword = ''
+                this.restaurantPasswordConfirmation = ''
+                form?.reset?.()
+            } catch (error) {
+                this.restaurantPasswordError = error.response?.data?.message || 'Das Passwort konnte nicht geändert werden.'
+            } finally {
+                this.restaurantPasswordLoading = false
+            }
         },
 
         async loadMenuPlans() {
@@ -1244,6 +1407,14 @@ export default {
             this.registerError = ''
         },
 
+        resetRestaurantPasswordDialogState() {
+            this.restaurantPassword = ''
+            this.restaurantPasswordConfirmation = ''
+            this.restaurantPasswordLoading = false
+            this.restaurantPasswordError = ''
+            this.restaurantPasswordSuccess = ''
+        },
+
         countdownFor(plan) {
             if (! plan.orderable_until) return null
 
@@ -1259,6 +1430,12 @@ export default {
             if (days > 0) return `${days} Tage ${hours} Stunden ${minutes} Minuten`
             if (hours > 0) return `${hours} Stunden ${minutes} Minuten ${seconds} Sekunden`
             return `${minutes} Minuten ${seconds} Sekunden`
+        },
+
+        bookMenu(entry) {
+            // Dummy function for now - just show an alert
+            alert(`Menü "${entry.menu_title || entry.menu?.title || 'Menü'}" würde jetzt gebucht werden.`);
+            console.log('Booking menu:', entry);
         },
     },
 }
@@ -1557,8 +1734,18 @@ export default {
     color: #6b7280;
 }
 
+.restaurant-auth-card__meta {
+    margin: 0 0 4px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #9a3412;
+    word-break: break-word;
+}
+
 .restaurant-auth-card__actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 10px;
     flex-shrink: 0;
 }
@@ -1904,6 +2091,12 @@ export default {
     color: #6b7280;
     font-style: italic;
     line-height: 1.5;
+}
+
+.rp-menu__actions {
+    margin-top: 10px;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .rp-empty {

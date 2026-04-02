@@ -306,6 +306,30 @@ class RestaurantHomepageAuthService
     }
 
     /**
+     * @param  array{school_id:int|string, new_password:string, confirm_password:string}  $data
+     * @return array<string, mixed>
+     */
+    public function changePassword(array $data): array
+    {
+        $authUser = Auth::user();
+
+        if (! $authUser instanceof User || ! $authUser->hasRole('lunch_user')) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        if ((int) $authUser->school_id !== (int) $data['school_id']) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $authUser->setPassword((string) $data['new_password']);
+
+        return [
+            'status' => 'PASSWORD_CHANGED',
+            'message' => 'Passwort erfolgreich geändert.',
+        ];
+    }
+
+    /**
      * @param  array{school_id:int|string, email:string, user_id:int|string}  $data
      * @return array<string, mixed>
      */

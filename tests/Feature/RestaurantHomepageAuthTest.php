@@ -176,6 +176,50 @@ it('logs a lunch user in with the restaurant password and stores login metadata'
     $this->assertAuthenticatedAs($user);
 });
 
+it('changes the password for an authenticated lunch user on the restaurant homepage', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'change-password@test.local',
+        'password' => Hash::make('old-secret-123'),
+    ]);
+    $user->assignRole('lunch_user');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/restaurant/change_password', [
+            'data' => [
+                'school_id' => $this->school->id,
+                'new_password' => 'new-secret-123',
+                'confirm_password' => 'new-secret-123',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('status', 'PASSWORD_CHANGED')
+        ->assertJsonPath('message', 'Passwort erfolgreich geändert.');
+
+    expect(Hash::check('new-secret-123', (string) $user->fresh()->password))->toBeTrue();
+});
+
+it('forbids changing the restaurant password for users without the lunch role', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'plain-user@test.local',
+        'password' => Hash::make('old-secret-123'),
+    ]);
+    $user->assignRole('user');
+
+    $this->actingAs($user)
+        ->postJson('/api/homepage/restaurant/change_password', [
+            'data' => [
+                'school_id' => $this->school->id,
+                'new_password' => 'new-secret-123',
+                'confirm_password' => 'new-secret-123',
+            ],
+        ])
+        ->assertForbidden();
+});
+
 it('informs the user when the restaurant confirmation is still pending for the email address', function () {
     $user = User::factory()->create([
         'school_id' => $this->school->id,
