@@ -6,13 +6,19 @@ use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
 use App\Http\Requests\Homepage\HomepageRoutingRequest;
 use App\Http\Requests\Homepage\RestaurantCheckEmailRequest;
 use App\Http\Requests\Homepage\RestaurantConfirmEmailRequest;
+use App\Http\Requests\Homepage\RestaurantConfirmUserRequest;
+use App\Http\Requests\Homepage\RestaurantLoginWithCodeRequest;
+use App\Http\Requests\Homepage\RestaurantLoginWithPasswordRequest;
 use App\Http\Requests\Homepage\RestaurantRegisterUserRequest;
+use App\Http\Requests\Homepage\RestaurantSendLoginCodeRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
+use App\Http\Resources\Homepage\UserResource;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
+use App\Models\User;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantHomepageAuthService;
@@ -134,6 +140,7 @@ class HomepageController extends Controller
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $school);
         $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $school);
         $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $school);
+        $restaurantAuthUser = $this->restaurantAuthUser($school);
 
         $data = [
             'schooltool_logo' => config('schooltool.logo'),
@@ -164,11 +171,14 @@ class HomepageController extends Controller
                 'Nachhilfetool' => $this->toolLicenceStatus('Nachhilfetool', $licenceService),
                 'Lehrertool' => $this->toolLicenceStatus('Lehrertool', $licenceService),
             ],
+            'auth_check' => $restaurantAuthUser !== null,
+            'auth_user' => $restaurantAuthUser ? new UserResource($restaurantAuthUser) : null,
             'health' => [
                 'queue_working' => $this->isQueueWorking(),
             ],
             'restaurant' => [
                 'user_information_intro_html' => trim((string) ($school?->schoolTool?->restaurant_user_information_intro_html ?? '')),
+                'new_users_must_confirm_email' => (bool) ($school?->schoolTool?->restaurant_new_users_must_confirm_email ?? false),
                 ...$restaurantService->homepageSummaryForSchool($school),
             ],
         ];
@@ -221,6 +231,33 @@ class HomepageController extends Controller
         );
     }
 
+    public function restaurantSendLoginCode(
+        RestaurantSendLoginCodeRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->sendLoginCode($request->validated()['data'])
+        );
+    }
+
+    public function restaurantLoginWithCode(
+        RestaurantLoginWithCodeRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->loginWithCode($request->validated()['data'])
+        );
+    }
+
+    public function restaurantLoginWithPassword(
+        RestaurantLoginWithPasswordRequest $request,
+        RestaurantHomepageAuthService $authService
+    ) {
+        return response()->json(
+            $authService->loginWithPassword($request->validated()['data'])
+        );
+    }
+
     public function restaurantConfirmEmail(
         RestaurantConfirmEmailRequest $request,
         RestaurantHomepageAuthService $authService
@@ -230,6 +267,55 @@ class HomepageController extends Controller
         );
     }
 
+    public function restaurantConfirmUser(
+        RestaurantConfirmUserRequest $request,
+        RestaurantHomepageAuthService $authService,
+        LicenceService $licenceService
+    ) {
+        $validated = $request->validated();
+        $user = User::query()->findOrFail((int) $validated['user_id']);
+
+        $this->ensureRestaurantLicenceForSchool($user->selectedSchool, $licenceService);
+        $wasConfirmed = $authService->confirmPendingRestaurantUser((int) $validated['user_id'], (string) $validated['token']);
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => $wasConfirmed
+                ? 'Benutzer wurde erfolgreich bestätigt.'
+                : 'Benutzer konnte nicht bestaetigt werden.',
+            'subtitle' => $this->restaurantApprovalSubtitle($user),
+            'text' => $wasConfirmed
+                ? 'Die Freischaltung fuer das Restaurant wurde bearbeitet.'
+                : 'Die Anfrage wurde eventuell bereits bearbeitet oder die E-Mail-Adresse ist noch nicht bestaetigt.',
+            'status' => $wasConfirmed ? 'BESTAETIGT' : 'NICHT BESTAETIGT',
+            'back_url' => url('/homepage/restaurant?school='.$user->selectedSchool?->short_name),
+        ]);
+    }
+
+    public function restaurantRejectUser(
+        RestaurantConfirmUserRequest $request,
+        RestaurantHomepageAuthService $authService,
+        LicenceService $licenceService
+    ) {
+        $validated = $request->validated();
+        $user = User::query()->findOrFail((int) $validated['user_id']);
+
+        $this->ensureRestaurantLicenceForSchool($user->selectedSchool, $licenceService);
+
+        $wasRejected = $authService->rejectPendingRestaurantUser((int) $validated['user_id'], (string) $validated['token']);
+
+        return response()->view('homepage.restaurant-approval-response', [
+            'title' => $wasRejected
+                ? 'Benutzer wurde abgelehnt.'
+                : 'Benutzer konnte nicht abgelehnt werden.',
+            'subtitle' => $this->restaurantApprovalSubtitle($user),
+            'text' => $wasRejected
+                ? 'Die Restaurantanmeldung wurde abgelehnt.'
+                : 'Die Anfrage wurde eventuell bereits bearbeitet oder kann nicht mehr abgelehnt werden.',
+            'status' => $wasRejected ? 'ABGELEHNT' : 'NICHT ABGELEHNT',
+            'back_url' => url('/homepage/restaurant?school='.$user->selectedSchool?->short_name),
+        ]);
+    }
+
     public function logout()
     {
         if (Auth::check()) {
@@ -237,5 +323,49 @@ class HomepageController extends Controller
             session()->invalidate();
             session()->regenerateToken();
         }
+    }
+
+    private function ensureRestaurantLicenceForSchool(?School $school, LicenceService $licenceService): void
+    {
+        $status = $licenceService->licenceStatus($school, 'Restaurant');
+
+        if ($status === 'active') {
+            return;
+        }
+
+        abort(403, $status === 'expired' ? 'Lizenz abgelaufen.' : 'Lizenz nicht vorhanden.');
+    }
+
+    private function restaurantApprovalSubtitle(User $user): string
+    {
+        $fullName = trim(implode(' ', array_filter([
+            trim((string) $user->last_name),
+            trim((string) $user->first_name),
+        ])));
+
+        if ($fullName === '') {
+            return trim((string) $user->email);
+        }
+
+        return $fullName.' ('.trim((string) $user->email).')';
+    }
+
+    private function restaurantAuthUser(?School $school): ?User
+    {
+        $authUser = Auth::user();
+
+        if (! $authUser instanceof User) {
+            return null;
+        }
+
+        if (! $authUser->hasRole('lunch_user')) {
+            return null;
+        }
+
+        if ($school && (int) $authUser->school_id !== (int) $school->id) {
+            return null;
+        }
+
+        return $authUser;
     }
 }

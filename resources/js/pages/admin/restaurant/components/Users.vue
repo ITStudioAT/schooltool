@@ -160,6 +160,18 @@
                                 </v-btn>
 
                                 <v-btn
+                                    v-if="user.roles?.includes('lunch_candidate')"
+                                    size="small"
+                                    color="error"
+                                    variant="text"
+                                    prepend-icon="mdi-delete-outline"
+                                    :loading="deleteUserId === user.id"
+                                    :disabled="deleteUserId === user.id"
+                                    @click="openDeleteCandidateDialog(user)">
+                                    Löschen
+                                </v-btn>
+
+                                <v-btn
                                     size="small"
                                     :color="user.has_sepa ? 'warning' : 'success'"
                                     :variant="user.has_sepa ? 'outlined' : 'flat'"
@@ -243,6 +255,37 @@
                     density="comfortable"
                     @update:model-value="handlePageChange" />
             </div>
+
+            <v-dialog v-model="deleteDialog" max-width="460" persistent>
+                <v-card rounded="xl">
+                    <v-card-title>Kandidat löschen</v-card-title>
+
+                    <v-card-text>
+                        <div class="text-body-1">
+                            Soll die ausstehende Restaurant-Anmeldung von
+                            <strong>{{ fullName(pendingDeleteUser) }}</strong>
+                            wirklich gelöscht werden?
+                        </div>
+
+                        <div v-if="pendingDeleteUser?.email" class="text-body-2 text-medium-emphasis mt-3">
+                            {{ pendingDeleteUser.email }}
+                        </div>
+                    </v-card-text>
+
+                    <v-card-actions class="px-6 pb-5">
+                        <v-spacer />
+                        <v-btn variant="text" @click="closeDeleteCandidateDialog">Abbrechen</v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            :loading="deleteUserId === pendingDeleteUser?.id"
+                            :disabled="deleteUserId === pendingDeleteUser?.id"
+                            @click="confirmDeleteCandidate">
+                            Löschen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
         </ItsGridBox>
     </v-col>
 </template>
@@ -268,6 +311,9 @@ export default {
             searchDraft: '',
             sepaUserId: null,
             confirmUserId: null,
+            deleteUserId: null,
+            deleteDialog: false,
+            pendingDeleteUser: null,
         }
     },
 
@@ -358,6 +404,36 @@ export default {
                 }
             } finally {
                 this.confirmUserId = null
+            }
+        },
+        openDeleteCandidateDialog(user) {
+            this.pendingDeleteUser = user ?? null
+            this.deleteDialog = true
+        },
+        closeDeleteCandidateDialog() {
+            this.deleteDialog = false
+            this.pendingDeleteUser = null
+        },
+        async confirmDeleteCandidate() {
+            if (! this.pendingDeleteUser?.id) {
+                return
+            }
+
+            const targetPage = this.users.length === 1 && this.currentPage > 1
+                ? this.currentPage - 1
+                : this.currentPage
+
+            this.deleteUserId = this.pendingDeleteUser.id
+
+            try {
+                const deleted = await this.restaurantUserStore.destroyCandidate(this.pendingDeleteUser.id)
+
+                if (deleted) {
+                    await this.restaurantUserStore.index(targetPage)
+                    this.closeDeleteCandidateDialog()
+                }
+            } finally {
+                this.deleteUserId = null
             }
         },
         syncPendingConfirmationFilterFromRoute() {

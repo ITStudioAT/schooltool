@@ -53,6 +53,13 @@
                                         aria-label="Bestellbarer Menüplan">
                                         <v-icon icon="mdi-cart-outline" size="12" />
                                     </span>
+                                    <span
+                                        v-if="day.isFreeDay"
+                                        class="mp-day__free"
+                                        :data-testid="`free-day-marker-${day.iso}`"
+                                        aria-label="Freier Tag">
+                                        <v-icon icon="mdi-calendar-remove-outline" size="12" />
+                                    </span>
                                     <span class="mp-day__num">{{ day.dayNumber }}</span>
                                     <span class="mp-day__mon">{{ day.monthShort }}</span>
                                     <span v-if="day.hasPlan" class="mp-day__dot" aria-hidden="true" />
@@ -84,6 +91,12 @@
                                     <v-icon icon="mdi-cart-outline" size="12" />
                                 </span>
                                 Bestellbarer Menüplan
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-free" aria-hidden="true">
+                                    <v-icon icon="mdi-calendar-remove-outline" size="12" />
+                                </span>
+                                Freier Tag
                             </span>
                         </div>
 
@@ -201,6 +214,7 @@ export default {
             selectedEndIso: '',
             previewMessage: '',
             currentDateTime: new Date(),
+            freeDayDates: {},
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
         }
     },
@@ -216,6 +230,8 @@ export default {
         if (! restaurantStore.settings) {
             restaurantStore.loadSettings()
         }
+
+        this.loadVisibleFreeDays()
     },
 
     watch: {
@@ -225,6 +241,9 @@ export default {
             }
 
             this.currentWeekStartIso = this.startOfWeekIso(week)
+        },
+        currentWeekStartIso() {
+            this.loadVisibleFreeDays()
         },
     },
 
@@ -295,6 +314,7 @@ export default {
                     labelShort: this.weekDayLabels[index],
                     dayNumber: String(date.getDate()).padStart(2, '0'),
                     monthShort: date.toLocaleDateString('de-AT', { month: 'short' }),
+                    isFreeDay: this.isFreeDay(iso),
                     hasPlan: planCount > 0,
                     hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
                     hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
@@ -335,6 +355,42 @@ export default {
         },
         formatPeriod(startIso, endIso) {
             return `${this.formatDate(startIso)} - ${this.formatDate(endIso)}`
+        },
+        visibleRangeYears() {
+            const startYear = Number(String(this.currentWeekStartIso || '').slice(0, 4))
+            const endYear = Number(String(this.addDaysIso(this.currentWeekStartIso, 20) || '').slice(0, 4))
+
+            return [...new Set([startYear, endYear].filter((year) => Number.isInteger(year) && year > 0))]
+        },
+        async loadVisibleFreeDays() {
+            try {
+                const responses = await Promise.all(this.visibleRangeYears().map((year) => {
+                    return axios.get('/api/admin/restaurant/free-days', {
+                        params: { year },
+                    })
+                }))
+
+                const freeDayDates = {}
+
+                responses.forEach((response) => {
+                    const freeDays = Array.isArray(response?.data?.data) ? response.data.data : []
+
+                    freeDays.forEach((freeDay) => {
+                        const isoDate = String(freeDay?.free_date || '').trim()
+
+                        if (isoDate !== '') {
+                            freeDayDates[isoDate] = true
+                        }
+                    })
+                })
+
+                this.freeDayDates = freeDayDates
+            } catch {
+                this.freeDayDates = {}
+            }
+        },
+        isFreeDay(isoString) {
+            return this.freeDayDates[isoString] === true
         },
         isWithinRange(targetIso, startIso, endIso) {
             return targetIso >= startIso && targetIso <= endIso
@@ -382,6 +438,7 @@ export default {
 
             return {
                 'is-today': isoString === this.todayIso,
+                'is-free-day': this.isFreeDay(isoString),
                 'has-plan': hasPlan,
                 'has-plan-start': hasPlan && !hasPreviousPlanConnection,
                 'has-plan-middle': hasPlan && hasPreviousPlanConnection && hasNextPlanConnection,
@@ -778,6 +835,20 @@ export default {
     color: #1d4ed8;
 }
 
+.mp-day__free {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
+}
+
 /* ---- Plan State ---- */
 
 .mp-day.has-plan {
@@ -788,6 +859,14 @@ export default {
 
 .mp-day.has-plan .mp-day__num { color: #78350f; }
 .mp-day.has-plan .mp-day__mon { color: #b45309; }
+
+.mp-day.is-free-day {
+    background: linear-gradient(160deg, #f0fdf4 0%, #dcfce7 100%);
+    border-color: rgba(34, 197, 94, 0.38);
+}
+
+.mp-day.is-free-day .mp-day__num { color: #166534; }
+.mp-day.is-free-day .mp-day__mon { color: #15803d; }
 
 .mp-day.has-plan-start,
 .mp-day.has-plan-middle,
@@ -895,6 +974,17 @@ export default {
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.14);
     color: #1d4ed8;
+}
+
+.mp-legend-free {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
 }
 
 /* ---- Sidebar ---- */

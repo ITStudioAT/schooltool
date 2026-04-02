@@ -10,9 +10,12 @@ use App\Http\Resources\Admin\UserResource;
 use App\Models\Import116;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Services\RestaurantHomepageAuthService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class RestaurantUserController extends Controller
 {
@@ -137,7 +140,7 @@ class RestaurantUserController extends Controller
         ]);
     }
 
-    public function confirm(User $user): JsonResponse
+    public function confirm(User $user, RestaurantHomepageAuthService $restaurantHomepageAuthService): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -169,9 +172,44 @@ class RestaurantUserController extends Controller
             $targetUser->assignRole('lunch_user');
         }
 
+        $restaurantHomepageAuthService->sendRestaurantConfirmationEmail($targetUser);
+
         return response()->json([
             'data' => new UserResource($targetUser->fresh()->load('roles')),
         ]);
+    }
+
+    public function destroy(User $user): Response
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $targetUser = User::query()
+            ->whereKey($user->id)
+            ->where('school_id', $authUser->school_id)
+            ->whereHas('roles', function (Builder $query): void {
+                $query->where('name', 'lunch_candidate');
+            })
+            ->with('roles')
+            ->firstOrFail();
+
+        DB::transaction(function () use ($targetUser): void {
+            if ($targetUser->roles->count() > 1) {
+                $targetUser->removeRole('lunch_candidate');
+
+                return;
+            }
+
+            if ($targetUser->hasDependencies()) {
+                abort(409, 'Der Benutzer hat noch Abhängigkeiten und kann nicht gelöscht werden.');
+            }
+
+            $targetUser->syncRoles([]);
+            $targetUser->delete();
+        });
+
+        return response()->noContent();
     }
 
     /**

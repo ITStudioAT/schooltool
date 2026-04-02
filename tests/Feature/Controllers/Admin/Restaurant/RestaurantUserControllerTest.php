@@ -4,12 +4,16 @@ use App\Models\Import116;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\StandardEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
+    Notification::fake();
+
     collect(['admin', 'lunch_admin', 'lunch_candidate', 'lunch_user'])->each(function (string $role): void {
         Role::firstOrCreate([
             'name' => $role,
@@ -375,6 +379,13 @@ test('restaurant lunch candidate can be confirmed for the same school after emai
         ->and($user->fresh()->hasRole('lunch_candidate'))->toBeFalse()
         ->and($user->fresh()->confirmed_at)->not->toBeNull()
         ->and($user->fresh()->restaurant_confirmed_at)->not->toBeNull();
+
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable) use ($user): bool {
+        return ($notifiable->routes['mail'] ?? null) === (string) $user->email
+            && ($notification->data['markdown'] ?? null) === 'mails.homepage.restaurantRegistrationConfirmed'
+            && ($notification->data['subject'] ?? null) === 'Restaurantanmeldung bestätigt'
+            && str_contains((string) ($notification->data['restaurant_url'] ?? ''), '/homepage/restaurant?school=');
+    });
 });
 
 test('restaurant lunch candidate confirmation requires a verified email', function () {
@@ -396,4 +407,44 @@ test('restaurant lunch candidate confirmation requires a verified email', functi
         ->and($user->fresh()->hasRole('lunch_user'))->toBeFalse()
         ->and($user->fresh()->confirmed_at)->toBeNull()
         ->and($user->fresh()->restaurant_confirmed_at)->toBeNull();
+});
+
+test('restaurant lunch candidate can be deleted for the same school', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'email' => 'candidate@example.test',
+    ]);
+    $user->assignRole('lunch_candidate');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->deleteJson("/api/admin/restaurant/users/{$user->id}")
+        ->assertNoContent();
+
+    expect(User::find($user->id))->toBeNull();
+});
+
+test('restaurant lunch candidate deletion keeps the user when additional roles exist', function () {
+    Role::firstOrCreate([
+        'name' => 'teacher',
+        'guard_name' => 'web',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'email' => 'teacher.candidate@example.test',
+    ]);
+    $user->assignRole('lunch_candidate');
+    $user->assignRole('teacher');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->deleteJson("/api/admin/restaurant/users/{$user->id}")
+        ->assertNoContent();
+
+    expect($user->fresh())->not->toBeNull()
+        ->and($user->fresh()->hasRole('lunch_candidate'))->toBeFalse()
+        ->and($user->fresh()->hasRole('teacher'))->toBeTrue();
 });

@@ -46,6 +46,40 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
             }
         },
 
+        async destroyCandidate(userId) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+            this.error = null
+
+            try {
+                await axios.delete(`/api/admin/restaurant/users/${userId}`)
+                this.users = this.users.filter((user) => {
+                    return Number(user.id) !== Number(userId)
+                })
+
+                notification.notify({
+                    message: 'Kandidat wurde geloescht.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return true
+            } catch (error) {
+                this.error = error
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Loeschen des Kandidaten.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async updateSepa(userId, hasSepa) {
             const adminStore = useAdminStore()
             const notification = useNotificationStore()

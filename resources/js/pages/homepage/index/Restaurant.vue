@@ -89,17 +89,28 @@
 
         <section v-if="currentSchoolShortName" class="restaurant-auth">
             <div class="restaurant-shell">
-                <div class="restaurant-auth-card">
+                <div v-if="restaurantAuthUser" class="restaurant-auth-card">
+                    <div class="restaurant-auth-card__icon">
+                        <v-icon size="28">mdi-account-check-outline</v-icon>
+                    </div>
+                    <div class="restaurant-auth-card__copy">
+                        <h2 class="restaurant-auth-card__title">{{ restaurantAuthDisplayName }}</h2>
+                        <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
+                    </div>
+                    <div class="restaurant-auth-card__actions">
+                        <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
+                    </div>
+                </div>
+                <div v-else class="restaurant-auth-card">
                     <div class="restaurant-auth-card__icon">
                         <v-icon size="28">mdi-account-circle-outline</v-icon>
                     </div>
                     <div class="restaurant-auth-card__copy">
-                        <h2 class="restaurant-auth-card__title">Anmelden oder Registrieren</h2>
+                        <h2 class="restaurant-auth-card__title">Anmelden/Registrieren</h2>
                         <p class="restaurant-auth-card__text">Melden Sie sich an, um Bestellungen aufzugeben und Ihren Speiseplan einzusehen.</p>
                     </div>
                     <div class="restaurant-auth-card__actions">
-                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openLoginDialog">Anmelden</v-btn>
-                        <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="openRegisterDialog">Registrieren</v-btn>
+                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openLoginDialog">Anmelden/Registrieren</v-btn>
                     </div>
                 </div>
             </div>
@@ -187,9 +198,7 @@
                         <span>{{ schoolInfoName }}</span>
                     </div>
 
-                    <p class="restaurant-login-intro">Bitte geben Sie Ihre E-Mail-Adresse ein, um fortzufahren.</p>
-
-                    <v-form ref="loginEmailForm" @submit.prevent="submitLoginEmailCheck">
+                    <v-form v-if="!loginCheckResult" ref="loginEmailForm" @submit.prevent="submitLoginEmailCheck">
                         <v-text-field
                             v-model="loginEmail"
                             autofocus
@@ -201,6 +210,11 @@
                             :rules="[required(), mail(), maxLength(255)]"
                             @keyup.enter="submitLoginEmailCheck" />
                     </v-form>
+
+                    <div v-if="loginCheckResult?.email" class="restaurant-login-email mb-3">
+                        <div class="restaurant-login-email__label">E-Mail</div>
+                        <div class="restaurant-login-email__value">{{ loginCheckResult.email }}</div>
+                    </div>
 
                     <v-alert
                         v-if="loginCheckError"
@@ -228,7 +242,9 @@
                             <div
                                 v-for="user in loginCheckResult.matched_users"
                                 :key="user.id"
-                                class="restaurant-login-state__match">
+                                class="restaurant-login-state__match"
+                                :class="{ 'restaurant-login-state__match--selected': loginSelectedUserId === user.id }"
+                                @click="selectLoginUser(user.id)">
                                 <strong>{{ user.name }}</strong>
                                 <span v-if="user.schoolclass">{{ user.schoolclass }}</span>
                                 <span v-if="user.matched_children?.length">
@@ -238,9 +254,105 @@
                         </div>
 
                         <div class="restaurant-login-state__actions">
-                            <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold">Mit Code</v-btn>
-                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold">Mit Passwort</v-btn>
+                            <v-btn
+                                color="#ea580c"
+                                :variant="loginMode === 'code' ? 'flat' : 'outlined'"
+                                rounded="lg"
+                                class="text-none font-weight-bold"
+                                :disabled="!selectedLoginUser || loginLoading"
+                                @click="startCodeLogin">
+                                Mit Code
+                            </v-btn>
+                            <v-btn
+                                color="#ea580c"
+                                :variant="loginMode === 'password' ? 'flat' : 'outlined'"
+                                rounded="lg"
+                                class="text-none font-weight-bold"
+                                :disabled="!selectedLoginUser || loginLoading"
+                                @click="startPasswordLogin">
+                                Mit Passwort
+                            </v-btn>
                         </div>
+
+                        <v-alert
+                            v-if="loginActionMessage"
+                            type="info"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mt-3">
+                            {{ loginActionMessage }}
+                        </v-alert>
+
+                        <v-alert
+                            v-if="loginAuthError"
+                            type="error"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mt-3">
+                            {{ loginAuthError }}
+                        </v-alert>
+
+                        <v-form
+                            v-if="loginMode === 'code'"
+                            ref="loginCodeForm"
+                            class="mt-4"
+                            @submit.prevent="submitRestaurantCodeLogin">
+                            <v-otp-input
+                                v-model="loginCodeToken"
+                                autofocus
+                                class="mb-3" />
+
+                            <div class="d-flex justify-space-between align-center ga-3">
+                                <v-btn
+                                    variant="text"
+                                    color="#ea580c"
+                                    class="text-none"
+                                    :disabled="loginLoading || !selectedLoginUser"
+                                    @click.prevent="sendRestaurantLoginCode">
+                                    Code erneut senden
+                                </v-btn>
+                                <v-btn
+                                    color="#ea580c"
+                                    variant="flat"
+                                    rounded="lg"
+                                    class="text-none font-weight-bold"
+                                    :loading="loginLoading"
+                                    :disabled="!canSubmitLoginCode"
+                                    type="submit">
+                                    Anmelden
+                                </v-btn>
+                            </div>
+                        </v-form>
+
+                        <v-form
+                            v-if="loginMode === 'password'"
+                            ref="loginPasswordForm"
+                            class="mt-4"
+                            @submit.prevent="submitRestaurantPasswordLogin">
+                            <v-text-field
+                                v-model="loginPassword"
+                                autofocus
+                                label="Passwort"
+                                type="password"
+                                variant="outlined"
+                                density="compact"
+                                class="mb-3"
+                                :disabled="loginLoading"
+                                :rules="[required(), minLength(8), maxLength(255)]" />
+
+                            <div class="d-flex justify-end">
+                                <v-btn
+                                    color="#ea580c"
+                                    variant="flat"
+                                    rounded="lg"
+                                    class="text-none font-weight-bold"
+                                    :loading="loginLoading"
+                                    :disabled="!canSubmitLoginPassword"
+                                    type="submit">
+                                    Anmelden
+                                </v-btn>
+                            </div>
+                        </v-form>
                     </div>
 
                     <div v-else-if="loginCheckResult?.status === 'REGISTER_REQUIRED'" class="restaurant-login-state">
@@ -248,18 +360,31 @@
                             Diese E-Mail-Adresse wurde noch nicht für das Restaurant gefunden. Möchten Sie sich registrieren?
                         </p>
                     </div>
+
+                    <div v-else-if="loginCheckResult?.status === 'PENDING_CONFIRMATION'" class="restaurant-login-state">
+                        <p class="restaurant-login-state__text">
+                            {{ loginCheckResult.message }}
+                        </p>
+                    </div>
                 </v-card-text>
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
-                    <v-btn variant="text" color="secondary" @click="closeLoginDialog">Abbrechen</v-btn>
                     <v-btn
+                        v-if="loginCheckResult?.status !== 'PENDING_CONFIRMATION'"
+                        variant="text"
+                        color="secondary"
+                        @click="closeLoginDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        v-if="!loginCheckResult || loginCheckResult?.status === 'REGISTER_REQUIRED' || loginCheckResult?.status === 'PENDING_CONFIRMATION'"
                         variant="flat"
                         color="#ea580c"
                         class="text-none font-weight-bold"
                         :loading="loginCheckLoading"
                         :disabled="!canSubmitLoginEmail"
                         @click="handleLoginPrimaryAction">
-                        {{ loginCheckResult?.status === 'REGISTER_REQUIRED' ? 'Registrieren' : 'Weiter' }}
+                        {{ loginPrimaryActionLabel }}
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -280,13 +405,10 @@
                         v-if="registerResult?.status !== 'REGISTERED'"
                         ref="registerForm"
                         @submit.prevent="handleRegisterPrimaryAction">
-                        <v-text-field
-                            :model-value="registerEmail"
-                            label="E-Mail"
-                            variant="outlined"
-                            density="compact"
-                            class="mb-3"
-                            readonly />
+                        <div v-if="registerEmail" class="restaurant-login-email mb-3">
+                            <div class="restaurant-login-email__label">E-Mail</div>
+                            <div class="restaurant-login-email__value">{{ registerEmail }}</div>
+                        </div>
 
                         <div v-if="registerSourceInfoText" class="restaurant-login-state mb-3">
                             <p class="restaurant-login-state__text">
@@ -326,6 +448,7 @@
                         <v-text-field
                             v-if="registerRequiresManualNameFields && registerHasConfirmedEmail"
                             v-model="registerLastName"
+                            autofocus
                             label="Nachname"
                             variant="outlined"
                             density="compact"
@@ -340,6 +463,41 @@
                             density="compact"
                             class="mb-3"
                             :rules="[required(), maxLength(255)]" />
+
+                        <div v-if="registerShouldAskForPasswordChoice" class="restaurant-login-state mb-3">
+                            <p class="restaurant-login-state__text">
+                                Möchten Sie jetzt ein Passwort für spätere Anmeldungen festlegen?
+                            </p>
+
+                            <div class="restaurant-login-state__actions">
+                                <v-btn
+                                    color="#ea580c"
+                                    :variant="registerPasswordIntent === 'yes' ? 'flat' : 'outlined'"
+                                    rounded="lg"
+                                    class="text-none font-weight-bold"
+                                    @click.prevent="setRegisterPasswordIntent('yes')">
+                                    Ja
+                                </v-btn>
+                                <v-btn
+                                    color="#ea580c"
+                                    :variant="registerPasswordIntent === 'no' ? 'flat' : 'outlined'"
+                                    rounded="lg"
+                                    class="text-none font-weight-bold"
+                                    @click.prevent="setRegisterPasswordIntent('no')">
+                                    Nein
+                                </v-btn>
+                            </div>
+                        </div>
+
+                        <v-text-field
+                            v-if="registerShouldAskForPasswordInput"
+                            v-model="registerPassword"
+                            label="Passwort"
+                            type="password"
+                            variant="outlined"
+                            density="compact"
+                            class="mb-3"
+                            :rules="[required(), minLength(8), maxLength(255)]" />
                     </v-form>
 
                     <v-alert
@@ -421,10 +579,20 @@ export default {
             loginCheckLoading: false,
             loginCheckResult: null,
             loginCheckError: '',
+            loginSelectedUserId: null,
+            loginMode: null,
+            loginCodeToken: '',
+            loginPassword: '',
+            loginLoading: false,
+            loginAuthError: '',
+            loginActionMessage: '',
             registerFirstName: '',
             registerLastName: '',
             registerEmailToken: '',
             registerConfirmationToken: '',
+            registerPasswordChoicePrompted: false,
+            registerPasswordIntent: null,
+            registerPassword: '',
             registerLoading: false,
             registerResult: null,
             registerError: '',
@@ -446,6 +614,16 @@ export default {
         ...mapWritableState(useHomepageStore, ['config']),
         restaurantIntroHtml() {
             return this.config?.restaurant?.user_information_intro_html || ''
+        },
+        restaurantAuthUser() {
+            return this.config?.auth_check === true ? this.config?.auth_user || null : null
+        },
+        restaurantAuthDisplayName() {
+            const firstName = this.restaurantAuthUser?.first_name?.trim?.() || ''
+            const lastName = this.restaurantAuthUser?.last_name?.trim?.() || ''
+            const fullName = [firstName, lastName].filter(Boolean).join(' ').trim()
+
+            return fullName || this.restaurantAuthUser?.email || ''
         },
         schoolInfoName() {
             return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
@@ -476,6 +654,26 @@ export default {
         canSubmitLoginEmail() {
             return !!this.currentSchoolId && this.loginEmail.trim() !== ''
         },
+        selectedLoginUser() {
+            return this.loginCheckResult?.matched_users?.find(user => user.id === this.loginSelectedUserId) || null
+        },
+        canSubmitLoginCode() {
+            return !!this.selectedLoginUser && this.loginCodeToken.trim().length === 6 && !this.loginLoading
+        },
+        canSubmitLoginPassword() {
+            return !!this.selectedLoginUser && this.loginPassword.length >= 8 && !this.loginLoading
+        },
+        loginPrimaryActionLabel() {
+            if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
+                return 'Registrieren'
+            }
+
+            if (this.loginCheckResult?.status === 'PENDING_CONFIRMATION') {
+                return 'Schließen'
+            }
+
+            return 'Weiter'
+        },
         registerEmail() {
             return (this.loginCheckResult?.email || this.loginEmail || '').trim()
         },
@@ -485,6 +683,9 @@ export default {
         registerRequiresManualNameFields() {
             return this.registerSource === 'new_user'
         },
+        restaurantNewUsersMustConfirmEmail() {
+            return this.config?.restaurant?.new_users_must_confirm_email === true
+        },
         registerIsWaitingForEmailConfirmation() {
             return this.registerSource === 'new_user' && this.registerResult?.status === 'CONFIRM_EMAIL'
         },
@@ -492,6 +693,16 @@ export default {
             return this.registerSource === 'new_user'
                 && this.registerResult?.status === 'ENTER_USER_DATA'
                 && this.registerConfirmationToken.trim() !== ''
+        },
+        registerShouldOfferPasswordChoice() {
+            return this.registerSource === 'new_user'
+                && this.registerHasConfirmedEmail
+        },
+        registerShouldAskForPasswordChoice() {
+            return this.registerShouldOfferPasswordChoice && this.registerPasswordChoicePrompted
+        },
+        registerShouldAskForPasswordInput() {
+            return this.registerShouldAskForPasswordChoice && this.registerPasswordIntent === 'yes'
         },
         canSubmitRegister() {
             if (!this.currentSchoolId || !this.registerEmail || this.registerLoading) {
@@ -510,6 +721,18 @@ export default {
                 return this.registerResult === null
             }
 
+            if (this.registerShouldOfferPasswordChoice && !this.registerPasswordChoicePrompted) {
+                return this.registerFirstName.trim() !== '' && this.registerLastName.trim() !== ''
+            }
+
+            if (this.registerShouldAskForPasswordChoice && this.registerPasswordIntent === null) {
+                return false
+            }
+
+            if (this.registerShouldAskForPasswordInput) {
+                return this.registerPassword.length >= 8
+            }
+
             return this.registerFirstName.trim() !== '' && this.registerLastName.trim() !== ''
         },
         registerIntroText() {
@@ -521,11 +744,18 @@ export default {
             }
 
             if (this.registerResult?.status === 'ENTER_USER_DATA') {
+                if (this.registerShouldAskForPasswordChoice && this.registerPasswordIntent === null) {
+                    return 'Möchten Sie jetzt noch ein Passwort festlegen?'
+                }
+
+                if (this.registerShouldAskForPasswordInput) {
+                    return 'Bitte geben Sie jetzt Ihr gewünschtes Passwort ein.'
+                }
                 return 'Die E-Mail-Adresse ist bestätigt. Bitte ergänzen Sie jetzt Nachname und Vorname.'
             }
 
             if (this.registerResult?.status === 'REGISTERED') {
-                return 'Das Restaurantkonto wurde angelegt oder freigeschaltet.'
+                return ''
             }
 
             return 'Bitte prüfen Sie die Angaben für die Registrierung.'
@@ -533,6 +763,14 @@ export default {
         registerPrimaryActionLabel() {
             if (this.registerIsWaitingForEmailConfirmation) {
                 return 'Code bestaetigen'
+            }
+
+            if (this.registerShouldOfferPasswordChoice && !this.registerPasswordChoicePrompted) {
+                return 'Weiter'
+            }
+
+            if (this.registerShouldAskForPasswordChoice && this.registerPasswordIntent === null) {
+                return 'Weiter'
             }
 
             if (this.registerSource === 'new_user' && !this.registerHasConfirmedEmail) {
@@ -543,9 +781,21 @@ export default {
         },
         registerSourceInfoText() {
             if (this.registerSource === 'new_user') {
-                return this.registerHasConfirmedEmail
-                    ? 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Nach dem Speichern wird ein neuer lunch_candidate angelegt.'
-                    : 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Vor dem Speichern muss die E-Mail-Adresse bestaetigt werden.'
+                if (!this.registerHasConfirmedEmail) {
+                    return 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Vor dem Speichern muss die E-Mail-Adresse bestaetigt werden.'
+                }
+
+                if (this.registerShouldAskForPasswordChoice && this.registerPasswordIntent === null) {
+                    return 'Ihre Angaben sind gespeichert. Sie können jetzt optional noch ein Passwort für spätere Logins festlegen.'
+                }
+
+                if (this.registerShouldAskForPasswordInput) {
+                    return 'Bitte vergeben Sie jetzt ein Passwort mit mindestens 8 Zeichen.'
+                }
+
+                return this.restaurantNewUsersMustConfirmEmail
+                    ? ''
+                    : 'Diese E-Mail-Adresse ist noch in keiner Liste vorhanden. Nach dem Speichern wird ein neuer lunch_user angelegt und direkt angemeldet.'
             }
 
             switch (this.registerSource) {
@@ -608,6 +858,15 @@ export default {
                 this.showRegisterDialog = false
                 await this.loadMenuPlans()
             }
+        },
+
+        async logoutRestaurantUser() {
+            await this.homepageStore.logout()
+            await this.homepageStore.loadConfig(this.currentSchoolShortName, 'restaurant')
+            this.resetLoginDialogState()
+            this.resetRegisterDialogState()
+            this.showLoginDialog = false
+            this.showRegisterDialog = false
         },
 
         async loadMenuPlans() {
@@ -694,11 +953,147 @@ export default {
                 })
 
                 this.loginCheckResult = response.data || null
+                this.loginSelectedUserId = this.loginCheckResult?.matched_users?.[0]?.id || null
+                this.loginMode = null
+                this.loginCodeToken = ''
+                this.loginPassword = ''
+                this.loginLoading = false
+                this.loginAuthError = ''
+                this.loginActionMessage = ''
             } catch (error) {
                 this.loginCheckResult = null
                 this.loginCheckError = error.response?.data?.message || 'Die E-Mail-Adresse konnte nicht geprüft werden.'
             } finally {
                 this.loginCheckLoading = false
+            }
+        },
+
+        selectLoginUser(userId) {
+            this.loginSelectedUserId = userId
+            this.loginCodeToken = ''
+            this.loginPassword = ''
+            this.loginAuthError = ''
+            this.loginActionMessage = ''
+        },
+
+        async startCodeLogin() {
+            if (!this.selectedLoginUser) {
+                return
+            }
+
+            this.loginMode = 'code'
+            this.loginPassword = ''
+            this.loginAuthError = ''
+            await this.sendRestaurantLoginCode()
+        },
+
+        startPasswordLogin() {
+            if (!this.selectedLoginUser) {
+                return
+            }
+
+            this.loginMode = 'password'
+            this.loginCodeToken = ''
+            this.loginAuthError = ''
+            this.loginActionMessage = ''
+        },
+
+        async sendRestaurantLoginCode() {
+            if (!this.selectedLoginUser || this.loginLoading) {
+                return
+            }
+
+            this.loginLoading = true
+            this.loginAuthError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/send_login_code', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.loginCheckResult?.email || this.loginEmail.trim(),
+                        user_id: this.selectedLoginUser.id,
+                    },
+                })
+
+                this.loginActionMessage = response.data?.message || 'Der Login-Code wurde gesendet.'
+                this.loginCodeToken = ''
+            } catch (error) {
+                this.loginAuthError = error.response?.data?.message || 'Der Login-Code konnte nicht gesendet werden.'
+            } finally {
+                this.loginLoading = false
+            }
+        },
+
+        async submitRestaurantCodeLogin() {
+            if (!this.canSubmitLoginCode) {
+                return
+            }
+
+            this.loginLoading = true
+            this.loginAuthError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/login_with_code', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.loginCheckResult?.email || this.loginEmail.trim(),
+                        user_id: this.selectedLoginUser.id,
+                        token_2fa: this.loginCodeToken.trim(),
+                    },
+                })
+
+                if (response.data?.status === 'LOGGED_IN') {
+                    window.location.href = `/homepage/restaurant?school=${this.currentSchoolShortName}`
+
+                    return
+                }
+
+                this.loginActionMessage = ''
+                this.loginAuthError = response.data?.message || 'Der Code ist falsch oder abgelaufen.'
+            } catch (error) {
+                this.loginAuthError = error.response?.data?.message || 'Die Anmeldung mit Code ist fehlgeschlagen.'
+            } finally {
+                this.loginLoading = false
+            }
+        },
+
+        async submitRestaurantPasswordLogin() {
+            if (!this.canSubmitLoginPassword) {
+                return
+            }
+
+            const form = this.$refs.loginPasswordForm
+            const validationResult = await form?.validate?.()
+            const isValid = validationResult?.valid ?? false
+
+            if (!isValid) {
+                return
+            }
+
+            this.loginLoading = true
+            this.loginAuthError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/login_with_password', {
+                    data: {
+                        school_id: this.currentSchoolId,
+                        email: this.loginCheckResult?.email || this.loginEmail.trim(),
+                        user_id: this.selectedLoginUser.id,
+                        password: this.loginPassword,
+                    },
+                })
+
+                if (response.data?.status === 'LOGGED_IN') {
+                    window.location.href = `/homepage/restaurant?school=${this.currentSchoolShortName}`
+
+                    return
+                }
+
+                this.loginAuthError = response.data?.message || 'Das Passwort ist falsch.'
+            } catch (error) {
+                this.loginAuthError = error.response?.data?.message || 'Die Anmeldung mit Passwort ist fehlgeschlagen.'
+            } finally {
+                this.loginLoading = false
             }
         },
 
@@ -708,12 +1103,30 @@ export default {
                 return
             }
 
+            if (this.loginCheckResult?.status === 'PENDING_CONFIRMATION') {
+                this.closeLoginDialog()
+                return
+            }
+
             await this.submitLoginEmailCheck()
         },
 
         async handleRegisterPrimaryAction() {
             if (this.registerIsWaitingForEmailConfirmation) {
                 await this.confirmRestaurantRegistrationEmail()
+                return
+            }
+
+            if (this.registerShouldOfferPasswordChoice && !this.registerPasswordChoicePrompted) {
+                const form = this.$refs.registerForm
+                const validationResult = await form?.validate?.()
+                const isValid = validationResult?.valid ?? false
+
+                if (!isValid || this.registerFirstName.trim() === '' || this.registerLastName.trim() === '') {
+                    return
+                }
+
+                this.registerPasswordChoicePrompted = true
                 return
             }
 
@@ -740,6 +1153,7 @@ export default {
                         first_name: this.registerRequiresManualNameFields && this.registerHasConfirmedEmail ? this.registerFirstName.trim() : null,
                         last_name: this.registerRequiresManualNameFields && this.registerHasConfirmedEmail ? this.registerLastName.trim() : null,
                         confirmation_token: this.registerHasConfirmedEmail ? this.registerConfirmationToken : null,
+                        password: this.registerShouldAskForPasswordInput ? this.registerPassword : null,
                     },
                 })
 
@@ -788,8 +1202,19 @@ export default {
             this.registerResult = null
             this.registerEmailToken = ''
             this.registerConfirmationToken = ''
+            this.registerPasswordChoicePrompted = false
+            this.registerPasswordIntent = null
+            this.registerPassword = ''
 
             await this.submitRestaurantRegistration()
+        },
+
+        setRegisterPasswordIntent(intent) {
+            this.registerPasswordIntent = intent
+
+            if (intent !== 'yes') {
+                this.registerPassword = ''
+            }
         },
 
         resetLoginDialogState() {
@@ -797,6 +1222,13 @@ export default {
             this.loginCheckLoading = false
             this.loginCheckResult = null
             this.loginCheckError = ''
+            this.loginSelectedUserId = null
+            this.loginMode = null
+            this.loginCodeToken = ''
+            this.loginPassword = ''
+            this.loginLoading = false
+            this.loginAuthError = ''
+            this.loginActionMessage = ''
         },
 
         resetRegisterDialogState() {
@@ -804,6 +1236,9 @@ export default {
             this.registerLastName = ''
             this.registerEmailToken = ''
             this.registerConfirmationToken = ''
+            this.registerPasswordChoicePrompted = false
+            this.registerPasswordIntent = null
+            this.registerPassword = ''
             this.registerLoading = false
             this.registerResult = null
             this.registerError = ''
@@ -1151,6 +1586,30 @@ export default {
     color: #c2410c;
 }
 
+.restaurant-login-email {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.16), rgba(255, 247, 237, 0.95));
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.restaurant-login-email__label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9a3412;
+    margin-bottom: 4px;
+}
+
+.restaurant-login-email__value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #111827;
+    word-break: break-word;
+}
+
 .restaurant-login-state {
     display: grid;
     gap: 12px;
@@ -1176,10 +1635,16 @@ export default {
     border: 1px solid rgba(251, 146, 60, 0.16);
     color: #6b7280;
     font-size: 0.85rem;
+    cursor: pointer;
 }
 
 .restaurant-login-state__match strong {
     color: #1f2937;
+}
+
+.restaurant-login-state__match--selected {
+    border-color: rgba(234, 88, 12, 0.45);
+    background: rgba(255, 237, 213, 0.95);
 }
 
 .restaurant-login-state__actions {

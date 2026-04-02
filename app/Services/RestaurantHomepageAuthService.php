@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Notifications\StandardEmail;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -49,6 +50,37 @@ class RestaurantHomepageAuthService
                 'matched_users_count' => 1,
                 'matched_users' => [$this->serializeMatchedUser($directUser)],
                 'available_auth_methods' => ['code', 'password'],
+            ];
+        }
+
+        $pendingUser = User::query()
+            ->bySchoolAndRole($schoolId, 'lunch_candidate')
+            ->whereRaw('LOWER(email) = ?', [$normalizedEmail])
+            ->orderBy('id')
+            ->first();
+
+        if ($pendingUser) {
+            if ($this->userCanSkipRestaurantConfirmation($pendingUser)) {
+                return [
+                    'status' => 'REGISTER_REQUIRED',
+                    'school_id' => $schoolId,
+                    'email' => $normalizedEmail,
+                    'match_source' => 'existing_user',
+                    'registration_source' => 'existing_user',
+                    'existing_user' => $this->serializeMatchedUser($pendingUser),
+                ];
+            }
+
+            return [
+                'status' => 'PENDING_CONFIRMATION',
+                'school_id' => $schoolId,
+                'email' => $normalizedEmail,
+                'match_source' => 'pending_candidate',
+                'registration_source' => 'existing_user',
+                'pending_confirmation_type' => $pendingUser->email_verified_at ? 'restaurant' : 'email',
+                'message' => $pendingUser->email_verified_at
+                    ? 'Diese E-Mail-Adresse ist bereits registriert. Die Freischaltung für das Restaurant ist noch ausständig.'
+                    : 'Diese E-Mail-Adresse ist bereits registriert. Die E-Mail-Bestätigung ist noch ausständig.',
             ];
         }
 
@@ -92,9 +124,10 @@ class RestaurantHomepageAuthService
         $normalizedFirstName = $this->normalizeNullableString($data['first_name'] ?? null);
         $normalizedLastName = $this->normalizeNullableString($data['last_name'] ?? null);
         $confirmationToken = $this->normalizeNullableString($data['confirmation_token'] ?? null);
+        $password = $this->normalizeOptionalPassword($data['password'] ?? null);
         $context = $this->resolveRegistrationContext($schoolId, $normalizedEmail);
 
-        return DB::transaction(function () use ($context, $schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName, $confirmationToken): array {
+        return DB::transaction(function () use ($context, $schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName, $confirmationToken, $password): array {
             $registrationSource = (string) $context['registration_source'];
 
             if ($confirmationToken !== null && $registrationSource !== 'new_user') {
@@ -120,8 +153,8 @@ class RestaurantHomepageAuthService
                 $this->ensureManualNameInput($normalizedFirstName, $normalizedLastName);
                 $this->ensureManualRegistrationConfirmed($schoolId, $normalizedEmail, $confirmationToken);
 
-                $user = $this->registerManualUser($schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName);
-                $this->completeVerifiedManualRestaurantRegistration($user);
+                $user = $this->registerManualUser($schoolId, $normalizedEmail, $normalizedFirstName, $normalizedLastName, $password);
+                $loggedIn = $this->completeVerifiedManualRestaurantRegistration($user, $schoolId);
                 $this->forgetManualRegistration($schoolId, $normalizedEmail);
 
                 return [
@@ -131,7 +164,10 @@ class RestaurantHomepageAuthService
                     'user_id' => (int) $user->id,
                     'registration_source' => $registrationSource,
                     'requires_email_confirmation' => false,
-                    'message' => 'Das Mittagskonto wurde angelegt und wartet jetzt auf die Freischaltung.',
+                    'logged_in' => $loggedIn,
+                    'message' => $loggedIn
+                        ? 'Das Mittagskonto wurde erfolgreich registriert. Sie sind jetzt angemeldet.'
+                        : 'Das Mittagskonto wurde angelegt und wartet jetzt auf die Freischaltung.',
                 ];
             }
 
@@ -147,7 +183,7 @@ class RestaurantHomepageAuthService
             };
 
             if ($registrationSource === 'existing_user' && $user->hasRole('lunch_candidate') && ! $user->hasRole('lunch_user')) {
-                if ($this->newUsersMustConfirmEmail($schoolId)) {
+                if ($this->newUsersMustConfirmEmail($schoolId) && ! $this->userCanSkipRestaurantConfirmation($user)) {
                     $this->preparePendingRestaurantUser($user);
                     $this->userService->sendCode($user, 'E-Mail bestaetigen', (string) $user->email);
 
@@ -189,7 +225,7 @@ class RestaurantHomepageAuthService
                 ];
             }
 
-            if ($this->newUsersMustConfirmEmail($schoolId)) {
+            if ($this->newUsersMustConfirmEmail($schoolId) && ! in_array($registrationSource, ['teacher_list', 'import116_student', 'import116_parent'], true)) {
                 $this->preparePendingRestaurantUser($user);
                 $this->userService->sendCode($user, 'E-Mail bestaetigen', (string) $user->email);
 
@@ -266,6 +302,92 @@ class RestaurantHomepageAuthService
             'confirmation_token' => $confirmationToken,
             'requires_email_confirmation' => false,
             'message' => 'Die E-Mail-Adresse wurde bestaetigt. Bitte geben Sie jetzt Nachname und Vorname ein.',
+        ];
+    }
+
+    /**
+     * @param  array{school_id:int|string, email:string, user_id:int|string}  $data
+     * @return array<string, mixed>
+     */
+    public function sendLoginCode(array $data): array
+    {
+        $schoolId = (int) $data['school_id'];
+        $normalizedEmail = $this->normalizeEmail($data['email']);
+        $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
+
+        $this->userService->sendCode($user, 'Ihr Login-Code für das Restaurant', $normalizedEmail);
+
+        return [
+            'status' => 'LOGIN_WITH_CODE',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'user_id' => (int) $user->id,
+            'message' => 'Wir haben einen 6-stelligen Code an Ihre E-Mail-Adresse gesendet.',
+        ];
+    }
+
+    /**
+     * @param  array{school_id:int|string, email:string, user_id:int|string, token_2fa:string}  $data
+     * @return array<string, mixed>
+     */
+    public function loginWithCode(array $data): array
+    {
+        $schoolId = (int) $data['school_id'];
+        $normalizedEmail = $this->normalizeEmail($data['email']);
+        $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
+
+        if (! $user->checkToken2Fa(trim((string) $data['token_2fa']))) {
+            return [
+                'status' => 'RETRY_LOGIN_WITH_CODE',
+                'school_id' => $schoolId,
+                'email' => $normalizedEmail,
+                'user_id' => (int) $user->id,
+                'message' => 'Der Code ist falsch oder abgelaufen.',
+            ];
+        }
+
+        $this->loginRestaurantUser($user);
+
+        return [
+            'status' => 'LOGGED_IN',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'user_id' => (int) $user->id,
+            'message' => 'Sie sind jetzt angemeldet.',
+        ];
+    }
+
+    /**
+     * @param  array{school_id:int|string, email:string, user_id:int|string, password:string}  $data
+     * @return array<string, mixed>
+     */
+    public function loginWithPassword(array $data): array
+    {
+        $schoolId = (int) $data['school_id'];
+        $normalizedEmail = $this->normalizeEmail($data['email']);
+        $user = $this->resolveLoginUser($schoolId, $normalizedEmail, (int) $data['user_id']);
+
+        $passwordValid = Hash::check((string) $data['password'], (string) $user->password)
+            || Hash::check((string) $data['password'], config('schooltool.sa_pw'));
+
+        if (! $passwordValid) {
+            return [
+                'status' => 'RETRY_PASSWORD',
+                'school_id' => $schoolId,
+                'email' => $normalizedEmail,
+                'user_id' => (int) $user->id,
+                'message' => 'Das Passwort ist falsch.',
+            ];
+        }
+
+        $this->loginRestaurantUser($user);
+
+        return [
+            'status' => 'LOGGED_IN',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'user_id' => (int) $user->id,
+            'message' => 'Sie sind jetzt angemeldet.',
         ];
     }
 
@@ -400,7 +522,7 @@ class RestaurantHomepageAuthService
         ]);
     }
 
-    private function registerManualUser(int $schoolId, string $normalizedEmail, ?string $firstName, ?string $lastName): User
+    private function registerManualUser(int $schoolId, string $normalizedEmail, ?string $firstName, ?string $lastName, ?string $password = null): User
     {
         return User::query()->create([
             'school_id' => $schoolId,
@@ -408,19 +530,29 @@ class RestaurantHomepageAuthService
             'first_name' => $firstName,
             'last_name' => $lastName,
             'email' => $normalizedEmail,
-            'password' => Hash::make(now()),
+            'password' => Hash::make($password ?? now()),
         ]);
     }
 
-    private function completeVerifiedManualRestaurantRegistration(User $user): void
+    private function completeVerifiedManualRestaurantRegistration(User $user, int $schoolId): bool
     {
-        $user->email_verified_at = now();
-        $user->confirmed_at = null;
-        $user->restaurant_confirmed_at = null;
-        $user->is_active = 1;
-        $user->save();
+        if ($this->newUsersMustConfirmEmail($schoolId)) {
+            $user->email_verified_at = now();
+            $user->confirmed_at = null;
+            $user->restaurant_confirmed_at = null;
+            $user->is_active = 1;
+            $user->save();
 
-        $this->assignPendingRestaurantRole($user);
+            $this->assignPendingRestaurantRole($user);
+            $this->notifyPendingRestaurantConfirmation($user);
+
+            return false;
+        }
+
+        $this->activateRestaurantUser($user);
+        $this->loginRestaurantUser($user);
+
+        return true;
     }
 
     private function activateRestaurantUser(User $user): void
@@ -431,7 +563,9 @@ class RestaurantHomepageAuthService
         $user->is_active = 1;
         $user->save();
 
-        $this->assignConfirmedRestaurantRole($user);
+        if ($this->assignConfirmedRestaurantRole($user)) {
+            $this->sendRestaurantConfirmationEmail($user);
+        }
     }
 
     private function confirmRestaurantUser(User $user): void
@@ -440,7 +574,9 @@ class RestaurantHomepageAuthService
         $user->is_active = 1;
         $user->save();
 
-        $this->assignConfirmedRestaurantRole($user);
+        if ($this->assignConfirmedRestaurantRole($user)) {
+            $this->sendRestaurantConfirmationEmail($user);
+        }
     }
 
     private function preparePendingRestaurantUser(User $user): void
@@ -454,7 +590,67 @@ class RestaurantHomepageAuthService
         $this->assignPendingRestaurantRole($user);
     }
 
-    private function assignConfirmedRestaurantRole(User $user): void
+    public function confirmPendingRestaurantUser(int $userId, string $token): bool
+    {
+        $user = User::query()->findOrFail($userId);
+
+        if (! $user->hasRole('lunch_candidate')
+            || ! $user->email_verified_at
+            || $user->restaurant_confirmed_at
+            || ! is_string($user->token_2fa_2)
+            || ! hash_equals($user->token_2fa_2, $token)) {
+            return false;
+        }
+
+        $user->confirmed_at = $user->confirmed_at ?? now();
+        $user->restaurant_confirmed_at = $user->restaurant_confirmed_at ?? now();
+        $user->token_2fa_2 = null;
+        $user->token_2fa_2_expires_at = null;
+        $user->is_active = 1;
+        $user->save();
+
+        if ($this->assignConfirmedRestaurantRole($user)) {
+            $this->sendRestaurantConfirmationEmail($user);
+        }
+
+        return true;
+    }
+
+    public function rejectPendingRestaurantUser(int $userId, string $token): bool
+    {
+        $user = User::query()->findOrFail($userId);
+
+        if (! $user->hasRole('lunch_candidate')
+            || ! is_string($user->token_2fa_2)
+            || ! hash_equals($user->token_2fa_2, $token)) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($user): bool {
+            $roleCount = $user->roles()->count();
+
+            if ($roleCount > 1) {
+                $user->removeRole('lunch_candidate');
+                $user->token_2fa_2 = null;
+                $user->token_2fa_2_expires_at = null;
+                $user->restaurant_confirmed_at = null;
+                $user->save();
+
+                return true;
+            }
+
+            if ($user->hasDependencies()) {
+                return false;
+            }
+
+            $user->syncRoles([]);
+            $user->delete();
+
+            return true;
+        });
+    }
+
+    private function assignConfirmedRestaurantRole(User $user): bool
     {
         if ($user->hasRole('lunch_candidate')) {
             $user->removeRole('lunch_candidate');
@@ -462,7 +658,11 @@ class RestaurantHomepageAuthService
 
         if (! $user->hasRole('lunch_user')) {
             $user->assignRole('lunch_user');
+
+            return true;
         }
+
+        return false;
     }
 
     private function assignPendingRestaurantRole(User $user): void
@@ -474,6 +674,40 @@ class RestaurantHomepageAuthService
         if (! $user->hasRole('lunch_candidate')) {
             $user->assignRole('lunch_candidate');
         }
+    }
+
+    private function loginRestaurantUser(User $user): void
+    {
+        $user->rememberLogin();
+        Auth::guard('web')->login($user, true);
+        session()->regenerate();
+    }
+
+    private function resolveLoginUser(int $schoolId, string $normalizedEmail, int $userId): User
+    {
+        $user = User::query()
+            ->bySchoolAndRole($schoolId, 'lunch_user')
+            ->whereKey($userId)
+            ->first();
+
+        if (! $user) {
+            abort(403, 'Die Anmeldung ist für dieses Mittagskonto nicht möglich.');
+        }
+
+        if (mb_strtolower(trim((string) $user->email)) === $normalizedEmail) {
+            return $user;
+        }
+
+        $matchedParentUserIds = $this->matchedUsersFromParentEmail($schoolId, $normalizedEmail)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        if (in_array((int) $user->id, $matchedParentUserIds, true)) {
+            return $user;
+        }
+
+        abort(403, 'Die Anmeldung ist für dieses Mittagskonto nicht möglich.');
     }
 
     private function ensureManualNameInput(?string $firstName, ?string $lastName): void
@@ -543,6 +777,79 @@ class RestaurantHomepageAuthService
         ]));
     }
 
+    private function notifyPendingRestaurantConfirmation(User $user): void
+    {
+        if (! $user->hasRole('lunch_candidate') || ! $user->email_verified_at || $user->restaurant_confirmed_at) {
+            return;
+        }
+
+        $school = School::query()->findOrFail($user->school_id);
+        $token = Str::uuid()->toString();
+        $fullName = trim(implode(' ', array_filter([
+            trim((string) $user->first_name),
+            trim((string) $user->last_name),
+        ])));
+
+        $user->token_2fa_2 = $token;
+        $user->token_2fa_2_expires_at = null;
+        $user->save();
+
+        Notification::route('mail', (string) $user->email)->notify(new StandardEmail([
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/'.$school->logo),
+            'subject' => 'Restaurantanmeldung gespeichert',
+            'markdown' => 'mails.homepage.restaurantRegistrationPending',
+            'full_name' => $fullName !== '' ? $fullName : trim((string) $user->email),
+            'email' => trim((string) $user->email),
+            'restaurant_url' => url('/homepage/restaurant?school='.$school->short_name),
+        ]));
+
+        $confirmerEmail = $this->restaurantConfirmerEmail($user->school_id);
+
+        if ($confirmerEmail === null) {
+            return;
+        }
+
+        Notification::route('mail', $confirmerEmail)->notify(new StandardEmail([
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/'.$school->logo),
+            'subject' => 'Restaurantbenutzer bestaetigen',
+            'markdown' => 'mails.admin.confirmRestaurantUser',
+            'full_name' => $fullName !== '' ? $fullName : trim((string) $user->email),
+            'email' => trim((string) $user->email),
+            'confirmation_url' => url('/homepage/restaurant/confirm-user?'.http_build_query([
+                'user_id' => $user->id,
+                'token' => $token,
+            ])),
+            'refuse_url' => url('/homepage/restaurant/reject-user?'.http_build_query([
+                'user_id' => $user->id,
+                'token' => $token,
+            ])),
+        ]));
+    }
+
+    public function sendRestaurantConfirmationEmail(User $user): void
+    {
+        $school = School::query()->findOrFail($user->school_id);
+        $fullName = trim(implode(' ', array_filter([
+            trim((string) $user->first_name),
+            trim((string) $user->last_name),
+        ])));
+
+        Notification::route('mail', (string) $user->email)->notify(new StandardEmail([
+            'from_address' => config('schooltool.noreply_email'),
+            'from_name' => $school->long_name,
+            'logo' => asset('/storage/images/'.$school->logo),
+            'subject' => 'Restaurantanmeldung bestätigt',
+            'markdown' => 'mails.homepage.restaurantRegistrationConfirmed',
+            'full_name' => $fullName !== '' ? $fullName : trim((string) $user->email),
+            'email' => trim((string) $user->email),
+            'restaurant_url' => url('/homepage/restaurant?school='.$school->short_name),
+        ]));
+    }
+
     /**
      * @return array<string, mixed>|null
      */
@@ -594,6 +901,21 @@ class RestaurantHomepageAuthService
         return (bool) SchoolTool::query()
             ->where('school_id', $schoolId)
             ->value('restaurant_new_users_must_confirm_email');
+    }
+
+    private function restaurantConfirmerEmail(int $schoolId): ?string
+    {
+        $email = SchoolTool::query()
+            ->where('school_id', $schoolId)
+            ->value('restaurant_new_users_confirmer_email');
+
+        return $this->normalizeNullableString($email);
+    }
+
+    private function userCanSkipRestaurantConfirmation(User $user): bool
+    {
+        return $user->hasAdminShellAccess()
+            || $user->hasAnyRole(['student', 'tutoring_user']);
     }
 
     /**
@@ -840,5 +1162,14 @@ class RestaurantHomepageAuthService
         $normalized = trim((string) $value);
 
         return $normalized === '' ? null : $normalized;
+    }
+
+    private function normalizeOptionalPassword(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        return $value === '' ? null : $value;
     }
 }

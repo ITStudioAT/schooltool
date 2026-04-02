@@ -84,6 +84,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
     Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);
     Route::post('/homepage/restaurant/check_email', [HomepageController::class, 'restaurantCheckEmail'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
@@ -238,6 +241,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
         Route::put('/admin/restaurant/users/{user}/confirm', [RestaurantUserController::class, 'confirm']);
+        Route::delete('/admin/restaurant/users/{user}', [RestaurantUserController::class, 'destroy']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
         Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);

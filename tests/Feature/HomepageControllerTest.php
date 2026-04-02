@@ -42,6 +42,7 @@ beforeEach(function () {
     ]);
 
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'lunch_user', 'guard_name' => 'web']);
 });
 
 describe('loadSchoolsForTool', function () {
@@ -186,6 +187,8 @@ describe('config', function () {
                 'licence',
                 'selectableSchools',
                 'schoolLicences',
+                'auth_check',
+                'auth_user',
                 'tool_module_statuses' => [
                     'register',
                     'tutoring',
@@ -197,10 +200,33 @@ describe('config', function () {
                 'teaching_active',
                 'restaurant' => [
                     'user_information_intro_html',
+                    'new_users_must_confirm_email',
                     'visible_menu_plans_count',
                     'orderable_menu_plans_count',
                 ],
             ]);
+    });
+
+    test('config includes the authenticated restaurant user for the selected school', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Günther',
+            'last_name' => 'Kron',
+            'email' => 'restaurant-user@test.local',
+        ]);
+        $user->assignRole('lunch_user');
+
+        $this->actingAs($user);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name.'&app=Restaurant');
+
+        $response->assertOk()
+            ->assertJsonPath('auth_check', true)
+            ->assertJsonPath('auth_user.id', $user->id)
+            ->assertJsonPath('auth_user.first_name', 'Günther')
+            ->assertJsonPath('auth_user.last_name', 'Kron')
+            ->assertJsonPath('auth_user.email', 'restaurant-user@test.local');
     });
 
     test('config returns selectable schools', function () {
@@ -294,6 +320,18 @@ describe('config', function () {
 
         $response->assertOk()
             ->assertJsonPath('restaurant.user_information_intro_html', '<p><strong>Willkommen</strong> im Restaurant.</p>');
+    });
+
+    test('config includes whether new restaurant users must be confirmed', function () {
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_new_users_must_confirm_email' => true,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.new_users_must_confirm_email', true);
     });
 
     test('config includes current visible and orderable restaurant menu plan counts', function () {

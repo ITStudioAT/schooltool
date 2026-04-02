@@ -57,13 +57,13 @@
                                                 </div>
                                             </div>
                                             <div class="d-flex align-center" @click.stop>
+                                                <span class="mr-2 text-caption">{{ item.is_admin ? 'Dashboard' : 'Kein Dashboard' }}</span>
                                                 <v-switch
                                                     :model-value="!!item.is_admin"
                                                     color="success"
                                                     density="compact"
                                                     hide-details
                                                     inset
-                                                    :label="item.is_admin ? 'Dashboard' : 'Kein Dashboard'"
                                                     @update:modelValue="toggleRoleAdminAccess(item, $event)" />
                                             </div>
                                         </div>

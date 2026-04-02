@@ -51,6 +51,7 @@ function mountUsers(storeOverrides: Record<string, unknown> = {}, routeQuery: Re
         index: vi.fn().mockResolvedValue(true),
         updateSepa: vi.fn().mockResolvedValue(true),
         confirmUser: vi.fn().mockResolvedValue(true),
+        destroyCandidate: vi.fn().mockResolvedValue(true),
         ...storeOverrides,
     }
 
@@ -75,11 +76,15 @@ function mountUsers(storeOverrides: Record<string, unknown> = {}, routeQuery: Re
                 'v-col': { template: '<div><slot /></div>' },
                 'v-card': { template: '<div><slot /></div>' },
                 'v-card-text': { template: '<div><slot /></div>' },
+                'v-card-title': { template: '<div><slot /></div>' },
+                'v-card-actions': { template: '<div><slot /></div>' },
                 'v-btn': { template: '<button @click="$emit(\'click\')"><slot /></button>' },
                 'v-chip': { template: '<span><slot /></span>' },
                 'v-icon': { template: '<i />' },
                 'v-alert': { template: '<div><slot /></div>' },
+                'v-dialog': { template: '<div><slot /></div>' },
                 'v-pagination': { template: '<div class="v-pagination" />' },
+                'v-spacer': { template: '<div />' },
                 'v-text-field': {
                     props: ['modelValue'],
                     emits: ['update:modelValue', 'keyup.enter', 'click:clear'],
@@ -210,5 +215,38 @@ describe('Restaurant users component', () => {
         await (wrapper.vm as any).confirmRestaurantUser(store.users[0])
 
         expect(store.confirmUser).toHaveBeenCalledWith(1)
+    })
+
+    it('deletes a pending restaurant candidate and reloads the page', async () => {
+        const { wrapper, store } = mountUsers({
+            users: [
+                {
+                    id: 1,
+                    first_name: 'Anna',
+                    last_name: 'Mittag',
+                    email: 'anna@example.test',
+                    has_sepa: false,
+                    is_verified: true,
+                    is_confirmed: false,
+                    is_restaurant_confirmed: false,
+                    roles: ['lunch_candidate'],
+                },
+            ],
+            meta: {
+                current_page: 2,
+                last_page: 2,
+                total: 11,
+                from: 11,
+                to: 11,
+                pending_confirmation_total: 1,
+            },
+        })
+        ;(wrapper.vm as any).restaurantUserStore = store
+        ;(wrapper.vm as any).pendingDeleteUser = store.users[0]
+
+        await (wrapper.vm as any).confirmDeleteCandidate()
+
+        expect(store.destroyCandidate).toHaveBeenCalledWith(1)
+        expect(store.index).toHaveBeenCalledWith(1)
     })
 })

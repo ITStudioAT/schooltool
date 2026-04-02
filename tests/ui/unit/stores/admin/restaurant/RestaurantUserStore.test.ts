@@ -19,6 +19,7 @@ describe('RestaurantUserStore', () => {
     const axiosMock = {
         get: vi.fn(),
         put: vi.fn(),
+        delete: vi.fn(),
     }
 
     beforeEach(() => {
@@ -27,6 +28,7 @@ describe('RestaurantUserStore', () => {
         notifyMock.mockReset()
         axiosMock.get.mockReset()
         axiosMock.put.mockReset()
+        axiosMock.delete.mockReset()
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
         vi.mocked(useNotificationStore).mockReturnValue(notificationStoreMock as never)
@@ -155,5 +157,33 @@ describe('RestaurantUserStore', () => {
         })
         expect(store.users[0].roles).toEqual(['lunch_user'])
         expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/users/7/confirm')
+    })
+
+    it('removes a deleted lunch candidate from state', async () => {
+        axiosMock.delete.mockResolvedValue({})
+
+        const store = useRestaurantUserStore()
+        store.users = [
+            {
+                id: 7,
+                first_name: 'Anna',
+                last_name: 'Mittag',
+                email: 'anna@example.test',
+                roles: ['lunch_candidate'],
+            },
+            {
+                id: 8,
+                first_name: 'Berta',
+                last_name: 'Buffet',
+                email: 'berta@example.test',
+                roles: ['lunch_user'],
+            },
+        ]
+
+        const result = await store.destroyCandidate(7)
+
+        expect(result).toBe(true)
+        expect(store.users.map((user) => user.id)).toEqual([8])
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/restaurant/users/7')
     })
 })
