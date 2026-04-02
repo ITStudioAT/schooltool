@@ -58,6 +58,7 @@ use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
@@ -167,6 +168,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/test-queue', [HealthController::class, 'testQueue']);
         Route::get('/admin/test-queue/check', [HealthController::class, 'checkQueueStatus']);
         Route::get('/admin/test-cron/check', [HealthController::class, 'testCron']);
+
+        // Notes API - Accessible to all authenticated users
+        Route::apiResource('/homepage/notes', NoteController::class);
+        Route::post('/homepage/notes/{note}/toggle-pin', [NoteController::class, 'togglePin']);
     });
 
     /* SANCTUM - aba_teacher */

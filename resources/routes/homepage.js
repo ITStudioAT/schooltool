@@ -15,6 +15,7 @@ import StudentCourse from '@/pages/homepage/student/overview/myCourse/MyCourse.v
 import Cashier from '@/pages/homepage/cashier/Cashier.vue'
 import Restaurant from '@/pages/homepage/index/Restaurant.vue'
 import Products from '@/pages/homepage/index/Products.vue'
+import NotesDemo from '@/pages/homepage/NotesDemo.vue'
 
 const routes = [
     { path: '/', component: Index },
@@ -34,6 +35,7 @@ const routes = [
     { path: '/student/course/:id', component: StudentCourse },
     { path: '/homepage/cashier', component: Cashier },
     { path: '/homepage/restaurant', component: Restaurant },
+    { path: '/homepage/notes-demo', component: NotesDemo },
 ]
 
 const router = createRouter({
