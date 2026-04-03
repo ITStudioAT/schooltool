@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class AdminPasswordUnknownStepPasswordRequest extends FormRequest
@@ -17,7 +18,7 @@ class AdminPasswordUnknownStepPasswordRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -27,7 +28,7 @@ class AdminPasswordUnknownStepPasswordRequest extends FormRequest
             'data.school_id' => 'required|integer|exists:schools,id',
             'data.token_2fa' => 'required|string|size:6',
             'data.token_2fa_2' => 'nullable|string|size:6',
-            'data.password' => 'required|string|min:8'
+            'data.password' => 'required|string|min:8',
         ];
     }
 }

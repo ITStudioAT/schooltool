@@ -30,9 +30,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateHomepageTutoringRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateHomepageTutoringRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -42,7 +43,7 @@ function validateHomepageTutoringRequest(string $requestClass, array $data): \Il
 
 describe('TutoringCheckEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringCheckEmailRequest();
+        $request = new TutoringCheckEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -108,7 +109,7 @@ describe('TutoringCheckEmailRequest', function () {
 
 describe('TutoringConfirmEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringConfirmEmailRequest();
+        $request = new TutoringConfirmEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -156,7 +157,7 @@ describe('TutoringConfirmEmailRequest', function () {
 
 describe('TutoringConfirmUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringConfirmUserRequest();
+        $request = new TutoringConfirmUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -203,7 +204,7 @@ describe('TutoringConfirmUserRequest', function () {
 
 describe('TutoringCreateUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringCreateUserRequest();
+        $request = new TutoringCreateUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -374,7 +375,7 @@ describe('TutoringCreateUserRequest', function () {
 
 describe('TutoringLoginWithTokenRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringLoginWithTokenRequest();
+        $request = new TutoringLoginWithTokenRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -433,7 +434,7 @@ describe('TutoringLoginWithTokenRequest', function () {
 
 describe('TutoringUnknownPasswordRequest', function () {
     it('authorizes all requests', function () {
-        $request = new TutoringUnknownPasswordRequest();
+        $request = new TutoringUnknownPasswordRequest;
         expect($request->authorize())->toBeTrue();
     });
 

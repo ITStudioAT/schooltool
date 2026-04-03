@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Tutoring;
 
 use App\Models\TutoringSubject;
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -20,7 +21,7 @@ class OfferStoreRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -38,7 +39,7 @@ class OfferStoreRequest extends FormRequest
             'subject_id' => [
                 'required',
                 'integer',
-                'exists:tutoring_subjects,id,school_id,' . $user->school_id
+                'exists:tutoring_subjects,id,school_id,'.$user->school_id,
             ],
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:1024',
@@ -54,7 +55,7 @@ class OfferStoreRequest extends FormRequest
                 'max:255',
                 Rule::requiredIf($subjectRequiresAcceptance),
             ],
-            'visible_for_other_schools' => 'boolean'
+            'visible_for_other_schools' => 'boolean',
         ];
     }
 }

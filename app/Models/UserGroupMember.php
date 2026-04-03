@@ -11,16 +11,23 @@ class UserGroupMember extends Model
     use HasFactory;
 
     public const PROVIDER_USER = 'user';
+
     public const PROVIDER_IMPORT116_STUDENT = 'import116.student';
+
     public const PROVIDER_IMPORT116_PARENT_CONTACT = 'import116.parent_contact';
+
     public const PROVIDER_TEACHER_LIST_TEACHER = 'teacher_list.teacher';
 
     public const SOURCE_STATUS_ACTIVE = 'active';
+
     public const SOURCE_STATUS_MISSING = 'missing';
+
     public const SOURCE_STATUS_OUT_OF_SCOPE = 'out_of_scope';
 
     public const LINKED_USER_STATUS_LINKED = 'linked';
+
     public const LINKED_USER_STATUS_MISSING = 'missing';
+
     public const LINKED_USER_STATUS_NOT_APPLICABLE = 'not_applicable';
 
     protected $fillable = [

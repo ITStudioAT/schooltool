@@ -201,6 +201,42 @@
                                 Erstellen
                             </v-btn>
                             <v-btn
+                                v-if="isExistingPlanSelection && selectedExistingPlan?.is_available"
+                                :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                                data-testid="menu-plan-toggle-lock-button"
+                                :disabled="isNavigatingToEditor || isTogglingLock"
+                                @click="showToggleLockDialog = true">
+                                {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                            </v-btn>
+                            <v-btn
+                                v-if="isExistingPlanSelection && !selectedExistingPlan?.is_available"
+                                color="success"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-lock-open"
+                                data-testid="menu-plan-toggle-lock-button"
+                                :disabled="isNavigatingToEditor || isTogglingLock"
+                                @click="showToggleLockDialog = true">
+                                Aufsperren
+                            </v-btn>
+                            <v-btn
+                                v-if="isExistingPlanSelection"
+                                color="info"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-printer"
+                                data-testid="menu-plan-print-button"
+                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
+                                @click="showPrintDialog = true">
+                                Drucken
+                            </v-btn>
+                            <v-btn
                                 variant="text"
                                 color="secondary"
                                 rounded="xl"
@@ -225,6 +261,54 @@
                 </v-col>
             </v-row>
         </div>
+
+        <v-dialog v-model="showToggleLockDialog" max-width="450" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-5">
+                    {{ isSelectedPlanOrderableNow ? 'Menüplan zusperren' : 'Menüplan aufsperren' }}
+                </v-card-title>
+                <v-card-text class="px-5">
+                    <template v-if="isSelectedPlanOrderableNow">
+                        Soll der Menüplan
+                        <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                        sofort zugesperrt werden? Bestellungen sind danach nicht mehr m&ouml;glich.
+                    </template>
+                    <template v-else>
+                        Soll der Menüplan
+                        <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                        sofort aufgesperrt werden? Der Plan wird sichtbar und bestellbar.
+                    </template>
+                </v-card-text>
+                <v-card-actions class="px-5 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" color="secondary" rounded="xl" :disabled="isTogglingLock" @click="showToggleLockDialog = false">Abbrechen</v-btn>
+                    <v-btn
+                        :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                        variant="tonal"
+                        rounded="xl"
+                        :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                        :loading="isTogglingLock"
+                        @click="confirmToggleLock">
+                        {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="showPrintDialog" max-width="500" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-5">Menüplan drucken</v-card-title>
+                <v-card-text class="px-5">
+                    Druckoptionen für den Menüplan
+                    <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                    werden hier konfiguriert.
+                </v-card-text>
+                <v-card-actions class="px-5 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" color="secondary" rounded="xl" @click="showPrintDialog = false">Schlie&szlig;en</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-col>
 </template>
 
@@ -260,6 +344,9 @@ export default {
             selectedEndIso: '',
             previewMessage: '',
             isNavigatingToEditor: false,
+            isTogglingLock: false,
+            showToggleLockDialog: false,
+            showPrintDialog: false,
             currentDateTime: new Date(),
             freeDayDates: {},
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
@@ -324,6 +411,9 @@ export default {
         },
         isExistingPlanSelection() {
             return this.selectedExistingPlan !== null
+        },
+        isSelectedPlanOrderableNow() {
+            return this.selectedExistingPlan ? this.isPlanOrderableNow(this.selectedExistingPlan) : false
         },
         selectionSummary() {
             if (!this.selectedStartIso) {
@@ -562,6 +652,22 @@ export default {
                 start: this.selectedStartIso,
                 end: this.selectedEndIso,
             })
+        },
+        async confirmToggleLock() {
+            if (!this.selectedExistingPlan || this.isTogglingLock) {
+                return
+            }
+
+            this.isTogglingLock = true
+
+            try {
+                const store = useMenuPlanStore()
+                await store.toggleLock(this.selectedExistingPlan.id)
+                this.currentDateTime = new Date()
+                this.showToggleLockDialog = false
+            } finally {
+                this.isTogglingLock = false
+            }
         },
         editSelectedPlan() {
             if (!this.selectedExistingPlan || this.isNavigatingToEditor) {

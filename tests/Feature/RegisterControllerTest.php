@@ -2,7 +2,7 @@
 
 /**
  * RegisterController Tests
- * 
+ *
  * These tests cover the core functionality of the RegisterController including:
  * - Index endpoint (listing registers)
  * - Get active registers
@@ -11,18 +11,17 @@
  * - Delete register
  * - Set active register for user
  * - Toggle register active status
- * 
+ *
  * All endpoints require appropriate role permissions (admin or register_admin)
  */
 
+use App\Models\Licence;
 use App\Models\Register;
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
-use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\RegisterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -36,12 +35,12 @@ beforeEach(function () {
         'short_name' => 'TS',
         'logo' => 'test-logo.png',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
         'name' => '2023/2024',
     ]);
-    
+
     $this->otherSchoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
         'name' => '2024/2025',
@@ -54,12 +53,12 @@ beforeEach(function () {
     $this->school->licences()->attach($registerLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
     ]);
-    
+
     // Create roles
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
-    
+
     // Create admin user
     $this->adminUser = User::factory()->create([
         'email' => 'admin@example.com',
@@ -73,7 +72,7 @@ beforeEach(function () {
         'is_active' => true,
     ]);
     $this->adminUser->assignRole('admin');
-    
+
     // Create register_admin user
     $this->registerAdmin = User::factory()->create([
         'email' => 'register_admin@example.com',
@@ -87,7 +86,7 @@ beforeEach(function () {
         'is_active' => true,
     ]);
     $this->registerAdmin->assignRole('register_admin');
-    
+
     // Create regular user
     $this->regularUser = User::factory()->create([
         'email' => 'user@example.com',
@@ -110,23 +109,23 @@ test('index returns list of registers for current schoolyear for admin', functio
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Register 1',
     ]);
-    
+
     $register2 = Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Register 2',
     ]);
-    
+
     // Create register for different schoolyear (should not be included)
     Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->otherSchoolyear->id,
         'name' => 'Other Schoolyear Register',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->getJson('/api/admin/registers');
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(2)
         ->assertJsonStructure([
@@ -140,7 +139,7 @@ test('index returns list of registers for current schoolyear for admin', functio
                 'bookings_count',
                 'dates_count',
                 'different_dates_count',
-            ]
+            ],
         ]);
 });
 
@@ -150,10 +149,10 @@ test('index returns list of registers for register_admin', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Test Register',
     ]);
-    
+
     $response = $this->actingAs($this->registerAdmin)
         ->getJson('/api/admin/registers');
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1);
 });
@@ -161,13 +160,13 @@ test('index returns list of registers for register_admin', function () {
 test('index returns 403 for regular user', function () {
     $response = $this->actingAs($this->regularUser)
         ->getJson('/api/admin/registers');
-    
+
     $response->assertStatus(403);
 });
 
 test('index returns 401 for unauthenticated user', function () {
     $response = $this->getJson('/api/admin/registers');
-    
+
     $response->assertStatus(401);
 });
 
@@ -177,7 +176,7 @@ test('index includes correct counts for bookings and dates', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Test Register',
     ]);
-    
+
     // Create register dates
     $date1 = RegisterDate::factory()->create([
         'register_id' => $register->id,
@@ -185,14 +184,14 @@ test('index includes correct counts for bookings and dates', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'date' => '2024-01-10',
     ]);
-    
+
     $date2 = RegisterDate::factory()->create([
         'register_id' => $register->id,
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'date' => '2024-01-11',
     ]);
-    
+
     // Create bookings
     RegisterDateBooking::factory()->create([
         'register_id' => $register->id,
@@ -201,7 +200,7 @@ test('index includes correct counts for bookings and dates', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     RegisterDateBooking::factory()->create([
         'register_id' => $register->id,
         'register_date_id' => $date2->id,
@@ -209,10 +208,10 @@ test('index includes correct counts for bookings and dates', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->getJson('/api/admin/registers');
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('0.bookings_count', 2)
         ->assertJsonPath('0.dates_count', 2)
@@ -227,27 +226,27 @@ test('getActiveRegisters returns only active registers across all schoolyears', 
         'name' => 'Active Register 1',
         'is_active' => true,
     ]);
-    
+
     $activeRegister2 = Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->otherSchoolyear->id,
         'name' => 'Active Register 2',
         'is_active' => true,
     ]);
-    
+
     $inactiveRegister = Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Inactive Register',
         'is_active' => false,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/get_active');
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(2);
-    
+
     $responseData = $response->json();
     foreach ($responseData as $register) {
         expect($register['is_active'])->toBe(true);
@@ -261,26 +260,26 @@ test('getActiveRegisters orders by schoolyear desc then name', function () {
         'name' => 'B Register',
         'is_active' => true,
     ]);
-    
+
     Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->otherSchoolyear->id,
         'name' => 'A Register',
         'is_active' => true,
     ]);
-    
+
     Register::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'A Register',
         'is_active' => true,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/get_active');
-    
+
     $response->assertStatus(200);
-    
+
     $names = collect($response->json())->pluck('name')->toArray();
     // Should be ordered by schoolyear desc (2024/2025 first), then by name
     expect($names)->toBe(['A Register', 'A Register', 'B Register']);
@@ -289,7 +288,7 @@ test('getActiveRegisters orders by schoolyear desc then name', function () {
 test('getActiveRegisters returns 403 for regular user', function () {
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/registers/get_active');
-    
+
     $response->assertStatus(403);
 });
 
@@ -314,15 +313,15 @@ test('store creates new register for admin', function () {
         'show_end_time' => true,
         'show_supervisor' => false,
     ];
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers', $data);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('name', 'New Register')
         ->assertJsonPath('school_id', $this->school->id)
         ->assertJsonPath('schoolyear_id', $this->schoolyear->id);
-    
+
     $this->assertDatabaseHas('registers', [
         'name' => 'New Register',
         'school_id' => $this->school->id,
@@ -335,13 +334,13 @@ test('store creates register with minimal required fields', function () {
         'name' => 'Minimal Register',
         'max_registrations' => 0,
     ];
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers', $data);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('name', 'Minimal Register');
-    
+
     $this->assertDatabaseHas('registers', [
         'name' => 'Minimal Register',
     ]);
@@ -350,7 +349,7 @@ test('store creates register with minimal required fields', function () {
 test('store validates required fields', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers', []);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['name', 'max_registrations']);
 });
@@ -361,7 +360,7 @@ test('store validates max_registrations is integer', function () {
             'name' => 'Test',
             'max_registrations' => 'not-a-number',
         ]);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['max_registrations']);
 });
@@ -372,7 +371,7 @@ test('store validates max_registrations minimum value', function () {
             'name' => 'Test',
             'max_registrations' => -1,
         ]);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['max_registrations']);
 });
@@ -383,7 +382,7 @@ test('store returns 403 for regular user', function () {
             'name' => 'Test',
             'max_registrations' => 100,
         ]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -393,7 +392,7 @@ test('store works for register_admin', function () {
             'name' => 'Register Admin Test',
             'max_registrations' => 50,
         ]);
-    
+
     $response->assertStatus(200);
 });
 
@@ -405,7 +404,7 @@ test('update modifies existing register', function () {
         'name' => 'Original Name',
         'max_registrations' => 50,
     ]);
-    
+
     $data = [
         'id' => $register->id,
         'school_id' => $this->school->id,
@@ -415,14 +414,14 @@ test('update modifies existing register', function () {
         'description_on_website' => 'Updated description',
         'is_active' => false,
     ];
-    
+
     $response = $this->actingAs($this->adminUser)
         ->putJson("/api/admin/registers/{$register->id}", $data);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('name', 'Updated Name')
         ->assertJsonPath('max_registrations', 100);
-    
+
     $this->assertDatabaseHas('registers', [
         'id' => $register->id,
         'name' => 'Updated Name',
@@ -435,12 +434,12 @@ test('update validates required fields', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->putJson("/api/admin/registers/{$register->id}", [
             'id' => $register->id,
         ]);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['school_id', 'schoolyear_id', 'name', 'max_registrations']);
 });
@@ -450,7 +449,7 @@ test('update returns 403 for regular user', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->putJson("/api/admin/registers/{$register->id}", [
             'id' => $register->id,
@@ -459,7 +458,7 @@ test('update returns 403 for regular user', function () {
             'name' => 'Hacked',
             'max_registrations' => 1,
         ]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -470,14 +469,14 @@ test('destroy deletes register without dependencies', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'To Delete',
     ]);
-    
+
     $registerId = $register->id;
-    
+
     $response = $this->actingAs($this->adminUser)
         ->deleteJson("/api/admin/registers/{$registerId}");
-    
+
     $response->assertStatus(204);
-    
+
     $this->assertDatabaseMissing('registers', [
         'id' => $registerId,
     ]);
@@ -488,15 +487,15 @@ test('destroy clears user register_id before deleting', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $this->adminUser->register_id = $register->id;
     $this->adminUser->save();
-    
+
     $response = $this->actingAs($this->adminUser)
         ->deleteJson("/api/admin/registers/{$register->id}");
-    
+
     $response->assertStatus(204);
-    
+
     $this->adminUser->refresh();
     expect($this->adminUser->register_id)->toBeNull();
 });
@@ -506,10 +505,10 @@ test('destroy returns 403 for regular user', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->deleteJson("/api/admin/registers/{$register->id}");
-    
+
     $response->assertStatus(403);
 });
 
@@ -520,16 +519,16 @@ test('setActiveRegister sets register for user', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'name' => 'Selected Register',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/set_active', [
             'register_id' => $register->id,
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('id', $register->id)
         ->assertJsonPath('name', 'Selected Register');
-    
+
     $this->adminUser->refresh();
     expect($this->adminUser->register_id)->toBe($register->id);
 });
@@ -539,7 +538,7 @@ test('setActiveRegister validates register_id exists', function () {
         ->postJson('/api/admin/registers/set_active', [
             'register_id' => 99999,
         ]);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['register_id']);
 });
@@ -547,7 +546,7 @@ test('setActiveRegister validates register_id exists', function () {
 test('setActiveRegister requires register_id', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/set_active', []);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['register_id']);
 });
@@ -557,12 +556,12 @@ test('setActiveRegister returns 403 for regular user', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/registers/set_active', [
             'register_id' => $register->id,
         ]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -573,15 +572,15 @@ test('toggleRegister activates inactive register', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'is_active' => false,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/toggle', [
             'register_id' => $register->id,
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('is_active', true);
-    
+
     $this->assertDatabaseHas('registers', [
         'id' => $register->id,
         'is_active' => true,
@@ -594,15 +593,15 @@ test('toggleRegister deactivates active register', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'is_active' => true,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/registers/toggle', [
             'register_id' => $register->id,
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonPath('is_active', false);
-    
+
     $this->assertDatabaseHas('registers', [
         'id' => $register->id,
         'is_active' => false,
@@ -614,7 +613,7 @@ test('toggleRegister validates register_id', function () {
         ->postJson('/api/admin/registers/toggle', [
             'register_id' => 99999,
         ]);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['register_id']);
 });
@@ -624,12 +623,11 @@ test('toggleRegister returns 403 for regular user', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/registers/toggle', [
             'register_id' => $register->id,
         ]);
-    
+
     $response->assertStatus(403);
 });
-

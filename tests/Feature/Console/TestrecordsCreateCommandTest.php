@@ -2,10 +2,8 @@
 
 namespace Tests\Feature\Console;
 
-use App\Console\Commands\TestrecordsCreateCommand;
 use App\Models\School;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 
 uses(RefreshDatabase::class);
 

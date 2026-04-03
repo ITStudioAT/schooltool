@@ -1,18 +1,22 @@
 <?php
 
+use App\Models\Register;
+use App\Models\RegisterDate;
+use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\TeacherService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new TeacherService();
+    $this->service = new TeacherService;
 
     // Create required role
     Role::firstOrCreate(['name' => 'teacher', 'guard_name' => 'web']);
@@ -99,7 +103,7 @@ describe('create', function () {
         ];
 
         $this->service->create($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Das Kurzzeichen wird bereits verwendet');
+    })->throws(HttpException::class, 'Das Kurzzeichen wird bereits verwendet');
 
     it('throws 409 exception when email is already taken', function () {
         User::factory()->create([
@@ -117,7 +121,7 @@ describe('create', function () {
         ];
 
         $this->service->create($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Die E-Mail-Adresse wird bereits verwendet');
+    })->throws(HttpException::class, 'Die E-Mail-Adresse wird bereits verwendet');
 
     it('allows same short in different schools', function () {
         $otherSchool = School::factory()->create();
@@ -212,7 +216,7 @@ describe('update', function () {
         ];
 
         $this->service->update($authUser, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Diese Änderung kann nicht durchgeführt werden.');
+    })->throws(HttpException::class, 'Diese Änderung kann nicht durchgeführt werden.');
 
     it('throws 409 when new short is already taken by another teacher', function () {
         $authUser = User::factory()->create([
@@ -243,7 +247,7 @@ describe('update', function () {
         ];
 
         $this->service->update($authUser, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Das Kurzzeichen des Lehrers existiert bereits.');
+    })->throws(HttpException::class, 'Das Kurzzeichen des Lehrers existiert bereits.');
 
     it('throws 409 when new email is already taken by another teacher', function () {
         $authUser = User::factory()->create([
@@ -274,7 +278,7 @@ describe('update', function () {
         ];
 
         $this->service->update($authUser, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Die E-Mail des Lehrers existiert bereits.');
+    })->throws(HttpException::class, 'Die E-Mail des Lehrers existiert bereits.');
 
     it('allows updating to same short', function () {
         $authUser = User::factory()->create([
@@ -320,7 +324,7 @@ describe('update', function () {
         ];
 
         $this->service->update($authUser, $data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('deleteTeachers', function () {
@@ -373,18 +377,18 @@ describe('deleteTeachers', function () {
         $teacher->assignRole('teacher');
 
         // Create a dependency (register date booking)
-        $register = \App\Models\Register::factory()->create([
+        $register = Register::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
         ]);
 
-        $registerDate = \App\Models\RegisterDate::factory()->create([
+        $registerDate = RegisterDate::factory()->create([
             'school_id' => $this->school->id,
             'schoolyear_id' => $this->schoolyear->id,
             'register_id' => $register->id,
         ]);
 
-        \App\Models\RegisterDateBooking::factory()->create([
+        RegisterDateBooking::factory()->create([
             'register_date_id' => $registerDate->id,
             'user_id' => $teacher->id,
         ]);
@@ -429,4 +433,3 @@ describe('deleteTeachers', function () {
         expect(User::find($teacher->id))->toBeNull();
     });
 });
-

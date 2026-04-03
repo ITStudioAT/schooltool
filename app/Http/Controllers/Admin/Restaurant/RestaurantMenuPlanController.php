@@ -98,6 +98,24 @@ class RestaurantMenuPlanController extends Controller
         ]);
     }
 
+    public function toggleLock(int $id, RestaurantMenuPlanService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $plan = $service->toggleLockForUser($authUser, $id);
+
+        if (! $plan) {
+            abort(404, 'Menüplan nicht gefunden.');
+        }
+
+        return response()->json([
+            'message' => 'Menüplan wurde aktualisiert.',
+            'data' => RestaurantMenuPlanResource::make($plan),
+        ]);
+    }
+
     public function print(int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {

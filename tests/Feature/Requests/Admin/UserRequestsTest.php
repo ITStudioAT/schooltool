@@ -9,19 +9,19 @@
 use App\Http\Requests\Admin\ConfirmRequest;
 use App\Http\Requests\Admin\IndexUserRequest;
 use App\Http\Requests\Admin\IndexUserWithRoleRequest;
+use App\Http\Requests\Admin\SaveUserRoleRequest;
+use App\Http\Requests\Admin\SaveUserRolesRequest;
 use App\Http\Requests\Admin\StoreUserRequest;
-use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Requests\Admin\UpdateProfileRequest;
+use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
+use App\Http\Requests\Admin\UserDeleteUsersRequest;
 use App\Http\Requests\Admin\UserIndexRequest;
 use App\Http\Requests\Admin\UserStoreUserRequest;
 use App\Http\Requests\Admin\UserUpdateUserRequest;
-use App\Http\Requests\Admin\UserDeleteUsersRequest;
-use App\Http\Requests\Admin\SaveUserRoleRequest;
-use App\Http\Requests\Admin\SaveUserRolesRequest;
-use App\Models\User;
 use App\Models\School;
 use App\Models\Schoolyear;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -37,9 +37,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateUserRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateUserRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -49,7 +50,7 @@ function validateUserRequest(string $requestClass, array $data): \Illuminate\Val
 
 describe('ConfirmRequest', function () {
     it('authorizes all requests', function () {
-        $request = new ConfirmRequest();
+        $request = new ConfirmRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -112,7 +113,7 @@ describe('ConfirmRequest', function () {
 
 describe('IndexUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new IndexUserRequest();
+        $request = new IndexUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -163,7 +164,7 @@ describe('IndexUserRequest', function () {
 
 describe('IndexUserWithRoleRequest', function () {
     it('authorizes all requests', function () {
-        $request = new IndexUserWithRoleRequest();
+        $request = new IndexUserWithRoleRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -174,7 +175,7 @@ describe('IndexUserWithRoleRequest', function () {
 
 describe('StoreUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new StoreUserRequest();
+        $request = new StoreUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -254,7 +255,7 @@ describe('StoreUserRequest', function () {
 
 describe('UpdateUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new UpdateUserRequest();
+        $request = new UpdateUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -265,7 +266,7 @@ describe('UpdateUserRequest', function () {
 
 describe('UpdateProfileRequest', function () {
     it('authorizes all requests', function () {
-        $request = new UpdateProfileRequest();
+        $request = new UpdateProfileRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -276,7 +277,7 @@ describe('UpdateProfileRequest', function () {
 
 describe('UpdateUserWithCodeRequest', function () {
     it('authorizes all requests', function () {
-        $request = new UpdateUserWithCodeRequest();
+        $request = new UpdateUserWithCodeRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -287,13 +288,13 @@ describe('UpdateUserWithCodeRequest', function () {
 
 describe('UserIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new UserIndexRequest();
+        $request = new UserIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserIndexRequest();
+        $request = new UserIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -304,13 +305,13 @@ describe('UserIndexRequest', function () {
 
 describe('UserStoreUserRequest', function () {
     it('requires authentication', function () {
-        $request = new UserStoreUserRequest();
+        $request = new UserStoreUserRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserStoreUserRequest();
+        $request = new UserStoreUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -321,13 +322,13 @@ describe('UserStoreUserRequest', function () {
 
 describe('UserUpdateUserRequest', function () {
     it('requires authentication', function () {
-        $request = new UserUpdateUserRequest();
+        $request = new UserUpdateUserRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserUpdateUserRequest();
+        $request = new UserUpdateUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -338,13 +339,13 @@ describe('UserUpdateUserRequest', function () {
 
 describe('UserDeleteUsersRequest', function () {
     it('requires authentication', function () {
-        $request = new UserDeleteUsersRequest();
+        $request = new UserDeleteUsersRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserDeleteUsersRequest();
+        $request = new UserDeleteUsersRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -355,7 +356,7 @@ describe('UserDeleteUsersRequest', function () {
 
 describe('SaveUserRoleRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SaveUserRoleRequest();
+        $request = new SaveUserRoleRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -366,7 +367,7 @@ describe('SaveUserRoleRequest', function () {
 
 describe('SaveUserRolesRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SaveUserRolesRequest();
+        $request = new SaveUserRolesRequest;
         expect($request->authorize())->toBeTrue();
     });
 });

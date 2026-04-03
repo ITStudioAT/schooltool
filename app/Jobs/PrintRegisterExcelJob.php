@@ -9,7 +9,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Notification;
 
-
 class PrintRegisterExcelJob implements ShouldQueue
 {
     use Queueable;
@@ -27,7 +26,7 @@ class PrintRegisterExcelJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $service = new PrintRegisterService();
+        $service = new PrintRegisterService;
         $path = $service->printExcel($this->user, $this->data);
 
         $school = $this->user->selectedSchool;
@@ -36,8 +35,8 @@ class PrintRegisterExcelJob implements ShouldQueue
         $email = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school['long_name'],
-            'logo' =>  asset('/storage/images/' . $school['logo']),
-            'subject' => $register->name . ': Excel-Datei',
+            'logo' => asset('/storage/images/'.$school['logo']),
+            'subject' => $register->name.': Excel-Datei',
             'markdown' => 'mails.admin.sendPrint',
         ];
 

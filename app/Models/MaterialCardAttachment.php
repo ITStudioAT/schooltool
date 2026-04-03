@@ -13,6 +13,7 @@ class MaterialCardAttachment extends Model
     use SoftDeletes;
 
     public const TYPE_FILE = 'file';
+
     public const TYPE_LINK = 'link';
 
     protected $fillable = [

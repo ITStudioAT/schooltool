@@ -21,10 +21,10 @@ class MaterialCardAttachmentResource extends JsonResource
             'size_bytes' => $this->size_bytes,
             'downloaded_at' => $this->downloaded_at?->toDateTimeString(),
             'preview_url' => $this->attachment_type === 'file'
-                ? '/api/admin/materials/attachments/' . $this->id . '/preview'
+                ? '/api/admin/materials/attachments/'.$this->id.'/preview'
                 : null,
             'download_url' => $this->attachment_type === 'file'
-                ? '/api/admin/materials/attachments/' . $this->id . '/download'
+                ? '/api/admin/materials/attachments/'.$this->id.'/download'
                 : null,
             'created_at' => $this->created_at?->toDateTimeString(),
         ];

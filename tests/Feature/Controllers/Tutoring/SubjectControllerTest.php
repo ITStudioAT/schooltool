@@ -261,5 +261,3 @@ describe('index', function () {
         expect(array_keys($subject))->toBe($expectedKeys);
     });
 });
-
-

@@ -6,11 +6,11 @@
  * Tests for register date and booking management requests.
  */
 
-use App\Http\Requests\Admin\RegisterDateIndexRequest;
-use App\Http\Requests\Admin\RegisterDateCreateDatesRequest;
+use App\Http\Requests\Admin\RegisterDateBookingDeleteBookingsRequest;
 use App\Http\Requests\Admin\RegisterDateBookingStoreRequest;
 use App\Http\Requests\Admin\RegisterDateBookingUpdateOrCreateUserRequest;
-use App\Http\Requests\Admin\RegisterDateBookingDeleteBookingsRequest;
+use App\Http\Requests\Admin\RegisterDateCreateDatesRequest;
+use App\Http\Requests\Admin\RegisterDateIndexRequest;
 use App\Models\Register;
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
@@ -39,9 +39,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateRegisterDateRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateRegisterDateRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -51,13 +52,13 @@ function validateRegisterDateRequest(string $requestClass, array $data): \Illumi
 
 describe('RegisterDateIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDateIndexRequest();
+        $request = new RegisterDateIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDateIndexRequest();
+        $request = new RegisterDateIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -91,13 +92,13 @@ describe('RegisterDateIndexRequest', function () {
 
 describe('RegisterDateCreateDatesRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDateCreateDatesRequest();
+        $request = new RegisterDateCreateDatesRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDateCreateDatesRequest();
+        $request = new RegisterDateCreateDatesRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -275,13 +276,13 @@ describe('RegisterDateCreateDatesRequest', function () {
 
 describe('RegisterDateBookingStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDateBookingStoreRequest();
+        $request = new RegisterDateBookingStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDateBookingStoreRequest();
+        $request = new RegisterDateBookingStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -292,13 +293,13 @@ describe('RegisterDateBookingStoreRequest', function () {
 
 describe('RegisterDateBookingUpdateOrCreateUserRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDateBookingUpdateOrCreateUserRequest();
+        $request = new RegisterDateBookingUpdateOrCreateUserRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDateBookingUpdateOrCreateUserRequest();
+        $request = new RegisterDateBookingUpdateOrCreateUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -339,13 +340,13 @@ describe('RegisterDateBookingUpdateOrCreateUserRequest', function () {
 
 describe('RegisterDateBookingDeleteBookingsRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDateBookingDeleteBookingsRequest();
+        $request = new RegisterDateBookingDeleteBookingsRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDateBookingDeleteBookingsRequest();
+        $request = new RegisterDateBookingDeleteBookingsRequest;
         expect($request->authorize())->toBeTrue();
     });
 

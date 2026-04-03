@@ -1,10 +1,9 @@
 <?php
 
+use App\Jobs\HealthJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use App\Jobs\HealthJob;
-
 
 /*
 Artisan::command('inspire', function () {

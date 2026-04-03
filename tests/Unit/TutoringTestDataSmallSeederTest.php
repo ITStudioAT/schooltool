@@ -7,7 +7,9 @@ use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Database\Seeders\TutoringTestDataSmallSeeder;
+use Illuminate\Database\Eloquent\Casts\ArrayObject;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -27,7 +29,7 @@ describe('TutoringTestDataSmallSeeder', function () {
 
     it('adds Nachhilfetool license to test school', function () {
         // Erstelle die Nachhilfetool-Lizenz wenn sie noch nicht existiert
-        \Illuminate\Support\Facades\DB::table('licences')->updateOrInsert(
+        DB::table('licences')->updateOrInsert(
             ['id' => 2],
             [
                 'name' => 'Nachhilfetool',
@@ -136,11 +138,11 @@ describe('TutoringTestDataSmallSeeder', function () {
         expect($offers)->toHaveCount(2);
 
         foreach ($offers as $offer) {
-            $isArrayOrArrayObject = is_array($offer->time_table) || $offer->time_table instanceof \Illuminate\Database\Eloquent\Casts\ArrayObject;
+            $isArrayOrArrayObject = is_array($offer->time_table) || $offer->time_table instanceof ArrayObject;
 
             expect($offer->title)->toContain('Nachhilfe')
                 ->and($offer->description)->not->toBeNull()
-                ->and($offer->classes)->toBeInstanceOf(\Illuminate\Database\Eloquent\Casts\ArrayObject::class)
+                ->and($offer->classes)->toBeInstanceOf(ArrayObject::class)
                 ->and($isArrayOrArrayObject)->toBeTrue()
                 ->and($offer->is_active)->toBeTrue()
                 ->and($offer->accepted_at)->not->toBeNull()

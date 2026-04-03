@@ -31,6 +31,7 @@ class TutoringTestDataSmallSeeder extends Seeder
     ];
 
     private array $classes = ['1. Klasse', '2. Klasse', '3. Klasse', '4. Klasse'];
+
     private array $weekdays = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag'];
 
     public function run(): void
@@ -54,7 +55,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                 'is_selectable' => true,
             ]);
 
-            $this->command->info('✓ Schule erstellt: ' . $school->long_name);
+            $this->command->info('✓ Schule erstellt: '.$school->long_name);
 
             // Füge Nachhilfetool Lizenz hinzu (ID: 2) mit Gültigkeit bis 2026-07-10
             $school->licences()->attach(2, ['valid_until' => '2026-07-10']);
@@ -122,7 +123,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                 $shuffledTeachers = $teachers;
                 shuffle($shuffledTeachers);
                 $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
-                $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
+                $mentors = array_map(fn ($teacher) => $teacher->email, $selectedTeachers);
 
                 $subjectModels[] = TutoringSubject::create([
                     'school_id' => $school->id,
@@ -133,7 +134,7 @@ class TutoringTestDataSmallSeeder extends Seeder
                 ]);
             }
 
-            $this->command->info('✓ ' . count($subjectModels) . ' Fächer erstellt');
+            $this->command->info('✓ '.count($subjectModels).' Fächer erstellt');
 
             // Erstelle 10 Schüler
             $students = [];
@@ -154,7 +155,7 @@ class TutoringTestDataSmallSeeder extends Seeder
 
                 $student = User::create([
                     'school_id' => $school->id,
-                    'email' => strtolower($firstName . '.' . $lastName . $i) . '@test-school.at',
+                    'email' => strtolower($firstName.'.'.$lastName.$i).'@test-school.at',
                     'password' => Hash::make('password'),
                     'first_name' => $firstName,
                     'last_name' => $lastName,
@@ -208,8 +209,8 @@ class TutoringTestDataSmallSeeder extends Seeder
                     'school_id' => $school->id,
                     'user_id' => $student->id,
                     'subject_id' => $subject->id,
-                    'title' => $subject->long_name . ' Nachhilfe',
-                    'description' => 'Test-Angebot für ' . $subject->long_name,
+                    'title' => $subject->long_name.' Nachhilfe',
+                    'description' => 'Test-Angebot für '.$subject->long_name,
                     'classes' => $classes,
                     'time_table' => $timeTable,
                     'active_until' => now()->addMonths(3)->format('Y-m-d'),
@@ -234,7 +235,7 @@ class TutoringTestDataSmallSeeder extends Seeder
 
         } catch (\Exception $e) {
             DB::rollBack();
-            $this->command->error('❌ Fehler: ' . $e->getMessage());
+            $this->command->error('❌ Fehler: '.$e->getMessage());
             $this->command->error($e->getTraceAsString());
             throw $e;
         }

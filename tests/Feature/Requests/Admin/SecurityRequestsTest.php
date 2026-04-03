@@ -6,13 +6,13 @@
  * Tests for 2FA, password, and verification requests.
  */
 
+use App\Http\Requests\Admin\EmailVerificationRequest;
 use App\Http\Requests\Admin\Save2FaRequest;
 use App\Http\Requests\Admin\Save2FaWithCodeRequest;
 use App\Http\Requests\Admin\SavePasswordRequest;
 use App\Http\Requests\Admin\SavePasswordWithCodeRequest;
-use App\Http\Requests\Admin\EmailVerificationRequest;
-use App\Http\Requests\Admin\SendVerificationMailRequest;
 use App\Http\Requests\Admin\SendVerificationEmailInitializedFromUserRequest;
+use App\Http\Requests\Admin\SendVerificationMailRequest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
@@ -30,9 +30,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateSecurityRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateSecurityRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -42,7 +43,7 @@ function validateSecurityRequest(string $requestClass, array $data): \Illuminate
 
 describe('Save2FaRequest', function () {
     it('authorizes all requests', function () {
-        $request = new Save2FaRequest();
+        $request = new Save2FaRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -87,7 +88,7 @@ describe('Save2FaRequest', function () {
 
 describe('Save2FaWithCodeRequest', function () {
     it('authorizes all requests', function () {
-        $request = new Save2FaWithCodeRequest();
+        $request = new Save2FaWithCodeRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -127,7 +128,7 @@ describe('Save2FaWithCodeRequest', function () {
 
 describe('SavePasswordRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SavePasswordRequest();
+        $request = new SavePasswordRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -165,7 +166,7 @@ describe('SavePasswordRequest', function () {
 
 describe('SavePasswordWithCodeRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SavePasswordWithCodeRequest();
+        $request = new SavePasswordWithCodeRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -206,7 +207,7 @@ describe('SavePasswordWithCodeRequest', function () {
 
 describe('EmailVerificationRequest', function () {
     it('authorizes all requests', function () {
-        $request = new EmailVerificationRequest();
+        $request = new EmailVerificationRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -244,7 +245,7 @@ describe('EmailVerificationRequest', function () {
 
 describe('SendVerificationMailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SendVerificationMailRequest();
+        $request = new SendVerificationMailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -278,7 +279,7 @@ describe('SendVerificationMailRequest', function () {
 
 describe('SendVerificationEmailInitializedFromUserRequest', function () {
     it('authorizes all requests', function () {
-        $request = new SendVerificationEmailInitializedFromUserRequest();
+        $request = new SendVerificationEmailInitializedFromUserRequest;
         expect($request->authorize())->toBeTrue();
     });
 

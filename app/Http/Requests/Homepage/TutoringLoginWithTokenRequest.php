@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Homepage;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class TutoringLoginWithTokenRequest extends FormRequest
@@ -17,7 +18,7 @@ class TutoringLoginWithTokenRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
@@ -26,7 +27,7 @@ class TutoringLoginWithTokenRequest extends FormRequest
             'data.email' => 'required|email|max:255',
             'data.status' => 'in:LOGIN_WITH_TOKEN',
             'data.user_id' => 'required|integer|exists:users,id',
-            'data.token_2fa' => 'string|size:6'
+            'data.token_2fa' => 'string|size:6',
         ];
     }
 }

@@ -4,18 +4,20 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Notifications\StandardEmail;
 use App\Services\AdminService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new AdminService();
+    $this->service = new AdminService;
     Notification::fake();
 });
 
@@ -37,7 +39,7 @@ describe('checkRegister', function () {
         $data = ['email' => 'test@example.com', 'step' => 'REGISTER_ENTER_EMAIL'];
 
         $this->service->checkRegister($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Registrieren funktioniert mit dieser E-Mail-Adresse nicht.');
+    })->throws(HttpException::class, 'Registrieren funktioniert mit dieser E-Mail-Adresse nicht.');
 
     it('validates token for REGISTER_ENTER_TOKEN step', function () {
         $user = User::factory()->create([
@@ -74,7 +76,7 @@ describe('checkRegister', function () {
         ];
 
         $this->service->checkRegister($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Registrieren funktioniert nicht. Code falsch oder Zeit abgelaufen.');
+    })->throws(HttpException::class, 'Registrieren funktioniert nicht. Code falsch oder Zeit abgelaufen.');
 
     it('validates all fields for REGISTER_ENTER_FIELDS step', function () {
         $user = User::factory()->create([
@@ -117,7 +119,7 @@ describe('checkRegister', function () {
         ];
 
         $this->service->checkRegister($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Registrieren funktioniert nicht. Nachname darf nicht leer sein.');
+    })->throws(HttpException::class, 'Registrieren funktioniert nicht. Nachname darf nicht leer sein.');
 
     it('aborts when passwords do not match for REGISTER_ENTER_FIELDS step', function () {
         $user = User::factory()->create([
@@ -137,7 +139,7 @@ describe('checkRegister', function () {
         ];
 
         $this->service->checkRegister($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kennwort zurücksetzen funktioniert nicht. Kennwort und Wiederholung Kennwort sind nicht identisch');
+    })->throws(HttpException::class, 'Kennwort zurücksetzen funktioniert nicht. Kennwort und Wiederholung Kennwort sind nicht identisch');
 });
 
 describe('createRegisterUser', function () {
@@ -420,7 +422,7 @@ describe('login2Fa', function () {
         ];
 
         $this->service->login2Fa($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Der Token ist ungültig oder abgelaufen.');
+    })->throws(HttpException::class, 'Der Token ist ungültig oder abgelaufen.');
 
     it('aborts when token is expired', function () {
         $school = School::factory()->create();
@@ -438,7 +440,7 @@ describe('login2Fa', function () {
         ];
 
         $this->service->login2Fa($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Der Token ist ungültig oder abgelaufen.');
+    })->throws(HttpException::class, 'Der Token ist ungültig oder abgelaufen.');
 
     it('sets teacher schoolyear from school tool when schoolyear_id is null', function () {
         $school = School::factory()->create();
@@ -581,7 +583,7 @@ describe('passwordUnkownSendToken', function () {
         ];
 
         $this->service->passwordUnkownSendToken($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kein Benutzer gefunden');
+    })->throws(HttpException::class, 'Kein Benutzer gefunden');
 });
 
 describe('passwordUnkownCheckToken', function () {
@@ -622,7 +624,7 @@ describe('passwordUnkownCheckToken', function () {
         ];
 
         $this->service->passwordUnkownCheckToken($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Token falsch oder abgelaufen');
+    })->throws(HttpException::class, 'Token falsch oder abgelaufen');
 
     it('aborts when token is expired', function () {
         $school = School::factory()->create();
@@ -640,7 +642,7 @@ describe('passwordUnkownCheckToken', function () {
         ];
 
         $this->service->passwordUnkownCheckToken($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Token falsch oder abgelaufen');
+    })->throws(HttpException::class, 'Token falsch oder abgelaufen');
 
     it('aborts when user not found', function () {
         $school = School::factory()->create();
@@ -652,7 +654,7 @@ describe('passwordUnkownCheckToken', function () {
         ];
 
         $this->service->passwordUnkownCheckToken($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Kein Benutzer gefunden');
+    })->throws(HttpException::class, 'Kein Benutzer gefunden');
 });
 
 describe('passwordUnkownSetPassword', function () {
@@ -774,7 +776,7 @@ describe('setToken2Fa', function () {
 
         $this->service->setToken2Fa($user, $data, 'Test Subject');
 
-        Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
+        Notification::assertSentOnDemand(StandardEmail::class);
     });
 });
 
@@ -813,7 +815,7 @@ describe('checkLogin', function () {
         ];
 
         $this->service->checkLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+    })->throws(HttpException::class, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
 
     it('aborts when user is not confirmed', function () {
         $school = School::factory()->create();
@@ -831,7 +833,7 @@ describe('checkLogin', function () {
         ];
 
         $this->service->checkLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist noch nicht bestätigt.');
+    })->throws(HttpException::class, 'Benutzer ist noch nicht bestätigt.');
 
     it('aborts when user is not active', function () {
         $school = School::factory()->create();
@@ -849,7 +851,7 @@ describe('checkLogin', function () {
         ];
 
         $this->service->checkLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist gesperrt.');
+    })->throws(HttpException::class, 'Benutzer ist gesperrt.');
 
     it('aborts when user lacks required roles', function () {
         $school = School::factory()->create();
@@ -867,7 +869,7 @@ describe('checkLogin', function () {
         ];
 
         $this->service->checkLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
+    })->throws(HttpException::class, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
 
     it('aborts when password is incorrect', function () {
         $school = School::factory()->create();
@@ -890,7 +892,7 @@ describe('checkLogin', function () {
         ];
 
         $this->service->checkLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
+    })->throws(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
 
     it('accepts admin role for login', function () {
         $school = School::factory()->create();
@@ -1072,7 +1074,7 @@ describe('checkUserLogin', function () {
         ];
 
         $this->service->checkUserLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+    })->throws(HttpException::class, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
 
     it('aborts when user is not confirmed', function () {
         $school = School::factory()->create();
@@ -1091,7 +1093,7 @@ describe('checkUserLogin', function () {
         ];
 
         $this->service->checkUserLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist noch nicht bestätigt.');
+    })->throws(HttpException::class, 'Benutzer ist noch nicht bestätigt.');
 
     it('aborts when user is not active', function () {
         $school = School::factory()->create();
@@ -1110,7 +1112,7 @@ describe('checkUserLogin', function () {
         ];
 
         $this->service->checkUserLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Benutzer ist gesperrt.');
+    })->throws(HttpException::class, 'Benutzer ist gesperrt.');
 
     it('aborts when password is incorrect for password step', function () {
         $school = School::factory()->create();
@@ -1132,7 +1134,7 @@ describe('checkUserLogin', function () {
         ];
 
         $this->service->checkUserLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
+    })->throws(HttpException::class, 'Login funktioniert mit diesem Kennwort nicht.');
 
     it('aborts when token is invalid for token step', function () {
         $school = School::factory()->create();
@@ -1157,7 +1159,7 @@ describe('checkUserLogin', function () {
         ];
 
         $this->service->checkUserLogin($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Login funktioniert nicht. Code falsch oder Zeit abgelaufen.');
+    })->throws(HttpException::class, 'Login funktioniert nicht. Code falsch oder Zeit abgelaufen.');
 
     it('accepts user role for login', function () {
         $school = School::factory()->create();
@@ -1266,7 +1268,7 @@ describe('sendRegisterToken', function () {
 
         $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
-        Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
+        Notification::assertSentOnDemand(StandardEmail::class);
     });
 
     it('sets token on user model', function () {
@@ -1289,6 +1291,6 @@ describe('sendRegisterToken', function () {
 
         $this->service->sendRegisterToken($user, 'test@example.com', 1);
 
-        Notification::assertSentOnDemand(\App\Notifications\StandardEmail::class);
+        Notification::assertSentOnDemand(StandardEmail::class);
     });
 });

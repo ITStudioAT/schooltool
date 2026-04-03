@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Controllers\Tutoring;
 
-use App\Http\Controllers\Tutoring\OfferRequestController;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
@@ -27,12 +26,12 @@ beforeEach(function () {
     // Create schools
     $this->school1 = School::factory()->create([
         'short_name' => 'SCHUL1',
-        'long_name' => 'Testschule 1'
+        'long_name' => 'Testschule 1',
     ]);
 
     $this->school2 = School::factory()->create([
         'short_name' => 'SCHUL2',
-        'long_name' => 'Testschule 2'
+        'long_name' => 'Testschule 2',
     ]);
 
     // Create licence
@@ -165,9 +164,9 @@ test('index returns user sent requests', function () {
                 '*' => [
                     'id',
                     'message',
-                ]
+                ],
             ],
-            'meta'
+            'meta',
         ])
         ->assertJsonCount(1, 'data');
 });
@@ -297,9 +296,9 @@ test('receivedRequests returns requests received by user', function () {
                 '*' => [
                     'id',
                     'message',
-                ]
+                ],
             ],
-            'meta'
+            'meta',
         ])
         ->assertJsonCount(1, 'data');
 });
@@ -682,9 +681,9 @@ test('toActive requires request_id parameter', function () {
 // ============================
 
 test('offerRequest requires valid email', function () {
-    $token = (string)  Str::uuid();
+    $token = (string) Str::uuid();
 
-    $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
+    $response = $this->get('/homepage/tutoring/offer_request?'.http_build_query([
         'email' => 'invalid-email',
         'id' => 1,
         'token' => $token,
@@ -694,7 +693,7 @@ test('offerRequest requires valid email', function () {
 });
 
 test('offerRequest requires valid token format', function () {
-    $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
+    $response = $this->get('/homepage/tutoring/offer_request?'.http_build_query([
         'email' => 'test@example.com',
         'id' => 1,
         'token' => 'invalid-token',
@@ -704,9 +703,9 @@ test('offerRequest requires valid token format', function () {
 });
 
 test('offerRequest requires id parameter', function () {
-    $token = (string)  Str::uuid();
+    $token = (string) Str::uuid();
 
-    $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
+    $response = $this->get('/homepage/tutoring/offer_request?'.http_build_query([
         'email' => 'test@example.com',
         'token' => $token,
     ]));
@@ -730,7 +729,7 @@ test('offerRequest logs in the resolved user and redirects to tutoring overview'
     app()->instance(TutoringOfferService::class, $service);
 
     $this->actingAs($this->student)
-        ->get('/homepage/tutoring/offer_request?' . http_build_query([
+        ->get('/homepage/tutoring/offer_request?'.http_build_query([
             'email' => $targetUser->email,
             'id' => 123,
             'token' => Str::uuid()->toString(),
@@ -748,7 +747,7 @@ test('offerRequest redirects to error page when user lookup fails', function () 
 
     app()->instance(TutoringOfferService::class, $service);
 
-    $response = $this->get('/homepage/tutoring/offer_request?' . http_build_query([
+    $response = $this->get('/homepage/tutoring/offer_request?'.http_build_query([
         'email' => 'test@example.com',
         'id' => 1,
         'token' => Str::uuid()->toString(),

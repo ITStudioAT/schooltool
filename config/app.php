@@ -1,6 +1,9 @@
 <?php
 
-use DragonCode\Support\Helpers\Str;
+use Barryvdh\Debugbar\Facades\Debugbar;
+use Devrabiul\LaravelCookieConsent\Facades\CookieConsent;
+use Illuminate\Support\Str;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 return [
 
@@ -125,15 +128,13 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
-
     'aliases' => [
         // ...
         // 'Spa' => App\Facades\SpaFacade::class,
-        'Debugbar' => Barryvdh\Debugbar\Facades\Debugbar::class,
-        'Pdf' => Spatie\LaravelPdf\Facades\Pdf::class,
-        'Str' => Illuminate\Support\Str::class,
-        'CookieConsent' => Devrabiul\LaravelCookieConsent\Facades\CookieConsent::class,
+        'Debugbar' => Debugbar::class,
+        'Pdf' => Pdf::class,
+        'Str' => Str::class,
+        'CookieConsent' => CookieConsent::class,
     ],
-
 
 ];

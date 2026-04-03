@@ -14,7 +14,6 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
 
@@ -38,7 +37,7 @@ beforeEach(function () {
     });
 
     collect(['super_admin', 'admin', 'teacher'])->each(
-        fn(string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
+        fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
     $this->superAdmin = User::factory()->create([
@@ -130,7 +129,7 @@ test('admin can list users filtered by role', function () {
 
     $this->actingAs($this->adminUser, 'sanctum');
 
-    $response = $this->getJson('/api/admin/users_with_roles?' . http_build_query([
+    $response = $this->getJson('/api/admin/users_with_roles?'.http_build_query([
         'search_model' => ['role' => 'teacher'],
     ]));
 

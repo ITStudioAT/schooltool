@@ -4,8 +4,6 @@ namespace Database\Factories;
 
 use App\Models\Register;
 use App\Models\RegisterDate;
-use App\Models\School;
-use App\Models\Schoolyear;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class RegisterDateFactory extends Factory
@@ -15,7 +13,7 @@ class RegisterDateFactory extends Factory
     public function definition(): array
     {
         $register = Register::factory()->create();
-        
+
         return [
             'register_id' => $register->id,
             'school_id' => $register->school_id,

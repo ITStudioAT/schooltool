@@ -11,24 +11,24 @@ return new class extends Migration
      */
     public function up(): void
     {
-        if (!Schema::hasTable('school_tools')) {
+        if (! Schema::hasTable('school_tools')) {
             return;
         }
 
         Schema::table('school_tools', function (Blueprint $table) {
-            if (!Schema::hasColumn('school_tools', 'tutoring_student_must_be_confirmed')) {
+            if (! Schema::hasColumn('school_tools', 'tutoring_student_must_be_confirmed')) {
                 $table->boolean('tutoring_student_must_be_confirmed')->default(false);
             }
 
-            if (!Schema::hasColumn('school_tools', 'tutoring_confirmer_email')) {
+            if (! Schema::hasColumn('school_tools', 'tutoring_confirmer_email')) {
                 $table->string('tutoring_confirmer_email')->nullable();
             }
 
-            if (!Schema::hasColumn('school_tools', 'tutoring_max_offers_per_student')) {
+            if (! Schema::hasColumn('school_tools', 'tutoring_max_offers_per_student')) {
                 $table->unsignedInteger('tutoring_max_offers_per_student')->default(0);
             }
 
-            if (!Schema::hasColumn('school_tools', 'may_visible_for_other_schools')) {
+            if (! Schema::hasColumn('school_tools', 'may_visible_for_other_schools')) {
                 $table->boolean('may_visible_for_other_schools')->default(false);
             }
         });
@@ -39,7 +39,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        if (!Schema::hasTable('school_tools')) {
+        if (! Schema::hasTable('school_tools')) {
             return;
         }
 
@@ -59,4 +59,3 @@ return new class extends Migration
         });
     }
 };
-

@@ -46,12 +46,10 @@ class RegisterDateController extends Controller
 
         // $registerDates = RegisterDate::where('register_id', $register_id)->where('supervisor', 'like', '%' . $search_string . '%')->orderBy('date')->orderBy('from')->orderBy('supervisor')->get();
 
-
         $term = trim($validated['search_string']);
 
         // OPTIONAL: escape %/_ so they’re literal in LIKE; keeps user input safe for LIKE
-        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term) . '%';
-
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $term).'%';
 
         $registerDates = RegisterDate::query()
             ->with(['bookings.user']) // eager load to avoid N+1
@@ -63,14 +61,14 @@ class RegisterDateController extends Controller
                 // Search on related RegisterDateBooking
                 $q->orWhereHas('bookings', function ($b) use ($like) {
                     $b->where('student_first_name', 'like', $like)
-                        ->orWhere('student_last_name',  'like', $like);
+                        ->orWhere('student_last_name', 'like', $like);
                 });
 
                 // Search on related User (via RegisterDateBooking->user)
                 $q->orWhereHas('bookings.user', function ($u) use ($like) {
                     $u->where('first_name', 'like', $like)
-                        ->orWhere('last_name',  'like', $like)
-                        ->orWhere('email',      'like', $like);
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('email', 'like', $like);
                 });
             })
             ->orderBy('date')
@@ -120,7 +118,7 @@ class RegisterDateController extends Controller
         }
 
         $validated = $request->validate([
-            '*' => ['integer', 'exists:register_dates,id']
+            '*' => ['integer', 'exists:register_dates,id'],
         ]);
 
         $registerDates = RegisterDate::where('school_id', $auth_user->school_id)->where('schoolyear_id', $auth_user->schoolyear_id)->where('register_id', $auth_user->register_id)->whereIn('id', $validated)->update(['is_locked' => true]);
@@ -135,7 +133,7 @@ class RegisterDateController extends Controller
         }
 
         $validated = $request->validate([
-            '*' => ['integer', 'exists:register_dates,id']
+            '*' => ['integer', 'exists:register_dates,id'],
         ]);
 
         $registerDates = RegisterDate::where('school_id', $auth_user->school_id)->where('schoolyear_id', $auth_user->schoolyear_id)->where('register_id', $auth_user->register_id)->whereIn('id', $validated)->update(['is_locked' => false]);

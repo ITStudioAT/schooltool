@@ -3,17 +3,19 @@
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Notifications\StandardEmailWithAttachment;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Notification;
+use Tests\TestCase;
 
-uses(Tests\TestCase::class);
+uses(TestCase::class);
 
 beforeEach(function () {
     // Create test attachment file in a safe location
     $this->testFilePath = storage_path('app/test-notifications/test-attachment.txt');
     $testDir = dirname($this->testFilePath);
 
-    if (!is_dir($testDir)) {
+    if (! is_dir($testDir)) {
         mkdir($testDir, 0775, true);
     }
 
@@ -197,7 +199,7 @@ describe('StandardEmail Notification', function () {
 
         $notification = new StandardEmail($data);
 
-        expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+        expect($notification)->toBeInstanceOf(ShouldQueue::class);
     });
 
     it('returns empty array from toArray method', function () {
@@ -364,7 +366,7 @@ describe('StandardEmailWithAttachment Notification', function () {
 
         $notification = new StandardEmailWithAttachment($data);
 
-        expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+        expect($notification)->toBeInstanceOf(ShouldQueue::class);
     });
 
     it('returns empty array from toArray method', function () {
@@ -412,8 +414,8 @@ describe('Notification Integration Tests', function () {
         $standard = new StandardEmail($data);
         $withAttachment = new StandardEmailWithAttachment($data);
 
-        expect($standard)->toBeInstanceOf(\Illuminate\Notifications\Notification::class)
-            ->and($withAttachment)->toBeInstanceOf(\Illuminate\Notifications\Notification::class);
+        expect($standard)->toBeInstanceOf(Illuminate\Notifications\Notification::class)
+            ->and($withAttachment)->toBeInstanceOf(Illuminate\Notifications\Notification::class);
     });
 
     it('both notifications use Queueable trait', function () {

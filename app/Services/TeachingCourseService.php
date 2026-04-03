@@ -11,7 +11,9 @@ use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class TeachingCourseService
 {
@@ -21,7 +23,7 @@ class TeachingCourseService
             return array_values(array_filter($value));
         }
 
-        if ($value instanceof \Illuminate\Support\Collection) {
+        if ($value instanceof Collection) {
             return array_values(array_filter($value->all()));
         }
 
@@ -41,7 +43,7 @@ class TeachingCourseService
             return $value;
         }
 
-        if ($value instanceof \Illuminate\Support\Collection) {
+        if ($value instanceof Collection) {
             return $value->all();
         }
 
@@ -220,6 +222,7 @@ class TeachingCourseService
                 }
                 $updated++;
                 unset($activeByKey[$key], $deletedByKey[$key]);
+
                 continue;
             }
 
@@ -232,6 +235,7 @@ class TeachingCourseService
                     }
 
                     unset($deletedByKey[$key]);
+
                     continue;
                 }
 
@@ -242,6 +246,7 @@ class TeachingCourseService
                     $markedDeleted++;
                 }
                 unset($deletedByKey[$key]);
+
                 continue;
             }
 
@@ -318,12 +323,12 @@ class TeachingCourseService
             }
 
             $date = isset($data['date']) ? (string) $data['date'] : null;
-            if ($date !== null && $date !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            if ($date !== null && $date !== '' && ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
                 $date = null;
             }
 
             $stars[] = [
-                'id' => isset($data['id']) && $data['id'] !== '' ? (string) $data['id'] : (string) \Illuminate\Support\Str::uuid(),
+                'id' => isset($data['id']) && $data['id'] !== '' ? (string) $data['id'] : (string) Str::uuid(),
                 'value' => 1,
                 'comment' => $comment,
                 'date' => $date ?: now()->toDateString(),
@@ -711,11 +716,12 @@ class TeachingCourseService
         }
 
         $legacyId = isset($entry['id']) ? (int) $entry['id'] : 0;
+
         return $legacyId > 0 ? $legacyId : null;
     }
 
     /**
-     * @param array<string, mixed> $entry
+     * @param  array<string, mixed>  $entry
      * @return array<string, mixed>
      */
     private function buildCourseStudentPayload(array $entry): array
@@ -741,8 +747,8 @@ class TeachingCourseService
     }
 
     /**
-     * @param array<string, TeachingCourseStudent> $existingByKey
-     * @param array<string, array<string, mixed>> $activeByKey
+     * @param  array<string, TeachingCourseStudent>  $existingByKey
+     * @param  array<string, array<string, mixed>>  $activeByKey
      * @return array<string, string>
      */
     private function collectProtectedRemovalReasons(TeachingCourse $course, array $existingByKey, array $activeByKey): array
@@ -773,6 +779,7 @@ class TeachingCourseService
         foreach ($candidates as $key => $courseStudent) {
             if ($this->hasProtectedCourseStudentData($courseStudent)) {
                 $protected[$key] = 'course_student_data';
+
                 continue;
             }
 
@@ -786,7 +793,7 @@ class TeachingCourseService
     }
 
     /**
-     * @param array<int, int> $userIds
+     * @param  array<int, int>  $userIds
      * @return array<int, bool>
      */
     private function collectDependentUserIdSet(TeachingCourse $course, array $userIds): array
@@ -827,7 +834,7 @@ class TeachingCourseService
     }
 
     /**
-     * @param array<int, int> $candidateUserIds
+     * @param  array<int, int>  $candidateUserIds
      * @return array<int, int>
      */
     private function collectAttendanceDependentUserIds(int $courseId, array $candidateUserIds): array
@@ -874,7 +881,7 @@ class TeachingCourseService
     }
 
     /**
-     * @param array<int, int> $candidateUserIds
+     * @param  array<int, int>  $candidateUserIds
      * @return array<int, int>
      */
     private function collectWorkGroupDependentUserIds(int $courseId, array $candidateUserIds): array
@@ -974,6 +981,7 @@ class TeachingCourseService
         }
 
         $stars = $courseStudent->stars;
+
         return is_array($stars) && ! empty($stars);
     }
 

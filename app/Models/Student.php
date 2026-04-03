@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
  * @method static Builder|Student newModelQuery()
  * @method static Builder|Student newQuery()
  * @method static Builder|Student query()
+ *
  * @mixin \Eloquent
  */
 class Student extends User

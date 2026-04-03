@@ -7,6 +7,7 @@ use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
@@ -71,6 +72,7 @@ class RestaurantService
             ->count();
 
         $foods = $this->foodsForUser($authUser);
+        $bookedMenusCount = $this->bookedMenusCountForOrderablePlans($authUser);
 
         return [
             'categories' => $categories,
@@ -92,8 +94,35 @@ class RestaurantService
                 'lunch_users_pending_confirmation_count' => $lunchUsersPendingConfirmationCount,
                 'foods_with_image_count' => $foods->filter(fn (RestaurantFood $food): bool => filled($food->food_image_path))->count(),
                 'foods_without_price_count' => $foods->filter(fn (RestaurantFood $food): bool => blank($food->price))->count(),
+                'booked_menus_count' => $bookedMenusCount,
             ],
         ];
+    }
+
+    public function bookedMenusCountForOrderablePlans(User $authUser): int
+    {
+        $onlineSettings = $this->onlineSettingsForUser($authUser);
+        $now = now();
+
+        // Get all available menu plans for the user's school
+        $orderablePlans = RestaurantMenuPlan::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('is_available', true)
+            ->get()
+            ->filter(fn (RestaurantMenuPlan $plan): bool => $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now));
+
+        if ($orderablePlans->isEmpty()) {
+            return 0;
+        }
+
+        // Get the sum of booking quantities for all entries of orderable plans
+        return RestaurantMenuPlanBooking::query()
+            ->whereIn('restaurant_menu_plan_entry_id', function ($query) use ($orderablePlans) {
+                $query->select('id')
+                    ->from('restaurant_menu_plan_entries')
+                    ->whereIn('restaurant_menu_plan_id', $orderablePlans->pluck('id'));
+            })
+            ->sum('quantity');
     }
 
     public function userSettingsForUser(User $user): array

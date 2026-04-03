@@ -23,11 +23,18 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
+use App\Models\TeachingCourse;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -53,7 +60,7 @@ describe('User Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new User())->getFillable();
+        $fillable = (new User)->getFillable();
 
         expect($fillable)->toContain('school_id', 'email', 'password', 'first_name', 'last_name', 'phone');
     });
@@ -70,7 +77,7 @@ describe('User Model', function () {
     it('casts email_verified_at to datetime', function () {
         $user = User::factory()->create(['email_verified_at' => now()]);
 
-        expect($user->email_verified_at)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($user->email_verified_at)->toBeInstanceOf(Carbon::class);
     });
 
     it('belongs to a school', function () {
@@ -96,7 +103,7 @@ describe('User Model', function () {
     it('has many register date bookings', function () {
         $user = User::factory()->create();
 
-        expect($user->registerDateBookings())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($user->registerDateBookings())->toBeInstanceOf(HasMany::class);
     });
 
     it('can generate uuid', function () {
@@ -106,7 +113,7 @@ describe('User Model', function () {
         $user->refresh();
 
         expect($uuid)->toBeString()
-            ->and(\Illuminate\Support\Str::isUuid($uuid))->toBeTrue()
+            ->and(Str::isUuid($uuid))->toBeTrue()
             ->and($user->uuid)->toBe($uuid)
             ->and($user->uuid_at)->not->toBeNull();
     });
@@ -187,7 +194,7 @@ describe('School Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new School())->getFillable();
+        $fillable = (new School)->getFillable();
 
         expect($fillable)->toContain('long_name', 'short_name', 'email', 'logo', 'is_selectable');
     });
@@ -195,31 +202,31 @@ describe('School Model', function () {
     it('has many schoolyears', function () {
         $school = School::factory()->create();
 
-        expect($school->schoolyears())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($school->schoolyears())->toBeInstanceOf(HasMany::class);
     });
 
     it('has many registers', function () {
         $school = School::factory()->create();
 
-        expect($school->registers())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($school->registers())->toBeInstanceOf(HasMany::class);
     });
 
     it('has many users', function () {
         $school = School::factory()->create();
 
-        expect($school->users())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($school->users())->toBeInstanceOf(HasMany::class);
     });
 
     it('has many licences', function () {
         $school = School::factory()->create();
 
-        expect($school->licences())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsToMany::class);
+        expect($school->licences())->toBeInstanceOf(BelongsToMany::class);
     });
 
     it('has one active schoolyear', function () {
         $school = School::factory()->create();
 
-        expect($school->activeSchoolyear())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasOne::class);
+        expect($school->activeSchoolyear())->toBeInstanceOf(HasOne::class);
     });
 
     it('can use selectables scope', function () {
@@ -249,7 +256,7 @@ describe('Teacher Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new Teacher())->getFillable();
+        $fillable = (new Teacher)->getFillable();
 
         expect($fillable)->toContain('school_id', 'email', 'first_name', 'last_name', 'short', 'token');
     });
@@ -265,7 +272,7 @@ describe('Teacher Model', function () {
             'token_expires_at' => now(),
         ]);
 
-        expect($teacher->token_expires_at)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($teacher->token_expires_at)->toBeInstanceOf(Carbon::class);
     });
 
     it('belongs to school', function () {
@@ -278,7 +285,7 @@ describe('Teacher Model', function () {
             'short' => 'MUE',
         ]);
 
-        expect($teacher->school())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($teacher->school())->toBeInstanceOf(BelongsTo::class)
             ->and($teacher->school->id)->toBe($school->id);
     });
 
@@ -310,7 +317,7 @@ describe('Register Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new Register())->getFillable();
+        $fillable = (new Register)->getFillable();
 
         expect($fillable)->toContain('school_id', 'schoolyear_id', 'name', 'max_registrations', 'is_active');
     });
@@ -323,7 +330,7 @@ describe('Register Model', function () {
             'schoolyear_id' => $schoolyear->id,
         ]);
 
-        expect($register->school())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($register->school())->toBeInstanceOf(BelongsTo::class)
             ->and($register->school->id)->toBe($school->id);
     });
 
@@ -335,20 +342,20 @@ describe('Register Model', function () {
             'schoolyear_id' => $schoolyear->id,
         ]);
 
-        expect($register->schoolyear())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($register->schoolyear())->toBeInstanceOf(BelongsTo::class)
             ->and($register->schoolyear->id)->toBe($schoolyear->id);
     });
 
     it('has many dates', function () {
         $register = Register::factory()->create();
 
-        expect($register->dates())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($register->dates())->toBeInstanceOf(HasMany::class);
     });
 
     it('has many users', function () {
         $register = Register::factory()->create();
 
-        expect($register->users())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsToMany::class);
+        expect($register->users())->toBeInstanceOf(BelongsToMany::class);
     });
 });
 
@@ -363,7 +370,7 @@ describe('RegisterDate Model', function () {
     it('has many bookings', function () {
         $date = RegisterDate::factory()->create();
 
-        expect($date->bookings())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($date->bookings())->toBeInstanceOf(HasMany::class);
     });
 });
 
@@ -379,7 +386,7 @@ describe('RegisterDateBooking Model', function () {
         $user = User::factory()->create();
         $booking = RegisterDateBooking::factory()->create(['user_id' => $user->id]);
 
-        expect($booking->user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($booking->user())->toBeInstanceOf(BelongsTo::class)
             ->and($booking->user->id)->toBe($user->id);
     });
 
@@ -387,7 +394,7 @@ describe('RegisterDateBooking Model', function () {
         $date = RegisterDate::factory()->create();
         $booking = RegisterDateBooking::factory()->create(['register_date_id' => $date->id]);
 
-        expect($booking->registerDate())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($booking->registerDate())->toBeInstanceOf(BelongsTo::class)
             ->and($booking->registerDate->id)->toBe($date->id);
     });
 });
@@ -401,7 +408,7 @@ describe('Schoolyear Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new Schoolyear())->getFillable();
+        $fillable = (new Schoolyear)->getFillable();
 
         expect($fillable)->toContain('school_id', 'name', 'from', 'until', 'sem_2_start');
     });
@@ -436,7 +443,7 @@ describe('Licence Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new Licence())->getFillable();
+        $fillable = (new Licence)->getFillable();
 
         expect($fillable)->toContain('name', 'long_name', 'is_selectable');
     });
@@ -444,7 +451,7 @@ describe('Licence Model', function () {
     it('has many schools', function () {
         $licence = Licence::create(['name' => 'Test', 'long_name' => 'Test Licence', 'is_selectable' => 1]);
 
-        expect($licence->schools())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsToMany::class);
+        expect($licence->schools())->toBeInstanceOf(BelongsToMany::class);
     });
 });
 
@@ -464,7 +471,7 @@ describe('SchoolLicence Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new SchoolLicence())->getFillable();
+        $fillable = (new SchoolLicence)->getFillable();
 
         expect($fillable)->toContain('school_id', 'licence_id', 'valid_until');
     });
@@ -477,7 +484,7 @@ describe('SchoolLicence Model', function () {
             'licence_id' => $licence->id,
         ]);
 
-        expect($schoolLicence->school())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($schoolLicence->school())->toBeInstanceOf(BelongsTo::class)
             ->and($schoolLicence->school->id)->toBe($school->id);
     });
 
@@ -489,7 +496,7 @@ describe('SchoolLicence Model', function () {
             'licence_id' => $licence->id,
         ]);
 
-        expect($schoolLicence->licence())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($schoolLicence->licence())->toBeInstanceOf(BelongsTo::class)
             ->and($schoolLicence->licence->id)->toBe($licence->id);
     });
 });
@@ -503,7 +510,7 @@ describe('SchoolTool Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new SchoolTool())->getFillable();
+        $fillable = (new SchoolTool)->getFillable();
 
         expect($fillable)->toContain('school_id', 'tutoring_max_offers_per_student', 'tutoring_confirmer_email');
     });
@@ -511,7 +518,7 @@ describe('SchoolTool Model', function () {
     it('casts health_at to datetime', function () {
         $schoolTool = SchoolTool::factory()->create(['health_at' => now()]);
 
-        expect($schoolTool->health_at)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($schoolTool->health_at)->toBeInstanceOf(Carbon::class);
     });
 });
 
@@ -535,7 +542,7 @@ describe('TutoringOffer Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new TutoringOffer())->getFillable();
+        $fillable = (new TutoringOffer)->getFillable();
 
         expect($fillable)->toContain('school_id', 'user_id', 'subject_id', 'title', 'is_active');
     });
@@ -589,7 +596,7 @@ describe('TutoringOffer Model', function () {
             'price_per_hour' => 15.00,
         ]);
 
-        expect($offer->user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($offer->user())->toBeInstanceOf(BelongsTo::class)
             ->and($offer->user->id)->toBe($user->id);
     });
 
@@ -607,7 +614,7 @@ describe('TutoringOffer Model', function () {
             'price_per_hour' => 15.00,
         ]);
 
-        expect($offer->subject())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($offer->subject())->toBeInstanceOf(BelongsTo::class)
             ->and($offer->subject->id)->toBe($subject->id);
     });
 });
@@ -669,7 +676,7 @@ describe('TutoringOfferRequest Model', function () {
             'message' => 'I need help with math',
         ]);
 
-        expect($request->offer())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($request->offer())->toBeInstanceOf(BelongsTo::class)
             ->and($request->offer->id)->toBe($offer->id);
     });
 
@@ -699,7 +706,7 @@ describe('TutoringOfferRequest Model', function () {
             'message' => 'I need help with math',
         ]);
 
-        expect($request->from_user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($request->from_user())->toBeInstanceOf(BelongsTo::class)
             ->and($request->from_user->id)->toBe($fromUser->id);
     });
 
@@ -729,7 +736,7 @@ describe('TutoringOfferRequest Model', function () {
             'message' => 'I need help with math',
         ]);
 
-        expect($request->to_user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($request->to_user())->toBeInstanceOf(BelongsTo::class)
             ->and($request->to_user->id)->toBe($toUser->id);
     });
 });
@@ -748,7 +755,7 @@ describe('TutoringSubject Model', function () {
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new TutoringSubject())->getFillable();
+        $fillable = (new TutoringSubject)->getFillable();
 
         expect($fillable)->toContain('school_id', 'short_name', 'long_name');
     });
@@ -761,7 +768,7 @@ describe('TutoringSubject Model', function () {
             'long_name' => 'Mathematics',
         ]);
 
-        expect($subject->offers())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\HasMany::class);
+        expect($subject->offers())->toBeInstanceOf(HasMany::class);
     });
 
     it('can check for dependencies', function () {
@@ -797,7 +804,7 @@ describe('QueueTest Model', function () {
             'dispatched_at' => now(),
         ]);
 
-        expect(\Illuminate\Support\Str::isUuid($queueTest->id))->toBeTrue();
+        expect(Str::isUuid($queueTest->id))->toBeTrue();
     });
 
     it('belongs to user', function () {
@@ -808,7 +815,7 @@ describe('QueueTest Model', function () {
             'dispatched_at' => now(),
         ]);
 
-        expect($queueTest->user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($queueTest->user())->toBeInstanceOf(BelongsTo::class)
             ->and($queueTest->user->id)->toBe($user->id);
     });
 });
@@ -904,20 +911,20 @@ describe('Model Relationships Integration', function () {
 
 describe('TeachingCourse Model', function () {
     it('can be created via factory', function () {
-        $course = \App\Models\TeachingCourse::factory()->create();
+        $course = TeachingCourse::factory()->create();
 
-        expect($course)->toBeInstanceOf(\App\Models\TeachingCourse::class)
+        expect($course)->toBeInstanceOf(TeachingCourse::class)
             ->and($course->id)->toBeGreaterThan(0);
     });
 
     it('has correct fillable attributes', function () {
-        $fillable = (new \App\Models\TeachingCourse())->getFillable();
+        $fillable = (new TeachingCourse)->getFillable();
 
         expect($fillable)->toContain('school_id', 'schoolyear_id', 'user_id', 'title', 'classes');
     });
 
     it('casts classes to array', function () {
-        $course = \App\Models\TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'classes' => ['1A', '2B', '3C'],
         ]);
 
@@ -927,40 +934,40 @@ describe('TeachingCourse Model', function () {
 
     it('belongs to school', function () {
         $school = School::factory()->create();
-        $course = \App\Models\TeachingCourse::factory()->create(['school_id' => $school->id]);
+        $course = TeachingCourse::factory()->create(['school_id' => $school->id]);
 
-        expect($course->school())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($course->school())->toBeInstanceOf(BelongsTo::class)
             ->and($course->school->id)->toBe($school->id);
     });
 
     it('belongs to schoolyear', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $course = \App\Models\TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
 
-        expect($course->schoolyear())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($course->schoolyear())->toBeInstanceOf(BelongsTo::class)
             ->and($course->schoolyear->id)->toBe($schoolyear->id);
     });
 
     it('belongs to user (teacher)', function () {
         $school = School::factory()->create();
         $teacher = User::factory()->create(['school_id' => $school->id]);
-        $course = \App\Models\TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'school_id' => $school->id,
             'user_id' => $teacher->id,
         ]);
 
-        expect($course->user())->toBeInstanceOf(\Illuminate\Database\Eloquent\Relations\BelongsTo::class)
+        expect($course->user())->toBeInstanceOf(BelongsTo::class)
             ->and($course->user->id)->toBe($teacher->id);
     });
 
     it('can be created without teacher (user_id null)', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $course = \App\Models\TeachingCourse::factory()->withoutTeacher()->create([
+        $course = TeachingCourse::factory()->withoutTeacher()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
@@ -970,7 +977,7 @@ describe('TeachingCourse Model', function () {
     });
 
     it('can store empty classes array', function () {
-        $course = \App\Models\TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'classes' => [],
         ]);
 
@@ -979,7 +986,7 @@ describe('TeachingCourse Model', function () {
     });
 
     it('can store null classes', function () {
-        $course = \App\Models\TeachingCourse::factory()->create([
+        $course = TeachingCourse::factory()->create([
             'classes' => null,
         ]);
 
@@ -988,7 +995,7 @@ describe('TeachingCourse Model', function () {
 
     it('factory forSchool method works correctly', function () {
         $school = School::factory()->create();
-        $course = \App\Models\TeachingCourse::factory()->forSchool($school)->create();
+        $course = TeachingCourse::factory()->forSchool($school)->create();
 
         expect($course->school_id)->toBe($school->id);
     });
@@ -996,7 +1003,7 @@ describe('TeachingCourse Model', function () {
     it('factory forSchoolyear method works correctly', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        $course = \App\Models\TeachingCourse::factory()->forSchoolyear($schoolyear)->create([
+        $course = TeachingCourse::factory()->forSchoolyear($schoolyear)->create([
             'school_id' => $school->id,
         ]);
 
@@ -1006,7 +1013,7 @@ describe('TeachingCourse Model', function () {
     it('factory forTeacher method works correctly', function () {
         $school = School::factory()->create();
         $teacher = User::factory()->create(['school_id' => $school->id]);
-        $course = \App\Models\TeachingCourse::factory()->forTeacher($teacher)->create([
+        $course = TeachingCourse::factory()->forTeacher($teacher)->create([
             'school_id' => $school->id,
         ]);
 
@@ -1015,7 +1022,7 @@ describe('TeachingCourse Model', function () {
 
     it('factory withClasses method works correctly', function () {
         $classes = ['5A', '5B', '6A'];
-        $course = \App\Models\TeachingCourse::factory()->withClasses($classes)->create();
+        $course = TeachingCourse::factory()->withClasses($classes)->create();
 
         expect($course->classes)->toBe($classes);
     });

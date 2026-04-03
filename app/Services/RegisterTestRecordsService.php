@@ -12,16 +12,18 @@ use Carbon\Carbon;
 
 class RegisterTestRecordsService
 {
-
-
     public function checkRequirement(): bool
     {
 
         $school = School::where('id', 1)->first();
-        if (!$school) return false;
+        if (! $school) {
+            return false;
+        }
 
         $schoolyear = Schoolyear::where('id', 1)->where('school_id', 1)->first();
-        if (!$schoolyear) return false;
+        if (! $schoolyear) {
+            return false;
+        }
 
         return true;
     }
@@ -31,7 +33,9 @@ class RegisterTestRecordsService
     // true: Users created
     {
         $count = User::count();
-        if ($count >= 500) return false;
+        if ($count >= 500) {
+            return false;
+        }
 
         User::factory()
             ->count(500)
@@ -39,6 +43,7 @@ class RegisterTestRecordsService
             ->each(function ($user) {
                 $user->assignRole('register_user');
             });
+
         return true;
     }
 
@@ -68,7 +73,7 @@ class RegisterTestRecordsService
         // create Array with 500 users
         $highestId = User::max('id');
         $ids = range($highestId, $highestId - 499);
-        $ids = array_filter($ids, fn($id) => $id > 0);
+        $ids = array_filter($ids, fn ($id) => $id > 0);
 
         // MONDAY
         $registerDate = $this->createRegisterDate($register->id, 'Gruppe 1', $nextMonday, '08:00', '09:00', 20);
@@ -161,21 +166,19 @@ class RegisterTestRecordsService
 
             // Create the booking
             RegisterDateBooking::create([
-                'school_id'       => 1,
-                'schoolyear_id'   => 1,
-                'register_id'     => $registerDate->register_id,
+                'school_id' => 1,
+                'schoolyear_id' => 1,
+                'register_id' => $registerDate->register_id,
                 'register_date_id' => $registerDate->id,
-                'user_id'         => $userId,
-                'student_last_name'  => $user->last_name,
-                'student_first_name' =>  fake()->firstName(),
+                'user_id' => $userId,
+                'student_last_name' => $user->last_name,
+                'student_first_name' => fake()->firstName(),
                 'student_birthdate' => fake()->dateTimeBetween('-10 years', 'now')->format('Y-m-d'),
             ]);
         }
 
         return $ids;
     }
-
-
 
     private function createRegisterDate($register_id, $supervisor, $date, $from, $to, $max_registrations): RegisterDate
     {

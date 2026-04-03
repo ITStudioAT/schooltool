@@ -20,6 +20,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
+use App\Models\User;
 use App\Services\AuthService;
 use App\Services\LicenceService;
 use App\Services\TutoringOfferService;
@@ -318,7 +319,7 @@ class OfferController extends Controller
         $auth = $authService->getAuth();
 
         if ($auth['is_auth']) {
-            /** @var \App\Models\User $user */
+            /** @var User $user */
             $user = Auth::user();
             if (! $user->hasRole('tutoring_user')) {
                 UserService::logout();

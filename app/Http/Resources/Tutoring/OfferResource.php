@@ -48,6 +48,7 @@ class OfferResource extends JsonResource
             'is_own_offer' => $this->user_id === Auth::id(),
             'my_request' => $this->whenLoaded('requests', function () {
                 $request = $this->requests->first();
+
                 return $request ? [
                     'id' => $request->id,
                     'sent_at' => $request->sent_at?->format('Y-m-d H:i:s'),

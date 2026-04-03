@@ -1,9 +1,11 @@
 <?php
 
 namespace App\Console\Commands {
+    use Doctrine\DBAL\Schema\Comparator;
+
     function class_exists(string $class): bool
     {
-        if ($class === \Doctrine\DBAL\Schema\Comparator::class) {
+        if ($class === Comparator::class) {
             return $GLOBALS['schema_sync_dbal_available'] ?? false;
         }
 
@@ -12,8 +14,6 @@ namespace App\Console\Commands {
 }
 
 namespace Tests\Feature\Console {
-    use App\Console\Commands\SchemaSyncCommand;
-    use Tests\TestCase;
 
     it('fails when doctrine dbal is missing', function () {
         $GLOBALS['schema_sync_dbal_available'] = false;

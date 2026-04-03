@@ -93,7 +93,7 @@ test('admin can update subject and normalize email_mentors', function () {
         ],
     ];
 
-    $this->putJson('/api/admin/tutoring/subjects/' . $subject->id, $payload)
+    $this->putJson('/api/admin/tutoring/subjects/'.$subject->id, $payload)
         ->assertStatus(200)
         ->assertJsonFragment([
             'id' => $subject->id,
@@ -115,7 +115,7 @@ test('admin can delete subject without dependencies', function () {
 
     $this->actingAs($this->admin, 'sanctum');
 
-    $this->deleteJson('/api/admin/tutoring/subjects/' . $subject->id)
+    $this->deleteJson('/api/admin/tutoring/subjects/'.$subject->id)
         ->assertStatus(204);
 
     expect(TutoringSubject::find($subject->id))->toBeNull();

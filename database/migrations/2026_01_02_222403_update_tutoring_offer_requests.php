@@ -18,22 +18,22 @@ return new class extends Migration
         $columns = Schema::getColumnListing('tutoring_offer_requests');
 
         Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($columns) {
-            if (!in_array('token', $columns, true)) {
+            if (! in_array('token', $columns, true)) {
                 $table->string('token')->nullable()->after('archived_at');
             }
-            if (!in_array('token_expires_at', $columns, true)) {
+            if (! in_array('token_expires_at', $columns, true)) {
                 $table->timestamp('token_expires_at')->nullable()->after('token');
             }
-            if (!in_array('sent_at', $columns, true)) {
+            if (! in_array('sent_at', $columns, true)) {
                 $table->timestamp('sent_at')->nullable()->after('token_expires_at');
             }
-            if (!in_array('last_sent_at', $columns, true)) {
+            if (! in_array('last_sent_at', $columns, true)) {
                 $table->timestamp('last_sent_at')->nullable()->after('sent_at');
             }
-            if (!in_array('seen_at', $columns, true)) {
+            if (! in_array('seen_at', $columns, true)) {
                 $table->timestamp('seen_at')->nullable()->after('last_sent_at');
             }
-            if (!in_array('last_seen_at', $columns, true)) {
+            if (! in_array('last_seen_at', $columns, true)) {
                 $table->timestamp('last_seen_at')->nullable()->after('seen_at');
             }
         });
@@ -58,7 +58,7 @@ return new class extends Migration
             'last_seen_at',
         ]);
 
-        if (!empty($droppables)) {
+        if (! empty($droppables)) {
             Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($droppables) {
                 $table->dropColumn($droppables);
             });

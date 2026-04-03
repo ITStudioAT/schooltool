@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Resources\Homepage\UserResource;
 use App\Models\User;
 use App\Services\AuthService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Auth;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -10,7 +12,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new AuthService();
+    $this->service = new AuthService;
 });
 
 describe('getAuth', function () {
@@ -290,7 +292,7 @@ describe('getAuth', function () {
 
         $result = $this->service->getAuth();
 
-        expect($result['user'])->toBeInstanceOf(\App\Http\Resources\Homepage\UserResource::class);
+        expect($result['user'])->toBeInstanceOf(UserResource::class);
     });
 
     it('returns AnonymousResourceCollection for roles field', function () {
@@ -303,7 +305,7 @@ describe('getAuth', function () {
 
         $result = $this->service->getAuth();
 
-        expect($result['roles'])->toBeInstanceOf(\Illuminate\Http\Resources\Json\AnonymousResourceCollection::class);
+        expect($result['roles'])->toBeInstanceOf(AnonymousResourceCollection::class);
     });
 
     it('returns auth structure matches expected API format', function () {
@@ -331,4 +333,3 @@ describe('getAuth', function () {
             ->and($rolesData[0])->toHaveKeys(['id', 'name']);
     });
 });
-

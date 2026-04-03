@@ -12,10 +12,8 @@ use App\Http\Resources\Tutoring\ReceivedOfferRequestResource;
 use App\Models\TutoringOfferRequest;
 use App\Services\TutoringOfferService;
 use App\Services\UserService;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
 
 class OfferRequestController extends Controller
 {
@@ -35,14 +33,12 @@ class OfferRequestController extends Controller
         $requests = TutoringOfferRequest::where('from_user_id', $auth_user->id)
             ->when(
                 $show_archived,
-                fn($query) => $query->whereNotNull('archived_at'),
-                fn($query) => $query->whereNull('archived_at')
+                fn ($query) => $query->whereNotNull('archived_at'),
+                fn ($query) => $query->whereNull('archived_at')
             )
             ->with(['school', 'offer.subject'])
             ->orderBy('sent_at', 'DESC')
             ->paginate(config('schooltool.pagination'));
-
-
 
         return response()->json([
             'data' => OfferRequestResource::collection($requests),
@@ -71,8 +67,8 @@ class OfferRequestController extends Controller
         $requests = TutoringOfferRequest::where('to_user_id', $auth_user->id)
             ->when(
                 $show_to_user_archived,
-                fn($query) => $query->whereNotNull('to_user_archived_at'),
-                fn($query) => $query->whereNull('to_user_archived_at')
+                fn ($query) => $query->whereNotNull('to_user_archived_at'),
+                fn ($query) => $query->whereNull('to_user_archived_at')
             )
             ->with('school')
             ->with('offer')
@@ -80,8 +76,6 @@ class OfferRequestController extends Controller
             ->with('offer.subject')
             ->orderBy('sent_at', 'DESC')
             ->paginate(config('schooltool.pagination'));
-
-
 
         return response()->json([
             'data' => ReceivedOfferRequestResource::collection($requests),
@@ -122,7 +116,9 @@ class OfferRequestController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($auth_user->id != $offerRequest->from_user_id) abort(422, "Du bist nicht berechtigt, diese Anfrage zu löschen.");
+        if ($auth_user->id != $offerRequest->from_user_id) {
+            abort(422, 'Du bist nicht berechtigt, diese Anfrage zu löschen.');
+        }
 
         // TODO senden eine Info-EMail
         $service->sendOfferRequestStornoEmail($offerRequest);
@@ -155,25 +151,24 @@ class OfferRequestController extends Controller
 
         $validated = $request->validated();
 
+        $userService = new UserService;
 
-        $userService = new UserService();
+        $user = $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
 
-
-        $user =  $service->getUserFromOfferRequest($validated['email'], $validated['id'], $validated['token']);
-
-        if (!$user) {
-            return redirect()->to('/homepage/tutoring_response?' . http_build_query([
+        if (! $user) {
+            return redirect()->to('/homepage/tutoring_response?'.http_build_query([
                 'title' => 'Fehler',
                 'subtitle' => 'Fehler beim Anmelden',
                 'text' => 'Es ist ein Fehler beim Anmelden aufgetreten oder die Anfrage wurde gelöscht.',
-                'status' => 422
+                'status' => 422,
             ]));
         }
 
         // Wenn ein User eingeloggt wäre, dann ausloggen
         $auth_user = Auth::user();
-        if ($auth_user) $userService->logout();
-
+        if ($auth_user) {
+            $userService->logout();
+        }
 
         // Login des Users
         Auth::guard('web')->login($user, true);
@@ -197,11 +192,12 @@ class OfferRequestController extends Controller
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
 
-        if ($request->to_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+        if ($request->to_user_id != $auth_user->id) {
+            abort(422, 'Unzulässig Aktion');
+        }
 
         $request->to_user_archived_at = now();
         $request->save();
-
 
         return response()->json(new OfferRequestResource($request), 200);
     }
@@ -218,11 +214,12 @@ class OfferRequestController extends Controller
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
 
-        if ($request->from_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+        if ($request->from_user_id != $auth_user->id) {
+            abort(422, 'Unzulässig Aktion');
+        }
 
         $request->archived_at = now();
         $request->save();
-
 
         return response()->json(new OfferRequestResource($request), 200);
     }
@@ -239,11 +236,12 @@ class OfferRequestController extends Controller
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
 
-        if ($request->from_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+        if ($request->from_user_id != $auth_user->id) {
+            abort(422, 'Unzulässig Aktion');
+        }
 
         $request->archived_at = null;
         $request->save();
-
 
         return response()->json(new OfferRequestResource($request), 200);
     }
@@ -260,11 +258,12 @@ class OfferRequestController extends Controller
 
         $request = TutoringOfferRequest::findOrFail($validated['request_id']);
 
-        if ($request->to_user_id != $auth_user->id) abort(422, 'Unzulässig Aktion');
+        if ($request->to_user_id != $auth_user->id) {
+            abort(422, 'Unzulässig Aktion');
+        }
 
         $request->to_user_archived_at = null;
         $request->save();
-
 
         return response()->json(new OfferRequestResource($request), 200);
     }

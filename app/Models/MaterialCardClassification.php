@@ -37,4 +37,3 @@ class MaterialCardClassification extends Model
         return $this->belongsTo(MaterialUnit::class, 'unit_id');
     }
 }
-

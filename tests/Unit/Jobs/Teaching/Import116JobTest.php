@@ -22,7 +22,13 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -98,7 +104,7 @@ describe('job construction', function () {
     test('implements ShouldQueue interface', function () {
         $job = new Import116Job($this->admin, 'test/path');
 
-        expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+        expect($job)->toBeInstanceOf(ShouldQueue::class);
     });
 });
 
@@ -186,22 +192,22 @@ describe('file not found handling', function () {
 describe('job traits', function () {
     test('uses Dispatchable trait', function () {
         expect(class_uses_recursive(Import116Job::class))
-            ->toContain(\Illuminate\Foundation\Bus\Dispatchable::class);
+            ->toContain(Dispatchable::class);
     });
 
     test('uses InteractsWithQueue trait', function () {
         expect(class_uses_recursive(Import116Job::class))
-            ->toContain(\Illuminate\Queue\InteractsWithQueue::class);
+            ->toContain(InteractsWithQueue::class);
     });
 
     test('uses Queueable trait', function () {
         expect(class_uses_recursive(Import116Job::class))
-            ->toContain(\Illuminate\Bus\Queueable::class);
+            ->toContain(Queueable::class);
     });
 
     test('uses SerializesModels trait', function () {
         expect(class_uses_recursive(Import116Job::class))
-            ->toContain(\Illuminate\Queue\SerializesModels::class);
+            ->toContain(SerializesModels::class);
     });
 });
 
@@ -368,7 +374,7 @@ describe('date casting', function () {
             'birth_date' => '2010-05-15',
         ]);
 
-        expect($record->birth_date)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($record->birth_date)->toBeInstanceOf(Carbon::class);
     });
 
     test('import_date is cast to datetime', function () {
@@ -378,7 +384,7 @@ describe('date casting', function () {
             'import_date' => now(),
         ]);
 
-        expect($record->import_date)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($record->import_date)->toBeInstanceOf(Carbon::class);
     });
 
     test('exists_date is cast to datetime', function () {
@@ -388,7 +394,7 @@ describe('date casting', function () {
             'exists_date' => now(),
         ]);
 
-        expect($record->exists_date)->toBeInstanceOf(\Illuminate\Support\Carbon::class);
+        expect($record->exists_date)->toBeInstanceOf(Carbon::class);
     });
 });
 

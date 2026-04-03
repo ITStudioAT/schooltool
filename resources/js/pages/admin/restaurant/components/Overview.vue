@@ -48,6 +48,26 @@
                     </div>
                 </ItsGridBox>
             </v-col>
+
+            <v-col cols="12" md="6" xl="3">
+                <ItsGridBox
+                    variant="overview"
+                    color="primary"
+                    title="Gebuchte Menüs"
+                    icon="mdi-food-takeout-box">
+                    <div class="restaurant-overview-stat">{{ stats.booked_menus_count || 0 }}</div>
+                    <div class="restaurant-overview-action">
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-arrow-right"
+                            @click="openMenuPlans">
+                            Zu Menüplänen
+                        </v-btn>
+                    </div>
+                </ItsGridBox>
+            </v-col>
         </v-row>
     </v-col>
 </template>
@@ -81,6 +101,9 @@ export default {
                     only_pending_confirmation: '1',
                 },
             })
+        },
+        openMenuPlans() {
+            this.$router.push('/admin/restaurant/menu-plans')
         },
     },
 }

@@ -19,4 +19,3 @@ class MaterialCardAttachmentUpdateRequest extends FormRequest
         ];
     }
 }
-

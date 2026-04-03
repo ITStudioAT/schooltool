@@ -3,8 +3,8 @@
 namespace App\Services\Materials;
 
 use App\Models\MaterialCard;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class MaterialKeywordService
 {
@@ -202,7 +202,7 @@ class MaterialKeywordService
         $normalized = Str::lower($text);
         $tokens = preg_split('/[^\p{L}\p{N}]+/u', $normalized) ?: [];
 
-        return array_values(array_filter($tokens, fn($token) => $token !== null && $token !== ''));
+        return array_values(array_filter($tokens, fn ($token) => $token !== null && $token !== ''));
     }
 
     private function normalizeUrlToText(?string $url): string

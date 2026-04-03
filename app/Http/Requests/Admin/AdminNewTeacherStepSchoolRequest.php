@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class AdminNewTeacherStepSchoolRequest extends FormRequest
@@ -17,14 +18,14 @@ class AdminNewTeacherStepSchoolRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
             'email' => 'required|email|max:255',
             'step' => 'required|string|in:NEW_TEACHER_SELECT_SCHOOL',
-            'school_id' => 'required|integer|exists:schools,id'
+            'school_id' => 'required|integer|exists:schools,id',
         ];
     }
 }

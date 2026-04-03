@@ -12,7 +12,6 @@ use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Models\User;
 use App\Services\UserService;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class UserController extends Controller
@@ -52,7 +51,6 @@ class UserController extends Controller
             ->orderBy('first_name')
             ->paginate(config('schooltool.pagination'));
 
-
         // Löschbare Benutzer zählen (E-Mail nicht bestätigt und nur Rolle tutoring_user)
         $count_deletable_users = User::bySchoolAndRole($auth_user->school_id, 'tutoring_user')
             ->whereNull('email_verified_at')
@@ -61,14 +59,12 @@ class UserController extends Controller
             }, '=', 1)
             ->count();
 
-
         return response()->json([
             'data' => UserResource::collection($users),
             'meta' => new PaginateResource($users),
             'count_deletable_users' => $count_deletable_users,
         ]);
     }
-
 
     public function store(UserStoreRequest $request, UserService $service)
     {
@@ -78,7 +74,7 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $validated['roles'] = [
-            ['name' => 'tutoring_user', 'checked' => true]
+            ['name' => 'tutoring_user', 'checked' => true],
         ];
         $user = $service->store($auth_user->school_id, $validated);
 
@@ -93,7 +89,7 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $validated['roles'] = [
-            ['name' => 'tutoring_user', 'checked' => true]
+            ['name' => 'tutoring_user', 'checked' => true],
         ];
 
         $user = $service->update($validated);
@@ -109,6 +105,7 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $service->deleteTutoringUsers($validated['data']);
+
         return response()->noContent();
     }
 
@@ -120,6 +117,7 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $service->confirmTutoringUsers($validated['data']);
+
         return response()->noContent();
     }
 
@@ -131,6 +129,7 @@ class UserController extends Controller
         }
 
         $service->cleanTutoringUsers($auth_user->school_id);
+
         return response()->noContent();
     }
 }

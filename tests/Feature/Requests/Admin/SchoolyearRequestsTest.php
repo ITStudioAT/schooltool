@@ -28,9 +28,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateSchoolyearRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateSchoolyearRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -40,13 +41,13 @@ function validateSchoolyearRequest(string $requestClass, array $data): \Illumina
 
 describe('SchoolyearIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolyearIndexRequest();
+        $request = new SchoolyearIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolyearIndexRequest();
+        $request = new SchoolyearIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -57,13 +58,13 @@ describe('SchoolyearIndexRequest', function () {
 
 describe('SchoolyearStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolyearStoreRequest();
+        $request = new SchoolyearStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolyearStoreRequest();
+        $request = new SchoolyearStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -97,13 +98,13 @@ describe('SchoolyearStoreRequest', function () {
 
 describe('SchoolyearUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolyearUpdateRequest();
+        $request = new SchoolyearUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolyearUpdateRequest();
+        $request = new SchoolyearUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -131,13 +132,13 @@ describe('SchoolyearUpdateRequest', function () {
 
 describe('SetActiveSchoolyearRequest', function () {
     it('requires authentication', function () {
-        $request = new SetActiveSchoolyearRequest();
+        $request = new SetActiveSchoolyearRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SetActiveSchoolyearRequest();
+        $request = new SetActiveSchoolyearRequest;
         expect($request->authorize())->toBeTrue();
     });
 

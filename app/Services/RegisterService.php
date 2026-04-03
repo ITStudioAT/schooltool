@@ -47,7 +47,7 @@ class RegisterService
             abort(403, 'Sie haben bereits eine Buchung. Bitte stornieren Sie diese zuerst.');
         }
 
-        $service = new RegisterDateBookingService();
+        $service = new RegisterDateBookingService;
         $booking = $service->createBooking(
             $registerDate->school_id,
             $registerDate->schoolyear_id,
@@ -60,7 +60,6 @@ class RegisterService
 
         return $data;
     }
-
 
     public function loadRegisterAndUser($user): array
     {
@@ -119,7 +118,7 @@ class RegisterService
 
     public function checkLicenceAndSchool(string $schoolShort, string $app): array
     {
-        $licenceService = new LicenceService();
+        $licenceService = new LicenceService;
 
         $school = School::where('short_name', $schoolShort)->first();
         $isSchoolValid = $school !== null;
@@ -166,7 +165,7 @@ class RegisterService
             'password' => Hash::make(now()),
         ]);
 
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $adminService->setToken2Fa($user, ['school' => $school], 'Code zur Bestätigung der E-Mail-Adresse');
 
         $data['user_id'] = $user->id;
@@ -179,7 +178,7 @@ class RegisterService
     {
         $school = School::findOrFail($data['school_id']);
 
-        $adminService = new AdminService();
+        $adminService = new AdminService;
         $adminService->setToken2Fa($user, ['school' => $school], 'Code zur Anmeldung');
 
         $data['user_id'] = $user->id;

@@ -2,8 +2,8 @@
 
 use App\Services\FileUploadService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -11,14 +11,14 @@ uses(TestCase::class);
 // Helper function to recursively clean directories without deleting existing environment files
 function cleanupTempDirectory(string $dir): void
 {
-    if (!is_dir($dir)) {
+    if (! is_dir($dir)) {
         return;
     }
 
     $files = array_diff(scandir($dir), ['.', '..']);
 
     foreach ($files as $file) {
-        $path = $dir . DIRECTORY_SEPARATOR . $file;
+        $path = $dir.DIRECTORY_SEPARATOR.$file;
 
         if (is_dir($path)) {
             cleanupTempDirectory($path);
@@ -30,7 +30,7 @@ function cleanupTempDirectory(string $dir): void
 }
 
 beforeEach(function () {
-    $this->service = new FileUploadService();
+    $this->service = new FileUploadService;
 
     // Clean up any leftover temp directories from previous test runs
     $tempPath = storage_path('app/private/temp');
@@ -120,7 +120,7 @@ describe('uploadNext', function () {
         $request = Request::create('/uploadLogo', 'PATCH');
 
         $this->service->uploadNext($request, 'app/test-uploads');
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    })->throws(HttpException::class);
 
     it('creates temp directory if it does not exist', function () {
         $id = Str::uuid()->toString();
@@ -149,7 +149,7 @@ describe('uploadNext', function () {
         $this->service->uploadNext($request2, 'app/test-uploads');
 
         $partFile = "{$dir}/file.part";
-        expect(file_get_contents($partFile))->toBe($chunk1 . $chunk2);
+        expect(file_get_contents($partFile))->toBe($chunk1.$chunk2);
     });
 
     it('returns 204 NO_CONTENT when request body is empty', function () {
@@ -316,7 +316,7 @@ describe('uploadNext', function () {
 
         $destFile = storage_path('app/test-uploads/multipart.txt');
         expect(file_exists($destFile))->toBeTrue()
-            ->and(file_get_contents($destFile))->toBe($chunk1 . $chunk2 . $chunk3)
+            ->and(file_get_contents($destFile))->toBe($chunk1.$chunk2.$chunk3)
             ->and($result)->toBe('multipart.txt');
     });
 

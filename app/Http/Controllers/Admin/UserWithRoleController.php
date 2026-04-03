@@ -3,11 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Role;
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\Admin\IndexUserWithRoleRequest;
 use App\Http\Requests\Admin\SavePasswordRequest;
 use App\Http\Requests\Admin\SavePasswordWithCodeRequest;
@@ -18,8 +13,13 @@ use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
 use App\Http\Resources\Admin\RoleResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
+use App\Models\Role;
+use App\Models\User;
 use App\Services\AdminService;
 use App\Traits\PaginationTrait;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 
 class UserWithRoleController extends Controller
 {
@@ -248,7 +248,7 @@ class UserWithRoleController extends Controller
 
         if ($user->email != $validated['email']) {
             // Neue E-Mail-Adresse, die muss natürlich zunächst bestätigt werden
-            $adminService = new AdminService();
+            $adminService = new AdminService;
             $adminService->sendEmailValidationToken(1, $user, $validated['email']);
 
             return response()->json(['answer' => 'INPUT_CODE', 'email' => $user->email, 'email_new' => $validated['email']]);
@@ -281,7 +281,7 @@ class UserWithRoleController extends Controller
         }
         $validated = $request->validated();
 
-        $adminService = new AdminService();
+        $adminService = new AdminService;
 
         $adminService->sendPasswordResetToken(1, $user, $user->email);
 

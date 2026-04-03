@@ -4,15 +4,15 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolyearService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new SchoolyearService();
+    $this->service = new SchoolyearService;
 
     // Create test school
     $this->school = School::factory()->create([

@@ -3,6 +3,7 @@
 namespace App\Services\Materials;
 
 use App\Models\MaterialCardAttachment;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpPresentation\IOFactory as PresentationIOFactory;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
@@ -187,7 +188,7 @@ class MaterialAttachmentPreviewService
     /**
      * @return array{path: string, is_temp: bool}
      */
-    private function resolveLocalPath(\Illuminate\Contracts\Filesystem\Filesystem $disk, string $relativePath, string $diskName = ''): array
+    private function resolveLocalPath(Filesystem $disk, string $relativePath, string $diskName = ''): array
     {
         if ($diskName === 'local') {
             return ['path' => Storage::disk('local')->path($relativePath), 'is_temp' => false];
@@ -211,11 +212,11 @@ class MaterialAttachmentPreviewService
     }
 
     /**
-     * @return array{disk:\Illuminate\Contracts\Filesystem\Filesystem|null,disk_name:string}
+     * @return array{disk:Filesystem|null,disk_name:string}
      */
     /**
      * @param  array<int, string>  $candidateDiskNames
-     * @return array{disk:\Illuminate\Contracts\Filesystem\Filesystem|null,disk_name:string}
+     * @return array{disk:Filesystem|null,disk_name:string}
      */
     private function resolveAttachmentDisk(string $relativePath, array $candidateDiskNames = []): array
     {

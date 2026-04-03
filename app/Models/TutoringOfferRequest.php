@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -12,23 +13,24 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $to_user_id
  * @property string|null $message
  * @property bool $is_serious
- * @property \Illuminate\Support\Carbon|null $archived_at
- * @property \Illuminate\Support\Carbon|null $to_user_archived_at
+ * @property Carbon|null $archived_at
+ * @property Carbon|null $to_user_archived_at
  * @property string|null $token
- * @property \Illuminate\Support\Carbon|null $token_expires_at
- * @property \Illuminate\Support\Carbon|null $sent_at
- * @property \Illuminate\Support\Carbon|null $last_sent_at
+ * @property Carbon|null $token_expires_at
+ * @property Carbon|null $sent_at
+ * @property Carbon|null $last_sent_at
  * @property int|null $sent_count
- * @property \Illuminate\Support\Carbon|null $seen_at
- * @property \Illuminate\Support\Carbon|null $last_seen_at
+ * @property Carbon|null $seen_at
+ * @property Carbon|null $last_seen_at
  * @property int|null $seen_count
- * @property \Illuminate\Support\Carbon|null $mail_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \App\Models\User|null $from_user
- * @property-read \App\Models\TutoringOffer|null $offer
- * @property-read \App\Models\School|null $school
- * @property-read \App\Models\User|null $to_user
+ * @property Carbon|null $mail_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read User|null $from_user
+ * @property-read TutoringOffer|null $offer
+ * @property-read School|null $school
+ * @property-read User|null $to_user
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest query()
@@ -52,12 +54,12 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest whereToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest whereTokenExpiresAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOfferRequest whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class TutoringOfferRequest extends Model
 {
     protected $guarded = [];
-
 
     protected $casts = [
         'is_serious' => 'boolean',

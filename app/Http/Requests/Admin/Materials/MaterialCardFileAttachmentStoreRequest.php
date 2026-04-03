@@ -19,7 +19,7 @@ class MaterialCardFileAttachmentStoreRequest extends FormRequest
         $maxUploadSizeKb = $this->maxUploadSizeKbForUser();
 
         return [
-            'file' => ['required', 'file', 'max:' . $maxUploadSizeKb],
+            'file' => ['required', 'file', 'max:'.$maxUploadSizeKb],
             'name' => ['nullable', 'string', 'max:255'],
         ];
     }

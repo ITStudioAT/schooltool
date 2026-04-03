@@ -614,4 +614,3 @@ describe('cleanUsers', function () {
         ]);
     });
 });
-

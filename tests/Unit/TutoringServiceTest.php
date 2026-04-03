@@ -7,12 +7,15 @@ use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Services\TutoringService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\RefreshDatabaseState;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -22,7 +25,7 @@ beforeAll(function () {
 });
 
 beforeEach(function () {
-    $this->service = new TutoringService();
+    $this->service = new TutoringService;
 
     Notification::fake();
 
@@ -162,7 +165,7 @@ describe('createUser', function () {
         ];
 
         $this->service->createUser($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Der Benutzer existiert bereits.');
+    })->throws(HttpException::class, 'Der Benutzer existiert bereits.');
 
     it('does not include status field in created user', function () {
         $data = [
@@ -206,7 +209,7 @@ describe('assignTutoringRole', function () {
 
     it('throws exception for non-existent user', function () {
         $this->service->assignTutoringRole(99999);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('sendCodeToUser', function () {
@@ -329,7 +332,7 @@ describe('confirmEmail', function () {
         ];
 
         $this->service->confirmEmail($data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('checkUserConfirmation', function () {
@@ -422,7 +425,7 @@ describe('checkUserConfirmation', function () {
 
 describe('confirmUser', function () {
     it('confirms user with valid UUID', function () {
-        $uuid = \Illuminate\Support\Str::uuid()->toString();
+        $uuid = Str::uuid()->toString();
 
         $user = User::factory()->create([
             'school_id' => $this->school->id,
@@ -444,7 +447,7 @@ describe('confirmUser', function () {
     });
 
     it('sends confirmation email to user after confirmation', function () {
-        $uuid = \Illuminate\Support\Str::uuid()->toString();
+        $uuid = Str::uuid()->toString();
 
         $user = User::factory()->create([
             'school_id' => $this->school->id,
@@ -465,8 +468,8 @@ describe('confirmUser', function () {
     });
 
     it('returns false with invalid UUID', function () {
-        $uuid = \Illuminate\Support\Str::uuid()->toString();
-        $wrongUuid = \Illuminate\Support\Str::uuid()->toString();
+        $uuid = Str::uuid()->toString();
+        $wrongUuid = Str::uuid()->toString();
 
         $user = User::factory()->create([
             'school_id' => $this->school->id,
@@ -485,7 +488,7 @@ describe('confirmUser', function () {
     });
 
     it('returns false when user already confirmed', function () {
-        $uuid = \Illuminate\Support\Str::uuid()->toString();
+        $uuid = Str::uuid()->toString();
 
         $user = User::factory()->create([
             'school_id' => $this->school->id,
@@ -501,7 +504,7 @@ describe('confirmUser', function () {
 
     it('throws exception for non-existent user', function () {
         $this->service->confirmUser(99999, 'some-uuid');
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('checkLoginRequirement', function () {
@@ -616,7 +619,7 @@ describe('unknownPassword', function () {
         $data = ['user_id' => 99999];
 
         $this->service->unknownPassword($data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('loginWithToken', function () {
@@ -705,7 +708,7 @@ describe('loginWithToken', function () {
         ];
 
         $this->service->loginWithToken($data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('loginWithPassword', function () {
@@ -795,7 +798,7 @@ describe('loginWithPassword', function () {
         ];
 
         $this->service->loginWithPassword($data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('integration scenarios', function () {
@@ -894,4 +897,3 @@ describe('integration scenarios', function () {
         expect($loginResult['status'])->toBe('LOGGED_IN');
     });
 });
-

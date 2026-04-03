@@ -11,13 +11,13 @@
  * and validate register_id parameter
  */
 
-use App\Models\Register;
-use App\Models\RegisterDateBooking;
 use App\Models\Licence;
+use App\Models\Register;
+use App\Models\RegisterDate;
+use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\RegisterUserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -61,7 +61,7 @@ beforeEach(function () {
     ]);
 
     // Create a default register date for tests
-    $this->registerDate = \App\Models\RegisterDate::factory()->create([
+    $this->registerDate = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
@@ -122,10 +122,10 @@ test('admin can access index endpoint', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -137,10 +137,10 @@ test('user can access index endpoint', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->standardUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -150,7 +150,7 @@ test('user can access index endpoint', function () {
 test('unauthorized user cannot access index endpoint', function () {
     $this->actingAs($this->unauthorizedUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -159,7 +159,7 @@ test('unauthorized user cannot access index endpoint', function () {
 });
 
 test('guest cannot access index endpoint', function () {
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -182,7 +182,7 @@ test('index requires register_id', function () {
 test('index requires valid register_id', function () {
     $this->actingAs($this->adminUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => 99999,
     ]));
 
@@ -195,10 +195,10 @@ test('index accepts valid search_string', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
         'search_string' => 'test',
     ]));
@@ -211,10 +211,10 @@ test('index accepts page parameter', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
         'page' => 1,
     ]));
@@ -231,7 +231,7 @@ test('index returns users attached to register', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     // Attach users to register
@@ -248,7 +248,7 @@ test('index returns users attached to register', function () {
         ],
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -261,13 +261,13 @@ test('index returns users attached to register', function () {
                     'first_name',
                     'last_name',
                     'email',
-                ]
+                ],
             ],
             'meta' => [
                 'current_page',
                 'total',
                 'per_page',
-            ]
+            ],
         ])
         ->assertJsonCount(2, 'data');
 });
@@ -277,7 +277,7 @@ test('index returns users sorted by last_name and first_name', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     // Create users with specific names
@@ -312,12 +312,12 @@ test('index returns users sorted by last_name and first_name', function () {
         $userC->id => $pivotData,
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
     $response->assertStatus(200);
-    
+
     $data = $response->json('data');
     expect($data[0]['last_name'])->toBe('Anderson');
     expect($data[0]['first_name'])->toBe('Alice');
@@ -331,7 +331,7 @@ test('index filters users by search_string on last_name', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     $userA = User::factory()->create([
@@ -357,14 +357,14 @@ test('index filters users by search_string on last_name', function () {
         $userB->id => $pivotData,
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
         'search_string' => 'Smith',
     ]));
 
     $response->assertStatus(200)
         ->assertJsonCount(1, 'data');
-    
+
     expect($response->json('data')[0]['last_name'])->toBe('Smith');
 });
 
@@ -373,7 +373,7 @@ test('index filters users by search_string on first_name', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     $userA = User::factory()->create([
@@ -399,14 +399,14 @@ test('index filters users by search_string on first_name', function () {
         $userB->id => $pivotData,
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
         'search_string' => 'Alex',
     ]));
 
     $response->assertStatus(200)
         ->assertJsonCount(1, 'data');
-    
+
     expect($response->json('data')[0]['first_name'])->toBe('Alexander');
 });
 
@@ -415,7 +415,7 @@ test('index filters users by search_string on email', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     $userA = User::factory()->create([
@@ -441,14 +441,14 @@ test('index filters users by search_string on email', function () {
         $userB->id => $pivotData,
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
         'search_string' => 'special',
     ]));
 
     $response->assertStatus(200)
         ->assertJsonCount(1, 'data');
-    
+
     expect($response->json('data')[0]['email'])->toBe('special@test.com');
 });
 
@@ -457,7 +457,7 @@ test('index returns count_deletable_users correctly', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     // Create register user with only register_user role and no bookings
@@ -478,7 +478,7 @@ test('index returns count_deletable_users correctly', function () {
         ],
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -488,7 +488,7 @@ test('index returns count_deletable_users correctly', function () {
             'data',
             'meta',
         ]);
-    
+
     // Count should be >= 1 (at least the deletable user we created)
     expect($response->json('count_deletable_users'))->toBeGreaterThanOrEqual(1);
 });
@@ -498,7 +498,7 @@ test('index excludes users with bookings from deletable count', function () {
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     // Create register user with booking
@@ -511,7 +511,7 @@ test('index excludes users with bookings from deletable count', function () {
     $userWithBooking->assignRole('register_user');
 
     // Create a register date and booking
-    $registerDate = \App\Models\RegisterDate::factory()->create([
+    $registerDate = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
@@ -532,7 +532,7 @@ test('index excludes users with bookings from deletable count', function () {
         'user_id' => $userWithBooking->id,
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -549,7 +549,7 @@ test('index excludes users with multiple roles from deletable count', function (
     if (DB::connection()->getDriverName() === 'sqlite') {
         $this->markTestSkipped('SQLite does not support HAVING clause on non-aggregate queries');
     }
-    
+
     $this->actingAs($this->adminUser);
 
     // Create user with multiple roles
@@ -568,7 +568,7 @@ test('index excludes users with multiple roles from deletable count', function (
         ],
     ]);
 
-    $response = $this->getJson('/api/admin/register_users?' . http_build_query([
+    $response = $this->getJson('/api/admin/register_users?'.http_build_query([
         'register_id' => $this->register->id,
     ]));
 
@@ -695,7 +695,7 @@ test('delete does not remove users with bookings', function () {
     $userWithBooking->assignRole('register_user');
 
     // Create booking
-    $registerDate = \App\Models\RegisterDate::factory()->create([
+    $registerDate = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
     ]);
     RegisterDateBooking::create([
@@ -843,4 +843,3 @@ test('delete does not remove users without register_user role', function () {
         'id' => $userWithDifferentRole->id,
     ]);
 });
-

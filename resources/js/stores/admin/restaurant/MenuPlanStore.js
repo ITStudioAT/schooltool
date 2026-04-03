@@ -146,6 +146,45 @@ export const useMenuPlanStore = defineStore('AdminRestaurantMenuPlanStore', {
             }
         },
 
+        async toggleLock(id) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.post(`/api/admin/restaurant/menu-plans/${id}/toggle-lock`)
+                const updatedPlan = response?.data?.data
+
+                if (updatedPlan) {
+                    const index = this.plans.findIndex((p) => p.id === id)
+
+                    if (index !== -1) {
+                        this.plans[index] = updatedPlan
+                    }
+                }
+
+                notification.notify({
+                    message: response?.data?.message || 'Menüplan wurde aktualisiert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return updatedPlan || true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Menüplan konnte nicht aktualisiert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async destroy(id) {
             const adminStore = useAdminStore()
             const notification = useNotificationStore()

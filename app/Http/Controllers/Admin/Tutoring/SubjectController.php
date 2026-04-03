@@ -46,7 +46,6 @@ class SubjectController extends Controller
      * Update the specified resource in storage.
      */
     public function update(SubjectUpdateSubjectRequest $request, TutoringSubject $subject)
-
     {
         if (! $auth_user = $this->userHasRole(['admin', 'tutoring_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -58,7 +57,7 @@ class SubjectController extends Controller
         // ✅ Bereinige email_mentors: entferne leere Strings
         if (isset($data['email_mentors'])) {
             $data['email_mentors'] = collect($data['email_mentors'])
-                ->filter(fn($email) => !empty(trim($email)))
+                ->filter(fn ($email) => ! empty(trim($email)))
                 ->values()
                 ->toArray();
 
@@ -69,6 +68,7 @@ class SubjectController extends Controller
         }
 
         $subject->update($data);
+
         return response()->json(new SubjectResource($subject), 200);
     }
 
@@ -81,9 +81,12 @@ class SubjectController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($subject->hasDependencies()) abort(422, "Es existieren noch Abhängigkeiten.");
+        if ($subject->hasDependencies()) {
+            abort(422, 'Es existieren noch Abhängigkeiten.');
+        }
 
         $subject->delete();
+
         return response()->noContent();
     }
 

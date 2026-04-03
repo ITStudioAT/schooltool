@@ -32,7 +32,7 @@ beforeEach(function () {
     ]);
 
     collect(['super_admin', 'admin', 'register_admin', 'teacher'])->each(
-        fn(string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
+        fn (string $role) => Role::firstOrCreate(['name' => $role, 'guard_name' => 'web'])
     );
 
     $this->adminUser = User::factory()->create([

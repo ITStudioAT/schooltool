@@ -6,16 +6,16 @@
  * Tests for teacher management requests.
  */
 
-use App\Http\Requests\Admin\TeacherIndexRequest;
-use App\Http\Requests\Admin\TeacherStoreRequest;
-use App\Http\Requests\Admin\TeacherUpdateRequest;
-use App\Http\Requests\Admin\TeacherDeleteTeachersRequest;
-use App\Http\Requests\Admin\TeacherListStoreRequest;
-use App\Http\Requests\Admin\TeacherListUpdateRequest;
-use App\Http\Requests\Admin\TeachersListDeleteTeachers;
 use App\Http\Requests\Admin\AdminNewTeacherStepCodeRequest;
 use App\Http\Requests\Admin\AdminNewTeacherStepEmailRequest;
 use App\Http\Requests\Admin\AdminNewTeacherStepSchoolRequest;
+use App\Http\Requests\Admin\TeacherDeleteTeachersRequest;
+use App\Http\Requests\Admin\TeacherIndexRequest;
+use App\Http\Requests\Admin\TeacherListStoreRequest;
+use App\Http\Requests\Admin\TeacherListUpdateRequest;
+use App\Http\Requests\Admin\TeachersListDeleteTeachers;
+use App\Http\Requests\Admin\TeacherStoreRequest;
+use App\Http\Requests\Admin\TeacherUpdateRequest;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
@@ -35,9 +35,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateTeacherRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateTeacherRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -47,13 +48,13 @@ function validateTeacherRequest(string $requestClass, array $data): \Illuminate\
 
 describe('TeacherIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherIndexRequest();
+        $request = new TeacherIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherIndexRequest();
+        $request = new TeacherIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -64,13 +65,13 @@ describe('TeacherIndexRequest', function () {
 
 describe('TeacherStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherStoreRequest();
+        $request = new TeacherStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherStoreRequest();
+        $request = new TeacherStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -118,13 +119,13 @@ describe('TeacherStoreRequest', function () {
 
 describe('TeacherUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherUpdateRequest();
+        $request = new TeacherUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherUpdateRequest();
+        $request = new TeacherUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -135,13 +136,13 @@ describe('TeacherUpdateRequest', function () {
 
 describe('TeacherDeleteTeachersRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherDeleteTeachersRequest();
+        $request = new TeacherDeleteTeachersRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherDeleteTeachersRequest();
+        $request = new TeacherDeleteTeachersRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -169,13 +170,13 @@ describe('TeacherDeleteTeachersRequest', function () {
 
 describe('TeacherListStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherListStoreRequest();
+        $request = new TeacherListStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherListStoreRequest();
+        $request = new TeacherListStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -210,13 +211,13 @@ describe('TeacherListStoreRequest', function () {
 
 describe('TeacherListUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new TeacherListUpdateRequest();
+        $request = new TeacherListUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeacherListUpdateRequest();
+        $request = new TeacherListUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -261,13 +262,13 @@ describe('TeacherListUpdateRequest', function () {
 
 describe('TeachersListDeleteTeachers', function () {
     it('requires authentication', function () {
-        $request = new TeachersListDeleteTeachers();
+        $request = new TeachersListDeleteTeachers;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new TeachersListDeleteTeachers();
+        $request = new TeachersListDeleteTeachers;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -278,7 +279,7 @@ describe('TeachersListDeleteTeachers', function () {
 
 describe('AdminNewTeacherStepCodeRequest', function () {
     it('authorizes all requests', function () {
-        $request = new AdminNewTeacherStepCodeRequest();
+        $request = new AdminNewTeacherStepCodeRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -289,7 +290,7 @@ describe('AdminNewTeacherStepCodeRequest', function () {
 
 describe('AdminNewTeacherStepEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new AdminNewTeacherStepEmailRequest();
+        $request = new AdminNewTeacherStepEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -300,8 +301,7 @@ describe('AdminNewTeacherStepEmailRequest', function () {
 
 describe('AdminNewTeacherStepSchoolRequest', function () {
     it('authorizes all requests', function () {
-        $request = new AdminNewTeacherStepSchoolRequest();
+        $request = new AdminNewTeacherStepSchoolRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
-

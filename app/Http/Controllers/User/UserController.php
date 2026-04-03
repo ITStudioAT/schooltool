@@ -2,36 +2,32 @@
 
 namespace App\Http\Controllers\User;
 
-use App\Models\User;
 use App\Enums\TwoFaResult;
-use Illuminate\Http\Request;
-use App\Services\UserService;
-use App\Services\AdminService;
-use App\Traits\PaginationTrait;
 use App\Enums\VerificationResult;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Hash;
-use App\Http\Resources\Admin\UserResource;
 use App\Http\Requests\Admin\ConfirmRequest;
-use App\Http\Requests\Admin\Save2FaRequest;
-use App\Http\Requests\Admin\IndexUserRequest;
-use App\Http\Requests\Admin\StoreUserRequest;
-use App\Http\Requests\Admin\UpdateUserRequest;
-use App\Http\Requests\Admin\SavePasswordRequest;
-use App\Http\Requests\Admin\SaveUserRolesRequest;
-use App\Http\Requests\Admin\UpdateProfileRequest;
-use App\Http\Requests\Admin\Save2FaWithCodeRequest;
 use App\Http\Requests\Admin\EmailVerificationRequest;
-use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
+use App\Http\Requests\Admin\Save2FaRequest;
+use App\Http\Requests\Admin\Save2FaWithCodeRequest;
+use App\Http\Requests\Admin\SavePasswordRequest;
 use App\Http\Requests\Admin\SavePasswordWithCodeRequest;
-use App\Http\Requests\Admin\SendVerificationMailRequest;
+use App\Http\Requests\Admin\SaveUserRolesRequest;
 use App\Http\Requests\Admin\SendVerificationEmailInitializedFromUserRequest;
+use App\Http\Requests\Admin\SendVerificationMailRequest;
+use App\Http\Requests\Admin\UpdateProfileRequest;
+use App\Http\Requests\Admin\UpdateUserRequest;
+use App\Http\Requests\Admin\UpdateUserWithCodeRequest;
+use App\Http\Resources\Admin\UserResource;
+use App\Models\User;
+use App\Services\AdminService;
+use App\Services\UserService;
+use App\Traits\PaginationTrait;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
     use PaginationTrait;
 
-    
     public function show(User $user)
     {
         if (! $auth_user = $this->userHasRole(['admin'])) {
@@ -69,7 +65,7 @@ class UserController extends Controller
         return response()->noContent();
     }
 
-       private function convertConfirmedVerified($validated, $user = null)
+    private function convertConfirmedVerified($validated, $user = null)
     {
 
         // Benutzer is_confirmed?
@@ -112,7 +108,7 @@ class UserController extends Controller
 
         if ($user->email != $validated['email']) {
             // Neue E-Mail-Adresse, die muss natürlich zunächst bestätigt werden
-            $adminService = new AdminService();
+            $adminService = new AdminService;
             $adminService->sendEmailValidationToken(1, $user, $validated['email']);
 
             return response()->json(['answer' => 'INPUT_CODE', 'email' => $user->email, 'email_new' => $validated['email']]);
@@ -145,7 +141,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        $adminService = new AdminService();
+        $adminService = new AdminService;
 
         $adminService->sendPasswordResetToken(1, $user, $user->email);
 
@@ -185,7 +181,7 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $userService = new UserService();
+        $userService = new UserService;
 
         $result = $userService->check2Fa($user, $validated['is_2fa'], $validated['email_2fa']);
 
@@ -216,7 +212,7 @@ class UserController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $userService = new UserService();
+        $userService = new UserService;
 
         $result = $userService->check2Fa($user, $validated['is_2fa'], $validated['email_2fa']);
 
@@ -245,9 +241,10 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->confirm($validated['ids']);
-        //XXXXXXX
+
+        // XXXXXXX
         return response()->json(VerificationResult::EMAIL_SENT, 200);
     }
 
@@ -258,7 +255,7 @@ class UserController extends Controller
         }
         $validated = $request->validated();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->sendVerificationEmail($validated['ids']);
 
         return response()->json(VerificationResult::EMAIL_SENT, 200);
@@ -290,7 +287,7 @@ class UserController extends Controller
         $validated = $request->validated();
         $user = User::where('email', $validated['email'])->first();
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->sendVerificationEmail($user->id);
 
         return response()->json(VerificationResult::EMAIL_SENT, 200);
@@ -306,7 +303,7 @@ class UserController extends Controller
         $user_ids = $validated['user_ids'];
         $role_ids = $validated['role_ids'];
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->setNewUserRoles($user_ids, $role_ids, $user);
 
         return response()->noContent();

@@ -39,7 +39,7 @@ class MaterialChunkUploadController extends Controller
         $originalName = (string) ($request->header('Upload-Name') ?? 'upload');
         $base = pathinfo($originalName, PATHINFO_FILENAME);
         $slug = Str::slug((string) $base, '-');
-        $targetName = $slug !== '' ? $uploadId . '-' . mb_substr($slug, 0, 80) : $uploadId;
+        $targetName = $slug !== '' ? $uploadId.'-'.mb_substr($slug, 0, 80) : $uploadId;
 
         $result = $fileUploadService->uploadNext(
             $request,

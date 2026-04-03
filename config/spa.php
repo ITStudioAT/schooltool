@@ -14,5 +14,5 @@ return [
     'register_admin_allowed' => true,
     'registered_admin_must_be_confirmed' => true,
     'timeout' => 3000, // timeout for messages
-    'pagination' => 20 // Amount of records displayed at once
+    'pagination' => 20, // Amount of records displayed at once
 ];

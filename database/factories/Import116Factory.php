@@ -46,7 +46,7 @@ class Import116Factory extends Factory
      */
     public function forSchool(School $school): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'school_id' => $school->id,
         ]);
     }
@@ -56,7 +56,7 @@ class Import116Factory extends Factory
      */
     public function importedBy(User $user): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'import_user_id' => $user->id,
         ]);
     }
@@ -66,7 +66,7 @@ class Import116Factory extends Factory
      */
     public function deleted(): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'exists_date' => null,
         ]);
     }
@@ -76,7 +76,7 @@ class Import116Factory extends Factory
      */
     public function withMother(): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'mother_name' => $this->faker->name('female'),
             'mother_email' => $this->faker->safeEmail(),
             'mother_phone_1' => $this->faker->phoneNumber(),
@@ -88,7 +88,7 @@ class Import116Factory extends Factory
      */
     public function withFather(): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'father_name' => $this->faker->name('male'),
             'father_email' => $this->faker->safeEmail(),
             'father_phone_1' => $this->faker->phoneNumber(),

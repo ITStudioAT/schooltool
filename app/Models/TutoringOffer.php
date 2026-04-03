@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
-use App\Models\School;
-use App\Models\TutoringSubject;
-use App\Models\User;
+use Illuminate\Database\Eloquent\Casts\ArrayObject;
 use Illuminate\Database\Eloquent\Casts\AsArrayObject;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $subject_id
  * @property string $title
  * @property string|null $description
- * @property \Illuminate\Database\Eloquent\Casts\ArrayObject<array-key, mixed> $classes
+ * @property ArrayObject<array-key, mixed> $classes
  * @property array<array-key, mixed>|null $time_table
  * @property string|null $active_until
  * @property bool $is_active
@@ -26,10 +26,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $email_mentor
  * @property string|null $accepted_at
  * @property int|null $click_count
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read TutoringSubject|null $subject
- * @property-read \App\Models\User|null $user
+ * @property-read User|null $user
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer query()
@@ -52,18 +53,21 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTitle($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereUserId($value)
+ *
  * @property array<array-key, mixed>|null $click_ips
  * @property bool $visible_for_other_schools
  * @property string|null $token
  * @property string|null $token_expires_at
  * @property mixed $select_only_me_concerning
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\TutoringOfferRequest> $requests
+ * @property-read Collection<int, TutoringOfferRequest> $requests
  * @property-read int|null $requests_count
  * @property-read School|null $school
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereClickIps($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereTokenExpiresAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringOffer whereVisibleForOtherSchools($value)
+ *
  * @mixin \Eloquent
  */
 class TutoringOffer extends Model

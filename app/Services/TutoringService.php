@@ -69,7 +69,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => 'E-Mail bestätigen',
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token2fa,
@@ -134,16 +134,16 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => 'Benutzer Nachhilfetool bestätigen',
             'markdown' => 'mails.admin.confirmTutoringUser',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
-            'confirmation_url' => url('/homepage/tutoring/confirm-user?' . http_build_query([
+            'confirmation_url' => url('/homepage/tutoring/confirm-user?'.http_build_query([
                 'user_id' => $user->id,
                 'token' => $token,
             ])),
-            'refuse_url' => url('/homepage/tutoring/refuse-user?' . http_build_query([
+            'refuse_url' => url('/homepage/tutoring/refuse-user?'.http_build_query([
                 'user_id' => $user->id,
                 'token' => $token,
             ])),
@@ -177,7 +177,7 @@ class TutoringService
             return false;
         }
 
-        $userService = new UserService();
+        $userService = new UserService;
         $userService->deleteTutoringUsers([$userId]);
 
         return true;
@@ -190,12 +190,12 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => 'Nachhilfetool bestätigt',
             'markdown' => 'mails.admin.informTutoringUserIsConfirmed',
             'full_name' => "{$user->last_name} {$user->first_name}",
             'email' => $user->email,
-            'login_url' => url('/homepage/tutoring_overview?school=' . $school->short_name),
+            'login_url' => url('/homepage/tutoring_overview?school='.$school->short_name),
         ];
 
         Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
@@ -207,6 +207,7 @@ class TutoringService
 
         if (! $user->is_active) {
             $data['status'] = 'USER_INACTIVE';
+
             return $data;
         }
 
@@ -233,7 +234,7 @@ class TutoringService
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => 'Login mit Code',
             'markdown' => 'mails.homepage.sendCode',
             'token_2fa' => $token2fa,

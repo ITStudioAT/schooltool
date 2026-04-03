@@ -9,9 +9,8 @@ use App\Http\Resources\Admin\Tutoring\OfferResource;
 use App\Models\TutoringOffer;
 use App\Models\User;
 use App\Services\TutoringOfferService;
-use Barryvdh\Debugbar\Facades\Debugbar;
-use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class OfferController extends Controller
 {
@@ -69,7 +68,6 @@ class OfferController extends Controller
             }
         }
 
-
         // Only me concerning filter
         if ($select_only_me_concerning) {
             $query->where('email_mentor', $auth_user->email);
@@ -118,7 +116,9 @@ class OfferController extends Controller
             abort(403, 'Das Angebot gehört nicht zu deiner Schule.');
         }
 
-        if ($offer->requests()->exists()) abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
+        if ($offer->requests()->exists()) {
+            abort(409, 'Das Angebot kann nicht gelöscht werden, da Anfragen existieren.');
+        }
 
         $service->sendOfferDeletedToStudent($offer);
 
@@ -162,7 +162,7 @@ class OfferController extends Controller
             ->values();
 
         if ($blockingOfferIds->isNotEmpty()) {
-            abort(409, 'Mindestens ein Angebot kann nicht gelöscht werden, da Anfragen existieren. IDs: ' . $blockingOfferIds->implode(', '));
+            abort(409, 'Mindestens ein Angebot kann nicht gelöscht werden, da Anfragen existieren. IDs: '.$blockingOfferIds->implode(', '));
         }
 
         foreach ($offers as $offer) {
@@ -262,7 +262,7 @@ class OfferController extends Controller
             'students_count' => TutoringOffer::where('school_id', $auth_user->school_id)->distinct()->count('user_id'),
             'online_count' => TutoringOffer::where('school_id', $auth_user->school_id)->where('is_active', true)->count(),
             'accepted_count' => TutoringOffer::where('school_id', $auth_user->school_id)->whereNotNull('accepted_at')->count(),
-            'users_count' => User::where('school_id', $auth_user->school_id)->role('tutoring_user')->count()
+            'users_count' => User::where('school_id', $auth_user->school_id)->role('tutoring_user')->count(),
         ];
 
         $offerUserIds = TutoringOffer::where('school_id', $auth_user->school_id)

@@ -2,10 +2,8 @@
 
 namespace Tests\Feature\Console;
 
-use App\Console\Commands\MakeRegisterTestRecordsCommand;
 use App\Services\RegisterTestRecordsService;
 use Mockery;
-use Tests\TestCase;
 
 it('fails when register requirements are not met', function () {
     $service = Mockery::mock(RegisterTestRecordsService::class);

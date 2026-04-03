@@ -7,7 +7,6 @@ use App\Http\Requests\Admin\RegisterPrintRequest;
 use App\Jobs\PrintRegisterDateJob;
 use App\Jobs\PrintRegisterExcelJob;
 use App\Jobs\PrintRegisterSupervisorJob;
-use Illuminate\Http\Request;
 
 class RegisterPrintController extends Controller
 {
@@ -21,7 +20,6 @@ class RegisterPrintController extends Controller
 
         // Job dispatch
         PrintRegisterExcelJob::dispatch($auth_user, $validated);
-
 
         return response()->noContent();
     }
@@ -37,7 +35,6 @@ class RegisterPrintController extends Controller
         // Job dispatch
         PrintRegisterSupervisorJob::dispatch($auth_user, $validated);
 
-
         return response()->noContent();
     }
 
@@ -51,7 +48,6 @@ class RegisterPrintController extends Controller
 
         // Job dispatch
         PrintRegisterDateJob::dispatch($auth_user, $validated);
-
 
         return response()->noContent();
     }

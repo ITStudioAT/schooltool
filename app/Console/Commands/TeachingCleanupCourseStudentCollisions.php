@@ -53,6 +53,7 @@ class TeachingCleanupCourseStudentCollisions extends Command
 
         if ($rows->isEmpty()) {
             $this->info('No rows found that can be checked.');
+
             return self::SUCCESS;
         }
 
@@ -122,6 +123,7 @@ class TeachingCleanupCourseStudentCollisions extends Command
 
         if (empty($candidates)) {
             $this->info('No safe candidate rows found.');
+
             return self::SUCCESS;
         }
 
@@ -144,6 +146,7 @@ class TeachingCleanupCourseStudentCollisions extends Command
 
         if (! $apply) {
             $this->info('Dry-run only. Re-run with --apply to persist.');
+
             return self::SUCCESS;
         }
 
@@ -463,6 +466,7 @@ class TeachingCleanupCourseStudentCollisions extends Command
         }
 
         $id = (int) $studentKey;
+
         return $id > 0 ? $id : null;
     }
 }

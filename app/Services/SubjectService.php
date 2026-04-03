@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
+use App\Models\TutoringSubject;
 
 class SubjectService
 {
-
     public function create($school_id, $subjects)
     {
         foreach ($subjects as $subject) {
@@ -13,14 +13,14 @@ class SubjectService
                 // Filtere leere E-Mails raus
                 $emailMentors = isset($subject['email_mentors'])
                     ? array_filter($subject['email_mentors'], function ($email) {
-                        return !empty(trim($email));
+                        return ! empty(trim($email));
                     })
                     : [];
 
                 // Re-index array
                 $emailMentors = array_values($emailMentors);
 
-                \App\Models\TutoringSubject::firstOrCreate(
+                TutoringSubject::firstOrCreate(
                     [
                         'school_id' => $school_id,
                         'short_name' => $subject['short_name'],

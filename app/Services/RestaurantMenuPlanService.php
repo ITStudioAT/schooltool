@@ -323,6 +323,102 @@ class RestaurantMenuPlanService
         ];
     }
 
+    public function toggleLockForUser(User $authUser, int $id): ?RestaurantMenuPlan
+    {
+        $plan = RestaurantMenuPlan::query()
+            ->where('school_id', $authUser->school_id)
+            ->find($id);
+
+        if (! $plan) {
+            return null;
+        }
+
+        $now = Carbon::now(config('app.timezone'));
+        $isCurrentlyOrderable = $this->isPlanOrderableNow($plan);
+
+        if ($isCurrentlyOrderable) {
+            $plan->update([
+                'use_individual_schedule_values' => true,
+                'order_end_at' => $now->copy()->subMinute(),
+            ]);
+        } else {
+            $plan->update([
+                'is_available' => true,
+                'use_individual_schedule_values' => true,
+                'visible_start_at' => $now,
+                'order_start_at' => $now,
+                'visible_end_at' => null,
+                'order_end_at' => null,
+            ]);
+        }
+
+        return $this->attachDeletionMeta(
+            $plan->load([
+                'entries' => fn ($query) => $query
+                    ->orderBy('plan_date')
+                    ->orderBy('id')
+                    ->withSum('bookings as booked_menu_count', 'quantity'),
+            ])
+        );
+    }
+
+    private function isPlanOrderableNow(RestaurantMenuPlan $plan): bool
+    {
+        if (! $plan->is_available) {
+            return false;
+        }
+
+        $now = Carbon::now(config('app.timezone'));
+        $orderStart = $this->resolveOrderStart($plan);
+        $orderEnd = $this->resolveOrderEnd($plan);
+
+        return $orderStart <= $now && $now <= $orderEnd;
+    }
+
+    private function resolveOrderStart(RestaurantMenuPlan $plan): Carbon
+    {
+        if ($plan->use_individual_schedule_values && $plan->order_start_at) {
+            return $plan->order_start_at;
+        }
+
+        if ($plan->order_start_mode === 'scheduled') {
+            return $this->resolveScheduledDateTime(
+                $plan,
+                (int) $plan->order_start_week_offset,
+                (int) $plan->order_start_day_of_week,
+                $plan->order_start_time
+            );
+        }
+
+        return Carbon::createFromTimestamp(0, config('app.timezone'));
+    }
+
+    private function resolveOrderEnd(RestaurantMenuPlan $plan): Carbon
+    {
+        if ($plan->use_individual_schedule_values && $plan->order_end_at) {
+            return $plan->order_end_at;
+        }
+
+        return $this->resolveScheduledDateTime(
+            $plan,
+            (int) $plan->order_end_week_offset,
+            (int) $plan->order_end_day_of_week,
+            $plan->order_end_time
+        );
+    }
+
+    private function resolveScheduledDateTime(RestaurantMenuPlan $plan, int $weekOffset, int $dayOfWeek, ?string $time): Carbon
+    {
+        $startDate = $plan->start_date->copy()->startOfWeek(Carbon::MONDAY);
+        $dayOffset = ($dayOfWeek === 0 ? 6 : $dayOfWeek - 1) - ($weekOffset * 7);
+        $target = $startDate->copy()->addDays($dayOffset);
+
+        $timeParts = explode(':', $time ?? '00:00');
+        $target->setTime((int) ($timeParts[0] ?? 0), (int) ($timeParts[1] ?? 0), 0);
+
+        return $target;
+    }
+
     private function normalizePlanDateTime(mixed $value): ?Carbon
     {
         $normalized = trim((string) $value);

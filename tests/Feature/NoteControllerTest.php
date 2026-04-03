@@ -31,8 +31,8 @@ class NoteControllerTest extends TestCase
             ->assertJsonStructure([
                 'success',
                 'data' => [
-                    '*' => ['id', 'title', 'content', 'is_pinned', 'user_id', 'created_at', 'updated_at']
-                ]
+                    '*' => ['id', 'title', 'content', 'is_pinned', 'user_id', 'created_at', 'updated_at'],
+                ],
             ])
             ->assertJsonCount(3, 'data');
     }
@@ -51,7 +51,7 @@ class NoteControllerTest extends TestCase
             ->assertJsonStructure([
                 'success',
                 'message',
-                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id']
+                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id'],
             ])
             ->assertJson([
                 'success' => true,
@@ -60,7 +60,7 @@ class NoteControllerTest extends TestCase
                     'content' => 'This is a test note content.',
                     'is_pinned' => true,
                     'user_id' => $this->user->id,
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('notes', [
@@ -76,7 +76,7 @@ class NoteControllerTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonStructure([
                 'success',
-                'errors' => ['title', 'content']
+                'errors' => ['title', 'content'],
             ]);
     }
 
@@ -89,14 +89,14 @@ class NoteControllerTest extends TestCase
         $response->assertStatus(200)
             ->assertJsonStructure([
                 'success',
-                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id']
+                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id'],
             ])
             ->assertJson([
                 'success' => true,
                 'data' => [
                     'id' => $note->id,
                     'title' => $note->title,
-                ]
+                ],
             ]);
     }
 
@@ -126,7 +126,7 @@ class NoteControllerTest extends TestCase
             ->assertJsonStructure([
                 'success',
                 'message',
-                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id']
+                'data' => ['id', 'title', 'content', 'is_pinned', 'user_id'],
             ])
             ->assertJson([
                 'success' => true,
@@ -134,7 +134,7 @@ class NoteControllerTest extends TestCase
                     'title' => 'Updated Title',
                     'content' => 'Updated content.',
                     'is_pinned' => true,
-                ]
+                ],
             ]);
 
         $this->assertDatabaseHas('notes', [
@@ -149,7 +149,7 @@ class NoteControllerTest extends TestCase
         $note = Note::factory()->create(['user_id' => $otherUser->id]);
 
         $response = $this->putJson("/api/homepage/notes/{$note->id}", [
-            'title' => 'Hacked Title'
+            'title' => 'Hacked Title',
         ]);
 
         $response->assertStatus(403);
@@ -164,7 +164,7 @@ class NoteControllerTest extends TestCase
         $response->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'message' => 'Note deleted successfully'
+                'message' => 'Note deleted successfully',
             ]);
 
         // Check that the note is soft deleted
@@ -194,11 +194,11 @@ class NoteControllerTest extends TestCase
             ->assertJsonStructure([
                 'success',
                 'message',
-                'data' => ['id', 'is_pinned']
+                'data' => ['id', 'is_pinned'],
             ])
             ->assertJson([
                 'success' => true,
-                'data' => ['is_pinned' => true]
+                'data' => ['is_pinned' => true],
             ]);
 
         $this->assertDatabaseHas('notes', [

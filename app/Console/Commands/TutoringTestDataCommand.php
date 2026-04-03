@@ -2,9 +2,18 @@
 
 namespace App\Console\Commands;
 
+use App\Models\School;
+use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
+use App\Models\TutoringSubject;
+use App\Models\User;
 use Database\Seeders\TutoringTestDataCleanupSeeder;
 use Database\Seeders\TutoringTestDataSeeder;
+use Database\Seeders\TutoringTestDataSmallSeeder;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class TutoringTestDataCommand extends Command
 {
@@ -44,7 +53,7 @@ class TutoringTestDataCommand extends Command
 
             case 'add-small':
                 $this->info('📝 Füge kleine Test-Daten hinzu (1 Schule, 10 Schüler, 2 Angebote)...');
-                $this->call('db:seed', ['--class' => \Database\Seeders\TutoringTestDataSmallSeeder::class]);
+                $this->call('db:seed', ['--class' => TutoringTestDataSmallSeeder::class]);
                 break;
 
             case 'remove':
@@ -77,8 +86,8 @@ class TutoringTestDataCommand extends Command
     protected function createTestUser(): void
     {
         // Finde die Schulen anhand von short_name (verlässlicher)
-        $agSalzburg = \App\Models\School::where('short_name', 'ABG-SB')->first();
-        $agInnsbruck = \App\Models\School::where('short_name', 'ABG-IBK')->first();
+        $agSalzburg = School::where('short_name', 'ABG-SB')->first();
+        $agInnsbruck = School::where('short_name', 'ABG-IBK')->first();
 
         if (! $agSalzburg) {
             $this->error('❌ Akademisches Gymnasium Salzburg (ABG-SB) nicht gefunden!');
@@ -98,7 +107,7 @@ class TutoringTestDataCommand extends Command
         $this->info("✓ Akademisches Gymnasium Innsbruck gefunden (ID: {$agInnsbruck->id})");
 
         // Prüfe ob Benutzer mit dieser E-Mail UND school_id bereits existiert
-        $existingUser = \App\Models\User::where('email', 'hallo@itstudio.at')
+        $existingUser = User::where('email', 'hallo@itstudio.at')
             ->where('school_id', $agSalzburg->id)
             ->first();
 
@@ -107,10 +116,10 @@ class TutoringTestDataCommand extends Command
             $this->warn("⚠ Benutzer hallo@itstudio.at existiert bereits für diese Schule (ID: {$existingUser->id}). Lösche nur OfferRequests...");
 
             // Lösche zugehörige OfferRequests
-            $deletedRequests = \App\Models\TutoringOfferRequest::where('from_user_id', $existingUser->id)
+            $deletedRequests = TutoringOfferRequest::where('from_user_id', $existingUser->id)
                 ->orWhere('to_user_id', $existingUser->id)
                 ->count();
-            \App\Models\TutoringOfferRequest::where('from_user_id', $existingUser->id)
+            TutoringOfferRequest::where('from_user_id', $existingUser->id)
                 ->orWhere('to_user_id', $existingUser->id)
                 ->delete();
             $this->info("✓ {$deletedRequests} alte OfferRequests gelöscht");
@@ -120,9 +129,9 @@ class TutoringTestDataCommand extends Command
 
         } else {
             // Kein existierender Benutzer für diese Schule - erstelle neuen
-            $role = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'tutoring_user']);
+            $role = Role::firstOrCreate(['name' => 'tutoring_user']);
 
-            $user = \App\Models\User::create([
+            $user = User::create([
                 'first_name' => 'Test',
                 'last_name' => 'User',
                 'email' => 'hallo@itstudio.at',
@@ -145,8 +154,8 @@ class TutoringTestDataCommand extends Command
         $this->createIncomingRequests($user);
 
         $this->info("\n✅ Fertig! Test-Benutzer mit 80 OfferRequests erstellt.");
-        $this->info("   E-Mail: hallo@itstudio.at");
-        $this->info("   Passwort: password");
+        $this->info('   E-Mail: hallo@itstudio.at');
+        $this->info('   Passwort: password');
         $this->info("   User ID: {$user->id}");
     }
 
@@ -156,13 +165,13 @@ class TutoringTestDataCommand extends Command
     protected function createOutgoingRequests($user, $agSalzburg, $agInnsbruck): void
     {
         // Hole Angebote aus beiden Schulen
-        $offersFromSalzburg = \App\Models\TutoringOffer::where('school_id', $agSalzburg->id)
+        $offersFromSalzburg = TutoringOffer::where('school_id', $agSalzburg->id)
             ->where('user_id', '!=', $user->id)
             ->inRandomOrder()
             ->limit(20)
             ->get();
 
-        $offersFromInnsbruck = \App\Models\TutoringOffer::where('school_id', $agInnsbruck->id)
+        $offersFromInnsbruck = TutoringOffer::where('school_id', $agInnsbruck->id)
             ->inRandomOrder()
             ->limit(20)
             ->get();
@@ -192,7 +201,7 @@ class TutoringTestDataCommand extends Command
             if ($isSent) {
                 $sentAt = now()->subDays(rand(1, 30));
                 $lastSentAt = $sentAt;
-                $token = \Illuminate\Support\Str::random(64);
+                $token = Str::random(64);
                 $tokenExpiresAt = now()->addDays(7);
             }
 
@@ -201,7 +210,7 @@ class TutoringTestDataCommand extends Command
                 $lastSeenAt = $seenAt;
             }
 
-            \App\Models\TutoringOfferRequest::create([
+            TutoringOfferRequest::create([
                 'school_id' => $offer->school_id,
                 'offer_id' => $offer->id,
                 'from_user_id' => $user->id,
@@ -230,7 +239,7 @@ class TutoringTestDataCommand extends Command
     protected function createIncomingRequests($user): void
     {
         // Hole zufällige Benutzer aus allen Schulen
-        $fromUsers = \App\Models\User::where('id', '!=', $user->id)
+        $fromUsers = User::where('id', '!=', $user->id)
             ->inRandomOrder()
             ->limit(40)
             ->get();
@@ -240,7 +249,7 @@ class TutoringTestDataCommand extends Command
         }
 
         // Hole Angebote des Test-Benutzers oder erstelle Dummy-Angebote
-        $userOffers = \App\Models\TutoringOffer::where('user_id', $user->id)->get();
+        $userOffers = TutoringOffer::where('user_id', $user->id)->get();
 
         if ($userOffers->isEmpty()) {
             $this->warn('⚠ Test-Benutzer hat keine Angebote. Erstelle Dummy-Angebote...');
@@ -274,7 +283,7 @@ class TutoringTestDataCommand extends Command
             if ($isSent) {
                 $sentAt = now()->subDays(rand(1, 30));
                 $lastSentAt = $sentAt;
-                $token = \Illuminate\Support\Str::random(64);
+                $token = Str::random(64);
                 $tokenExpiresAt = now()->addDays(7);
             }
 
@@ -283,7 +292,7 @@ class TutoringTestDataCommand extends Command
                 $lastSeenAt = $seenAt;
             }
 
-            \App\Models\TutoringOfferRequest::create([
+            TutoringOfferRequest::create([
                 'school_id' => $fromUser->school_id,
                 'offer_id' => $offer->id,
                 'from_user_id' => $fromUser->id,
@@ -309,9 +318,9 @@ class TutoringTestDataCommand extends Command
     /**
      * Erstellt Dummy-Angebote für den Test-Benutzer
      */
-    protected function createDummyOffers($user): \Illuminate\Support\Collection
+    protected function createDummyOffers($user): Collection
     {
-        $subjects = \App\Models\TutoringSubject::where('school_id', $user->school_id)
+        $subjects = TutoringSubject::where('school_id', $user->school_id)
             ->inRandomOrder()
             ->limit(5)
             ->get();
@@ -328,7 +337,7 @@ class TutoringTestDataCommand extends Command
             $acceptedAt = $mustBeAccepted ? now()->subDays(rand(1, 30)) : null;
             $isActive = $acceptedAt !== null; // is_active nur true wenn accepted_at gesetzt ist
 
-            $offer = \App\Models\TutoringOffer::create([
+            $offer = TutoringOffer::create([
                 'school_id' => $user->school_id,
                 'user_id' => $user->id,
                 'subject_id' => $subject->id,
@@ -363,10 +372,11 @@ class TutoringTestDataCommand extends Command
 
         return $offers;
     }
+
     /**
      * Erstellt Dummy-Subjects fuer eine Schule
      */
-    protected function createDummySubjects(int $schoolId): \Illuminate\Support\Collection
+    protected function createDummySubjects(int $schoolId): Collection
     {
         $names = [
             ['MAT', 'Mathematik'],
@@ -378,7 +388,7 @@ class TutoringTestDataCommand extends Command
 
         $subjects = collect();
         foreach ($names as [$short, $long]) {
-            $subjects->push(\App\Models\TutoringSubject::create([
+            $subjects->push(TutoringSubject::create([
                 'school_id' => $schoolId,
                 'short_name' => $short,
                 'long_name' => $long,

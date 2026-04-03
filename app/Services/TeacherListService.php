@@ -8,7 +8,6 @@ use App\Models\Teacher;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class TeacherListService
@@ -160,11 +159,10 @@ class TeacherListService
         $teacher->token_expires_at = now()->addMinutes(config('schooltool.token_expire_time'));
         $teacher->save();
 
-
         $mail = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
-            'logo' => asset('/storage/images/logos/' . $school->logo),
+            'logo' => asset('/storage/images/logos/'.$school->logo),
             'subject' => 'Code zum Bestätigen Ihrer Anmeldung',
             'markdown' => 'mails.admin.sendCode',
             'token_2fa' => $teacher->token,

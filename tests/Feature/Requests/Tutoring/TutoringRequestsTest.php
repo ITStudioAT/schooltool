@@ -7,18 +7,18 @@
  */
 
 use App\Http\Requests\Tutoring\LoginWithPasswordRequest;
+use App\Http\Requests\Tutoring\OfferConfirmRefuseRequest;
 use App\Http\Requests\Tutoring\OfferIndexRequest;
 use App\Http\Requests\Tutoring\OfferLoadOfferConfigRequest;
 use App\Http\Requests\Tutoring\OfferLoadOffersRequest;
-use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
-use App\Http\Requests\Tutoring\OfferStoreRequest;
-use App\Http\Requests\Tutoring\OfferUpdateRequest;
-use App\Http\Requests\Tutoring\OfferSendRequestRequest;
-use App\Http\Requests\Tutoring\OfferConfirmRefuseRequest;
 use App\Http\Requests\Tutoring\OfferRequestIndexRequest;
 use App\Http\Requests\Tutoring\OfferRequestMailClickedRequest;
 use App\Http\Requests\Tutoring\OfferRequestRequest;
+use App\Http\Requests\Tutoring\OfferSendRequestRequest;
 use App\Http\Requests\Tutoring\OfferSetUserSearchCriteriaRequest;
+use App\Http\Requests\Tutoring\OfferStoreRequest;
+use App\Http\Requests\Tutoring\OfferToggleOfferRequest;
+use App\Http\Requests\Tutoring\OfferUpdateRequest;
 use App\Http\Requests\Tutoring\SubjectCreateSubjectsRequest;
 use App\Http\Requests\Tutoring\UserUpdatePasswordRequest;
 use App\Http\Requests\Tutoring\UserUpdateRequest;
@@ -49,9 +49,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateTutoringRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateTutoringRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -61,7 +62,7 @@ function validateTutoringRequest(string $requestClass, array $data): \Illuminate
 
 describe('LoginWithPasswordRequest', function () {
     it('authorizes all requests', function () {
-        $request = new LoginWithPasswordRequest();
+        $request = new LoginWithPasswordRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -150,13 +151,13 @@ describe('LoginWithPasswordRequest', function () {
 
 describe('OfferIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferIndexRequest();
+        $request = new OfferIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferIndexRequest();
+        $request = new OfferIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -190,7 +191,7 @@ describe('OfferIndexRequest', function () {
 
 describe('OfferLoadOfferConfigRequest', function () {
     it('authorizes all requests', function () {
-        $request = new OfferLoadOfferConfigRequest();
+        $request = new OfferLoadOfferConfigRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -209,7 +210,7 @@ describe('OfferLoadOfferConfigRequest', function () {
 
 describe('OfferLoadOffersRequest', function () {
     it('authorizes all requests', function () {
-        $request = new OfferLoadOffersRequest();
+        $request = new OfferLoadOffersRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -230,13 +231,13 @@ describe('OfferLoadOffersRequest', function () {
 
 describe('OfferToggleOfferRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferToggleOfferRequest();
+        $request = new OfferToggleOfferRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferToggleOfferRequest();
+        $request = new OfferToggleOfferRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -279,13 +280,13 @@ describe('OfferToggleOfferRequest', function () {
 
 describe('OfferStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferStoreRequest();
+        $request = new OfferStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferStoreRequest();
+        $request = new OfferStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -296,13 +297,13 @@ describe('OfferStoreRequest', function () {
 
 describe('OfferUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferUpdateRequest();
+        $request = new OfferUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferUpdateRequest();
+        $request = new OfferUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -313,13 +314,13 @@ describe('OfferUpdateRequest', function () {
 
 describe('OfferSendRequestRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferSendRequestRequest();
+        $request = new OfferSendRequestRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferSendRequestRequest();
+        $request = new OfferSendRequestRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -401,7 +402,7 @@ describe('OfferSendRequestRequest', function () {
 
 describe('OfferConfirmRefuseRequest', function () {
     it('authorizes all requests', function () {
-        $request = new OfferConfirmRefuseRequest();
+        $request = new OfferConfirmRefuseRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -443,13 +444,13 @@ describe('OfferConfirmRefuseRequest', function () {
 
 describe('OfferRequestIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferRequestIndexRequest();
+        $request = new OfferRequestIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferRequestIndexRequest();
+        $request = new OfferRequestIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -460,13 +461,13 @@ describe('OfferRequestIndexRequest', function () {
 
 describe('OfferRequestMailClickedRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferRequestMailClickedRequest();
+        $request = new OfferRequestMailClickedRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferRequestMailClickedRequest();
+        $request = new OfferRequestMailClickedRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -477,7 +478,7 @@ describe('OfferRequestMailClickedRequest', function () {
 
 describe('OfferRequestRequest', function () {
     it('authorizes all requests', function () {
-        $request = new OfferRequestRequest();
+        $request = new OfferRequestRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -538,13 +539,13 @@ describe('OfferRequestRequest', function () {
 
 describe('OfferSetUserSearchCriteriaRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferSetUserSearchCriteriaRequest();
+        $request = new OfferSetUserSearchCriteriaRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferSetUserSearchCriteriaRequest();
+        $request = new OfferSetUserSearchCriteriaRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -581,13 +582,13 @@ describe('OfferSetUserSearchCriteriaRequest', function () {
 
 describe('SubjectCreateSubjectsRequest', function () {
     it('requires authentication', function () {
-        $request = new SubjectCreateSubjectsRequest();
+        $request = new SubjectCreateSubjectsRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SubjectCreateSubjectsRequest();
+        $request = new SubjectCreateSubjectsRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -652,13 +653,13 @@ describe('SubjectCreateSubjectsRequest', function () {
 
 describe('UserUpdatePasswordRequest', function () {
     it('requires authentication', function () {
-        $request = new UserUpdatePasswordRequest();
+        $request = new UserUpdatePasswordRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserUpdatePasswordRequest();
+        $request = new UserUpdatePasswordRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -742,13 +743,13 @@ describe('UserUpdatePasswordRequest', function () {
 
 describe('UserUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new UserUpdateRequest();
+        $request = new UserUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserUpdateRequest();
+        $request = new UserUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 

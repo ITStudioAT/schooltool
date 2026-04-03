@@ -40,6 +40,7 @@ class UpdateSchoolyearsConcerns extends Command
         }
 
         $this->info("✓ Updated {$updated} schoolyear(s)");
+
         return Command::SUCCESS;
     }
 }

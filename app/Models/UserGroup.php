@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class UserGroup extends Model
 {
     public const TYPE_SCHOOL = 'school';
+
     public const TYPE_MATERIALS = 'materials';
+
     public const TYPE_OWN = 'own';
 
     public const TYPES = [
@@ -20,6 +22,7 @@ class UserGroup extends Model
     ];
 
     public const TEACHING_COURSE_GROUP_TYPE_STUDENTS = 'students';
+
     public const TEACHING_COURSE_GROUP_TYPE_PARENTS = 'parents';
 
     protected $fillable = [

@@ -10,7 +10,11 @@
 use App\Jobs\HealthJob;
 use App\Models\School;
 use App\Models\SchoolTool;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
@@ -28,7 +32,7 @@ beforeEach(function () {
 
     // Create SchoolTool record with ID 1 (required by the job)
     // Use DB insert to force ID 1
-    \Illuminate\Support\Facades\DB::table('school_tools')->insert([
+    DB::table('school_tools')->insert([
         'id' => 1,
         'school_id' => $this->school->id,
         'tutoring_student_must_be_confirmed' => 0,
@@ -46,7 +50,7 @@ describe('handle', function () {
     it('updates health_at timestamp for SchoolTool with id 1', function () {
         expect($this->schoolTool->health_at)->toBeNull();
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
 
         $this->schoolTool->refresh();
@@ -56,7 +60,7 @@ describe('handle', function () {
     it('sets health_at to current timestamp', function () {
         $before = now()->subSecond()->toDateTimeString();
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
 
         $after = now()->addSecond()->toDateTimeString();
@@ -73,7 +77,7 @@ describe('handle', function () {
 
         expect($this->schoolTool->health_at->toDateTimeString())->toBe($oldTimestamp->toDateTimeString());
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
 
         $this->schoolTool->refresh();
@@ -86,7 +90,7 @@ describe('handle', function () {
         $originalMustBeConfirmed = $this->schoolTool->tutoring_student_must_be_confirmed;
         $originalMaxOffers = $this->schoolTool->tutoring_max_offers_per_student;
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
 
         $this->schoolTool->refresh();
@@ -100,20 +104,20 @@ describe('handle', function () {
         // Delete the SchoolTool record
         SchoolTool::where('id', 1)->delete();
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 });
 
 describe('job configuration', function () {
     it('implements ShouldQueue interface', function () {
-        $job = new HealthJob();
-        expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+        $job = new HealthJob;
+        expect($job)->toBeInstanceOf(ShouldQueue::class);
     });
 
     it('uses Queueable trait', function () {
-        $job = new HealthJob();
-        expect(class_uses($job))->toContain(\Illuminate\Foundation\Queue\Queueable::class);
+        $job = new HealthJob;
+        expect(class_uses($job))->toContain(Queueable::class);
     });
 
     it('can be dispatched to queue', function () {
@@ -125,7 +129,7 @@ describe('job configuration', function () {
     });
 
     it('can be instantiated without parameters', function () {
-        $job = new HealthJob();
+        $job = new HealthJob;
         expect($job)->toBeInstanceOf(HealthJob::class);
     });
 });
@@ -135,7 +139,7 @@ describe('job execution', function () {
         $this->schoolTool->health_at = null;
         $this->schoolTool->save();
 
-        $job = new HealthJob();
+        $job = new HealthJob;
         dispatch($job);
 
         // Since we're testing synchronously, the job should execute immediately
@@ -144,7 +148,7 @@ describe('job execution', function () {
     });
 
     it('updates timestamp accurately on repeated execution', function () {
-        $job1 = new HealthJob();
+        $job1 = new HealthJob;
         $job1->handle();
 
         $this->schoolTool->refresh();
@@ -153,7 +157,7 @@ describe('job execution', function () {
         // Wait a moment to ensure different timestamp
         sleep(1);
 
-        $job2 = new HealthJob();
+        $job2 = new HealthJob;
         $job2->handle();
 
         $this->schoolTool->refresh();
@@ -165,7 +169,7 @@ describe('job execution', function () {
 
 describe('database interactions', function () {
     it('persists health_at to database', function () {
-        $job = new HealthJob();
+        $job = new HealthJob;
         $job->handle();
 
         $this->assertDatabaseHas('school_tools', [
@@ -174,7 +178,7 @@ describe('database interactions', function () {
         ]);
 
         // Verify health_at is not null in database
-        $record = \Illuminate\Support\Facades\DB::table('school_tools')->where('id', 1)->first();
+        $record = DB::table('school_tools')->where('id', 1)->first();
         expect($record->health_at)->not->toBeNull();
     });
 
@@ -183,7 +187,7 @@ describe('database interactions', function () {
         // an exception when the record doesn't exist
         SchoolTool::where('id', 1)->delete();
 
-        expect(fn() => (new HealthJob())->handle())
-            ->toThrow(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        expect(fn () => (new HealthJob)->handle())
+            ->toThrow(ModelNotFoundException::class);
     });
 });

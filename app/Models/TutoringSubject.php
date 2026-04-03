@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -12,10 +14,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $long_name
  * @property bool $must_be_accepted
  * @property array<array-key, mixed>|null $email_mentors
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
- * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\TutoringOffer> $offers
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Collection<int, TutoringOffer> $offers
  * @property-read int|null $offers_count
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject query()
@@ -27,6 +30,7 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereSchoolId($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereShortName($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|TutoringSubject whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class TutoringSubject extends Model

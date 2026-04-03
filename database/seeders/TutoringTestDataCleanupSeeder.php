@@ -34,8 +34,9 @@ class TutoringTestDataCleanupSeeder extends Seeder
     {
         $this->command->info('🧹 Starte Bereinigung der Tutoring Test Daten...');
 
-        if (!$this->command->confirm('⚠️  Sind Sie sicher, dass Sie ALLE Test-Daten löschen möchten? Dies kann nicht rückgängig gemacht werden!', false)) {
+        if (! $this->command->confirm('⚠️  Sind Sie sicher, dass Sie ALLE Test-Daten löschen möchten? Dies kann nicht rückgängig gemacht werden!', false)) {
             $this->command->info('Bereinigung abgebrochen.');
+
             return;
         }
 
@@ -49,10 +50,11 @@ class TutoringTestDataCleanupSeeder extends Seeder
             if (empty($schoolIds)) {
                 $this->command->info('Keine Test-Schulen gefunden. Möglicherweise wurden die Daten bereits gelöscht.');
                 DB::commit();
+
                 return;
             }
 
-            $this->command->info('Gefundene Test-Schulen: ' . count($testSchools));
+            $this->command->info('Gefundene Test-Schulen: '.count($testSchools));
 
             // Lösche TutoringOfferRequests (müssen vor Angeboten gelöscht werden wegen Foreign Key)
             $offerRequestsCount = TutoringOfferRequest::whereIn('school_id', $schoolIds)->count();
@@ -163,7 +165,7 @@ class TutoringTestDataCleanupSeeder extends Seeder
 
         } catch (\Exception $e) {
             DB::rollBack();
-            $this->command->error('❌ Fehler beim Bereinigen: ' . $e->getMessage());
+            $this->command->error('❌ Fehler beim Bereinigen: '.$e->getMessage());
             throw $e;
         }
     }

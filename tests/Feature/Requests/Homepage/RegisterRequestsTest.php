@@ -6,14 +6,14 @@
  * Tests for public registration-related requests.
  */
 
-use App\Http\Requests\Homepage\HomepageRoutingRequest;
 use App\Http\Requests\Homepage\HomepageLoadSchoolsForToolRequest;
+use App\Http\Requests\Homepage\HomepageRoutingRequest;
+use App\Http\Requests\Homepage\RegisterBookRequest;
 use App\Http\Requests\Homepage\RegisterCheckEmailRequest;
 use App\Http\Requests\Homepage\RegisterConfirmEmailRequest;
-use App\Http\Requests\Homepage\RegisterSaveUserDataRequest;
-use App\Http\Requests\Homepage\RegisterLoginTokenRequest;
 use App\Http\Requests\Homepage\RegisterDeleteBookingRequest;
-use App\Http\Requests\Homepage\RegisterBookRequest;
+use App\Http\Requests\Homepage\RegisterLoginTokenRequest;
+use App\Http\Requests\Homepage\RegisterSaveUserDataRequest;
 use App\Models\Licence;
 use App\Models\Register;
 use App\Models\RegisterDate;
@@ -49,9 +49,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateHomepageRegisterRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateHomepageRegisterRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -61,7 +62,7 @@ function validateHomepageRegisterRequest(string $requestClass, array $data): \Il
 
 describe('HomepageRoutingRequest', function () {
     it('authorizes all requests', function () {
-        $request = new HomepageRoutingRequest();
+        $request = new HomepageRoutingRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -95,7 +96,7 @@ describe('HomepageRoutingRequest', function () {
 
 describe('HomepageLoadSchoolsForToolRequest', function () {
     it('authorizes all requests', function () {
-        $request = new HomepageLoadSchoolsForToolRequest();
+        $request = new HomepageLoadSchoolsForToolRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -129,7 +130,7 @@ describe('HomepageLoadSchoolsForToolRequest', function () {
 
 describe('RegisterCheckEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterCheckEmailRequest();
+        $request = new RegisterCheckEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -217,7 +218,7 @@ describe('RegisterCheckEmailRequest', function () {
                 'step' => 'EMAIL',
                 'school_id' => $this->school->id,
                 'register_id' => $this->register->id,
-                'email' => str_repeat('a', 250) . '@test.com',
+                'email' => str_repeat('a', 250).'@test.com',
             ],
         ]);
 
@@ -231,7 +232,7 @@ describe('RegisterCheckEmailRequest', function () {
 
 describe('RegisterConfirmEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterConfirmEmailRequest();
+        $request = new RegisterConfirmEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -287,7 +288,7 @@ describe('RegisterConfirmEmailRequest', function () {
 
 describe('RegisterSaveUserDataRequest', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterSaveUserDataRequest();
+        $request = new RegisterSaveUserDataRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -349,7 +350,7 @@ describe('RegisterSaveUserDataRequest', function () {
 
 describe('RegisterLoginTokenRequest', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterLoginTokenRequest();
+        $request = new RegisterLoginTokenRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -405,13 +406,13 @@ describe('RegisterLoginTokenRequest', function () {
 
 describe('RegisterDeleteBookingRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterDeleteBookingRequest();
+        $request = new RegisterDeleteBookingRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterDeleteBookingRequest();
+        $request = new RegisterDeleteBookingRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -450,13 +451,13 @@ describe('RegisterDeleteBookingRequest', function () {
 
 describe('RegisterBookRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterBookRequest();
+        $request = new RegisterBookRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterBookRequest();
+        $request = new RegisterBookRequest;
         expect($request->authorize())->toBeTrue();
     });
 

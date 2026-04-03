@@ -18,16 +18,16 @@ return new class extends Migration
         $columns = Schema::getColumnListing('tutoring_offer_requests');
 
         Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($columns) {
-            if (!in_array('sent_count', $columns, true)) {
+            if (! in_array('sent_count', $columns, true)) {
                 $table->integer('sent_count')->nullable()->default(0)->after('last_sent_at');
             }
-            if (!in_array('seen_count', $columns, true)) {
+            if (! in_array('seen_count', $columns, true)) {
                 $table->integer('seen_count')->nullable()->default(0)->after('last_seen_at');
             }
-            if (!in_array('mail_at', $columns, true)) {
+            if (! in_array('mail_at', $columns, true)) {
                 $table->timestamp('mail_at')->nullable()->after('seen_count');
             }
-            if (!in_array('to_user_archived_at', $columns, true)) {
+            if (! in_array('to_user_archived_at', $columns, true)) {
                 $table->timestamp('to_user_archived_at')->nullable()->after('archived_at');
             }
         });
@@ -50,7 +50,7 @@ return new class extends Migration
             'to_user_archived_at',
         ]);
 
-        if (!empty($droppables)) {
+        if (! empty($droppables)) {
             Schema::table('tutoring_offer_requests', function (Blueprint $table) use ($droppables) {
                 $table->dropColumn($droppables);
             });
