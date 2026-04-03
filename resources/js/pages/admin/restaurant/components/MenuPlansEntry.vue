@@ -1,5 +1,18 @@
 <template>
-    <div class="mpe-page">
+    <div
+        class="mpe-page"
+        :class="{ 'mpe-page--busy': isNavigatingBack }"
+        :aria-busy="isNavigatingBack ? 'true' : 'false'">
+        <div
+            v-if="isNavigatingBack"
+            class="mpe-overlay"
+            data-testid="menu-plan-back-overlay"
+            aria-live="polite">
+            <div class="mpe-overlay__content">
+                <div class="mpe-overlay__spinner" aria-hidden="true" />
+                <div class="mpe-overlay__text">Ansicht wird geladen ...</div>
+            </div>
+        </div>
         <v-container fluid class="ma-0 w-100 pa-2">
             <AdminSectionHero
                 class="mb-3"
@@ -37,6 +50,7 @@
                                         variant="flat"
                                         prepend-icon="mdi-content-save-outline"
                                         :loading="isSaving"
+                                        :disabled="isNavigatingBack"
                                         @click="savePlan">
                                         Speichern
                                     </v-btn>
@@ -46,7 +60,7 @@
                                         rounded="xl"
                                         variant="tonal"
                                         prepend-icon="mdi-delete-outline"
-                                        :disabled="!canDeletePlan"
+                                        :disabled="!canDeletePlan || isNavigatingBack"
                                         data-testid="delete-menu-plan-button"
                                         @click="requestDeletePlan">
                                         {{ deletePlanButtonLabel }}
@@ -58,7 +72,7 @@
                                         variant="tonal"
                                         icon="mdi-printer-outline"
                                         :loading="isPrinting"
-                                        :disabled="isPrinting"
+                                        :disabled="isPrinting || isNavigatingBack"
                                         aria-label="Menüplan als PDF drucken"
                                         title="Menüplan als PDF drucken"
                                         data-testid="print-menu-plan-button"
@@ -68,7 +82,10 @@
                                         rounded="xl"
                                         variant="tonal"
                                         prepend-icon="mdi-arrow-left"
-                                        :to="backTarget">
+                                        :loading="isNavigatingBack"
+                                        :disabled="isNavigatingBack"
+                                        data-testid="menu-plan-back-button"
+                                        @click="navigateBack">
                                         Zurück
                                     </v-btn>
                                 </div>
@@ -222,34 +239,50 @@
                                     <div
                                         v-for="(entry, entryIndex) in dayEntries(day.iso)"
                                         :key="entry._key"
-                                        class="mpe-entry-card">
+                                        class="mpe-entry-card"
+                                        :class="{ 'mpe-entry-card--locked': isEntryLocked(entry) }">
                                         <div class="mpe-entry-card__header">
-                                            <div class="mpe-entry-card__title">{{ entry.menuTitle || entry.menu.title }}</div>
+                                            <div class="mpe-entry-card__title-row">
+                                                <div class="mpe-entry-card__title">{{ entry.menuTitle || entry.menu.title }}</div>
+                                                <span
+                                                    v-if="isEntryLocked(entry)"
+                                                    class="mpe-entry-card__lock"
+                                                    :data-testid="`locked-menu-entry-${day.iso}-${entry._key}`">
+                                                    <v-icon icon="mdi-lock-outline" size="12" />
+                                                    {{ entryLockLabel(entry) }}
+                                                </span>
+                                            </div>
                                         </div>
                                         <div class="mpe-entry-card__actions">
                                             <v-btn
                                                 icon="mdi-arrow-up"
                                                 size="x-small"
                                                 variant="text"
-                                                :disabled="entryIndex === 0"
+                                                :disabled="entryIndex === 0 || dayHasLockedEntries(day.iso)"
+                                                :data-testid="`move-entry-up-${day.iso}-${entry._key}`"
                                                 @click="moveEntry(day.iso, entryIndex, -1)" />
                                             <v-btn
                                                 icon="mdi-arrow-down"
                                                 size="x-small"
                                                 variant="text"
-                                                :disabled="entryIndex === dayEntries(day.iso).length - 1"
+                                                :disabled="entryIndex === dayEntries(day.iso).length - 1 || dayHasLockedEntries(day.iso)"
+                                                :data-testid="`move-entry-down-${day.iso}-${entry._key}`"
                                                 @click="moveEntry(day.iso, entryIndex, 1)" />
                                             <v-btn
                                                 icon="mdi-delete"
                                                 size="x-small"
                                                 variant="text"
                                                 color="warning"
+                                                :disabled="isEntryLocked(entry)"
+                                                :data-testid="`delete-entry-${day.iso}-${entry._key}`"
                                                 @click="requestDeleteEntry(day.iso, entry._key)" />
                                             <v-btn
                                                 icon="mdi-pencil"
                                                 size="x-small"
                                                 variant="text"
                                                 color="primary"
+                                                :disabled="isEntryLocked(entry)"
+                                                :data-testid="`edit-entry-${day.iso}-${entry._key}`"
                                                 @click="openEditEntryDialog(day.iso, entry._key)" />
                                             <v-btn
                                                 icon="mdi-eye-outline"
@@ -273,6 +306,9 @@
                                         <div v-if="entryHasPriceOverride(entry) && entry.menu.price != null" class="mpe-entry-card__price-note">
                                             Basispreis: {{ formatPrice(entry.menu.price) }}
                                         </div>
+                                        <div v-if="isEntryLocked(entry)" class="mpe-entry-card__lock-note">
+                                            Dieser Eintrag ist wegen vorhandener Buchungen gesperrt und kann nicht bearbeitet, verschoben oder geloescht werden.
+                                        </div>
 
                                         <div v-if="entryActiveEatingTimeLabels(entry).length" class="mpe-eating-times mpe-eating-times--active mt-2">
                                             <div class="mpe-eating-times__label">Aktiv:</div>
@@ -294,6 +330,7 @@
                                                     :color="isTimeActive(entry, et.id) ? 'primary' : undefined"
                                                     :variant="isTimeActive(entry, et.id) ? 'flat' : 'outlined'"
                                                     class="mpe-time-chip"
+                                                    :disabled="isEntryLocked(entry)"
                                                     @click="toggleTime(entry, et.id)">
                                                     {{ et.eating_time }} Uhr
                                                 </v-chip>
@@ -1099,6 +1136,7 @@ export default {
             searchStates: {},    // { iso: { open: bool, query: '' } }
             isSaving: false,
             isPrinting: false,
+            isNavigatingBack: false,
             createMenuDialog: false,
             createMenuForDate: null,
             editingMenuId: null,
@@ -1527,11 +1565,13 @@ export default {
                 }
 
                 next[iso].push({
+                    id: entry.id || null,
                     _key: newEntryKey(),
                     menu,
                     menuTitle: entry.menu_title || menu.title || '',
                     price: entry.price != null ? String(entry.price) : (menu.price != null ? String(menu.price) : ''),
                     comments: entry.comments || '',
+                    bookedMenuCount: Number(entry.booked_menu_count || 0),
                     eatingTimeIds: entry.eating_time_ids || [],
                     eatingTimes: entry.eating_times || [],
                 })
@@ -1573,6 +1613,34 @@ export default {
             return this.entriesByDate[iso] || []
         },
 
+        findEntry(iso, key) {
+            return this.dayEntries(iso).find((entry) => entry?._key === key) || null
+        },
+
+        entryBookedMenuCount(entry) {
+            return Number(entry?.bookedMenuCount || 0)
+        },
+
+        isEntryLocked(entry) {
+            return this.entryBookedMenuCount(entry) > 0
+        },
+
+        dayHasLockedEntries(iso) {
+            return this.dayEntries(iso).some((entry) => this.isEntryLocked(entry))
+        },
+
+        entryLockLabel(entry) {
+            const bookingCount = this.entryBookedMenuCount(entry)
+
+            if (bookingCount <= 0) {
+                return ''
+            }
+
+            return bookingCount === 1
+                ? 'Gesperrt: 1 Buchung'
+                : `Gesperrt: ${bookingCount} Buchungen`
+        },
+
         entryEffectivePrice(entry) {
             if (entry?.price !== '') {
                 return entry?.price ?? null
@@ -1593,11 +1661,13 @@ export default {
             this.entriesByDate[iso] = [
                 ...this.entriesByDate[iso],
                 {
+                    id: null,
                     _key: newEntryKey(),
                     menu,
                     menuTitle: menu?.title || '',
                     price: menu?.price != null ? String(menu.price) : '',
                     comments: '',
+                    bookedMenuCount: 0,
                     eatingTimeIds: this.eatingTimes.map((et) => et.id),
                     eatingTimes: this.eatingTimes.map((et) => ({
                         id: et.id,
@@ -1610,7 +1680,9 @@ export default {
         },
 
         removeEntry(iso, key) {
-            if (! this.entriesByDate[iso]) {
+            const entry = this.findEntry(iso, key)
+
+            if (! entry || this.isEntryLocked(entry)) {
                 return
             }
 
@@ -1624,7 +1696,12 @@ export default {
                 return
             }
 
+            const currentEntry = entries[index]
             const targetIndex = index + direction
+
+            if (! currentEntry || this.dayHasLockedEntries(iso)) {
+                return
+            }
 
             if (targetIndex < 0 || targetIndex >= entries.length) {
                 return
@@ -1672,6 +1749,10 @@ export default {
         },
 
         toggleTime(entry, timeId) {
+            if (this.isEntryLocked(entry)) {
+                return
+            }
+
             if (entry.eatingTimeIds.includes(timeId)) {
                 entry.eatingTimeIds = entry.eatingTimeIds.filter((id) => id !== timeId)
             } else {
@@ -1769,9 +1850,9 @@ export default {
         },
 
         openEditEntryDialog(iso, key) {
-            const entry = this.dayEntries(iso).find((item) => item?._key === key)
+            const entry = this.findEntry(iso, key)
 
-            if (! entry) {
+            if (! entry || this.isEntryLocked(entry)) {
                 return
             }
 
@@ -1785,9 +1866,9 @@ export default {
         },
 
         requestDeleteEntry(iso, key) {
-            const entry = this.dayEntries(iso).find((item) => item?._key === key)
+            const entry = this.findEntry(iso, key)
 
-            if (! entry) {
+            if (! entry || this.isEntryLocked(entry)) {
                 return
             }
 
@@ -1797,6 +1878,10 @@ export default {
 
         canDeleteBoundaryDay(iso) {
             if (! this.rangeBounds || this.planDays.length <= 1) {
+                return false
+            }
+
+            if (this.dayHasLockedEntries(iso)) {
                 return false
             }
 
@@ -2087,8 +2172,9 @@ export default {
 
         saveEntryEdit() {
             const entries = this.entriesByDate[this.entryEditTarget.iso]
+            const entry = this.findEntry(this.entryEditTarget.iso, this.entryEditTarget.key)
 
-            if (! Array.isArray(entries)) {
+            if (! Array.isArray(entries) || ! entry || this.isEntryLocked(entry)) {
                 return
             }
 
@@ -2263,6 +2349,7 @@ export default {
             Object.entries(this.entriesByDate).forEach(([iso, dayEntries]) => {
                 dayEntries.forEach((entry) => {
                     entries.push({
+                        ...(entry.id ? { id: entry.id } : {}),
                         plan_date: iso,
                         menu_id: entry.menu.id,
                         menu_title: entry.menuTitle !== '' ? entry.menuTitle : null,
@@ -2391,6 +2478,27 @@ export default {
 
         // ── Helpers ──────────────────────────────────────────────────────
 
+        async navigateBack() {
+            if (this.isNavigatingBack) {
+                return
+            }
+
+            this.isNavigatingBack = true
+
+            try {
+                const navigationFailure = await this.$router.push(this.backTarget)
+
+                if (navigationFailure) {
+                    this.isNavigatingBack = false
+                }
+
+                return navigationFailure
+            } catch (error) {
+                this.isNavigatingBack = false
+                throw error
+            }
+        },
+
         fileNameFromContentDisposition(headerValue) {
             const normalizedHeader = String(headerValue || '').trim()
 
@@ -2462,8 +2570,58 @@ export default {
 /* ---- Page ---- */
 
 .mpe-page {
+    position: relative;
     min-height: 100vh;
     background: linear-gradient(160deg, #fafaf8 0%, #f5ede0 100%);
+}
+
+.mpe-page--busy {
+    user-select: none;
+}
+
+.mpe-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.38);
+    backdrop-filter: blur(2px);
+}
+
+.mpe-overlay__content {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(255, 247, 237, 0.98);
+    border: 1px solid rgba(234, 88, 12, 0.18);
+    color: #9a3412;
+    font-weight: 700;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+.mpe-overlay__spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(234, 88, 12, 0.2);
+    border-top-color: #ea580c;
+    animation: mpe-overlay-spin 0.7s linear infinite;
+}
+
+.mpe-overlay__text {
+    font-size: 0.92rem;
+    line-height: 1.2;
+}
+
+@keyframes mpe-overlay-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* ---- Stage ---- */
@@ -2953,8 +3111,20 @@ export default {
     border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
+.mpe-entry-card--locked {
+    background: linear-gradient(160deg, #fff7ed, #ffedd5);
+    border-color: rgba(194, 65, 12, 0.26);
+}
+
 .mpe-entry-card__header {
     margin-bottom: 6px;
+}
+
+.mpe-entry-card__title-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
 }
 
 .mpe-entry-card__actions {
@@ -2972,6 +3142,19 @@ export default {
     color: #1f2937;
     line-height: 1.4;
     word-break: break-word;
+}
+
+.mpe-entry-card__lock {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(194, 65, 12, 0.1);
+    color: #9a3412;
+    font-size: 0.7rem;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
 .mpe-entry-card__price :deep(.v-field) {
@@ -3011,6 +3194,13 @@ export default {
     font-size: 0.72rem;
     color: #64748b;
     margin-top: 2px;
+}
+
+.mpe-entry-card__lock-note {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: #9a3412;
 }
 
 .mpe-preview {

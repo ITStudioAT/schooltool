@@ -23,12 +23,14 @@ use App\Models\User;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantHomepageAuthService;
+use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantService;
 use App\Services\SchoolToolModuleStatusService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HomepageController extends Controller
 {
@@ -212,6 +214,25 @@ class HomepageController extends Controller
         return response()->json([
             'plans' => RestaurantMenuPlanResource::collection($plans),
         ]);
+    }
+
+    public function restaurantMenuPlanPrint(int $id, RestaurantService $restaurantService, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
+    {
+        $plan = $restaurantService->findVisibleMenuPlan($id);
+
+        if (! $plan) {
+            abort(404, 'Menüplan nicht gefunden.');
+        }
+
+        $path = $pdfService->createPdf($plan);
+
+        return response()
+            ->download($path, basename($path), [
+                'Content-Type' => 'application/pdf',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ])
+            ->deleteFileAfterSend(true);
     }
 
     public function restaurantCheckEmail(

@@ -272,6 +272,7 @@ it('returns a homepage restaurant overview pdf for the authenticated user', func
 
     $school = School::factory()->create(['short_name' => 'CDGym', 'long_name' => 'CDGym']);
     $user = User::factory()->create(['school_id' => $school->id]);
+    $otherUser = User::factory()->create(['school_id' => $school->id]);
     $menu = RestaurantMenu::factory()->forSchool($school)->create();
     $eatingTime = RestaurantEatingTime::factory()->create(['school_id' => $school->id]);
 
@@ -317,14 +318,36 @@ it('returns a homepage restaurant overview pdf for the authenticated user', func
         'booked_at' => now()->subHour(),
     ]);
 
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $school->id,
+        'user_id' => $otherUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $eatingTime->id,
+        'price' => 5.50,
+        'quantity' => 1,
+        'metadata' => [
+            'recipients' => [
+                ['name' => 'Fremde Buchung', 'type' => 'child', 'import116_id' => 13],
+            ],
+        ],
+        'booked_at' => now()->subMinutes(30),
+    ]);
+
     $this->withoutMiddleware(ToolLicensed::class);
 
     $this->actingAs($user, 'sanctum')
         ->get('/api/homepage/restaurant/print?school=CDGym')
         ->assertSuccessful();
 
-    Pdf::assertRespondedWithPdf(fn () => true);
-    Pdf::assertViewIs('pdfs.restaurantHomepageOverview');
+    Pdf::assertRespondedWithPdf(function ($pdf) use ($user) {
+        return $pdf->viewName === 'pdfs.restaurantHomepageOverview'
+            && $pdf->isDownload()
+            && $pdf->viewData['user']['email'] === $user->email
+            && count($pdf->viewData['bookings']) === 1
+            && ! array_key_exists('plans', $pdf->viewData)
+            && $pdf->contains(['Elmina Beispiel', 'Allen Beispiel'])
+            && ! $pdf->contains('Fremde Buchung');
+    });
 });
 
 it('stores booking recipients in metadata and remembers them as defaults for the user', function () {

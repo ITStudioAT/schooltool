@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import router, { routes } from '../../../../resources/routes/admin.js'
 
 describe('admin routes', () => {

@@ -251,6 +251,27 @@ class RestaurantService
         })->values();
     }
 
+    public function findVisibleMenuPlan(int $id): ?RestaurantMenuPlan
+    {
+        $plan = RestaurantMenuPlan::query()
+            ->where('is_available', true)
+            ->with(['school', 'entries' => fn ($q) => $q->orderBy('plan_date'), 'entries.menu.foods.category', 'entries.eatingTimes'])
+            ->find($id);
+
+        if (! $plan) {
+            return null;
+        }
+
+        $onlineSettings = $this->normalizeOnlineSettings($plan->school?->schoolTool);
+        $now = now();
+
+        if (! $this->isMenuPlanVisibleNow($plan, $onlineSettings, $now) && ! $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now)) {
+            return null;
+        }
+
+        return $plan;
+    }
+
     public function isMenuPlanOrderable(RestaurantMenuPlan $plan, ?Carbon $now = null): bool
     {
         return $this->isMenuPlanOrderableNow(

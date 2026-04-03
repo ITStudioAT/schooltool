@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <div class="menu-plans-page">
         <v-container fluid class="ma-0 w-100 pa-2">
             <AdminSectionHero

@@ -12,6 +12,7 @@ function mountMenuPlansEntry(
         foods?: Array<Record<string, unknown>>
         eatingTimes?: Array<Record<string, unknown>>
         onlineSettings?: Record<string, unknown>
+        routerPushImplementation?: () => Promise<unknown> | unknown
     } = {},
 ) {
     return mount(MenuPlansEntry, {
@@ -58,7 +59,7 @@ function mountMenuPlansEntry(
                     query,
                 },
                 $router: {
-                    push: vi.fn(() => Promise.resolve()),
+                    push: vi.fn(options.routerPushImplementation || (() => Promise.resolve())),
                     replace: vi.fn(() => Promise.resolve()),
                 },
             },
@@ -235,6 +236,11 @@ describe('MenuPlans entry page', () => {
             },
         }
 
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
+
         ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 0, 1)
         expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
             'entry-2',
@@ -247,6 +253,29 @@ describe('MenuPlans entry page', () => {
             'entry-2',
             'entry-3',
             'entry-1',
+        ])
+    })
+
+    it('does not reorder entries on a day that contains booked menus', () => {
+        const ctx = {
+            entriesByDate: {
+                '2026-03-24': [
+                    { _key: 'entry-1', menu: { title: 'Suppe' }, bookedMenuCount: 0 },
+                    { _key: 'entry-2', menu: { title: 'Pasta' }, bookedMenuCount: 2 },
+                ],
+            },
+        }
+
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
+
+        ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 0, 1)
+
+        expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
+            'entry-1',
+            'entry-2',
         ])
     })
 
@@ -382,6 +411,61 @@ describe('MenuPlans entry page', () => {
         })
     })
 
+    it('marks booked menu entries as locked and disables edit move and delete actions', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).entriesByDate = {
+            '2026-03-24': [
+                {
+                    id: 17,
+                    _key: 'locked-entry',
+                    menu: { id: 5, title: 'Pasta', foods: [] },
+                    menuTitle: 'Pasta',
+                    price: '8.50',
+                    comments: '',
+                    bookedMenuCount: 2,
+                    eatingTimeIds: [],
+                    eatingTimes: [],
+                },
+            ],
+        }
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="locked-menu-entry-2026-03-24-locked-entry"]').text()).toContain('2 Buchungen')
+        expect(wrapper.find('[data-testid="move-entry-up-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="move-entry-down-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="delete-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="edit-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain('gesperrt')
+    })
+
+    it('disables the editor immediately while the back navigation is pending', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+            return_to: '/admin/restaurant/menu-plans',
+            return_week: '2026-04-13',
+        }, [], {
+            routerPushImplementation: () => new Promise(() => {}),
+        })
+
+        await wrapper.find('[data-testid="menu-plan-back-button"]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isNavigatingBack).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-back-overlay"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-back-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="print-menu-plan-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="delete-menu-plan-button"]').attributes('disabled')).toBeDefined()
+    })
+
     it('renders each day in the requested range and keeps open days ready for menu assignment', () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'create',
@@ -487,6 +571,10 @@ describe('MenuPlans entry page', () => {
 
         ctx.toDate = (iso: string) => (MenuPlansEntry as any).methods.toDate.call(ctx, iso)
         ctx.addDaysIso = (iso: string, days: number) => (MenuPlansEntry as any).methods.addDaysIso.call(ctx, iso, days)
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
         ctx.canDeleteBoundaryDay = (iso: string) => (MenuPlansEntry as any).methods.canDeleteBoundaryDay.call(ctx, iso)
         ctx.cancelDeleteBoundaryDay = () => (MenuPlansEntry as any).methods.cancelDeleteBoundaryDay.call(ctx)
 

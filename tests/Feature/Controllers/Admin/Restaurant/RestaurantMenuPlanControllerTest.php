@@ -298,6 +298,155 @@ test('update replaces entries', function () {
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
 });
 
+test('update preserves booked entries while allowing unlocked entries to change', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $lockedEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Gebucht',
+        'price' => '8.50',
+        'comments' => 'Bitte warm halten.',
+    ]);
+    $lockedEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    $editableEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-09',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Bearbeitbar',
+        'price' => '7.90',
+        'comments' => 'Alt',
+    ]);
+    $editableEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $lockedEntry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $menu2 = RestaurantMenu::factory()->create(['school_id' => $this->school->id]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Aktualisiert mit Sperre',
+            'start_date' => '2026-04-07',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+            'entries' => [
+                [
+                    'id' => $lockedEntry->id,
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Gebucht',
+                    'price' => '8.50',
+                    'comments' => 'Bitte warm halten.',
+                    'eating_time_ids' => [$this->eatingTime->id],
+                ],
+                [
+                    'id' => $editableEntry->id,
+                    'plan_date' => '2026-04-09',
+                    'menu_id' => $menu2->id,
+                    'menu_title' => 'Bearbeitbar neu',
+                    'price' => '12.10',
+                    'comments' => 'Mit Salat.',
+                    'eating_time_ids' => [],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Aktualisiert mit Sperre')
+        ->assertJsonCount(2, 'data.entries');
+
+    expect($lockedEntry->fresh()?->restaurant_menu_id)->toBe($this->menu->id);
+    expect($lockedEntry->fresh()?->menu_title)->toBe('Gebucht');
+    expect($lockedEntry->fresh()?->comments)->toBe('Bitte warm halten.');
+    expect($lockedEntry->fresh()?->eatingTimes()->pluck('restaurant_eating_times.id')->all())->toBe([$this->eatingTime->id]);
+
+    expect($editableEntry->fresh()?->restaurant_menu_id)->toBe($menu2->id);
+    expect($editableEntry->fresh()?->menu_title)->toBe('Bearbeitbar neu');
+    expect($editableEntry->fresh()?->price)->toBe('12.10');
+    expect($editableEntry->fresh()?->comments)->toBe('Mit Salat.');
+    expect($editableEntry->fresh()?->eatingTimes()->count())->toBe(0);
+
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $lockedEntry->id)->count())->toBe(1);
+    expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(2);
+});
+
+test('update rejects changes to booked entries', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $lockedEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Gebucht',
+        'price' => '8.50',
+        'comments' => 'Bitte warm halten.',
+    ]);
+    $lockedEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $lockedEntry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Konflikt',
+            'start_date' => '2026-04-07',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+            'entries' => [
+                [
+                    'id' => $lockedEntry->id,
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Gebucht veraendert',
+                    'price' => '8.50',
+                    'comments' => 'Bitte warm halten.',
+                    'eating_time_ids' => [$this->eatingTime->id],
+                ],
+            ],
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Gebuchte Menüs sind gesperrt und können nicht geändert, verschoben oder gelöscht werden.');
+
+    expect($lockedEntry->fresh()?->menu_title)->toBe('Gebucht');
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $lockedEntry->id)->count())->toBe(1);
+});
+
 test('update can shrink the menu plan range to remove the first day', function () {
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $this->school->id,

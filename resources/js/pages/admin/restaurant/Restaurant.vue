@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <v-container fluid class="restaurant-page ma-0 w-100 pa-2">
         <AdminSectionHero
             class="mb-3"

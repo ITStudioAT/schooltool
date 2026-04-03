@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <v-col cols="12">
         <v-row dense>
             <v-col cols="12" md="6" xl="3">

@@ -8,8 +8,10 @@ use App\Models\RestaurantMenuPlanEntry;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class RestaurantMenuPlanService
 {
@@ -20,6 +22,7 @@ class RestaurantMenuPlanService
             ->with([
                 'entries' => fn ($query) => $query
                     ->orderBy('plan_date')
+                    ->orderBy('id')
                     ->withSum('bookings as booked_menu_count', 'quantity'),
             ])
             ->orderBy('start_date')
@@ -38,6 +41,7 @@ class RestaurantMenuPlanService
                 'school',
                 'entries' => fn ($query) => $query
                     ->orderBy('plan_date')
+                    ->orderBy('id')
                     ->withSum('bookings as booked_menu_count', 'quantity'),
                 'entries.menu.foods.category',
                 'entries.menu.foods.ingredientIcons',
@@ -70,6 +74,7 @@ class RestaurantMenuPlanService
             $plan->load([
                 'entries' => fn ($query) => $query
                     ->orderBy('plan_date')
+                    ->orderBy('id')
                     ->withSum('bookings as booked_menu_count', 'quantity'),
                 'entries.menu.foods.category',
                 'entries.menu.foods.ingredientIcons',
@@ -107,6 +112,7 @@ class RestaurantMenuPlanService
             $plan->load([
                 'entries' => fn ($query) => $query
                     ->orderBy('plan_date')
+                    ->orderBy('id')
                     ->withSum('bookings as booked_menu_count', 'quantity'),
                 'entries.menu.foods.category',
                 'entries.menu.foods.ingredientIcons',
@@ -134,6 +140,72 @@ class RestaurantMenuPlanService
 
     private function syncEntries(RestaurantMenuPlan $plan, array $entries): void
     {
+        /** @var SupportCollection<int, RestaurantMenuPlanEntry> $existingEntries */
+        $existingEntries = $plan->entries()
+            ->with(['eatingTimes:id'])
+            ->withCount('bookings')
+            ->get()
+            ->keyBy('id');
+
+        if ($existingEntries->every(fn (RestaurantMenuPlanEntry $entry): bool => (int) ($entry->bookings_count ?? 0) === 0)) {
+            $this->replaceEntries($plan, $entries);
+
+            return;
+        }
+
+        /** @var SupportCollection<int, array<string, mixed>> $submittedEntriesById */
+        $submittedEntriesById = collect($entries)
+            ->filter(fn (array $entry): bool => isset($entry['id']) && $entry['id'] !== null && $entry['id'] !== '')
+            ->mapWithKeys(fn (array $entry): array => [(int) $entry['id'] => $entry]);
+
+        $this->ensureSubmittedEntriesBelongToPlan($existingEntries, $submittedEntriesById);
+        $this->ensureBookedEntriesRemainUnchanged($existingEntries, $submittedEntriesById);
+
+        $existingEntries->each(function (RestaurantMenuPlanEntry $entry) use ($submittedEntriesById): void {
+            if ((int) ($entry->bookings_count ?? 0) > 0) {
+                return;
+            }
+
+            if ($submittedEntriesById->has($entry->id)) {
+                return;
+            }
+
+            $entry->eatingTimes()->detach();
+            $entry->delete();
+        });
+
+        foreach ($entries as $entry) {
+            $existingEntry = isset($entry['id']) ? $existingEntries->get((int) $entry['id']) : null;
+
+            if ($existingEntry && (int) ($existingEntry->bookings_count ?? 0) > 0) {
+                continue;
+            }
+
+            $menu = RestaurantMenu::query()
+                ->where('school_id', $plan->school_id)
+                ->findOrFail($entry['menu_id']);
+
+            $attributes = [
+                'plan_date' => $entry['plan_date'],
+                'restaurant_menu_id' => $menu->id,
+                'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : (string) $menu->title,
+                'price' => isset($entry['price']) && $entry['price'] !== '' ? $entry['price'] : $menu->price,
+                'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
+            ];
+
+            if ($existingEntry) {
+                $existingEntry->update($attributes);
+                $targetEntry = $existingEntry;
+            } else {
+                $targetEntry = $plan->entries()->create($attributes);
+            }
+
+            $targetEntry->eatingTimes()->sync($entry['eating_time_ids'] ?? []);
+        }
+    }
+
+    private function replaceEntries(RestaurantMenuPlan $plan, array $entries): void
+    {
         $plan->entries()->each(fn (RestaurantMenuPlanEntry $entry) => $entry->eatingTimes()->detach());
         $plan->entries()->delete();
 
@@ -150,10 +222,105 @@ class RestaurantMenuPlanService
                 'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
             ]);
 
-            if (! empty($entry['eating_time_ids'])) {
-                $newEntry->eatingTimes()->attach($entry['eating_time_ids']);
+            $newEntry->eatingTimes()->sync($entry['eating_time_ids'] ?? []);
+        }
+    }
+
+    /**
+     * @param  SupportCollection<int, RestaurantMenuPlanEntry>  $existingEntries
+     * @param  SupportCollection<int, array<string, mixed>>  $submittedEntriesById
+     */
+    private function ensureSubmittedEntriesBelongToPlan(SupportCollection $existingEntries, SupportCollection $submittedEntriesById): void
+    {
+        $unknownEntryIds = $submittedEntriesById
+            ->keys()
+            ->reject(fn (int $entryId): bool => $existingEntries->has($entryId))
+            ->values();
+
+        if ($unknownEntryIds->isNotEmpty()) {
+            throw new ConflictHttpException('Mindestens ein Menüeintrag ist nicht mehr verfügbar.');
+        }
+    }
+
+    /**
+     * @param  SupportCollection<int, RestaurantMenuPlanEntry>  $existingEntries
+     * @param  SupportCollection<int, array<string, mixed>>  $submittedEntriesById
+     */
+    private function ensureBookedEntriesRemainUnchanged(SupportCollection $existingEntries, SupportCollection $submittedEntriesById): void
+    {
+        $bookedEntries = $existingEntries->filter(
+            fn (RestaurantMenuPlanEntry $entry): bool => (int) ($entry->bookings_count ?? 0) > 0
+        );
+
+        foreach ($bookedEntries as $entry) {
+            $submittedEntry = $submittedEntriesById->get($entry->id);
+
+            if (! is_array($submittedEntry)) {
+                throw new ConflictHttpException('Gebuchte Menüs sind gesperrt und können nicht geändert, verschoben oder gelöscht werden.');
+            }
+
+            if ($this->lockedEntrySignature($entry) !== $this->submittedLockedEntrySignature($submittedEntry)) {
+                throw new ConflictHttpException('Gebuchte Menüs sind gesperrt und können nicht geändert, verschoben oder gelöscht werden.');
             }
         }
+    }
+
+    /**
+     * @return array{
+     *     plan_date: string,
+     *     menu_id: int,
+     *     menu_title: ?string,
+     *     price: ?string,
+     *     comments: ?string,
+     *     eating_time_ids: array<int, int>
+     * }
+     */
+    private function lockedEntrySignature(RestaurantMenuPlanEntry $entry): array
+    {
+        return [
+            'plan_date' => $entry->plan_date?->format('Y-m-d') ?? '',
+            'menu_id' => (int) $entry->restaurant_menu_id,
+            'menu_title' => filled($entry->menu_title) ? trim((string) $entry->menu_title) : null,
+            'price' => $entry->price !== null ? number_format((float) $entry->price, 2, '.', '') : null,
+            'comments' => filled($entry->comments) ? trim((string) $entry->comments) : null,
+            'eating_time_ids' => $entry->eatingTimes
+                ->pluck('id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->sort()
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array{
+     *     plan_date: string,
+     *     menu_id: int,
+     *     menu_title: ?string,
+     *     price: ?string,
+     *     comments: ?string,
+     *     eating_time_ids: array<int, int>
+     * }
+     */
+    private function submittedLockedEntrySignature(array $entry): array
+    {
+        $rawPrice = $entry['price'] ?? null;
+
+        return [
+            'plan_date' => (string) ($entry['plan_date'] ?? ''),
+            'menu_id' => (int) ($entry['menu_id'] ?? 0),
+            'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : null,
+            'price' => $rawPrice !== null && $rawPrice !== ''
+                ? number_format((float) $rawPrice, 2, '.', '')
+                : null,
+            'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
+            'eating_time_ids' => collect($entry['eating_time_ids'] ?? [])
+                ->map(fn (mixed $id): int => (int) $id)
+                ->sort()
+                ->values()
+                ->all(),
+        ];
     }
 
     private function normalizePlanDateTime(mixed $value): ?Carbon

@@ -1,6 +1,19 @@
 <template>
     <v-col cols="12">
-        <div class="mp-root">
+        <div
+            class="mp-root"
+            :class="{ 'mp-root--busy': isNavigatingToEditor }"
+            :aria-busy="isNavigatingToEditor ? 'true' : 'false'">
+            <div
+                v-if="isNavigatingToEditor"
+                class="mp-overlay"
+                data-testid="menu-plans-navigation-overlay"
+                aria-live="polite">
+                <div class="mp-overlay__content">
+                    <div class="mp-overlay__spinner" aria-hidden="true" />
+                    <div class="mp-overlay__text">Editor wird geladen ...</div>
+                </div>
+            </div>
             <v-row dense class="ma-0">
                 <v-col cols="12" lg="8" class="pa-0 pr-lg-3">
                     <v-sheet rounded="xl" elevation="0" class="mp-calendar pa-5" data-testid="menu-plans-calendar">
@@ -11,14 +24,14 @@
                                 <h3 class="mp-cal-title">{{ currentWeekRangeLabel }}</h3>
                             </div>
                             <div class="mp-cal-nav">
-                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToPreviousWeek">
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" :disabled="isNavigatingToEditor" @click="goToPreviousWeek">
                                     <v-icon icon="mdi-chevron-left" size="18" />
                                 </v-btn>
-                                <v-btn size="small" variant="tonal" color="warning" rounded="lg" @click="goToCurrentWeek">Heute</v-btn>
-                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToNextWeek">
+                                <v-btn size="small" variant="tonal" color="warning" rounded="lg" :disabled="isNavigatingToEditor" @click="goToCurrentWeek">Heute</v-btn>
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" :disabled="isNavigatingToEditor" @click="goToNextWeek">
                                     <v-icon icon="mdi-chevron-right" size="18" />
                                 </v-btn>
-                                <v-btn size="small" variant="outlined" color="primary" rounded="lg" @click="refreshData" title="Daten aktualisieren">
+                                <v-btn size="small" variant="outlined" color="primary" rounded="lg" :disabled="isNavigatingToEditor" @click="refreshData" title="Daten aktualisieren">
                                     <v-icon icon="mdi-refresh" size="18" />
                                 </v-btn>
                             </div>
@@ -41,6 +54,7 @@
                                     class="mp-day"
                                     :class="dayCellClasses(day.iso)"
                                     :data-testid="`menu-day-${day.iso}`"
+                                    :disabled="isNavigatingToEditor"
                                     @click="selectDay(day.iso)">
                                     <span
                                         v-if="day.hasAvailablePlan"
@@ -170,7 +184,8 @@
                                 rounded="xl"
                                 block
                                 prepend-icon="mdi-pencil-outline"
-                                :disabled="!selectedExistingPlan"
+                                data-testid="menu-plan-edit-button"
+                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
                                 @click="editSelectedPlan">
                                 Bearbeiten
                             </v-btn>
@@ -180,11 +195,19 @@
                                 rounded="xl"
                                 block
                                 prepend-icon="mdi-plus"
-                                :disabled="!canCreatePreview"
+                                data-testid="menu-plan-create-button"
+                                :disabled="!canCreatePreview || isNavigatingToEditor"
                                 @click="createPreview">
                                 Erstellen
                             </v-btn>
-                            <v-btn variant="text" color="secondary" rounded="xl" block @click="resetSelection">
+                            <v-btn
+                                variant="text"
+                                color="secondary"
+                                rounded="xl"
+                                block
+                                data-testid="menu-plan-reset-button"
+                                :disabled="isNavigatingToEditor"
+                                @click="resetSelection">
                                 Zur&uuml;cksetzen
                             </v-btn>
                         </div>
@@ -236,6 +259,7 @@ export default {
             selectedStartIso: '',
             selectedEndIso: '',
             previewMessage: '',
+            isNavigatingToEditor: false,
             currentDateTime: new Date(),
             freeDayDates: {},
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
@@ -483,6 +507,10 @@ export default {
             }
         },
         selectDay(isoString) {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.previewMessage = ''
             const clickedPlan = this.findPlanForDay(isoString)
 
@@ -525,53 +553,90 @@ export default {
             return { 'is-done': isDone, 'is-active': isActive && !isDone }
         },
         createPreview() {
-            if (!this.canCreatePreview) {
+            if (!this.canCreatePreview || this.isNavigatingToEditor) {
                 return
             }
 
-            this.navigateToEditor({
+            return this.navigateToEditor({
                 mode: 'create',
                 start: this.selectedStartIso,
                 end: this.selectedEndIso,
             })
         },
         editSelectedPlan() {
-            if (!this.selectedExistingPlan) {
+            if (!this.selectedExistingPlan || this.isNavigatingToEditor) {
                 return
             }
 
-            this.navigateToEditor({
+            return this.navigateToEditor({
                 mode: 'edit',
                 plan_id: this.selectedExistingPlan.id,
                 start: this.selectedExistingPlan.start_date,
                 end: this.selectedExistingPlan.end_date,
             })
         },
-        navigateToEditor(query) {
-            this.$router.push({
-                path: '/admin/menu-plans',
-                query: {
-                    ...query,
-                    return_to: '/admin/restaurant/menu-plans',
-                    return_week: this.currentWeekStartIso,
-                },
-            })
+        async navigateToEditor(query) {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
+            this.isNavigatingToEditor = true
+
+            try {
+                const navigationFailure = await this.$router.push({
+                    path: '/admin/menu-plans',
+                    query: {
+                        ...query,
+                        return_to: '/admin/restaurant/menu-plans',
+                        return_week: this.currentWeekStartIso,
+                    },
+                })
+
+                if (navigationFailure) {
+                    this.isNavigatingToEditor = false
+                }
+
+                return navigationFailure
+            } catch (error) {
+                this.isNavigatingToEditor = false
+                throw error
+            }
         },
         resetSelection() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.selectedStartIso = ''
             this.selectedEndIso = ''
             this.previewMessage = ''
         },
         goToCurrentWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.startOfWeekIso(this.todayIso)
         },
         goToPreviousWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, -7)
         },
         goToNextWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, 7)
         },
         refreshData() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             const store = useMenuPlanStore()
             const restaurantStore = useRestaurantStore()
             
@@ -737,6 +802,60 @@ export default {
 
 <style scoped>
 /* ---- Calendar Panel ---- */
+
+.mp-root {
+    position: relative;
+}
+
+.mp-root--busy {
+    user-select: none;
+}
+
+.mp-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(1.5px);
+}
+
+.mp-overlay__content {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(255, 247, 237, 0.96);
+    border: 1px solid rgba(234, 88, 12, 0.18);
+    color: #9a3412;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.mp-overlay__spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(234, 88, 12, 0.2);
+    border-top-color: #ea580c;
+    animation: mp-overlay-spin 0.7s linear infinite;
+}
+
+.mp-overlay__text {
+    font-size: 0.92rem;
+    line-height: 1.2;
+}
+
+@keyframes mp-overlay-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 
 .mp-calendar,
 .mp-side {

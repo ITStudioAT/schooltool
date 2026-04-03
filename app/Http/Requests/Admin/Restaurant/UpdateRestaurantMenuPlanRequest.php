@@ -39,6 +39,7 @@ class UpdateRestaurantMenuPlanRequest extends FormRequest
             'order_start_at' => ['required_if:use_individual_schedule_values,true,1', 'nullable', 'date_format:Y-m-d\TH:i'],
             'order_end_at' => ['required_if:use_individual_schedule_values,true,1', 'nullable', 'date_format:Y-m-d\TH:i'],
             'entries' => ['nullable', 'array'],
+            'entries.*.id' => ['nullable', 'integer', 'exists:restaurant_menu_plan_entries,id'],
             'entries.*.plan_date' => ['required', 'date_format:Y-m-d'],
             'entries.*.menu_id' => ['required', 'integer', 'exists:restaurant_menus,id'],
             'entries.*.menu_title' => ['nullable', 'string', 'max:255'],

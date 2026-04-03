@@ -100,7 +100,7 @@
                             <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
                         </div>
                         <div class="restaurant-auth-card__actions">
-                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="downloadRestaurantOverviewPdf">PDF drucken</v-btn>
+                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="downloadRestaurantOverviewPdf">Meine Menüs drucken</v-btn>
                             <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openRestaurantPasswordDialog">Passwort ändern</v-btn>
                             <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
                         </div>
@@ -229,6 +229,10 @@
                                 <span>noch {{ countdownFor(plan) }}</span>
                             </div>
                         </div>
+                        <v-btn color="white" variant="outlined" rounded="lg" size="small" class="text-none font-weight-bold rp-plan__print-btn" @click="downloadMenuPlanPdf(plan.id)">
+                            <v-icon icon="mdi-printer" size="16" class="mr-1" />
+                            Menüplan drucken
+                        </v-btn>
                     </div>
 
                     <div class="rp-days">
@@ -1642,6 +1646,10 @@ export default {
 
             const url = `/api/homepage/restaurant/print?school=${encodeURIComponent(this.currentSchoolShortName)}`
             window.open(url, '_blank', 'noopener')
+        },
+
+        downloadMenuPlanPdf(planId) {
+            window.open(`/api/homepage/restaurant/menu-plans/${planId}/print`, '_blank', 'noopener')
         },
 
         groupEntriesByDate(entries) {

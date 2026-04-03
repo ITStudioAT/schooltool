@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="utf-8">
-    <title>Restaurant Übersicht</title>
+    <title>Restaurant Buchungen</title>
     <style>
         * {
             box-sizing: border-box;
@@ -105,58 +105,6 @@
             color: #4b5563;
         }
 
-        .plan {
-            margin-bottom: 12px;
-            padding: 10px 12px;
-            border: 1px solid #dbe3ea;
-            border-radius: 10px;
-            background: #ffffff;
-            page-break-inside: avoid;
-        }
-
-        .plan-title {
-            margin: 0;
-            font-size: 12px;
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .plan-range {
-            margin-top: 2px;
-            color: #4b5563;
-        }
-
-        .plan-days {
-            margin-top: 8px;
-        }
-
-        .plan-day + .plan-day {
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px dashed #d1d5db;
-        }
-
-        .plan-day-title {
-            font-size: 10.5px;
-            font-weight: 700;
-            color: #92400e;
-        }
-
-        .plan-entry {
-            margin-top: 4px;
-            padding-left: 8px;
-        }
-
-        .plan-entry-title {
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .plan-entry-meta {
-            margin-top: 2px;
-            color: #4b5563;
-        }
-
         .empty {
             padding: 10px 12px;
             border-radius: 10px;
@@ -168,15 +116,13 @@
 <body>
     <div class="page">
         <section class="header">
-            <div class="eyebrow">Restaurant Übersicht</div>
+            <div class="eyebrow">Restaurant Buchungen</div>
             <h1 class="title">{{ $school['name'] !== '' ? $school['name'] : 'Restaurant' }}</h1>
             <div class="meta"><strong>Nutzer:</strong> {{ $user['name'] }}@if($user['email'] !== '') ({{ $user['email'] }})@endif</div>
             <div class="meta"><strong>Erstellt am:</strong> {{ $school['generated_at'] }}</div>
         </section>
 
         <section class="section">
-            <h2 class="section-title">Bereits gebucht</h2>
-            <p class="section-subtitle">Ihre Menüs</p>
 
             @if(count($bookings) === 0)
                 <div class="empty">Keine aktuellen Buchungen vorhanden.</div>
@@ -196,58 +142,12 @@
                                             um {{ $booking['eating_time'] }} Uhr
                                         @endif
                                         @if($booking['recipients'] !== '')
-                                            · {{ $booking['recipients'] }}
+                                            &middot; {{ $booking['recipients'] }}
                                         @endif
                                     </div>
                                 @endforeach
                             </div>
                         @endforeach
-                    </div>
-                @endforeach
-            @endif
-        </section>
-
-        <section class="section">
-            <h2 class="section-title">Menüplan</h2>
-
-            @if(count($plans) === 0)
-                <div class="empty">Kein sichtbarer Menüplan vorhanden.</div>
-            @else
-                @foreach($plans as $plan)
-                    <div class="plan">
-                        <h3 class="plan-title">{{ $plan['title'] }}</h3>
-                        <div class="plan-range">{{ $plan['range_label'] }}</div>
-
-                        <div class="plan-days">
-                            @foreach($plan['days'] as $day)
-                                <div class="plan-day">
-                                    <div class="plan-day-title">{{ $day['weekday_label'] }}, {{ $day['date_label'] }}</div>
-
-                                    @if(count($day['entries']) === 0)
-                                        <div class="plan-entry">
-                                            <div class="plan-entry-meta">Kein Menü eingetragen.</div>
-                                        </div>
-                                    @else
-                                        @foreach($day['entries'] as $entry)
-                                            <div class="plan-entry">
-                                                <div class="plan-entry-title">
-                                                    {{ $entry['menu_title'] }}
-                                                    @if($entry['price'])
-                                                        · {{ $entry['price'] }}
-                                                    @endif
-                                                </div>
-                                                @if(count($entry['eating_times']) > 0)
-                                                    <div class="plan-entry-meta">{{ implode(', ', $entry['eating_times']) }}</div>
-                                                @endif
-                                                @if($entry['comments'])
-                                                    <div class="plan-entry-meta">{{ $entry['comments'] }}</div>
-                                                @endif
-                                            </div>
-                                        @endforeach
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
                     </div>
                 @endforeach
             @endif

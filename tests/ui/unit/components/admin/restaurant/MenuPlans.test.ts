@@ -1,4 +1,4 @@
-﻿import { mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import MenuPlans from '@/pages/admin/restaurant/components/MenuPlans.vue'
 import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
@@ -14,14 +14,15 @@ vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
 
 function mountMenuPlans(
     routeQuery: Record<string, string> = {},
-    plans: Array<Record<string, unknown>> = [
+    plans: Array<Record<string, unknown>> | undefined = [
         { id: 'mp-2026-03-23', start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
     ],
     options: {
         onlineSettings?: Record<string, unknown>
+        routerPushImplementation?: () => Promise<unknown> | unknown
     } = {},
 ) {
-    const routerPush = vi.fn()
+    const routerPush = vi.fn(options.routerPushImplementation)
     const normalizedPlans = plans.map((plan) => ({ ...plan }))
 
     vi.mocked(useMenuPlanStore).mockReturnValue({
@@ -191,6 +192,27 @@ describe('Restaurant menu plans component', () => {
                 return_week: (wrapper.vm as any).currentWeekStartIso,
             },
         })
+    })
+
+    it('disables the selection UI immediately while the editor navigation is pending', async () => {
+        const wrapper = mountMenuPlans({}, undefined, {
+            routerPushImplementation: () => new Promise(() => {}),
+        })
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        await wrapper.vm.$nextTick()
+
+        ;(wrapper.vm as any).selectDay('2026-03-25')
+        await wrapper.vm.$nextTick()
+
+        await wrapper.find('[data-testid="menu-plan-edit-button"]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isNavigatingToEditor).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plans-navigation-overlay"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-edit-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="menu-plan-reset-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="menu-day-2026-03-25"]').attributes('disabled')).toBeDefined()
     })
 
     it('renders three stacked weeks and the create action', () => {
