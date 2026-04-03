@@ -32,6 +32,11 @@ class RestaurantCreateBookingRequest extends FormRequest
             'data.child_type' => 'nullable|string|in:child,other_person',
             'data.import116_id' => 'nullable|integer|exists:import116,id',
             'data.notes' => 'nullable|string|max:1000',
+            'data.recipients' => 'nullable|array|max:100',
+            'data.recipients.*.name' => 'required_with:data.recipients|string|max:255',
+            'data.recipients.*.type' => 'nullable|string|in:self,child,other_person',
+            'data.recipients.*.import116_id' => 'nullable|integer|exists:import116,id',
+            'data.single_recipient_customized' => 'nullable|boolean',
         ];
     }
 

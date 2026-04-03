@@ -96,6 +96,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     // Restaurant booking routes
     Route::post('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'store'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
     Route::get('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'index'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/print', [RestaurantBookingController::class, 'print'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
     Route::delete('/homepage/restaurant/bookings/{id}', [RestaurantBookingController::class, 'destroy'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
     Route::get('/homepage/restaurant/child-options', [RestaurantBookingController::class, 'childOptions'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
 

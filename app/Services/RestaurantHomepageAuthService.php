@@ -42,6 +42,11 @@ class RestaurantHomepageAuthService
             ->first();
 
         if ($directUser) {
+            $directUser->setAttribute(
+                'matched_children',
+                $this->childLabelsFromParentImports($this->parentImportsForEmail($schoolId, $normalizedEmail))
+            );
+
             return [
                 'status' => 'USER_FOUND',
                 'school_id' => $schoolId,
@@ -998,6 +1003,23 @@ class RestaurantHomepageAuthService
                 return $user;
             })
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, Import116>  $parentImports
+     * @return array<int, string>
+     */
+    private function childLabelsFromParentImports(Collection $parentImports): array
+    {
+        return $parentImports
+            ->map(fn (Import116 $import): string => trim(implode(' ', array_filter([
+                trim((string) $import->first_name),
+                trim((string) $import->last_name),
+            ]))))
+            ->filter(fn (string $child): bool => $child !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function linkedLunchUserForImportStudent(int $schoolId, Import116 $import): ?User

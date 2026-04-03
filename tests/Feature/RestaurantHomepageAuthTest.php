@@ -81,6 +81,56 @@ it('finds a direct lunch user by email', function () {
         ->assertJsonPath('available_auth_methods.1', 'password');
 });
 
+it('includes all linked children when a direct lunch user logs in with a parent email', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'parent-login@test.local',
+        'first_name' => 'Eva',
+        'last_name' => 'Muster',
+    ]);
+    $user->assignRole('lunch_user');
+
+    $importingUser = User::factory()->create(['school_id' => $this->school->id]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Kind',
+        'last_name' => 'Eins',
+        'mother_name' => 'Eva Muster',
+        'mother_email' => 'parent-login@test.local',
+        'import_user_id' => $importingUser->id,
+    ]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'first_name' => 'Kind',
+        'last_name' => 'Zwei',
+        'mother_name' => 'Eva Muster',
+        'mother_email' => 'parent-login@test.local',
+        'import_user_id' => $importingUser->id,
+    ]);
+
+    $response = $this->postJson('/api/homepage/restaurant/check_email', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'parent-login@test.local',
+        ],
+    ]);
+
+    $response
+        ->assertOk()
+        ->assertJsonPath('status', 'USER_FOUND')
+        ->assertJsonPath('match_source', 'user')
+        ->assertJsonPath('matched_users_count', 1)
+        ->assertJsonPath('matched_users.0.email', 'parent-login@test.local');
+
+    expect(collect($response->json('matched_users.0.matched_children'))->sort()->values()->all())
+        ->toBe(['Kind Eins', 'Kind Zwei']);
+});
+
 it('sends a restaurant login code for a lunch user', function () {
     $user = User::factory()->create([
         'school_id' => $this->school->id,

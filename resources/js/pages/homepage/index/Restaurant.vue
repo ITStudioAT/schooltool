@@ -89,18 +89,84 @@
 
         <section v-if="currentSchoolShortName" class="restaurant-auth">
             <div class="restaurant-shell">
-                <div v-if="restaurantAuthUser" class="restaurant-auth-card">
-                    <div class="restaurant-auth-card__icon">
-                        <v-icon size="28">mdi-account-check-outline</v-icon>
+                <div v-if="restaurantAuthUser" class="restaurant-auth-stack">
+                    <div class="restaurant-auth-card">
+                        <div class="restaurant-auth-card__icon">
+                            <v-icon size="28">mdi-account-check-outline</v-icon>
+                        </div>
+                        <div class="restaurant-auth-card__copy">
+                            <h2 class="restaurant-auth-card__title">{{ restaurantAuthDisplayName }}</h2>
+                            <p v-if="restaurantAuthEmail" class="restaurant-auth-card__meta">E-Mail: {{ restaurantAuthEmail }}</p>
+                            <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
+                        </div>
+                        <div class="restaurant-auth-card__actions">
+                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="downloadRestaurantOverviewPdf">PDF drucken</v-btn>
+                            <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openRestaurantPasswordDialog">Passwort ändern</v-btn>
+                            <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
+                        </div>
                     </div>
-                    <div class="restaurant-auth-card__copy">
-                        <h2 class="restaurant-auth-card__title">{{ restaurantAuthDisplayName }}</h2>
-                        <p v-if="restaurantAuthEmail" class="restaurant-auth-card__meta">E-Mail: {{ restaurantAuthEmail }}</p>
-                        <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
-                    </div>
-                    <div class="restaurant-auth-card__actions">
-                        <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openRestaurantPasswordDialog">Passwort ändern</v-btn>
-                        <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
+
+                    <div v-if="groupedUserBookings.length" class="restaurant-auth-bookings">
+                        <div class="restaurant-auth-bookings__header">
+                            <div>
+                                <div class="restaurant-auth-bookings__eyebrow">Bereits gebucht</div>
+                                <h3 class="restaurant-auth-bookings__title">Ihre Menüs</h3>
+                            </div>
+                            <div class="restaurant-auth-bookings__count">{{ userBookings.length }} Buchung<span v-if="userBookings.length !== 1">en</span></div>
+                        </div>
+
+                        <div class="restaurant-auth-bookings__list">
+                            <div
+                                v-for="group in groupedUserBookings"
+                                :key="`auth-booking-date-${group.dateKey}`"
+                                class="restaurant-auth-bookings__item"
+                                :class="{ 'restaurant-auth-bookings__item--today': group.dateKey === todayDateKey }">
+                                <div class="restaurant-auth-bookings__item-title">
+                                    {{ group.dayLabel }}, {{ group.dateLabel }}
+                                    <span v-if="group.dateKey === todayDateKey" class="restaurant-auth-bookings__today-badge">Heute</span>
+                                </div>
+
+                                <div class="restaurant-auth-bookings__entries">
+                                    <div
+                                        v-for="menuGroup in group.menuGroups"
+                                        :key="`auth-booking-menu-${group.dateKey}-${menuGroup.menuKey}`"
+                                        class="restaurant-auth-bookings__menu-group">
+                                        <div class="restaurant-auth-bookings__entry-title">
+                                            {{ menuGroup.menuTitle }}
+                                        </div>
+
+                                        <div class="restaurant-auth-bookings__menu-items">
+                                            <div
+                                                v-for="booking in menuGroup.bookings"
+                                                :key="`auth-booking-${booking.id}`"
+                                                class="restaurant-auth-bookings__entry">
+                                                <div class="restaurant-auth-bookings__copy">
+                                                    <div class="restaurant-auth-bookings__item-meta">
+                                                        <strong>{{ booking.quantity }}x</strong>
+                                                        <span v-if="booking.eating_time"> um {{ formatEatingTime(booking.eating_time) }} Uhr</span>
+                                                        <span v-if="bookingRecipientNames(booking)"> · {{ bookingRecipientNames(booking) }}</span>
+                                                    </div>
+                                                </div>
+
+                                                <v-btn
+                                                    v-if="booking.can_cancel"
+                                                    color="#ea580c"
+                                                    variant="text"
+                                                    size="small"
+                                                    class="text-none font-weight-bold"
+                                                    :loading="isBookingCancellationLoading(booking.id)"
+                                                    :disabled="isBookingCancellationLoading(booking.id)"
+                                                    @click="requestBookingCancellation(booking)">
+                                                    Stornieren
+                                                </v-btn>
+
+                                                <span v-else class="restaurant-auth-bookings__locked">Nicht stornierbar!</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div v-else class="restaurant-auth-card">
@@ -125,16 +191,38 @@
                     <h2 class="rp-section-header__title">Aktuelle Speisepläne</h2>
                 </div>
 
+                <v-alert
+                    v-if="bookingSuccess"
+                    type="success"
+                    variant="tonal"
+                    density="comfortable"
+                    class="mb-4">
+                    {{ bookingSuccess }}
+                </v-alert>
+
+                <v-alert
+                    v-if="bookingError"
+                    type="error"
+                    variant="tonal"
+                    density="comfortable"
+                    class="mb-4">
+                    {{ bookingError }}
+                </v-alert>
+
                 <div v-for="plan in menuPlans" :key="plan.id" class="rp-plan" :class="{ 'rp-plan--orderable': plan.is_orderable }">
                     <div class="rp-plan__header">
                         <div class="rp-plan__header-left">
                             <div class="rp-plan__title">{{ plan.title || "Menüplan" }}</div>
                             <div class="rp-plan__range">{{ formatDate(plan.start_date) }} - {{ formatDate(plan.end_date) }}</div>
                         </div>
-                        <div v-if="plan.is_orderable" class="rp-plan__badge-group">
-                            <div class="rp-plan__badge">
+                        <div v-if="plan.is_orderable || (!plan.is_orderable && plan.order_start_at && new Date(plan.order_start_at).getTime() > Date.now())" class="rp-plan__badge-group">
+                            <div v-if="plan.is_orderable" class="rp-plan__badge">
                                 <v-icon icon="mdi-cart-check" size="15" />
                                 <span>Bestellbar</span>
+                            </div>
+                            <div v-else class="rp-plan__badge">
+                                <v-icon icon="mdi-clock-outline" size="15" />
+                                <span>Bald bestellbar</span>
                             </div>
                             <div v-if="countdownFor(plan)" class="rp-plan__timer">
                                 <v-icon icon="mdi-timer-outline" size="13" />
@@ -176,6 +264,37 @@
 
                                     <div v-if="entry.comments" class="rp-menu__comments">{{ entry.comments }}</div>
 
+                                    <div v-if="restaurantAuthUser && entryHasBookings(entry.id)" class="rp-menu__booking-state">
+                                        <div class="rp-menu__booking-summary">
+                                            <v-icon icon="mdi-check-circle" size="14" class="rp-menu__booking-summary-icon" />
+                                            <span>Gebucht: {{ bookedQuantityForEntry(entry.id) }}x</span>
+                                        </div>
+
+                                        <div class="rp-menu__booking-list">
+                                            <div v-for="booking in userBookingsForEntry(entry.id)" :key="booking.id" class="rp-menu__booking-item">
+                                                <div class="rp-menu__booking-copy">
+                                                    <strong>{{ booking.quantity }}x</strong>
+                                                    <span v-if="booking.eating_time"> um {{ formatEatingTime(booking.eating_time) }} Uhr</span>
+                                                    <span v-if="bookingRecipientNames(booking)"> - {{ bookingRecipientNames(booking) }}</span>
+                                                </div>
+
+                                                <v-btn
+                                                    v-if="booking.can_cancel"
+                                                    color="#ea580c"
+                                                    variant="text"
+                                                    size="small"
+                                                    class="text-none font-weight-bold"
+                                                    :loading="isBookingCancellationLoading(booking.id)"
+                                                    :disabled="isBookingCancellationLoading(booking.id)"
+                                            @click="requestBookingCancellation(booking)">
+                                            Stornieren
+                                        </v-btn>
+
+                                                <span v-else class="rp-menu__booking-locked">Nicht stornierbar!</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div v-if="restaurantAuthUser && plan.is_orderable" class="rp-menu__actions">
                                         <v-btn
                                             color="#ea580c"
@@ -183,7 +302,7 @@
                                             size="small"
                                             class="text-none font-weight-bold"
                                             @click="bookMenu(entry)">
-                                            Buchen
+                                            {{ entryHasBookings(entry.id) ? 'Weiteres buchen' : 'Buchen' }}
                                         </v-btn>
                                     </div>
                                 </div>
@@ -703,7 +822,7 @@
                                         'booking-quantity-picker__option--active': bookingData.quantity === quantity,
                                     }"
                                     :aria-pressed="bookingData.quantity === quantity"
-                                    @click="bookingData.quantity = quantity">
+                                    @click="setBookingQuantity(quantity)">
                                     {{ quantity }}
                                 </button>
                                 <button
@@ -717,7 +836,79 @@
                             </div>
                         </div>
 
-                        <div v-if="restaurantAuthUser?.import116_parent">
+                        <div class="booking-recipient-section mb-3">
+                            <div class="booking-recipient-section__label">Für wen ist das Menü?</div>
+
+                            <div v-if="bookingData.quantity === 1">
+                                <div class="booking-recipient-summary">
+                                    Standardmäßig für <strong>{{ bookingSingleRecipientDisplayName }}</strong>.
+                                </div>
+
+                                <div v-if="bookingHasMultipleChildOptions" class="booking-child-picker">
+                                    <div class="booking-child-picker__label">Kind schnell auswählen</div>
+                                    <div class="booking-child-picker__options">
+                                        <button
+                                            v-for="child in childOptions"
+                                            :key="child.id"
+                                            type="button"
+                                            class="booking-child-picker__option"
+                                            :class="{
+                                                'booking-child-picker__option--active': isSingleChildSelected(child),
+                                            }"
+                                            :aria-pressed="isSingleChildSelected(child)"
+                                            @click="selectSingleChildRecipient(child)">
+                                            {{ child.name }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <label class="booking-recipient-toggle">
+                                    <input
+                                        type="checkbox"
+                                        :checked="bookingRecipientOverride"
+                                        @change="setSingleRecipientOverride($event.target.checked)" />
+                                    <span>Für jemanden anderen</span>
+                                </label>
+
+                                <div v-if="shouldShowSingleRecipientEditor" class="booking-recipient-field-wrap mt-3">
+                                    <label class="booking-recipient-field__label" for="booking-recipient-0">Name</label>
+                                    <input
+                                        id="booking-recipient-0"
+                                        v-model="bookingData.recipients[0].name"
+                                        @input="onRecipientNameInput(0)"
+                                        type="text"
+                                        maxlength="255"
+                                        class="booking-recipient-field"
+                                        autocomplete="off" />
+                                </div>
+                            </div>
+
+                            <div v-else class="booking-recipient-list">
+                                <div
+                                    v-for="(recipient, index) in bookingRecipients"
+                                    :key="`booking-recipient-${index}`"
+                                    class="booking-recipient-field-wrap">
+                                    <label class="booking-recipient-field__label" :for="`booking-recipient-${index}`">
+                                        {{ recipientFieldLabel(index) }}
+                                    </label>
+                                    <input
+                                        :id="`booking-recipient-${index}`"
+                                        v-model="bookingData.recipients[index].name"
+                                        @input="onRecipientNameInput(index)"
+                                        type="text"
+                                        maxlength="255"
+                                        class="booking-recipient-field"
+                                        autocomplete="off" />
+                                    <div
+                                        v-if="bookingIsImport116Parent && recipient.type === 'child' && recipient.import116_id"
+                                        class="booking-recipient-field__hint">
+                                        Aus den hinterlegten Kindern übernommen
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="false && restaurantAuthUser?.import116_parent">
                             <div v-if="childOptions.length === 1" class="mb-3">
                                 <v-text-field
                                     v-model="bookingData.child_name"
@@ -802,6 +993,48 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="showCancelBookingDialog" persistent max-width="420">
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-6 font-weight-bold">Buchung stornieren?</v-card-title>
+                <v-card-text class="px-6">
+                    <p class="restaurant-login-state__text mb-3">
+                        Möchten Sie diese Buchung wirklich stornieren?
+                    </p>
+
+                    <div v-if="pendingCancellationBooking" class="restaurant-login-email">
+                        <div class="restaurant-login-email__label">Buchung</div>
+                        <div class="restaurant-login-email__value">
+                            {{ pendingCancellationBooking.menu_title || 'Menü' }}
+                        </div>
+                        <div class="restaurant-auth-bookings__item-meta">
+                            <strong>{{ pendingCancellationBooking.quantity }}x</strong>
+                            <span v-if="pendingCancellationBooking.eating_time"> um {{ formatEatingTime(pendingCancellationBooking.eating_time) }} Uhr</span>
+                            <span v-if="bookingRecipientNames(pendingCancellationBooking)"> · {{ bookingRecipientNames(pendingCancellationBooking) }}</span>
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        color="secondary"
+                        :disabled="pendingCancellationLoading"
+                        @click="closeCancelBookingDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="pendingCancellationLoading"
+                        :disabled="pendingCancellationLoading"
+                        @click="confirmBookingCancellation">
+                        Ja, stornieren
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -841,6 +1074,7 @@ export default {
             homepageStore: null,
             selectedSchoolShortName: null,
             menuPlans: [],
+            userBookings: [],
             showLoginDialog: false,
             showRegisterDialog: false,
             showPasswordDialog: false,
@@ -881,6 +1115,7 @@ export default {
             restaurant_eating_time_id: null,
             quantity: 1,
             price: null,
+            recipients: [],
             child_name: '',
             child_type: null,
             notes: '',
@@ -888,9 +1123,22 @@ export default {
         bookingLoading: false,
         bookingError: '',
         bookingSuccess: '',
+        bookingCancellationIds: [],
+        showCancelBookingDialog: false,
+        pendingCancellationBooking: null,
+        pendingCancellationLoading: false,
         bookingChildOptionsLoading: false,
         bookingQuantityExpanded: false,
         childOptions: [],
+        bookingFormContext: {
+            is_import116_parent: false,
+            self_name: '',
+            booking_defaults: {
+                recipients: [],
+                single_recipient_customized: false,
+            },
+        },
+        bookingRecipientOverride: false,
         }
     },
 
@@ -919,6 +1167,85 @@ export default {
         },
         restaurantAuthEmail() {
             return this.restaurantAuthUser?.email?.trim?.() || ''
+        },
+        todayDateKey() {
+            const today = new Date(this.tickNow)
+            const year = today.getFullYear()
+            const month = String(today.getMonth() + 1).padStart(2, '0')
+            const day = String(today.getDate()).padStart(2, '0')
+
+            return `${year}-${month}-${day}`
+        },
+        sortedUserBookings() {
+            return [...this.userBookings].sort((left, right) => {
+                const leftDate = (left?.plan_date || '').toString()
+                const rightDate = (right?.plan_date || '').toString()
+
+                if (leftDate !== rightDate) {
+                    return leftDate.localeCompare(rightDate)
+                }
+
+                const leftTime = (left?.eating_time || '').toString()
+                const rightTime = (right?.eating_time || '').toString()
+
+                if (leftTime !== rightTime) {
+                    return leftTime.localeCompare(rightTime)
+                }
+
+                const leftTitle = (left?.menu_title || '').toString()
+                const rightTitle = (right?.menu_title || '').toString()
+
+                return leftTitle.localeCompare(rightTitle)
+            })
+        },
+        groupedUserBookings() {
+            const groupedBookings = this.sortedUserBookings.reduce((groups, booking) => {
+                const parsedDate = this.parseRestaurantDate(booking?.plan_date)
+                const dateKey = parsedDate
+                    ? parsedDate.toISOString().slice(0, 10)
+                    : (booking?.plan_date || '').toString().trim() || `booking-${booking?.id || groups.length}`
+
+                const existingGroup = groups.find((group) => group.dateKey === dateKey)
+
+                if (existingGroup) {
+                    existingGroup.bookings.push(booking)
+                    return groups
+                }
+
+                groups.push({
+                    dateKey,
+                    dayLabel: this.weekdayLabel(booking?.plan_date),
+                    dateLabel: this.formatDateShort(booking?.plan_date),
+                    bookings: [booking],
+                })
+
+                return groups
+            }, [])
+
+            return groupedBookings.map((group) => {
+                const menuGroups = group.bookings.reduce((menus, booking) => {
+                    const menuTitle = (booking?.menu_title || '').toString().trim() || 'Menü'
+                    const existingMenuGroup = menus.find((menuGroup) => menuGroup.menuKey === menuTitle)
+
+                    if (existingMenuGroup) {
+                        existingMenuGroup.bookings.push(booking)
+                        return menus
+                    }
+
+                    menus.push({
+                        menuKey: menuTitle,
+                        menuTitle,
+                        bookings: [booking],
+                    })
+
+                    return menus
+                }, [])
+
+                return {
+                    ...group,
+                    menuGroups,
+                }
+            })
         },
         schoolInfoName() {
             return this.config?.school?.long_name || this.config?.school?.short_name || 'Keine Schule ausgewählt'
@@ -979,6 +1306,29 @@ export default {
         bookingRequiresEatingTime() {
             return (this.selectedMenuEntry?.eating_times?.length || 0) > 0
         },
+        bookingIsImport116Parent() {
+            return this.bookingFormContext?.is_import116_parent === true
+        },
+        bookingRecipients() {
+            return Array.isArray(this.bookingData.recipients) ? this.bookingData.recipients : []
+        },
+        bookingHasMultipleChildOptions() {
+            return this.bookingData.quantity === 1 && this.bookingIsImport116Parent && this.childOptions.length > 1
+        },
+        bookingSingleRecipient() {
+            return this.bookingRecipients[0] || null
+        },
+        bookingSingleRecipientBase() {
+            return this.buildBaseRecipients(1)[0] || this.defaultBlankRecipient()
+        },
+        shouldShowSingleRecipientEditor() {
+            return this.bookingData.quantity === 1 && this.bookingRecipientOverride
+        },
+        bookingSingleRecipientDisplayName() {
+            return this.bookingSingleRecipient?.name?.trim?.()
+                || this.bookingSingleRecipientBase?.name?.trim?.()
+                || 'jemanden'
+        },
         canSubmitBooking() {
             if (this.bookingLoading || !this.selectedMenuEntry) {
                 return false
@@ -988,7 +1338,11 @@ export default {
                 return false
             }
 
-            return true
+            if (this.bookingRecipients.length !== Number(this.bookingData.quantity || 0)) {
+                return false
+            }
+
+            return this.bookingRecipients.every((recipient) => (recipient?.name || '').trim() !== '')
         },
         loginPrimaryActionLabel() {
             if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
@@ -1202,6 +1556,7 @@ export default {
         async logoutRestaurantUser() {
             await this.homepageStore.logout()
             await this.homepageStore.loadConfig(this.currentSchoolShortName, 'restaurant')
+            this.userBookings = []
             this.resetLoginDialogState()
             this.resetRegisterDialogState()
             this.resetRestaurantPasswordDialogState()
@@ -1250,6 +1605,7 @@ export default {
         async loadMenuPlans() {
             if (! this.currentSchoolShortName) {
                 this.menuPlans = []
+                this.userBookings = []
                 return
             }
 
@@ -1261,6 +1617,31 @@ export default {
             } catch {
                 this.menuPlans = []
             }
+
+            await this.loadUserBookings()
+        },
+
+        async loadUserBookings() {
+            if (! this.restaurantAuthUser) {
+                this.userBookings = []
+                return
+            }
+
+            try {
+                const response = await axios.get('/api/homepage/restaurant/bookings')
+                this.userBookings = response.data?.bookings || []
+            } catch {
+                this.userBookings = []
+            }
+        },
+
+        downloadRestaurantOverviewPdf() {
+            if (!this.restaurantAuthUser || !this.currentSchoolShortName) {
+                return
+            }
+
+            const url = `/api/homepage/restaurant/print?school=${encodeURIComponent(this.currentSchoolShortName)}`
+            window.open(url, '_blank', 'noopener')
         },
 
         groupEntriesByDate(entries) {
@@ -1279,18 +1660,50 @@ export default {
         },
 
         weekdayLabel(isoDate) {
+            const parsedDate = this.parseRestaurantDate(isoDate)
+
+            if (!parsedDate) {
+                return ''
+            }
+
             const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
-            return days[new Date(`${isoDate}T00:00:00`).getDay()]
+            return days[parsedDate.getDay()]
+        },
+
+        parseRestaurantDate(value) {
+            const normalizedValue = (value || '').toString().trim()
+
+            if (!normalizedValue) {
+                return null
+            }
+
+            const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)
+                ? new Date(`${normalizedValue}T00:00:00`)
+                : new Date(normalizedValue)
+
+            return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
         },
 
         formatDate(isoDate) {
-            return new Date(`${isoDate}T00:00:00`).toLocaleDateString('de-AT', {
+            const parsedDate = this.parseRestaurantDate(isoDate)
+
+            if (!parsedDate) {
+                return ''
+            }
+
+            return parsedDate.toLocaleDateString('de-AT', {
                 day: '2-digit', month: '2-digit', year: 'numeric',
             })
         },
 
         formatDateWithWeekday(isoDate) {
-            return new Date(`${isoDate}T00:00:00`).toLocaleDateString('de-AT', {
+            const parsedDate = this.parseRestaurantDate(isoDate)
+
+            if (!parsedDate) {
+                return ''
+            }
+
+            return parsedDate.toLocaleDateString('de-AT', {
                 weekday: 'long',
                 day: '2-digit',
                 month: '2-digit',
@@ -1299,7 +1712,13 @@ export default {
         },
 
         formatDateShort(isoDate) {
-            return new Date(`${isoDate}T00:00:00`).toLocaleDateString('de-AT', {
+            const parsedDate = this.parseRestaurantDate(isoDate)
+
+            if (!parsedDate) {
+                return ''
+            }
+
+            return parsedDate.toLocaleDateString('de-AT', {
                 day: '2-digit', month: '2-digit',
             })
         },
@@ -1317,6 +1736,320 @@ export default {
             if (parts.length < 2) return normalized
 
             return parts.slice(0, 2).join(':')
+        },
+
+        userBookingsForEntry(entryId) {
+            return this.userBookings.filter((booking) => Number(booking.menu_plan_entry_id) === Number(entryId))
+        },
+
+        entryHasBookings(entryId) {
+            return this.userBookingsForEntry(entryId).length > 0
+        },
+
+        bookedQuantityForEntry(entryId) {
+            return this.userBookingsForEntry(entryId).reduce((sum, booking) => sum + Number(booking.quantity || 0), 0)
+        },
+
+        isBookingCancellationLoading(bookingId) {
+            return this.bookingCancellationIds.includes(Number(bookingId))
+        },
+
+        bookingRecipientNames(booking) {
+            const recipients = Array.isArray(booking?.recipients) ? booking.recipients : []
+            const names = recipients
+                .map((recipient) => (recipient?.name || '').trim())
+                .filter(Boolean)
+
+            if (names.length > 0) {
+                return names.join(', ')
+            }
+
+            return (booking?.child_name || '').trim()
+        },
+
+        defaultBlankRecipient() {
+            return {
+                name: '',
+                type: 'other_person',
+                import116_id: null,
+            }
+        },
+
+        normalizeBookingRecipient(recipient = null) {
+            return {
+                name: (recipient?.name || '').toString().trim(),
+                type: ['self', 'child', 'other_person'].includes(recipient?.type) ? recipient.type : 'other_person',
+                import116_id: Number(recipient?.import116_id || 0) || null,
+            }
+        },
+
+        defaultSelfRecipientName() {
+            return (this.bookingFormContext?.self_name || this.restaurantAuthDisplayName || this.restaurantAuthEmail || '').trim()
+        },
+
+        isSelectableChildRecipient(recipient) {
+            const import116Id = Number(recipient?.import116_id || 0)
+
+            if (!import116Id) {
+                return false
+            }
+
+            return this.childOptions.some((child) => Number(child?.id || 0) === import116Id)
+        },
+
+        buildBaseRecipients(quantity) {
+            const normalizedQuantity = Math.max(1, Number(quantity || 1))
+
+            if (this.bookingIsImport116Parent) {
+                return Array.from({ length: normalizedQuantity }, (_, index) => {
+                    const child = this.childOptions[index]
+
+                    if (!child?.name) {
+                        return this.defaultBlankRecipient()
+                    }
+
+                    return {
+                        name: child.name,
+                        type: 'child',
+                        import116_id: Number(child.id || 0) || null,
+                    }
+                })
+            }
+
+            return Array.from({ length: normalizedQuantity }, (_, index) => {
+                if (index === 0) {
+                    return {
+                        name: this.defaultSelfRecipientName(),
+                        type: 'self',
+                        import116_id: null,
+                    }
+                }
+
+                return this.defaultBlankRecipient()
+            })
+        },
+
+        isCustomizedRecipient(recipient, baseRecipient) {
+            const normalizedRecipient = this.normalizeBookingRecipient(recipient)
+            const normalizedBaseRecipient = this.normalizeBookingRecipient(baseRecipient)
+
+            return normalizedRecipient.name !== normalizedBaseRecipient.name
+                || normalizedRecipient.type !== normalizedBaseRecipient.type
+                || normalizedRecipient.import116_id !== normalizedBaseRecipient.import116_id
+        },
+
+        syncBookingRecipients(quantity, { preserveCurrent = true } = {}) {
+            const normalizedQuantity = Math.max(1, Number(quantity || 1))
+            const baseRecipients = this.buildBaseRecipients(normalizedQuantity)
+            const rememberedRecipients = Array.isArray(this.bookingFormContext?.booking_defaults?.recipients)
+                ? this.bookingFormContext.booking_defaults.recipients.map((recipient) => this.normalizeBookingRecipient(recipient))
+                : []
+            const currentRecipients = preserveCurrent && Array.isArray(this.bookingData.recipients)
+                ? this.bookingData.recipients.map((recipient) => this.normalizeBookingRecipient(recipient))
+                : []
+
+            const recipients = Array.from({ length: normalizedQuantity }, (_, index) => {
+                const baseRecipient = this.normalizeBookingRecipient(baseRecipients[index] || this.defaultBlankRecipient())
+                const currentRecipient = currentRecipients[index]
+                const rememberedRecipient = rememberedRecipients[index]
+
+                if (this.bookingIsImport116Parent && normalizedQuantity > 1) {
+                    if (this.isSelectableChildRecipient(currentRecipient) || this.isSelectableChildRecipient(rememberedRecipient)) {
+                        return baseRecipient
+                    }
+                }
+
+                if (currentRecipient?.name) {
+                    return currentRecipient
+                }
+
+                if (rememberedRecipient?.name) {
+                    return rememberedRecipient
+                }
+
+                return baseRecipient
+            })
+
+            if (normalizedQuantity === 1 && !this.bookingRecipientOverride) {
+                const currentSingleRecipient = currentRecipients[0]
+                const rememberedSingleRecipient = rememberedRecipients[0]
+
+                if (this.bookingIsImport116Parent && this.isSelectableChildRecipient(currentSingleRecipient)) {
+                    recipients[0] = this.normalizeBookingRecipient(currentSingleRecipient)
+                } else if (this.bookingIsImport116Parent && this.isSelectableChildRecipient(rememberedSingleRecipient)) {
+                    recipients[0] = this.normalizeBookingRecipient(rememberedSingleRecipient)
+                } else {
+                    recipients[0] = this.normalizeBookingRecipient(baseRecipients[0] || this.defaultBlankRecipient())
+                }
+            }
+
+            this.bookingData = {
+                ...this.bookingData,
+                quantity: normalizedQuantity,
+                recipients,
+            }
+        },
+
+        applyBookingFormContext(payload = {}) {
+            const options = Array.isArray(payload?.options) ? payload.options : []
+            const rememberedRecipients = Array.isArray(payload?.booking_defaults?.recipients)
+                ? payload.booking_defaults.recipients.map((recipient) => this.normalizeBookingRecipient(recipient))
+                : []
+
+            this.childOptions = options
+            this.bookingFormContext = {
+                is_import116_parent: payload?.is_import116_parent === true,
+                self_name: (payload?.self_name || this.restaurantAuthDisplayName || this.restaurantAuthEmail || '').trim(),
+                booking_defaults: {
+                    recipients: rememberedRecipients,
+                    single_recipient_customized: payload?.booking_defaults?.single_recipient_customized === true,
+                },
+            }
+
+            const baseSingleRecipient = this.buildBaseRecipients(1)[0] || this.defaultBlankRecipient()
+            const firstRememberedRecipient = rememberedRecipients[0] || null
+
+            this.bookingRecipientOverride = this.bookingData.quantity === 1 && (
+                this.bookingFormContext.booking_defaults.single_recipient_customized
+                || !baseSingleRecipient.name
+                || (firstRememberedRecipient
+                    ? !this.isSelectableChildRecipient(firstRememberedRecipient)
+                        && this.isCustomizedRecipient(firstRememberedRecipient, baseSingleRecipient)
+                    : false)
+            )
+
+            this.syncBookingRecipients(this.bookingData.quantity, { preserveCurrent: false })
+        },
+
+        async loadBookingFormContext() {
+            this.bookingChildOptionsLoading = true
+
+            try {
+                const response = await axios.get('/api/homepage/restaurant/child-options')
+                this.applyBookingFormContext(response.data || {})
+            } catch (error) {
+                this.childOptions = []
+                this.bookingFormContext = {
+                    is_import116_parent: false,
+                    self_name: this.defaultSelfRecipientName(),
+                    booking_defaults: {
+                        recipients: [],
+                        single_recipient_customized: false,
+                    },
+                }
+                this.bookingRecipientOverride = !this.defaultSelfRecipientName()
+                this.syncBookingRecipients(this.bookingData.quantity, { preserveCurrent: false })
+                this.bookingError = error.response?.data?.message || 'Die Buchungsvorgaben konnten nicht geladen werden.'
+            } finally {
+                this.bookingChildOptionsLoading = false
+            }
+        },
+
+        setBookingQuantity(quantity) {
+            const normalizedQuantity = Math.max(1, Number(quantity || 1))
+
+            if (normalizedQuantity === 1) {
+                const firstRecipient = this.bookingRecipients[0] || this.bookingFormContext?.booking_defaults?.recipients?.[0] || null
+                this.bookingRecipientOverride = !this.bookingSingleRecipientBase?.name
+                    || (firstRecipient
+                        ? !this.isSelectableChildRecipient(firstRecipient)
+                            && this.isCustomizedRecipient(firstRecipient, this.bookingSingleRecipientBase)
+                        : false)
+                    || this.bookingFormContext?.booking_defaults?.single_recipient_customized === true
+            } else {
+                this.bookingRecipientOverride = false
+            }
+
+            this.syncBookingRecipients(normalizedQuantity)
+        },
+
+        setSingleRecipientOverride(enabled) {
+            this.bookingRecipientOverride = enabled === true
+
+            if (!this.bookingRecipientOverride) {
+                this.syncBookingRecipients(1, { preserveCurrent: false })
+                return
+            }
+
+            if (this.bookingIsImport116Parent) {
+                this.bookingData = {
+                    ...this.bookingData,
+                    recipients: [{
+                        name: '',
+                        type: 'other_person',
+                        import116_id: null,
+                    }],
+                }
+
+                return
+            }
+
+            if (!this.bookingRecipients[0]) {
+                this.syncBookingRecipients(1)
+            }
+        },
+
+        isSingleChildSelected(child) {
+            return Number(this.bookingSingleRecipient?.import116_id || 0) === Number(child?.id || 0)
+        },
+
+        selectSingleChildRecipient(child) {
+            if (!child?.name) {
+                return
+            }
+
+            this.bookingRecipientOverride = false
+            this.bookingData = {
+                ...this.bookingData,
+                recipients: [{
+                    name: child.name,
+                    type: 'child',
+                    import116_id: Number(child.id || 0) || null,
+                }],
+            }
+        },
+
+        onRecipientNameInput(index) {
+            const recipient = this.bookingRecipients[index]
+
+            if (!recipient) {
+                return
+            }
+
+            const trimmedName = (recipient.name || '').trim()
+            const linkedChild = this.childOptions.find((child) => Number(child?.id || 0) === Number(recipient.import116_id || 0))
+
+            if (linkedChild && trimmedName !== linkedChild.name) {
+                this.bookingData.recipients[index] = {
+                    ...recipient,
+                    type: 'other_person',
+                    import116_id: null,
+                }
+
+                return
+            }
+
+            if (!this.bookingIsImport116Parent && this.bookingRecipientOverride && index === 0) {
+                const selfName = this.defaultSelfRecipientName()
+
+                this.bookingData.recipients[index] = {
+                    ...recipient,
+                    type: trimmedName !== '' && trimmedName !== selfName ? 'other_person' : 'self',
+                    import116_id: null,
+                }
+            }
+        },
+
+        recipientFieldLabel(index) {
+            if (this.bookingIsImport116Parent && this.childOptions[index]?.name) {
+                return `Menü ${index + 1} (${this.childOptions[index].name})`
+            }
+
+            if (!this.bookingIsImport116Parent && index === 0) {
+                return `Menü ${index + 1} (${this.defaultSelfRecipientName() || 'Sie'})`
+            }
+
+            return `Menü ${index + 1}`
         },
 
         async submitLoginEmailCheck() {
@@ -1640,20 +2373,39 @@ export default {
         },
 
         countdownFor(plan) {
-            if (! plan.orderable_until) return null
+            // If plan is orderable, show countdown to order end
+            if (plan.is_orderable && plan.orderable_until) {
+                const diff = new Date(plan.orderable_until).getTime() - this.tickNow
+                if (diff <= 0) return null
 
-            const diff = new Date(plan.orderable_until).getTime() - this.tickNow
-            if (diff <= 0) return null
+                const totalSeconds = Math.floor(diff / 1000)
+                const days = Math.floor(totalSeconds / 86400)
+                const hours = Math.floor((totalSeconds % 86400) / 3600)
+                const minutes = Math.floor((totalSeconds % 3600) / 60)
+                const seconds = totalSeconds % 60
 
-            const totalSeconds = Math.floor(diff / 1000)
-            const days = Math.floor(totalSeconds / 86400)
-            const hours = Math.floor((totalSeconds % 86400) / 3600)
-            const minutes = Math.floor((totalSeconds % 3600) / 60)
-            const seconds = totalSeconds % 60
+                if (days > 0) return `${days} Tage ${hours} Stunden ${minutes} Minuten`
+                if (hours > 0) return `${hours} Stunden ${minutes} Minuten ${seconds} Sekunden`
+                return `${minutes} Minuten ${seconds} Sekunden`
+            }
+            
+            // If plan is not orderable but has order_start_at in the future, show countdown to order start
+            if (!plan.is_orderable && plan.order_start_at) {
+                const diff = new Date(plan.order_start_at).getTime() - this.tickNow
+                if (diff <= 0) return null
 
-            if (days > 0) return `${days} Tage ${hours} Stunden ${minutes} Minuten`
-            if (hours > 0) return `${hours} Stunden ${minutes} Minuten ${seconds} Sekunden`
-            return `${minutes} Minuten ${seconds} Sekunden`
+                const totalSeconds = Math.floor(diff / 1000)
+                const days = Math.floor(totalSeconds / 86400)
+                const hours = Math.floor((totalSeconds % 86400) / 3600)
+                const minutes = Math.floor((totalSeconds % 3600) / 60)
+                const seconds = totalSeconds % 60
+
+                if (days > 0) return `${days} Tage ${hours} Stunden ${minutes} Minuten`
+                if (hours > 0) return `${hours} Stunden ${minutes} Minuten ${seconds} Sekunden`
+                return `${minutes} Minuten ${seconds} Sekunden`
+            }
+            
+            return null
         },
 
         async bookMenu(entry) {
@@ -1663,6 +2415,7 @@ export default {
                 restaurant_eating_time_id: null,
                 quantity: 1,
                 price: entry.price,
+                recipients: [],
                 child_name: '',
                 child_type: null,
                 notes: '',
@@ -1672,21 +2425,10 @@ export default {
             this.bookingChildOptionsLoading = false
             this.bookingQuantityExpanded = false
             this.childOptions = []
+            this.bookingRecipientOverride = false
             this.showBookingDialog = true
 
-            if (this.restaurantAuthUser?.import116_parent) {
-                this.bookingChildOptionsLoading = true
-
-                try {
-                    const response = await axios.get('/api/homepage/restaurant/child-options')
-                    this.childOptions = response.data.options || []
-                } catch (error) {
-                    this.childOptions = []
-                    this.bookingError = error.response?.data?.message || 'Die Kinderauswahl konnte nicht geladen werden.'
-                } finally {
-                    this.bookingChildOptionsLoading = false
-                }
-            }
+            await this.loadBookingFormContext()
         },
         
         async submitBooking() {
@@ -1700,14 +2442,30 @@ export default {
             
             this.bookingLoading = true
             this.bookingError = ''
-            
+            const payload = {
+                ...this.bookingData,
+                recipients: this.bookingRecipients.map((recipient) => ({
+                    name: (recipient?.name || '').trim(),
+                    type: recipient?.type || 'other_person',
+                    import116_id: recipient?.import116_id || null,
+                })),
+                single_recipient_customized: this.bookingData.quantity === 1 ? this.bookingRecipientOverride : false,
+            }
+             
             try {
                 const response = await axios.post('/api/homepage/restaurant/bookings', {
-                    data: this.bookingData,
+                    data: payload,
                 })
                 
                 this.bookingSuccess = response.data.message || 'Menü erfolgreich gebucht.';
-                this.showBookingDialog = false;
+                this.bookingFormContext = {
+                    ...this.bookingFormContext,
+                    booking_defaults: {
+                        recipients: payload.recipients,
+                        single_recipient_customized: payload.single_recipient_customized,
+                    },
+                }
+                this.showBookingDialog = false
                 
                 // Reload menu plans to show updated booking status
                 await this.loadMenuPlans();
@@ -1726,6 +2484,65 @@ export default {
                 this.bookingLoading = false;
             }
         },
+
+        requestBookingCancellation(booking) {
+            const bookingId = Number(booking?.id || 0)
+
+            if (!bookingId || this.isBookingCancellationLoading(bookingId)) {
+                return
+            }
+
+            this.pendingCancellationBooking = booking
+            this.showCancelBookingDialog = true
+        },
+
+        closeCancelBookingDialog() {
+            if (this.pendingCancellationLoading) {
+                return
+            }
+
+            this.showCancelBookingDialog = false
+            this.pendingCancellationBooking = null
+        },
+
+        async confirmBookingCancellation() {
+            if (!this.pendingCancellationBooking) {
+                return
+            }
+
+            await this.cancelBooking(this.pendingCancellationBooking)
+        },
+
+        async cancelBooking(booking) {
+            const bookingId = Number(booking?.id || 0)
+
+            if (!bookingId || this.isBookingCancellationLoading(bookingId)) {
+                return
+            }
+
+            this.pendingCancellationLoading = true
+            this.bookingCancellationIds = [...this.bookingCancellationIds, bookingId]
+            this.bookingError = ''
+            this.bookingSuccess = ''
+
+            try {
+                const response = await axios.delete(`/api/homepage/restaurant/bookings/${bookingId}`)
+
+                this.bookingSuccess = response.data?.message || 'Buchung erfolgreich storniert.'
+                await this.loadMenuPlans()
+                this.showCancelBookingDialog = false
+                this.pendingCancellationBooking = null
+
+                setTimeout(() => {
+                    this.bookingSuccess = ''
+                }, 3000)
+            } catch (error) {
+                this.bookingError = error.response?.data?.message || 'Die Buchung konnte nicht storniert werden.'
+            } finally {
+                this.pendingCancellationLoading = false
+                this.bookingCancellationIds = this.bookingCancellationIds.filter((id) => id !== bookingId)
+            }
+        },
         
         closeBookingDialog() {
             this.showBookingDialog = false
@@ -1735,6 +2552,7 @@ export default {
                 restaurant_eating_time_id: null,
                 quantity: 1,
                 price: null,
+                recipients: [],
                 child_name: '',
                 child_type: null,
                 notes: '',
@@ -1745,6 +2563,7 @@ export default {
             this.bookingChildOptionsLoading = false
             this.bookingQuantityExpanded = false
             this.childOptions = []
+            this.bookingRecipientOverride = false
         },
     },
 }
@@ -2001,6 +2820,11 @@ export default {
     padding: 0 0 24px;
 }
 
+.restaurant-auth-stack {
+    display: grid;
+    gap: 14px;
+}
+
 .restaurant-auth-card {
     display: flex;
     align-items: center;
@@ -2057,6 +2881,139 @@ export default {
     justify-content: flex-end;
     gap: 10px;
     flex-shrink: 0;
+}
+
+.restaurant-auth-bookings {
+    display: grid;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(251, 146, 60, 0.16);
+    box-shadow: 0 8px 24px rgba(120, 53, 15, 0.04);
+}
+
+.restaurant-auth-bookings__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.restaurant-auth-bookings__eyebrow {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #9a3412;
+}
+
+.restaurant-auth-bookings__title {
+    margin: 2px 0 0;
+    font-size: 0.94rem;
+    font-weight: 800;
+    color: #111827;
+}
+
+.restaurant-auth-bookings__count {
+    flex-shrink: 0;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(255, 237, 213, 0.9);
+    color: #9a3412;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.restaurant-auth-bookings__list {
+    display: grid;
+    gap: 8px;
+}
+
+.restaurant-auth-bookings__item {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 247, 237, 0.86);
+    border: 1px solid rgba(251, 146, 60, 0.18);
+}
+
+.restaurant-auth-bookings__item--today {
+    background: linear-gradient(135deg, rgba(255, 237, 213, 0.95), rgba(255, 247, 237, 0.92));
+    border-color: rgba(234, 88, 12, 0.38);
+    box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.12);
+}
+
+.restaurant-auth-bookings__entries {
+    display: grid;
+    gap: 8px;
+}
+
+.restaurant-auth-bookings__menu-group {
+    display: grid;
+    gap: 6px;
+}
+
+.restaurant-auth-bookings__menu-items {
+    display: grid;
+    gap: 6px;
+}
+
+.restaurant-auth-bookings__entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.58);
+}
+
+.restaurant-auth-bookings__copy {
+    min-width: 0;
+}
+
+.restaurant-auth-bookings__item-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.86rem;
+    font-weight: 800;
+    color: #1f2937;
+}
+
+.restaurant-auth-bookings__today-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(234, 88, 12, 0.14);
+    color: #9a3412;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.restaurant-auth-bookings__entry-title {
+    font-size: 0.84rem;
+    font-weight: 800;
+    color: #1f2937;
+}
+
+.restaurant-auth-bookings__item-meta {
+    margin-top: 1px;
+    font-size: 0.8rem;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+.restaurant-auth-bookings__locked {
+    flex-shrink: 0;
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: #78716c;
 }
 
 .restaurant-login-intro {
@@ -2402,6 +3359,60 @@ export default {
     line-height: 1.5;
 }
 
+.rp-menu__booking-state {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.18);
+}
+
+.rp-menu__booking-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #166534;
+}
+
+.rp-menu__booking-summary-icon {
+    color: #16a34a;
+}
+
+.rp-menu__booking-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.rp-menu__booking-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    border-top: 1px solid rgba(34, 197, 94, 0.14);
+}
+
+.rp-menu__booking-item:first-child {
+    padding-top: 0;
+    border-top: none;
+}
+
+.rp-menu__booking-copy {
+    font-size: 0.78rem;
+    color: #166534;
+    line-height: 1.45;
+}
+
+.rp-menu__booking-locked {
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #6b7280;
+}
+
 .rp-menu__actions {
     margin-top: 10px;
     display: flex;
@@ -2530,6 +3541,126 @@ export default {
     outline-offset: 2px;
 }
 
+.booking-recipient-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.booking-recipient-section__label {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.booking-recipient-summary {
+    font-size: 0.88rem;
+    color: #7c2d12;
+}
+
+.booking-recipient-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #9a3412;
+    cursor: pointer;
+}
+
+.booking-recipient-toggle input {
+    accent-color: #ea580c;
+}
+
+.booking-child-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.booking-child-picker__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.booking-child-picker__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.booking-child-picker__option {
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    background: rgba(255, 247, 237, 0.9);
+    color: #9a3412;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.booking-child-picker__option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(234, 88, 12, 0.42);
+    box-shadow: 0 8px 18px rgba(154, 52, 18, 0.12);
+}
+
+.booking-child-picker__option:focus-visible {
+    outline: 2px solid rgba(234, 88, 12, 0.55);
+    outline-offset: 2px;
+}
+
+.booking-child-picker__option--active {
+    background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+    border-color: transparent;
+    color: #fff7ed;
+    box-shadow: 0 10px 20px rgba(194, 65, 12, 0.2);
+}
+
+.booking-recipient-list {
+    display: grid;
+    gap: 12px;
+}
+
+.booking-recipient-field-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.booking-recipient-field__label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.booking-recipient-field {
+    width: 100%;
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    background: rgba(255, 247, 237, 0.92);
+    color: #1f2937;
+    border-radius: 14px;
+    padding: 11px 14px;
+    font-size: 0.95rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.booking-recipient-field:focus {
+    outline: none;
+    border-color: rgba(234, 88, 12, 0.55);
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.16);
+    background: #fff;
+}
+
+.booking-recipient-field__hint {
+    font-size: 0.75rem;
+    color: #78716c;
+}
+
 .rp-empty {
     text-align: center;
     padding: 48px 24px;
@@ -2564,6 +3695,12 @@ export default {
         justify-content: center;
     }
 
+    .restaurant-auth-bookings__header,
+    .restaurant-auth-bookings__entry {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
     .rp-days {
         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     }
@@ -2596,6 +3733,15 @@ export default {
 
     .rp-plan__header {
         padding: 14px 16px;
+    }
+
+    .rp-plan__badge-group {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .rp-plan__timer {
+        flex-basis: 100%;
     }
 
     .rp-day__header {

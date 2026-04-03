@@ -18,6 +18,9 @@
                                 <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToNextWeek">
                                     <v-icon icon="mdi-chevron-right" size="18" />
                                 </v-btn>
+                                <v-btn size="small" variant="outlined" color="primary" rounded="lg" @click="refreshData" title="Daten aktualisieren">
+                                    <v-icon icon="mdi-refresh" size="18" />
+                                </v-btn>
                             </div>
                         </div>
 
@@ -52,6 +55,13 @@
                                         :data-testid="`orderable-plan-marker-${day.iso}`"
                                         aria-label="Bestellbarer Menüplan">
                                         <v-icon icon="mdi-cart-outline" size="12" />
+                                    </span>
+                                    <span
+                                        v-if="day.hasFreigegebenPlan"
+                                        class="mp-day__freigegeben"
+                                        :data-testid="`freigegeben-plan-marker-${day.iso}`"
+                                        aria-label="Freigegebener Menüplan">
+                                        <v-icon icon="mdi-check-circle" size="12" />
                                     </span>
                                     <span
                                         v-if="day.isFreeDay"
@@ -98,6 +108,12 @@
                                     <v-icon icon="mdi-cart-outline" size="12" />
                                 </span>
                                 Bestellbarer Menüplan
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-freigegeben" aria-hidden="true">
+                                    <v-icon icon="mdi-check-circle" size="12" />
+                                </span>
+                                Freigegebener Menüplan
                             </span>
                             <span class="mp-legend-item">
                                 <span class="mp-legend-free" aria-hidden="true">
@@ -325,6 +341,7 @@ export default {
                     hasPlan: planCount > 0,
                     hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
                     hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
+                    hasFreigegebenPlan: this.freigegebenPlanCountForDay(iso) > 0,
                     bookedMenuCount: this.bookedMenuCountForDay(iso),
                     planCount,
                 }
@@ -417,6 +434,11 @@ export default {
         orderablePlanCountForDay(isoString) {
             return useMenuPlanStore().plans.filter((plan) => {
                 return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanOrderableNow(plan)
+            }).length
+        },
+        freigegebenPlanCountForDay(isoString) {
+            return useMenuPlanStore().plans.filter((plan) => {
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && plan.is_available === true
             }).length
         },
         findPlanForDay(isoString) {
@@ -548,6 +570,22 @@ export default {
         },
         goToNextWeek() {
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, 7)
+        },
+        refreshData() {
+            const store = useMenuPlanStore()
+            const restaurantStore = useRestaurantStore()
+            
+            // Reload menu plans
+            store.load()
+            
+            // Reload restaurant settings
+            restaurantStore.loadSettings()
+            
+            // Reload free days
+            this.loadVisibleFreeDays()
+            
+            // Update current time for visibility/orderability calculations
+            this.currentDateTime = new Date()
         },
         onlineSettings() {
             return {
@@ -860,6 +898,20 @@ export default {
     color: #1d4ed8;
 }
 
+.mp-day__freigegeben {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(168, 85, 247, 0.14);
+    color: #7c3aed;
+}
+
 .mp-day__free {
     position: absolute;
     bottom: 6px;
@@ -999,6 +1051,17 @@ export default {
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.14);
     color: #1d4ed8;
+}
+
+.mp-legend-freigegeben {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(168, 85, 247, 0.14);
+    color: #7c3aed;
 }
 
 .mp-legend-free {

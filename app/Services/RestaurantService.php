@@ -244,6 +244,10 @@ class RestaurantService
             $isOrderable = $this->isMenuPlanOrderableNow($plan, $onlineSettings, $now);
             $plan->setAttribute('is_orderable', $isOrderable);
             $plan->setAttribute('orderable_until', $isOrderable ? $this->orderEndDateTime($plan, $onlineSettings)->toIso8601String() : null);
+
+            // Always set order_start_at so frontend can show countdown when plan is not orderable yet
+            $orderStart = $this->orderStartDateTime($plan, $onlineSettings);
+            $plan->setAttribute('order_start_at', $orderStart->toIso8601String());
         })->values();
     }
 
