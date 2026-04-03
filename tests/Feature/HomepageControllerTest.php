@@ -310,6 +310,36 @@ describe('config', function () {
             ->assertJsonPath('tool_module_statuses.materials', 'inactive');
     });
 
+    test('config resolves module statuses from the selected school instead of the first school tool record', function () {
+        $otherSchool = School::factory()->create([
+            'short_name' => 'OTHER',
+            'is_selectable' => true,
+        ]);
+
+        SchoolTool::factory()->create([
+            'school_id' => $otherSchool->id,
+            'register_visible_user' => false,
+            'tutoring_visible_user' => false,
+            'teaching_visible_user' => false,
+            'materials_visible_user' => false,
+            'restaurant_visible_user' => false,
+        ]);
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'register_visible_user' => true,
+            'restaurant_visible_user' => true,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('register_active', true)
+            ->assertJsonPath('restaurant_active', true)
+            ->assertJsonPath('tool_module_statuses.register', 'active')
+            ->assertJsonPath('tool_module_statuses.restaurant', 'active');
+    });
+
     test('config includes the restaurant user information intro html for the selected school', function () {
         SchoolTool::factory()->create([
             'school_id' => $this->school->id,

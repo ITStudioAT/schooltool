@@ -60,6 +60,7 @@ use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
+use App\Http\Controllers\Homepage\RestaurantBookingController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
@@ -91,6 +92,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
+
+    // Restaurant booking routes
+    Route::post('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'store'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'index'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::delete('/homepage/restaurant/bookings/{id}', [RestaurantBookingController::class, 'destroy'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/child-options', [RestaurantBookingController::class, 'childOptions'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/

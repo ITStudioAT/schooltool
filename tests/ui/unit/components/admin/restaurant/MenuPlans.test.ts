@@ -30,6 +30,13 @@ function mountMenuPlans(
         load: vi.fn(),
         findPlanForDay: (isoDate: string) => normalizedPlans.find((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date) || null,
         planCountForDay: (isoDate: string) => normalizedPlans.filter((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date).length,
+        bookedMenuCountForDay: (isoDate: string) => normalizedPlans.reduce((sum: number, plan: any) => {
+            const entries = Array.isArray(plan.entries) ? plan.entries : []
+
+            return sum + entries
+                .filter((entry: any) => entry.plan_date === isoDate)
+                .reduce((entrySum: number, entry: any) => entrySum + Number(entry.booked_menu_count || 0), 0)
+        }, 0),
     } as never)
 
     vi.mocked(useRestaurantStore).mockReturnValue({
@@ -318,5 +325,26 @@ describe('Restaurant menu plans component', () => {
         expect(endDayClasses['has-plan']).toBe(true)
         expect(endDayClasses['has-plan-end']).toBe(true)
         expect(endDayClasses['has-plan-start']).toBe(false)
+    })
+
+    it('shows the booked menu counter for each day', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                entries: [
+                    { id: 1, plan_date: '2026-03-25', booked_menu_count: 5 },
+                    { id: 2, plan_date: '2026-03-26', booked_menu_count: 2 },
+                ],
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-25"]').text()).toBe('5')
+        expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-26"]').text()).toBe('2')
     })
 })

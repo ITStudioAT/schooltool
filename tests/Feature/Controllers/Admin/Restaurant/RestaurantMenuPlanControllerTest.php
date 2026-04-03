@@ -5,14 +5,13 @@ use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\User;
 use App\Services\RestaurantMenuPlanPdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -68,6 +67,49 @@ test('index returns only plans from current school', function () {
         ->getJson('/api/admin/restaurant/menu-plans')
         ->assertOk()
         ->assertJsonCount(1, 'data');
+});
+
+test('index returns booked menu counters for each entry day', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-01',
+        'end_date' => '2026-04-05',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-03',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Freitagsmenue',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 3,
+        'booked_at' => now(),
+    ]);
+
+    $secondBookedUser = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => null]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $secondBookedUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 2,
+        'booked_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/menu-plans')
+        ->assertOk()
+        ->assertJsonPath('data.0.entries.0.plan_date', '2026-04-03')
+        ->assertJsonPath('data.0.entries.0.booked_menu_count', 5);
 });
 
 test('store creates menu plan with entries and eating times', function () {
@@ -332,22 +374,26 @@ test('destroy deletes plan and cascades entries', function () {
 });
 
 test('destroy returns conflict when menu plan has bookings', function () {
-    Schema::create('restaurant_menu_plan_bookings', function ($table): void {
-        $table->id();
-        $table->foreignId('restaurant_menu_plan_id')->constrained('restaurant_menu_plans')->cascadeOnDelete();
-        $table->timestamps();
-    });
-
     $plan = RestaurantMenuPlan::factory()->create([
         'school_id' => $this->school->id,
         'start_date' => '2026-04-07',
         'end_date' => '2026-04-11',
     ]);
 
-    DB::table('restaurant_menu_plan_bookings')->insert([
+    $entry = RestaurantMenuPlanEntry::factory()->create([
         'restaurant_menu_plan_id' => $plan->id,
-        'created_at' => now(),
-        'updated_at' => now(),
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
     ]);
 
     $this->actingAs($this->admin, 'sanctum')

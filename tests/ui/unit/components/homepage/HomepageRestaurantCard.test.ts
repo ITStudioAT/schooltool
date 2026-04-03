@@ -11,6 +11,9 @@ describe('homepage restaurant entry', () => {
         expect(source).toContain('@click="openRestaurant()"')
         expect(source).toContain('<h3 class="card-title">Restaurant</h3>')
         expect(source).toContain('<span class="action-text">Zum Restaurant</span>')
+        expect(source).toContain('canShowRestaurant() {')
+        expect(source).toContain('return true')
+        expect(source).toContain('return this.config?.auth_check === true || this.moduleAllowsAccess(this.restaurantModuleStatus)')
         expect(source).not.toContain('https://cdgym.info/lunch')
     })
 

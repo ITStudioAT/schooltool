@@ -184,5 +184,15 @@ export const useMenuPlanStore = defineStore('AdminRestaurantMenuPlanStore', {
         planCountForDay(isoDate) {
             return this.plans.filter((plan) => isoDate >= plan.start_date && isoDate <= plan.end_date).length
         },
+
+        bookedMenuCountForDay(isoDate) {
+            return this.plans.reduce((sum, plan) => {
+                const entries = Array.isArray(plan.entries) ? plan.entries : []
+
+                return sum + entries
+                    .filter((entry) => entry.plan_date === isoDate)
+                    .reduce((entrySum, entry) => entrySum + Number(entry.booked_menu_count || 0), 0)
+            }, 0)
+        },
     },
 })

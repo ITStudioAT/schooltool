@@ -620,6 +620,185 @@
                         @click="handleRegisterPrimaryAction">
                         {{ registerPrimaryActionLabel }}
                     </v-btn>
+        </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="showBookingDialog" persistent max-width="500">
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-6 font-weight-bold">Menü buchen</v-card-title>
+                <v-card-text class="px-6">
+                    <div v-if="selectedMenuEntry" class="mb-4">
+                        <div class="restaurant-login-email mb-2">
+                            <div class="restaurant-login-email__label">Menü</div>
+                            <div class="restaurant-login-email__value">{{ selectedMenuEntry.menu_title || selectedMenuEntry.menu?.title || 'Menü' }}</div>
+                        </div>
+                        <div v-if="selectedMenuEntry.price" class="restaurant-login-email mb-2">
+                            <div class="restaurant-login-email__label">Preis</div>
+                            <div class="restaurant-login-email__value">{{ formatPrice(selectedMenuEntry.price) }}</div>
+                        </div>
+                        <div v-if="selectedMenuEntry.plan_date" class="restaurant-login-email">
+                            <div class="restaurant-login-email__label">Datum</div>
+                            <div class="restaurant-login-email__value">{{ formatDateWithWeekday(selectedMenuEntry.plan_date) }}</div>
+                        </div>
+                    </div>
+
+                    <v-alert
+                        v-if="bookingSuccess"
+                        type="success"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ bookingSuccess }}
+                    </v-alert>
+
+                    <v-alert
+                        v-if="bookingError"
+                        type="error"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ bookingError }}
+                    </v-alert>
+
+                    <v-alert
+                        v-if="bookingChildOptionsLoading"
+                        type="info"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        Die Kinderauswahl wird geladen...
+                    </v-alert>
+
+                    <v-form @submit.prevent="submitBooking">
+                        <div v-if="selectedMenuEntry?.eating_times?.length" class="mb-3">
+                            <div class="booking-time-picker">
+                                <div class="booking-time-picker__label">Speisezeit</div>
+                                <div class="booking-time-picker__options">
+                                    <button
+                                        v-for="eatingTime in selectedMenuEntry.eating_times"
+                                        :key="eatingTime.id"
+                                        type="button"
+                                        class="booking-time-picker__option"
+                                        :class="{
+                                            'booking-time-picker__option--active': bookingData.restaurant_eating_time_id === eatingTime.id,
+                                        }"
+                                        :aria-pressed="bookingData.restaurant_eating_time_id === eatingTime.id"
+                                        @click="bookingData.restaurant_eating_time_id = eatingTime.id">
+                                        {{ formatEatingTime(eatingTime.eating_time) }} Uhr
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="booking-quantity-picker mb-3">
+                            <div class="booking-quantity-picker__label">Anzahl</div>
+                            <div class="booking-quantity-picker__options">
+                                <button
+                                    v-for="quantity in bookingQuantityOptions"
+                                    :key="quantity"
+                                    type="button"
+                                    class="booking-quantity-picker__option"
+                                    :class="{
+                                        'booking-quantity-picker__option--active': bookingData.quantity === quantity,
+                                    }"
+                                    :aria-pressed="bookingData.quantity === quantity"
+                                    @click="bookingData.quantity = quantity">
+                                    {{ quantity }}
+                                </button>
+                                <button
+                                    v-if="!bookingQuantityExpanded"
+                                    type="button"
+                                    class="booking-quantity-picker__more"
+                                    aria-expanded="false"
+                                    @click="bookingQuantityExpanded = true">
+                                    Mehr
+                                </button>
+                            </div>
+                        </div>
+
+                        <div v-if="restaurantAuthUser?.import116_parent">
+                            <div v-if="childOptions.length === 1" class="mb-3">
+                                <v-text-field
+                                    v-model="bookingData.child_name"
+                                    :label="`Für welches Kind (${childOptions[0].name})`"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required(), maxLength(255)]"
+                                    required />
+                                <input type="hidden" v-model="bookingData.child_type" value="child" />
+                            </div>
+                            <div v-else-if="childOptions.length > 1" class="mb-3">
+                                <v-select
+                                    v-model="bookingData.child_name"
+                                    :items="[
+                                        ...childOptions.map(child => ({ title: child.name, value: child.name })),
+                                        { title: 'Andere Person', value: 'other_person' }
+                                    ]"
+                                    label="Für wen bestellen?"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required()]"
+                                    required />
+                                
+                                <div v-if="bookingData.child_name === 'other_person'" class="mt-3">
+                                    <v-text-field
+                                        v-model="bookingData.child_name"
+                                        label="Name der Person"
+                                        variant="outlined"
+                                        density="compact"
+                                        :rules="[required(), maxLength(255)]"
+                                        required />
+                                    <input type="hidden" v-model="bookingData.child_type" value="other_person" />
+                                </div>
+                                <div v-else>
+                                    <input type="hidden" v-model="bookingData.child_type" value="child" />
+                                </div>
+                            </div>
+                            <div v-else class="mb-3">
+                                <v-text-field
+                                    v-model="bookingData.child_name"
+                                    label="Für wen bestellen? (Name)"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required(), maxLength(255)]"
+                                    required />
+                                <v-select
+                                    v-model="bookingData.child_type"
+                                    :items="[
+                                        { title: 'Kind', value: 'child' },
+                                        { title: 'Andere Person', value: 'other_person' }
+                                    ]"
+                                    label="Typ"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[required()]"
+                                    required />
+                            </div>
+                        </div>
+
+                    </v-form>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        color="#9a3412"
+                        class="text-none"
+                        :disabled="bookingLoading"
+                        @click="closeBookingDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="#ea580c"
+                        variant="flat"
+                        rounded="lg"
+                        class="text-none font-weight-bold"
+                        :disabled="!canSubmitBooking"
+                        :loading="bookingLoading"
+                        @click="submitBooking">
+                        Buchen
+                    </v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -630,6 +809,7 @@
 import { mapWritableState } from 'pinia'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
+import axios from 'axios'
 
 export default {
     name: 'HomepageRestaurantPage',
@@ -691,8 +871,26 @@ export default {
             restaurantPasswordError: '',
             restaurantPasswordSuccess: '',
             schoolSearch: '',
-            tickNow: Date.now(),
-            tickInterval: null,
+        tickNow: Date.now(),
+        tickInterval: null,
+        // Booking dialog
+        showBookingDialog: false,
+        selectedMenuEntry: null,
+        bookingData: {
+            restaurant_menu_plan_entry_id: null,
+            restaurant_eating_time_id: null,
+            quantity: 1,
+            price: null,
+            child_name: '',
+            child_type: null,
+            notes: '',
+        },
+        bookingLoading: false,
+        bookingError: '',
+        bookingSuccess: '',
+        bookingChildOptionsLoading: false,
+        bookingQuantityExpanded: false,
+        childOptions: [],
         }
     },
 
@@ -774,6 +972,23 @@ export default {
                 && this.restaurantPasswordConfirmation.length >= 8
                 && this.restaurantPassword === this.restaurantPasswordConfirmation
                 && !this.restaurantPasswordLoading
+        },
+        bookingQuantityOptions() {
+            return this.bookingQuantityExpanded ? [1, 2, 3, 4] : [1]
+        },
+        bookingRequiresEatingTime() {
+            return (this.selectedMenuEntry?.eating_times?.length || 0) > 0
+        },
+        canSubmitBooking() {
+            if (this.bookingLoading || !this.selectedMenuEntry) {
+                return false
+            }
+
+            if (this.bookingRequiresEatingTime && !this.bookingData.restaurant_eating_time_id) {
+                return false
+            }
+
+            return true
         },
         loginPrimaryActionLabel() {
             if (this.loginCheckResult?.status === 'REGISTER_REQUIRED') {
@@ -1071,6 +1286,15 @@ export default {
         formatDate(isoDate) {
             return new Date(`${isoDate}T00:00:00`).toLocaleDateString('de-AT', {
                 day: '2-digit', month: '2-digit', year: 'numeric',
+            })
+        },
+
+        formatDateWithWeekday(isoDate) {
+            return new Date(`${isoDate}T00:00:00`).toLocaleDateString('de-AT', {
+                weekday: 'long',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
             })
         },
 
@@ -1432,10 +1656,95 @@ export default {
             return `${minutes} Minuten ${seconds} Sekunden`
         },
 
-        bookMenu(entry) {
-            // Dummy function for now - just show an alert
-            alert(`Menü "${entry.menu_title || entry.menu?.title || 'Menü'}" würde jetzt gebucht werden.`);
-            console.log('Booking menu:', entry);
+        async bookMenu(entry) {
+            this.selectedMenuEntry = entry
+            this.bookingData = {
+                restaurant_menu_plan_entry_id: entry.id,
+                restaurant_eating_time_id: null,
+                quantity: 1,
+                price: entry.price,
+                child_name: '',
+                child_type: null,
+                notes: '',
+            }
+            this.bookingError = ''
+            this.bookingSuccess = ''
+            this.bookingChildOptionsLoading = false
+            this.bookingQuantityExpanded = false
+            this.childOptions = []
+            this.showBookingDialog = true
+
+            if (this.restaurantAuthUser?.import116_parent) {
+                this.bookingChildOptionsLoading = true
+
+                try {
+                    const response = await axios.get('/api/homepage/restaurant/child-options')
+                    this.childOptions = response.data.options || []
+                } catch (error) {
+                    this.childOptions = []
+                    this.bookingError = error.response?.data?.message || 'Die Kinderauswahl konnte nicht geladen werden.'
+                } finally {
+                    this.bookingChildOptionsLoading = false
+                }
+            }
+        },
+        
+        async submitBooking() {
+            if (!this.restaurantAuthUser || !this.selectedMenuEntry) {
+                return
+            }
+
+            if (!this.canSubmitBooking) {
+                return
+            }
+            
+            this.bookingLoading = true
+            this.bookingError = ''
+            
+            try {
+                const response = await axios.post('/api/homepage/restaurant/bookings', {
+                    data: this.bookingData,
+                })
+                
+                this.bookingSuccess = response.data.message || 'Menü erfolgreich gebucht.';
+                this.showBookingDialog = false;
+                
+                // Reload menu plans to show updated booking status
+                await this.loadMenuPlans();
+                
+                // Show success message
+                setTimeout(() => {
+                    this.bookingSuccess = '';
+                }, 3000);
+                
+            } catch (error) {
+                this.bookingError = error.response?.data?.message || 'Die Buchung konnte nicht gespeichert werden.';
+                if (error.response?.data?.errors) {
+                    this.bookingError += ' ' + error.response.data.errors.join(' ');
+                }
+            } finally {
+                this.bookingLoading = false;
+            }
+        },
+        
+        closeBookingDialog() {
+            this.showBookingDialog = false
+            this.selectedMenuEntry = null
+            this.bookingData = {
+                restaurant_menu_plan_entry_id: null,
+                restaurant_eating_time_id: null,
+                quantity: 1,
+                price: null,
+                child_name: '',
+                child_type: null,
+                notes: '',
+            }
+            this.bookingLoading = false
+            this.bookingError = ''
+            this.bookingSuccess = ''
+            this.bookingChildOptionsLoading = false
+            this.bookingQuantityExpanded = false
+            this.childOptions = []
         },
     },
 }
@@ -2097,6 +2406,128 @@ export default {
     margin-top: 10px;
     display: flex;
     justify-content: flex-end;
+}
+
+.booking-time-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.booking-time-picker__label {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.booking-time-picker__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.booking-time-picker__option {
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    background: rgba(255, 247, 237, 0.9);
+    color: #9a3412;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.booking-time-picker__option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(234, 88, 12, 0.42);
+    box-shadow: 0 8px 18px rgba(154, 52, 18, 0.12);
+}
+
+.booking-time-picker__option:focus-visible {
+    outline: 2px solid rgba(234, 88, 12, 0.55);
+    outline-offset: 2px;
+}
+
+.booking-time-picker__option--active {
+    background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+    border-color: transparent;
+    color: #fff7ed;
+    box-shadow: 0 10px 20px rgba(194, 65, 12, 0.2);
+}
+
+.booking-quantity-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.booking-quantity-picker__label {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #7c2d12;
+}
+
+.booking-quantity-picker__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.booking-quantity-picker__option {
+    border: 1px solid rgba(251, 146, 60, 0.28);
+    background: rgba(255, 247, 237, 0.9);
+    color: #9a3412;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.booking-quantity-picker__option:hover {
+    transform: translateY(-1px);
+    border-color: rgba(234, 88, 12, 0.42);
+    box-shadow: 0 8px 18px rgba(154, 52, 18, 0.12);
+}
+
+.booking-quantity-picker__option:focus-visible {
+    outline: 2px solid rgba(234, 88, 12, 0.55);
+    outline-offset: 2px;
+}
+
+.booking-quantity-picker__option--active {
+    background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+    border-color: transparent;
+    color: #fff7ed;
+    box-shadow: 0 10px 20px rgba(194, 65, 12, 0.2);
+}
+
+.booking-quantity-picker__more {
+    border: 1px dashed rgba(251, 146, 60, 0.42);
+    background: rgba(255, 247, 237, 0.72);
+    color: #9a3412;
+    border-radius: 999px;
+    padding: 10px 18px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.booking-quantity-picker__more:hover {
+    transform: translateY(-1px);
+    border-color: rgba(234, 88, 12, 0.55);
+    box-shadow: 0 8px 18px rgba(154, 52, 18, 0.12);
+}
+
+.booking-quantity-picker__more:focus-visible {
+    outline: 2px solid rgba(234, 88, 12, 0.55);
+    outline-offset: 2px;
 }
 
 .rp-empty {

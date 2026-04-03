@@ -62,6 +62,13 @@
                                     </span>
                                     <span class="mp-day__num">{{ day.dayNumber }}</span>
                                     <span class="mp-day__mon">{{ day.monthShort }}</span>
+                                    <span
+                                        v-if="day.hasPlan"
+                                        class="mp-day__booked"
+                                        :data-testid="`booked-menu-counter-${day.iso}`"
+                                        :aria-label="`${day.bookedMenuCount} gebuchte Menüs`">
+                                        {{ day.bookedMenuCount }}
+                                    </span>
                                     <span v-if="day.hasPlan" class="mp-day__dot" aria-hidden="true" />
                                 </button>
                             </div>
@@ -318,6 +325,7 @@ export default {
                     hasPlan: planCount > 0,
                     hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
                     hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
+                    bookedMenuCount: this.bookedMenuCountForDay(iso),
                     planCount,
                 }
             })
@@ -397,6 +405,9 @@ export default {
         },
         planCountForDay(isoString) {
             return useMenuPlanStore().planCountForDay(isoString)
+        },
+        bookedMenuCountForDay(isoString) {
+            return useMenuPlanStore().bookedMenuCountForDay(isoString)
         },
         availablePlanCountForDay(isoString) {
             return useMenuPlanStore().plans.filter((plan) => {
@@ -797,6 +808,20 @@ export default {
     font-size: 0.62rem;
     color: #9ca3af;
     text-transform: capitalize;
+}
+
+.mp-day__booked {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(194, 65, 12, 0.12);
+    color: #9a3412;
+    font-size: 0.72rem;
+    font-weight: 800;
 }
 
 .mp-day__dot {

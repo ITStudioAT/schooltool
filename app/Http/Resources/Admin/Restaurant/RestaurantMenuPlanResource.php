@@ -43,6 +43,7 @@ class RestaurantMenuPlanResource extends JsonResource
                 'menu_id' => $entry->restaurant_menu_id,
                 'menu_title' => $entry->menu_title,
                 'price' => $entry->price !== null ? (string) $entry->price : null,
+                'booked_menu_count' => (int) ($entry->getAttribute('booked_menu_count') ?? 0),
                 'comments' => $entry->comments,
                 'menu' => $entry->relationLoaded('menu') && $entry->menu
                     ? (new RestaurantMenuResource($entry->menu))->resolve($request)

@@ -17,6 +17,11 @@ class RestaurantMenuPlanService
     {
         $plans = RestaurantMenuPlan::query()
             ->where('school_id', $authUser->school_id)
+            ->with([
+                'entries' => fn ($query) => $query
+                    ->orderBy('plan_date')
+                    ->withSum('bookings as booked_menu_count', 'quantity'),
+            ])
             ->orderBy('start_date')
             ->get();
 
@@ -29,7 +34,15 @@ class RestaurantMenuPlanService
     {
         $plan = RestaurantMenuPlan::query()
             ->where('school_id', $authUser->school_id)
-            ->with(['school', 'entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
+            ->with([
+                'school',
+                'entries' => fn ($query) => $query
+                    ->orderBy('plan_date')
+                    ->withSum('bookings as booked_menu_count', 'quantity'),
+                'entries.menu.foods.category',
+                'entries.menu.foods.ingredientIcons',
+                'entries.eatingTimes',
+            ])
             ->find($id);
 
         return $plan ? $this->attachDeletionMeta($plan) : null;
@@ -54,7 +67,14 @@ class RestaurantMenuPlanService
         $this->syncEntries($plan, $validated['entries'] ?? []);
 
         return $this->attachDeletionMeta(
-            $plan->load(['entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
+            $plan->load([
+                'entries' => fn ($query) => $query
+                    ->orderBy('plan_date')
+                    ->withSum('bookings as booked_menu_count', 'quantity'),
+                'entries.menu.foods.category',
+                'entries.menu.foods.ingredientIcons',
+                'entries.eatingTimes',
+            ])
         );
     }
 
@@ -84,7 +104,14 @@ class RestaurantMenuPlanService
         $this->syncEntries($plan, $validated['entries'] ?? []);
 
         return $this->attachDeletionMeta(
-            $plan->load(['entries.menu.foods.category', 'entries.menu.foods.ingredientIcons', 'entries.eatingTimes'])
+            $plan->load([
+                'entries' => fn ($query) => $query
+                    ->orderBy('plan_date')
+                    ->withSum('bookings as booked_menu_count', 'quantity'),
+                'entries.menu.foods.category',
+                'entries.menu.foods.ingredientIcons',
+                'entries.eatingTimes',
+            ])
         );
     }
 
@@ -188,27 +215,28 @@ class RestaurantMenuPlanService
     {
         $count = 0;
 
-        foreach ($this->bookingReferenceTables() as $reference) {
-            if (! Schema::hasTable($reference['table']) || ! Schema::hasColumn($reference['table'], $reference['column'])) {
-                continue;
-            }
+        if (
+            Schema::hasTable('restaurant_menu_plan_bookings')
+            && Schema::hasTable('restaurant_menu_plan_entries')
+            && Schema::hasColumn('restaurant_menu_plan_bookings', 'restaurant_menu_plan_entry_id')
+        ) {
+            $count += DB::table('restaurant_menu_plan_bookings')
+                ->join(
+                    'restaurant_menu_plan_entries',
+                    'restaurant_menu_plan_entries.id',
+                    '=',
+                    'restaurant_menu_plan_bookings.restaurant_menu_plan_entry_id'
+                )
+                ->where('restaurant_menu_plan_entries.restaurant_menu_plan_id', $plan->id)
+                ->count();
+        }
 
-            $count += DB::table($reference['table'])
-                ->where($reference['column'], $plan->id)
+        if (Schema::hasTable('menu_plan_bookings') && Schema::hasColumn('menu_plan_bookings', 'menu_plan_id')) {
+            $count += DB::table('menu_plan_bookings')
+                ->where('menu_plan_id', $plan->id)
                 ->count();
         }
 
         return $count;
-    }
-
-    /**
-     * @return array<int, array{table: string, column: string}>
-     */
-    private function bookingReferenceTables(): array
-    {
-        return [
-            ['table' => 'restaurant_menu_plan_bookings', 'column' => 'restaurant_menu_plan_id'],
-            ['table' => 'menu_plan_bookings', 'column' => 'menu_plan_id'],
-        ];
     }
 }

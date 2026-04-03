@@ -247,6 +247,22 @@ class RestaurantService
         })->values();
     }
 
+    public function isMenuPlanOrderable(RestaurantMenuPlan $plan, ?Carbon $now = null): bool
+    {
+        return $this->isMenuPlanOrderableNow(
+            $plan,
+            $this->onlineSettingsForMenuPlan($plan),
+            $now ?? now(),
+        );
+    }
+
+    public function hasMenuPlanOrderEnded(RestaurantMenuPlan $plan, ?Carbon $now = null): bool
+    {
+        return ($now ?? now())->gt(
+            $this->orderEndDateTime($plan, $this->onlineSettingsForMenuPlan($plan))
+        );
+    }
+
     public function foodsForUser(User $authUser): Collection
     {
         $this->ensureDefaultCategories($authUser);
@@ -811,6 +827,13 @@ class RestaurantService
         }
 
         return substr($normalized, 0, 5);
+    }
+
+    private function onlineSettingsForMenuPlan(RestaurantMenuPlan $plan): array
+    {
+        $plan->loadMissing('school.schoolTool');
+
+        return $this->normalizeOnlineSettings($plan->school?->schoolTool);
     }
 
     private function isMenuPlanVisibleNow(RestaurantMenuPlan $plan, array $onlineSettings, Carbon $now): bool
