@@ -68,17 +68,23 @@ return [
     'verification' => [
         'check_testing_environment' => function () {
             return app()->environment('testing') &&
-                   config('database.connections.mysql.database') === 'pest_test';
+                config('database.connections.mysql.database') === 'pest_test';
         },
         'ensure_test_database_is_used' => function () {
-            if (app()->environment('testing') &&
-                config('database.connections.mysql.database') !== 'pest_test') {
+            if (
+                app()->environment('testing') &&
+                config('database.connections.mysql.database') !== 'pest_test'
+            ) {
                 throw new RuntimeException(
-                    'Tests are attempting to run against the production database! '.
-                    'This is prohibited. Check phpunit.xml configuration.'
+                    'SAFETY VIOLATION: Tests are attempting to run against production database! '.
+                        'This would delete all production data. '.
+                        'Tests must use a separate test database (configured in phpunit.xml as "pest_test"). '.
+                        'Check your configuration and ensure DB_DATABASE is set to "pest_test" in testing environment.'
                 );
             }
         },
+        'production_databases' => ['schooltool', 'production_db', 'live_db'],
+        'test_databases' => ['pest_test', 'testing', 'test'],
     ],
 
     /*

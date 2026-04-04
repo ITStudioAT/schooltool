@@ -8,23 +8,41 @@
                         <span class="restaurant-users-header-count__value">{{ pendingConfirmationCount }}</span>
                     </div>
 
-                    <v-btn
-                        size="small"
-                        :color="only_pending_confirmation ? 'error' : 'warning'"
-                        :variant="only_pending_confirmation ? 'flat' : 'flat'"
-                        prepend-icon="mdi-filter-check-outline"
-                        @click="togglePendingConfirmationFilter">
-                        {{ only_pending_confirmation ? 'Alle Benutzer' : 'Nur zu bestätigen' }}
-                    </v-btn>
+                    <div class="restaurant-users-filter-toggle" role="group" aria-label="Bestätigungsfilter">
+                        <v-btn
+                            size="small"
+                            :color="only_pending_confirmation ? undefined : 'warning'"
+                            :variant="only_pending_confirmation ? 'text' : 'flat'"
+                            @click="setPendingConfirmationFilter(false)">
+                            Alle
+                        </v-btn>
+                        <v-btn
+                            size="small"
+                            :color="only_pending_confirmation ? 'warning' : undefined"
+                            :variant="only_pending_confirmation ? 'flat' : 'text'"
+                            prepend-icon="mdi-filter-check-outline"
+                            @click="setPendingConfirmationFilter(true)">
+                            Nur zu bestätigen
+                        </v-btn>
+                    </div>
 
-                    <v-btn
-                        size="small"
-                        color="warning"
-                        variant="flat"
-                        prepend-icon="mdi-refresh"
-                        @click="reloadUsers">
-                        Aktualisieren
-                    </v-btn>
+                    <div class="restaurant-users-filter-toggle" role="group" aria-label="SEPA-Filter">
+                        <v-btn
+                            size="small"
+                            :color="only_without_sepa ? undefined : 'primary'"
+                            :variant="only_without_sepa ? 'text' : 'flat'"
+                            @click="setSepaFilter(false)">
+                            Alle
+                        </v-btn>
+                        <v-btn
+                            size="small"
+                            :color="only_without_sepa ? 'primary' : undefined"
+                            :variant="only_without_sepa ? 'flat' : 'text'"
+                            @click="setSepaFilter(true)">
+                            ohne SEPA
+                        </v-btn>
+                    </div>
+
                 </div>
             </template>
 
@@ -74,7 +92,7 @@
                     color="error"
                     variant="flat"
                     prepend-icon="mdi-close-circle-outline"
-                    @click="togglePendingConfirmationFilter">
+                    @click="setPendingConfirmationFilter(false)">
                     Filter aufheben
                 </v-btn>
             </div>
@@ -305,7 +323,7 @@ export default {
     async beforeMount() {
         this.restaurantUserStore = useRestaurantUserStore()
         this.searchDraft = this.search_string || ''
-        this.syncPendingConfirmationFilterFromRoute()
+        this.syncFiltersFromRoute()
         await this.restaurantUserStore.index()
     },
 
@@ -322,7 +340,7 @@ export default {
     },
 
     computed: {
-        ...mapState(useRestaurantUserStore, ['users', 'meta', 'search_string', 'only_pending_confirmation']),
+        ...mapState(useRestaurantUserStore, ['users', 'meta', 'search_string', 'only_pending_confirmation', 'only_without_sepa']),
         currentPage() {
             return Number(this.meta?.current_page || 1)
         },
@@ -351,7 +369,10 @@ export default {
 
     watch: {
         '$route.query.only_pending_confirmation'() {
-            this.syncPendingConfirmationFilterFromRoute()
+            this.syncFiltersFromRoute()
+        },
+        '$route.query.only_without_sepa'() {
+            this.syncFiltersFromRoute()
         },
     },
 
@@ -401,9 +422,26 @@ export default {
         async handlePageChange(page) {
             await this.restaurantUserStore.index(page)
         },
-        async togglePendingConfirmationFilter() {
-            this.restaurantUserStore.only_pending_confirmation = ! this.restaurantUserStore.only_pending_confirmation
-            this.syncPendingConfirmationFilterRoute()
+        async setPendingConfirmationFilter(onlyPendingConfirmation) {
+            const normalized = onlyPendingConfirmation === true
+
+            if (this.restaurantUserStore.only_pending_confirmation === normalized) {
+                return
+            }
+
+            this.restaurantUserStore.only_pending_confirmation = normalized
+            this.syncFilterRoute()
+            await this.restaurantUserStore.index(1)
+        },
+        async setSepaFilter(onlyWithoutSepa) {
+            const normalized = onlyWithoutSepa === true
+
+            if (this.restaurantUserStore.only_without_sepa === normalized) {
+                return
+            }
+
+            this.restaurantUserStore.only_without_sepa = normalized
+            this.syncFilterRoute()
             await this.restaurantUserStore.index(1)
         },
         async toggleSepa(user) {
@@ -458,12 +496,11 @@ export default {
                 this.deleteUserId = null
             }
         },
-        syncPendingConfirmationFilterFromRoute() {
-            const rawValue = this.$route?.query?.only_pending_confirmation
-
-            this.restaurantUserStore.only_pending_confirmation = rawValue === '1' || rawValue === 1 || rawValue === true || rawValue === 'true'
+        syncFiltersFromRoute() {
+            this.restaurantUserStore.only_pending_confirmation = this.isTruthyQueryValue(this.$route?.query?.only_pending_confirmation)
+            this.restaurantUserStore.only_without_sepa = this.isTruthyQueryValue(this.$route?.query?.only_without_sepa)
         },
-        syncPendingConfirmationFilterRoute() {
+        syncFilterRoute() {
             const query = {
                 ...(this.$route?.query || {}),
             }
@@ -474,15 +511,34 @@ export default {
                 delete query.only_pending_confirmation
             }
 
+            if (this.restaurantUserStore.only_without_sepa) {
+                query.only_without_sepa = '1'
+            } else {
+                delete query.only_without_sepa
+            }
+
             this.$router.replace({
                 query,
             }).catch(() => {})
+        },
+        isTruthyQueryValue(value) {
+            return value === '1' || value === 1 || value === true || value === 'true'
         },
     },
 }
 </script>
 
 <style scoped>
+.restaurant-users-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border: 1px solid rgba(14, 116, 144, 0.14);
+    border-radius: 999px;
+    background: rgba(248, 250, 252, 0.88);
+}
+
 .restaurant-users-search-panel {
     display: flex;
     gap: 1rem;

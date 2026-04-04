@@ -244,6 +244,37 @@ test('restaurant users endpoint can filter only users that must be confirmed', f
         ->assertJsonPath('data.0.email', 'offen@example.test');
 });
 
+test('restaurant users endpoint can filter only users without sepa', function () {
+    $withSepaUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Sina',
+        'last_name' => 'Sepa',
+        'email' => 'sina@example.test',
+        'sepa_at' => now(),
+    ]);
+    $withSepaUser->assignRole('lunch_user');
+
+    $withoutSepaUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Noah',
+        'last_name' => 'Ohne',
+        'email' => 'noah@example.test',
+        'sepa_at' => null,
+    ]);
+    $withoutSepaUser->assignRole('lunch_user');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $response = $this->getJson('/api/admin/restaurant/users?only_without_sepa=1');
+
+    $response->assertOk()
+        ->assertJsonPath('meta.total', 1)
+        ->assertJsonPath('meta.only_without_sepa', true)
+        ->assertJsonPath('data.0.email', 'noah@example.test');
+});
+
 test('restaurant users endpoint includes lunch candidates in the default listing', function () {
     $candidateUser = User::factory()->create([
         'school_id' => $this->school->id,

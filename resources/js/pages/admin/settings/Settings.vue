@@ -520,6 +520,7 @@ export default {
                     { key: 'free-days', label: 'Freie Tage', meta: 'Schließzeiten', icon: 'mdi-calendar-remove-outline' },
                     { key: 'eating-times', label: 'Speisezeiten', meta: 'Ausgabe planen', icon: 'mdi-clock-outline' },
                     { key: 'users', label: 'Benutzer', meta: 'Mittagskonten', icon: 'mdi-account-group-outline' },
+                    { key: 'sepa', label: 'SEPA', meta: 'Lastschriftmandat', icon: 'mdi-bank-transfer' },
                     { key: 'online', label: 'Online', meta: 'Bestellung & Sichtbarkeit', icon: 'mdi-web' },
                 ]
             }
@@ -690,7 +691,7 @@ export default {
                 keys = ['groups_overview', 'groups_own']
                 fallback = 'groups_overview'
             } else if (resolvedTab === 'restaurant') {
-                keys = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'online']
+                keys = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online']
                 fallback = 'general'
             } else {
                 keys = ['general', 'schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']

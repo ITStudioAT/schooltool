@@ -93,6 +93,9 @@ class SchoolTool extends Model
         'restaurant_new_users_must_confirm_email',
         'restaurant_new_users_confirmer_email',
         'restaurant_user_information_intro_html',
+        'restaurant_sepa_online_enabled',
+        'restaurant_sepa_payee',
+        'restaurant_sepa_mandate_text',
     ];
 
     protected $casts = [
@@ -132,6 +135,7 @@ class SchoolTool extends Model
         'restaurant_menu_order_end_week_offset' => 'integer',
         'restaurant_menu_order_end_day_of_week' => 'integer',
         'restaurant_new_users_must_confirm_email' => 'boolean',
+        'restaurant_sepa_online_enabled' => 'boolean',
     ];
 
     public function school(): BelongsTo

@@ -8,6 +8,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('restaurant_ingredient_icons')) {
+            return;
+        }
+
         Schema::create('restaurant_ingredient_icons', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->nullable()->constrained()->cascadeOnDelete();

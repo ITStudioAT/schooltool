@@ -154,8 +154,8 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'online'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'Online'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'SEPA', 'Online'])
     })
 
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {

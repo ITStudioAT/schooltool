@@ -22,7 +22,7 @@ beforeEach(function () {
 
     Storage::fake('local');
     Storage::fake('public');
-    Storage::disk('local')->put('restaurant/svgs/cow-svgrepo-com.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    Storage::disk('local')->put('restaurant/ingredient_icons/Rindfleisch.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
 
     $this->school = School::factory()->create();
     $this->otherSchool = School::factory()->create();
@@ -88,7 +88,7 @@ test('index returns only foods from current school', function () {
         ->and($response->json('data.0.title'))->toBe('Lasagne');
 });
 
-test('settings syncs ingredient icons from private svg storage', function () {
+test('settings no longer sync ingredient icons from the private directory automatically', function () {
     $this->actingAs($this->admin, 'sanctum');
 
     $response = $this->getJson('/api/admin/restaurant/settings');
@@ -97,7 +97,7 @@ test('settings syncs ingredient icons from private svg storage', function () {
         ->assertJsonPath('ingredient_icons.0.title', 'Rind');
 
     $this->icon->refresh();
-    expect($this->icon->image_path)->toBe('restaurant/svgs/cow-svgrepo-com.svg');
+    expect($this->icon->image_path)->toBeNull();
 });
 
 test('store creates food with new category and image', function () {

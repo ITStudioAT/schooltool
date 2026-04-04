@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -24,11 +25,19 @@ class RestaurantService
 {
     private const DEFAULT_RESTAURANT_FOODS_PAGINATION_NUMBER = 12;
 
+    private const PRIVATE_INGREDIENT_ICON_DIRECTORY = 'restaurant/ingredient_icons';
+
     private const DEFAULT_GENERAL_SETTINGS = [
         'service_email' => '',
         'new_users_must_confirm_email' => false,
         'new_users_confirmer_email' => '',
         'user_information_intro_html' => '',
+    ];
+
+    private const DEFAULT_SEPA_SETTINGS = [
+        'sepa_online_enabled' => false,
+        'sepa_payee' => '',
+        'sepa_mandate_text' => '',
     ];
 
     private const DEFAULT_ONLINE_SETTINGS = [
@@ -49,7 +58,6 @@ class RestaurantService
     public function settingsForUser(User $authUser): array
     {
         $this->ensureDefaultCategories($authUser);
-        $this->ensureDefaultIngredientIcons($authUser);
 
         $categories = RestaurantCategory::query()
             ->where('school_id', $authUser->school_id)
@@ -81,6 +89,8 @@ class RestaurantService
             'allergen_suggestions' => $this->extractAllergenSuggestions($foods),
             'general_settings' => $this->generalSettingsForUser($authUser),
             'can_manage_general_settings' => true,
+            'sepa_settings' => $this->sepaSettingsForUser($authUser),
+            'can_manage_sepa_settings' => true,
             'user_settings' => $this->userSettingsForUser($authUser),
             'can_manage_user_settings' => true,
             'online_settings' => $this->onlineSettingsForUser($authUser),
@@ -152,6 +162,23 @@ class RestaurantService
         ])->save();
 
         return $this->normalizeGeneralSettings($schoolTool->fresh());
+    }
+
+    public function sepaSettingsForUser(User $user): array
+    {
+        return $this->normalizeSepaSettings($this->schoolToolForUser($user));
+    }
+
+    public function updateSepaSettings(User $user, array $settings): array
+    {
+        $schoolTool = $this->schoolToolForUser($user);
+        $schoolTool->fill([
+            'restaurant_sepa_online_enabled' => (bool) ($settings['restaurant_sepa_online_enabled'] ?? false),
+            'restaurant_sepa_payee' => $this->normalizeNullableHtml($settings['restaurant_sepa_payee'] ?? null),
+            'restaurant_sepa_mandate_text' => $this->normalizeNullableHtml($settings['restaurant_sepa_mandate_text'] ?? null),
+        ])->save();
+
+        return $this->normalizeSepaSettings($schoolTool->fresh());
     }
 
     public function updateUserSettings(User $user, int $restaurantFoodsPaginationNumber): array
@@ -320,13 +347,148 @@ class RestaurantService
     public function foodsForUser(User $authUser): Collection
     {
         $this->ensureDefaultCategories($authUser);
-        $this->ensureDefaultIngredientIcons($authUser);
 
         return RestaurantFood::query()
             ->where('school_id', $authUser->school_id)
             ->with(['category', 'ingredientIcons'])
             ->orderBy('title')
             ->get();
+    }
+
+    /**
+     * @return array{
+     *     source_directory: string,
+     *     icons: array<int, array{
+     *         title: string,
+     *         path: string,
+     *         image_url: ?string,
+     *         already_imported: bool
+     *     }>
+     * }
+     */
+    public function availablePrivateIngredientIconsForUser(User $authUser): array
+    {
+        $existingIcons = RestaurantIngredientIcon::query()
+            ->where('school_id', $authUser->school_id)
+            ->get();
+
+        $icons = $this->privateIngredientIconPaths()
+            ->map(function (string $path) use ($existingIcons): array {
+                $title = $this->ingredientIconTitleFromPath($path);
+                $titleVariants = $this->ingredientIconTitleVariants($title);
+
+                return [
+                    'title' => $title,
+                    'path' => $path,
+                    'image_url' => $this->ingredientIconImageUrlFromPath($path),
+                    'already_imported' => $existingIcons->contains(
+                        fn (RestaurantIngredientIcon $icon): bool => in_array($icon->title, $titleVariants, true)
+                    ),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'source_directory' => 'storage/app/private/'.self::PRIVATE_INGREDIENT_ICON_DIRECTORY,
+            'icons' => $icons,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     ingredient_icons: Collection<int, RestaurantIngredientIcon>,
+     *     created_count: int,
+     *     updated_count: int,
+     *     processed_count: int
+     * }
+     */
+    public function syncIngredientIconsFromPrivateDirectoryForUser(User $authUser, ?array $selectedPaths = null): array
+    {
+        $createdCount = 0;
+        $updatedCount = 0;
+
+        $availablePaths = $this->privateIngredientIconPaths();
+
+        collect($selectedPaths ?? $availablePaths->all())
+            ->filter(fn (string $path): bool => $availablePaths->contains($path))
+            ->sort()
+            ->values()
+            ->each(function (string $path, int $index) use ($authUser, &$createdCount, &$updatedCount): void {
+                $title = $this->ingredientIconTitleFromPath($path);
+                $sortOrder = ($index + 1) * 10;
+                $canonicalIngredientIcon = RestaurantIngredientIcon::query()
+                    ->where('school_id', $authUser->school_id)
+                    ->where('title', $title)
+                    ->first();
+
+                $aliasIcons = RestaurantIngredientIcon::query()
+                    ->where('school_id', $authUser->school_id)
+                    ->whereIn('title', array_values(array_diff($this->ingredientIconTitleVariants($title), [$title])))
+                    ->orderBy('id')
+                    ->get();
+
+                $ingredientIcon = $canonicalIngredientIcon ?? $aliasIcons->shift() ?? RestaurantIngredientIcon::query()->make([
+                    'school_id' => $authUser->school_id,
+                ]);
+
+                $wasRecentlyCreated = ! $ingredientIcon->exists;
+                $originalImagePath = $ingredientIcon->image_path;
+                $hasChanges = $wasRecentlyCreated
+                    || $ingredientIcon->title !== $title
+                    || $ingredientIcon->image_path !== $path
+                    || (int) $ingredientIcon->sort_order !== $sortOrder;
+
+                if (! $hasChanges) {
+                    $this->mergeDuplicateIngredientIcons($ingredientIcon, $aliasIcons);
+
+                    return;
+                }
+
+                $ingredientIcon->fill([
+                    'title' => $title,
+                    'image_path' => $path,
+                    'sort_order' => $sortOrder,
+                ])->save();
+
+                if ($originalImagePath !== $path) {
+                    $this->deleteIngredientIconImage($originalImagePath);
+                }
+
+                $this->mergeDuplicateIngredientIcons($ingredientIcon, $aliasIcons);
+
+                if ($wasRecentlyCreated) {
+                    $createdCount++;
+
+                    return;
+                }
+
+                $updatedCount++;
+            });
+
+        $ingredientIcons = RestaurantIngredientIcon::query()
+            ->where('school_id', $authUser->school_id)
+            ->withCount('foods')
+            ->orderBy('title')
+            ->get();
+
+        return [
+            'ingredient_icons' => $ingredientIcons,
+            'created_count' => $createdCount,
+            'updated_count' => $updatedCount,
+            'processed_count' => $ingredientIcons->count(),
+        ];
+    }
+
+    /**
+     * @return SupportCollection<int, string>
+     */
+    private function privateIngredientIconPaths(): SupportCollection
+    {
+        return collect(Storage::disk('local')->files(self::PRIVATE_INGREDIENT_ICON_DIRECTORY))
+            ->filter(fn (string $path): bool => Str::endsWith(Str::lower($path), '.svg'))
+            ->sort()
+            ->values();
     }
 
     public function createFoodForUser(User $authUser, array $validated): RestaurantFood
@@ -498,14 +660,12 @@ class RestaurantService
         $imagePath = $ingredientIcon->image_path;
 
         if (! empty($validated['remove_image']) && $imagePath) {
-            Storage::disk('public')->delete($imagePath);
+            $this->deleteIngredientIconImage($imagePath);
             $imagePath = null;
         }
 
         if (($validated['image'] ?? null) instanceof UploadedFile) {
-            if ($imagePath) {
-                Storage::disk('public')->delete($imagePath);
-            }
+            $this->deleteIngredientIconImage($imagePath);
             $imagePath = $this->storeImage($validated['image'], 'restaurant/ingredient-icons');
         }
 
@@ -525,9 +685,7 @@ class RestaurantService
             abort(409, 'Dieses Zutaten-Symbol wird noch von Speisen verwendet.');
         }
 
-        if ($ingredientIcon->image_path) {
-            Storage::disk('public')->delete($ingredientIcon->image_path);
-        }
+        $this->deleteIngredientIconImage($ingredientIcon->image_path);
 
         $ingredientIcon->delete();
     }
@@ -546,40 +704,6 @@ class RestaurantService
                 'sort_order' => $category['sort_order'],
             ]);
         });
-    }
-
-    private function ensureDefaultIngredientIcons(User $authUser): void
-    {
-        collect(Storage::disk('local')->files('restaurant/svgs'))
-            ->filter(fn (string $path): bool => Str::endsWith(Str::lower($path), '.svg'))
-            ->sort()
-            ->values()
-            ->each(function (string $path, int $index) use ($authUser): void {
-                $title = $this->ingredientIconTitleFromPath($path);
-                $sortOrder = ($index + 1) * 10;
-                $canonicalIngredientIcon = RestaurantIngredientIcon::query()
-                    ->where('school_id', $authUser->school_id)
-                    ->where('title', $title)
-                    ->first();
-
-                $aliasIcons = RestaurantIngredientIcon::query()
-                    ->where('school_id', $authUser->school_id)
-                    ->whereIn('title', array_values(array_diff($this->ingredientIconTitleVariants($title), [$title])))
-                    ->orderBy('id')
-                    ->get();
-
-                $ingredientIcon = $canonicalIngredientIcon ?? $aliasIcons->shift() ?? RestaurantIngredientIcon::query()->make([
-                    'school_id' => $authUser->school_id,
-                ]);
-
-                $ingredientIcon->fill([
-                    'title' => $title,
-                    'image_path' => $path,
-                    'sort_order' => $sortOrder,
-                ])->save();
-
-                $this->mergeDuplicateIngredientIcons($ingredientIcon, $aliasIcons);
-            });
     }
 
     private function resolveCategory(User $authUser, array $validated): RestaurantCategory
@@ -711,29 +835,30 @@ class RestaurantService
 
     private function ingredientIconTitleFromPath(string $path): string
     {
-        $filename = pathinfo($path, PATHINFO_BASENAME);
-
-        return match ($filename) {
-            'cow-svgrepo-com.svg' => 'Rind',
-            'european-union-europe-svgrepo-com.svg' => 'EU',
-            'fish-svgrepo-com.svg' => 'Fisch',
-            'flag-for-flag-austria-svgrepo-com.svg' => 'Österreich',
-            'mushroom-svgrepo-com.svg' => 'Pilz',
-            'pig-svgrepo-com.svg' => 'Schwein',
-            default => Str::of(pathinfo($path, PATHINFO_FILENAME))
-                ->replace('-svgrepo-com', '')
-                ->replace('-', ' ')
-                ->headline()
-                ->toString(),
-        };
+        return Str::of(pathinfo($path, PATHINFO_FILENAME))
+            ->replace(['_', '-'], ' ')
+            ->replace('Oesterreich', 'Österreich')
+            ->squish()
+            ->toString();
     }
 
     private function ingredientIconTitleVariants(string $title): array
     {
         return match ($title) {
             'Österreich' => ['Österreich', 'Oesterreich', 'Ã–sterreich'],
+            'Rindfleisch' => ['Rindfleisch', 'Rind'],
+            'Pilze' => ['Pilze', 'Pilz'],
             default => [$title],
         };
+    }
+
+    private function ingredientIconImageUrlFromPath(string $path): ?string
+    {
+        if (! Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        return 'data:image/svg+xml;base64,'.base64_encode(Storage::disk('local')->get($path));
     }
 
     private function mergeDuplicateIngredientIcons(RestaurantIngredientIcon $ingredientIcon, Collection $duplicates): void
@@ -748,6 +873,19 @@ class RestaurantService
             $duplicate->foods()->detach();
             $duplicate->delete();
         });
+    }
+
+    private function deleteIngredientIconImage(?string $imagePath): void
+    {
+        if (! $imagePath) {
+            return;
+        }
+
+        if (Storage::disk('local')->exists($imagePath)) {
+            return;
+        }
+
+        Storage::disk('public')->delete($imagePath);
     }
 
     private function sanitizeTags(array $tags): array
@@ -837,6 +975,19 @@ class RestaurantService
             'new_users_must_confirm_email' => (bool) ($schoolTool->restaurant_new_users_must_confirm_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_must_confirm_email']),
             'new_users_confirmer_email' => trim((string) ($schoolTool->restaurant_new_users_confirmer_email ?? self::DEFAULT_GENERAL_SETTINGS['new_users_confirmer_email'])),
             'user_information_intro_html' => trim((string) ($schoolTool->restaurant_user_information_intro_html ?? self::DEFAULT_GENERAL_SETTINGS['user_information_intro_html'])),
+        ];
+    }
+
+    private function normalizeSepaSettings(?SchoolTool $schoolTool): array
+    {
+        if (! $schoolTool) {
+            return self::DEFAULT_SEPA_SETTINGS;
+        }
+
+        return [
+            'sepa_online_enabled' => (bool) ($schoolTool->restaurant_sepa_online_enabled ?? self::DEFAULT_SEPA_SETTINGS['sepa_online_enabled']),
+            'sepa_payee' => trim((string) ($schoolTool->restaurant_sepa_payee ?? self::DEFAULT_SEPA_SETTINGS['sepa_payee'])),
+            'sepa_mandate_text' => trim((string) ($schoolTool->restaurant_sepa_mandate_text ?? self::DEFAULT_SEPA_SETTINGS['sepa_mandate_text'])),
         ];
     }
 

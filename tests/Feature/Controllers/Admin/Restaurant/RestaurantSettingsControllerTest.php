@@ -26,8 +26,6 @@ beforeEach(function () {
 
     Storage::fake('local');
     Storage::fake('public');
-    Storage::disk('local')->put('restaurant/svgs/pig-svgrepo-com.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
-    Storage::disk('local')->put('restaurant/svgs/fish-svgrepo-com.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
 
     $this->school = School::factory()->create();
     $this->admin = User::factory()->create([
@@ -38,6 +36,13 @@ beforeEach(function () {
 });
 
 test('settings creates default categories for empty school', function () {
+    SchoolTool::query()->create([
+        'school_id' => $this->school->id,
+        'restaurant_sepa_online_enabled' => true,
+        'restaurant_sepa_payee' => '<p>Zahlungsempfänger</p>',
+        'restaurant_sepa_mandate_text' => '<p>Mandatstext</p>',
+    ]);
+
     $lunchUser = User::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => null,
@@ -74,6 +79,14 @@ test('settings creates default categories for empty school', function () {
         ->toBe('')
         ->and($response->json('can_manage_general_settings'))
         ->toBeTrue()
+        ->and($response->json('sepa_settings.sepa_online_enabled'))
+        ->toBeTrue()
+        ->and($response->json('sepa_settings.sepa_payee'))
+        ->toBe('<p>Zahlungsempfänger</p>')
+        ->and($response->json('sepa_settings.sepa_mandate_text'))
+        ->toBe('<p>Mandatstext</p>')
+        ->and($response->json('can_manage_sepa_settings'))
+        ->toBeTrue()
         ->and($response->json('user_settings.restaurant_foods_pagination_number'))
         ->toBe((int) config('schooltool.pagination'))
         ->and($response->json('can_manage_user_settings'))
@@ -96,10 +109,8 @@ test('settings creates default categories for empty school', function () {
         ->toBe(2)
         ->and($response->json('stats.lunch_users_pending_confirmation_count'))
         ->toBe(1)
-        ->and(collect($response->json('ingredient_icons'))->pluck('title')->all())
-        ->toEqual(['Fisch', 'Schwein'])
-        ->and($response->json('ingredient_icons.0.image_url'))
-        ->toStartWith('data:image/svg+xml;base64,');
+        ->and($response->json('ingredient_icons'))
+        ->toEqual([]);
 });
 
 test('restaurant user can update own foods pagination setting', function () {
@@ -404,6 +415,42 @@ test('ingredient icon CRUD works with svg upload and title ordering', function (
         ->assertNoContent();
 });
 
+test('restaurant ingredient icons can be synced manually from the private directory', function () {
+    Storage::disk('local')->put('restaurant/ingredient_icons/Fisch.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    Storage::disk('local')->put('restaurant/ingredient_icons/Schwein.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    Storage::disk('local')->put('restaurant/ingredient_icons/Österreich.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $listing = $this->getJson('/api/admin/restaurant/ingredient_icons/private-directory');
+
+    $listing->assertOk()
+        ->assertJsonPath('source_directory', 'storage/app/private/restaurant/ingredient_icons');
+
+    $response = $this->postJson('/api/admin/restaurant/ingredient_icons/sync-private', [
+        'paths' => [
+            'restaurant/ingredient_icons/Fisch.svg',
+            'restaurant/ingredient_icons/Österreich.svg',
+        ],
+    ]);
+
+    $response->assertOk();
+
+    expect(collect($response->json('data'))->pluck('title')->all())
+        ->toEqual(['Fisch', 'Österreich']);
+
+    $this->assertDatabaseHas('restaurant_ingredient_icons', [
+        'school_id' => $this->school->id,
+        'title' => 'Fisch',
+        'image_path' => 'restaurant/ingredient_icons/Fisch.svg',
+    ]);
+
+    $this->assertDatabaseMissing('restaurant_ingredient_icons', [
+        'school_id' => $this->school->id,
+        'title' => 'Schwein',
+    ]);
+});
+
 test('ingredient icon upload only accepts svg files', function () {
     $this->actingAs($this->admin, 'sanctum');
 
@@ -437,27 +484,29 @@ test('cannot delete category or ingredient icon while in use', function () {
         ->assertStatus(409);
 });
 
-test('settings merges legacy Oesterreich ingredient icon into Österreich', function () {
-    Storage::disk('local')->put('restaurant/svgs/flag-for-flag-austria-svgrepo-com.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+test('manual ingredient icon sync merges legacy Oesterreich icon into Österreich', function () {
+    Storage::disk('local')->put('restaurant/ingredient_icons/Österreich.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
 
     RestaurantIngredientIcon::factory()->forSchool($this->school)->create([
         'title' => 'Oesterreich',
-        'image_path' => 'restaurant/svgs/flag-for-flag-austria-svgrepo-com.svg',
+        'image_path' => 'restaurant/ingredient_icons/Österreich.svg',
         'sort_order' => 10,
     ]);
 
     RestaurantIngredientIcon::factory()->forSchool($this->school)->create([
         'title' => 'Österreich',
-        'image_path' => 'restaurant/svgs/flag-for-flag-austria-svgrepo-com.svg',
+        'image_path' => 'restaurant/ingredient_icons/Österreich.svg',
         'sort_order' => 20,
     ]);
 
     $this->actingAs($this->admin, 'sanctum');
 
-    $response = $this->getJson('/api/admin/restaurant/settings');
+    $response = $this->postJson('/api/admin/restaurant/ingredient_icons/sync-private', [
+        'paths' => ['restaurant/ingredient_icons/Österreich.svg'],
+    ]);
 
     $response->assertOk();
-    expect(collect($response->json('ingredient_icons'))->pluck('title')->filter(fn (string $title): bool => $title === 'Österreich'))
+    expect(collect($response->json('data'))->pluck('title')->filter(fn (string $title): bool => $title === 'Österreich'))
         ->toHaveCount(1);
 
     expect(RestaurantIngredientIcon::query()

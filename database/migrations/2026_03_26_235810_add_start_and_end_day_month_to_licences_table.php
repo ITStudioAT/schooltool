@@ -11,9 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (! Schema::hasTable('licences')) {
+            return;
+        }
+
         Schema::table('licences', function (Blueprint $table) {
-            $table->string('start_day_month', 5)->nullable()->after('price_per_year');
-            $table->string('end_day_month', 5)->nullable()->after('start_day_month');
+            if (! Schema::hasColumn('licences', 'start_day_month')) {
+                $table->string('start_day_month', 5)->nullable()->after('price_per_year');
+            }
+
+            if (! Schema::hasColumn('licences', 'end_day_month')) {
+                $table->string('end_day_month', 5)->nullable()->after('start_day_month');
+            }
         });
     }
 
@@ -22,8 +31,19 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('licences', function (Blueprint $table) {
-            $table->dropColumn(['start_day_month', 'end_day_month']);
-        });
+        if (! Schema::hasTable('licences')) {
+            return;
+        }
+
+        $columnsToDrop = array_values(array_filter([
+            'start_day_month',
+            'end_day_month',
+        ], fn (string $column): bool => Schema::hasColumn('licences', $column)));
+
+        if ($columnsToDrop !== []) {
+            Schema::table('licences', function (Blueprint $table) use ($columnsToDrop) {
+                $table->dropColumn($columnsToDrop);
+            });
+        }
     }
 };

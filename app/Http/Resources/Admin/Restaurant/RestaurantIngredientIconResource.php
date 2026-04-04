@@ -26,7 +26,7 @@ class RestaurantIngredientIconResource extends JsonResource
             return null;
         }
 
-        if (Str::startsWith($this->image_path, 'restaurant/svgs/') && Storage::disk('local')->exists($this->image_path)) {
+        if (Str::endsWith(Str::lower($this->image_path), '.svg') && Storage::disk('local')->exists($this->image_path)) {
             return 'data:image/svg+xml;base64,'.base64_encode(Storage::disk('local')->get($this->image_path));
         }
 

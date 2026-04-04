@@ -12,14 +12,37 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
-            $table->renameColumn('price_override', 'price');
+        if (! Schema::hasTable('restaurant_menu_plan_entries')) {
+            return;
+        }
+
+        $shouldBackfill = false;
+
+        if (
+            Schema::hasColumn('restaurant_menu_plan_entries', 'price_override')
+            && ! Schema::hasColumn('restaurant_menu_plan_entries', 'price')
+        ) {
+            Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
+                $table->renameColumn('price_override', 'price');
+            });
+
+            $shouldBackfill = true;
+        }
+
+        Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) use (&$shouldBackfill) {
+            if (! Schema::hasColumn('restaurant_menu_plan_entries', 'menu_title')) {
+                $table->string('menu_title')->nullable()->after('restaurant_menu_id');
+                $shouldBackfill = true;
+            }
+
+            if (! Schema::hasColumn('restaurant_menu_plan_entries', 'comments')) {
+                $table->text('comments')->nullable()->after('price');
+            }
         });
 
-        Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
-            $table->string('menu_title')->nullable()->after('restaurant_menu_id');
-            $table->text('comments')->nullable()->after('price');
-        });
+        if (! $shouldBackfill || ! Schema::hasTable('restaurant_menus') || ! Schema::hasColumn('restaurant_menu_plan_entries', 'price')) {
+            return;
+        }
 
         DB::table('restaurant_menu_plan_entries')
             ->orderBy('id')
@@ -43,12 +66,27 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
-            $table->dropColumn(['menu_title', 'comments']);
-        });
+        if (! Schema::hasTable('restaurant_menu_plan_entries')) {
+            return;
+        }
 
-        Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
-            $table->renameColumn('price', 'price_override');
-        });
+        $columnsToDrop = collect(['menu_title', 'comments'])
+            ->filter(fn (string $column): bool => Schema::hasColumn('restaurant_menu_plan_entries', $column))
+            ->all();
+
+        if ($columnsToDrop !== []) {
+            Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) use ($columnsToDrop) {
+                $table->dropColumn($columnsToDrop);
+            });
+        }
+
+        if (
+            Schema::hasColumn('restaurant_menu_plan_entries', 'price')
+            && ! Schema::hasColumn('restaurant_menu_plan_entries', 'price_override')
+        ) {
+            Schema::table('restaurant_menu_plan_entries', function (Blueprint $table) {
+                $table->renameColumn('price', 'price_override');
+            });
+        }
     }
 };

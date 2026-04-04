@@ -27,47 +27,22 @@ class RecordsCreateService
 
     private function checkOrCreateLicences(): void
     {
-        Licence::firstOrCreate(
-            ['id' => 1],
-            [
-                'name' => 'Anmeldetool',
-                'long_name' => 'Tool zum Verwalten von Anmeldungen',
-                'price_per_year' => 200,
-            ]
-        );
+        $licences = config('schooltool.licences', []);
 
-        Licence::firstOrCreate(
-            ['id' => 2],
-            [
-                'name' => 'Nachhilfetool',
-                'long_name' => 'Tool zum Verwalten von Nachhilfe',
-                'price_per_year' => 200,
-            ]
-        );
+        foreach ($licences as $licence) {
+            $name = $licence['name'] ?? null;
 
-        Licence::firstOrCreate(
-            ['name' => 'Lehrertool'],
-            [
-                'long_name' => 'Tool zum Verwalten von Unterricht',
-                'price_per_year' => 200,
-            ]
-        );
+            if (! $name) {
+                continue;
+            }
 
-        Licence::firstOrCreate(
-            ['name' => 'Materialientool'],
-            [
-                'long_name' => 'Tool zum Verwalten von Unterrichtsmaterialien',
-                'price_per_year' => 200,
-            ]
-        );
+            $attributes = collect($licence)->except('name')->toArray();
 
-        Licence::firstOrCreate(
-            ['name' => 'Restaurant'],
-            [
-                'long_name' => 'Tool zum Verwalten des Restaurants',
-                'price_per_year' => 200,
-            ]
-        );
+            Licence::firstOrCreate(
+                ['name' => $name],
+                $attributes
+            );
+        }
     }
 
     private function firstOrCreateSchool(): School

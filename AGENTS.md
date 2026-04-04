@@ -51,6 +51,7 @@ This project has domain-specific skills available. You MUST activate the relevan
 
 - Stick to existing directory structure; don't create new base folders without approval.
 - Do not change the application's dependencies without approval.
+- Migrations must be safe on existing customer databases. New `Schema::create(...)` migrations must guard with `Schema::hasTable(...)`, additive `Schema::table(...)` migrations must guard with `Schema::hasColumn(...)`, and `up()` migrations must never drop or recreate live tables as a shortcut.
 
 ## Frontend Bundling
 
@@ -138,6 +139,8 @@ This project has domain-specific skills available. You MUST activate the relevan
 - When creating models for tests, use the factories for the models. Check if the factory has custom states that can be used before manually setting up the model.
 - Faker: Use methods such as `$this->faker->word()` or `fake()->randomDigit()`. Follow existing conventions whether to use `$this->faker` or `fake()`.
 - When creating tests, make use of `php artisan make:test [options] {name}` to create a feature test, and pass `--unit` to create a unit test. Most tests should be feature tests.
+- This repository's automated tests use the dedicated MySQL database `pest_test` from `phpunit.xml` and may drop/recreate it through `RefreshDatabase`, `php artisan test`, or `migrate:fresh`. Never run destructive test commands without the user's explicit approval in the current conversation.
+- If the user approves test execution, state clearly before running that the test database may be wiped and rebuilt.
 
 ## Vite Error
 

@@ -8,6 +8,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
         meta: {},
         search_string: '',
         only_pending_confirmation: false,
+        only_without_sepa: false,
         error: null,
     }),
 
@@ -23,6 +24,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                     params: {
                         search_string: this.search_string || '',
                         only_pending_confirmation: this.only_pending_confirmation ? 1 : 0,
+                        only_without_sepa: this.only_without_sepa ? 1 : 0,
                         page,
                     },
                 })

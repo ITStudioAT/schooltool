@@ -44,6 +44,13 @@ namespace Tests\Feature\Console {
             ->once()
             ->andReturn(['deleted' => [], 'failed' => []]);
         $install->shouldReceive('clearDebugbar')->once();
+        $install->shouldReceive('normalizeRestaurantUserRoles')
+            ->once()
+            ->andReturn([
+                'restaurant_confirmed_backfilled' => 0,
+                'lunch_user_roles_assigned' => 0,
+                'lunch_candidate_roles_removed' => 0,
+            ]);
         $records->shouldReceive('initRecords')->once();
 
         app()->instance(InstallUpdateService::class, $install);

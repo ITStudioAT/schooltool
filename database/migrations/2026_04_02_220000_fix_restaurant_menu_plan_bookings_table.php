@@ -11,8 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // First drop the table if it exists (with foreign key constraints)
-        Schema::dropIfExists('restaurant_menu_plan_bookings');
+        if (Schema::hasTable('restaurant_menu_plan_bookings')) {
+            return;
+        }
 
         Schema::create('restaurant_menu_plan_bookings', function (Blueprint $table) {
             $table->id();
@@ -53,6 +54,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('restaurant_menu_plan_bookings');
+        if (Schema::hasTable('restaurant_menu_plan_bookings')) {
+            Schema::dropIfExists('restaurant_menu_plan_bookings');
+        }
     }
 };

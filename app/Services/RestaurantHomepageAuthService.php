@@ -22,6 +22,7 @@ class RestaurantHomepageAuthService
 {
     public function __construct(
         public Import116Service $import116Service,
+        public RestaurantSepaMandateService $restaurantSepaMandateService,
         public TeacherListService $teacherListService,
         public UserService $userService,
     ) {}
@@ -162,6 +163,18 @@ class RestaurantHomepageAuthService
                 $loggedIn = $this->completeVerifiedManualRestaurantRegistration($user, $schoolId);
                 $this->forgetManualRegistration($schoolId, $normalizedEmail);
 
+                if ($sepaResponse = $this->sepaRequiredResponse(
+                    $user,
+                    $schoolId,
+                    $normalizedEmail,
+                    'new_user',
+                    $loggedIn
+                        ? 'Das Mittagskonto wurde erfolgreich registriert. Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.'
+                        : 'Das Mittagskonto wurde angelegt. Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.'
+                )) {
+                    return $sepaResponse;
+                }
+
                 return [
                     'status' => 'REGISTERED',
                     'school_id' => $schoolId,
@@ -205,6 +218,16 @@ class RestaurantHomepageAuthService
 
                 $this->activateRestaurantUser($user);
 
+                if ($sepaResponse = $this->sepaRequiredResponse(
+                    $user,
+                    $schoolId,
+                    $normalizedEmail,
+                    $registrationSource,
+                    'Das bestehende Benutzerkonto wurde fuer das Restaurant freigeschaltet. Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.'
+                )) {
+                    return $sepaResponse;
+                }
+
                 return [
                     'status' => 'REGISTERED',
                     'school_id' => $schoolId,
@@ -218,6 +241,16 @@ class RestaurantHomepageAuthService
 
             if ($registrationSource === 'existing_user') {
                 $this->confirmRestaurantUser($user);
+
+                if ($sepaResponse = $this->sepaRequiredResponse(
+                    $user,
+                    $schoolId,
+                    $normalizedEmail,
+                    $registrationSource,
+                    'Das bestehende Benutzerkonto wurde fuer das Restaurant freigeschaltet. Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.'
+                )) {
+                    return $sepaResponse;
+                }
 
                 return [
                     'status' => 'REGISTERED',
@@ -246,6 +279,16 @@ class RestaurantHomepageAuthService
             }
 
             $this->activateRestaurantUser($user);
+
+            if ($sepaResponse = $this->sepaRequiredResponse(
+                $user,
+                $schoolId,
+                $normalizedEmail,
+                $registrationSource,
+                'Das Mittagskonto wurde erfolgreich registriert. Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.'
+            )) {
+                return $sepaResponse;
+            }
 
             return [
                 'status' => 'REGISTERED',
@@ -377,6 +420,10 @@ class RestaurantHomepageAuthService
 
         $this->loginRestaurantUser($user);
 
+        if ($sepaResponse = $this->sepaRequiredLoginResponse($user, $schoolId, $normalizedEmail)) {
+            return $sepaResponse;
+        }
+
         return [
             'status' => 'LOGGED_IN',
             'school_id' => $schoolId,
@@ -410,6 +457,10 @@ class RestaurantHomepageAuthService
         }
 
         $this->loginRestaurantUser($user);
+
+        if ($sepaResponse = $this->sepaRequiredLoginResponse($user, $schoolId, $normalizedEmail)) {
+            return $sepaResponse;
+        }
 
         return [
             'status' => 'LOGGED_IN',
@@ -939,6 +990,51 @@ class RestaurantHomepageAuthService
             ->value('restaurant_new_users_confirmer_email');
 
         return $this->normalizeNullableString($email);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function sepaRequiredLoginResponse(User $user, int $schoolId, string $normalizedEmail): ?array
+    {
+        if (! $this->restaurantSepaMandateService->requiresMandate($user)) {
+            return null;
+        }
+
+        return [
+            'status' => 'SEPA_REQUIRED',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'user_id' => (int) $user->id,
+            'message' => 'Bitte erteilen Sie jetzt das SEPA-Lastschriftmandat.',
+            'sepa_flow' => $this->restaurantSepaMandateService->bootstrapFlow($user, 'login'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function sepaRequiredResponse(
+        User $user,
+        int $schoolId,
+        string $normalizedEmail,
+        string $registrationSource,
+        string $message
+    ): ?array {
+        if (! $this->restaurantSepaMandateService->requiresMandate($user)) {
+            return null;
+        }
+
+        return [
+            'status' => 'SEPA_REQUIRED',
+            'school_id' => $schoolId,
+            'email' => $normalizedEmail,
+            'user_id' => (int) $user->id,
+            'registration_source' => $registrationSource,
+            'requires_email_confirmation' => false,
+            'message' => $message,
+            'sepa_flow' => $this->restaurantSepaMandateService->bootstrapFlow($user, 'register'),
+        ];
     }
 
     private function userCanSkipRestaurantConfirmation(User $user): bool

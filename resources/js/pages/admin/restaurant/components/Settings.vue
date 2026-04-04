@@ -66,6 +66,16 @@
                         </v-btn>
                         <v-btn
                             rounded="xl"
+                            :color="selectedPanel === 'sepa' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'sepa' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'sepa' }"
+                            :disabled="isPanelNavigationDisabled('sepa')"
+                            @click="activatePanel('sepa')">
+                            SEPA
+                        </v-btn>
+                        <v-btn
+                            rounded="xl"
                             :color="selectedPanel === 'online' ? 'primary' : undefined"
                             :variant="selectedPanel === 'online' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
@@ -230,9 +240,21 @@
             <v-col v-if="selectedPanel === 'ingredient-icons'" cols="12">
                 <ItsGridBox variant="overview" color="primary" title="Zutaten-Symbole" icon="mdi-image-multiple-outline">
                     <template #header-actions>
-                        <v-btn size="small" color="primary" variant="flat" prepend-icon="mdi-plus" @click="openNewIngredientIcon">
-                            Neues Symbol
-                        </v-btn>
+                        <div class="d-flex flex-wrap justify-end ga-2">
+                            <v-btn
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                prepend-icon="mdi-folder-sync-outline"
+                                :loading="isLoadingIngredientIconImportDialog"
+                                :disabled="isLoadingIngredientIconImportDialog || isImportingIngredientIcons"
+                                @click="openIngredientIconImportDialog">
+                                Aus Verzeichnis übernehmen
+                            </v-btn>
+                            <v-btn size="small" color="primary" variant="flat" prepend-icon="mdi-plus" @click="openNewIngredientIcon">
+                                Neues Symbol
+                            </v-btn>
+                        </div>
                     </template>
 
                     <v-alert v-if="!ingredientIcons.length" type="info" variant="tonal" class="mb-3">
@@ -271,6 +293,7 @@
             <FreeDays v-if="selectedPanel === 'free-days'" />
             <EatingTimes v-if="selectedPanel === 'eating-times'" />
             <Users v-if="selectedPanel === 'users'" />
+            <Sepa v-if="selectedPanel === 'sepa'" />
             <OnlineSettings v-if="selectedPanel === 'online'" />
         </v-row>
 
@@ -396,6 +419,78 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="ingredientIconImportDialog" max-width="880" persistent>
+                <v-card rounded="xl">
+                    <v-card-title>Zutaten-Symbole aus Verzeichnis übernehmen</v-card-title>
+
+                    <v-card-text>
+                    <div v-if="availablePrivateIngredientIcons.length" class="d-flex flex-wrap justify-space-between align-center ga-2 mb-4">
+                        <div class="text-body-2">
+                            {{ selectedIngredientIconImportPaths.length }} von {{ availablePrivateIngredientIcons.length }} Symbolen ausgewählt
+                        </div>
+
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-btn size="small" variant="text" @click="selectAllIngredientIconsForImport">
+                                Alle auswählen
+                            </v-btn>
+                            <v-btn size="small" variant="text" @click="clearIngredientIconImportSelection">
+                                Auswahl aufheben
+                            </v-btn>
+                        </div>
+                    </div>
+
+                    <v-alert v-if="!availablePrivateIngredientIcons.length" type="info" variant="tonal">
+                        Im Verzeichnis wurden keine SVG-Symbole gefunden.
+                    </v-alert>
+
+                    <v-row v-else dense>
+                        <v-col
+                            v-for="icon in availablePrivateIngredientIcons"
+                            :key="icon.path"
+                            cols="12"
+                            md="6">
+                            <v-sheet rounded="lg" class="settings-icon-card pa-3">
+                                <div class="d-flex align-center ga-3">
+                                    <v-avatar size="56" rounded="lg" class="settings-icon-card__avatar">
+                                        <v-img v-if="icon.image_url" :src="icon.image_url" cover />
+                                        <span v-else class="font-weight-bold">{{ shortLabel(icon.title) }}</span>
+                                    </v-avatar>
+
+                                    <div class="flex-grow-1">
+                                        <div class="font-weight-bold">{{ icon.title }}</div>
+                                        <div class="text-caption text-medium-emphasis">{{ icon.path }}</div>
+                                        <div v-if="icon.already_imported" class="text-caption text-medium-emphasis mt-1">
+                                            Bereits als Zutaten-Symbol vorhanden
+                                        </div>
+                                    </div>
+
+                                    <v-checkbox
+                                        v-model="selectedIngredientIconImportPaths"
+                                        :value="icon.path"
+                                        hide-details
+                                        density="comfortable"
+                                        color="primary" />
+                                </div>
+                            </v-sheet>
+                        </v-col>
+                    </v-row>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" @click="closeIngredientIconImportDialog">Abbrechen</v-btn>
+                    <v-btn
+                        color="primary"
+                        variant="flat"
+                        :loading="isImportingIngredientIcons"
+                        :disabled="!hasIngredientIconImportSelection"
+                        @click="confirmIngredientIconImport">
+                        Übernehmen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="ingredientIconDeleteDialog" max-width="440" persistent>
             <v-card rounded="xl">
                 <v-card-title>Symbol löschen</v-card-title>
@@ -426,6 +521,7 @@ import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import OnlineSettings from '@/pages/admin/restaurant/components/OnlineSettings.vue'
+import Sepa from '@/pages/admin/restaurant/components/Sepa.vue'
 import Users from '@/pages/admin/restaurant/components/Users.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
@@ -461,7 +557,7 @@ function emptyGeneralSettingsForm() {
     }
 }
 
-const validPanels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'online']
+const validPanels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online']
 
 export default {
     setup() {
@@ -479,7 +575,7 @@ export default {
         },
     },
 
-    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings, Users },
+    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings, Sepa, Users },
 
     data() {
         return {
@@ -490,8 +586,14 @@ export default {
             isCategoryFormValid: false,
             categoryDeleteDialog: false,
             ingredientIconDialog: false,
+            ingredientIconImportDialog: false,
             ingredientIconDeleteDialog: false,
             isIngredientIconFormValid: false,
+            isLoadingIngredientIconImportDialog: false,
+            isImportingIngredientIcons: false,
+            ingredientIconImportSourceDirectory: '',
+            availablePrivateIngredientIcons: [],
+            selectedIngredientIconImportPaths: [],
             categoryEditingId: null,
             pendingDeleteCategory: null,
             pendingDeleteIngredientIcon: null,
@@ -513,6 +615,9 @@ export default {
         },
         ingredientIconFiles() {
             return this.ingredientIconForm.image ? [{ source: this.ingredientIconForm.image, options: { type: 'local' } }] : []
+        },
+        hasIngredientIconImportSelection() {
+            return this.selectedIngredientIconImportPaths.length > 0
         },
     },
 
@@ -713,6 +818,15 @@ export default {
             this.ingredientIconDialog = false
             this.resetIngredientIconForm()
         },
+        resetIngredientIconImportDialog() {
+            this.ingredientIconImportSourceDirectory = ''
+            this.availablePrivateIngredientIcons = []
+            this.selectedIngredientIconImportPaths = []
+        },
+        closeIngredientIconImportDialog() {
+            this.ingredientIconImportDialog = false
+            this.resetIngredientIconImportDialog()
+        },
         openIngredientIconDeleteDialog(icon) {
             this.pendingDeleteIngredientIcon = icon
             this.ingredientIconDeleteDialog = true
@@ -765,6 +879,51 @@ export default {
             }
 
             this.closeIngredientIconDeleteDialog()
+        },
+        async openIngredientIconImportDialog() {
+            if (this.isLoadingIngredientIconImportDialog || this.isImportingIngredientIcons) {
+                return
+            }
+
+            this.isLoadingIngredientIconImportDialog = true
+
+            try {
+                const result = await useRestaurantStore().loadAvailableIngredientIconsFromPrivateDirectory()
+
+                if (! result) {
+                    return
+                }
+
+                this.ingredientIconImportSourceDirectory = result.source_directory
+                this.availablePrivateIngredientIcons = result.icons
+                this.selectedIngredientIconImportPaths = result.icons.map((icon) => icon.path)
+                this.ingredientIconImportDialog = true
+            } finally {
+                this.isLoadingIngredientIconImportDialog = false
+            }
+        },
+        selectAllIngredientIconsForImport() {
+            this.selectedIngredientIconImportPaths = this.availablePrivateIngredientIcons.map((icon) => icon.path)
+        },
+        clearIngredientIconImportSelection() {
+            this.selectedIngredientIconImportPaths = []
+        },
+        async confirmIngredientIconImport() {
+            if (! this.hasIngredientIconImportSelection || this.isImportingIngredientIcons) {
+                return
+            }
+
+            this.isImportingIngredientIcons = true
+
+            try {
+                const result = await useRestaurantStore().syncIngredientIconsFromPrivateDirectory(this.selectedIngredientIconImportPaths)
+
+                if (result) {
+                    this.closeIngredientIconImportDialog()
+                }
+            } finally {
+                this.isImportingIngredientIcons = false
+            }
         },
     },
 }

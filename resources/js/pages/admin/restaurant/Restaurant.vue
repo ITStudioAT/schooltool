@@ -29,16 +29,30 @@
                     </span>
                 </v-btn>
             </div>
-            <v-btn
-                icon
-                size="small"
-                variant="text"
-                color="grey"
-                class="restaurant-nav__settings-btn"
-                title="Restaurant-Einstellungen"
-                @click="$router.push('/admin/settings?tab=restaurant')">
-                <v-icon size="20">mdi-cog-outline</v-icon>
-            </v-btn>
+            <div class="restaurant-nav__actions">
+                <v-btn
+                    size="small"
+                    color="warning"
+                    variant="flat"
+                    rounded="xl"
+                    prepend-icon="mdi-refresh"
+                    :loading="isRefreshing"
+                    :disabled="isNavigationLocked || isRefreshing"
+                    @click="refreshPageData">
+                    Aktualisieren
+                </v-btn>
+
+                <v-btn
+                    icon
+                    size="small"
+                    variant="text"
+                    color="grey"
+                    class="restaurant-nav__settings-btn"
+                    title="Restaurant-Einstellungen"
+                    @click="$router.push('/admin/settings?tab=restaurant')">
+                    <v-icon size="20">mdi-cog-outline</v-icon>
+                </v-btn>
+            </div>
         </v-sheet>
 
         <div class="restaurant-content">
@@ -80,7 +94,7 @@ export default {
         this.menuStore = useMenuStore()
         this.action = ''
         this.action_2 = ''
-        await Promise.all([this.restaurantStore.loadSettings(), this.foodStore.index(), this.menuStore.index()])
+        await this.loadPageData()
     },
 
     data() {
@@ -90,6 +104,7 @@ export default {
             foodStore: null,
             menuStore: null,
             main_action: this.$route.params.section || 'overview',
+            isRefreshing: false,
         }
     },
 
@@ -213,12 +228,28 @@ export default {
     },
 
     methods: {
+        loadPageData() {
+            return Promise.all([this.restaurantStore.loadSettings(), this.foodStore.index(), this.menuStore.index()])
+        },
         handleNavigation(target) {
             if (this.isNavigationLocked) {
                 return
             }
 
             this.navigateTo(target)
+        },
+        async refreshPageData() {
+            if (this.isNavigationLocked || this.isRefreshing) {
+                return
+            }
+
+            this.isRefreshing = true
+
+            try {
+                await this.loadPageData()
+            } finally {
+                this.isRefreshing = false
+            }
         },
         navigateTo(section) {
             this.main_action = section
@@ -241,6 +272,7 @@ export default {
     padding: 10px;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
 }
 
@@ -249,6 +281,13 @@ export default {
     flex-wrap: wrap;
     gap: 8px;
     flex: 1;
+}
+
+.restaurant-nav__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .restaurant-nav__settings-btn {
@@ -298,6 +337,11 @@ export default {
 @media (max-width: 960px) {
     .restaurant-nav__button {
         flex: 1 1 calc(50% - 8px);
+    }
+
+    .restaurant-nav__actions {
+        width: 100%;
+        justify-content: flex-end;
     }
 }
 </style>

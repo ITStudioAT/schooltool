@@ -14,6 +14,25 @@
                 <div class="online-settings__intro-badges">
                     <span class="online-settings__badge">Live-Vorschau</span>
                     <span class="online-settings__badge online-settings__badge--muted">f&uuml;r alle User der Schule</span>
+                    <template v-if="canManageOnlineSettings">
+                        <button
+                            v-if="!isEditingOnlineSettings"
+                            type="button"
+                            class="online-settings__save-button online-settings__save-button--inline"
+                            data-testid="online-settings-edit-button"
+                            @click="beginEdit">
+                            Bearbeiten
+                        </button>
+                        <button
+                            v-else
+                            type="button"
+                            class="online-settings__ghost-button online-settings__ghost-button--inline"
+                            :disabled="isSaving"
+                            data-testid="online-settings-cancel-button"
+                            @click="abortEdit">
+                            Abbrechen
+                        </button>
+                    </template>
                 </div>
             </div>
 
@@ -40,7 +59,7 @@
 
                             <div class="online-settings__field online-settings__field--stacked">
                                 <span>Bestellstart</span>
-                                <div class="online-settings__mode-toggle">
+                                <div v-if="isEditingOnlineSettings" class="online-settings__mode-toggle">
                                     <button
                                         type="button"
                                         class="online-settings__mode-option"
@@ -64,6 +83,12 @@
                                         Starttag festlegen
                                     </button>
                                 </div>
+                                <div
+                                    v-else
+                                    class="online-settings__summary-value"
+                                    data-testid="order-start-summary">
+                                    {{ startStatusLabel }}
+                                </div>
                             </div>
 
                         </div>
@@ -76,7 +101,7 @@
 
                             <div class="online-settings__field online-settings__field--stacked">
                                 <span>Bestellende</span>
-                                <div class="online-settings__mode-toggle">
+                                <div v-if="isEditingOnlineSettings" class="online-settings__mode-toggle">
                                     <button
                                         type="button"
                                         class="online-settings__mode-option is-active"
@@ -90,6 +115,12 @@
                                         @click="openEndSelectionDialog">
                                         Endtag festlegen
                                     </button>
+                                </div>
+                                <div
+                                    v-else
+                                    class="online-settings__summary-value"
+                                    data-testid="order-end-summary">
+                                    {{ endStatusLabel }}
                                 </div>
                             </div>
 
@@ -113,7 +144,7 @@
 
                             <div class="online-settings__field online-settings__field--stacked">
                                 <span>Sichtbarkeitsstart</span>
-                                <div class="online-settings__mode-toggle">
+                                <div v-if="isEditingOnlineSettings" class="online-settings__mode-toggle">
                                     <button
                                         type="button"
                                         class="online-settings__mode-option"
@@ -144,6 +175,12 @@
                                         Starttag festlegen
                                     </button>
                                 </div>
+                                <div
+                                    v-else
+                                    class="online-settings__summary-value"
+                                    data-testid="visibility-start-summary">
+                                    {{ visibilityStartStatusLabel }}
+                                </div>
                             </div>
 
                         </div>
@@ -156,7 +193,7 @@
 
                             <div class="online-settings__field online-settings__field--stacked">
                                 <span>Sichbarkeitsende</span>
-                                <div class="online-settings__choice-row">
+                                <div v-if="isEditingOnlineSettings" class="online-settings__choice-row">
                                     <button
                                         v-for="option in visibilityOptions"
                                         :key="`visibility-${option.value}`"
@@ -166,6 +203,12 @@
                                         @click="form.visibility_end_mode = option.value">
                                         {{ option.label }}
                                     </button>
+                                </div>
+                                <div
+                                    v-else
+                                    class="online-settings__summary-value"
+                                    data-testid="visibility-end-summary">
+                                    {{ visibilityStatusLabel }}
                                 </div>
                             </div>
                         </div>
@@ -285,10 +328,18 @@
                     </div>
                 </section>
 
-                <div class="online-settings__actions">
+                <div v-if="isEditingOnlineSettings" class="online-settings__actions">
+                    <button
+                        type="button"
+                        class="online-settings__ghost-button"
+                        :disabled="isSaving"
+                        @click="abortEdit">
+                        Abbrechen
+                    </button>
                     <button
                         type="button"
                         class="online-settings__save-button"
+                        data-testid="online-settings-save-button"
                         :disabled="isSaving"
                         @click="save">
                         {{ isSaving ? 'Speichert ...' : 'Einstellungen speichern' }}
@@ -568,6 +619,7 @@ export default {
         return {
             form: defaultSettings(),
             isSaving: false,
+            isEditingOnlineSettings: false,
             previewNow: new Date(),
             startSelectionDialog: false,
             endSelectionDialog: false,
@@ -779,6 +831,24 @@ export default {
     },
 
     methods: {
+        beginEdit() {
+            if (! this.canManageOnlineSettings || this.isSaving) {
+                return
+            }
+
+            this.syncForm(this.onlineSettings)
+            this.isEditingOnlineSettings = true
+        },
+        abortEdit() {
+            this.syncForm(this.onlineSettings)
+            this.closeAllDialogs()
+            this.isEditingOnlineSettings = false
+        },
+        closeAllDialogs() {
+            this.startSelectionDialog = false
+            this.endSelectionDialog = false
+            this.visibilitySelectionDialog = false
+        },
         syncForm(settings) {
             this.form = {
                 ...defaultSettings(),
@@ -790,6 +860,10 @@ export default {
             this.resetVisibilityDialogDraft()
         },
         setStartMode(mode) {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.form.order_start_mode = mode
             this.ensureVisibilityStartDoesNotExceedOrderStart()
         },
@@ -801,6 +875,10 @@ export default {
             }
         },
         openStartSelectionDialog() {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.resetStartDialogDraft()
             this.startSelectionDialog = true
         },
@@ -809,6 +887,10 @@ export default {
             this.resetStartDialogDraft()
         },
         applyStartSelectionDialog() {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.form.order_start_week_offset = this.startDialogDraft.week_offset
             this.form.order_start_day_of_week = this.startDialogDraft.day_of_week
             this.form.order_start_time = this.startDialogDraft.time
@@ -823,6 +905,10 @@ export default {
             }
         },
         openEndSelectionDialog() {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.resetEndDialogDraft()
             this.endSelectionDialog = true
         },
@@ -831,6 +917,10 @@ export default {
             this.resetEndDialogDraft()
         },
         applyEndSelectionDialog() {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.form.order_end_week_offset = this.endDialogDraft.week_offset
             this.form.order_end_day_of_week = this.endDialogDraft.day_of_week
             this.form.order_end_time = this.endDialogDraft.time
@@ -844,6 +934,10 @@ export default {
             }
         },
         openVisibilitySelectionDialog() {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.resetVisibilityDialogDraft()
             this.visibilitySelectionDialog = true
         },
@@ -852,7 +946,7 @@ export default {
             this.resetVisibilityDialogDraft()
         },
         applyVisibilitySelectionDialog() {
-            if (this.visibilitySelectionExceedsOrderStart) {
+            if (! this.isEditingOnlineSettings || this.visibilitySelectionExceedsOrderStart) {
                 return
             }
 
@@ -862,6 +956,10 @@ export default {
             this.visibilitySelectionDialog = false
         },
         setVisibilityStartMode(mode) {
+            if (! this.isEditingOnlineSettings) {
+                return
+            }
+
             this.form.visibility_start_mode = mode
             this.ensureVisibilityStartDoesNotExceedOrderStart()
         },
@@ -1164,7 +1262,7 @@ export default {
             }
         },
         async save() {
-            if (!this.canManageOnlineSettings || this.isSaving) {
+            if (! this.canManageOnlineSettings || ! this.isEditingOnlineSettings || this.isSaving) {
                 return
             }
 
@@ -1174,6 +1272,8 @@ export default {
                 const saved = await useRestaurantStore().updateOnlineSettings({ ...this.form })
                 if (saved) {
                     this.syncForm(saved)
+                    this.closeAllDialogs()
+                    this.isEditingOnlineSettings = false
                 }
             } finally {
                 this.isSaving = false
@@ -1233,6 +1333,19 @@ export default {
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 8px;
+}
+
+.online-settings__summary-value {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(180, 83, 9, 0.14);
+    background: rgba(255, 255, 255, 0.88);
+    padding: 12px 14px;
+    color: rgb(120, 53, 15);
+    font-weight: 700;
 }
 
 .online-settings__badge,
@@ -1807,6 +1920,13 @@ export default {
 .online-settings__save-button {
     background: rgba(255, 255, 255, 0.82);
     cursor: pointer;
+}
+
+.online-settings__ghost-button--inline,
+.online-settings__save-button--inline {
+    min-width: auto;
+    padding: 6px 12px;
+    border-radius: 999px;
 }
 
 .online-settings__ghost-button {

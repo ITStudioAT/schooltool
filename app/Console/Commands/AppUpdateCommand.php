@@ -40,6 +40,11 @@ class AppUpdateCommand extends Command
 
         $recordsCreateService->initRecords();
         $this->info('✅ Init Records checked');
+        $restaurantRoleNormalization = $service->normalizeRestaurantUserRoles();
+        $this->info('✅ Restaurant-Benutzer normalisiert');
+        $this->line('   restaurant_confirmed_at ergänzt: '.$restaurantRoleNormalization['restaurant_confirmed_backfilled']);
+        $this->line('   lunch_user zugewiesen: '.$restaurantRoleNormalization['lunch_user_roles_assigned']);
+        $this->line('   lunch_candidate entfernt: '.$restaurantRoleNormalization['lunch_candidate_roles_removed']);
         $this->line(str_repeat('.', 50));
 
         // ✅ Folders

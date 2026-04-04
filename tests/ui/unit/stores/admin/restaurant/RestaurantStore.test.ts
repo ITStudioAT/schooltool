@@ -299,4 +299,75 @@ describe('RestaurantStore', () => {
         expect(result).toBe(true)
         expect(store.ingredientIcons).toEqual([])
     })
+
+    it('loads available ingredient icons from the private directory', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                source_directory: 'storage/app/private/restaurant/ingredient_icons',
+                data: [
+                    { title: 'Fisch', path: 'restaurant/ingredient_icons/Fisch.svg', image_url: 'data:image/svg+xml;base64,AAA', already_imported: true },
+                    { title: 'Schwein', path: 'restaurant/ingredient_icons/Schwein.svg', image_url: 'data:image/svg+xml;base64,BBB', already_imported: false },
+                ],
+            },
+        })
+
+        const store = useRestaurantStore()
+        const result = await store.loadAvailableIngredientIconsFromPrivateDirectory()
+
+        expect(result).toEqual({
+            source_directory: 'storage/app/private/restaurant/ingredient_icons',
+            icons: [
+                { title: 'Fisch', path: 'restaurant/ingredient_icons/Fisch.svg', image_url: 'data:image/svg+xml;base64,AAA', already_imported: true },
+                { title: 'Schwein', path: 'restaurant/ingredient_icons/Schwein.svg', image_url: 'data:image/svg+xml;base64,BBB', already_imported: false },
+            ],
+        })
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/restaurant/ingredient_icons/private-directory')
+    })
+
+    it('syncs selected ingredient icons from the private directory', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                message: '3 Zutaten-Symbole übernommen (1 neu, 2 aktualisiert).',
+                data: [
+                    { id: 3, title: 'Schwein', sort_order: 30 },
+                    { id: 1, title: 'Fisch', sort_order: 10 },
+                    { id: 2, title: 'Österreich', sort_order: 20 },
+                ],
+            },
+        })
+
+        const store = useRestaurantStore()
+        store.settings = {
+            categories: [],
+            ingredient_icons: [],
+            allergen_options: [],
+            allergen_suggestions: [],
+            user_settings: { restaurant_foods_pagination_number: 12 },
+            can_manage_user_settings: true,
+            stats: { ingredient_icons_count: 0 },
+        }
+
+        const selectedPaths = [
+            'restaurant/ingredient_icons/Schwein.svg',
+            'restaurant/ingredient_icons/Fisch.svg',
+            'restaurant/ingredient_icons/Österreich.svg',
+        ]
+
+        const result = await store.syncIngredientIconsFromPrivateDirectory(selectedPaths)
+
+        expect(result).toEqual([
+            { id: 1, title: 'Fisch', sort_order: 10 },
+            { id: 2, title: 'Österreich', sort_order: 20 },
+            { id: 3, title: 'Schwein', sort_order: 30 },
+        ])
+        expect(store.ingredientIcons.map((icon) => icon.title)).toEqual(['Fisch', 'Österreich', 'Schwein'])
+        expect(store.stats.ingredient_icons_count).toBe(3)
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/restaurant/ingredient_icons/sync-private', {
+            paths: selectedPaths,
+        })
+        expect(notifyMock).toHaveBeenCalledWith(expect.objectContaining({
+            message: '3 Zutaten-Symbole übernommen (1 neu, 2 aktualisiert).',
+            type: 'success',
+        }))
+    })
 })

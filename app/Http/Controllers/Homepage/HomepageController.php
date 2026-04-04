@@ -12,6 +12,9 @@ use App\Http\Requests\Homepage\RestaurantLoginWithCodeRequest;
 use App\Http\Requests\Homepage\RestaurantLoginWithPasswordRequest;
 use App\Http\Requests\Homepage\RestaurantRegisterUserRequest;
 use App\Http\Requests\Homepage\RestaurantSendLoginCodeRequest;
+use App\Http\Requests\Homepage\RestaurantSepaCompleteRequest;
+use App\Http\Requests\Homepage\RestaurantSepaConfirmCodeRequest;
+use App\Http\Requests\Homepage\RestaurantSepaStoreRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
@@ -24,6 +27,7 @@ use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantHomepageAuthService;
 use App\Services\RestaurantMenuPlanPdfService;
+use App\Services\RestaurantSepaMandateService;
 use App\Services\RestaurantService;
 use App\Services\SchoolToolModuleStatusService;
 use Carbon\Carbon;
@@ -98,8 +102,12 @@ class HomepageController extends Controller
         return response()->json($data, 200);
     }
 
-    public function config(Request $request, LicenceService $licenceService, RestaurantService $restaurantService)
-    {
+    public function config(
+        Request $request,
+        LicenceService $licenceService,
+        RestaurantService $restaurantService,
+        RestaurantSepaMandateService $restaurantSepaMandateService
+    ) {
         $school_short = $request->query('school');
         $app = $request->query('app');
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
@@ -183,6 +191,10 @@ class HomepageController extends Controller
                 'user_information_intro_html' => trim((string) ($school?->schoolTool?->restaurant_user_information_intro_html ?? '')),
                 'new_users_must_confirm_email' => (bool) ($school?->schoolTool?->restaurant_new_users_must_confirm_email ?? false),
                 ...$restaurantService->homepageSummaryForSchool($school),
+                ...$restaurantSepaMandateService->publicSettingsForSchool($school),
+                'sepa_flow' => $restaurantAuthUser
+                    ? $restaurantSepaMandateService->bootstrapFlow($restaurantAuthUser, 'login')
+                    : null,
             ],
         ];
 
@@ -295,6 +307,33 @@ class HomepageController extends Controller
     ) {
         return response()->json(
             $authService->changePassword($request->validated()['data'])
+        );
+    }
+
+    public function restaurantStoreSepaMandate(
+        RestaurantSepaStoreRequest $request,
+        RestaurantSepaMandateService $restaurantSepaMandateService
+    ) {
+        return response()->json(
+            $restaurantSepaMandateService->submitMandate($request->validated()['data'], (string) $request->ip())
+        );
+    }
+
+    public function restaurantConfirmSepaMandateCode(
+        RestaurantSepaConfirmCodeRequest $request,
+        RestaurantSepaMandateService $restaurantSepaMandateService
+    ) {
+        return response()->json(
+            $restaurantSepaMandateService->confirmCode($request->validated()['data'], (string) $request->ip())
+        );
+    }
+
+    public function restaurantCompleteSepaMandate(
+        RestaurantSepaCompleteRequest $request,
+        RestaurantSepaMandateService $restaurantSepaMandateService
+    ) {
+        return response()->json(
+            $restaurantSepaMandateService->completeFlow($request->validated()['data'], (string) $request->ip())
         );
     }
 

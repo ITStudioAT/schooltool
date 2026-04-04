@@ -146,9 +146,8 @@ describe('Restaurant settings component', () => {
         expect(wrapper.text()).toContain('Live-Vorschau')
         expect(wrapper.text()).toContain('Bestellzeitraum für Menüpläne')
         expect(wrapper.text()).toContain('Sobald verfügbar')
-        expect(wrapper.text()).toContain('Fester Tag')
-        expect(wrapper.findAll('button').some((button) => button.text() === 'Sobald verfügbar')).toBe(true)
-        expect(wrapper.findAll('button').some((button) => button.text() === 'Fester Tag')).toBe(true)
+        expect(wrapper.text()).toContain('Bearbeiten')
+        expect(wrapper.findAll('button').some((button) => button.text() === 'Bearbeiten')).toBe(true)
 
         ;(wrapper.vm as any).activatePanel('ingredient-icons')
         await wrapper.vm.$nextTick()
@@ -319,6 +318,46 @@ describe('Restaurant settings component', () => {
         expect((wrapper.vm as any).ingredientIconDialog).toBe(true)
         expect(wrapper.text()).toContain('Symbol aktualisieren')
         expect(wrapper.find('input[data-label="Bestehendes Bild entfernen"]').exists()).toBe(true)
+    })
+
+    it('opens the ingredient icon import dialog, shows the directory entries and imports the selected symbols', async () => {
+        const { wrapper } = mountSettings()
+        const store = useRestaurantStore()
+        store.loadAvailableIngredientIconsFromPrivateDirectory = vi.fn().mockResolvedValue({
+            source_directory: 'storage/app/private/restaurant/ingredient_icons',
+            icons: [
+                { title: 'Fisch', path: 'restaurant/ingredient_icons/Fisch.svg', image_url: 'data:image/svg+xml;base64,AAA', already_imported: true },
+                { title: 'Schwein', path: 'restaurant/ingredient_icons/Schwein.svg', image_url: 'data:image/svg+xml;base64,BBB', already_imported: false },
+            ],
+        })
+        store.syncIngredientIconsFromPrivateDirectory = vi.fn().mockResolvedValue([
+            { id: 1, title: 'Fisch', sort_order: 10, foods_count: 0, image_url: null },
+        ])
+
+        ;(wrapper.vm as any).activatePanel('ingredient-icons')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.text()).toContain('Aus Verzeichnis übernehmen')
+        expect(wrapper.text()).not.toContain('Quelle für die Übernahme')
+
+        await (wrapper.vm as any).openIngredientIconImportDialog()
+        await wrapper.vm.$nextTick()
+
+        expect(store.loadAvailableIngredientIconsFromPrivateDirectory).toHaveBeenCalled()
+        expect((wrapper.vm as any).ingredientIconImportDialog).toBe(true)
+        expect(wrapper.text()).toContain('Zutaten-Symbole aus Verzeichnis übernehmen')
+        expect(wrapper.text()).toContain('storage/app/private/restaurant/ingredient_icons')
+        expect(wrapper.text()).toContain('Fisch')
+        expect(wrapper.text()).toContain('Schwein')
+        expect(wrapper.text()).toContain('Alle auswählen')
+        expect(wrapper.text()).toContain('Auswahl aufheben')
+
+        ;(wrapper.vm as any).selectedIngredientIconImportPaths = ['restaurant/ingredient_icons/Fisch.svg']
+        await (wrapper.vm as any).confirmIngredientIconImport()
+
+        expect(store.syncIngredientIconsFromPrivateDirectory).toHaveBeenCalledWith(['restaurant/ingredient_icons/Fisch.svg'])
+        expect((wrapper.vm as any).ingredientIconImportDialog).toBe(false)
+        expect((wrapper.vm as any).isImportingIngredientIcons).toBe(false)
     })
 
     it('validates the category form before saving and closes the dialog after success', async () => {

@@ -272,6 +272,11 @@ class User extends Authenticatable
         return $this->hasMany(SchoolUserLicence::class);
     }
 
+    public function restaurantSepaMandates(): HasMany
+    {
+        return $this->hasMany(RestaurantSepaMandate::class);
+    }
+
     public function materialCards(): HasMany
     {
         return $this->hasMany(MaterialCard::class);

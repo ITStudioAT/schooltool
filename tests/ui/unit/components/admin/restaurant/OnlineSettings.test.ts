@@ -58,6 +58,19 @@ function mountOnlineSettings(options: {
 }
 
 describe('Restaurant online settings component', () => {
+    it('starts in a read-only mode with summary values and an edit button', () => {
+        const wrapper = mountOnlineSettings()
+
+        expect(wrapper.get('[data-testid="online-settings-edit-button"]').text()).toContain('Bearbeiten')
+        expect(wrapper.get('[data-testid="order-start-summary"]').text()).toContain('Sonntag 15:00 der Vorvorwoche')
+        expect(wrapper.get('[data-testid="order-end-summary"]').text()).toContain('Freitag 17:00 vor der Menüwoche')
+        expect(wrapper.get('[data-testid="visibility-start-summary"]').text()).toContain('Samstag 14:00 der Vorvorwoche')
+        expect(wrapper.get('[data-testid="visibility-end-summary"]').text()).toContain('Bis zum letzten Tag des Menüplans')
+        expect(wrapper.find('[data-testid="online-settings-save-button"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="open-start-day-dialog"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="open-visibility-start-day-dialog"]').exists()).toBe(false)
+    })
+
     it('lists weekdays from monday to sunday so sunday stays at the end of the previous week', () => {
         const options = (OnlineSettings as any).computed.dayOptions.call({})
 
@@ -205,7 +218,7 @@ describe('Restaurant online settings component', () => {
         expect(wrapper.get('[data-testid="visibility-panel"]').text()).toContain('Sichbarkeitsende')
     })
 
-    it('shows an extra card with menu plans inside the displayed preview range', () => {
+    it('shows an extra card with menu plans inside the displayed preview range', async () => {
         const wrapper = mountOnlineSettings({
             plans: [
                 { id: 1, start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
@@ -213,6 +226,8 @@ describe('Restaurant online settings component', () => {
                 { id: 3, start_date: '2026-03-11', end_date: '2026-03-13', is_available: true },
             ],
         })
+        ;(wrapper.vm as any).previewNow = new Date('2026-03-20T12:00:00')
+        await wrapper.vm.$nextTick()
 
         expect(wrapper.get('[data-testid="plan-status-card"]').text()).toContain('Men')
         expect(wrapper.get('[data-testid="plan-status-card"]').text()).toContain('09.03.2026 - 29.03.2026')
@@ -249,6 +264,8 @@ describe('Restaurant online settings component', () => {
 
     it('opens a visibility-start dialog from the sichtbar panel and applies the selected time', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
         const visibilityPanel = wrapper.get('[data-testid="visibility-panel"]')
         const visibilityModeToggle = visibilityPanel.find('.online-settings__mode-toggle')
 
@@ -279,6 +296,8 @@ describe('Restaurant online settings component', () => {
 
     it('blocks a visibility start that would lie after the scheduled order start', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
 
         ;(wrapper.vm as any).openVisibilitySelectionDialog()
         await wrapper.vm.$nextTick()
@@ -304,6 +323,8 @@ describe('Restaurant online settings component', () => {
 
     it('disables impossible weeks and days in the visibility-start dialog', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
 
         ;(wrapper.vm as any).openVisibilitySelectionDialog()
         await wrapper.vm.$nextTick()
@@ -326,6 +347,8 @@ describe('Restaurant online settings component', () => {
 
     it('opens a start-day dialog from the bestellbar panel and applies the selected start time', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
         const orderPanel = wrapper.get('[data-testid="order-panel"]')
         const startModeToggle = orderPanel.find('.online-settings__mode-toggle')
 
@@ -358,6 +381,8 @@ describe('Restaurant online settings component', () => {
 
     it('moves the visibility start with the order start when the new order start is earlier', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
 
         ;(wrapper.vm as any).openStartSelectionDialog()
         await wrapper.vm.$nextTick()
@@ -404,6 +429,8 @@ describe('Restaurant online settings component', () => {
 
     it('opens an end-day dialog from the bestellbar panel and applies the selected end time', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
         const orderPanel = wrapper.get('[data-testid="order-panel"]')
         const endBlock = orderPanel.findAll('.online-settings__panel-block')[1]
         const endModeToggle = endBlock.find('.online-settings__mode-toggle')
@@ -434,8 +461,10 @@ describe('Restaurant online settings component', () => {
         expect(wrapper.find('[data-testid="end-day-dialog"]').exists()).toBe(false)
     })
 
-    it('shows both visibility options in the visibility panel', () => {
+    it('shows both visibility options in the visibility panel while editing', async () => {
         const wrapper = mountOnlineSettings()
+        ;(wrapper.vm as any).beginEdit()
+        await wrapper.vm.$nextTick()
         const visibilityPanel = wrapper.get('[data-testid="visibility-panel"]')
 
         expect(visibilityPanel.text()).toContain('Sobald bestellbar')
@@ -478,6 +507,7 @@ describe('Restaurant online settings component', () => {
 
         const ctx = {
             canManageOnlineSettings: true,
+            isEditingOnlineSettings: true,
             isSaving: false,
             form: {
                 visibility_start_mode: 'scheduled',
@@ -494,6 +524,7 @@ describe('Restaurant online settings component', () => {
                 visibility_end_mode: 'week_end',
             },
             syncForm: vi.fn(),
+            closeAllDialogs: vi.fn(),
         }
 
         await (OnlineSettings as any).methods.save.call(ctx)
@@ -513,6 +544,8 @@ describe('Restaurant online settings component', () => {
             visibility_end_mode: 'week_end',
         })
         expect(ctx.syncForm).toHaveBeenCalled()
+        expect(ctx.closeAllDialogs).toHaveBeenCalled()
         expect(ctx.isSaving).toBe(false)
+        expect(ctx.isEditingOnlineSettings).toBe(false)
     })
 })

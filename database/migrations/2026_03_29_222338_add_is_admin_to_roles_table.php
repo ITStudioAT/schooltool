@@ -12,23 +12,29 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (! Schema::hasTable('roles') || Schema::hasColumn('roles', 'is_admin')) {
+            return;
+        }
+
         Schema::table('roles', function (Blueprint $table) {
             $table->boolean('is_admin')->default(false)->after('guard_name');
         });
 
-        DB::table('roles')
-            ->whereIn('name', [
-                'admin',
-                'register_admin',
-                'tutoring_admin',
-                'teaching_admin',
-                'materials_admin',
-                'materials_moderator',
-                'teacher',
-                'lunch_admin',
-                'aba_teacher',
-            ])
-            ->update(['is_admin' => true]);
+        if (Schema::hasColumn('roles', 'is_admin')) {
+            DB::table('roles')
+                ->whereIn('name', [
+                    'admin',
+                    'register_admin',
+                    'tutoring_admin',
+                    'teaching_admin',
+                    'materials_admin',
+                    'materials_moderator',
+                    'teacher',
+                    'lunch_admin',
+                    'aba_teacher',
+                ])
+                ->update(['is_admin' => true]);
+        }
     }
 
     /**
@@ -36,6 +42,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (! Schema::hasTable('roles') || ! Schema::hasColumn('roles', 'is_admin')) {
+            return;
+        }
+
         Schema::table('roles', function (Blueprint $table) {
             $table->dropColumn('is_admin');
         });

@@ -50,6 +50,8 @@ php artisan test               # Alternative test command
 php artisan test --filter=TestName  # Run specific test
 ```
 
+Warning: this repository's tests use the dedicated MySQL database `pest_test` from `phpunit.xml` and may drop/recreate it. Do not run destructive test commands unless the repository owner explicitly approves it in the current conversation.
+
 ### Building
 
 ```bash
@@ -159,6 +161,7 @@ The project uses Pest for testing with good coverage:
 - Test setup in `tests/Pest.php` and `tests/TestCase.php`
 
 Note: Feature tests extend `Tests\TestCase` which provides database access.
+Additional safety rule: never run `php artisan test`, `composer test`, `pest`, `phpunit`, or `php artisan migrate:fresh` here without explicit user approval, because the configured test database can be reset during test execution.
 
 ## Configuration Notes
 
@@ -204,6 +207,8 @@ Current work on `tutoring` branch:
 ## Database
 
 Migrations in `database/migrations/`. Recent additions include `school_tools` table for tutoring feature.
+
+Migration safety rule: this codebase must tolerate existing customer databases. New table migrations should guard with `Schema::hasTable(...)`, additive column migrations should guard with `Schema::hasColumn(...)`, and `up()` migrations must not drop/recreate populated tables as a shortcut.
 
 ## File Aliases
 

@@ -28,6 +28,7 @@ class RestaurantUserController extends Controller
         $validated = $request->validated();
         $searchString = $validated['search_string'] ?? null;
         $onlyPendingConfirmation = (bool) ($validated['only_pending_confirmation'] ?? false);
+        $onlyWithoutSepa = (bool) ($validated['only_without_sepa'] ?? false);
         $pendingConfirmationTotal = $this->restaurantCandidateUsersQuery($authUser->school_id)
             ->count();
 
@@ -37,6 +38,9 @@ class RestaurantUserController extends Controller
                 $query->whereHas('roles', function (Builder $roleQuery): void {
                     $roleQuery->where('name', 'lunch_candidate');
                 });
+            })
+            ->when($onlyWithoutSepa, function ($query): void {
+                $query->whereNull('sepa_at');
             })
             ->when($searchString, function ($query, $searchString) {
                 $query->where(function ($nestedQuery) use ($searchString): void {
@@ -97,6 +101,7 @@ class RestaurantUserController extends Controller
                 ...(new PaginateResource($users))->toArray($request),
                 'pending_confirmation_total' => $pendingConfirmationTotal,
                 'only_pending_confirmation' => $onlyPendingConfirmation,
+                'only_without_sepa' => $onlyWithoutSepa,
             ],
         ]);
     }

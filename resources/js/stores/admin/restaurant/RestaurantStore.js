@@ -58,6 +58,8 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
         canManageGeneralSettings: (state) => state.settings?.can_manage_general_settings === true,
         userSettings: (state) => state.settings?.user_settings || {},
         canManageUserSettings: (state) => state.settings?.can_manage_user_settings === true,
+        sepaSettings: (state) => state.settings?.sepa_settings || {},
+        canManageSepaSettings: (state) => state.settings?.can_manage_sepa_settings === true,
         onlineSettings: (state) => state.settings?.online_settings || {},
         canManageOnlineSettings: (state) => state.settings?.can_manage_online_settings === true,
         stats: (state) => state.settings?.stats || {},
@@ -165,6 +167,44 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler beim Speichern der allgemeinen Restaurant-Einstellungen.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async updateSepaSettings(settings) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.put('/api/admin/restaurant/sepa-settings', {
+                    data: settings,
+                })
+
+                this.settings = {
+                    ...(this.settings || {}),
+                    sepa_settings: response?.data?.data || {},
+                    can_manage_sepa_settings: true,
+                }
+
+                notification.notify({
+                    message: 'SEPA-Einstellungen gespeichert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return response?.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Speichern der SEPA-Einstellungen.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -398,6 +438,71 @@ export const useRestaurantStore = defineStore('AdminRestaurantStore', {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadAvailableIngredientIconsFromPrivateDirectory() {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.get('/api/admin/restaurant/ingredient_icons/private-directory')
+
+                return {
+                    source_directory: response?.data?.source_directory || '',
+                    icons: response?.data?.data || [],
+                }
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Verzeichnis konnte nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async syncIngredientIconsFromPrivateDirectory(paths = []) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+
+            try {
+                const response = await axios.post('/api/admin/restaurant/ingredient_icons/sync-private', {
+                    paths,
+                })
+                const ingredientIcons = sortByTitle(response?.data?.data || [])
+
+                this.settings = {
+                    ...(this.settings || {}),
+                    ingredient_icons: ingredientIcons,
+                    stats: {
+                        ...(this.settings?.stats || {}),
+                        ingredient_icons_count: ingredientIcons.length,
+                    },
+                }
+
+                notification.notify({
+                    message: response?.data?.message || 'Zutaten-Symbole wurden übernommen.',
+                    type: 'success',
+                    timeout: 2600,
+                })
+
+                return ingredientIcons
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Zutaten-Symbole konnten nicht übernommen werden.',
                     type: 'error',
                     timeout: 3000,
                 })

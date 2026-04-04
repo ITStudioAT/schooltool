@@ -25,6 +25,8 @@ class RestaurantSettingsController extends Controller
             'allergen_suggestions' => $settings['allergen_suggestions'],
             'general_settings' => $settings['general_settings'],
             'can_manage_general_settings' => $settings['can_manage_general_settings'],
+            'sepa_settings' => $settings['sepa_settings'],
+            'can_manage_sepa_settings' => $settings['can_manage_sepa_settings'],
             'user_settings' => $settings['user_settings'],
             'can_manage_user_settings' => $settings['can_manage_user_settings'],
             'online_settings' => $settings['online_settings'],

@@ -97,9 +97,22 @@
                         <div class="restaurant-auth-card__copy">
                             <h2 class="restaurant-auth-card__title">{{ restaurantAuthDisplayName }}</h2>
                             <p v-if="restaurantAuthEmail" class="restaurant-auth-card__meta">E-Mail: {{ restaurantAuthEmail }}</p>
-                            <p class="restaurant-auth-card__text">Sie sind angemeldet und können jetzt Menüs bestellen.</p>
+                            <p class="restaurant-auth-card__text">
+                                {{ restaurantRequiresSepa
+                                    ? 'Bevor Sie Menüs bestellen können, muss zuerst das SEPA-Lastschriftmandat bestätigt werden.'
+                                    : 'Sie sind angemeldet und können jetzt Menüs bestellen.' }}
+                            </p>
                         </div>
                         <div class="restaurant-auth-card__actions">
+                            <v-btn
+                                v-if="restaurantRequiresSepa"
+                                color="#ea580c"
+                                variant="flat"
+                                rounded="lg"
+                                class="text-none font-weight-bold"
+                                @click="openSepaDialogFromConfig">
+                                SEPA bestätigen
+                            </v-btn>
                             <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="downloadRestaurantOverviewPdf">Meine Menüs drucken</v-btn>
                             <v-btn color="#ea580c" variant="flat" rounded="lg" class="text-none font-weight-bold" @click="openRestaurantPasswordDialog">Passwort ändern</v-btn>
                             <v-btn color="#ea580c" variant="outlined" rounded="lg" class="text-none font-weight-bold" @click="logoutRestaurantUser">Abmelden</v-btn>
@@ -305,6 +318,7 @@
                                             variant="flat"
                                             size="small"
                                             class="text-none font-weight-bold"
+                                            :disabled="restaurantRequiresSepa"
                                             @click="bookMenu(entry)">
                                             {{ entryHasBookings(entry.id) ? 'Weiteres buchen' : 'Buchen' }}
                                         </v-btn>
@@ -422,11 +436,6 @@
                             @keyup.enter="submitLoginEmailCheck" />
                     </v-form>
 
-                    <div v-if="loginCheckResult?.email" class="restaurant-login-email mb-3">
-                        <div class="restaurant-login-email__label">E-Mail</div>
-                        <div class="restaurant-login-email__value">{{ loginCheckResult.email }}</div>
-                    </div>
-
                     <v-alert
                         v-if="loginCheckError"
                         type="error"
@@ -436,33 +445,15 @@
                         {{ loginCheckError }}
                     </v-alert>
 
+                    <div v-if="loginCheckResult?.email" class="restaurant-login-email mb-3">
+                        <div class="restaurant-login-email__label">E-Mail</div>
+                        <div class="restaurant-login-email__value">{{ loginCheckResult.email }}</div>
+                    </div>
+
                     <div v-if="loginCheckResult?.status === 'USER_FOUND'" class="restaurant-login-state">
                         <p class="restaurant-login-state__text">
-                            <template v-if="loginCheckResult.match_source === 'parent'">
-                                Die E-Mail-Adresse wurde über einen Elternkontakt gefunden.
-                            </template>
-                            <template v-else>
-                                Die E-Mail-Adresse gehört zu einem Mittagskonto.
-                            </template>
                             Möchten Sie sich per Code oder per Passwort anmelden?
                         </p>
-
-                        <div
-                            v-if="loginCheckResult.matched_users?.length"
-                            class="restaurant-login-state__matches">
-                            <div
-                                v-for="user in loginCheckResult.matched_users"
-                                :key="user.id"
-                                class="restaurant-login-state__match"
-                                :class="{ 'restaurant-login-state__match--selected': loginSelectedUserId === user.id }"
-                                @click="selectLoginUser(user.id)">
-                                <strong>{{ user.name }}</strong>
-                                <span v-if="user.schoolclass">{{ user.schoolclass }}</span>
-                                <span v-if="user.matched_children?.length">
-                                    {{ user.matched_children.join(', ') }}
-                                </span>
-                            </div>
-                        </div>
 
                         <div class="restaurant-login-state__actions">
                             <v-btn
@@ -744,6 +735,247 @@
                         {{ registerPrimaryActionLabel }}
                     </v-btn>
         </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="showSepaDialog" persistent max-width="920">
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-6 font-weight-bold">SEPA-Lastschriftmandat</v-card-title>
+                <v-card-text class="px-6">
+                    <div v-if="schoolInfoName" class="restaurant-login-school mb-3">
+                        <v-icon icon="mdi-domain" size="16" class="restaurant-login-school__icon" />
+                        <span>{{ schoolInfoName }}</span>
+                    </div>
+
+                    <div v-if="sepaDialogEmail" class="restaurant-login-email mb-4">
+                        <div class="restaurant-login-email__label">E-Mail</div>
+                        <div class="restaurant-login-email__value">{{ sepaDialogEmail }}</div>
+                    </div>
+
+                    <v-alert
+                        v-if="sepaError"
+                        type="error"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ sepaError }}
+                    </v-alert>
+
+                    <v-alert
+                        v-if="sepaSuccess"
+                        type="success"
+                        variant="tonal"
+                        density="comfortable"
+                        class="mb-3">
+                        {{ sepaSuccess }}
+                    </v-alert>
+
+                    <template v-if="sepaDialogStage === 'form'">
+                        <p class="restaurant-login-intro mb-4">
+                            Bitte füllen Sie das SEPA-Lastschriftmandat vollständig aus und bestätigen Sie es online.
+                        </p>
+
+                        <v-form ref="sepaFormRef" @submit.prevent="submitRestaurantSepaMandate">
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Zahlungsempfänger (Gläubiger)</div>
+                                <div class="restaurant-sepa-richtext" v-html="sepaPayeeHtml || '<p>Nicht hinterlegt</p>'" />
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Zahlungspflichtigen (Debitor / Kontoinhaber)</div>
+
+                                <v-text-field
+                                    v-model="sepaForm.account_holder_name"
+                                    label="Name des Kontoinhabers (Vor- und Nachname)"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mb-3"
+                                    :rules="[required(), maxLength(255)]" />
+
+                                <v-textarea
+                                    v-model="sepaForm.address_line"
+                                    label="Anschrift (Straße, Hausnummer, PLZ, Ort)"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mb-3"
+                                    rows="2"
+                                    auto-grow
+                                    :rules="[required(), maxLength(500)]" />
+
+                                <v-text-field
+                                    v-model="sepaForm.iban"
+                                    label="IBAN"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mb-3"
+                                    :rules="[required(), maxLength(64)]" />
+
+                                <v-text-field
+                                    v-model="sepaForm.bic"
+                                    label="BIC (optional im SEPA-Raum)"
+                                    variant="outlined"
+                                    density="compact"
+                                    :rules="[maxLength(64)]" />
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Kind</div>
+
+                                <div
+                                    v-for="(child, index) in sepaForm.child_entries"
+                                    :key="`sepa-child-${index}`"
+                                    class="restaurant-sepa-child-row">
+                                    <v-text-field
+                                        v-model="child.name"
+                                        label="Name des Kindes"
+                                        variant="outlined"
+                                        density="compact"
+                                        class="mb-3"
+                                        :rules="[required(), maxLength(255)]" />
+
+                                    <v-text-field
+                                        v-model="child.schoolclass"
+                                        label="Klasse des Kindes"
+                                        variant="outlined"
+                                        density="compact"
+                                        class="mb-3"
+                                        :rules="[required(), maxLength(255)]" />
+
+                                    <v-btn
+                                        v-if="sepaForm.child_entries.length > 1"
+                                        variant="text"
+                                        color="#ea580c"
+                                        class="text-none mb-3"
+                                        @click.prevent="removeSepaChild(index)">
+                                        Kind entfernen
+                                    </v-btn>
+                                </div>
+
+                                <v-btn
+                                    variant="outlined"
+                                    color="#ea580c"
+                                    class="text-none font-weight-bold"
+                                    @click.prevent="addSepaChild">
+                                    Weiteres Kind hinzufügen
+                                </v-btn>
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">SEPA-Ermächtigung</div>
+                                <div class="restaurant-sepa-richtext mb-3" v-html="sepaMandateTextHtml || '<p>Nicht hinterlegt</p>'" />
+                                <v-checkbox
+                                    v-model="sepaForm.accepted"
+                                    color="#ea580c"
+                                    hide-details
+                                    label="Ich akzeptiere die SEPA-Ermächtigung und erteile das Mandat." />
+                            </div>
+                        </v-form>
+                    </template>
+
+                    <template v-else-if="sepaDialogStage === 'code'">
+                        <p class="restaurant-login-intro mb-4">
+                            Bitte geben Sie jetzt den 6-stelligen Bestätigungscode aus der E-Mail ein.
+                        </p>
+
+                        <v-otp-input
+                            v-model="sepaCode"
+                            autofocus
+                            class="mb-3" />
+                    </template>
+
+                    <template v-else>
+                        <p class="restaurant-login-intro mb-4">
+                            Bitte prüfen Sie das online bestätigte SEPA-Lastschriftmandat.
+                        </p>
+
+                        <div class="restaurant-sepa-preview">
+                            <div class="restaurant-sepa-preview__title">SEPA-Lastschriftmandat</div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Zahlungsempfänger (Gläubiger)</div>
+                                <div class="restaurant-sepa-richtext" v-html="sepaPayeeHtml || '<p>Nicht hinterlegt</p>'" />
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Zahlungspflichtigen (Debitor / Kontoinhaber)</div>
+                                <div class="restaurant-sepa-preview__line"><strong>Name:</strong> {{ sepaForm.account_holder_name }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>Anschrift:</strong> {{ sepaForm.address_line }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>IBAN:</strong> {{ sepaForm.iban }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>BIC:</strong> {{ sepaForm.bic || 'Nicht angegeben' }}</div>
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">Angaben zum Kind</div>
+                                <div
+                                    v-for="(child, index) in sepaForm.child_entries"
+                                    :key="`sepa-preview-child-${index}`"
+                                    class="restaurant-sepa-preview__line">
+                                    <strong>{{ child.name }}</strong><span v-if="child.schoolclass"> · {{ child.schoolclass }}</span>
+                                </div>
+                            </div>
+
+                            <div class="restaurant-sepa-panel mb-4">
+                                <div class="restaurant-sepa-panel__title">SEPA-Ermächtigung</div>
+                                <div class="restaurant-sepa-richtext" v-html="sepaMandateTextHtml || '<p>Nicht hinterlegt</p>'" />
+                            </div>
+
+                            <div class="restaurant-sepa-signature-row">
+                                <div class="restaurant-sepa-signature-box">
+                                    <div class="restaurant-sepa-signature-box__label">Ort</div>
+                                    <div class="restaurant-sepa-signature-box__value">{{ schoolInfoName }}</div>
+                                </div>
+                                <div class="restaurant-sepa-signature-box">
+                                    <div class="restaurant-sepa-signature-box__label">Datum</div>
+                                    <div class="restaurant-sepa-signature-box__value">{{ sepaConfirmedDateLabel }}</div>
+                                </div>
+                                <div class="restaurant-sepa-signature-box">
+                                    <div class="restaurant-sepa-signature-box__label">Unterschrift Kontoinhaber/in</div>
+                                    <div class="restaurant-sepa-signature-box__value">{{ sepaSignatureLabel }}</div>
+                                    <div class="restaurant-sepa-signature-box__meta">Online bestätigt</div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn
+                        variant="text"
+                        color="secondary"
+                        :disabled="sepaLoading"
+                        @click="closeSepaDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        v-if="sepaDialogStage === 'form'"
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="sepaLoading"
+                        :disabled="!canSubmitSepaMandate"
+                        @click="submitRestaurantSepaMandate">
+                        Mandat erteilen
+                    </v-btn>
+                    <v-btn
+                        v-else-if="sepaDialogStage === 'code'"
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="sepaLoading"
+                        :disabled="sepaCode.trim().length !== 6"
+                        @click="confirmRestaurantSepaCode">
+                        Code bestätigen
+                    </v-btn>
+                    <v-btn
+                        v-else
+                        variant="flat"
+                        color="#ea580c"
+                        class="text-none font-weight-bold"
+                        :loading="sepaLoading"
+                        @click="completeRestaurantSepaFlow">
+                        Okay
+                    </v-btn>
+                </v-card-actions>
             </v-card>
         </v-dialog>
 
@@ -1060,6 +1292,8 @@ export default {
             await this.homepageStore.loadConfig(schoolFromUrl, this.$route?.query?.app ?? null)
         }
 
+        this.sepaFlow = this.config?.restaurant?.sepa_flow || null
+
         if (this.config?.school?.short_name) {
             this.selectedSchoolShortName = this.config.school.short_name
         }
@@ -1071,6 +1305,10 @@ export default {
         }
 
         await this.loadMenuPlans()
+
+        if (this.restaurantRequiresSepa && this.sepaFlow) {
+            this.openSepaDialog(this.sepaFlow, 'login')
+        }
     },
 
     data() {
@@ -1103,6 +1341,23 @@ export default {
             registerLoading: false,
             registerResult: null,
             registerError: '',
+            showSepaDialog: false,
+            sepaLoading: false,
+            sepaError: '',
+            sepaSuccess: '',
+            sepaFlow: null,
+            sepaContextAction: null,
+            sepaCode: '',
+            sepaForm: {
+                account_holder_name: '',
+                address_line: '',
+                iban: '',
+                bic: '',
+                accepted: false,
+                child_entries: [
+                    { name: '', schoolclass: '' },
+                ],
+            },
             restaurantPassword: '',
             restaurantPasswordConfirmation: '',
             restaurantPasswordLoading: false,
@@ -1171,6 +1426,60 @@ export default {
         },
         restaurantAuthEmail() {
             return this.restaurantAuthUser?.email?.trim?.() || ''
+        },
+        restaurantRequiresSepa() {
+            return this.config?.restaurant?.sepa_online_enabled === true
+                && this.restaurantAuthUser?.has_sepa !== true
+        },
+        sepaDialogEmail() {
+            return this.sepaFlow?.email?.trim?.() || this.restaurantAuthEmail || this.registerEmail
+        },
+        sepaDialogStage() {
+            if (this.sepaFlow?.confirmed_at) {
+                return 'preview'
+            }
+
+            if (this.sepaFlow?.status === 'pending_code') {
+                return 'code'
+            }
+
+            return 'form'
+        },
+        canSubmitSepaMandate() {
+            if (this.sepaLoading) {
+                return false
+            }
+
+            if (this.sepaForm.account_holder_name.trim() === '' || this.sepaForm.address_line.trim() === '' || this.sepaForm.iban.trim() === '') {
+                return false
+            }
+
+            if (!this.sepaForm.accepted) {
+                return false
+            }
+
+            return this.sepaForm.child_entries.some((child) => child.name.trim() !== '' && child.schoolclass.trim() !== '')
+        },
+        sepaPayeeHtml() {
+            return this.sepaFlow?.sepa_payee || this.config?.restaurant?.sepa_payee || ''
+        },
+        sepaMandateTextHtml() {
+            return this.sepaFlow?.sepa_mandate_text || this.config?.restaurant?.sepa_mandate_text || ''
+        },
+        sepaConfirmedDateLabel() {
+            const isoDate = this.sepaFlow?.confirmed_at
+            if (!isoDate) {
+                return ''
+            }
+
+            return new Date(isoDate).toLocaleDateString('de-AT', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+            })
+        },
+        sepaSignatureLabel() {
+            return this.sepaFlow?.signature_uuid || this.sepaFlow?.flow_uuid || ''
         },
         todayDateKey() {
             const today = new Date(this.tickNow)
@@ -1532,6 +1841,166 @@ export default {
             this.resetRegisterDialogState()
         },
 
+        openSepaDialog(flow = null, contextAction = null) {
+            const nextFlow = flow || this.config?.restaurant?.sepa_flow || null
+            if (!nextFlow) {
+                return
+            }
+
+            this.sepaFlow = nextFlow
+            this.sepaContextAction = contextAction || this.sepaContextAction || 'login'
+            this.sepaCode = ''
+            this.sepaError = ''
+            this.sepaSuccess = ''
+            this.syncSepaFormFromFlow()
+            this.showSepaDialog = true
+        },
+
+        openSepaDialogFromConfig() {
+            this.openSepaDialog(this.config?.restaurant?.sepa_flow || null, 'login')
+        },
+
+        closeSepaDialog() {
+            this.showSepaDialog = false
+            this.sepaError = ''
+            this.sepaSuccess = ''
+        },
+
+        syncSepaFormFromFlow() {
+            const flow = this.sepaFlow || {}
+            const childEntries = Array.isArray(flow.child_entries) && flow.child_entries.length > 0
+                ? flow.child_entries.map((child) => ({
+                    name: (child?.name || '').toString(),
+                    schoolclass: (child?.schoolclass || '').toString(),
+                }))
+                : [{ name: '', schoolclass: '' }]
+
+            this.sepaForm = {
+                account_holder_name: (flow.account_holder_name || '').toString(),
+                address_line: (flow.address_line || '').toString(),
+                iban: (flow.iban || '').toString(),
+                bic: (flow.bic || '').toString(),
+                accepted: flow.confirmed_at !== null || flow.accepted_at !== null,
+                child_entries: childEntries,
+            }
+        },
+
+        addSepaChild() {
+            this.sepaForm.child_entries.push({ name: '', schoolclass: '' })
+        },
+
+        removeSepaChild(index) {
+            if (this.sepaForm.child_entries.length <= 1) {
+                return
+            }
+
+            this.sepaForm.child_entries.splice(index, 1)
+        },
+
+        async submitRestaurantSepaMandate() {
+            if (!this.canSubmitSepaMandate || !this.sepaFlow?.flow_uuid) {
+                return
+            }
+
+            this.sepaLoading = true
+            this.sepaError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/sepa/store', {
+                    data: {
+                        flow_uuid: this.sepaFlow.flow_uuid,
+                        account_holder_name: this.sepaForm.account_holder_name.trim(),
+                        address_line: this.sepaForm.address_line.trim(),
+                        iban: this.sepaForm.iban.trim(),
+                        bic: this.sepaForm.bic.trim() || null,
+                        child_entries: this.sepaForm.child_entries
+                            .map((child) => ({
+                                name: (child.name || '').trim(),
+                                schoolclass: (child.schoolclass || '').trim(),
+                            }))
+                            .filter((child) => child.name !== '' || child.schoolclass !== ''),
+                        accepted: this.sepaForm.accepted,
+                    },
+                })
+
+                this.sepaFlow = response.data?.flow || this.sepaFlow
+                this.sepaSuccess = response.data?.message || 'Der Bestätigungscode wurde gesendet.'
+                this.sepaCode = ''
+                this.syncSepaFormFromFlow()
+            } catch (error) {
+                this.sepaError = error.response?.data?.message || 'Das SEPA-Lastschriftmandat konnte nicht gespeichert werden.'
+            } finally {
+                this.sepaLoading = false
+            }
+        },
+
+        async confirmRestaurantSepaCode() {
+            if (this.sepaCode.trim().length !== 6 || !this.sepaFlow?.flow_uuid) {
+                return
+            }
+
+            this.sepaLoading = true
+            this.sepaError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/sepa/confirm_code', {
+                    data: {
+                        flow_uuid: this.sepaFlow.flow_uuid,
+                        code: this.sepaCode.trim(),
+                    },
+                })
+
+                this.sepaFlow = response.data?.flow || this.sepaFlow
+                this.sepaSuccess = response.data?.message || 'Das SEPA-Lastschriftmandat wurde bestätigt.'
+                this.syncSepaFormFromFlow()
+            } catch (error) {
+                this.sepaError = error.response?.data?.message || 'Der Code ist falsch oder abgelaufen.'
+            } finally {
+                this.sepaLoading = false
+            }
+        },
+
+        async completeRestaurantSepaFlow() {
+            if (!this.sepaFlow?.flow_uuid) {
+                return
+            }
+
+            this.sepaLoading = true
+            this.sepaError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/sepa/complete', {
+                    data: {
+                        flow_uuid: this.sepaFlow.flow_uuid,
+                    },
+                })
+
+                this.sepaSuccess = response.data?.message || 'Das SEPA-Lastschriftmandat wurde gespeichert.'
+                this.showSepaDialog = false
+                this.sepaFlow = null
+
+                await this.homepageStore.loadConfig(this.currentSchoolShortName, 'restaurant')
+                await this.loadMenuPlans()
+
+                if (response.data?.logged_in === true && this.currentSchoolShortName) {
+                    window.location.href = `/homepage/restaurant?school=${this.currentSchoolShortName}`
+
+                    return
+                }
+
+                if (this.sepaContextAction === 'register') {
+                    this.registerResult = {
+                        status: 'REGISTERED',
+                        message: response.data?.message || 'Das SEPA-Lastschriftmandat wurde gespeichert.',
+                    }
+                }
+            } catch (error) {
+                this.sepaError = error.response?.data?.message || 'Das SEPA-Lastschriftmandat konnte nicht abgeschlossen werden.'
+            } finally {
+                this.sepaLoading = false
+            }
+        },
+
         async switchToRegisterDialog() {
             this.showLoginDialog = false
             this.resetRegisterDialogState()
@@ -1553,6 +2022,10 @@ export default {
                 this.resetRestaurantPasswordDialogState()
                 this.showRegisterDialog = false
                 this.showPasswordDialog = false
+                this.sepaFlow = this.config?.restaurant?.sepa_flow || null
+                if (this.restaurantRequiresSepa && this.sepaFlow) {
+                    this.openSepaDialog(this.sepaFlow, 'login')
+                }
                 await this.loadMenuPlans()
             }
         },
@@ -1567,6 +2040,8 @@ export default {
             this.showLoginDialog = false
             this.showRegisterDialog = false
             this.showPasswordDialog = false
+            this.showSepaDialog = false
+            this.sepaFlow = null
         },
 
         async submitRestaurantPasswordChange() {
@@ -2176,6 +2651,12 @@ export default {
                     return
                 }
 
+                if (response.data?.status === 'SEPA_REQUIRED') {
+                    this.loginActionMessage = ''
+                    this.openSepaDialog(response.data?.sepa_flow || null, 'login')
+                    return
+                }
+
                 this.loginActionMessage = ''
                 this.loginAuthError = response.data?.message || 'Der Code ist falsch oder abgelaufen.'
             } catch (error) {
@@ -2214,6 +2695,11 @@ export default {
                 if (response.data?.status === 'LOGGED_IN') {
                     window.location.href = `/homepage/restaurant?school=${this.currentSchoolShortName}`
 
+                    return
+                }
+
+                if (response.data?.status === 'SEPA_REQUIRED') {
+                    this.openSepaDialog(response.data?.sepa_flow || null, 'login')
                     return
                 }
 
@@ -2286,6 +2772,9 @@ export default {
                 })
 
                 this.registerResult = response.data || null
+                if (this.registerResult?.status === 'SEPA_REQUIRED') {
+                    this.openSepaDialog(this.registerResult?.sepa_flow || null, 'register')
+                }
                 if (this.registerResult?.status === 'CONFIRM_EMAIL') {
                     this.registerEmailToken = ''
                     this.registerConfirmationToken = ''
@@ -2370,6 +2859,8 @@ export default {
             this.registerLoading = false
             this.registerResult = null
             this.registerError = ''
+            this.sepaContextAction = null
+            this.sepaCode = ''
         },
 
         resetRestaurantPasswordDialogState() {
@@ -2417,6 +2908,11 @@ export default {
         },
 
         async bookMenu(entry) {
+            if (this.restaurantRequiresSepa) {
+                this.openSepaDialogFromConfig()
+                return
+            }
+
             this.selectedMenuEntry = entry
             this.bookingData = {
                 restaurant_menu_plan_entry_id: entry.id,
@@ -3627,6 +4123,84 @@ export default {
     border-color: transparent;
     color: #fff7ed;
     box-shadow: 0 10px 20px rgba(194, 65, 12, 0.2);
+}
+
+.restaurant-sepa-panel {
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 18px;
+    background: rgba(248, 250, 252, 0.9);
+    padding: 1rem 1.1rem;
+}
+
+.restaurant-sepa-panel__title {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 0.85rem;
+}
+
+.restaurant-sepa-richtext {
+    color: #1e293b;
+    line-height: 1.7;
+}
+
+.restaurant-sepa-child-row {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    margin-bottom: 1rem;
+    padding-bottom: 0.2rem;
+}
+
+.restaurant-sepa-child-row:last-of-type {
+    border-bottom: 0;
+    margin-bottom: 0.5rem;
+}
+
+.restaurant-sepa-preview__title {
+    font-size: 1.35rem;
+    font-weight: 900;
+    color: #0f172a;
+    margin-bottom: 1rem;
+}
+
+.restaurant-sepa-preview__line {
+    color: #1e293b;
+    line-height: 1.7;
+}
+
+.restaurant-sepa-signature-row {
+    display: grid;
+    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.restaurant-sepa-signature-box {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 0.9rem 1rem;
+}
+
+.restaurant-sepa-signature-box__label {
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 0.45rem;
+}
+
+.restaurant-sepa-signature-box__value {
+    color: #0f172a;
+    font-weight: 700;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.restaurant-sepa-signature-box__meta {
+    color: #0f766e;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-top: 0.35rem;
 }
 
 .booking-recipient-list {

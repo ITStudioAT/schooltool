@@ -48,6 +48,7 @@ function mountUsers(storeOverrides: Record<string, unknown> = {}, routeQuery: Re
         },
         search_string: '',
         only_pending_confirmation: false,
+        only_without_sepa: false,
         index: vi.fn().mockResolvedValue(true),
         updateSepa: vi.fn().mockResolvedValue(true),
         confirmUser: vi.fn().mockResolvedValue(true),
@@ -114,6 +115,8 @@ describe('Restaurant users component', () => {
         expect(wrapper.text()).toContain('Zu bestätigen')
         expect(wrapper.text()).toContain('4')
         expect(wrapper.text()).toContain('Nur zu bestätigen')
+        expect(wrapper.text()).toContain('Alle')
+        expect(wrapper.text()).toContain('ohne SEPA')
         expect(wrapper.text()).toContain('Mittag Anna')
         expect(wrapper.text()).toContain('anna@example.test')
         expect(wrapper.text()).toContain('Import116 #42')
@@ -141,6 +144,15 @@ describe('Restaurant users component', () => {
         expect(wrapper.text()).toContain('Filter aufheben')
     })
 
+    it('reads the without-sepa filter from the route on mount', async () => {
+        const { store } = mountUsers({}, {
+            only_without_sepa: '1',
+        })
+
+        expect(store.only_without_sepa).toBe(true)
+        expect(store.index).toHaveBeenCalledWith()
+    })
+
     it('applies a search and reloads the first page', async () => {
         const { wrapper, store } = mountUsers()
         ;(wrapper.vm as any).restaurantUserStore = store
@@ -161,13 +173,23 @@ describe('Restaurant users component', () => {
         expect(store.index).toHaveBeenCalledWith(3)
     })
 
-    it('toggles the pending confirmation filter and reloads the first page', async () => {
+    it('switches to the pending confirmation filter and reloads the first page', async () => {
         const { wrapper, store } = mountUsers()
         ;(wrapper.vm as any).restaurantUserStore = store
 
-        await (wrapper.vm as any).togglePendingConfirmationFilter()
+        await (wrapper.vm as any).setPendingConfirmationFilter(true)
 
         expect(store.only_pending_confirmation).toBe(true)
+        expect(store.index).toHaveBeenCalledWith(1)
+    })
+
+    it('switches to the without-sepa filter and reloads the first page', async () => {
+        const { wrapper, store } = mountUsers()
+        ;(wrapper.vm as any).restaurantUserStore = store
+
+        await (wrapper.vm as any).setSepaFilter(true)
+
+        expect(store.only_without_sepa).toBe(true)
         expect(store.index).toHaveBeenCalledWith(1)
     })
 
@@ -179,7 +201,7 @@ describe('Restaurant users component', () => {
         })
         ;(wrapper.vm as any).restaurantUserStore = store
 
-        await (wrapper.vm as any).togglePendingConfirmationFilter()
+        await (wrapper.vm as any).setPendingConfirmationFilter(false)
 
         expect(store.only_pending_confirmation).toBe(false)
         expect(store.index).toHaveBeenCalledWith(1)

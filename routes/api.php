@@ -25,6 +25,7 @@ use App\Http\Controllers\Admin\RegisterDateBookingController;
 use App\Http\Controllers\Admin\RegisterDateController;
 use App\Http\Controllers\Admin\RegisterPrintController;
 use App\Http\Controllers\Admin\RegisterUserController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantBillingController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantEatingTimeController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
@@ -34,6 +35,7 @@ use App\Http\Controllers\Admin\Restaurant\RestaurantIngredientIconController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantMenuPlanController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantOnlineSettingsController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantSepaSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantSettingsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantUserSettingsController;
@@ -93,6 +95,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/sepa/store', [HomepageController::class, 'restaurantStoreSepaMandate'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/sepa/confirm_code', [HomepageController::class, 'restaurantConfirmSepaMandateCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/sepa/complete', [HomepageController::class, 'restaurantCompleteSepaMandate'])->middleware('tool-licensed:Restaurant');
 
     // Restaurant booking routes
     Route::post('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'store'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
@@ -260,6 +265,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/restaurant/users/{user}', [RestaurantUserController::class, 'destroy']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
         Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
+        Route::put('/admin/restaurant/sepa-settings', [RestaurantSepaSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);
         Route::get('/admin/restaurant/free-days', [RestaurantFreeDayController::class, 'index']);
@@ -267,8 +273,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/restaurant/foods', RestaurantFoodController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/menus', RestaurantMenuController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/categories', RestaurantCategoryController::class)->only(['store', 'update', 'destroy']);
+        Route::get('/admin/restaurant/ingredient_icons/private-directory', [RestaurantIngredientIconController::class, 'privateDirectory']);
+        Route::post('/admin/restaurant/ingredient_icons/sync-private', [RestaurantIngredientIconController::class, 'syncFromPrivateDirectory']);
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/eating-times', RestaurantEatingTimeController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('/admin/restaurant/billings/{id}/print', [RestaurantBillingController::class, 'print']);
+        Route::apiResource('/admin/restaurant/billings', RestaurantBillingController::class)->only(['index', 'store']);
         Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
         Route::post('/admin/restaurant/menu-plans/{id}/toggle-lock', [RestaurantMenuPlanController::class, 'toggleLock']);
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);

@@ -40,6 +40,8 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'last_name' => $this->last_name,
             'first_name' => $this->first_name,
+            'has_sepa' => (bool) $this->sepa_at,
+            'sepa_at' => $this->sepa_at?->toIso8601String(),
             'sex' => $this->sex,
             'phone' => $this->phone,
             'schoolclass' => $this->schoolclass,

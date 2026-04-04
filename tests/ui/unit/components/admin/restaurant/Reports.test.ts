@@ -41,6 +41,7 @@ function mountReports(plans: Array<Record<string, unknown>> = []) {
                 'v-progress-linear': { template: '<div />' },
                 'v-alert': { template: '<div><slot /></div>' },
                 'v-icon': { template: '<span />' },
+                RestaurantBillingReportsCard: { template: '<div class="billing-card-stub" />' },
                 ItsGridBox: {
                     props: ['title'],
                     template: '<section><h3>{{ title }}</h3><slot /></section>',

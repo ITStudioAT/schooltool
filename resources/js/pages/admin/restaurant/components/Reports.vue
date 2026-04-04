@@ -111,6 +111,8 @@
             </div>
         </ItsGridBox>
     </v-col>
+
+    <RestaurantBillingReportsCard />
 </template>
 
 <script>
@@ -118,6 +120,7 @@ import { mapState } from 'pinia'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
+import RestaurantBillingReportsCard from './RestaurantBillingReportsCard.vue'
 
 function defaultOnlineSettings() {
     return {
@@ -137,7 +140,7 @@ function defaultOnlineSettings() {
 }
 
 export default {
-    components: { ItsGridBox },
+    components: { ItsGridBox, RestaurantBillingReportsCard },
 
     data() {
         return {

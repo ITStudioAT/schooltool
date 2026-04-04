@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\QueueTest;
 use App\Models\School;
+use App\Models\User;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -30,6 +31,53 @@ class InstallUpdateService
         if (File::exists($debugbarPath)) {
             File::cleanDirectory($debugbarPath);  // empty everything inside
         }
+    }
+
+    /**
+     * @return array{restaurant_confirmed_backfilled: int, lunch_user_roles_assigned: int, lunch_candidate_roles_removed: int}
+     */
+    public function normalizeRestaurantUserRoles(): array
+    {
+        $summary = [
+            'restaurant_confirmed_backfilled' => 0,
+            'lunch_user_roles_assigned' => 0,
+            'lunch_candidate_roles_removed' => 0,
+        ];
+
+        User::query()
+            ->with('roles')
+            ->whereHas('roles', function ($query): void {
+                $query->whereIn('name', ['lunch_user', 'lunch_candidate']);
+            })
+            ->orderBy('id')
+            ->chunkById(200, function ($users) use (&$summary): void {
+                foreach ($users as $user) {
+                    $hasLunchUserRole = $user->hasRole('lunch_user');
+                    $hasLunchCandidateRole = $user->hasRole('lunch_candidate');
+
+                    if ($hasLunchUserRole && ! $user->restaurant_confirmed_at) {
+                        $user->restaurant_confirmed_at = now();
+                        $user->save();
+                        $summary['restaurant_confirmed_backfilled']++;
+                    }
+
+                    if (! $user->restaurant_confirmed_at) {
+                        continue;
+                    }
+
+                    if (! $hasLunchUserRole) {
+                        $user->assignRole('lunch_user');
+                        $summary['lunch_user_roles_assigned']++;
+                    }
+
+                    if ($hasLunchCandidateRole) {
+                        $user->removeRole('lunch_candidate');
+                        $summary['lunch_candidate_roles_removed']++;
+                    }
+                }
+            });
+
+        return $summary;
     }
 
     public function checkSuperAdmins()
