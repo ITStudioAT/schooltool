@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\RestaurantFreeDay;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Illuminate\Support\Carbon;
@@ -13,23 +14,41 @@ use Illuminate\Support\Str;
 
 class RestaurantMenuPlanPdfService
 {
+    public function __construct(
+        private readonly RestaurantBookingService $bookingService
+    ) {}
+
     public function createPdf(RestaurantMenuPlan $plan): string
     {
         $plan->loadMissing(['school', 'entries.menu.foods.category', 'entries.eatingTimes']);
 
-        $directory = storage_path('app/private/pdf');
-        File::ensureDirectoryExists($directory);
-
-        $path = $directory.DIRECTORY_SEPARATOR.$this->filename($plan);
+        $path = $this->pdfDirectory().DIRECTORY_SEPARATOR.$this->filename($plan);
 
         DomPdf::loadView('pdfs.restaurantMenuPlan', [
-            'plan' => [
-                'title' => filled($plan->title) ? (string) $plan->title : "Men\u{fc}plan",
-                'range_label' => $this->formatDate($plan->start_date).' - '.$this->formatDate($plan->end_date),
-                'school_name' => (string) ($plan->school?->long_name ?: $plan->school?->short_name ?: ''),
-                'generated_at' => now()->format('d.m.Y H:i'),
-            ],
+            'plan' => $this->planMeta($plan),
             'days' => $this->buildDays($plan),
+        ])
+            ->setPaper('a4', 'landscape')
+            ->save($path);
+
+        return $path;
+    }
+
+    public function createBookingsPdf(RestaurantMenuPlan $plan): string
+    {
+        $plan->loadMissing([
+            'school',
+            'entries.menu',
+            'entries.eatingTimes',
+            'entries.bookings.user',
+            'entries.bookings.eatingTime',
+        ]);
+
+        $path = $this->pdfDirectory().DIRECTORY_SEPARATOR.$this->bookingFilename($plan);
+
+        DomPdf::loadView('pdfs.restaurantMenuPlanBookings', [
+            'plan' => $this->planMeta($plan),
+            'pages' => $this->buildBookingPages($plan),
         ])
             ->setPaper('a4', 'portrait')
             ->save($path);
@@ -124,6 +143,118 @@ class RestaurantMenuPlanPdfService
         })->all();
     }
 
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildBookingPages(RestaurantMenuPlan $plan): array
+    {
+        if (! $plan->start_date || ! $plan->end_date) {
+            return [];
+        }
+
+        $entriesByDate = $plan->entries
+            ->sortBy(fn (RestaurantMenuPlanEntry $entry): string => ($entry->plan_date?->format('Y-m-d') ?? '').'-'.str_pad((string) $entry->id, 8, '0', STR_PAD_LEFT))
+            ->groupBy(fn (RestaurantMenuPlanEntry $entry): string => (string) $entry->plan_date?->format('Y-m-d'));
+
+        $pages = [];
+        $cursor = $plan->start_date->copy()->startOfDay();
+        $endDate = $plan->end_date->copy()->startOfDay();
+
+        while ($cursor->lte($endDate)) {
+            $isoDate = $cursor->format('Y-m-d');
+            $dayEntries = $entriesByDate->get($isoDate, collect());
+
+            array_push($pages, ...$this->buildBookingPagesForDay($cursor, $dayEntries));
+
+            $cursor->addDay();
+        }
+
+        return $pages;
+    }
+
+    /**
+     * @param  Collection<int, RestaurantMenuPlanEntry>  $entries
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildBookingPagesForDay(Carbon $date, Collection $entries): array
+    {
+        $dayLabel = [
+            'weekday_label' => $this->weekdayLabel($date),
+            'date_label' => $date->format('d.m.Y'),
+        ];
+
+        $dayBookings = $entries
+            ->flatMap(function (RestaurantMenuPlanEntry $entry): Collection {
+                return $entry->bookings->map(fn (RestaurantMenuPlanBooking $booking): array => [
+                    'entry' => $entry,
+                    'booking' => $booking,
+                ]);
+            })
+            ->values();
+
+        if ($dayBookings->isEmpty()) {
+            return [];
+        }
+
+        $timeKeys = $dayBookings
+            ->map(fn (array $payload): string => $payload['booking']->eatingTime?->eating_time ?: '__none__')
+            ->filter()
+            ->unique()
+            ->sortBy(fn (string $timeKey): string => $this->bookingTimeSortKey($timeKey))
+            ->values()
+            ->all();
+
+        return collect($timeKeys)
+            ->map(function (string $timeKey) use ($dayBookings, $dayLabel): array {
+                $rows = $dayBookings
+                    ->filter(fn (array $payload): bool => ($payload['booking']->eatingTime?->eating_time ?: '__none__') === $timeKey)
+                    ->flatMap(fn (array $payload): array => $this->buildBookingRows($payload['booking'], $payload['entry']))
+                    ->sortBy(fn (array $row): string => mb_strtolower($row['customer_name'].' '.$row['menu_title']))
+                    ->values()
+                    ->all();
+
+                return [
+                    ...$dayLabel,
+                    'sort_key' => $this->bookingTimeSortKey($timeKey),
+                    'time_label' => $this->bookingTimeLabel($timeKey),
+                    'rows' => $rows,
+                ];
+            })
+            ->sortBy('sort_key')
+            ->values()
+            ->map(function (array $page): array {
+                unset($page['sort_key']);
+
+                return $page;
+            })
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{customer_name:string, menu_title:string}>
+     */
+    private function buildBookingRows(RestaurantMenuPlanBooking $booking, RestaurantMenuPlanEntry $entry): array
+    {
+        $menuTitle = trim((string) ($entry->menu_title ?: $entry->menu?->title ?: "Men\u{fc}"));
+
+        $customerNames = collect($this->bookingService->recipientsForBooking($booking))
+            ->pluck('name')
+            ->map(fn (mixed $name): string => trim((string) $name))
+            ->filter()
+            ->values();
+
+        if ($customerNames->isEmpty()) {
+            $customerNames = collect([$this->fallbackCustomerName($booking)]);
+        }
+
+        return $customerNames
+            ->map(fn (string $customerName): array => [
+                'customer_name' => $customerName,
+                'menu_title' => $menuTitle,
+            ])
+            ->all();
+    }
+
     private function filename(RestaurantMenuPlan $plan): string
     {
         $title = filled($plan->title)
@@ -131,6 +262,60 @@ class RestaurantMenuPlanPdfService
             : 'menueplan_'.$plan->start_date?->format('Ymd').'_'.$plan->end_date?->format('Ymd');
 
         return $title.'_'.now()->format('Ymd_His').'.pdf';
+    }
+
+    private function bookingFilename(RestaurantMenuPlan $plan): string
+    {
+        $title = filled($plan->title)
+            ? Str::slug((string) $plan->title, '_')
+            : 'menueplan_'.$plan->start_date?->format('Ymd').'_'.$plan->end_date?->format('Ymd');
+
+        return $title.'_bestellungen_'.now()->format('Ymd_His').'.pdf';
+    }
+
+    private function pdfDirectory(): string
+    {
+        $directory = storage_path('app/private/pdf');
+        File::ensureDirectoryExists($directory);
+
+        return $directory;
+    }
+
+    /**
+     * @return array{
+     *     title:string,
+     *     range_label:string,
+     *     school_name:string,
+     *     generated_at:string
+     * }
+     */
+    private function planMeta(RestaurantMenuPlan $plan): array
+    {
+        return [
+            'title' => filled($plan->title) ? (string) $plan->title : "Men\u{fc}plan",
+            'range_label' => $this->formatDate($plan->start_date).' - '.$this->formatDate($plan->end_date),
+            'school_name' => (string) ($plan->school?->long_name ?: $plan->school?->short_name ?: ''),
+            'generated_at' => now()->format('d.m.Y H:i'),
+        ];
+    }
+
+    private function bookingTimeSortKey(string $timeKey): string
+    {
+        return $timeKey === '__none__' ? '99:99:99' : $timeKey;
+    }
+
+    private function bookingTimeLabel(string $timeKey): string
+    {
+        if ($timeKey === '__none__') {
+            return 'Ohne Speisezeit';
+        }
+
+        return Carbon::parse($timeKey)->format('H:i').' Uhr';
+    }
+
+    private function fallbackCustomerName(RestaurantMenuPlanBooking $booking): string
+    {
+        return trim((string) ($booking->ordered_for_display ?: $booking->user?->full_name ?: $booking->user?->email ?: ''));
     }
 
     private function formatDate(?Carbon $date): string

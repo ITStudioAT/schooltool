@@ -302,6 +302,35 @@
                     Druckoptionen für den Menüplan
                     <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
                     werden hier konfiguriert.
+                    <div class="mp-print-dialog__options">
+                        <v-btn
+                            block
+                            color="info"
+                            variant="tonal"
+                            rounded="xl"
+                            prepend-icon="mdi-format-list-bulleted"
+                            data-testid="menu-plan-print-bookings-button"
+                            @click="openPrint('bookings')">
+                            Bestellungen drucken
+                        </v-btn>
+                        <div class="mp-print-dialog__hint">
+                            Alle Tage des Men&uuml;plans. Jede Speisezeit wird auf einer eigenen Seite mit den Kunden und ihrem Men&uuml; ausgegeben.
+                        </div>
+
+                        <v-btn
+                            block
+                            color="info"
+                            variant="outlined"
+                            rounded="xl"
+                            prepend-icon="mdi-calendar-text-outline"
+                            data-testid="menu-plan-print-overview-button"
+                            @click="openPrint('plan')">
+                            Men&uuml;plan drucken
+                        </v-btn>
+                        <div class="mp-print-dialog__hint">
+                            Kompakte &Uuml;bersicht des gesamten Men&uuml;plans als PDF.
+                        </div>
+                    </div>
                 </v-card-text>
                 <v-card-actions class="px-5 pb-5">
                     <v-spacer />
@@ -680,6 +709,27 @@ export default {
                 start: this.selectedExistingPlan.start_date,
                 end: this.selectedExistingPlan.end_date,
             })
+        },
+        buildPrintUrl(type = 'plan') {
+            if (!this.selectedExistingPlan?.id) {
+                return ''
+            }
+
+            const baseUrl = `/api/admin/restaurant/menu-plans/${this.selectedExistingPlan.id}/print`
+
+            return type === 'bookings'
+                ? `${baseUrl}?type=bookings`
+                : baseUrl
+        },
+        openPrint(type = 'plan') {
+            const url = this.buildPrintUrl(type)
+
+            if (!url) {
+                return
+            }
+
+            this.showPrintDialog = false
+            window.open(url, '_blank', 'noopener')
         },
         async navigateToEditor(query) {
             if (this.isNavigatingToEditor) {
@@ -1407,6 +1457,19 @@ export default {
 .mp-side-actions {
     display: grid;
     gap: 8px;
+}
+
+.mp-print-dialog__options {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.mp-print-dialog__hint {
+    margin-top: -2px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #64748b;
 }
 
 /* ---- Responsive ---- */

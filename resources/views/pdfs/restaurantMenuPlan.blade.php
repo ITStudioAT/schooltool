@@ -10,7 +10,7 @@
 
         @page {
             margin: 6mm 6mm;
-            size: A4 portrait;
+            size: A4 landscape;
         }
 
         body {
@@ -191,7 +191,7 @@
             <div class="meta-row"><strong>Erstellt am:</strong> {{ $plan['generated_at'] }}</div>
         </section>
 
-        @foreach(array_chunk($days, 5) as $weekChunk)
+        @foreach(array_chunk($days, 7) as $weekChunk)
             <table class="week-table">
                 <tr>
                     @foreach($weekChunk as $day)

@@ -574,6 +574,27 @@ test('print downloads menu plan pdf for current school', function () {
         ->assertHeader('content-type', 'application/pdf');
 });
 
+test('print downloads booking pdf for current school when requested', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
+    $tempPath = storage_path('framework/testing/menu-plan-bookings-test.pdf');
+
+    File::ensureDirectoryExists(dirname($tempPath));
+    File::put($tempPath, 'pdf-test');
+
+    $mock = Mockery::mock(RestaurantMenuPlanPdfService::class);
+    $mock->shouldReceive('createBookingsPdf')
+        ->once()
+        ->andReturn($tempPath);
+
+    $this->app->instance(RestaurantMenuPlanPdfService::class, $mock);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->get("/api/admin/restaurant/menu-plans/{$plan->id}/print?type=bookings")
+        ->assertSuccessful()
+        ->assertDownload('menu-plan-bookings-test.pdf')
+        ->assertHeader('content-type', 'application/pdf');
+});
+
 test('cannot access plan from another school', function () {
     $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->otherSchool->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
 

@@ -1,15 +1,39 @@
-<template>
+the<template>
     <v-col cols="12">
         <v-row dense>
             <v-col cols="12" md="6" xl="3">
                 <ItsGridBox variant="overview" color="primary" title="Speisen" icon="mdi-silverware-variant">
                     <div class="restaurant-overview-stat">{{ stats.foods_count || 0 }}</div>
+                    <div class="restaurant-overview-action">
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-arrow-right"
+                            :loading="navigating === 'foods'"
+                            :disabled="navigating !== null"
+                            @click="openFoods">
+                            Zu den Speisen
+                        </v-btn>
+                    </div>
                 </ItsGridBox>
             </v-col>
 
             <v-col cols="12" md="6" xl="3">
                 <ItsGridBox variant="overview" color="primary" title="Men&uuml;s" icon="mdi-food-takeout-box-outline">
                     <div class="restaurant-overview-stat">{{ stats.menus_count || 0 }}</div>
+                    <div class="restaurant-overview-action">
+                        <v-btn
+                            size="small"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-arrow-right"
+                            :loading="navigating === 'menus'"
+                            :disabled="navigating !== null"
+                            @click="openMenus">
+                            Zu den Menüs
+                        </v-btn>
+                    </div>
                 </ItsGridBox>
             </v-col>
 
@@ -22,6 +46,8 @@
                             color="primary"
                             variant="tonal"
                             prepend-icon="mdi-arrow-right"
+                            :loading="navigating === 'users'"
+                            :disabled="navigating !== null"
                             @click="openUsers">
                             Zu Benutzern
                         </v-btn>
@@ -42,6 +68,8 @@
                             :color="pendingConfirmationCount > 0 ? 'error' : 'primary'"
                             variant="tonal"
                             prepend-icon="mdi-filter-check-outline"
+                            :loading="navigating === 'pending'"
+                            :disabled="navigating !== null"
                             @click="openPendingConfirmationUsers">
                             Nur zu bestätigen
                         </v-btn>
@@ -62,6 +90,8 @@
                             color="primary"
                             variant="tonal"
                             prepend-icon="mdi-arrow-right"
+                            :loading="navigating === 'menuPlans'"
+                            :disabled="navigating !== null"
                             @click="openMenuPlans">
                             Zu Menüplänen
                         </v-btn>
@@ -80,6 +110,12 @@ import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 export default {
     components: { ItsGridBox },
 
+    data() {
+        return {
+            navigating: null,
+        }
+    },
+
     computed: {
         ...mapState(useRestaurantStore, ['stats']),
         pendingConfirmationCount() {
@@ -91,11 +127,21 @@ export default {
     },
 
     methods: {
+        navigate(key, to) {
+            this.navigating = key
+            this.$router.push(to)
+        },
+        openFoods() {
+            this.navigate('foods', '/admin/restaurant/foods')
+        },
+        openMenus() {
+            this.navigate('menus', '/admin/restaurant/menus')
+        },
         openUsers() {
-            this.$router.push('/admin/restaurant/users')
+            this.navigate('users', '/admin/restaurant/users')
         },
         openPendingConfirmationUsers() {
-            this.$router.push({
+            this.navigate('pending', {
                 path: '/admin/restaurant/users',
                 query: {
                     only_pending_confirmation: '1',
@@ -103,7 +149,7 @@ export default {
             })
         },
         openMenuPlans() {
-            this.$router.push('/admin/restaurant/menu-plans')
+            this.navigate('menuPlans', '/admin/restaurant/menu-plans')
         },
     },
 }
