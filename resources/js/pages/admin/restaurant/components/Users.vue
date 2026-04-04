@@ -10,8 +10,8 @@
 
                     <v-btn
                         size="small"
-                        :color="only_pending_confirmation ? 'error' : 'secondary'"
-                        :variant="only_pending_confirmation ? 'flat' : 'tonal'"
+                        :color="only_pending_confirmation ? 'error' : 'warning'"
+                        :variant="only_pending_confirmation ? 'flat' : 'flat'"
                         prepend-icon="mdi-filter-check-outline"
                         @click="togglePendingConfirmationFilter">
                         {{ only_pending_confirmation ? 'Alle Benutzer' : 'Nur zu bestätigen' }}
@@ -143,9 +143,12 @@
                                         {{ user.is_confirmed ? 'Bestätigt' : 'Offen' }}
                                     </v-chip>
 
-                                    <span class="text-caption text-medium-emphasis">
-                                        {{ user.is_restaurant_confirmed ? 'Restaurant bestaetigt' : 'Restaurant offen' }}
-                                    </span>
+                                    <v-chip
+                                        size="x-small"
+                                        :color="user.is_restaurant_confirmed ? 'success' : 'warning'"
+                                        variant="tonal">
+                                        {{ user.is_restaurant_confirmed ? 'Restaurant bestätigt' : 'Restaurant offen' }}
+                                    </v-chip>
                                 </div>
 
                                 <v-btn

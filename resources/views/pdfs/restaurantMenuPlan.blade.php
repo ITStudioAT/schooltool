@@ -18,8 +18,8 @@
             font-family: DejaVu Sans, sans-serif;
             color: #1f2937;
             background: #ffffff;
-            font-size: 8.2px;
-            line-height: 1.18;
+            font-size: 11px;
+            line-height: 1.25;
         }
 
         .page {
@@ -36,7 +36,7 @@
 
         .eyebrow {
             margin-bottom: 3px;
-            font-size: 7px;
+            font-size: 9px;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -45,14 +45,14 @@
 
         .title {
             margin: 0 0 3px;
-            font-size: 13px;
+            font-size: 16px;
             font-weight: 700;
             color: #111827;
         }
 
         .meta-row {
             margin-top: 2px;
-            font-size: 10px;
+            font-size: 12px;
             color: #4b5563;
         }
 
@@ -84,14 +84,14 @@
 
         .week-day__title {
             margin: 0;
-            font-size: 8.8px;
+            font-size: 11.5px;
             font-weight: 700;
             color: #111827;
         }
 
         .week-day__date {
             margin-top: 1px;
-            font-size: 7px;
+            font-size: 9.5px;
             color: #6b7280;
         }
 
@@ -100,7 +100,7 @@
         }
 
         .week-day__note {
-            font-size: 7.4px;
+            font-size: 10px;
             font-weight: 600;
             color: #475569;
         }
@@ -120,21 +120,21 @@
         }
 
         .entry-title {
-            font-size: 8.2px;
+            font-size: 11px;
             font-weight: 700;
             color: #111827;
         }
 
         .entry-price {
             margin-top: 1px;
-            font-size: 7.4px;
+            font-size: 10px;
             font-weight: 700;
             color: #92400e;
         }
 
         .entry-subline {
             margin-top: 1px;
-            font-size: 7px;
+            font-size: 9.5px;
             color: #4b5563;
         }
 
@@ -159,7 +159,7 @@
 
         .food-course {
             margin-bottom: 1px;
-            font-size: 6.5px;
+            font-size: 8.5px;
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
@@ -167,14 +167,14 @@
         }
 
         .food-title {
-            font-size: 7.5px;
+            font-size: 10px;
             font-weight: 700;
             color: #111827;
         }
 
         .food-meta {
             margin-top: 1px;
-            font-size: 6.7px;
+            font-size: 9px;
             color: #4b5563;
         }
     </style>

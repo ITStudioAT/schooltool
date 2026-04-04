@@ -18,7 +18,7 @@
             font-family: DejaVu Sans, sans-serif;
             color: #1f2937;
             background: #ffffff;
-            font-size: 10px;
+            font-size: 13px;
             line-height: 1.45;
         }
 
@@ -41,7 +41,7 @@
 
         .eyebrow {
             margin-bottom: 4px;
-            font-size: 8px;
+            font-size: 10px;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -50,7 +50,7 @@
 
         .title {
             margin: 0;
-            font-size: 18px;
+            font-size: 22px;
             font-weight: 700;
             color: #111827;
         }
@@ -62,7 +62,7 @@
 
         .day-label {
             margin-top: 10px;
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 800;
             line-height: 1.1;
             color: #111827;
@@ -79,7 +79,7 @@
             border-radius: 999px;
             background: #fed7aa;
             color: #9a3412;
-            font-size: 9px;
+            font-size: 12px;
             font-weight: 700;
         }
 
@@ -106,7 +106,7 @@
         .booking-table th {
             background: #f8fafc;
             color: #0f172a;
-            font-size: 9px;
+            font-size: 12px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;

@@ -215,6 +215,104 @@ it('builds a booking print pdf with separate pages per day and eating time', fun
         ->and($path)->toEndWith('.pdf');
 });
 
+it('builds an order summary pdf with all days and menu booking counts', function () {
+    $school = School::factory()->create(['long_name' => 'Testschule']);
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $school->id,
+        'title' => "Fr\u{fc}hlingswoche",
+        'start_date' => '2026-03-23',
+        'end_date' => '2026-03-25',
+    ]);
+
+    $menuA = RestaurantMenu::factory()->create([
+        'school_id' => $school->id,
+        'title' => 'Pasta',
+    ]);
+    $menuB = RestaurantMenu::factory()->create([
+        'school_id' => $school->id,
+        'title' => 'Suppe',
+    ]);
+
+    $entryA = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-03-23',
+        'restaurant_menu_id' => $menuA->id,
+        'menu_title' => 'Pasta',
+    ]);
+    $entryB = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-03-24',
+        'restaurant_menu_id' => $menuB->id,
+        'menu_title' => 'Suppe',
+    ]);
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'first_name' => 'Erika',
+        'last_name' => 'Muster',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'restaurant_menu_plan_entry_id' => $entryA->id,
+        'price' => 8.50,
+        'quantity' => 3,
+        'booked_at' => now(),
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'restaurant_menu_plan_entry_id' => $entryB->id,
+        'price' => 7.20,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $wrapper = Mockery::mock(PDF::class);
+    $wrapper->shouldReceive('setPaper')
+        ->once()
+        ->with('a4', 'landscape')
+        ->andReturnSelf();
+    $wrapper->shouldReceive('save')
+        ->once()
+        ->withArgs(function (string $path): bool {
+            expect($path)->toContain('app/private/pdf')
+                ->and($path)->toContain('fruhlingswoche_menusummen_')
+                ->and($path)->toEndWith('.pdf');
+
+            return true;
+        });
+
+    DomPdf::shouldReceive('loadView')
+        ->once()
+        ->withArgs(function (string $view, array $data): bool {
+            expect($view)->toBe('pdfs.restaurantMenuPlanOrderSummary');
+            expect($data['plan']['title'])->toBe("Fr\u{fc}hlingswoche");
+            expect($data['plan']['school_name'])->toBe('Testschule');
+            expect($data['totalOrders'])->toBe(4);
+            expect($data['rows'])->toHaveCount(3);
+            expect($data['rows'][0]['date_label'])->toBe('23.03.2026');
+            expect($data['rows'][0]['menu_title'])->toBe('Pasta');
+            expect($data['rows'][0]['orders_count'])->toBe(3);
+            expect($data['rows'][1]['menu_title'])->toBe('Suppe');
+            expect($data['rows'][1]['orders_count'])->toBe(1);
+            expect($data['rows'][2]['date_label'])->toBe('25.03.2026');
+            expect($data['rows'][2]['menu_title'])->toBe('Kein Menü eingetragen');
+            expect($data['rows'][2]['orders_count'])->toBe(0);
+            expect($data['rows'][2]['is_placeholder'])->toBeTrue();
+
+            return true;
+        })
+        ->andReturn($wrapper);
+
+    $path = app(RestaurantMenuPlanPdfService::class)->createOrderSummaryPdf($plan->fresh());
+
+    expect($path)->toContain('fruhlingswoche_menusummen_')
+        ->and($path)->toEndWith('.pdf');
+});
+
 it('renders the compact weekly layout for the menu plan pdf', function () {
     $html = view('pdfs.restaurantMenuPlan', [
         'plan' => [
@@ -284,9 +382,54 @@ it('renders the bookings print layout with separate print pages', function () {
 
     expect($html)->toContain('page-break-after: always;')
         ->and($html)->toContain('Restaurant Bestellungen')
-        ->and($html)->toContain('font-size: 28px;')
+        ->and($html)->toContain('font-size: 32px;')
         ->and($html)->toContain('Tag:</span> Montag, 23.03.2026')
         ->and($html)->toContain('Anna Beispiel')
         ->and($html)->toContain('Montagsmen')
         ->and($html)->not->toContain('Keine Bestellungen');
+});
+
+it('renders the order summary print layout as a compact single table', function () {
+    $html = view('pdfs.restaurantMenuPlanOrderSummary', [
+        'plan' => [
+            'title' => 'Menüsummen',
+            'range_label' => '23.03.2026 - 25.03.2026',
+            'school_name' => 'Testschule',
+            'generated_at' => '25.03.2026 09:15',
+        ],
+        'totalOrders' => 4,
+        'rows' => [
+            [
+                'weekday_label' => 'Montag',
+                'date_label' => '23.03.2026',
+                'menu_title' => 'Pasta',
+                'orders_count' => 3,
+                'is_placeholder' => false,
+            ],
+            [
+                'weekday_label' => 'Dienstag',
+                'date_label' => '24.03.2026',
+                'menu_title' => 'Suppe',
+                'orders_count' => 1,
+                'is_placeholder' => false,
+            ],
+            [
+                'weekday_label' => 'Mittwoch',
+                'date_label' => '25.03.2026',
+                'menu_title' => 'Kein Menü eingetragen',
+                'orders_count' => 0,
+                'is_placeholder' => true,
+            ],
+        ],
+    ])->render();
+
+    expect($html)->toContain('size: A4 landscape;')
+        ->and($html)->toContain('Restaurant Menüsummen')
+        ->and($html)->toContain('Gesamtbestellungen: 4')
+        ->and($html)->toContain('Summe aller Bestellungen')
+        ->and($html)->toContain('text-align: right;')
+        ->and($html)->toContain('class="summary-table"')
+        ->and($html)->toContain('Pasta')
+        ->and($html)->toContain('Kein Men')
+        ->and($html)->toContain('summary-table__menu is-placeholder');
 });

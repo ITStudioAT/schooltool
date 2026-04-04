@@ -56,6 +56,30 @@ class RestaurantMenuPlanPdfService
         return $path;
     }
 
+    public function createOrderSummaryPdf(RestaurantMenuPlan $plan): string
+    {
+        $plan->load([
+            'school',
+            'entries' => fn ($query) => $query
+                ->orderBy('plan_date')
+                ->orderBy('id')
+                ->with('menu')
+                ->withSum('bookings as booked_menu_count', 'quantity'),
+        ]);
+
+        $path = $this->pdfDirectory().DIRECTORY_SEPARATOR.$this->orderSummaryFilename($plan);
+
+        DomPdf::loadView('pdfs.restaurantMenuPlanOrderSummary', [
+            'plan' => $this->planMeta($plan, 'Menüsummen'),
+            'rows' => $this->buildOrderSummaryRows($plan),
+            'totalOrders' => $this->totalOrdersForPlan($plan),
+        ])
+            ->setPaper('a4', 'landscape')
+            ->save($path);
+
+        return $path;
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -231,6 +255,63 @@ class RestaurantMenuPlanPdfService
     }
 
     /**
+     * @return array<int, array{
+     *     weekday_label:string,
+     *     date_label:string,
+     *     menu_title:string,
+     *     orders_count:int,
+     *     is_placeholder:bool
+     * }>
+     */
+    private function buildOrderSummaryRows(RestaurantMenuPlan $plan): array
+    {
+        if (! $plan->start_date || ! $plan->end_date) {
+            return [];
+        }
+
+        $entriesByDate = $plan->entries
+            ->sortBy(fn (RestaurantMenuPlanEntry $entry): string => ($entry->plan_date?->format('Y-m-d') ?? '').'-'.str_pad((string) $entry->id, 8, '0', STR_PAD_LEFT))
+            ->groupBy(fn (RestaurantMenuPlanEntry $entry): string => (string) $entry->plan_date?->format('Y-m-d'));
+
+        $rows = [];
+        $cursor = $plan->start_date->copy()->startOfDay();
+        $endDate = $plan->end_date->copy()->startOfDay();
+
+        while ($cursor->lte($endDate)) {
+            $isoDate = $cursor->format('Y-m-d');
+            $dayEntries = $entriesByDate->get($isoDate, collect());
+
+            if ($dayEntries->isEmpty()) {
+                $rows[] = [
+                    'weekday_label' => $this->weekdayLabel($cursor),
+                    'date_label' => $cursor->format('d.m.Y'),
+                    'menu_title' => 'Kein Menü eingetragen',
+                    'orders_count' => 0,
+                    'is_placeholder' => true,
+                ];
+
+                $cursor->addDay();
+
+                continue;
+            }
+
+            foreach ($dayEntries as $entry) {
+                $rows[] = [
+                    'weekday_label' => $this->weekdayLabel($cursor),
+                    'date_label' => $cursor->format('d.m.Y'),
+                    'menu_title' => (string) ($entry->menu_title ?: $entry->menu?->title ?: "Men\u{fc}"),
+                    'orders_count' => (int) ($entry->getAttribute('booked_menu_count') ?? 0),
+                    'is_placeholder' => false,
+                ];
+            }
+
+            $cursor->addDay();
+        }
+
+        return $rows;
+    }
+
+    /**
      * @return array<int, array{customer_name:string, menu_title:string}>
      */
     private function buildBookingRows(RestaurantMenuPlanBooking $booking, RestaurantMenuPlanEntry $entry): array
@@ -273,6 +354,15 @@ class RestaurantMenuPlanPdfService
         return $title.'_bestellungen_'.now()->format('Ymd_His').'.pdf';
     }
 
+    private function orderSummaryFilename(RestaurantMenuPlan $plan): string
+    {
+        $title = filled($plan->title)
+            ? Str::slug((string) $plan->title, '_')
+            : 'menueplan_'.$plan->start_date?->format('Ymd').'_'.$plan->end_date?->format('Ymd');
+
+        return $title.'_menusummen_'.now()->format('Ymd_His').'.pdf';
+    }
+
     private function pdfDirectory(): string
     {
         $directory = storage_path('app/private/pdf');
@@ -289,14 +379,19 @@ class RestaurantMenuPlanPdfService
      *     generated_at:string
      * }
      */
-    private function planMeta(RestaurantMenuPlan $plan): array
+    private function planMeta(RestaurantMenuPlan $plan, string $defaultTitle = "Men\u{fc}plan"): array
     {
         return [
-            'title' => filled($plan->title) ? (string) $plan->title : "Men\u{fc}plan",
+            'title' => filled($plan->title) ? (string) $plan->title : $defaultTitle,
             'range_label' => $this->formatDate($plan->start_date).' - '.$this->formatDate($plan->end_date),
             'school_name' => (string) ($plan->school?->long_name ?: $plan->school?->short_name ?: ''),
             'generated_at' => now()->format('d.m.Y H:i'),
         ];
+    }
+
+    private function totalOrdersForPlan(RestaurantMenuPlan $plan): int
+    {
+        return $plan->entries->sum(fn (RestaurantMenuPlanEntry $entry): int => (int) ($entry->getAttribute('booked_menu_count') ?? 0));
     }
 
     private function bookingTimeSortKey(string $timeKey): string

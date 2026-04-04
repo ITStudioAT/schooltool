@@ -129,9 +129,11 @@ class RestaurantMenuPlanController extends Controller
             abort(404, 'Menüplan nicht gefunden.');
         }
 
-        $path = $request->query('type') === 'bookings'
-            ? $pdfService->createBookingsPdf($plan)
-            : $pdfService->createPdf($plan);
+        $path = match ((string) $request->query('type', 'plan')) {
+            'bookings' => $pdfService->createBookingsPdf($plan),
+            'summary' => $pdfService->createOrderSummaryPdf($plan),
+            default => $pdfService->createPdf($plan),
+        };
 
         return response()
             ->download($path, basename($path), [

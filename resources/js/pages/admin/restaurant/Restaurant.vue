@@ -47,6 +47,7 @@
                 <Foods v-if="main_action === 'foods'" />
                 <Menus v-if="main_action === 'menus'" />
                 <MenuPlans v-if="main_action === 'menu-plans'" />
+                <Reports v-if="main_action === 'reports'" />
                 <Users v-if="main_action === 'users'" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
@@ -65,11 +66,12 @@ import Overview from './components/Overview.vue'
 import Foods from './components/Foods.vue'
 import Menus from './components/Menus.vue'
 import MenuPlans from './components/MenuPlans.vue'
+import Reports from './components/Reports.vue'
 import Users from './components/Users.vue'
 import Settings from './components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Users, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, Users, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -143,6 +145,11 @@ export default {
                     icon: 'mdi-calendar-text-outline',
                     note: '',
                 },
+                reports: {
+                    label: 'Auswertungen',
+                    icon: 'mdi-chart-box-outline',
+                    note: 'Statistiken',
+                },
                 users: {
                     label: 'Benutzer',
                     icon: 'mdi-account-multiple-outline',
@@ -182,6 +189,12 @@ export default {
                     label: 'Men\u00fcpl\u00e4ne',
                     meta: 'Pl\u00e4ne vorbereiten',
                     icon: 'mdi-calendar-text-outline',
+                },
+                {
+                    key: 'reports',
+                    label: 'Auswertungen',
+                    meta: 'Statistiken',
+                    icon: 'mdi-chart-box-outline',
                 },
                 {
                     key: 'users',
