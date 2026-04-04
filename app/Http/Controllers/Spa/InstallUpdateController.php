@@ -3,15 +3,15 @@
 namespace App\Http\Controllers\Spa;
 
 use App\Models\User;
+use App\Services\InstallUpdateService;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use App\Services\InstallUpdateService;
 
 class InstallUpdateController extends Controller
 {
     public function index(Request $request)
     {
-        $installUpdateService = new InstallUpdateService();
+        $installUpdateService = new InstallUpdateService;
 
         /* 1. User der Users-Tabelle laden */
         if (! $user = User::query()->first()) {

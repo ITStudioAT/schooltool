@@ -53,17 +53,19 @@ class UserController extends Controller
             unset($data['status']);
 
             // E-Mail-Adresse ist nicht verfügbar ==> abort
-            if (!$service->isEmailInSchoolAvailable($user->school_id, $data['email'])) abort(409, "Die E-Mail-Adresse ist nicht verfügbar.");
+            if (! $service->isEmailInSchoolAvailable($user->school_id, $data['email'])) {
+                abort(409, 'Die E-Mail-Adresse ist nicht verfügbar.');
+            }
 
             if ($service->checkEmailVerification($auth_user, $data['token_2fa'])) {
-                //E-Mail_verifikation hat funktioniert
+                // E-Mail_verifikation hat funktioniert
                 // User updaten und E-Mail-Verifikationsdatum setzen
                 $user->update($data);
                 $user->email_verified_at = now();
                 $user->save();
                 $data['status'] = 'OK';
             } else {
-                //E-Mail_verifikation fehlgeschlagen
+                // E-Mail_verifikation fehlgeschlagen
 
                 // Code für E-Mail-Verifikation schicken
                 $service->sendEmailVerification($user, $data['email']);
@@ -75,7 +77,9 @@ class UserController extends Controller
             // Benutzer hat eine neue E-Mail eingegeben
             if ($user->email != $data['email']) {
                 // E-Mail-Adresse ist nicht verfügbar ==> abort
-                if (!$service->isEmailInSchoolAvailable($user->school_id, $data['email'])) abort(409, "Die E-Mail-Adresse ist nicht verfügbar.");
+                if (! $service->isEmailInSchoolAvailable($user->school_id, $data['email'])) {
+                    abort(409, 'Die E-Mail-Adresse ist nicht verfügbar.');
+                }
 
                 // Code für E-Mail-Verifikation schicken
                 $service->sendEmailVerification($user, $data['email']);
@@ -106,7 +110,9 @@ class UserController extends Controller
 
         $validated = $request->validated();
         $data = $validated['data'];
-        if ($auth_user->id != $data['id'])  abort(403, 'Sie haben keine Berechtigung');
+        if ($auth_user->id != $data['id']) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
 
         $data = $service->setPasswordOrSendCode($auth_user, $data);
 

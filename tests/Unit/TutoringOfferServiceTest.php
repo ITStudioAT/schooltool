@@ -7,13 +7,15 @@ use App\Models\TutoringOffer;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use App\Services\TutoringOfferService;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new TutoringOfferService();
+    $this->service = new TutoringOfferService;
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
@@ -200,7 +202,7 @@ describe('create', function () {
     });
 
     it('sets accepted_at to now when must_be_accepted is false', function () {
-        $beforeCreation = \Carbon\Carbon::now();
+        $beforeCreation = Carbon::now();
 
         $data = [
             'subject_id' => $this->subject->id,
@@ -211,11 +213,11 @@ describe('create', function () {
 
         $offer = $this->service->create($this->school->id, $this->user->id, $data);
 
-        $afterCreation = \Carbon\Carbon::now();
+        $afterCreation = Carbon::now();
 
         expect($offer->accepted_at)->not->toBeNull()
-            ->and(\Carbon\Carbon::parse($offer->accepted_at)->isAfter($beforeCreation->subSecond()))->toBeTrue()
-            ->and(\Carbon\Carbon::parse($offer->accepted_at)->isBefore($afterCreation->addSecond()))->toBeTrue();
+            ->and(Carbon::parse($offer->accepted_at)->isAfter($beforeCreation->subSecond()))->toBeTrue()
+            ->and(Carbon::parse($offer->accepted_at)->isBefore($afterCreation->addSecond()))->toBeTrue();
     });
 
     it('does not set accepted_at when must_be_accepted is true', function () {
@@ -261,7 +263,7 @@ describe('create', function () {
         expect($offer->title)->toBe('Comprehensive tutoring')
             ->and($offer->description)->toBe('Comprehensive tutoring')
             ->and($offer->price_per_hour)->toBe('30.50')
-            ->and($offer->classes)->toBeInstanceOf(\ArrayObject::class)
+            ->and($offer->classes)->toBeInstanceOf(ArrayObject::class)
             ->and($offer->time_table)->toBeArray();
     });
 
@@ -274,7 +276,7 @@ describe('create', function () {
         ];
 
         $this->service->create($this->school->id, $this->user->id, $data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 
     it('creates multiple offers for same user and school', function () {
         $data1 = [

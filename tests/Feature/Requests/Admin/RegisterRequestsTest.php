@@ -7,13 +7,13 @@
  */
 
 use App\Http\Requests\Admin\RegisterIndexRequest;
-use App\Http\Requests\Admin\RegisterStoreRequest;
-use App\Http\Requests\Admin\RegisterUpdateRequest;
-use App\Http\Requests\Admin\RegisterToggleRequest;
 use App\Http\Requests\Admin\RegisterPrintRequest;
-use App\Http\Requests\Admin\SetActiveRegisterRequest;
-use App\Http\Requests\Admin\RegisterUserIndexRequest;
+use App\Http\Requests\Admin\RegisterStoreRequest;
+use App\Http\Requests\Admin\RegisterToggleRequest;
+use App\Http\Requests\Admin\RegisterUpdateRequest;
 use App\Http\Requests\Admin\RegisterUserDeleteRegisterUsersRequest;
+use App\Http\Requests\Admin\RegisterUserIndexRequest;
+use App\Http\Requests\Admin\SetActiveRegisterRequest;
 use App\Models\Register;
 use App\Models\School;
 use App\Models\Schoolyear;
@@ -37,9 +37,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateRegisterRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateRegisterRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -49,13 +50,13 @@ function validateRegisterRequest(string $requestClass, array $data): \Illuminate
 
 describe('RegisterIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterIndexRequest();
+        $request = new RegisterIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterIndexRequest();
+        $request = new RegisterIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -66,13 +67,13 @@ describe('RegisterIndexRequest', function () {
 
 describe('RegisterStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterStoreRequest();
+        $request = new RegisterStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterStoreRequest();
+        $request = new RegisterStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -162,13 +163,13 @@ describe('RegisterStoreRequest', function () {
 
 describe('RegisterUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterUpdateRequest();
+        $request = new RegisterUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterUpdateRequest();
+        $request = new RegisterUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -179,13 +180,13 @@ describe('RegisterUpdateRequest', function () {
 
 describe('RegisterToggleRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterToggleRequest();
+        $request = new RegisterToggleRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterToggleRequest();
+        $request = new RegisterToggleRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -219,13 +220,13 @@ describe('RegisterToggleRequest', function () {
 
 describe('RegisterPrintRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterPrintRequest();
+        $request = new RegisterPrintRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterPrintRequest();
+        $request = new RegisterPrintRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -251,13 +252,13 @@ describe('RegisterPrintRequest', function () {
 
 describe('SetActiveRegisterRequest', function () {
     it('requires authentication', function () {
-        $request = new SetActiveRegisterRequest();
+        $request = new SetActiveRegisterRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SetActiveRegisterRequest();
+        $request = new SetActiveRegisterRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -291,13 +292,13 @@ describe('SetActiveRegisterRequest', function () {
 
 describe('RegisterUserIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterUserIndexRequest();
+        $request = new RegisterUserIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterUserIndexRequest();
+        $request = new RegisterUserIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -323,13 +324,13 @@ describe('RegisterUserIndexRequest', function () {
 
 describe('RegisterUserDeleteRegisterUsersRequest', function () {
     it('requires authentication', function () {
-        $request = new RegisterUserDeleteRegisterUsersRequest();
+        $request = new RegisterUserDeleteRegisterUsersRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new RegisterUserDeleteRegisterUsersRequest();
+        $request = new RegisterUserDeleteRegisterUsersRequest;
         expect($request->authorize())->toBeTrue();
     });
 

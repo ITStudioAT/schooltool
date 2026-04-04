@@ -6,7 +6,8 @@ use Illuminate\Pagination\LengthAwarePaginator;
 test('pagination trait maps pagination metadata and items', function () {
     $paginator = new LengthAwarePaginator([1, 2, 3], 3, 2, 1);
 
-    $subject = new class {
+    $subject = new class
+    {
         use PaginationTrait;
     };
 
@@ -24,7 +25,8 @@ test('pagination trait maps pagination metadata and items', function () {
 test('pagination trait returns null next_page on last page', function () {
     $paginator = new LengthAwarePaginator([1], 1, 1, 1);
 
-    $subject = new class {
+    $subject = new class
+    {
         use PaginationTrait;
     };
 

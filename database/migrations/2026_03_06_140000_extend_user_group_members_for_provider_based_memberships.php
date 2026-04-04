@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\UserGroupMember;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -8,7 +9,9 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     private const LINKED_USER_INDEX = 'ugm_linked_user_idx';
+
     private const SCHOOL_PROVIDER_INDEX = 'ugm_school_provider_idx';
+
     private const MEMBER_UNIQUE_INDEX = 'ugm_group_provider_ref_uniq';
 
     public function up(): void
@@ -87,14 +90,14 @@ return new class extends Migration
             ->leftJoin('users as linked_users', 'linked_users.id', '=', 'user_group_members.linked_user_id')
             ->update([
                 'user_group_members.school_id' => DB::raw('user_groups.school_id'),
-                'user_group_members.member_provider' => DB::raw("'" . addslashes(\App\Models\UserGroupMember::PROVIDER_USER) . "'"),
+                'user_group_members.member_provider' => DB::raw("'".addslashes(UserGroupMember::PROVIDER_USER)."'"),
                 'user_group_members.member_ref' => DB::raw("CONCAT('user:', COALESCE(user_group_members.linked_user_id, 0))"),
                 'user_group_members.display_name' => DB::raw("TRIM(CONCAT(COALESCE(linked_users.last_name, ''), ' ', COALESCE(linked_users.first_name, '')))"),
                 'user_group_members.display_email' => DB::raw('linked_users.email'),
                 'user_group_members.display_schoolclass' => DB::raw('linked_users.schoolclass'),
                 'user_group_members.member_type_label' => DB::raw("'Benutzer'"),
-                'user_group_members.source_status' => DB::raw("'" . addslashes(\App\Models\UserGroupMember::SOURCE_STATUS_ACTIVE) . "'"),
-                'user_group_members.linked_user_status' => DB::raw("CASE WHEN user_group_members.linked_user_id IS NULL THEN '" . addslashes(\App\Models\UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE) . "' ELSE '" . addslashes(\App\Models\UserGroupMember::LINKED_USER_STATUS_LINKED) . "' END"),
+                'user_group_members.source_status' => DB::raw("'".addslashes(UserGroupMember::SOURCE_STATUS_ACTIVE)."'"),
+                'user_group_members.linked_user_status' => DB::raw("CASE WHEN user_group_members.linked_user_id IS NULL THEN '".addslashes(UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE)."' ELSE '".addslashes(UserGroupMember::LINKED_USER_STATUS_LINKED)."' END"),
             ]);
 
         DB::table('user_group_members')

@@ -426,4 +426,3 @@ test('deleteTeachers calls service with correct parameters', function () {
 
     $response->assertStatus(204);
 });
-

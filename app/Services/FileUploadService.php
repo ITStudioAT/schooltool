@@ -4,8 +4,6 @@ namespace App\Services;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-
-use Intervention\Image\Image;
 use Intervention\Image\ImageManager;
 
 class FileUploadService
@@ -16,7 +14,7 @@ class FileUploadService
         // 1) Create a unique upload id and temp dir
         $id = Str::uuid()->toString();
         $dir = storage_path("app/private/temp/{$id}");
-        if (!is_dir($dir)) {
+        if (! is_dir($dir)) {
             mkdir($dir, 0775, true);
         }
 
@@ -37,7 +35,7 @@ class FileUploadService
         abort_unless($id, 422, 'Missing upload id');
 
         $dir = storage_path("app/private/temp/{$id}");
-        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+        if (! is_dir($dir) && ! mkdir($dir, 0775, true) && ! is_dir($dir)) {
             abort(500, "Cannot create temp dir: {$dir}");
         }
 
@@ -61,7 +59,7 @@ class FileUploadService
 
         // Detect completion
         $total = (int) ($request->header('Upload-Length') ?? 0);
-        $size  = is_file($part) ? (filesize($part) ?: 0) : 0;
+        $size = is_file($part) ? (filesize($part) ?: 0) : 0;
 
         if ($total > 0 && $size >= $total) {
             // Extension comes from original upload name header
@@ -71,35 +69,33 @@ class FileUploadService
             }
             $originalName = is_string($originalName) && trim($originalName) !== '' ? trim($originalName) : 'upload.bin';
             $request->attributes->set('upload_original_name', $originalName);
-            $extension    = pathinfo($originalName, PATHINFO_EXTENSION);
-
-
+            $extension = pathinfo($originalName, PATHINFO_EXTENSION);
 
             // Filename base is provided by controller (e.g. logo_{schoolId})
             $base = $new_name ?: pathinfo($originalName, PATHINFO_FILENAME) ?: 'upload';
-            $name = $base . ($extension ? ".{$extension}" : '');
+            $name = $base.($extension ? ".{$extension}" : '');
 
             // Destination directory: use the provided $upload_path under storage/
             $destDir = storage_path(trim($upload_path, '/'));
-            if (!is_dir($destDir) && !mkdir($destDir, 0775, true) && !is_dir($destDir)) {
+            if (! is_dir($destDir) && ! mkdir($destDir, 0775, true) && ! is_dir($destDir)) {
                 abort(500, "Cannot create dest dir: {$destDir}");
             }
 
             $newPath = "{$destDir}/{$name}";
 
             // Move finished file
-            if (!@rename($part, $newPath)) {
+            if (! @rename($part, $newPath)) {
                 // fallback in case rename fails (e.g. cross-device)
-                if (!@copy($part, $newPath) || !@unlink($part)) {
+                if (! @copy($part, $newPath) || ! @unlink($part)) {
                     $err = error_get_last();
-                    abort(500, 'Failed to move uploaded file: ' . ($err['message'] ?? 'unknown error'));
+                    abort(500, 'Failed to move uploaded file: '.($err['message'] ?? 'unknown error'));
                 }
             }
 
             // Optional resize
             if ($fit && is_array($fit)) {
                 $manager = ImageManager::gd();
-                $image   = $manager->read($newPath);
+                $image = $manager->read($newPath);
 
                 if (isset($fit['width'], $fit['height'])) {
                     $image->scale($fit['width'], $fit['height']);

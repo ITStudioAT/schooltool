@@ -12,6 +12,7 @@ use App\Jobs\ImportTeachersListJob;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Models\User;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Role;
@@ -668,7 +669,7 @@ describe('job properties', function () {
     it('is queueable', function () {
         $job = new ImportTeachersListJob($this->user, 'test-path.xlsx');
 
-        expect($job)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
+        expect($job)->toBeInstanceOf(ShouldQueue::class);
     });
 
     it('stores user and path properties', function () {

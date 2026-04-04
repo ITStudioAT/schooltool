@@ -15,7 +15,7 @@ class MaterialFileSettingsUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'data.max_upload_size_kb' => ['required', 'integer', 'min:1', 'max:' . (1024 * 1024)],
+            'data.max_upload_size_kb' => ['required', 'integer', 'min:1', 'max:'.(1024 * 1024)],
         ];
     }
 }

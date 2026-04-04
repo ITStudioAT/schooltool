@@ -38,10 +38,11 @@ class CheckUserEmailConflicts extends Command
 
         if ($conflicts->isEmpty()) {
             $this->info('✓ No conflicts found! Safe to migrate.');
+
             return Command::SUCCESS;
         }
 
-        $this->error('⚠ Found ' . $conflicts->count() . ' conflict(s):');
+        $this->error('⚠ Found '.$conflicts->count().' conflict(s):');
 
         foreach ($conflicts as $conflict) {
             $this->warn("  Email: {$conflict->email}, School ID: {$conflict->school_id}, Count: {$conflict->count}");

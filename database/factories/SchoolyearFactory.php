@@ -14,7 +14,7 @@ class SchoolyearFactory extends Factory
     {
         return [
             'school_id' => School::factory(),
-            'name' => $this->faker->year() . '/' . ($this->faker->year() + 1),
+            'name' => $this->faker->year().'/'.($this->faker->year() + 1),
             'is_active' => true,
         ];
     }

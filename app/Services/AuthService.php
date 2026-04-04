@@ -6,8 +6,6 @@ use App\Http\Resources\Admin\RoleResource;
 use App\Http\Resources\Homepage\UserResource;
 use Illuminate\Support\Facades\Auth;
 
-
-
 class AuthService
 {
     public function getAuth()
@@ -19,7 +17,7 @@ class AuthService
             $auth = [
                 'is_auth' => true,
                 'user' => new UserResource($user),
-                'roles' => RoleResource::collection($user->roles)
+                'roles' => RoleResource::collection($user->roles),
             ];
         } else {
             $auth = ['is_auth' => false];

@@ -61,30 +61,28 @@ class InstallUpdateService
         $schools = School::query()->get();
 
         foreach ($schools as $school) {
-            $path = $school->id . '/temp';
+            $path = $school->id.'/temp';
             $this->createOrCleanDirectory($path);
-            $path =  $school->id . '/excel';
+            $path = $school->id.'/excel';
             $this->createOrCleanDirectory($path);
-            $path =  $school->id . '/pdf';
+            $path = $school->id.'/pdf';
             $this->createOrCleanDirectory($path);
         }
 
-
-
         $path = 'images'; // relative to storage/app/public
-        if (!Storage::disk('public')->exists($path)) {
+        if (! Storage::disk('public')->exists($path)) {
             Storage::disk('public')->makeDirectory($path);
         }
 
         $path = 'images/logos'; // relative to storage/app/public
-        if (!Storage::disk('public')->exists($path)) {
+        if (! Storage::disk('public')->exists($path)) {
             Storage::disk('public')->makeDirectory($path);
         }
     }
 
     public function pruneOrphanPrivateSchoolFolders(bool $delete = true): array
     {
-        $schoolIds = School::query()->pluck('id')->map(fn($id) => (string) $id)->all();
+        $schoolIds = School::query()->pluck('id')->map(fn ($id) => (string) $id)->all();
         $schoolIdLookup = array_fill_keys($schoolIds, true);
         $orphanPaths = [];
 
@@ -96,7 +94,7 @@ class InstallUpdateService
         }
 
         foreach (['materials/schools', 'materials/temp'] as $basePath) {
-            if (!Storage::disk('local')->directoryExists($basePath)) {
+            if (! Storage::disk('local')->directoryExists($basePath)) {
                 continue;
             }
 
@@ -130,7 +128,7 @@ class InstallUpdateService
                 // Ignore and verify existence below.
             }
 
-            if (!Storage::disk('local')->directoryExists($orphanPath)) {
+            if (! Storage::disk('local')->directoryExists($orphanPath)) {
                 $deletedPaths[] = $orphanPath;
             } else {
                 $failedPaths[] = $orphanPath;
@@ -147,7 +145,7 @@ class InstallUpdateService
 
     private function createOrCleanDirectory($path)
     {
-        if (!Storage::directoryExists($path)) {
+        if (! Storage::directoryExists($path)) {
             Storage::makeDirectory($path);
         } else {
             $files = Storage::allFiles($path);
@@ -162,6 +160,6 @@ class InstallUpdateService
 
     private function isOrphanSchoolScopedDirectory(string $directoryName, array $schoolIdLookup): bool
     {
-        return ctype_digit($directoryName) && !array_key_exists($directoryName, $schoolIdLookup);
+        return ctype_digit($directoryName) && ! array_key_exists($directoryName, $schoolIdLookup);
     }
 }

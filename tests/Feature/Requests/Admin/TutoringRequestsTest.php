@@ -15,8 +15,8 @@ use App\Http\Requests\Admin\Tutoring\UserIndexRequest;
 use App\Http\Requests\Admin\Tutoring\UserStoreRequest;
 use App\Http\Requests\Admin\Tutoring\UserUpdateRequest;
 use App\Models\School;
-use App\Models\Schoolyear;
 use App\Models\SchoolTool;
+use App\Models\Schoolyear;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,9 +34,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateAdminTutoringRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateAdminTutoringRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -46,13 +47,13 @@ function validateAdminTutoringRequest(string $requestClass, array $data): \Illum
 
 describe('SchoolToolSaveTutoringSettingsRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolToolSaveTutoringSettingsRequest();
+        $request = new SchoolToolSaveTutoringSettingsRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolToolSaveTutoringSettingsRequest();
+        $request = new SchoolToolSaveTutoringSettingsRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -89,13 +90,13 @@ describe('SchoolToolSaveTutoringSettingsRequest', function () {
 
 describe('Admin\Tutoring\OfferIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new OfferIndexRequest();
+        $request = new OfferIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new OfferIndexRequest();
+        $request = new OfferIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -106,13 +107,13 @@ describe('Admin\Tutoring\OfferIndexRequest', function () {
 
 describe('Admin\Tutoring\SubjectUpdateSubjectRequest', function () {
     it('requires authentication', function () {
-        $request = new SubjectUpdateSubjectRequest();
+        $request = new SubjectUpdateSubjectRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SubjectUpdateSubjectRequest();
+        $request = new SubjectUpdateSubjectRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -187,13 +188,13 @@ describe('Admin\Tutoring\SubjectUpdateSubjectRequest', function () {
 
 describe('Admin\Tutoring\UserConfirmUsersRequest', function () {
     it('requires authentication', function () {
-        $request = new UserConfirmUsersRequest();
+        $request = new UserConfirmUsersRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserConfirmUsersRequest();
+        $request = new UserConfirmUsersRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -235,13 +236,13 @@ describe('Admin\Tutoring\UserConfirmUsersRequest', function () {
 
 describe('Admin\Tutoring\UserDeleteUsersRequest', function () {
     it('requires authentication', function () {
-        $request = new UserDeleteUsersRequest();
+        $request = new UserDeleteUsersRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserDeleteUsersRequest();
+        $request = new UserDeleteUsersRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -283,13 +284,13 @@ describe('Admin\Tutoring\UserDeleteUsersRequest', function () {
 
 describe('Admin\Tutoring\UserIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new UserIndexRequest();
+        $request = new UserIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserIndexRequest();
+        $request = new UserIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -300,13 +301,13 @@ describe('Admin\Tutoring\UserIndexRequest', function () {
 
 describe('Admin\Tutoring\UserStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new UserStoreRequest();
+        $request = new UserStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserStoreRequest();
+        $request = new UserStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -387,13 +388,13 @@ describe('Admin\Tutoring\UserStoreRequest', function () {
 
 describe('Admin\Tutoring\UserUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new UserUpdateRequest();
+        $request = new UserUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new UserUpdateRequest();
+        $request = new UserUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 });

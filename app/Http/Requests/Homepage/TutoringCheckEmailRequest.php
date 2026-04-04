@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Homepage;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class TutoringCheckEmailRequest extends FormRequest
@@ -17,13 +18,13 @@ class TutoringCheckEmailRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
             'data.school_id' => 'required|integer|exists:schools,id',
-            'data.email' => 'required|email|max:255'
+            'data.email' => 'required|email|max:255',
         ];
     }
 }

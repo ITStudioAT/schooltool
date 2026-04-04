@@ -8,6 +8,7 @@ const componentStubs = {
     FreeDays: { template: '<div class="free-days-stub">Freie Tage Inhalt</div>' },
     ItsRichTextEditor: { props: ['modelValue'], template: '<div class="rich-text-editor-stub">{{ modelValue }}</div>' },
     ItsGridBox: { props: ['title'], template: '<div><div class="grid-title">{{ title }}</div><slot name="header-actions" /><slot /></div>' },
+    Users: { template: '<div class="users-stub">Restaurant Benutzer Inhalt</div>' },
     'v-col': { template: '<div><slot /></div>' },
     'v-row': { template: '<div><slot /></div>' },
     'v-btn': { template: '<button v-bind="$attrs"><slot /></button>' },
@@ -99,6 +100,7 @@ describe('Restaurant settings component', () => {
         expect(wrapper.text()).toContain('Allgemein')
         expect(wrapper.text()).toContain('Kategorien')
         expect(wrapper.text()).toContain('Zutaten-Symbole')
+        expect(wrapper.text()).toContain('Benutzer')
         expect(wrapper.text()).toContain('Online')
         expect((wrapper.vm as any).selectedPanel).toBe('general')
         expect(wrapper.findAll('.grid-title')).toHaveLength(1)
@@ -172,12 +174,13 @@ describe('Restaurant settings component', () => {
         const { wrapper, routerReplace } = mountSettings({
             props: {
                 embedded: true,
-                panel: 'online',
+                panel: 'users',
             },
         })
 
-        expect((wrapper.vm as any).selectedPanel).toBe('online')
+        expect((wrapper.vm as any).selectedPanel).toBe('users')
         expect(wrapper.findAll('button').some((button) => button.text() === 'Allgemein')).toBe(false)
+        expect(wrapper.text()).toContain('Restaurant Benutzer Inhalt')
 
         await wrapper.setProps({ panel: 'categories' })
 

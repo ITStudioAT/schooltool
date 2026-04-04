@@ -2,11 +2,9 @@
 
 namespace App\Models;
 
-use App\Models\Register;
-use App\Models\TeachingHoliday;
-use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -15,8 +13,9 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $from
  * @property string|null $until
  * @property string|null $sem_2_start
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear active()
  * @method static \Database\Factories\SchoolyearFactory factory($count = null, $state = [])
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear newModelQuery()
@@ -30,9 +29,13 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereSem2Start($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUntil($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereUpdatedAt($value)
+ *
  * @mixin IdeHelperSchoolyear
+ *
  * @property int $is_active
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Schoolyear whereIsActive($value)
+ *
  * @mixin \Eloquent
  */
 class Schoolyear extends Model
@@ -49,16 +52,24 @@ class Schoolyear extends Model
         'concerns',
     ];
 
-
     public function hasDependencies(): bool
     {
         // Prüfen, ob es Registers gibt
-        if (Register::where('schoolyear_id', $this->id)->exists())  return true;
+        if (Register::where('schoolyear_id', $this->id)->exists()) {
+            return true;
+        }
 
         // Prüfen, ob es mehr als einen User gibt
-        if (User::where('schoolyear_id', $this->id)->count() > 1)  return true;
-        if (TeachingHoliday::where('schoolyear_id', $this->id)->exists()) return true;
-        if (TeachingSchema::where('schoolyear_id', $this->id)->exists()) return true;
+        if (User::where('schoolyear_id', $this->id)->count() > 1) {
+            return true;
+        }
+        if (TeachingHoliday::where('schoolyear_id', $this->id)->exists()) {
+            return true;
+        }
+        if (TeachingSchema::where('schoolyear_id', $this->id)->exists()) {
+            return true;
+        }
+
         return false;
     }
 

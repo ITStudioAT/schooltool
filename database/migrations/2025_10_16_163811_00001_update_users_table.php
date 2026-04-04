@@ -21,59 +21,59 @@ return new class extends Migration
 
             $existing = array_intersect($columns, $droppables);
 
-            if (!empty($existing)) {
+            if (! empty($existing)) {
                 $table->dropColumn($existing);
             }
 
-            if (!in_array('last_name', $columns, true)) {
+            if (! in_array('last_name', $columns, true)) {
                 $table->string('last_name')->nullable();
             }
-            if (!in_array('first_name', $columns, true)) {
+            if (! in_array('first_name', $columns, true)) {
                 $table->string('first_name')->nullable();
             }
-            if (!in_array('login_at', $columns, true)) {
+            if (! in_array('login_at', $columns, true)) {
                 $table->timestamp('login_at')->nullable();
             }
-            if (!in_array('login_ip', $columns, true)) {
+            if (! in_array('login_ip', $columns, true)) {
                 $table->string('login_ip')->nullable();
             }
-            if (!in_array('is_2fa', $columns, true)) {
+            if (! in_array('is_2fa', $columns, true)) {
                 $table->boolean('is_2fa')->nullable()->default(0);
             }
-            if (!in_array('token_2fa', $columns, true)) {
+            if (! in_array('token_2fa', $columns, true)) {
                 $table->string('token_2fa')->nullable();
             }
-            if (!in_array('token_2fa_expires_at', $columns, true)) {
+            if (! in_array('token_2fa_expires_at', $columns, true)) {
                 $table->timestamp('token_2fa_expires_at')->nullable();
             }
-            if (!in_array('token_2fa_2', $columns, true)) {
+            if (! in_array('token_2fa_2', $columns, true)) {
                 $table->string('token_2fa_2')->nullable();
             }
-            if (!in_array('token_2fa_2_expires_at', $columns, true)) {
+            if (! in_array('token_2fa_2_expires_at', $columns, true)) {
                 $table->timestamp('token_2fa_2_expires_at')->nullable();
             }
-            if (!in_array('email_2fa', $columns, true)) {
+            if (! in_array('email_2fa', $columns, true)) {
                 $table->string('email_2fa')->nullable();
             }
-            if (!in_array('email_2fa_verified_at', $columns, true)) {
+            if (! in_array('email_2fa_verified_at', $columns, true)) {
                 $table->timestamp('email_2fa_verified_at')->nullable();
             }
-            if (!in_array('is_active', $columns, true)) {
+            if (! in_array('is_active', $columns, true)) {
                 $table->boolean('is_active')->nullable()->default(1);
             }
-            if (!in_array('register_started_at', $columns, true)) {
+            if (! in_array('register_started_at', $columns, true)) {
                 $table->timestamp('register_started_at')->nullable();
             }
-            if (!in_array('register_as', $columns, true)) {
+            if (! in_array('register_as', $columns, true)) {
                 $table->string('register_as')->nullable();
             }
-            if (!in_array('confirmed_at', $columns, true)) {
+            if (! in_array('confirmed_at', $columns, true)) {
                 $table->timestamp('confirmed_at')->nullable();
             }
-            if (!in_array('uuid', $columns, true)) {
+            if (! in_array('uuid', $columns, true)) {
                 $table->string('uuid')->nullable();
             }
-            if (!in_array('uuid_at', $columns, true)) {
+            if (! in_array('uuid_at', $columns, true)) {
                 $table->timestamp('uuid_at')->nullable();
             }
         });
@@ -109,7 +109,7 @@ return new class extends Migration
 
         $existing = array_intersect($columns, $droppables);
 
-        if (!empty($existing)) {
+        if (! empty($existing)) {
             Schema::table('users', function (Blueprint $table) use ($existing) {
                 $table->dropColumn($existing);
             });

@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use App\Models\School;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -13,10 +13,11 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $short
  * @property string $email
  * @property string|null $token
- * @property \Illuminate\Support\Carbon|null $token_expires_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $token_expires_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property-read School|null $school
+ *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher query()
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereTokenExpiresAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|Teacher whereUpdatedAt($value)
+ *
  * @mixin \Eloquent
  */
 class Teacher extends Model
@@ -53,6 +55,7 @@ class Teacher extends Model
         $this->token = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $this->token_expires_at = now()->addMinutes($minutes);
         $this->save();
+
         return $this->token;
     }
 

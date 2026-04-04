@@ -309,29 +309,32 @@ export default {
         restaurantModuleStatus() {
             return this.moduleStatuses.restaurant || 'inactive'
         },
+        hasRestaurantHomepageAccess() {
+            return this.config?.auth_check === true || this.moduleAllowsAccess(this.restaurantModuleStatus)
+        },
         canShowRegister() {
-            return this.isModuleVisible(this.registerModuleStatus) && this.registerStatus !== 'missing'
+            return true
         },
         canShowTutoring() {
-            return this.isModuleVisible(this.tutoringModuleStatus) && this.tutoringStatus !== 'missing'
+            return true
         },
         canShowTeaching() {
-            return this.isModuleVisible(this.teachingModuleStatus) && this.teachingStatus !== 'missing'
+            return true
         },
         canShowRestaurant() {
-            return this.isModuleVisible(this.restaurantModuleStatus)
+            return true
         },
         isRegisterDisabled() {
-            return this.registerStatus === 'expired' || !this.moduleAllowsAccess(this.registerModuleStatus)
+            return this.registerStatus !== 'active' || !this.moduleAllowsAccess(this.registerModuleStatus)
         },
         isTutoringDisabled() {
-            return this.tutoringStatus === 'expired' || !this.moduleAllowsAccess(this.tutoringModuleStatus)
+            return this.tutoringStatus !== 'active' || !this.moduleAllowsAccess(this.tutoringModuleStatus)
         },
         isTeachingDisabled() {
-            return this.teachingStatus === 'expired' || !this.moduleAllowsAccess(this.teachingModuleStatus)
+            return this.teachingStatus !== 'active' || !this.moduleAllowsAccess(this.teachingModuleStatus)
         },
         isRestaurantDisabled() {
-            return !this.moduleAllowsAccess(this.restaurantModuleStatus)
+            return !this.hasRestaurantHomepageAccess
         },
         registerBadge() {
             return this.buildBadge(this.registerStatus, this.registerModuleStatus)
@@ -371,7 +374,7 @@ export default {
             this.$router.push('/homepage/student')
         },
         openRestaurant() {
-            if (!this.canShowRestaurant || !this.moduleAllowsAccess(this.restaurantModuleStatus)) {
+            if (!this.canShowRestaurant || !this.hasRestaurantHomepageAccess) {
                 this.notifyToolUnavailable('Restaurant', 'active', this.restaurantModuleStatus)
                 return
             }

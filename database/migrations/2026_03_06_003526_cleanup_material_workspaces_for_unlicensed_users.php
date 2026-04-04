@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\User;
+use App\Services\LicenceService;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -75,21 +77,21 @@ return new class extends Migration
 
     private function eligibleMaterialWorkspaceUserIds(): Collection
     {
-        if (! class_exists(\App\Models\User::class) || ! class_exists(\App\Services\LicenceService::class)) {
+        if (! class_exists(User::class) || ! class_exists(LicenceService::class)) {
             return collect();
         }
 
-        /** @var \App\Services\LicenceService $licenceService */
-        $licenceService = app(\App\Services\LicenceService::class);
+        /** @var LicenceService $licenceService */
+        $licenceService = app(LicenceService::class);
         $candidateRoles = ['admin', 'materials_admin', 'materials_moderator', 'super_admin'];
         $eligibleIds = collect();
 
-        \App\Models\User::query()
+        User::query()
             ->select(['id', 'school_id'])
             ->with('selectedSchool')
             ->chunkById(200, function ($users) use ($licenceService, $candidateRoles, &$eligibleIds): void {
                 foreach ($users as $user) {
-                    if (! $user instanceof \App\Models\User) {
+                    if (! $user instanceof User) {
                         continue;
                     }
 

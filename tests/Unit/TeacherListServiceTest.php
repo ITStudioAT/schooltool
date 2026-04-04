@@ -5,16 +5,19 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\Teacher;
 use App\Models\User;
+use App\Notifications\StandardEmail;
 use App\Services\TeacherListService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new TeacherListService();
+    $this->service = new TeacherListService;
 
     // Fake notifications
     Notification::fake();
@@ -62,7 +65,7 @@ describe('create', function () {
         ];
 
         $this->service->create($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Das Kurzzeichen wird bereits verwendet');
+    })->throws(HttpException::class, 'Das Kurzzeichen wird bereits verwendet');
 
     it('aborts when email is already used in same school', function () {
         Teacher::create([
@@ -80,7 +83,7 @@ describe('create', function () {
         ];
 
         $this->service->create($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Die E-Mail-Adresse wird bereits verwendet');
+    })->throws(HttpException::class, 'Die E-Mail-Adresse wird bereits verwendet');
 
     it('allows same short in different schools', function () {
         $school2 = School::factory()->create();
@@ -180,7 +183,7 @@ describe('update', function () {
         ];
 
         $this->service->update($this->school->id, $data);
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+    })->throws(ModelNotFoundException::class);
 
     it('aborts when school_id does not match', function () {
         $otherSchool = School::factory()->create();
@@ -201,7 +204,7 @@ describe('update', function () {
         ];
 
         $this->service->update($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Diese Änderung kann nicht durchgeführt werden');
+    })->throws(HttpException::class, 'Diese Änderung kann nicht durchgeführt werden');
 
     it('aborts when updating short to existing one in same school', function () {
         $teacher1 = Teacher::create([
@@ -227,7 +230,7 @@ describe('update', function () {
         ];
 
         $this->service->update($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Das Kurzzeichen des Lehrers existiert bereits');
+    })->throws(HttpException::class, 'Das Kurzzeichen des Lehrers existiert bereits');
 
     it('aborts when updating email to existing one in same school', function () {
         $teacher1 = Teacher::create([
@@ -253,7 +256,7 @@ describe('update', function () {
         ];
 
         $this->service->update($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Die E-Mail des Lehrers existiert bereits');
+    })->throws(HttpException::class, 'Die E-Mail des Lehrers existiert bereits');
 
     it('allows updating to same short when not changed', function () {
         $teacher = Teacher::create([
@@ -492,7 +495,7 @@ describe('sendCode', function () {
 
         Notification::assertSentTo(
             [Notification::route('mail', 'teacher@example.com')],
-            \App\Notifications\StandardEmail::class
+            StandardEmail::class
         );
     });
 

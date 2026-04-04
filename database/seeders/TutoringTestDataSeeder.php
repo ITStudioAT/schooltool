@@ -187,7 +187,7 @@ class TutoringTestDataSeeder extends Seeder
 
             // Erstelle 100 Schulen (ohne Transaktion - sofort committen)
             $schools = $this->createSchools();
-            $this->command->info('✓ ' . count($schools) . ' Schulen erstellt');
+            $this->command->info('✓ '.count($schools).' Schulen erstellt');
 
             // Für jede Schule - JEDE SCHULE in eigener Transaktion
             $schoolCount = count($schools);
@@ -215,25 +215,26 @@ class TutoringTestDataSeeder extends Seeder
                 } catch (\Exception $e) {
                     DB::rollBack();
                     $this->command->error("  ❌ Fehler bei Schule {$currentIndex}: {$e->getMessage()}");
-                    $this->command->warn("  ⚠️  Schule wird übersprungen, fahre mit nächster fort...");
+                    $this->command->warn('  ⚠️  Schule wird übersprungen, fahre mit nächster fort...');
+
                     continue; // Fahre mit nächster Schule fort
                 }
             }
 
             $this->command->info('✅ Tutoring Test Daten erfolgreich erstellt!');
             $this->command->info('📊 Zusammenfassung:');
-            $this->command->info('   - Schulen: ' . count($schools));
-            $this->command->info('   - Super-Admins: ' . User::role('super_admin')->where('email', 'kron@naturwelt.at')->count());
-            $this->command->info('   - Schüler: ~' . User::role('tutoring_user')->count());
-            $this->command->info('   - Lehrer: ~' . User::role('teacher')->count());
-            $this->command->info('   - Fächer: ' . TutoringSubject::count());
-            $this->command->info('   - Tutoring Angebote: ' . TutoringOffer::count());
+            $this->command->info('   - Schulen: '.count($schools));
+            $this->command->info('   - Super-Admins: '.User::role('super_admin')->where('email', 'kron@naturwelt.at')->count());
+            $this->command->info('   - Schüler: ~'.User::role('tutoring_user')->count());
+            $this->command->info('   - Lehrer: ~'.User::role('teacher')->count());
+            $this->command->info('   - Fächer: '.TutoringSubject::count());
+            $this->command->info('   - Tutoring Angebote: '.TutoringOffer::count());
             $this->command->info('');
             $this->command->info('🔑 Login als Super-Admin:');
             $this->command->info('   Email: kron@naturwelt.at');
             $this->command->info('   Passwort: password');
         } catch (\Exception $e) {
-            $this->command->error('❌ Kritischer Fehler beim Seeding: ' . $e->getMessage());
+            $this->command->error('❌ Kritischer Fehler beim Seeding: '.$e->getMessage());
             throw $e;
         }
     }
@@ -264,9 +265,10 @@ class TutoringTestDataSeeder extends Seeder
 
         if ($existingUser) {
             // User existiert bereits, stelle sicher dass er super_admin ist
-            if (!$existingUser->hasRole('super_admin')) {
+            if (! $existingUser->hasRole('super_admin')) {
                 $existingUser->assignRole('super_admin');
             }
+
             return;
         }
 
@@ -299,7 +301,7 @@ class TutoringTestDataSeeder extends Seeder
             $school = School::create([
                 'short_name' => $schoolData['short_name'],
                 'long_name' => $schoolData['long_name'],
-                'email' => 'office@' . $schoolData['domain'] . '.at',
+                'email' => 'office@'.$schoolData['domain'].'.at',
                 'logo' => null,
                 'is_selectable' => true,
             ]);
@@ -337,7 +339,7 @@ class TutoringTestDataSeeder extends Seeder
             $shuffledTeachers = $teachers;
             shuffle($shuffledTeachers);
             $selectedTeachers = array_slice($shuffledTeachers, 0, $mentorCount);
-            $mentors = array_map(fn($teacher) => $teacher->email, $selectedTeachers);
+            $mentors = array_map(fn ($teacher) => $teacher->email, $selectedTeachers);
 
             $subjectModel = TutoringSubject::create([
                 'school_id' => $school->id,
@@ -378,14 +380,14 @@ class TutoringTestDataSeeder extends Seeder
             }
 
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
-            $baseEmail = strtolower($firstName . '.' . $lastName);
+            $baseEmail = strtolower($firstName.'.'.$lastName);
             $emailCounter = $i + 10000; // Start höher um Konflikte mit Schülern zu vermeiden
-            $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
+            $email = $baseEmail.$emailCounter.'@'.$domain.'.at';
 
             // Falls Email bereits existiert, erhöhe Counter bis eindeutig
             while (in_array($email, $usedEmails)) {
                 $emailCounter++;
-                $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
+                $email = $baseEmail.$emailCounter.'@'.$domain.'.at';
             }
 
             $usedEmails[] = $email;
@@ -439,14 +441,14 @@ class TutoringTestDataSeeder extends Seeder
             }
 
             // Generiere eindeutige Email (nur lokale Prüfung für Performance)
-            $baseEmail = strtolower($firstName . '.' . $lastName);
+            $baseEmail = strtolower($firstName.'.'.$lastName);
             $emailCounter = $i;
-            $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
+            $email = $baseEmail.$emailCounter.'@'.$domain.'.at';
 
             // Falls Email bereits existiert, erhöhe Counter bis eindeutig
             while (in_array($email, $usedEmails)) {
                 $emailCounter++;
-                $email = $baseEmail . $emailCounter . '@' . $domain . '.at';
+                $email = $baseEmail.$emailCounter.'@'.$domain.'.at';
             }
 
             $usedEmails[] = $email;
@@ -523,7 +525,7 @@ class TutoringTestDataSeeder extends Seeder
             shuffle($availableClasses);
             $selectedClassNumbers = array_slice($availableClasses, 0, $numClasses);
             foreach ($selectedClassNumbers as $classNumber) {
-                $classes[(string)$classNumber] = true;
+                $classes[(string) $classNumber] = true;
             }
 
             // Erstelle Zeitplan
@@ -536,7 +538,7 @@ class TutoringTestDataSeeder extends Seeder
             }
 
             // Wenn must_be_accepted == false, dann email_mentor = null und accepted_at = now()
-            if (!$subject->must_be_accepted) {
+            if (! $subject->must_be_accepted) {
                 $mentorEmail = null;
                 $acceptedAt = now()->format('Y-m-d');
             } else {
@@ -547,8 +549,8 @@ class TutoringTestDataSeeder extends Seeder
                 'school_id' => $school->id,
                 'user_id' => $student->id,
                 'subject_id' => $subject->id,
-                'title' => $subject->long_name . ' Nachhilfe',
-                'description' => 'Ich biete professionelle Nachhilfe in ' . $subject->long_name . ' an. Langjährige Erfahrung und gute Noten garantiert!',
+                'title' => $subject->long_name.' Nachhilfe',
+                'description' => 'Ich biete professionelle Nachhilfe in '.$subject->long_name.' an. Langjährige Erfahrung und gute Noten garantiert!',
                 'classes' => $classes,
                 'time_table' => $timeTable,
                 'active_until' => now()->addMonths(rand(1, 6))->format('Y-m-d'),

@@ -14,23 +14,23 @@ beforeEach(function () {
     Storage::fake('local');
     Storage::fake('public');
 
-    $this->service = new InstallUpdateService();
+    $this->service = new InstallUpdateService;
 });
 
 describe('createRoles', function () {
     it('creates a single role', function () {
         $roles = ['admin'];
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::where('name', 'admin')->where('guard_name', 'web')->exists())->toBeTrue();
     });
 
     it('creates multiple roles', function () {
         $roles = ['admin', 'teacher', 'student'];
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::where('name', 'admin')->exists())->toBeTrue()
             ->and(Role::where('name', 'teacher')->exists())->toBeTrue()
             ->and(Role::where('name', 'student')->exists())->toBeTrue();
@@ -38,44 +38,44 @@ describe('createRoles', function () {
 
     it('sets web as guard name for all roles', function () {
         $roles = ['admin', 'teacher'];
-        
+
         $this->service->createRoles($roles);
-        
+
         $adminRole = Role::where('name', 'admin')->first();
         $teacherRole = Role::where('name', 'teacher')->first();
-        
+
         expect($adminRole->guard_name)->toBe('web')
             ->and($teacherRole->guard_name)->toBe('web');
     });
 
     it('does not duplicate roles if they already exist', function () {
         $roles = ['admin'];
-        
+
         // Create role first time
         $this->service->createRoles($roles);
         $countAfterFirst = Role::where('name', 'admin')->count();
-        
+
         // Try to create same role again
         $this->service->createRoles($roles);
         $countAfterSecond = Role::where('name', 'admin')->count();
-        
+
         expect($countAfterFirst)->toBe(1)
             ->and($countAfterSecond)->toBe(1);
     });
 
     it('handles empty array gracefully', function () {
         $roles = [];
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::count())->toBe(0);
     });
 
     it('creates roles with special characters in name', function () {
         $roles = ['super_admin', 'content-editor'];
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::where('name', 'super_admin')->exists())->toBeTrue()
             ->and(Role::where('name', 'content-editor')->exists())->toBeTrue();
     });
@@ -85,9 +85,9 @@ describe('createRoles', function () {
         for ($i = 1; $i <= 10; $i++) {
             $roles[] = "role_{$i}";
         }
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::count())->toBe(10);
     });
 
@@ -95,11 +95,11 @@ describe('createRoles', function () {
         // Create initial roles
         $initialRoles = ['admin', 'teacher'];
         $this->service->createRoles($initialRoles);
-        
+
         // Create additional roles
         $additionalRoles = ['student', 'parent'];
         $this->service->createRoles($additionalRoles);
-        
+
         expect(Role::count())->toBe(4)
             ->and(Role::where('name', 'admin')->exists())->toBeTrue()
             ->and(Role::where('name', 'teacher')->exists())->toBeTrue()
@@ -116,25 +116,25 @@ describe('checkSuperAdmins', function () {
 
     it('creates super admin for school without one', function () {
         $school = School::factory()->create();
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdmins = $school->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         expect($superAdmins)->toBe(1);
     });
 
     it('creates super admin with correct attributes', function () {
         $school = School::factory()->create();
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdmin = $school->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->first();
-        
+
         expect($superAdmin)->not->toBeNull()
             ->and($superAdmin->last_name)->toBe('Kron')
             ->and($superAdmin->first_name)->toBe('Günther')
@@ -143,13 +143,13 @@ describe('checkSuperAdmins', function () {
 
     it('uses default password when SA_PW is not set', function () {
         $school = School::factory()->create();
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdmin = $school->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->first();
-        
+
         expect($superAdmin)->not->toBeNull()
             ->and($superAdmin->password)->not->toBeEmpty()
             ->and($superAdmin->password)->not->toBeNull();
@@ -157,7 +157,7 @@ describe('checkSuperAdmins', function () {
 
     it('does not create duplicate super admin if one exists', function () {
         $school = School::factory()->create();
-        
+
         // Create existing super admin
         $existingAdmin = $school->users()->create([
             'last_name' => 'Test',
@@ -166,15 +166,15 @@ describe('checkSuperAdmins', function () {
             'password' => bcrypt('password123'),
         ]);
         $existingAdmin->assignRole('super_admin');
-        
+
         config(['app.env.SA_PW' => 'TestPassword123!']);
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdminCount = $school->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         expect($superAdminCount)->toBe(1);
     });
 
@@ -182,21 +182,21 @@ describe('checkSuperAdmins', function () {
         $school1 = School::factory()->create();
         $school2 = School::factory()->create();
         $school3 = School::factory()->create();
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $school1Admins = $school1->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         $school2Admins = $school2->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         $school3Admins = $school3->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         expect($school1Admins)->toBe(1)
             ->and($school2Admins)->toBe(1)
             ->and($school3Admins)->toBe(1);
@@ -205,7 +205,7 @@ describe('checkSuperAdmins', function () {
     it('creates super admin only for schools missing one', function () {
         $school1 = School::factory()->create();
         $school2 = School::factory()->create();
-        
+
         // School1 already has super admin
         $existingAdmin = $school1->users()->create([
             'last_name' => 'Existing',
@@ -214,18 +214,18 @@ describe('checkSuperAdmins', function () {
             'password' => bcrypt('HashedPassword123!'),
         ]);
         $existingAdmin->assignRole('super_admin');
-        
+
         $this->service->checkSuperAdmins();
-        
+
         // School1 should still have 1, School2 should now have 1
         $school1Admins = $school1->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         $school2Admins = $school2->users()->whereHas('roles', function ($q) {
             $q->where('name', 'super_admin');
         })->count();
-        
+
         expect($school1Admins)->toBe(1)
             ->and($school2Admins)->toBe(1)
             ->and($school1->users()->count())->toBe(1) // Only the existing one
@@ -234,30 +234,30 @@ describe('checkSuperAdmins', function () {
 
     it('does nothing when no schools exist', function () {
         $this->service->checkSuperAdmins();
-        
+
         expect(User::count())->toBe(0);
     });
 
     it('assigns super_admin role to created user', function () {
         $school = School::factory()->create();
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdmin = $school->users()->first();
-        
+
         expect($superAdmin->hasRole('super_admin'))->toBeTrue();
     });
 
     it('creates super admin with school relationship', function () {
         $school = School::factory()->create(['short_name' => 'TEST']);
-        
+
         $this->service->checkSuperAdmins();
-        
+
         $superAdmin = User::where('email', 'kron@naturwelt.at')->first();
-        
+
         expect($superAdmin)->not->toBeNull()
             ->and($superAdmin->school_id)->toBe($school->id);
-        
+
         // Reload to get the relationship
         $superAdmin->refresh();
         $loadedSchool = School::find($superAdmin->school_id);
@@ -611,23 +611,23 @@ describe('edge cases and error handling', function () {
     it('handles schools without users relationship', function () {
         $school = School::factory()->create();
         Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
-        
+
         $this->service->checkSuperAdmins();
-        
+
         expect(User::count())->toBe(1);
     });
 
     it('handles empty role array', function () {
         $this->service->createRoles([]);
-        
+
         expect(Role::count())->toBe(0);
     });
 
     it('handles role names with spaces', function () {
         $roles = ['Super Admin'];
-        
+
         $this->service->createRoles($roles);
-        
+
         expect(Role::where('name', 'Super Admin')->exists())->toBeTrue();
     });
 
@@ -647,4 +647,3 @@ describe('edge cases and error handling', function () {
             ->and(Storage::allFiles("{$school->id}/temp"))->toBeEmpty();
     });
 });
-

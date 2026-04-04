@@ -2,16 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\Licence;
-use App\Models\School;
-use App\Models\SchoolLicence;
 use App\Models\Schoolyear;
-use Spatie\Permission\Models\Role;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class SchoolyearService
 {
-
     public function setToUser($user, $schoolyear_id): Schoolyear
     {
         $schoolyear = Schoolyear::findOrFail($schoolyear_id);

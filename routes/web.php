@@ -103,6 +103,11 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         Route::get('offer_request', [OfferRequestController::class, 'offerRequest']);
     });
 
+    Route::prefix('homepage/restaurant')->group(function () {
+        Route::get('confirm-user', [HomepageController::class, 'restaurantConfirmUser']);
+        Route::get('reject-user', [HomepageController::class, 'restaurantRejectUser']);
+    });
+
     Route::get('/homepage/cashier/', function () {
         return view('homepage');
     });

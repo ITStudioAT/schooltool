@@ -4,13 +4,14 @@ use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\SchoolyearService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new SchoolyearService();
+    $this->service = new SchoolyearService;
 
     // Create necessary roles
     Role::firstOrCreate(['name' => 'super_admin']);
@@ -108,8 +109,8 @@ describe('setToUser', function () {
         $nonExistentId = 99999;
 
         // Act & Assert
-        expect(fn() => $this->service->setToUser($user, $nonExistentId))
-            ->toThrow(Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        expect(fn () => $this->service->setToUser($user, $nonExistentId))
+            ->toThrow(ModelNotFoundException::class);
     });
 
     it('handles multiple users with same schoolyear', function () {
@@ -225,4 +226,3 @@ describe('setToUser', function () {
             ->and($result->is_active)->toBe(0);
     });
 });
-

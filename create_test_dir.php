@@ -1,4 +1,5 @@
 <?php
+
 // Run AdminNavigationService tests
 chdir(__DIR__);
 

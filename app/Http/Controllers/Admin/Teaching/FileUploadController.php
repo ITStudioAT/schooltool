@@ -95,6 +95,7 @@ class FileUploadController extends Controller
         }
 
         $base = pathinfo($originalName, PATHINFO_FILENAME);
+
         return $base === '166';
     }
 }

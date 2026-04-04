@@ -2,9 +2,7 @@
 
 namespace Tests\Feature\Console;
 
-use App\Console\Commands\TutoringTestDataCommand;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 
 uses(RefreshDatabase::class);
 

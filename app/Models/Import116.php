@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $phone_1
  * @property string|null $phone_2
  * @property string|null $sex
- * @property \Illuminate\Support\Carbon|null $birth_date
+ * @property Carbon|null $birth_date
  * @property string|null $mother_name
  * @property string|null $mother_email
  * @property string|null $mother_phone_1
@@ -26,11 +27,12 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $father_email
  * @property string|null $father_phone_1
  * @property string|null $father_phone_2
- * @property \Illuminate\Support\Carbon $import_date
- * @property \Illuminate\Support\Carbon|null $exists_date
+ * @property Carbon $import_date
+ * @property Carbon|null $exists_date
  * @property int $import_user_id
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ *
  * @mixin \Eloquent
  */
 class Import116 extends Model

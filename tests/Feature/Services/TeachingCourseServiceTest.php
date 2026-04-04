@@ -30,7 +30,7 @@ beforeEach(function () {
         'admin',
         'student',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -51,7 +51,7 @@ beforeEach(function () {
         'long_name' => 'Other School',
     ]);
 
-    $this->service = new TeachingCourseService();
+    $this->service = new TeachingCourseService;
 });
 
 // ============================================================================

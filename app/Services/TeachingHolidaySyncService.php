@@ -15,7 +15,7 @@ class TeachingHolidaySyncService
     /**
      * Sync system-managed "free" status based on school and teacher holidays.
      *
-     * @param array<int, string> $onlyDates
+     * @param  array<int, string>  $onlyDates
      */
     public function syncForSchoolyear(int $schoolId, int $schoolyearId, array $onlyDates = [], ?int $onlyTeacherId = null): int
     {
@@ -103,7 +103,7 @@ class TeachingHolidaySyncService
     }
 
     /**
-     * @param array<int, mixed> $status
+     * @param  array<int, mixed>  $status
      * @return array<int, mixed>
      */
     private function withSystemFree(array $status, bool $shouldBeFree): array
@@ -127,7 +127,7 @@ class TeachingHolidaySyncService
     }
 
     /**
-     * @param array<int, string> $dateFilter
+     * @param  array<int, string>  $dateFilter
      * @return array<string, true>
      */
     private function schoolHolidayDateSet(int $schoolId, int $schoolyearId, array $dateFilter): array
@@ -151,7 +151,7 @@ class TeachingHolidaySyncService
     }
 
     /**
-     * @param array<int, string> $dateFilter
+     * @param  array<int, string>  $dateFilter
      * @return array<int, array<string, true>>
      */
     private function teacherHolidayDateSet(int $schoolId, int $schoolyearId, array $dateFilter, ?int $onlyTeacherId): array

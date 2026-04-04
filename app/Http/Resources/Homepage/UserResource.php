@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources\Homepage;
 
-use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\School;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -24,7 +23,7 @@ class UserResource extends JsonResource
         ];
 
         // Schools mit vollständigen Daten laden
-        if (!empty($tutoringFilter['schools'])) {
+        if (! empty($tutoringFilter['schools'])) {
             $schoolIds = collect($tutoringFilter['schools'])->pluck('id')->toArray();
             $schools = School::whereIn('id', $schoolIds)->get();
 

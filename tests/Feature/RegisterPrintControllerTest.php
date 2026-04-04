@@ -472,4 +472,3 @@ test('print endpoints work with inactive register', function () {
         return $job->data['register_id'] === $inactiveRegister->id;
     });
 });
-

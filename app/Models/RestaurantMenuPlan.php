@@ -19,6 +19,23 @@ class RestaurantMenuPlan extends Model
         'start_date',
         'end_date',
         'is_available',
+        'visible_start_at',
+        'visible_end_at',
+        'order_start_at',
+        'order_end_at',
+        'use_individual_schedule_values',
+        'visibility_start_mode',
+        'visibility_start_week_offset',
+        'visibility_start_day_of_week',
+        'visibility_start_time',
+        'order_start_mode',
+        'order_start_week_offset',
+        'order_start_day_of_week',
+        'order_start_time',
+        'order_end_week_offset',
+        'order_end_day_of_week',
+        'order_end_time',
+        'visibility_end_mode',
     ];
 
     protected function casts(): array
@@ -27,6 +44,17 @@ class RestaurantMenuPlan extends Model
             'start_date' => 'date',
             'end_date' => 'date',
             'is_available' => 'boolean',
+            'visible_start_at' => 'datetime',
+            'visible_end_at' => 'datetime',
+            'order_start_at' => 'datetime',
+            'order_end_at' => 'datetime',
+            'use_individual_schedule_values' => 'boolean',
+            'visibility_start_week_offset' => 'integer',
+            'visibility_start_day_of_week' => 'integer',
+            'order_start_week_offset' => 'integer',
+            'order_start_day_of_week' => 'integer',
+            'order_end_week_offset' => 'integer',
+            'order_end_day_of_week' => 'integer',
         ];
     }
 

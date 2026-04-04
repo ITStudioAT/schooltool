@@ -19,12 +19,12 @@ return new class extends Migration
 
         Schema::table('users', function (Blueprint $table) use ($columns) {
             // E-Mail als UNIQUE l”schen
-            if (!in_array('school_id', $columns, true)) {
+            if (! in_array('school_id', $columns, true)) {
                 $table->foreignId('school_id')->after('id');
             }
 
             // E-Mail plus school_id als UNIQUE setzen
-            if (!Schema::hasIndex('users', 'users_school_id_email_unique')) {
+            if (! Schema::hasIndex('users', 'users_school_id_email_unique')) {
                 $table->unique(['school_id', 'email']);
             }
         });

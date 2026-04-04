@@ -2,8 +2,10 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 return new class extends Migration
 {
@@ -371,10 +373,10 @@ return new class extends Migration
     }
 
     /**
-     * @param array<string, mixed> $entry
+     * @param  array<string, mixed>  $entry
      * @return array<string, mixed>
      */
-    private function buildPersistPayload(int $courseId, array $entry, bool $deleted, \Illuminate\Support\Carbon $now): array
+    private function buildPersistPayload(int $courseId, array $entry, bool $deleted, Carbon $now): array
     {
         return [
             'teaching_course_id' => $courseId,
@@ -429,7 +431,7 @@ return new class extends Migration
             }
 
             $stars[] = [
-                'id' => isset($data['id']) && $data['id'] !== '' ? (string) $data['id'] : (string) \Illuminate\Support\Str::uuid(),
+                'id' => isset($data['id']) && $data['id'] !== '' ? (string) $data['id'] : (string) Str::uuid(),
                 'value' => 1,
                 'comment' => $comment,
                 'date' => $date ?: now()->toDateString(),

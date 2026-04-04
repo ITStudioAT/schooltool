@@ -10,7 +10,11 @@
  */
 
 use App\Events\Import116FinishedEvent;
+use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\SerializesModels;
 
 // ============================================================================
 // Event Properties Tests
@@ -96,7 +100,7 @@ describe('broadcasting', function () {
         expect($channels)->toBeArray()
             ->and($channels)->toHaveCount(1)
             ->and($channels[0])->toBeInstanceOf(PrivateChannel::class)
-            ->and($channels[0]->name)->toBe('private-user.' . $userId);
+            ->and($channels[0]->name)->toBe('private-user.'.$userId);
     });
 
     test('broadcasts on correct channel for different user', function () {
@@ -110,7 +114,7 @@ describe('broadcasting', function () {
     test('implements ShouldBroadcast interface', function () {
         $event = new Import116FinishedEvent(200, 1, 'Success');
 
-        expect($event)->toBeInstanceOf(\Illuminate\Contracts\Broadcasting\ShouldBroadcast::class);
+        expect($event)->toBeInstanceOf(ShouldBroadcast::class);
     });
 });
 
@@ -166,16 +170,16 @@ describe('error scenarios', function () {
 describe('traits', function () {
     test('uses Dispatchable trait', function () {
         expect(class_uses_recursive(Import116FinishedEvent::class))
-            ->toContain(\Illuminate\Foundation\Events\Dispatchable::class);
+            ->toContain(Dispatchable::class);
     });
 
     test('uses InteractsWithSockets trait', function () {
         expect(class_uses_recursive(Import116FinishedEvent::class))
-            ->toContain(\Illuminate\Broadcasting\InteractsWithSockets::class);
+            ->toContain(InteractsWithSockets::class);
     });
 
     test('uses SerializesModels trait', function () {
         expect(class_uses_recursive(Import116FinishedEvent::class))
-            ->toContain(\Illuminate\Queue\SerializesModels::class);
+            ->toContain(SerializesModels::class);
     });
 });

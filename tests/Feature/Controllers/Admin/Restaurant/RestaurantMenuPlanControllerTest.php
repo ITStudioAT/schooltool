@@ -5,6 +5,7 @@ use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
 use App\Models\User;
@@ -68,6 +69,49 @@ test('index returns only plans from current school', function () {
         ->assertJsonCount(1, 'data');
 });
 
+test('index returns booked menu counters for each entry day', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-01',
+        'end_date' => '2026-04-05',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-03',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Freitagsmenue',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 3,
+        'booked_at' => now(),
+    ]);
+
+    $secondBookedUser = User::factory()->create(['school_id' => $this->school->id, 'schoolyear_id' => null]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $secondBookedUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 2,
+        'booked_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/menu-plans')
+        ->assertOk()
+        ->assertJsonPath('data.0.entries.0.plan_date', '2026-04-03')
+        ->assertJsonPath('data.0.entries.0.booked_menu_count', 5);
+});
+
 test('store creates menu plan with entries and eating times', function () {
     $this->actingAs($this->admin, 'sanctum');
 
@@ -76,6 +120,23 @@ test('store creates menu plan with entries and eating times', function () {
         'start_date' => '2026-04-07',
         'end_date' => '2026-04-11',
         'is_available' => true,
+        'visibility_start_mode' => 'scheduled',
+        'visibility_start_week_offset' => 1,
+        'visibility_start_day_of_week' => 2,
+        'visibility_start_time' => '09:15',
+        'order_start_mode' => 'scheduled',
+        'order_start_week_offset' => 1,
+        'order_start_day_of_week' => 2,
+        'order_start_time' => '10:00',
+        'order_end_week_offset' => 0,
+        'order_end_day_of_week' => 5,
+        'order_end_time' => '17:00',
+        'visibility_end_mode' => 'week_end',
+        'use_individual_schedule_values' => true,
+        'visible_start_at' => '2026-04-01T09:15',
+        'visible_end_at' => '2026-04-12T23:59',
+        'order_start_at' => '2026-04-01T10:00',
+        'order_end_at' => '2026-04-10T17:00',
         'entries' => [
             [
                 'plan_date' => '2026-04-07',
@@ -92,6 +153,14 @@ test('store creates menu plan with entries and eating times', function () {
         ->assertJsonPath('data.title', 'Testwoche')
         ->assertJsonPath('data.start_date', '2026-04-07')
         ->assertJsonPath('data.is_available', true)
+        ->assertJsonPath('data.visibility_start_mode', 'scheduled')
+        ->assertJsonPath('data.order_start_mode', 'scheduled')
+        ->assertJsonPath('data.visibility_end_mode', 'week_end')
+        ->assertJsonPath('data.use_individual_schedule_values', true)
+        ->assertJsonPath('data.visible_start_at', '2026-04-01T09:15')
+        ->assertJsonPath('data.visible_end_at', '2026-04-12T23:59')
+        ->assertJsonPath('data.order_start_at', '2026-04-01T10:00')
+        ->assertJsonPath('data.order_end_at', '2026-04-10T17:00')
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.menu_title', 'Montagsmenue')
         ->assertJsonPath('data.entries.0.price', '8.50')
@@ -99,6 +168,8 @@ test('store creates menu plan with entries and eating times', function () {
 
     expect(RestaurantMenuPlan::query()->where('school_id', $this->school->id)->count())->toBe(1);
     expect(RestaurantMenuPlan::query()->first()?->is_available)->toBeTrue();
+    expect(RestaurantMenuPlan::query()->first()?->use_individual_schedule_values)->toBeTrue();
+    expect(RestaurantMenuPlan::query()->first()?->visible_start_at?->format('Y-m-d\TH:i'))->toBe('2026-04-01T09:15');
     expect(RestaurantMenuPlanEntry::query()->count())->toBe(1);
 });
 
@@ -108,6 +179,22 @@ test('show returns plan with entries and eating time details', function () {
         'start_date' => '2026-04-07',
         'end_date' => '2026-04-11',
         'is_available' => true,
+        'visibility_start_mode' => 'scheduled',
+        'visibility_start_week_offset' => 1,
+        'visibility_start_day_of_week' => 2,
+        'visibility_start_time' => '09:15:00',
+        'order_start_mode' => 'scheduled',
+        'order_start_week_offset' => 1,
+        'order_start_day_of_week' => 2,
+        'order_start_time' => '10:00:00',
+        'order_end_week_offset' => 0,
+        'order_end_day_of_week' => 5,
+        'order_end_time' => '17:00:00',
+        'visibility_end_mode' => 'week_end',
+        'visible_start_at' => '2026-04-01 09:15:00',
+        'visible_end_at' => '2026-04-12 23:59:00',
+        'order_start_at' => '2026-04-01 10:00:00',
+        'order_end_at' => '2026-04-10 17:00:00',
     ]);
     $entry = RestaurantMenuPlanEntry::factory()->create([
         'restaurant_menu_plan_id' => $plan->id,
@@ -124,6 +211,16 @@ test('show returns plan with entries and eating time details', function () {
         ->assertOk()
         ->assertJsonPath('data.id', $plan->id)
         ->assertJsonPath('data.is_available', true)
+        ->assertJsonPath('data.visibility_start_mode', 'scheduled')
+        ->assertJsonPath('data.order_start_mode', 'scheduled')
+        ->assertJsonPath('data.visibility_end_mode', 'week_end')
+        ->assertJsonPath('data.use_individual_schedule_values', false)
+        ->assertJsonPath('data.visible_start_at', '2026-04-01T09:15')
+        ->assertJsonPath('data.visible_end_at', '2026-04-12T23:59')
+        ->assertJsonPath('data.order_start_at', '2026-04-01T10:00')
+        ->assertJsonPath('data.order_end_at', '2026-04-10T17:00')
+        ->assertJsonPath('data.has_bookings', false)
+        ->assertJsonPath('data.can_delete', true)
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.eating_time_ids.0', $this->eatingTime->id)
         ->assertJsonPath('data.entries.0.eating_times.0.id', $this->eatingTime->id)
@@ -154,6 +251,23 @@ test('update replaces entries', function () {
             'start_date' => '2026-04-07',
             'end_date' => '2026-04-11',
             'is_available' => true,
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 1,
+            'visibility_start_day_of_week' => 2,
+            'visibility_start_time' => '09:15',
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 1,
+            'order_start_day_of_week' => 2,
+            'order_start_time' => '10:00',
+            'order_end_week_offset' => 0,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'week_end',
+            'use_individual_schedule_values' => true,
+            'visible_start_at' => '2026-04-01T09:15',
+            'visible_end_at' => '2026-04-12T23:59',
+            'order_start_at' => '2026-04-01T10:00',
+            'order_end_at' => '2026-04-10T17:00',
             'entries' => [
                 [
                     'plan_date' => '2026-04-08',
@@ -168,6 +282,10 @@ test('update replaces entries', function () {
         ->assertOk()
         ->assertJsonPath('data.title', 'Aktualisiert')
         ->assertJsonPath('data.is_available', true)
+        ->assertJsonPath('data.visibility_start_mode', 'scheduled')
+        ->assertJsonPath('data.use_individual_schedule_values', true)
+        ->assertJsonPath('data.visible_start_at', '2026-04-01T09:15')
+        ->assertJsonPath('data.order_end_at', '2026-04-10T17:00')
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.plan_date', '2026-04-08')
         ->assertJsonPath('data.entries.0.menu_title', 'Dienstagsmenue')
@@ -175,7 +293,158 @@ test('update replaces entries', function () {
         ->assertJsonPath('data.entries.0.comments', 'Mit Salat.');
 
     expect($plan->fresh()?->is_available)->toBeTrue();
+    expect($plan->fresh()?->use_individual_schedule_values)->toBeTrue();
+    expect($plan->fresh()?->order_end_at?->format('Y-m-d\TH:i'))->toBe('2026-04-10T17:00');
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
+});
+
+test('update preserves booked entries while allowing unlocked entries to change', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $lockedEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Gebucht',
+        'price' => '8.50',
+        'comments' => 'Bitte warm halten.',
+    ]);
+    $lockedEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    $editableEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-09',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Bearbeitbar',
+        'price' => '7.90',
+        'comments' => 'Alt',
+    ]);
+    $editableEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $lockedEntry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $menu2 = RestaurantMenu::factory()->create(['school_id' => $this->school->id]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Aktualisiert mit Sperre',
+            'start_date' => '2026-04-07',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+            'entries' => [
+                [
+                    'id' => $lockedEntry->id,
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Gebucht',
+                    'price' => '8.50',
+                    'comments' => 'Bitte warm halten.',
+                    'eating_time_ids' => [$this->eatingTime->id],
+                ],
+                [
+                    'id' => $editableEntry->id,
+                    'plan_date' => '2026-04-09',
+                    'menu_id' => $menu2->id,
+                    'menu_title' => 'Bearbeitbar neu',
+                    'price' => '12.10',
+                    'comments' => 'Mit Salat.',
+                    'eating_time_ids' => [],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.title', 'Aktualisiert mit Sperre')
+        ->assertJsonCount(2, 'data.entries');
+
+    expect($lockedEntry->fresh()?->restaurant_menu_id)->toBe($this->menu->id);
+    expect($lockedEntry->fresh()?->menu_title)->toBe('Gebucht');
+    expect($lockedEntry->fresh()?->comments)->toBe('Bitte warm halten.');
+    expect($lockedEntry->fresh()?->eatingTimes()->pluck('restaurant_eating_times.id')->all())->toBe([$this->eatingTime->id]);
+
+    expect($editableEntry->fresh()?->restaurant_menu_id)->toBe($menu2->id);
+    expect($editableEntry->fresh()?->menu_title)->toBe('Bearbeitbar neu');
+    expect($editableEntry->fresh()?->price)->toBe('12.10');
+    expect($editableEntry->fresh()?->comments)->toBe('Mit Salat.');
+    expect($editableEntry->fresh()?->eatingTimes()->count())->toBe(0);
+
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $lockedEntry->id)->count())->toBe(1);
+    expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(2);
+});
+
+test('update rejects changes to booked entries', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $lockedEntry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Gebucht',
+        'price' => '8.50',
+        'comments' => 'Bitte warm halten.',
+    ]);
+    $lockedEntry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $lockedEntry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Konflikt',
+            'start_date' => '2026-04-07',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+            'entries' => [
+                [
+                    'id' => $lockedEntry->id,
+                    'plan_date' => '2026-04-08',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Gebucht veraendert',
+                    'price' => '8.50',
+                    'comments' => 'Bitte warm halten.',
+                    'eating_time_ids' => [$this->eatingTime->id],
+                ],
+            ],
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Gebuchte Menüs sind gesperrt und können nicht geändert, verschoben oder gelöscht werden.');
+
+    expect($lockedEntry->fresh()?->menu_title)->toBe('Gebucht');
+    expect(RestaurantMenuPlanBooking::query()->where('restaurant_menu_plan_entry_id', $lockedEntry->id)->count())->toBe(1);
 });
 
 test('update can shrink the menu plan range to remove the first day', function () {
@@ -204,6 +473,12 @@ test('update can shrink the menu plan range to remove the first day', function (
             'start_date' => '2026-04-08',
             'end_date' => '2026-04-11',
             'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
             'entries' => [
                 [
                     'plan_date' => '2026-04-08',
@@ -245,6 +520,37 @@ test('destroy deletes plan and cascades entries', function () {
 
     expect(RestaurantMenuPlan::query()->find($plan->id))->toBeNull();
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(0);
+});
+
+test('destroy returns conflict when menu plan has bookings', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 8.50,
+        'quantity' => 1,
+        'booked_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}")
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.');
+
+    expect(RestaurantMenuPlan::query()->find($plan->id))->not->toBeNull();
 });
 
 test('print downloads menu plan pdf for current school', function () {

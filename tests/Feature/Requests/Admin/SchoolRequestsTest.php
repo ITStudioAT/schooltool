@@ -6,19 +6,19 @@
  * Tests for school management requests.
  */
 
-use App\Http\Requests\Admin\SchoolIndexRequest;
-use App\Http\Requests\Admin\SchoolStoreRequest;
-use App\Http\Requests\Admin\SchoolUpdateRequest;
-use App\Http\Requests\Admin\SchoolSwitchSchoolRequest;
-use App\Http\Requests\Admin\SchoolLoadSchoolLicencesRequest;
-use App\Http\Requests\Admin\SchoolAddLicenceRequest;
-use App\Http\Requests\Admin\SchoolDeleteLicenceRequest;
 use App\Http\Requests\Admin\SchoolAddAdminRequest;
+use App\Http\Requests\Admin\SchoolAddLicenceRequest;
 use App\Http\Requests\Admin\SchoolDeleteAdminRequest;
+use App\Http\Requests\Admin\SchoolDeleteLicenceRequest;
 use App\Http\Requests\Admin\SchoolDeleteSchoolsRequest;
+use App\Http\Requests\Admin\SchoolIndexRequest;
+use App\Http\Requests\Admin\SchoolLoadSchoolLicencesRequest;
+use App\Http\Requests\Admin\SchoolStoreRequest;
+use App\Http\Requests\Admin\SchoolSwitchSchoolRequest;
+use App\Http\Requests\Admin\SchoolUpdateRequest;
 use App\Models\School;
-use App\Models\User;
 use App\Models\Schoolyear;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -38,9 +38,10 @@ beforeEach(function () {
     ]);
 });
 
-function validateSchoolRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateSchoolRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -50,13 +51,13 @@ function validateSchoolRequest(string $requestClass, array $data): \Illuminate\V
 
 describe('SchoolIndexRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolIndexRequest();
+        $request = new SchoolIndexRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolIndexRequest();
+        $request = new SchoolIndexRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -67,13 +68,13 @@ describe('SchoolIndexRequest', function () {
 
 describe('SchoolStoreRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolStoreRequest();
+        $request = new SchoolStoreRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolStoreRequest();
+        $request = new SchoolStoreRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -168,13 +169,13 @@ describe('SchoolStoreRequest', function () {
 
 describe('SchoolUpdateRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolUpdateRequest();
+        $request = new SchoolUpdateRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolUpdateRequest();
+        $request = new SchoolUpdateRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -185,13 +186,13 @@ describe('SchoolUpdateRequest', function () {
 
 describe('SchoolSwitchSchoolRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolSwitchSchoolRequest();
+        $request = new SchoolSwitchSchoolRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolSwitchSchoolRequest();
+        $request = new SchoolSwitchSchoolRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -225,13 +226,13 @@ describe('SchoolSwitchSchoolRequest', function () {
 
 describe('SchoolLoadSchoolLicencesRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolLoadSchoolLicencesRequest();
+        $request = new SchoolLoadSchoolLicencesRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolLoadSchoolLicencesRequest();
+        $request = new SchoolLoadSchoolLicencesRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -257,13 +258,13 @@ describe('SchoolLoadSchoolLicencesRequest', function () {
 
 describe('SchoolAddLicenceRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolAddLicenceRequest();
+        $request = new SchoolAddLicenceRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolAddLicenceRequest();
+        $request = new SchoolAddLicenceRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -274,13 +275,13 @@ describe('SchoolAddLicenceRequest', function () {
 
 describe('SchoolDeleteLicenceRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolDeleteLicenceRequest();
+        $request = new SchoolDeleteLicenceRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolDeleteLicenceRequest();
+        $request = new SchoolDeleteLicenceRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -291,13 +292,13 @@ describe('SchoolDeleteLicenceRequest', function () {
 
 describe('SchoolAddAdminRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolAddAdminRequest();
+        $request = new SchoolAddAdminRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolAddAdminRequest();
+        $request = new SchoolAddAdminRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -308,13 +309,13 @@ describe('SchoolAddAdminRequest', function () {
 
 describe('SchoolDeleteAdminRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolDeleteAdminRequest();
+        $request = new SchoolDeleteAdminRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolDeleteAdminRequest();
+        $request = new SchoolDeleteAdminRequest;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -325,13 +326,13 @@ describe('SchoolDeleteAdminRequest', function () {
 
 describe('SchoolDeleteSchoolsRequest', function () {
     it('requires authentication', function () {
-        $request = new SchoolDeleteSchoolsRequest();
+        $request = new SchoolDeleteSchoolsRequest;
         expect($request->authorize())->toBeFalse();
     });
 
     it('authorizes authenticated users', function () {
         Auth::shouldReceive('check')->andReturn(true);
-        $request = new SchoolDeleteSchoolsRequest();
+        $request = new SchoolDeleteSchoolsRequest;
         expect($request->authorize())->toBeTrue();
     });
 

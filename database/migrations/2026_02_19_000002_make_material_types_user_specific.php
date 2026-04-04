@@ -27,7 +27,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropUnique(['school_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -35,7 +35,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropIndex(['school_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -101,6 +101,7 @@ return new class extends Migration
                         'updated_at' => $now,
                     ]
                 );
+
                 continue;
             }
 
@@ -164,7 +165,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropUnique(['user_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -172,7 +173,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropIndex(['user_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -196,7 +197,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropUnique(['user_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -204,7 +205,7 @@ return new class extends Migration
             Schema::table('material_types', function (Blueprint $table) {
                 $table->dropIndex(['user_id', 'name']);
             });
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // ignore if index does not exist
         }
 
@@ -225,7 +226,7 @@ return new class extends Migration
                 ];
             })
             ->filter()
-            ->unique(fn ($row) => $row['school_id'] . '|' . mb_strtolower($row['name']))
+            ->unique(fn ($row) => $row['school_id'].'|'.mb_strtolower($row['name']))
             ->values();
 
         DB::table('material_types')->delete();

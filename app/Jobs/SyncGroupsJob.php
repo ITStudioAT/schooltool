@@ -23,9 +23,7 @@ class SyncGroupsJob implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 900;
 
-    public function __construct(public int $schoolId, public int $actorUserId)
-    {
-    }
+    public function __construct(public int $schoolId, public int $actorUserId) {}
 
     public function uniqueId(): string
     {

@@ -2,11 +2,11 @@
 
 namespace App\Providers;
 
-use App\Http\Middleware\ApiAllowed;
+use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\AliasLoader;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
@@ -18,9 +18,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
 
-        $loader = \Illuminate\Foundation\AliasLoader::getInstance();
+        $loader = AliasLoader::getInstance();
         if (config('app.env') === 'local') {
-            $loader->alias('Debugbar', \Barryvdh\Debugbar\Facades\Debugbar::class);
+            $loader->alias('Debugbar', Debugbar::class);
         }
     }
 

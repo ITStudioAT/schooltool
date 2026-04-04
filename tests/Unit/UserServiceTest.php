@@ -7,19 +7,20 @@ use App\Models\RegisterDateBooking;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\TutoringOffer;
+use App\Models\TutoringSubject;
 use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new UserService();
+    $this->service = new UserService;
 
     // Fake notifications
     Notification::fake();
@@ -130,7 +131,7 @@ describe('store', function () {
         ];
 
         $this->service->store($this->school->id, $data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'E-Mail existiert bereits');
+    })->throws(HttpException::class, 'E-Mail existiert bereits');
 
     it('assigns roles to user except super_admin', function () {
         $data = [
@@ -208,7 +209,7 @@ describe('update', function () {
         ];
 
         $this->service->update($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'E-Mail existiert bereits');
+    })->throws(HttpException::class, 'E-Mail existiert bereits');
 
     it('adds checked roles', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
@@ -330,7 +331,7 @@ describe('update', function () {
         $user->assignRole('tutoring_user');
 
         // Create tutoring subject first
-        $subject = \App\Models\TutoringSubject::create([
+        $subject = TutoringSubject::create([
             'school_id' => $this->school->id,
             'short_name' => 'Math',
             'long_name' => 'Mathematics',
@@ -514,7 +515,7 @@ describe('confirm', function () {
         ]);
 
         $this->service->confirm([$user->id]);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class, 'Alle Benutzer sind bereits bestätigt');
+    })->throws(HttpException::class, 'Alle Benutzer sind bereits bestätigt');
 });
 
 describe('check2Fa', function () {
@@ -769,4 +770,3 @@ describe('logout', function () {
         expect(Auth::check())->toBeFalse();
     });
 });
-

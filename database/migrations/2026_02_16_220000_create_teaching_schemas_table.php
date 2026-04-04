@@ -95,4 +95,3 @@ return new class extends Migration
         Schema::dropIfExists('teaching_schemas');
     }
 };
-

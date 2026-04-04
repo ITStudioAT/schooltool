@@ -1,6 +1,19 @@
 <template>
     <v-col cols="12">
-        <div class="mp-root">
+        <div
+            class="mp-root"
+            :class="{ 'mp-root--busy': isNavigatingToEditor }"
+            :aria-busy="isNavigatingToEditor ? 'true' : 'false'">
+            <div
+                v-if="isNavigatingToEditor"
+                class="mp-overlay"
+                data-testid="menu-plans-navigation-overlay"
+                aria-live="polite">
+                <div class="mp-overlay__content">
+                    <div class="mp-overlay__spinner" aria-hidden="true" />
+                    <div class="mp-overlay__text">Editor wird geladen ...</div>
+                </div>
+            </div>
             <v-row dense class="ma-0">
                 <v-col cols="12" lg="8" class="pa-0 pr-lg-3">
                     <v-sheet rounded="xl" elevation="0" class="mp-calendar pa-5" data-testid="menu-plans-calendar">
@@ -11,12 +24,15 @@
                                 <h3 class="mp-cal-title">{{ currentWeekRangeLabel }}</h3>
                             </div>
                             <div class="mp-cal-nav">
-                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToPreviousWeek">
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" :disabled="isNavigatingToEditor" @click="goToPreviousWeek">
                                     <v-icon icon="mdi-chevron-left" size="18" />
                                 </v-btn>
-                                <v-btn size="small" variant="tonal" color="warning" rounded="lg" @click="goToCurrentWeek">Heute</v-btn>
-                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" @click="goToNextWeek">
+                                <v-btn size="small" variant="tonal" color="warning" rounded="lg" :disabled="isNavigatingToEditor" @click="goToCurrentWeek">Heute</v-btn>
+                                <v-btn size="small" variant="outlined" color="secondary" rounded="lg" :disabled="isNavigatingToEditor" @click="goToNextWeek">
                                     <v-icon icon="mdi-chevron-right" size="18" />
+                                </v-btn>
+                                <v-btn size="small" variant="outlined" color="primary" rounded="lg" :disabled="isNavigatingToEditor" @click="refreshData" title="Daten aktualisieren">
+                                    <v-icon icon="mdi-refresh" size="18" />
                                 </v-btn>
                             </div>
                         </div>
@@ -38,6 +54,7 @@
                                     class="mp-day"
                                     :class="dayCellClasses(day.iso)"
                                     :data-testid="`menu-day-${day.iso}`"
+                                    :disabled="isNavigatingToEditor"
                                     @click="selectDay(day.iso)">
                                     <span
                                         v-if="day.hasAvailablePlan"
@@ -53,8 +70,29 @@
                                         aria-label="Bestellbarer Menüplan">
                                         <v-icon icon="mdi-cart-outline" size="12" />
                                     </span>
+                                    <span
+                                        v-if="day.hasFreigegebenPlan"
+                                        class="mp-day__freigegeben"
+                                        :data-testid="`freigegeben-plan-marker-${day.iso}`"
+                                        aria-label="Freigegebener Menüplan">
+                                        <v-icon icon="mdi-check-circle" size="12" />
+                                    </span>
+                                    <span
+                                        v-if="day.isFreeDay"
+                                        class="mp-day__free"
+                                        :data-testid="`free-day-marker-${day.iso}`"
+                                        aria-label="Freier Tag">
+                                        <v-icon icon="mdi-calendar-remove-outline" size="12" />
+                                    </span>
                                     <span class="mp-day__num">{{ day.dayNumber }}</span>
                                     <span class="mp-day__mon">{{ day.monthShort }}</span>
+                                    <span
+                                        v-if="day.hasPlan"
+                                        class="mp-day__booked"
+                                        :data-testid="`booked-menu-counter-${day.iso}`"
+                                        :aria-label="`${day.bookedMenuCount} gebuchte Menüs`">
+                                        {{ day.bookedMenuCount }}
+                                    </span>
                                     <span v-if="day.hasPlan" class="mp-day__dot" aria-hidden="true" />
                                 </button>
                             </div>
@@ -84,6 +122,18 @@
                                     <v-icon icon="mdi-cart-outline" size="12" />
                                 </span>
                                 Bestellbarer Menüplan
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-freigegeben" aria-hidden="true">
+                                    <v-icon icon="mdi-check-circle" size="12" />
+                                </span>
+                                Freigegebener Menüplan
+                            </span>
+                            <span class="mp-legend-item">
+                                <span class="mp-legend-free" aria-hidden="true">
+                                    <v-icon icon="mdi-calendar-remove-outline" size="12" />
+                                </span>
+                                Freier Tag
                             </span>
                         </div>
 
@@ -134,7 +184,8 @@
                                 rounded="xl"
                                 block
                                 prepend-icon="mdi-pencil-outline"
-                                :disabled="!selectedExistingPlan"
+                                data-testid="menu-plan-edit-button"
+                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
                                 @click="editSelectedPlan">
                                 Bearbeiten
                             </v-btn>
@@ -144,11 +195,55 @@
                                 rounded="xl"
                                 block
                                 prepend-icon="mdi-plus"
-                                :disabled="!canCreatePreview"
+                                data-testid="menu-plan-create-button"
+                                :disabled="!canCreatePreview || isNavigatingToEditor"
                                 @click="createPreview">
                                 Erstellen
                             </v-btn>
-                            <v-btn variant="text" color="secondary" rounded="xl" block @click="resetSelection">
+                            <v-btn
+                                v-if="isExistingPlanSelection && selectedExistingPlan?.is_available"
+                                :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                                data-testid="menu-plan-toggle-lock-button"
+                                :disabled="isNavigatingToEditor || isTogglingLock"
+                                @click="showToggleLockDialog = true">
+                                {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                            </v-btn>
+                            <v-btn
+                                v-if="isExistingPlanSelection && !selectedExistingPlan?.is_available"
+                                color="success"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-lock-open"
+                                data-testid="menu-plan-toggle-lock-button"
+                                :disabled="isNavigatingToEditor || isTogglingLock"
+                                @click="showToggleLockDialog = true">
+                                Aufsperren
+                            </v-btn>
+                            <v-btn
+                                v-if="isExistingPlanSelection"
+                                color="info"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-printer"
+                                data-testid="menu-plan-print-button"
+                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
+                                @click="showPrintDialog = true">
+                                Drucken
+                            </v-btn>
+                            <v-btn
+                                variant="text"
+                                color="secondary"
+                                rounded="xl"
+                                block
+                                data-testid="menu-plan-reset-button"
+                                :disabled="isNavigatingToEditor"
+                                @click="resetSelection">
                                 Zur&uuml;cksetzen
                             </v-btn>
                         </div>
@@ -166,6 +261,54 @@
                 </v-col>
             </v-row>
         </div>
+
+        <v-dialog v-model="showToggleLockDialog" max-width="450" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-5">
+                    {{ isSelectedPlanOrderableNow ? 'Menüplan zusperren' : 'Menüplan aufsperren' }}
+                </v-card-title>
+                <v-card-text class="px-5">
+                    <template v-if="isSelectedPlanOrderableNow">
+                        Soll der Menüplan
+                        <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                        sofort zugesperrt werden? Bestellungen sind danach nicht mehr m&ouml;glich.
+                    </template>
+                    <template v-else>
+                        Soll der Menüplan
+                        <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                        sofort aufgesperrt werden? Der Plan wird sichtbar und bestellbar.
+                    </template>
+                </v-card-text>
+                <v-card-actions class="px-5 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" color="secondary" rounded="xl" :disabled="isTogglingLock" @click="showToggleLockDialog = false">Abbrechen</v-btn>
+                    <v-btn
+                        :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                        variant="tonal"
+                        rounded="xl"
+                        :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                        :loading="isTogglingLock"
+                        @click="confirmToggleLock">
+                        {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="showPrintDialog" max-width="500" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="pt-5 px-5">Menüplan drucken</v-card-title>
+                <v-card-text class="px-5">
+                    Druckoptionen für den Menüplan
+                    <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
+                    werden hier konfiguriert.
+                </v-card-text>
+                <v-card-actions class="px-5 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" color="secondary" rounded="xl" @click="showPrintDialog = false">Schlie&szlig;en</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </v-col>
 </template>
 
@@ -200,7 +343,12 @@ export default {
             selectedStartIso: '',
             selectedEndIso: '',
             previewMessage: '',
+            isNavigatingToEditor: false,
+            isTogglingLock: false,
+            showToggleLockDialog: false,
+            showPrintDialog: false,
             currentDateTime: new Date(),
+            freeDayDates: {},
             weekDayLabels: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
         }
     },
@@ -216,6 +364,8 @@ export default {
         if (! restaurantStore.settings) {
             restaurantStore.loadSettings()
         }
+
+        this.loadVisibleFreeDays()
     },
 
     watch: {
@@ -225,6 +375,9 @@ export default {
             }
 
             this.currentWeekStartIso = this.startOfWeekIso(week)
+        },
+        currentWeekStartIso() {
+            this.loadVisibleFreeDays()
         },
     },
 
@@ -258,6 +411,9 @@ export default {
         },
         isExistingPlanSelection() {
             return this.selectedExistingPlan !== null
+        },
+        isSelectedPlanOrderableNow() {
+            return this.selectedExistingPlan ? this.isPlanOrderableNow(this.selectedExistingPlan) : false
         },
         selectionSummary() {
             if (!this.selectedStartIso) {
@@ -295,9 +451,12 @@ export default {
                     labelShort: this.weekDayLabels[index],
                     dayNumber: String(date.getDate()).padStart(2, '0'),
                     monthShort: date.toLocaleDateString('de-AT', { month: 'short' }),
+                    isFreeDay: this.isFreeDay(iso),
                     hasPlan: planCount > 0,
                     hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
                     hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
+                    hasFreigegebenPlan: this.freigegebenPlanCountForDay(iso) > 0,
+                    bookedMenuCount: this.bookedMenuCountForDay(iso),
                     planCount,
                 }
             })
@@ -336,20 +495,64 @@ export default {
         formatPeriod(startIso, endIso) {
             return `${this.formatDate(startIso)} - ${this.formatDate(endIso)}`
         },
+        visibleRangeYears() {
+            const startYear = Number(String(this.currentWeekStartIso || '').slice(0, 4))
+            const endYear = Number(String(this.addDaysIso(this.currentWeekStartIso, 20) || '').slice(0, 4))
+
+            return [...new Set([startYear, endYear].filter((year) => Number.isInteger(year) && year > 0))]
+        },
+        async loadVisibleFreeDays() {
+            try {
+                const responses = await Promise.all(this.visibleRangeYears().map((year) => {
+                    return axios.get('/api/admin/restaurant/free-days', {
+                        params: { year },
+                    })
+                }))
+
+                const freeDayDates = {}
+
+                responses.forEach((response) => {
+                    const freeDays = Array.isArray(response?.data?.data) ? response.data.data : []
+
+                    freeDays.forEach((freeDay) => {
+                        const isoDate = String(freeDay?.free_date || '').trim()
+
+                        if (isoDate !== '') {
+                            freeDayDates[isoDate] = true
+                        }
+                    })
+                })
+
+                this.freeDayDates = freeDayDates
+            } catch {
+                this.freeDayDates = {}
+            }
+        },
+        isFreeDay(isoString) {
+            return this.freeDayDates[isoString] === true
+        },
         isWithinRange(targetIso, startIso, endIso) {
             return targetIso >= startIso && targetIso <= endIso
         },
         planCountForDay(isoString) {
             return useMenuPlanStore().planCountForDay(isoString)
         },
+        bookedMenuCountForDay(isoString) {
+            return useMenuPlanStore().bookedMenuCountForDay(isoString)
+        },
         availablePlanCountForDay(isoString) {
             return useMenuPlanStore().plans.filter((plan) => {
-                return plan.is_available === true && this.isWithinRange(isoString, plan.start_date, plan.end_date)
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanVisibleNow(plan)
             }).length
         },
         orderablePlanCountForDay(isoString) {
             return useMenuPlanStore().plans.filter((plan) => {
                 return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanOrderableNow(plan)
+            }).length
+        },
+        freigegebenPlanCountForDay(isoString) {
+            return useMenuPlanStore().plans.filter((plan) => {
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && plan.is_available === true
             }).length
         },
         findPlanForDay(isoString) {
@@ -382,6 +585,7 @@ export default {
 
             return {
                 'is-today': isoString === this.todayIso,
+                'is-free-day': this.isFreeDay(isoString),
                 'has-plan': hasPlan,
                 'has-plan-start': hasPlan && !hasPreviousPlanConnection,
                 'has-plan-middle': hasPlan && hasPreviousPlanConnection && hasNextPlanConnection,
@@ -393,6 +597,10 @@ export default {
             }
         },
         selectDay(isoString) {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.previewMessage = ''
             const clickedPlan = this.findPlanForDay(isoString)
 
@@ -435,57 +643,158 @@ export default {
             return { 'is-done': isDone, 'is-active': isActive && !isDone }
         },
         createPreview() {
-            if (!this.canCreatePreview) {
+            if (!this.canCreatePreview || this.isNavigatingToEditor) {
                 return
             }
 
-            this.navigateToEditor({
+            return this.navigateToEditor({
                 mode: 'create',
                 start: this.selectedStartIso,
                 end: this.selectedEndIso,
             })
         },
-        editSelectedPlan() {
-            if (!this.selectedExistingPlan) {
+        async confirmToggleLock() {
+            if (!this.selectedExistingPlan || this.isTogglingLock) {
                 return
             }
 
-            this.navigateToEditor({
+            this.isTogglingLock = true
+
+            try {
+                const store = useMenuPlanStore()
+                await store.toggleLock(this.selectedExistingPlan.id)
+                this.currentDateTime = new Date()
+                this.showToggleLockDialog = false
+            } finally {
+                this.isTogglingLock = false
+            }
+        },
+        editSelectedPlan() {
+            if (!this.selectedExistingPlan || this.isNavigatingToEditor) {
+                return
+            }
+
+            return this.navigateToEditor({
                 mode: 'edit',
                 plan_id: this.selectedExistingPlan.id,
                 start: this.selectedExistingPlan.start_date,
                 end: this.selectedExistingPlan.end_date,
             })
         },
-        navigateToEditor(query) {
-            this.$router.push({
-                path: '/admin/menu-plans',
-                query: {
-                    ...query,
-                    return_to: '/admin/restaurant/menu-plans',
-                    return_week: this.currentWeekStartIso,
-                },
-            })
+        async navigateToEditor(query) {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
+            this.isNavigatingToEditor = true
+
+            try {
+                const navigationFailure = await this.$router.push({
+                    path: '/admin/menu-plans',
+                    query: {
+                        ...query,
+                        return_to: '/admin/restaurant/menu-plans',
+                        return_week: this.currentWeekStartIso,
+                    },
+                })
+
+                if (navigationFailure) {
+                    this.isNavigatingToEditor = false
+                }
+
+                return navigationFailure
+            } catch (error) {
+                this.isNavigatingToEditor = false
+                throw error
+            }
         },
         resetSelection() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.selectedStartIso = ''
             this.selectedEndIso = ''
             this.previewMessage = ''
         },
         goToCurrentWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.startOfWeekIso(this.todayIso)
         },
         goToPreviousWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, -7)
         },
         goToNextWeek() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, 7)
+        },
+        refreshData() {
+            if (this.isNavigatingToEditor) {
+                return
+            }
+
+            const store = useMenuPlanStore()
+            const restaurantStore = useRestaurantStore()
+            
+            // Reload menu plans
+            store.load()
+            
+            // Reload restaurant settings
+            restaurantStore.loadSettings()
+            
+            // Reload free days
+            this.loadVisibleFreeDays()
+            
+            // Update current time for visibility/orderability calculations
+            this.currentDateTime = new Date()
         },
         onlineSettings() {
             return {
                 ...defaultOnlineSettings(),
                 ...(useRestaurantStore().onlineSettings || {}),
             }
+        },
+        planScheduleSettings(plan) {
+            const settings = this.onlineSettings()
+
+            return {
+                ...settings,
+                visibility_start_mode: settings.visibility_start_mode,
+                visibility_start_week_offset: Number(settings.visibility_start_week_offset),
+                visibility_start_day_of_week: Number(settings.visibility_start_day_of_week),
+                visibility_start_time: String(settings.visibility_start_time),
+                order_start_mode: settings.order_start_mode,
+                order_start_week_offset: Number(settings.order_start_week_offset),
+                order_start_day_of_week: Number(settings.order_start_day_of_week),
+                order_start_time: String(settings.order_start_time),
+                order_end_week_offset: Number(settings.order_end_week_offset),
+                order_end_day_of_week: Number(settings.order_end_day_of_week),
+                order_end_time: String(settings.order_end_time),
+                visibility_end_mode: settings.visibility_end_mode,
+            }
+        },
+        individualScheduleDateTime(plan, field) {
+            if (plan?.use_individual_schedule_values !== true) {
+                return null
+            }
+
+            const value = String(plan?.[field] || '').trim()
+
+            if (! value) {
+                return null
+            }
+
+            return value.includes('T') ? new Date(value) : this.toDate(value)
         },
         currentDateTimeValue() {
             return this.currentDateTime instanceof Date ? this.currentDateTime : new Date(this.currentDateTime)
@@ -514,13 +823,73 @@ export default {
 
             return this.isoAtTime(targetIso, timeString)
         },
+        visibilityStartDateTime(plan) {
+            const individualValue = this.individualScheduleDateTime(plan, 'visible_start_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            if (schedule.visibility_start_mode === 'scheduled') {
+                return this.scheduledDateTime(plan, schedule.visibility_start_week_offset, schedule.visibility_start_day_of_week, schedule.visibility_start_time)
+            }
+
+            if (schedule.visibility_start_mode === 'when_orderable') {
+                return this.orderStartDateTime(plan)
+            }
+
+            return new Date(0)
+        },
+        visibilityEndDateTime(plan) {
+            const individualValue = this.individualScheduleDateTime(plan, 'visible_end_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+            const visibilityEndIso = schedule.visibility_end_mode === 'week_end'
+                ? this.addDaysIso(this.startOfWeekIso(plan.end_date), 6)
+                : plan.end_date
+
+            return this.isoAtTime(visibilityEndIso, '23:59', true)
+        },
         orderStartDateTime(plan) {
-            return this.onlineSettings().order_start_mode === 'scheduled'
-                ? this.scheduledDateTime(plan, this.onlineSettings().order_start_week_offset, this.onlineSettings().order_start_day_of_week, this.onlineSettings().order_start_time)
+            const individualValue = this.individualScheduleDateTime(plan, 'order_start_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            return schedule.order_start_mode === 'scheduled'
+                ? this.scheduledDateTime(plan, schedule.order_start_week_offset, schedule.order_start_day_of_week, schedule.order_start_time)
                 : new Date(0)
         },
         orderEndDateTime(plan) {
-            return this.scheduledDateTime(plan, this.onlineSettings().order_end_week_offset, this.onlineSettings().order_end_day_of_week, this.onlineSettings().order_end_time)
+            const individualValue = this.individualScheduleDateTime(plan, 'order_end_at')
+
+            if (individualValue) {
+                return individualValue
+            }
+
+            const schedule = this.planScheduleSettings(plan)
+
+            return this.scheduledDateTime(plan, schedule.order_end_week_offset, schedule.order_end_day_of_week, schedule.order_end_time)
+        },
+        isPlanVisibleNow(plan) {
+            if (plan?.is_available !== true) {
+                return false
+            }
+
+            const now = this.currentDateTimeValue()
+            const visibilityStart = this.visibilityStartDateTime(plan)
+            const visibilityEnd = this.visibilityEndDateTime(plan)
+
+            return visibilityStart <= now && now <= visibilityEnd
         },
         isPlanOrderableNow(plan) {
             if (plan?.is_available !== true) {
@@ -539,6 +908,60 @@ export default {
 
 <style scoped>
 /* ---- Calendar Panel ---- */
+
+.mp-root {
+    position: relative;
+}
+
+.mp-root--busy {
+    user-select: none;
+}
+
+.mp-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(1.5px);
+}
+
+.mp-overlay__content {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 999px;
+    background: rgba(255, 247, 237, 0.96);
+    border: 1px solid rgba(234, 88, 12, 0.18);
+    color: #9a3412;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.mp-overlay__spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 2px solid rgba(234, 88, 12, 0.2);
+    border-top-color: #ea580c;
+    animation: mp-overlay-spin 0.7s linear infinite;
+}
+
+.mp-overlay__text {
+    font-size: 0.92rem;
+    line-height: 1.2;
+}
+
+@keyframes mp-overlay-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
 
 .mp-calendar,
 .mp-side {
@@ -650,6 +1073,20 @@ export default {
     text-transform: capitalize;
 }
 
+.mp-day__booked {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(194, 65, 12, 0.12);
+    color: #9a3412;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
 .mp-day__dot {
     width: 5px;
     height: 5px;
@@ -686,6 +1123,34 @@ export default {
     color: #1d4ed8;
 }
 
+.mp-day__freigegeben {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(168, 85, 247, 0.14);
+    color: #7c3aed;
+}
+
+.mp-day__free {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
+}
+
 /* ---- Plan State ---- */
 
 .mp-day.has-plan {
@@ -696,6 +1161,14 @@ export default {
 
 .mp-day.has-plan .mp-day__num { color: #78350f; }
 .mp-day.has-plan .mp-day__mon { color: #b45309; }
+
+.mp-day.is-free-day {
+    background: linear-gradient(160deg, #f0fdf4 0%, #dcfce7 100%);
+    border-color: rgba(34, 197, 94, 0.38);
+}
+
+.mp-day.is-free-day .mp-day__num { color: #166534; }
+.mp-day.is-free-day .mp-day__mon { color: #15803d; }
 
 .mp-day.has-plan-start,
 .mp-day.has-plan-middle,
@@ -803,6 +1276,28 @@ export default {
     border-radius: 999px;
     background: rgba(59, 130, 246, 0.14);
     color: #1d4ed8;
+}
+
+.mp-legend-freigegeben {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(168, 85, 247, 0.14);
+    color: #7c3aed;
+}
+
+.mp-legend-free {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #15803d;
 }
 
 /* ---- Sidebar ---- */

@@ -20,7 +20,7 @@ test('install update aborts when no user exists', function () {
     User::query()->delete();
     expect(User::count())->toBe(0);
 
-    $controller = new InstallUpdateController();
+    $controller = new InstallUpdateController;
 
     $this->expectException(HttpException::class);
     $this->expectExceptionMessage('1. Benutzer wurde nicht gefunden');
@@ -36,7 +36,7 @@ test('install update creates roles and assigns super admin', function () {
         'email' => 'setup@test.com',
     ]);
 
-    $controller = new InstallUpdateController();
+    $controller = new InstallUpdateController;
     $controller->index(Request::create('/install', 'GET'));
 
     app(PermissionRegistrar::class)->forgetCachedPermissions();

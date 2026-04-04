@@ -11,6 +11,7 @@ class MaterialInboxImport extends Model
     use HasFactory;
 
     public const MODE_COPY = 'copy';
+
     public const MODE_LINK = 'link';
 
     protected $fillable = [

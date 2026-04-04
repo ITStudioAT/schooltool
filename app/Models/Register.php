@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -26,17 +28,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property bool $show_end_time
  * @property bool $show_supervisor
  * @property bool $is_active
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property int $show_note
  * @property int $must_note
- * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDateBooking> $bookings
+ * @property-read Collection<int, RegisterDateBooking> $bookings
  * @property-read int|null $bookings_count
- * @property-read \Illuminate\Database\Eloquent\Collection<int, RegisterDate> $dates
+ * @property-read Collection<int, RegisterDate> $dates
  * @property-read int|null $dates_count
  * @property-read School|null $school
  * @property-read Schoolyear|null $schoolyear
- * @property-read \Illuminate\Database\Eloquent\Collection<int, User> $users
+ * @property-read Collection<int, User> $users
  * @property-read int|null $users_count
  *
  * @method static \Database\Factories\RegisterFactory factory($count = null, $state = [])

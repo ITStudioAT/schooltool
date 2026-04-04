@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin\Teaching;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Student;
-use Barryvdh\Debugbar\Facades\Debugbar;
 use Illuminate\Http\Request;
 
 class StudentController extends Controller
@@ -25,7 +24,6 @@ class StudentController extends Controller
         $schoolclass = $validated['schoolclass'] ?? null;
         $schoolclasses = $validated['schoolclasses'] ?? null;
 
-
         $studentsQuery = Student::query()
             ->where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $auth_user->schoolyear_id);
@@ -40,7 +38,6 @@ class StudentController extends Controller
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->get();
-
 
         $classes = Student::query()
             ->where('school_id', $auth_user->school_id)

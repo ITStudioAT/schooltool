@@ -46,7 +46,7 @@ return new class extends Migration
 
             $roleNames = collect(array_keys($plansByRole))
                 ->merge(array_keys($requiredByRole))
-                ->filter(fn($roleName) => is_string($roleName) && trim($roleName) !== '')
+                ->filter(fn ($roleName) => is_string($roleName) && trim($roleName) !== '')
                 ->unique()
                 ->values();
 

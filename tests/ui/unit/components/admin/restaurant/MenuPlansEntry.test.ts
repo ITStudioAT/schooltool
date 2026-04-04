@@ -11,6 +11,8 @@ function mountMenuPlansEntry(
         menus?: Array<Record<string, unknown>>
         foods?: Array<Record<string, unknown>>
         eatingTimes?: Array<Record<string, unknown>>
+        onlineSettings?: Record<string, unknown>
+        routerPushImplementation?: () => Promise<unknown> | unknown
     } = {},
 ) {
     return mount(MenuPlansEntry, {
@@ -46,6 +48,7 @@ function mountMenuPlansEntry(
                             settings: {
                                 categories: [],
                                 allergen_options: [],
+                                online_settings: options.onlineSettings || {},
                             },
                         },
                     },
@@ -56,6 +59,7 @@ function mountMenuPlansEntry(
                     query,
                 },
                 $router: {
+                    push: vi.fn(options.routerPushImplementation || (() => Promise.resolve())),
                     replace: vi.fn(() => Promise.resolve()),
                 },
             },
@@ -69,6 +73,7 @@ function mountMenuPlansEntry(
                 },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-text-field': { template: '<input />' },
+                'v-select': { template: '<select><slot /></select>' },
                 'v-dialog': { template: '<div><slot /></div>' },
                 'v-card': { template: '<div><slot /></div>' },
                 'v-card-title': { template: '<div><slot /></div>' },
@@ -139,9 +144,30 @@ describe('MenuPlans entry page', () => {
 
         const buttons = wrapper.findAll('.mpe-header__actions button')
 
-        expect(buttons).toHaveLength(3)
+        expect(buttons).toHaveLength(4)
         expect(buttons[0].text()).toContain('Speichern')
-        expect(buttons[2].text()).toContain('Zur\u00fcck')
+        expect(buttons[1].text()).toContain('L')
+        expect(buttons[3].text()).toContain('Zur\u00fcck')
+    })
+
+    it('allows deleting a saved menu plan only when no bookings exist', () => {
+        const deletableContext = {
+            planId: 3,
+            hasPlanBookings: false,
+            isDeletingPlan: false,
+            isSaving: false,
+        }
+
+        const blockedContext = {
+            planId: 3,
+            hasPlanBookings: true,
+            isDeletingPlan: false,
+            isSaving: false,
+        }
+
+        expect((MenuPlansEntry as any).computed.canDeletePlan.call(deletableContext)).toBe(true)
+        expect((MenuPlansEntry as any).computed.canDeletePlan.call(blockedContext)).toBe(false)
+        expect((MenuPlansEntry as any).computed.deletePlanHint.call(blockedContext)).toContain('Buchungen')
     })
 
     it('builds a new menu draft course by course with category first and food second', () => {
@@ -210,6 +236,11 @@ describe('MenuPlans entry page', () => {
             },
         }
 
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
+
         ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 0, 1)
         expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
             'entry-2',
@@ -222,6 +253,29 @@ describe('MenuPlans entry page', () => {
             'entry-2',
             'entry-3',
             'entry-1',
+        ])
+    })
+
+    it('does not reorder entries on a day that contains booked menus', () => {
+        const ctx = {
+            entriesByDate: {
+                '2026-03-24': [
+                    { _key: 'entry-1', menu: { title: 'Suppe' }, bookedMenuCount: 0 },
+                    { _key: 'entry-2', menu: { title: 'Pasta' }, bookedMenuCount: 2 },
+                ],
+            },
+        }
+
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
+
+        ;(MenuPlansEntry as any).methods.moveEntry.call(ctx, '2026-03-24', 0, 1)
+
+        expect(ctx.entriesByDate['2026-03-24'].map((entry: { _key: string }) => entry._key)).toEqual([
+            'entry-1',
+            'entry-2',
         ])
     })
 
@@ -357,6 +411,61 @@ describe('MenuPlans entry page', () => {
         })
     })
 
+    it('marks booked menu entries as locked and disables edit move and delete actions', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).entriesByDate = {
+            '2026-03-24': [
+                {
+                    id: 17,
+                    _key: 'locked-entry',
+                    menu: { id: 5, title: 'Pasta', foods: [] },
+                    menuTitle: 'Pasta',
+                    price: '8.50',
+                    comments: '',
+                    bookedMenuCount: 2,
+                    eatingTimeIds: [],
+                    eatingTimes: [],
+                },
+            ],
+        }
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="locked-menu-entry-2026-03-24-locked-entry"]').text()).toContain('2 Buchungen')
+        expect(wrapper.find('[data-testid="move-entry-up-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="move-entry-down-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="delete-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="edit-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain('gesperrt')
+    })
+
+    it('disables the editor immediately while the back navigation is pending', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+            return_to: '/admin/restaurant/menu-plans',
+            return_week: '2026-04-13',
+        }, [], {
+            routerPushImplementation: () => new Promise(() => {}),
+        })
+
+        await wrapper.find('[data-testid="menu-plan-back-button"]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isNavigatingBack).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-back-overlay"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-back-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="print-menu-plan-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="delete-menu-plan-button"]').attributes('disabled')).toBeDefined()
+    })
+
     it('renders each day in the requested range and keeps open days ready for menu assignment', () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'create',
@@ -462,6 +571,10 @@ describe('MenuPlans entry page', () => {
 
         ctx.toDate = (iso: string) => (MenuPlansEntry as any).methods.toDate.call(ctx, iso)
         ctx.addDaysIso = (iso: string, days: number) => (MenuPlansEntry as any).methods.addDaysIso.call(ctx, iso, days)
+        ctx.dayEntries = (iso: string) => (MenuPlansEntry as any).methods.dayEntries.call(ctx, iso)
+        ctx.entryBookedMenuCount = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryBookedMenuCount.call(ctx, entry)
+        ctx.isEntryLocked = (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.isEntryLocked.call(ctx, entry)
+        ctx.dayHasLockedEntries = (iso: string) => (MenuPlansEntry as any).methods.dayHasLockedEntries.call(ctx, iso)
         ctx.canDeleteBoundaryDay = (iso: string) => (MenuPlansEntry as any).methods.canDeleteBoundaryDay.call(ctx, iso)
         ctx.cancelDeleteBoundaryDay = () => (MenuPlansEntry as any).methods.cancelDeleteBoundaryDay.call(ctx)
 
@@ -508,21 +621,189 @@ describe('MenuPlans entry page', () => {
         const ctx = {
             entriesByDate: {},
             planTitle: 'Testplan',
+            planScheduleForm: {
+                visibilityStartMode: 'when_available',
+                visibilityStartWeekOffset: 2,
+                visibilityStartDayOfWeek: 0,
+                visibilityStartTime: '15:00',
+                orderStartMode: 'when_available',
+                orderStartWeekOffset: 2,
+                orderStartDayOfWeek: 0,
+                orderStartTime: '15:00',
+                orderEndWeekOffset: 1,
+                orderEndDayOfWeek: 5,
+                orderEndTime: '17:00',
+                visibilityEndMode: 'plan_end',
+            },
             rangeBounds: {
                 start: '2026-03-23',
                 end: '2026-03-27',
             },
             isPlanAvailable: true,
             canToggleAvailability: false,
+            menuPlanOnlineSettings: () => ({}),
+            scheduledPosition: (weekOffset: number, dayOfWeek: number, timeString: string) => (MenuPlansEntry as any).methods.scheduledPosition.call(ctx, weekOffset, dayOfWeek, timeString),
         }
+
+        ctx.resolvedPlanSchedulePayload = () => (MenuPlansEntry as any).methods.resolvedPlanSchedulePayload.call(ctx)
 
         expect((MenuPlansEntry as any).methods.buildPayload.call(ctx)).toMatchObject({
             title: 'Testplan',
             start_date: '2026-03-23',
             end_date: '2026-03-27',
             is_available: false,
+            visibility_start_mode: 'when_available',
+            order_start_mode: 'when_available',
+            visibility_end_mode: 'plan_end',
+            use_individual_schedule_values: false,
+            visible_start_at: null,
+            visible_end_at: null,
+            order_start_at: null,
+            order_end_at: null,
             entries: [],
         })
+    })
+
+    it('stores the four individual schedule values in the payload when the switch is enabled', () => {
+        const ctx = {
+            entriesByDate: {},
+            planTitle: 'Testplan',
+            planScheduleForm: {
+                visibilityStartMode: 'when_available',
+                visibilityStartWeekOffset: 2,
+                visibilityStartDayOfWeek: 0,
+                visibilityStartTime: '15:00',
+                orderStartMode: 'when_available',
+                orderStartWeekOffset: 2,
+                orderStartDayOfWeek: 0,
+                orderStartTime: '15:00',
+                orderEndWeekOffset: 1,
+                orderEndDayOfWeek: 5,
+                orderEndTime: '17:00',
+                visibilityEndMode: 'plan_end',
+            },
+            individualScheduleForm: {
+                visibleStartAt: '2026-03-20T08:30',
+                visibleEndAt: '2026-03-27T23:59',
+                orderStartAt: '2026-03-21T09:15',
+                orderEndAt: '2026-03-26T17:00',
+            },
+            rangeBounds: {
+                start: '2026-03-23',
+                end: '2026-03-27',
+            },
+            isPlanAvailable: true,
+            canToggleAvailability: true,
+            useIndividualScheduleValues: true,
+            menuPlanOnlineSettings: () => ({}),
+            scheduledPosition: (weekOffset: number, dayOfWeek: number, timeString: string) => (MenuPlansEntry as any).methods.scheduledPosition.call(ctx, weekOffset, dayOfWeek, timeString),
+        }
+
+        ctx.resolvedPlanSchedulePayload = () => (MenuPlansEntry as any).methods.resolvedPlanSchedulePayload.call(ctx)
+
+        expect((MenuPlansEntry as any).methods.buildPayload.call(ctx)).toMatchObject({
+            title: 'Testplan',
+            start_date: '2026-03-23',
+            end_date: '2026-03-27',
+            is_available: true,
+            use_individual_schedule_values: true,
+            visible_start_at: '2026-03-20T08:30',
+            visible_end_at: '2026-03-27T23:59',
+            order_start_at: '2026-03-21T09:15',
+            order_end_at: '2026-03-26T17:00',
+            entries: [],
+        })
+    })
+
+    it('uses the current online settings for existing plans instead of stored schedule rule snapshots', () => {
+        const ctx = {
+            menuPlanOnlineSettings: () => ({
+                visibility_start_mode: 'scheduled',
+                visibility_start_week_offset: 1,
+                visibility_start_day_of_week: 1,
+                visibility_start_time: '08:30',
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 1,
+                order_start_day_of_week: 2,
+                order_start_time: '09:15',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 4,
+                order_end_time: '13:45',
+                visibility_end_mode: 'week_end',
+            }),
+        }
+
+        expect((MenuPlansEntry as any).methods.planScheduleFormFromPlan.call(ctx, {
+            start_date: '2026-03-30',
+            end_date: '2026-04-02',
+            visibility_start_mode: 'when_available',
+            visibility_start_week_offset: 2,
+            visibility_start_day_of_week: 0,
+            visibility_start_time: '15:00',
+            order_start_mode: 'when_available',
+            order_start_week_offset: 2,
+            order_start_day_of_week: 0,
+            order_start_time: '15:00',
+            order_end_week_offset: 1,
+            order_end_day_of_week: 5,
+            order_end_time: '17:00',
+            visibility_end_mode: 'plan_end',
+        })).toEqual({
+            visibilityStartMode: 'scheduled',
+            visibilityStartWeekOffset: 1,
+            visibilityStartDayOfWeek: 1,
+            visibilityStartTime: '08:30',
+            orderStartMode: 'scheduled',
+            orderStartWeekOffset: 1,
+            orderStartDayOfWeek: 2,
+            orderStartTime: '09:15',
+            orderEndWeekOffset: 0,
+            orderEndDayOfWeek: 4,
+            orderEndTime: '13:45',
+            visibilityEndMode: 'week_end',
+        })
+    })
+
+    it('enables individual schedule editing and prefills the four calculated timestamps', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'create',
+            start: '2026-03-30',
+            end: '2026-04-02',
+        }, [], {
+            onlineSettings: {
+                visibility_start_mode: 'scheduled',
+                visibility_start_week_offset: 1,
+                visibility_start_day_of_week: 1,
+                visibility_start_time: '08:30',
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 1,
+                order_start_day_of_week: 2,
+                order_start_time: '09:15',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 4,
+                order_end_time: '13:45',
+                visibility_end_mode: 'week_end',
+            },
+        })
+
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="individual-schedule-visibleStartAt"]').exists()).toBe(false)
+
+        await wrapper.get('[data-testid="individual-schedule-toggle"] input').setValue(true)
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).useIndividualScheduleValues).toBe(true)
+        expect((wrapper.vm as any).individualScheduleForm).toEqual({
+            visibleStartAt: '2026-03-23T08:30',
+            visibleEndAt: '2026-04-05T23:59',
+            orderStartAt: '2026-03-24T09:15',
+            orderEndAt: '2026-04-02T13:45',
+        })
+        expect((wrapper.get('[data-testid="individual-schedule-visibleStartAt"]').element as HTMLInputElement).value).toBe('2026-03-23T08:30')
+        expect((wrapper.get('[data-testid="individual-schedule-visibleEndAt"]').element as HTMLInputElement).value).toBe('2026-04-05T23:59')
+        expect((wrapper.get('[data-testid="individual-schedule-orderStartAt"]').element as HTMLInputElement).value).toBe('2026-03-24T09:15')
+        expect((wrapper.get('[data-testid="individual-schedule-orderEndAt"]').element as HTMLInputElement).value).toBe('2026-04-02T13:45')
     })
 
     it('shows active eating times from stored plan data even before the global list is loaded', async () => {

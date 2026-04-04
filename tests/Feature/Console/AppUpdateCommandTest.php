@@ -31,6 +31,7 @@ namespace Tests\Feature\Console {
             'tutoring_admin',
             'teacher',
             'lunch_admin',
+            'lunch_candidate',
             'lunch_user',
             'teaching_admin',
             'materials_admin',

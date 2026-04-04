@@ -56,6 +56,16 @@
                         </v-btn>
                         <v-btn
                             rounded="xl"
+                            :color="selectedPanel === 'users' ? 'primary' : undefined"
+                            :variant="selectedPanel === 'users' ? 'flat' : 'outlined'"
+                            class="settings-subnav__button"
+                            :class="{ 'settings-subnav__button--active': selectedPanel === 'users' }"
+                            :disabled="isPanelNavigationDisabled('users')"
+                            @click="activatePanel('users')">
+                            Benutzer
+                        </v-btn>
+                        <v-btn
+                            rounded="xl"
                             :color="selectedPanel === 'online' ? 'primary' : undefined"
                             :variant="selectedPanel === 'online' ? 'flat' : 'outlined'"
                             class="settings-subnav__button"
@@ -260,6 +270,7 @@
 
             <FreeDays v-if="selectedPanel === 'free-days'" />
             <EatingTimes v-if="selectedPanel === 'eating-times'" />
+            <Users v-if="selectedPanel === 'users'" />
             <OnlineSettings v-if="selectedPanel === 'online'" />
         </v-row>
 
@@ -415,6 +426,7 @@ import FreeDays from '@/pages/admin/restaurant/components/FreeDays.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import OnlineSettings from '@/pages/admin/restaurant/components/OnlineSettings.vue'
+import Users from '@/pages/admin/restaurant/components/Users.vue'
 import { useRestaurantStore } from '@/stores/admin/restaurant/RestaurantStore'
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
@@ -449,7 +461,7 @@ function emptyGeneralSettingsForm() {
     }
 }
 
-const validPanels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'online']
+const validPanels = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'online']
 
 export default {
     setup() {
@@ -467,7 +479,7 @@ export default {
         },
     },
 
-    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings },
+    components: { EatingTimes, FilePond, FreeDays, ItsGridBox, ItsRichTextEditor, OnlineSettings, Users },
 
     data() {
         return {

@@ -26,7 +26,7 @@ class PrintRegisterDateJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $service = new PrintRegisterService();
+        $service = new PrintRegisterService;
         $path = $service->printDate($this->user, $this->data);
 
         $school = $this->user->selectedSchool;
@@ -35,8 +35,8 @@ class PrintRegisterDateJob implements ShouldQueue
         $email = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school['long_name'],
-            'logo' =>  asset('/storage/images/' . $school['logo']),
-            'subject' => $register->name . ': Pdf-Datei (Tag)',
+            'logo' => asset('/storage/images/'.$school['logo']),
+            'subject' => $register->name.': Pdf-Datei (Tag)',
             'markdown' => 'mails.admin.sendPrint',
         ];
 

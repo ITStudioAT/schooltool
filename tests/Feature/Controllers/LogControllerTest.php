@@ -24,7 +24,7 @@ beforeEach(function () {
     $this->backupPath = storage_path('logs/laravel_backup.log');
 
     // Ensure logs directory exists
-    if (!is_dir(storage_path('logs'))) {
+    if (! is_dir(storage_path('logs'))) {
         mkdir(storage_path('logs'), 0755, true);
     }
 });
@@ -63,7 +63,7 @@ describe('getLog', function () {
         // Temporarily move all matching log files away to make the test deterministic.
         $movedLogs = [];
         foreach ((glob(storage_path('logs/laravel*.log')) ?: []) as $path) {
-            $tempPath = $path . '.pest-hidden-' . uniqid();
+            $tempPath = $path.'.pest-hidden-'.uniqid();
             if (@rename($path, $tempPath)) {
                 $movedLogs[] = [$tempPath, $path];
             }
@@ -106,7 +106,7 @@ describe('getLog', function () {
         $user->assignRole('super_admin');
 
         // Create test log file with 10 lines
-        $content = implode("\n", array_map(fn($i) => "Line $i", range(1, 10))) . "\n";
+        $content = implode("\n", array_map(fn ($i) => "Line $i", range(1, 10)))."\n";
         file_put_contents($this->logPath, $content);
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log?lines=5&mode=first');
@@ -125,7 +125,7 @@ describe('getLog', function () {
         $user->assignRole('super_admin');
 
         // Create test log file with 10 lines
-        $content = implode("\n", array_map(fn($i) => "Line $i", range(1, 10))) . "\n";
+        $content = implode("\n", array_map(fn ($i) => "Line $i", range(1, 10)))."\n";
         file_put_contents($this->logPath, $content);
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log?lines=5&mode=last');
@@ -144,7 +144,7 @@ describe('getLog', function () {
         $user->assignRole('super_admin');
 
         // Create test log file with many lines
-        $content = implode("\n", array_map(fn($i) => "Line $i", range(1, 1500))) . "\n";
+        $content = implode("\n", array_map(fn ($i) => "Line $i", range(1, 1500)))."\n";
         file_put_contents($this->logPath, $content);
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log?lines=2000');
@@ -159,7 +159,7 @@ describe('getLog', function () {
         $user->assignRole('super_admin');
 
         // Create test log file with 600 lines
-        $content = implode("\n", array_map(fn($i) => "Line $i", range(1, 600))) . "\n";
+        $content = implode("\n", array_map(fn ($i) => "Line $i", range(1, 600)))."\n";
         file_put_contents($this->logPath, $content);
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log');
@@ -206,7 +206,7 @@ describe('getLog', function () {
         $user = User::factory()->create(['school_id' => $this->school->id]);
         $user->assignRole('super_admin');
 
-        file_put_contents($this->logPath, "Single line without newline");
+        file_put_contents($this->logPath, 'Single line without newline');
 
         $response = $this->actingAs($user)->getJson('/api/admin/get_log');
 
@@ -214,7 +214,7 @@ describe('getLog', function () {
             ->assertHeader('X-Lines-Count', '1')
             ->assertHeader('X-Total-Lines', '1');
 
-        expect($response->getContent())->toBe("Single line without newline");
+        expect($response->getContent())->toBe('Single line without newline');
     });
 
     it('preserves log formatting and special characters', function () {
@@ -387,7 +387,7 @@ describe('deleteLog', function () {
         $user->assignRole('super_admin');
 
         // Create large log file (1000 lines)
-        $largeContent = implode("\n", array_map(fn($i) => "Log line $i with some content", range(1, 1000))) . "\n";
+        $largeContent = implode("\n", array_map(fn ($i) => "Log line $i with some content", range(1, 1000)))."\n";
         file_put_contents($this->logPath, $largeContent);
 
         $response = $this->actingAs($user)->postJson('/api/admin/delete_log');
@@ -465,4 +465,3 @@ describe('integration tests', function () {
         $response4->assertStatus(403);
     });
 });
-

@@ -9,7 +9,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new SubjectService();
+    $this->service = new SubjectService;
     $this->school = School::factory()->create();
 });
 

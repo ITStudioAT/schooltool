@@ -7,6 +7,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
         users: [],
         meta: {},
         search_string: '',
+        only_pending_confirmation: false,
         error: null,
     }),
 
@@ -21,6 +22,7 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                 const response = await axios.get('/api/admin/restaurant/users', {
                     params: {
                         search_string: this.search_string || '',
+                        only_pending_confirmation: this.only_pending_confirmation ? 1 : 0,
                         page,
                     },
                 })
@@ -34,6 +36,40 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler beim Laden der Restaurant-Benutzer.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async destroyCandidate(userId) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+            this.error = null
+
+            try {
+                await axios.delete(`/api/admin/restaurant/users/${userId}`)
+                this.users = this.users.filter((user) => {
+                    return Number(user.id) !== Number(userId)
+                })
+
+                notification.notify({
+                    message: 'Kandidat wurde geloescht.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return true
+            } catch (error) {
+                this.error = error
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Loeschen des Kandidaten.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -77,6 +113,44 @@ export const useRestaurantUserStore = defineStore('AdminRestaurantUserStore', {
                 notification.notify({
                     status: error.response?.status,
                     message: error.response?.data?.message || 'Fehler beim Speichern des SEPA-Status.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async confirmUser(userId) {
+            const adminStore = useAdminStore()
+            const notification = useNotificationStore()
+            adminStore.is_loading++
+            this.error = null
+
+            try {
+                const response = await axios.put(`/api/admin/restaurant/users/${userId}/confirm`)
+                const updatedUser = response?.data?.data || null
+
+                if (updatedUser) {
+                    this.users = this.users.map((user) => {
+                        return Number(user.id) === Number(userId) ? updatedUser : user
+                    })
+                }
+
+                notification.notify({
+                    message: 'Restaurant-Benutzer bestätigt.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+
+                return updatedUser
+            } catch (error) {
+                this.error = error
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler beim Bestätigen des Restaurant-Benutzers.',
                     type: 'error',
                     timeout: 3000,
                 })

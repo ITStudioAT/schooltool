@@ -34,7 +34,7 @@ beforeEach(function () {
         'teaching_admin',
         'teacher',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -89,7 +89,7 @@ beforeEach(function () {
     // Clean up temp directory
     $tempDir = storage_path('app/private/temp');
     if (is_dir($tempDir)) {
-        $files = glob($tempDir . '/*');
+        $files = glob($tempDir.'/*');
         foreach ($files as $file) {
             if (is_dir($file)) {
                 foreach (glob("$file/*.*") as $subFile) {
@@ -105,7 +105,7 @@ afterEach(function () {
     // Clean up any created directories - suppress errors as files may be locked
     $schoolDir = storage_path("app/private/{$this->school->id}");
     if (is_dir($schoolDir)) {
-        $excelDir = $schoolDir . '/excel';
+        $excelDir = $schoolDir.'/excel';
         if (is_dir($excelDir)) {
             foreach (glob("$excelDir/*.*") as $file) {
                 @unlink($file);
@@ -118,7 +118,7 @@ afterEach(function () {
     // Clean temp directory
     $tempDir = storage_path('app/private/temp');
     if (is_dir($tempDir)) {
-        $files = glob($tempDir . '/*');
+        $files = glob($tempDir.'/*');
         foreach ($files as $file) {
             if (is_dir($file)) {
                 foreach (glob("$file/*.*") as $subFile) {
@@ -242,7 +242,7 @@ describe('file type validation', function () {
         $uploadId = $initResponse->getContent();
 
         // Try to continue with non-xlsx file
-        $response = $this->patchJson('/api/admin/teaching_upload/116?patch=' . $uploadId, [], [
+        $response = $this->patchJson('/api/admin/teaching_upload/116?patch='.$uploadId, [], [
             'Upload-Name' => 'test.pdf',
             'Upload-Length' => '100',
         ]);
@@ -323,7 +323,7 @@ describe('import 116 job dispatch', function () {
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
@@ -351,7 +351,7 @@ describe('import 116 job dispatch', function () {
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
@@ -387,7 +387,7 @@ describe('import 166 school tool update', function () {
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
@@ -415,7 +415,7 @@ describe('import 166 school tool update', function () {
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
@@ -450,7 +450,7 @@ describe('upload flow', function () {
 
         // Step 2: Create temp directory (simulating what happens in real upload)
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 
@@ -476,7 +476,7 @@ describe('upload flow', function () {
 
         // Create temp directory
         $tempDir = storage_path("app/private/temp/{$uploadId}");
-        if (!is_dir($tempDir)) {
+        if (! is_dir($tempDir)) {
             mkdir($tempDir, 0775, true);
         }
 

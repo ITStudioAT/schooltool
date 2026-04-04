@@ -13,8 +13,11 @@ class Import116FinishedEvent implements ShouldBroadcast
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $status;
+
     public $userId;
+
     public $message;
+
     public $data;
 
     public function __construct($status, $userId, $message, $data = [])
@@ -28,7 +31,7 @@ class Import116FinishedEvent implements ShouldBroadcast
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('user.' . $this->userId),
+            new PrivateChannel('user.'.$this->userId),
         ];
     }
 }

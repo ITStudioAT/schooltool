@@ -12,11 +12,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->service = new UserService();
+    $this->service = new UserService;
 
     // Create roles
     Role::firstOrCreate(['name' => 'super_admin']);
@@ -85,7 +86,7 @@ describe('store', function () {
         ];
 
         $this->service->store($school->id, $userData);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    })->throws(HttpException::class);
 });
 
 describe('update', function () {
@@ -183,7 +184,7 @@ describe('update', function () {
         ];
 
         $this->service->update($data);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    })->throws(HttpException::class);
 });
 
 describe('delete', function () {
@@ -238,13 +239,13 @@ describe('setSchoolyearToNull', function () {
     it('sets schoolyear_id and register_id to null for users in the given schoolyear', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user1 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
             'register_id' => 1,
         ]);
-        
+
         $user2 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -254,10 +255,10 @@ describe('setSchoolyearToNull', function () {
         $result = $this->service->setSchoolyearToNull($schoolyear);
 
         expect($result)->toBeTrue();
-        
+
         $user1->refresh();
         $user2->refresh();
-        
+
         expect($user1->schoolyear_id)->toBeNull()
             ->and($user1->register_id)->toBeNull()
             ->and($user2->schoolyear_id)->toBeNull()
@@ -268,13 +269,13 @@ describe('setSchoolyearToNull', function () {
         $school = School::factory()->create();
         $schoolyear1 = Schoolyear::factory()->create(['school_id' => $school->id]);
         $schoolyear2 = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user1 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear1->id,
             'register_id' => 1,
         ]);
-        
+
         $user2 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear2->id,
@@ -285,7 +286,7 @@ describe('setSchoolyearToNull', function () {
 
         $user1->refresh();
         $user2->refresh();
-        
+
         expect($user1->schoolyear_id)->toBeNull()
             ->and($user2->schoolyear_id)->toBe($schoolyear2->id)
             ->and($user2->register_id)->toBe(2);
@@ -297,7 +298,7 @@ describe('setNewSchoolyear', function () {
         $school = School::factory()->create();
         $oldSchoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
         $newSchoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $oldSchoolyear->id,
@@ -307,7 +308,7 @@ describe('setNewSchoolyear', function () {
         $this->service->setNewSchoolyear($user, $newSchoolyear);
 
         $user->refresh();
-        
+
         expect($user->schoolyear_id)->toBe($newSchoolyear->id)
             ->and($user->register_id)->toBeNull();
     });
@@ -315,7 +316,7 @@ describe('setNewSchoolyear', function () {
     it('updates user with null schoolyear', function () {
         $school = School::factory()->create();
         $newSchoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => null,
@@ -325,7 +326,7 @@ describe('setNewSchoolyear', function () {
         $this->service->setNewSchoolyear($user, $newSchoolyear);
 
         $user->refresh();
-        
+
         expect($user->schoolyear_id)->toBe($newSchoolyear->id)
             ->and($user->register_id)->toBeNull();
     });
@@ -385,7 +386,7 @@ describe('allUsersInfos', function () {
 
     it('returns zero counts when no users exist except dummy', function () {
         User::where('id', '!=', 1)->delete();
-        
+
         $result = $this->service->allUsersInfos();
 
         expect($result)->toBeArray()
@@ -396,7 +397,7 @@ describe('allUsersInfos', function () {
 describe('sendVerificationEmail', function () {
     it('sends verification email to a single user', function () {
         Notification::fake();
-        
+
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
         $user = User::factory()->create([
@@ -415,17 +416,17 @@ describe('sendVerificationEmail', function () {
 
     it('sends verification emails to multiple users', function () {
         Notification::fake();
-        
+
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user1 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
             'email' => 'test1@example.com',
             'uuid' => null,
         ]);
-        
+
         $user2 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -446,10 +447,10 @@ describe('sendVerificationEmail', function () {
 describe('confirm', function () {
     it('confirms unconfirmed users and sends verification emails', function () {
         Notification::fake();
-        
+
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -466,7 +467,7 @@ describe('confirm', function () {
     it('throws exception when all users are already confirmed', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -474,21 +475,21 @@ describe('confirm', function () {
         ]);
 
         $this->service->confirm($user->id);
-    })->throws(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+    })->throws(HttpException::class);
 
     it('processes multiple users for confirmation', function () {
         Notification::fake();
-        
+
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user1 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
             'confirmed_at' => null,
             'uuid' => null,
         ]);
-        
+
         $user2 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -509,14 +510,14 @@ describe('setNewUserRoles', function () {
     it('assigns roles to users', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
 
         $adminRole = Role::where('name', 'admin')->first();
-        
+
         $roleIds = [
             ['id' => $adminRole->id, 'role_check' => 1],
         ];
@@ -529,16 +530,16 @@ describe('setNewUserRoles', function () {
     it('removes roles from users', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
 
         $user->assignRole('admin');
-        
+
         $adminRole = Role::where('name', 'admin')->first();
-        
+
         $roleIds = [
             ['id' => $adminRole->id, 'role_check' => 2],
         ];
@@ -551,12 +552,12 @@ describe('setNewUserRoles', function () {
     it('assigns and removes multiple roles for multiple users', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user1 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
-        
+
         $user2 = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
@@ -567,7 +568,7 @@ describe('setNewUserRoles', function () {
 
         $adminRole = Role::where('name', 'admin')->first();
         $teacherRole = Role::where('name', 'teacher')->first();
-        
+
         $roleIds = [
             ['id' => $adminRole->id, 'role_check' => 1],
             ['id' => $teacherRole->id, 'role_check' => 2],
@@ -587,14 +588,14 @@ describe('setNewUserRoles', function () {
     it('ignores roles with role_check not 1 or 2', function () {
         $school = School::factory()->create();
         $schoolyear = Schoolyear::factory()->create(['school_id' => $school->id]);
-        
+
         $user = User::factory()->create([
             'school_id' => $school->id,
             'schoolyear_id' => $schoolyear->id,
         ]);
 
         $adminRole = Role::where('name', 'admin')->first();
-        
+
         $roleIds = [
             ['id' => $adminRole->id, 'role_check' => 0],
         ];
@@ -608,7 +609,7 @@ describe('setNewUserRoles', function () {
 describe('check2Fa', function () {
     it('returns TWO_FA_DELETE when 2FA is not wanted', function () {
         $user = User::factory()->create();
-        
+
         $result = $this->service->check2Fa($user, false, null);
 
         expect($result)->toBe(TwoFaResult::TWO_FA_DELETE);
@@ -616,7 +617,7 @@ describe('check2Fa', function () {
 
     it('returns error when 2FA email equals user email', function () {
         $user = User::factory()->create(['email' => 'test@example.com']);
-        
+
         $result = $this->service->check2Fa($user, true, 'test@example.com');
 
         expect($result)->toBe(TwoFaResult::TWO_FA_EMAIL_AND_2FA_EMAIL_MUST_NOT_BE_EQUAL);
@@ -628,7 +629,7 @@ describe('check2Fa', function () {
             'email_2fa' => '2fa@example.com',
             'email_2fa_verified_at' => now(),
         ]);
-        
+
         $result = $this->service->check2Fa($user, true, '2fa@example.com');
 
         expect($result)->toBe(TwoFaResult::TWO_FA_OK);
@@ -640,7 +641,7 @@ describe('check2Fa', function () {
             'email_2fa' => '2fa@example.com',
             'email_2fa_verified_at' => null,
         ]);
-        
+
         $result = $this->service->check2Fa($user, true, '2fa@example.com');
 
         expect($result)->toBe(TwoFaResult::TWO_FA_EMAIL_MUST_BE_VERIFIED);
@@ -651,7 +652,7 @@ describe('check2Fa', function () {
             'email' => 'test@example.com',
             'email_2fa' => 'old@example.com',
         ]);
-        
+
         $result = $this->service->check2Fa($user, true, null);
 
         expect($result)->toBe(TwoFaResult::TWO_FA_ERROR);
@@ -662,7 +663,7 @@ describe('check2Fa', function () {
             'email' => 'test@example.com',
             'email_2fa' => null,
         ]);
-        
+
         $result = $this->service->check2Fa($user, true, 'new2fa@example.com');
 
         expect($result)->toBe(TwoFaResult::TWO_FA_EMAIL_IS_NEW);
@@ -681,7 +682,7 @@ describe('check2FaStep2', function () {
         $this->service->check2FaStep2(TwoFaResult::TWO_FA_DELETE, $user, null);
 
         $user->refresh();
-        
+
         expect($user->is_2fa)->toBe(0)
             ->and($user->email_2fa)->toBeNull()
             ->and($user->email_2fa_verified_at)->toBeNull();
@@ -698,7 +699,7 @@ describe('check2FaStep2', function () {
         $this->service->check2FaStep2(TwoFaResult::TWO_FA_OK, $user, '2fa@example.com');
 
         $user->refresh();
-        
+
         expect($user->is_2fa)->toBe(1)
             ->and($user->email_2fa)->toBe('2fa@example.com');
     });
@@ -1068,4 +1069,3 @@ describe('setPasswordOrSendCode', function () {
             ->and(Auth::id())->toBe($user->id);
     });
 });
-

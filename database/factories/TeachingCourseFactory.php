@@ -45,7 +45,7 @@ class TeachingCourseFactory extends Factory
      */
     public function forSchool(School $school): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'school_id' => $school->id,
         ]);
     }
@@ -55,7 +55,7 @@ class TeachingCourseFactory extends Factory
      */
     public function forSchoolyear(Schoolyear $schoolyear): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'schoolyear_id' => $schoolyear->id,
         ]);
     }
@@ -65,7 +65,7 @@ class TeachingCourseFactory extends Factory
      */
     public function forTeacher(User $user): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'user_id' => $user->id,
         ]);
     }
@@ -75,7 +75,7 @@ class TeachingCourseFactory extends Factory
      */
     public function withoutTeacher(): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'user_id' => null,
         ]);
     }
@@ -85,7 +85,7 @@ class TeachingCourseFactory extends Factory
      */
     public function withClasses(array $classes): static
     {
-        return $this->state(fn(array $attributes) => [
+        return $this->state(fn (array $attributes) => [
             'classes' => $classes,
         ]);
     }

@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 class TestrecordsCreateCommand extends Command
 {
     protected $signature = 'testrecords:create {--model=} {--count=1000}';
+
     protected $description = 'Create test records for a given Eloquent model using its factory';
 
     public function handle(): int
@@ -17,6 +18,7 @@ class TestrecordsCreateCommand extends Command
 
         if (! $modelOption) {
             $this->error('❌  You must specify a model using --model=ModelName');
+
             return self::FAILURE;
         }
 
@@ -27,11 +29,13 @@ class TestrecordsCreateCommand extends Command
 
         if (! class_exists($modelClass)) {
             $this->error("❌  Model class [$modelClass] does not exist.");
+
             return self::FAILURE;
         }
 
         if (! method_exists($modelClass, 'factory')) {
             $this->error("❌  Model [$modelClass] does not have a factory defined.");
+
             return self::FAILURE;
         }
 

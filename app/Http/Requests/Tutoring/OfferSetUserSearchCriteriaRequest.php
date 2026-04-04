@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Tutoring;
 
+use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 
@@ -18,16 +19,16 @@ class OfferSetUserSearchCriteriaRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * @return array<string, ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
         return [
-            "only_in_my_school" => 'boolean',
-            "only_girls" => 'boolean',
-            "only_boys" => 'boolean',
-            "schools" => 'array',
-            "schools.*.id" => 'integer|exists:schools,id',
+            'only_in_my_school' => 'boolean',
+            'only_girls' => 'boolean',
+            'only_boys' => 'boolean',
+            'schools' => 'array',
+            'schools.*.id' => 'integer|exists:schools,id',
         ];
     }
 }

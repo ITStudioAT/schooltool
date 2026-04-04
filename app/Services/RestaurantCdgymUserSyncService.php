@@ -111,11 +111,11 @@ class RestaurantCdgymUserSyncService
     /**
      * @param  Collection<int, array<string, mixed>|object>  $sourceRows
      * @param  array<string, int>  $summary
-     * @return Collection<int, array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, roles: array<int, string>}>
+     * @return Collection<int, array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, restaurant_confirmed_at: ?string, roles: array<int, string>}>
      */
     private function normalizedSourceUsers(Collection $sourceRows, array &$summary): Collection
     {
-        /** @var array<string, array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, roles: array<int, string>}> $groupedUsers */
+        /** @var array<string, array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, restaurant_confirmed_at: ?string, roles: array<int, string>}> $groupedUsers */
         $groupedUsers = [];
 
         foreach ($sourceRows as $sourceRow) {
@@ -141,6 +141,7 @@ class RestaurantCdgymUserSyncService
                 'last_name' => $groupedUsers[$email]['last_name'] ?: $normalizedRow['last_name'],
                 'email_verified_at' => $groupedUsers[$email]['email_verified_at'] ?: $normalizedRow['email_verified_at'],
                 'confirmed_at' => $groupedUsers[$email]['confirmed_at'] ?: $normalizedRow['confirmed_at'],
+                'restaurant_confirmed_at' => $groupedUsers[$email]['restaurant_confirmed_at'] ?: $normalizedRow['restaurant_confirmed_at'],
                 'roles' => collect([
                     ...$groupedUsers[$email]['roles'],
                     ...$normalizedRow['roles'],
@@ -153,7 +154,7 @@ class RestaurantCdgymUserSyncService
 
     /**
      * @param  array<string, mixed>|object  $sourceRow
-     * @return array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, roles: array<int, string>}|null
+     * @return array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, restaurant_confirmed_at: ?string, roles: array<int, string>}|null
      */
     private function normalizeSourceRow(array|object $sourceRow): ?array
     {
@@ -182,12 +183,13 @@ class RestaurantCdgymUserSyncService
             'last_name' => $this->normalizeNullableString(data_get($sourceRow, 'last_name')),
             'email_verified_at' => $emailVerifiedAt,
             'confirmed_at' => $this->normalizeNullableString(data_get($sourceRow, 'confirmed_at')) ?: $emailVerifiedAt,
+            'restaurant_confirmed_at' => $this->normalizeNullableString(data_get($sourceRow, 'confirmed_at')) ?: $emailVerifiedAt ?: now()->toDateTimeString(),
             'roles' => $roleNames,
         ];
     }
 
     /**
-     * @param  array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, roles: array<int, string>}  $sourceUser
+     * @param  array{email: string, first_name: ?string, last_name: ?string, email_verified_at: ?string, confirmed_at: ?string, restaurant_confirmed_at: ?string, roles: array<int, string>}  $sourceUser
      */
     private function createLocalUser(int $schoolId, ?int $activeSchoolyearId, array $sourceUser): User
     {
@@ -200,6 +202,7 @@ class RestaurantCdgymUserSyncService
         $user->last_name = $sourceUser['last_name'];
         $user->email_verified_at = $sourceUser['email_verified_at'];
         $user->confirmed_at = $sourceUser['confirmed_at'];
+        $user->restaurant_confirmed_at = $sourceUser['restaurant_confirmed_at'];
         $user->teaching_show_behaviour = true;
         $user->remember_token = Str::random(10);
         $user->save();

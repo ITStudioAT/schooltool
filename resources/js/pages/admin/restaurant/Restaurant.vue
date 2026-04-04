@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <v-container fluid class="restaurant-page ma-0 w-100 pa-2">
         <AdminSectionHero
             class="mb-3"
@@ -126,32 +126,32 @@ export default {
                 overview: {
                     label: '\u00dcberblick',
                     icon: 'mdi-view-dashboard-outline',
-                    note: 'Schneller Einstieg in die Restaurant-Verwaltung.',
+                    note: '',
                 },
                 foods: {
                     label: 'Speisen',
                     icon: 'mdi-silverware-variant',
-                    note: 'Alle Gerichte pflegen, anlegen und bearbeiten.',
+                    note: '',
                 },
                 menus: {
                     label: 'Men\u00fcs',
                     icon: 'mdi-food-takeout-box-outline',
-                    note: 'Men\u00fcs mit mehreren G\u00e4ngen zusammenstellen und pflegen.',
+                    note: '',
                 },
                 'menu-plans': {
                     label: 'Men\u00fcpl\u00e4ne',
                     icon: 'mdi-calendar-text-outline',
-                    note: 'Platzhalter f\u00fcr geplante Wochen- und Zeitraumansichten.',
+                    note: '',
                 },
                 users: {
                     label: 'Benutzer',
                     icon: 'mdi-account-multiple-outline',
-                    note: 'Platzhalter f\u00fcr die Restaurant-Benutzerverwaltung.',
+                    note: '',
                 },
                 settings: {
                     label: 'Einstellungen',
                     icon: 'mdi-cog-outline',
-                    note: 'Kategorien und Zutaten-Symbole verwalten.',
+                    note: '',
                 },
             }
 

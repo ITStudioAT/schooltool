@@ -11,7 +11,6 @@ use App\Http\Requests\Admin\SetActiveRegisterRequest;
 use App\Http\Resources\Admin\RegisterResource;
 use App\Models\Register;
 use App\Services\RegisterService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class RegisterController extends Controller
@@ -77,7 +76,6 @@ class RegisterController extends Controller
         return response()->json(RegisterResource::collection($registers), 200);
     }
 
-
     /**
      * Store a newly created resource in storage.
      */
@@ -99,6 +97,7 @@ class RegisterController extends Controller
         }
 
         $register = Register::create($validated);
+
         return response()->json(new RegisterResource($register), 200);
     }
 
@@ -113,7 +112,7 @@ class RegisterController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(RegisterUpdateRequest $request, register $register)
+    public function update(RegisterUpdateRequest $request, Register $register)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'register_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -128,8 +127,8 @@ class RegisterController extends Controller
             );
         }
 
-
         $register->update($validated);
+
         return response()->json(new RegisterResource($register), 200);
     }
 
@@ -142,12 +141,15 @@ class RegisterController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if ($register->hasDependencies()) abort(409, 'Das Anmeldesystem hat noch Abhängigkeiten und kann nicht gelöscht werden');
+        if ($register->hasDependencies()) {
+            abort(409, 'Das Anmeldesystem hat noch Abhängigkeiten und kann nicht gelöscht werden');
+        }
 
         $auth_user->register_id = null;
         $auth_user->save();
 
         $register->delete();
+
         return response()->noContent();
     }
 

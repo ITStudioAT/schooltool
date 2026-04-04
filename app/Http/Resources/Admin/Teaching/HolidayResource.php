@@ -24,4 +24,3 @@ class HolidayResource extends JsonResource
         ];
     }
 }
-

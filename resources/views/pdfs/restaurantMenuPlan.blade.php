@@ -51,8 +51,8 @@
         }
 
         .meta-row {
-            margin-top: 1px;
-            font-size: 7.4px;
+            margin-top: 2px;
+            font-size: 10px;
             color: #4b5563;
         }
 

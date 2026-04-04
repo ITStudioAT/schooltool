@@ -10,7 +10,7 @@ test('broadcast service provider registers broadcast routes and channels', funct
     Broadcast::shouldReceive('routes')->once();
     Broadcast::shouldReceive('channel')
         ->once()
-        ->with('user.{id}', \Mockery::type('Closure'));
+        ->with('user.{id}', Mockery::type('Closure'));
 
     $provider = new BroadcastServiceProvider(app());
     $provider->boot();

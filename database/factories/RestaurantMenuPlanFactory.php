@@ -27,6 +27,23 @@ class RestaurantMenuPlanFactory extends Factory
             'start_date' => $start->format('Y-m-d'),
             'end_date' => $end->format('Y-m-d'),
             'is_available' => false,
+            'visible_start_at' => null,
+            'visible_end_at' => null,
+            'order_start_at' => null,
+            'order_end_at' => null,
+            'use_individual_schedule_values' => false,
+            'visibility_start_mode' => 'when_available',
+            'visibility_start_week_offset' => null,
+            'visibility_start_day_of_week' => null,
+            'visibility_start_time' => null,
+            'order_start_mode' => 'when_available',
+            'order_start_week_offset' => null,
+            'order_start_day_of_week' => null,
+            'order_start_time' => null,
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00:00',
+            'visibility_end_mode' => 'plan_end',
         ];
     }
 }

@@ -154,8 +154,8 @@ describe('Admin settings page', () => {
             isTutoringTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'online'])
-        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Online'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'online'])
+        expect(items.map((item: { label: string }) => item.label)).toEqual(['Allgemein', 'Kategorien', 'Zutaten-Symbole', 'Freie Tage', 'Speisezeiten', 'Benutzer', 'Online'])
     })
 
     it('shows the groups settings tab only for super_admin, admin, materials_admin, and materials_moderator', () => {
@@ -598,10 +598,10 @@ describe('Admin settings page', () => {
                 ],
                 mocks: {
                     $route: {
-                        fullPath: '/admin/settings?tab=restaurant&panel=online',
+                        fullPath: '/admin/settings?tab=restaurant&panel=users',
                         query: {
                             tab: 'restaurant',
-                            panel: 'online',
+                            panel: 'users',
                         },
                     },
                     $router: {
@@ -625,8 +625,9 @@ describe('Admin settings page', () => {
         expect(screen.getByText('Zutaten-Symbole')).toBeInTheDocument()
         expect(screen.getByText('Freie Tage')).toBeInTheDocument()
         expect(screen.getByText('Speisezeiten')).toBeInTheDocument()
+        expect(screen.getByText('Benutzer')).toBeInTheDocument()
         expect(screen.getByText('Online')).toBeInTheDocument()
-        expect(screen.getByText('RestaurantSettings embedded online')).toBeInTheDocument()
+        expect(screen.getByText('RestaurantSettings embedded users')).toBeInTheDocument()
         expect(container.querySelector('.settings-restaurant-wrap')).not.toBeNull()
     })
 

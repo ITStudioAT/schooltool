@@ -7,6 +7,7 @@ use Illuminate\Console\Command;
 class ClearOpcache extends Command
 {
     protected $signature = 'opcache:clear';
+
     protected $description = 'Clear OPcache';
 
     public function handle()
@@ -22,6 +23,7 @@ class ClearOpcache extends Command
         }
 
         $this->error('OPcache is not enabled');
+
         return 1;
     }
 }

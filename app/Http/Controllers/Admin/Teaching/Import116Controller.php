@@ -91,7 +91,7 @@ class Import116Controller extends Controller
             ->count();
 
         return response()->json([
-            'data' => $runs->map(fn(Import116Run $run) => $this->serializeRun($run))->values(),
+            'data' => $runs->map(fn (Import116Run $run) => $this->serializeRun($run))->values(),
             'meta' => [
                 'history_limit' => $historyLimit,
                 'reset_max_runs' => $this->resetMaxRuns(),
@@ -163,7 +163,7 @@ class Import116Controller extends Controller
         }
 
         if ($targetImportId) {
-            $targetIndex = $activeRuns->search(fn(Import116Run $run) => (int) $run->id === $targetImportId);
+            $targetIndex = $activeRuns->search(fn (Import116Run $run) => (int) $run->id === $targetImportId);
             if ($targetIndex === false) {
                 abort(422, 'Der ausgewählte Import kann nicht zurückgesetzt werden.');
             }
@@ -204,6 +204,7 @@ class Import116Controller extends Controller
 
                     if ($before === null) {
                         $this->rollbackInsertedStudent($change, $after);
+
                         continue;
                     }
 
@@ -330,7 +331,7 @@ class Import116Controller extends Controller
             'change_type' => (string) $change->change_type,
             'student_code' => (string) ($change->student_code ?? ($source['student_code'] ?? '')),
             'class' => $summary['class'] ?? ($source['class'] ?? null),
-            'name' => $summary['name'] ?? trim(((string) ($source['last_name'] ?? '')) . ' ' . ((string) ($source['first_name'] ?? ''))),
+            'name' => $summary['name'] ?? trim(((string) ($source['last_name'] ?? '')).' '.((string) ($source['first_name'] ?? ''))),
             'changed_fields' => array_values(array_filter((array) ($summary['changed_fields'] ?? []))),
             'before_snapshot' => $before,
             'after_snapshot' => $after,
@@ -361,7 +362,7 @@ class Import116Controller extends Controller
                 ->exists();
 
         if ($hasTeachingReferences) {
-            $label = trim(((string) ($afterSnapshot['last_name'] ?? '')) . ' ' . ((string) ($afterSnapshot['first_name'] ?? '')));
+            $label = trim(((string) ($afterSnapshot['last_name'] ?? '')).' '.((string) ($afterSnapshot['first_name'] ?? '')));
             abort(409, "Import kann nicht zurückgesetzt werden: Schüler {$label} ({$studentCode}) wird noch in Kursen verwendet.");
         }
 

@@ -26,9 +26,8 @@ class PrintRegisterSupervisorJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $service = new PrintRegisterService();
+        $service = new PrintRegisterService;
         $path = $service->printSupervisor($this->user, $this->data);
-
 
         $school = $this->user->selectedSchool;
         $register = Register::findOrFail($this->data['register_id']);
@@ -36,8 +35,8 @@ class PrintRegisterSupervisorJob implements ShouldQueue
         $email = [
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school['long_name'],
-            'logo' =>  asset('/storage/images/' . $school['logo']),
-            'subject' => $register->name . ': Pdf-Datei (Betreuer)',
+            'logo' => asset('/storage/images/'.$school['logo']),
+            'subject' => $register->name.': Pdf-Datei (Betreuer)',
             'markdown' => 'mails.admin.sendPrint',
         ];
 

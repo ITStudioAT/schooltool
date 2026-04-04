@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Admin\Teaching;
 
+use App\Models\TeachingCourse;
 use App\Services\TeachingCourseDateService;
 use App\Services\TeachingHolidaySyncService;
 use Illuminate\Http\Request;
@@ -66,7 +67,7 @@ class CourseDateResource extends JsonResource
             return [];
         }
 
-        $studentIds = $service->courseStudentIds($course ?? new \App\Models\TeachingCourse);
+        $studentIds = $service->courseStudentIds($course ?? new TeachingCourse);
         $studentIdSet = array_fill_keys(array_map(fn ($id) => (string) $id, $studentIds), true);
 
         $normalized = [];

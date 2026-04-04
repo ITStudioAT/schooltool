@@ -1,8 +1,8 @@
 <?php
 
 use App\Events\TeachersListImportFinishedEvent;
-use App\Models\User;
 use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -66,7 +66,7 @@ describe('TeachersListImportFinishedEvent', function () {
     it('implements ShouldBroadcast interface', function () {
         $event = new TeachersListImportFinishedEvent(200, 1, 'Test');
 
-        expect($event)->toBeInstanceOf(\Illuminate\Contracts\Broadcasting\ShouldBroadcast::class);
+        expect($event)->toBeInstanceOf(ShouldBroadcast::class);
     });
 
     it('stores success status', function () {

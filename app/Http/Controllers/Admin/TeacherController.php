@@ -11,7 +11,6 @@ use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\TeacherResource;
 use App\Models\User;
 use App\Services\TeacherService;
-use Illuminate\Http\Request;
 
 class TeacherController extends Controller
 {
@@ -42,7 +41,7 @@ class TeacherController extends Controller
 
         return response()->json([
             'data' => TeacherResource::collection($teachers),
-            'meta' => new PaginateResource($teachers)
+            'meta' => new PaginateResource($teachers),
         ]);
     }
 
@@ -75,7 +74,6 @@ class TeacherController extends Controller
     public function update(TeacherUpdateRequest $request, User $user, TeacherService $service)
     {
 
-
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
@@ -96,8 +94,6 @@ class TeacherController extends Controller
 
     public function deleteTeachers(TeacherDeleteTeachersRequest $request, TeacherService $service)
     {
-
-
 
         if (! $auth_user = $this->userHasRole(['admin'])) {
             abort(403, 'Sie haben keine Berechtigung');

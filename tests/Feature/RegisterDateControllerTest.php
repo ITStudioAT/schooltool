@@ -2,7 +2,7 @@
 
 /**
  * RegisterDateController Tests
- * 
+ *
  * These tests cover the complete functionality of the RegisterDateController including:
  * - Index endpoint (listing register dates by date)
  * - Filter register dates (search by supervisor, student name, and user)
@@ -10,18 +10,17 @@
  * - Create dates (bulk date generation with time slots)
  * - Load days (get dates grouped by day with booking counts)
  * - Delete register dates (with booking protection)
- * 
+ *
  * All endpoints require appropriate role permissions (admin or register_admin)
  */
 
+use App\Models\Licence;
 use App\Models\Register;
 use App\Models\RegisterDate;
 use App\Models\RegisterDateBooking;
-use App\Models\Licence;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\User;
-use App\Services\RegisterDateService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
@@ -35,7 +34,7 @@ beforeEach(function () {
         'short_name' => 'TS',
         'logo' => 'test-logo.png',
     ]);
-    
+
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
         'name' => '2023/2024',
@@ -48,13 +47,13 @@ beforeEach(function () {
     $this->school->licences()->attach($registerLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
     ]);
-    
+
     // Create roles
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_user', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
-    
+
     // Create register
     $this->register = Register::factory()->create([
         'school_id' => $this->school->id,
@@ -62,7 +61,7 @@ beforeEach(function () {
         'name' => 'Test Register',
         'is_active' => true,
     ]);
-    
+
     // Create admin user
     $this->adminUser = User::factory()->create([
         'email' => 'admin@example.com',
@@ -77,7 +76,7 @@ beforeEach(function () {
         'is_active' => true,
     ]);
     $this->adminUser->assignRole('admin');
-    
+
     // Create register_admin user
     $this->registerAdmin = User::factory()->create([
         'email' => 'register_admin@example.com',
@@ -92,7 +91,7 @@ beforeEach(function () {
         'is_active' => true,
     ]);
     $this->registerAdmin->assignRole('register_admin');
-    
+
     // Create regular user
     $this->regularUser = User::factory()->create([
         'email' => 'user@example.com',
@@ -114,7 +113,7 @@ beforeEach(function () {
 
 test('index returns register dates for specific date as admin', function () {
     $testDate = '2024-03-15';
-    
+
     // Create register dates for the test date
     $registerDate1 = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
@@ -126,7 +125,7 @@ test('index returns register dates for specific date as admin', function () {
         'supervisor' => 'Supervisor A',
         'max_registrations' => 5,
     ]);
-    
+
     $registerDate2 = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
@@ -137,7 +136,7 @@ test('index returns register dates for specific date as admin', function () {
         'supervisor' => 'Supervisor B',
         'max_registrations' => 5,
     ]);
-    
+
     // Different date (should not be returned)
     RegisterDate::factory()->create([
         'school_id' => $this->school->id,
@@ -148,10 +147,10 @@ test('index returns register dates for specific date as admin', function () {
         'to' => '09:00',
         'supervisor' => 'Supervisor C',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
-        ->getJson('/api/admin/register_dates?date=' . $testDate);
-    
+        ->getJson('/api/admin/register_dates?date='.$testDate);
+
     $response->assertStatus(200)
         ->assertJsonCount(2)
         ->assertJsonFragment(['supervisor' => 'Supervisor A'])
@@ -160,28 +159,28 @@ test('index returns register dates for specific date as admin', function () {
 
 test('index requires authentication', function () {
     $response = $this->getJson('/api/admin/register_dates?date=2024-03-15');
-    
+
     $response->assertStatus(401);
 });
 
 test('index requires admin or register_admin role', function () {
     $response = $this->actingAs($this->regularUser)
         ->getJson('/api/admin/register_dates?date=2024-03-15');
-    
+
     $response->assertStatus(403);
 });
 
 test('index returns empty array when no dates found', function () {
     $response = $this->actingAs($this->adminUser)
         ->getJson('/api/admin/register_dates?date=2024-03-15');
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(0);
 });
 
 test('index sorts dates by from time and supervisor', function () {
     $testDate = '2024-03-15';
-    
+
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
@@ -189,7 +188,7 @@ test('index sorts dates by from time and supervisor', function () {
         'to' => '11:00',
         'supervisor' => 'Supervisor Z',
     ]);
-    
+
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
@@ -197,7 +196,7 @@ test('index sorts dates by from time and supervisor', function () {
         'to' => '09:00',
         'supervisor' => 'Supervisor A',
     ]);
-    
+
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
@@ -205,12 +204,12 @@ test('index sorts dates by from time and supervisor', function () {
         'to' => '09:00',
         'supervisor' => 'Supervisor B',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
-        ->getJson('/api/admin/register_dates?date=' . $testDate);
-    
+        ->getJson('/api/admin/register_dates?date='.$testDate);
+
     $response->assertStatus(200);
-    
+
     $data = $response->json();
 
     // First entry should be earliest time
@@ -227,7 +226,7 @@ test('index sorts dates by from time and supervisor', function () {
 
 test('filterRegisterDates searches by supervisor name', function () {
     $testDate = '2024-03-15';
-    
+
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
@@ -235,7 +234,7 @@ test('filterRegisterDates searches by supervisor name', function () {
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
@@ -243,12 +242,12 @@ test('filterRegisterDates searches by supervisor name', function () {
         'from' => '09:00',
         'to' => '10:00',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'John',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'John Smith']);
@@ -262,19 +261,19 @@ test('filterRegisterDates searches by student first name in bookings', function 
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     RegisterDateBooking::factory()->create([
         'register_date_id' => $registerDate->id,
         'student_first_name' => 'Alice',
         'student_last_name' => 'Johnson',
         'user_id' => $this->regularUser->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'Alice',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'Supervisor A']);
@@ -288,19 +287,19 @@ test('filterRegisterDates searches by student last name in bookings', function (
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     RegisterDateBooking::factory()->create([
         'register_date_id' => $registerDate->id,
         'student_first_name' => 'Bob',
         'student_last_name' => 'Williams',
         'user_id' => $this->regularUser->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'Williams',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'Supervisor B']);
@@ -314,7 +313,7 @@ test('filterRegisterDates searches by user first name', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $registerDate = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => '2024-03-15',
@@ -322,19 +321,19 @@ test('filterRegisterDates searches by user first name', function () {
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     RegisterDateBooking::factory()->create([
         'register_date_id' => $registerDate->id,
         'student_first_name' => 'Student',
         'student_last_name' => 'Name',
         'user_id' => $bookingUser->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'Charlie',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'Supervisor C']);
@@ -348,7 +347,7 @@ test('filterRegisterDates searches by user email', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $registerDate = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => '2024-03-15',
@@ -356,19 +355,19 @@ test('filterRegisterDates searches by user email', function () {
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     RegisterDateBooking::factory()->create([
         'register_date_id' => $registerDate->id,
         'student_first_name' => 'Student',
         'student_last_name' => 'Name',
         'user_id' => $bookingUser->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'david.miller',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'Supervisor D']);
@@ -377,7 +376,7 @@ test('filterRegisterDates searches by user email', function () {
 test('filterRegisterDates requires search_string parameter', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', []);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['search_string']);
 });
@@ -390,13 +389,13 @@ test('filterRegisterDates escapes special characters in search', function () {
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     // The endpoint escapes special characters, so this should work without throwing errors
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => '%',
         ]);
-    
+
     $response->assertStatus(200);
     // The supervisor should be found since the % is properly escaped
     expect(count($response->json()))->toBeGreaterThanOrEqual(0);
@@ -407,7 +406,7 @@ test('filterRegisterDates requires admin or register_admin role', function () {
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'test',
         ]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -422,22 +421,22 @@ test('lockRegisterDates locks specified dates', function () {
         'register_id' => $this->register->id,
         'is_locked' => 0,
     ]);
-    
+
     $registerDate2 = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
         'is_locked' => 0,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/lock_register_dates', [
             $registerDate1->id,
             $registerDate2->id,
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     expect($registerDate1->fresh()->is_locked)->toBe(1);
     expect($registerDate2->fresh()->is_locked)->toBe(1);
 });
@@ -448,29 +447,29 @@ test('lockRegisterDates only locks dates in same school and register', function 
         'school_id' => $otherSchool->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $ownDate = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
         'is_locked' => 0,
     ]);
-    
+
     $otherDate = RegisterDate::factory()->create([
         'school_id' => $otherSchool->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $otherRegister->id,
         'is_locked' => 0,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/lock_register_dates', [
             $ownDate->id,
             $otherDate->id,
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     expect($ownDate->fresh()->is_locked)->toBe(1);
     expect($otherDate->fresh()->is_locked)->toBe(0);
 });
@@ -478,7 +477,7 @@ test('lockRegisterDates only locks dates in same school and register', function 
 test('lockRegisterDates validates register date IDs exist', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/lock_register_dates', [999999]);
-    
+
     $response->assertStatus(422);
 });
 
@@ -486,10 +485,10 @@ test('lockRegisterDates requires admin or register_admin role', function () {
     $registerDate = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/register_dates/lock_register_dates', [$registerDate->id]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -504,22 +503,22 @@ test('unlockRegisterDates unlocks specified dates', function () {
         'register_id' => $this->register->id,
         'is_locked' => 1,
     ]);
-    
+
     $registerDate2 = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
         'is_locked' => 1,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/unlock_register_dates', [
             $registerDate1->id,
             $registerDate2->id,
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     expect($registerDate1->fresh()->is_locked)->toBe(0);
     expect($registerDate2->fresh()->is_locked)->toBe(0);
 });
@@ -529,10 +528,10 @@ test('unlockRegisterDates requires admin or register_admin role', function () {
         'register_id' => $this->register->id,
         'is_locked' => 1,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/register_dates/unlock_register_dates', [$registerDate->id]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -559,11 +558,11 @@ test('createDates generates dates for single day', function () {
             'sunday' => false,
             'supervisor_1' => 'Supervisor A',
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     $dates = RegisterDate::where('register_id', $this->register->id)->get();
-    
+
     // Should create 4 slots: 08:00-08:30, 08:30-09:00, 09:00-09:30, 09:30-10:00
     expect($dates)->toHaveCount(4);
     expect($dates->first()->date)->toBe('2024-03-15');
@@ -589,13 +588,13 @@ test('createDates generates dates with pause between slots', function () {
             'sunday' => false,
             'supervisor_1' => 'Supervisor B',
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     $dates = RegisterDate::where('register_id', $this->register->id)
         ->orderBy('from')
         ->get();
-    
+
     // With 15 min pause, slots should be: 08:00-08:30, 08:45-09:15, 09:30-10:00
     expect($dates)->toHaveCount(3);
 });
@@ -614,11 +613,11 @@ test('createDates generates multiple supervisors', function () {
             'supervisor_1' => 'Supervisor A',
             'supervisor_2' => 'Supervisor B',
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     $dates = RegisterDate::where('register_id', $this->register->id)->get();
-    
+
     // 2 time slots × 2 supervisors = 4 entries
     expect($dates)->toHaveCount(4);
     expect($dates->where('supervisor', 'Supervisor A'))->toHaveCount(2);
@@ -644,11 +643,11 @@ test('createDates generates dates for multiple days', function () {
             'sunday' => false,
             'supervisor_1' => 'Supervisor C',
         ]);
-    
+
     $response->assertStatus(200);
-    
+
     $dates = RegisterDate::where('register_id', $this->register->id)->get();
-    
+
     // 5 weekdays × 1 slot = 5 entries
     expect($dates)->toHaveCount(5);
 });
@@ -656,7 +655,7 @@ test('createDates generates dates for multiple days', function () {
 test('createDates validates required fields', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/create_dates', []);
-    
+
     $response->assertStatus(422)
         ->assertJsonValidationErrors([
             'date_from',
@@ -681,7 +680,7 @@ test('createDates requires admin or register_admin role', function () {
             'friday' => true,
             'supervisor_1' => 'Supervisor A',
         ]);
-    
+
     $response->assertStatus(403);
 });
 
@@ -692,48 +691,48 @@ test('createDates requires admin or register_admin role', function () {
 test('loadDays returns dates grouped by day with booking counts', function () {
     $date1 = '2024-03-15';
     $date2 = '2024-03-16';
-    
+
     $registerDate1 = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $date1,
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     $registerDate2 = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $date1,
         'from' => '09:00',
         'to' => '10:00',
     ]);
-    
+
     $registerDate3 = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $date2,
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     // Add bookings
     RegisterDateBooking::factory()->create(['register_date_id' => $registerDate1->id]);
     RegisterDateBooking::factory()->create(['register_date_id' => $registerDate1->id]);
     RegisterDateBooking::factory()->create(['register_date_id' => $registerDate2->id]);
     RegisterDateBooking::factory()->create(['register_date_id' => $registerDate3->id]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/load_days');
-    
+
     $response->assertStatus(200);
-    
+
     $data = $response->json();
-    
+
     // Should return 2 days
     expect($data)->toHaveCount(2);
-    
+
     // First day should have combined booking count
     expect($data[0]['date'])->toBe($date1);
     expect($data[0]['bookings_count'])->toBe(3);
-    
+
     // Second day
     expect($data[1]['date'])->toBe($date2);
     expect($data[1]['bookings_count'])->toBe(1);
@@ -746,21 +745,21 @@ test('loadDays includes day name', function () {
         'from' => '08:00',
         'to' => '09:00',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/load_days');
-    
+
     $response->assertStatus(200);
-    
+
     $data = $response->json();
-    
+
     expect($data[0])->toHaveKey('day');
 });
 
 test('loadDays returns empty array when no dates exist', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/load_days');
-    
+
     $response->assertStatus(200)
         ->assertJson([]);
 });
@@ -768,7 +767,7 @@ test('loadDays returns empty array when no dates exist', function () {
 test('loadDays requires admin or register_admin role', function () {
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/register_dates/load_days');
-    
+
     $response->assertStatus(403);
 });
 
@@ -782,21 +781,21 @@ test('deleteRegisterDates deletes dates without bookings', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
-    
+
     $registerDate2 = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', [
             $registerDate1->id,
             $registerDate2->id,
         ]);
-    
+
     $response->assertStatus(204);
-    
+
     expect(RegisterDate::find($registerDate1->id))->toBeNull();
     expect(RegisterDate::find($registerDate2->id))->toBeNull();
 });
@@ -807,29 +806,29 @@ test('deleteRegisterDates protects dates with bookings', function () {
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
-    
+
     $registerDateWithoutBooking = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
-    
+
     // Add booking to first date
     RegisterDateBooking::factory()->create([
         'register_date_id' => $registerDateWithBooking->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', [
             $registerDateWithBooking->id,
             $registerDateWithoutBooking->id,
         ]);
-    
+
     $response->assertStatus(204);
-    
+
     // Date with booking should still exist
     expect(RegisterDate::find($registerDateWithBooking->id))->not->toBeNull();
-    
+
     // Date without booking should be deleted
     expect(RegisterDate::find($registerDateWithoutBooking->id))->toBeNull();
 });
@@ -840,30 +839,30 @@ test('deleteRegisterDates only deletes dates in same school and register', funct
         'school_id' => $otherSchool->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $ownDate = RegisterDate::factory()->create([
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $this->register->id,
     ]);
-    
+
     $otherDate = RegisterDate::factory()->create([
         'school_id' => $otherSchool->id,
         'schoolyear_id' => $this->schoolyear->id,
         'register_id' => $otherRegister->id,
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', [
             $ownDate->id,
             $otherDate->id,
         ]);
-    
+
     $response->assertStatus(204);
-    
+
     // Own date should be deleted
     expect(RegisterDate::find($ownDate->id))->toBeNull();
-    
+
     // Other school's date should remain
     expect(RegisterDate::find($otherDate->id))->not->toBeNull();
 });
@@ -871,7 +870,7 @@ test('deleteRegisterDates only deletes dates in same school and register', funct
 test('deleteRegisterDates validates register date IDs exist', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', [999999]);
-    
+
     $response->assertStatus(422);
 });
 
@@ -879,17 +878,17 @@ test('deleteRegisterDates requires admin or register_admin role', function () {
     $registerDate = RegisterDate::factory()->create([
         'register_id' => $this->register->id,
     ]);
-    
+
     $response = $this->actingAs($this->regularUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', [$registerDate->id]);
-    
+
     $response->assertStatus(403);
 });
 
 test('deleteRegisterDates handles empty array', function () {
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/delete_register_dates', []);
-    
+
     $response->assertStatus(204);
 });
 
@@ -904,32 +903,32 @@ test('register_admin can access all endpoints', function () {
         'register_id' => $this->register->id,
         'date' => '2024-03-15',
     ]);
-    
+
     // Test index
     $response = $this->actingAs($this->registerAdmin)
         ->getJson('/api/admin/register_dates?date=2024-03-15');
     $response->assertStatus(200);
-    
+
     // Test filter
     $response = $this->actingAs($this->registerAdmin)
         ->postJson('/api/admin/register_dates/filter_register_dates', ['search_string' => 'test']);
     $response->assertStatus(200);
-    
+
     // Test lock
     $response = $this->actingAs($this->registerAdmin)
         ->postJson('/api/admin/register_dates/lock_register_dates', [$registerDate->id]);
     $response->assertStatus(200);
-    
+
     // Test unlock
     $response = $this->actingAs($this->registerAdmin)
         ->postJson('/api/admin/register_dates/unlock_register_dates', [$registerDate->id]);
     $response->assertStatus(200);
-    
+
     // Test load days
     $response = $this->actingAs($this->registerAdmin)
         ->postJson('/api/admin/register_dates/load_days');
     $response->assertStatus(200);
-    
+
     // Test delete
     $response = $this->actingAs($this->registerAdmin)
         ->postJson('/api/admin/register_dates/delete_register_dates', [$registerDate->id]);
@@ -941,26 +940,26 @@ test('index only returns dates for users register', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     $testDate = '2024-03-15';
-    
+
     // Create date for user's register
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'date' => $testDate,
         'supervisor' => 'Own Supervisor',
     ]);
-    
+
     // Create date for other register
     RegisterDate::factory()->create([
         'register_id' => $otherRegister->id,
         'date' => $testDate,
         'supervisor' => 'Other Supervisor',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
-        ->getJson('/api/admin/register_dates?date=' . $testDate);
-    
+        ->getJson('/api/admin/register_dates?date='.$testDate);
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'Own Supervisor']);
@@ -971,26 +970,25 @@ test('filterRegisterDates only searches within users register', function () {
         'school_id' => $this->school->id,
         'schoolyear_id' => $this->schoolyear->id,
     ]);
-    
+
     // Create date for user's register
     RegisterDate::factory()->create([
         'register_id' => $this->register->id,
         'supervisor' => 'John Smith',
     ]);
-    
+
     // Create date for other register
     RegisterDate::factory()->create([
         'register_id' => $otherRegister->id,
         'supervisor' => 'John Doe',
     ]);
-    
+
     $response = $this->actingAs($this->adminUser)
         ->postJson('/api/admin/register_dates/filter_register_dates', [
             'search_string' => 'John',
         ]);
-    
+
     $response->assertStatus(200)
         ->assertJsonCount(1)
         ->assertJsonFragment(['supervisor' => 'John Smith']);
 });
-

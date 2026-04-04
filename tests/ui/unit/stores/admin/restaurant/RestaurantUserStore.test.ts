@@ -19,6 +19,7 @@ describe('RestaurantUserStore', () => {
     const axiosMock = {
         get: vi.fn(),
         put: vi.fn(),
+        delete: vi.fn(),
     }
 
     beforeEach(() => {
@@ -27,6 +28,7 @@ describe('RestaurantUserStore', () => {
         notifyMock.mockReset()
         axiosMock.get.mockReset()
         axiosMock.put.mockReset()
+        axiosMock.delete.mockReset()
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
         vi.mocked(useNotificationStore).mockReturnValue(notificationStoreMock as never)
@@ -57,6 +59,7 @@ describe('RestaurantUserStore', () => {
 
         const store = useRestaurantUserStore()
         store.search_string = 'Anna'
+        store.only_pending_confirmation = true
 
         const result = await store.index(2)
 
@@ -66,6 +69,7 @@ describe('RestaurantUserStore', () => {
         expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/restaurant/users', {
             params: {
                 search_string: 'Anna',
+                only_pending_confirmation: 1,
                 page: 2,
             },
         })
@@ -110,5 +114,76 @@ describe('RestaurantUserStore', () => {
                 has_sepa: false,
             },
         })
+    })
+
+    it('confirms a restaurant user locally', async () => {
+        axiosMock.put.mockResolvedValue({
+            data: {
+                data: {
+                    id: 7,
+                    first_name: 'Anna',
+                    last_name: 'Mittag',
+                    email: 'anna@example.test',
+                    is_confirmed: true,
+                    is_restaurant_confirmed: true,
+                    roles: ['lunch_user'],
+                },
+            },
+        })
+
+        const store = useRestaurantUserStore()
+        store.users = [
+            {
+                id: 7,
+                first_name: 'Anna',
+                last_name: 'Mittag',
+                email: 'anna@example.test',
+                is_confirmed: false,
+                is_restaurant_confirmed: false,
+                roles: ['lunch_candidate'],
+            },
+        ]
+
+        const result = await store.confirmUser(7)
+
+        expect(result).toEqual({
+            id: 7,
+            first_name: 'Anna',
+            last_name: 'Mittag',
+            email: 'anna@example.test',
+            is_confirmed: true,
+            is_restaurant_confirmed: true,
+            roles: ['lunch_user'],
+        })
+        expect(store.users[0].roles).toEqual(['lunch_user'])
+        expect(axiosMock.put).toHaveBeenCalledWith('/api/admin/restaurant/users/7/confirm')
+    })
+
+    it('removes a deleted lunch candidate from state', async () => {
+        axiosMock.delete.mockResolvedValue({})
+
+        const store = useRestaurantUserStore()
+        store.users = [
+            {
+                id: 7,
+                first_name: 'Anna',
+                last_name: 'Mittag',
+                email: 'anna@example.test',
+                roles: ['lunch_candidate'],
+            },
+            {
+                id: 8,
+                first_name: 'Berta',
+                last_name: 'Buffet',
+                email: 'berta@example.test',
+                roles: ['lunch_user'],
+            },
+        ]
+
+        const result = await store.destroyCandidate(7)
+
+        expect(result).toBe(true)
+        expect(store.users.map((user) => user.id)).toEqual([8])
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/restaurant/users/7')
     })
 })

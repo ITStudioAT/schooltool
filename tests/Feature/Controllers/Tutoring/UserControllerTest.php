@@ -5,10 +5,8 @@ use App\Models\School;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
-use Carbon\Carbon;
 
 uses(RefreshDatabase::class);
 
@@ -474,4 +472,3 @@ describe('unimplemented methods', function () {
         expect(true)->toBeTrue();
     });
 });
-

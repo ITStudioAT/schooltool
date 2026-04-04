@@ -58,7 +58,9 @@ use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
+use App\Http\Controllers\Homepage\NoteController;
 use App\Http\Controllers\Homepage\RegisterController;
+use App\Http\Controllers\Homepage\RestaurantBookingController;
 use App\Http\Controllers\Student\CourseController;
 use App\Http\Controllers\Student\CourseStudentEntryController;
 use App\Http\Controllers\Student\StudentController;
@@ -83,6 +85,22 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::get('/homepage/config', [HomepageController::class, 'config']);
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
     Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);
+    Route::get('/homepage/restaurant/menu-plans/{id}/print', [HomepageController::class, 'restaurantMenuPlanPrint']);
+    Route::post('/homepage/restaurant/check_email', [HomepageController::class, 'restaurantCheckEmail'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/send_login_code', [HomepageController::class, 'restaurantSendLoginCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/login_with_code', [HomepageController::class, 'restaurantLoginWithCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/login_with_password', [HomepageController::class, 'restaurantLoginWithPassword'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/change_password', [HomepageController::class, 'restaurantChangePassword'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/register', [HomepageController::class, 'restaurantRegisterUser'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
+
+    // Restaurant booking routes
+    Route::post('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'store'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/bookings', [RestaurantBookingController::class, 'index'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/print', [RestaurantBookingController::class, 'print'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::delete('/homepage/restaurant/bookings/{id}', [RestaurantBookingController::class, 'destroy'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+    Route::get('/homepage/restaurant/child-options', [RestaurantBookingController::class, 'childOptions'])->middleware(['auth:sanctum', 'tool-licensed:Restaurant']);
+
     Route::post('/homepage/logout', [HomepageController::class, 'logout']);
 
     /***** STUDENT ROUTES *****/
@@ -161,6 +179,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/test-queue', [HealthController::class, 'testQueue']);
         Route::get('/admin/test-queue/check', [HealthController::class, 'checkQueueStatus']);
         Route::get('/admin/test-cron/check', [HealthController::class, 'testCron']);
+
+        // Notes API - Accessible to all authenticated users
+        Route::apiResource('/homepage/notes', NoteController::class);
+        Route::post('/homepage/notes/{note}/toggle-pin', [NoteController::class, 'togglePin']);
     });
 
     /* SANCTUM - aba_teacher */
@@ -234,6 +256,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
+        Route::put('/admin/restaurant/users/{user}/confirm', [RestaurantUserController::class, 'confirm']);
+        Route::delete('/admin/restaurant/users/{user}', [RestaurantUserController::class, 'destroy']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
         Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);
@@ -246,6 +270,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/eating-times', RestaurantEatingTimeController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
+        Route::post('/admin/restaurant/menu-plans/{id}/toggle-lock', [RestaurantMenuPlanController::class, 'toggleLock']);
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });
 

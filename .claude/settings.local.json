@@ -70,7 +70,8 @@
       "Bash(/tmp/toast_beep.ps1:*)",
       "Bash(/tmp/play_chimes.ps1:*)",
       "Bash(/tmp/play_ring05.ps1:*)",
-      "Bash(/tmp/play_ring08.ps1:*)"
+      "Bash(/tmp/play_ring08.ps1:*)",
+      "Bash(npm run:*)"
     ],
     "deny": [],
     "ask": [],

@@ -20,7 +20,7 @@ class RegisterUserResource extends JsonResource
             'last_name' => $this->last_name,
             'email' => $this->email,
             'phone' => $this->phone,
-            'registerDateBookings' => $this->registerDateBookings
+            'registerDateBookings' => $this->registerDateBookings,
         ];
     }
 }

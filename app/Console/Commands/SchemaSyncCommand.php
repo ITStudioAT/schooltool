@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
-use Doctrine\DBAL\Schema\Comparator;
-use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Configuration as DoctrineConfiguration;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Schema\AbstractSchemaManager;
+use Doctrine\DBAL\Schema\Comparator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -24,17 +26,19 @@ class SchemaSyncCommand extends Command
 
     public function handle(): int
     {
-        if (!class_exists(Comparator::class)) {
+        if (! class_exists(Comparator::class)) {
             $this->error('Missing dependency: doctrine/dbal');
             $this->line('Install it with: composer require doctrine/dbal');
+
             return self::FAILURE;
         }
 
         $targetConnection = $this->option('connection') ?: (string) config('database.default');
         $targetConfig = config("database.connections.$targetConnection");
 
-        if (!is_array($targetConfig)) {
+        if (! is_array($targetConfig)) {
             $this->error("Unknown connection [$targetConnection].");
+
             return self::FAILURE;
         }
 
@@ -46,7 +50,8 @@ class SchemaSyncCommand extends Command
         try {
             $cleanup['create']();
         } catch (\Throwable $e) {
-            $this->error('Failed to prepare the temporary database: ' . $e->getMessage());
+            $this->error('Failed to prepare the temporary database: '.$e->getMessage());
+
             return self::FAILURE;
         }
 
@@ -61,6 +66,7 @@ class SchemaSyncCommand extends Command
             $this->error('Migrations failed on the temporary database.');
             $this->line(Artisan::output());
             $cleanup['destroy']();
+
             return self::FAILURE;
         }
 
@@ -81,10 +87,10 @@ class SchemaSyncCommand extends Command
         $platform = $actualDoctrine->getDatabasePlatform();
         $sqlStatements = $platform->getAlterSchemaSQL($schemaDiff);
 
-        if (!$this->option('drop-extra-tables')) {
+        if (! $this->option('drop-extra-tables')) {
             $sqlStatements = array_values(array_filter(
                 $sqlStatements,
-                fn (string $sql) => !preg_match('/^\s*drop\s+table/i', $sql)
+                fn (string $sql) => ! preg_match('/^\s*drop\s+table/i', $sql)
             ));
         }
 
@@ -98,9 +104,10 @@ class SchemaSyncCommand extends Command
         if ($this->option('dry-run')) {
             $this->info('Planned SQL statements:');
             foreach ($sqlStatements as $statement) {
-                $this->line($statement . ';');
+                $this->line($statement.';');
             }
             $cleanup['destroy']();
+
             return self::SUCCESS;
         }
 
@@ -154,14 +161,14 @@ class SchemaSyncCommand extends Command
             return [$tempConnection, $tempConfig, $cleanup];
         }
 
-        if (!in_array($driver, ['mysql', 'mariadb', 'pgsql', 'sqlsrv'], true)) {
+        if (! in_array($driver, ['mysql', 'mariadb', 'pgsql', 'sqlsrv'], true)) {
             throw new \RuntimeException("Unsupported driver [$driver] for schema sync.");
         }
 
         $baseName = (string) ($targetConfig['database'] ?? 'database');
         $baseName = preg_replace('/[^A-Za-z0-9_]/', '_', $baseName);
         $tempDatabase = $this->option('temp-database')
-            ?: substr($baseName . '_schema_sync_tmp_' . Str::uuid()->toString(), 0, 56);
+            ?: substr($baseName.'_schema_sync_tmp_'.Str::uuid()->toString(), 0, 56);
 
         $tempConfig = $targetConfig;
         $tempConfig['database'] = $tempDatabase;
@@ -183,18 +190,18 @@ class SchemaSyncCommand extends Command
     private function quoteDatabaseName(string $driver, string $database): string
     {
         return match ($driver) {
-            'mysql', 'mariadb' => '`' . str_replace('`', '``', $database) . '`',
-            'pgsql' => '"' . str_replace('"', '""', $database) . '"',
-            'sqlsrv' => '[' . str_replace(']', ']]', $database) . ']',
+            'mysql', 'mariadb' => '`'.str_replace('`', '``', $database).'`',
+            'pgsql' => '"'.str_replace('"', '""', $database).'"',
+            'sqlsrv' => '['.str_replace(']', ']]', $database).']',
             default => $database,
         };
     }
 
-    private function buildDoctrineConnection(string $connectionName): \Doctrine\DBAL\Connection
+    private function buildDoctrineConnection(string $connectionName): Connection
     {
         $config = config("database.connections.$connectionName");
 
-        if (!is_array($config)) {
+        if (! is_array($config)) {
             throw new \RuntimeException("Unknown connection [$connectionName].");
         }
 
@@ -233,19 +240,20 @@ class SchemaSyncCommand extends Command
             default => throw new \RuntimeException("Unsupported driver [$driver] for doctrine connection."),
         };
 
-        if (!empty($config['unix_socket']) && in_array($driver, ['mysql', 'mariadb'], true)) {
+        if (! empty($config['unix_socket']) && in_array($driver, ['mysql', 'mariadb'], true)) {
             $params['unix_socket'] = $config['unix_socket'];
         }
 
-        return DriverManager::getConnection($params, new DoctrineConfiguration());
+        return DriverManager::getConnection($params, new DoctrineConfiguration);
     }
 
-    private function shouldSkipStatement(\Doctrine\DBAL\Schema\AbstractSchemaManager $schemaManager, string $statement): bool
+    private function shouldSkipStatement(AbstractSchemaManager $schemaManager, string $statement): bool
     {
         if (preg_match('/^\s*DROP\s+INDEX\s+`?([A-Za-z0-9_]+)`?\s+ON\s+`?([A-Za-z0-9_]+)`?/i', $statement, $matches)) {
             [$indexName, $tableName] = [$matches[1], $matches[2]];
             $indexes = $schemaManager->listTableIndexes($tableName);
-            return !array_key_exists(strtolower($indexName), array_change_key_case($indexes, CASE_LOWER));
+
+            return ! array_key_exists(strtolower($indexName), array_change_key_case($indexes, CASE_LOWER));
         }
 
         if (preg_match('/^\s*ALTER\s+TABLE\s+`?([A-Za-z0-9_]+)`?\s+DROP\s+FOREIGN\s+KEY\s+`?([A-Za-z0-9_]+)`?/i', $statement, $matches)) {
@@ -256,6 +264,7 @@ class SchemaSyncCommand extends Command
                     return false;
                 }
             }
+
             return true;
         }
 

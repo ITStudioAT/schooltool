@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class PruneOrphanSchoolFoldersCommand extends Command
 {
     protected $signature = 'private:prune-orphan-school-folders {--dry-run : Show orphan folders without deleting them}';
+
     protected $description = 'Remove orphan school folders from storage/app/private';
 
     public function handle(InstallUpdateService $service): int
@@ -24,6 +25,7 @@ class PruneOrphanSchoolFoldersCommand extends Command
 
         if (empty($orphans)) {
             $this->info('No orphan school folders found in storage/app/private.');
+
             return self::SUCCESS;
         }
 
@@ -34,15 +36,17 @@ class PruneOrphanSchoolFoldersCommand extends Command
 
         if ($dryRun) {
             $this->warn('Dry-run mode: no folders were deleted.');
+
             return self::SUCCESS;
         }
 
-        $this->info('Deleted folders: ' . count($deleted));
+        $this->info('Deleted folders: '.count($deleted));
         if (! empty($failed)) {
-            $this->error('Failed to delete folders: ' . count($failed));
+            $this->error('Failed to delete folders: '.count($failed));
             foreach ($failed as $path) {
                 $this->error(" - {$path}");
             }
+
             return self::FAILURE;
         }
 

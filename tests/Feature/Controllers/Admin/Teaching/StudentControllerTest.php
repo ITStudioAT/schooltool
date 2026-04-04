@@ -28,7 +28,7 @@ beforeEach(function () {
         'teacher',
         'student',
         'user',
-    ])->each(fn(string $role) => Role::firstOrCreate([
+    ])->each(fn (string $role) => Role::firstOrCreate([
         'name' => $role,
         'guard_name' => 'web',
     ]));
@@ -516,7 +516,7 @@ describe('validation', function () {
 
         $longString = str_repeat('a', 256);
 
-        $response = $this->getJson('/api/admin/teaching/load_class_students?schoolclass=' . $longString);
+        $response = $this->getJson('/api/admin/teaching/load_class_students?schoolclass='.$longString);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['schoolclass']);
@@ -536,7 +536,7 @@ describe('validation', function () {
 
         $longString = str_repeat('a', 256);
 
-        $response = $this->getJson('/api/admin/teaching/load_class_students?schoolclasses[]=' . $longString);
+        $response = $this->getJson('/api/admin/teaching/load_class_students?schoolclasses[]='.$longString);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['schoolclasses.0']);

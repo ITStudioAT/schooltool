@@ -41,7 +41,7 @@
                             <v-icon size="18" :icon="resolvedActiveSection.icon" />
                             <span>{{ resolvedActiveSection.label }}</span>
                         </div>
-                        <div class="admin-section-hero__focus-note">{{ resolvedActiveSection.note }}</div>
+                        <div v-if="resolvedActiveSection.note" class="admin-section-hero__focus-note">{{ resolvedActiveSection.note }}</div>
                     </v-card-text>
                 </v-card>
             </v-col>

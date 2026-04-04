@@ -2,6 +2,13 @@
 
 For any Laravel/project questions, DO NOT guess. Always inspect the real project state first using Laravel Boost MCP tools and/or local project commands.
 
+## Encoding and text handling
+
+- Treat the repository as UTF-8 without BOM.
+- Preserve German umlauts and other non-ASCII characters exactly as stored.
+- Never replace correct characters with `?`, `�`, `Ã¤`, `Ã¶`, `Ã¼`, `ÃŸ`, or similar mojibake.
+- If text appears corrupted, only repair strings that are clearly reconstructable.
+
 Use Boost tools by default for:
 
 - routing (route definitions, middleware stacks, route groups)
@@ -21,9 +28,9 @@ When reporting findings, include:
 
 - exact file path(s)
 - line numbers when possible
-- the exact code snippet (1–3 lines)outputs
+- the exact code snippet (1-3 lines)
 
-## Frontend conventions (resources/js) — Vue 3 + Pinia + Vue Router + Vuetify
+## Frontend conventions (resources/js) ? Vue 3 + Pinia + Vue Router + Vuetify
 
 ### Architecture
 
@@ -33,11 +40,11 @@ When reporting findings, include:
 
 ### Folder structure (this repo)
 
-- `resources/js/lib/api.ts` — single Axios instance + interceptors.
-- `resources/js/stores/*` — Pinia stores (one store per domain, e.g. `useTasksStore`).
-- `resources/js/router/index.ts` + `resources/js/router/guards/*` — routes + guards.
-- `resources/js/pages/*` (or `views/*` if that’s what exists) — route-level components.
-- `resources/js/components/*` — reusable Vuetify components.
+- `resources/js/lib/api.ts` ? single Axios instance + interceptors.
+- `resources/js/stores/*` ? Pinia stores (one store per domain, e.g. `useTasksStore`).
+- `resources/js/router/index.ts` + `resources/js/router/guards/*` ? routes + guards.
+- `resources/js/pages/*` (or `views/*` if that's what exists) ? route-level components.
+- `resources/js/components/*` ? reusable Vuetify components.
 
 ### API client rules
 
@@ -56,12 +63,12 @@ When reporting findings, include:
 
 - Use a single auth store (`useAuthStore`) with `init()` that fetches current user.
 - Router guards enforce auth; redirect unauthenticated users to login.
-- 401 → redirect/login flow; 419 → CSRF refresh + retry once.
+- 401 ? redirect/login flow; 419 ? CSRF refresh + retry once.
 
 ### Output requirements
 
 - When generating code, include exact file paths and diffs.
-- Reuse existing patterns in `resources/js` (don’t create new conventions unless asked).
+- Reuse existing patterns in `resources/js` (don't create new conventions unless asked).
 
 ## UI design consistency (Vuetify)
 

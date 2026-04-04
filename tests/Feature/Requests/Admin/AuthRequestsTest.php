@@ -6,35 +6,26 @@
  * Tests for login, password recovery, and registration step requests.
  */
 
-use App\Http\Requests\Admin\LoginStepEmailRequest;
 use App\Http\Requests\Admin\LoginStep2Request;
 use App\Http\Requests\Admin\LoginStep3Request;
+use App\Http\Requests\Admin\LoginStepEmailRequest;
 use App\Http\Requests\Admin\PasswordUnknownStep1Request;
 use App\Http\Requests\Admin\PasswordUnknownStep2Request;
 use App\Http\Requests\Admin\PasswordUnknownStep3Request;
 use App\Http\Requests\Admin\PasswordUnknownStep4Request;
-use App\Http\Requests\Admin\PasswordUnknownStepEmailRequest;
-use App\Http\Requests\Admin\AdminPasswordUnknownStepPasswordRequest;
-use App\Http\Requests\Admin\AdminPasswordUnknownStepSchoolRequest;
-use App\Http\Requests\Admin\AdminPasswordUnknownStepTokenRequest;
-use App\Http\Requests\Admin\AdminPasswordUnknownStepToken2Request;
-use App\Http\Requests\Admin\AdminPasswordUnkownStepPasswordRequest;
-use App\Http\Requests\Admin\AdminPasswordUnkownStepTokenRequest;
 use App\Http\Requests\Admin\RegisterStep1Request;
 use App\Http\Requests\Admin\RegisterStep2Request;
 use App\Http\Requests\Admin\RegisterStep3Request;
-use App\Http\Requests\Admin\AdminNewTeacherStepCodeRequest;
-use App\Http\Requests\Admin\AdminNewTeacherStepEmailRequest;
-use App\Http\Requests\Admin\AdminNewTeacherStepSchoolRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Validator;
 
 uses(RefreshDatabase::class);
 
 // Helper function to validate request rules
-function validateRequest(string $requestClass, array $data): \Illuminate\Validation\Validator
+function validateRequest(string $requestClass, array $data): Illuminate\Validation\Validator
 {
-    $request = new $requestClass();
+    $request = new $requestClass;
+
     return Validator::make($data, $request->rules());
 }
 
@@ -44,7 +35,7 @@ function validateRequest(string $requestClass, array $data): \Illuminate\Validat
 
 describe('LoginStepEmailRequest', function () {
     it('authorizes all requests', function () {
-        $request = new LoginStepEmailRequest();
+        $request = new LoginStepEmailRequest;
         expect($request->authorize())->toBeTrue();
     });
 
@@ -107,7 +98,7 @@ describe('LoginStepEmailRequest', function () {
         $validator = validateRequest(LoginStepEmailRequest::class, [
             'data' => [
                 'step' => 'LOGIN_ENTER_EMAIL',
-                'email' => str_repeat('a', 250) . '@test.com',
+                'email' => str_repeat('a', 250).'@test.com',
             ],
         ]);
 
@@ -121,7 +112,7 @@ describe('LoginStepEmailRequest', function () {
 
 describe('LoginStep2Request', function () {
     it('authorizes all requests', function () {
-        $request = new LoginStep2Request();
+        $request = new LoginStep2Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -132,7 +123,7 @@ describe('LoginStep2Request', function () {
 
 describe('LoginStep3Request', function () {
     it('authorizes all requests', function () {
-        $request = new LoginStep3Request();
+        $request = new LoginStep3Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -143,7 +134,7 @@ describe('LoginStep3Request', function () {
 
 describe('PasswordUnknownStep1Request', function () {
     it('authorizes all requests', function () {
-        $request = new PasswordUnknownStep1Request();
+        $request = new PasswordUnknownStep1Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -154,7 +145,7 @@ describe('PasswordUnknownStep1Request', function () {
 
 describe('PasswordUnknownStep2Request', function () {
     it('authorizes all requests', function () {
-        $request = new PasswordUnknownStep2Request();
+        $request = new PasswordUnknownStep2Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -165,7 +156,7 @@ describe('PasswordUnknownStep2Request', function () {
 
 describe('PasswordUnknownStep3Request', function () {
     it('authorizes all requests', function () {
-        $request = new PasswordUnknownStep3Request();
+        $request = new PasswordUnknownStep3Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -176,7 +167,7 @@ describe('PasswordUnknownStep3Request', function () {
 
 describe('PasswordUnknownStep4Request', function () {
     it('authorizes all requests', function () {
-        $request = new PasswordUnknownStep4Request();
+        $request = new PasswordUnknownStep4Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -187,7 +178,7 @@ describe('PasswordUnknownStep4Request', function () {
 
 describe('RegisterStep1Request', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterStep1Request();
+        $request = new RegisterStep1Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -198,7 +189,7 @@ describe('RegisterStep1Request', function () {
 
 describe('RegisterStep2Request', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterStep2Request();
+        $request = new RegisterStep2Request;
         expect($request->authorize())->toBeTrue();
     });
 });
@@ -209,7 +200,7 @@ describe('RegisterStep2Request', function () {
 
 describe('RegisterStep3Request', function () {
     it('authorizes all requests', function () {
-        $request = new RegisterStep3Request();
+        $request = new RegisterStep3Request;
         expect($request->authorize())->toBeTrue();
     });
 });

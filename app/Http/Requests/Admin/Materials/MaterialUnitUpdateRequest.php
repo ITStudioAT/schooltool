@@ -19,4 +19,3 @@ class MaterialUnitUpdateRequest extends FormRequest
         ];
     }
 }
-

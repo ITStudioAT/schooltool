@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class RestaurantMenuPlanEntry extends Model
 {
@@ -48,5 +49,10 @@ class RestaurantMenuPlanEntry extends Model
             'restaurant_menu_plan_entry_id',
             'restaurant_eating_time_id'
         );
+    }
+
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(RestaurantMenuPlanBooking::class, 'restaurant_menu_plan_entry_id');
     }
 }

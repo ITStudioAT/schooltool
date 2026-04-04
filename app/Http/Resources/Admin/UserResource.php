@@ -33,12 +33,22 @@ class UserResource extends JsonResource
                     ];
                 })
                 ->values(),
+            'origin_keys' => collect($this->origin_keys ?? [])
+                ->filter(fn (mixed $origin): bool => is_string($origin) && trim($origin) !== '')
+                ->map(fn (string $origin): string => trim($origin))
+                ->values(),
+            'origin_labels' => collect($this->origin_labels ?? [])
+                ->filter(fn (mixed $origin): bool => is_string($origin) && trim($origin) !== '')
+                ->map(fn (string $origin): string => trim($origin))
+                ->values(),
             'has_sepa' => (bool) $this->sepa_at,
             'sepa_at' => $this->sepa_at ? Carbon::parse($this->sepa_at)->format('d.m.Y') : null,
             'is_2fa' => (bool) $this->is_2fa,
             'is_active' => (bool) $this->is_active,
             'is_confirmed' => (bool) $this->confirmed_at,
             'confirmed_at' => $this->confirmed_at ? Carbon::parse($this->confirmed_at)->format('d.m.Y') : null,
+            'is_restaurant_confirmed' => (bool) $this->restaurant_confirmed_at,
+            'restaurant_confirmed_at' => $this->restaurant_confirmed_at ? Carbon::parse($this->restaurant_confirmed_at)->format('d.m.Y') : null,
             'is_verified' => (bool) $this->email_verified_at,
             'email_verified_at' => $this->email_verified_at ? Carbon::parse($this->email_verified_at)->format('d.m.Y') : null,
             'email_2fa' => $this->email_2fa,

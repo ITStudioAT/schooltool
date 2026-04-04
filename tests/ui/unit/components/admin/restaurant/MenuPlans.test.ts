@@ -1,4 +1,4 @@
-﻿import { mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import MenuPlans from '@/pages/admin/restaurant/components/MenuPlans.vue'
 import { useMenuPlanStore } from '@/stores/admin/restaurant/MenuPlanStore'
@@ -14,11 +14,15 @@ vi.mock('@/stores/admin/restaurant/RestaurantStore', () => ({
 
 function mountMenuPlans(
     routeQuery: Record<string, string> = {},
-    plans: Array<Record<string, unknown>> = [
+    plans: Array<Record<string, unknown>> | undefined = [
         { id: 'mp-2026-03-23', start_date: '2026-03-23', end_date: '2026-03-27', is_available: true },
     ],
+    options: {
+        onlineSettings?: Record<string, unknown>
+        routerPushImplementation?: () => Promise<unknown> | unknown
+    } = {},
 ) {
-    const routerPush = vi.fn()
+    const routerPush = vi.fn(options.routerPushImplementation)
     const normalizedPlans = plans.map((plan) => ({ ...plan }))
 
     vi.mocked(useMenuPlanStore).mockReturnValue({
@@ -27,6 +31,13 @@ function mountMenuPlans(
         load: vi.fn(),
         findPlanForDay: (isoDate: string) => normalizedPlans.find((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date) || null,
         planCountForDay: (isoDate: string) => normalizedPlans.filter((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date).length,
+        bookedMenuCountForDay: (isoDate: string) => normalizedPlans.reduce((sum: number, plan: any) => {
+            const entries = Array.isArray(plan.entries) ? plan.entries : []
+
+            return sum + entries
+                .filter((entry: any) => entry.plan_date === isoDate)
+                .reduce((entrySum: number, entry: any) => entrySum + Number(entry.booked_menu_count || 0), 0)
+        }, 0),
     } as never)
 
     vi.mocked(useRestaurantStore).mockReturnValue({
@@ -39,6 +50,7 @@ function mountMenuPlans(
                 order_end_week_offset: 0,
                 order_end_day_of_week: 5,
                 order_end_time: '17:00',
+                ...(options.onlineSettings || {}),
             },
         },
         onlineSettings: {
@@ -49,6 +61,7 @@ function mountMenuPlans(
             order_end_week_offset: 0,
             order_end_day_of_week: 5,
             order_end_time: '17:00',
+            ...(options.onlineSettings || {}),
         },
         loadSettings: vi.fn(),
     } as never)
@@ -181,6 +194,27 @@ describe('Restaurant menu plans component', () => {
         })
     })
 
+    it('disables the selection UI immediately while the editor navigation is pending', async () => {
+        const wrapper = mountMenuPlans({}, undefined, {
+            routerPushImplementation: () => new Promise(() => {}),
+        })
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        await wrapper.vm.$nextTick()
+
+        ;(wrapper.vm as any).selectDay('2026-03-25')
+        await wrapper.vm.$nextTick()
+
+        await wrapper.find('[data-testid="menu-plan-edit-button"]').trigger('click')
+        await wrapper.vm.$nextTick()
+
+        expect((wrapper.vm as any).isNavigatingToEditor).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plans-navigation-overlay"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="menu-plan-edit-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="menu-plan-reset-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="menu-day-2026-03-25"]').attributes('disabled')).toBeDefined()
+    })
+
     it('renders three stacked weeks and the create action', () => {
         const wrapper = mountMenuPlans()
 
@@ -203,6 +237,98 @@ describe('Restaurant menu plans component', () => {
         expect(wrapper.text()).toContain('Bestellbarer Men')
     })
 
+    it('uses the current online settings for orderable markers when no individual values are enabled', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 0,
+                order_start_day_of_week: 1,
+                order_start_time: '11:00',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 2,
+                order_end_time: '12:00',
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-03-25T12:00:00')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-25"]').exists()).toBe(true)
+    })
+
+    it('prefers individual schedule values for orderable markers when they are enabled', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                use_individual_schedule_values: true,
+                visible_start_at: '2026-03-23T08:00',
+                visible_end_at: '2026-03-27T23:59',
+                order_start_at: '2026-03-23T08:00',
+                order_end_at: '2026-03-24T12:00',
+                order_start_mode: 'when_available',
+                order_end_week_offset: 0,
+                order_end_day_of_week: 5,
+                order_end_time: '17:00',
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-03-25T12:00:00')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-03-25"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-03-25"]').exists()).toBe(false)
+    })
+
+    it('does not show visible or orderable icons before the current online schedule opens the plan', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-04-13',
+                start_date: '2026-04-13',
+                end_date: '2026-04-16',
+                is_available: true,
+                use_individual_schedule_values: false,
+                visibility_start_mode: 'when_orderable',
+                order_start_mode: 'when_available',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 4,
+                order_end_time: '16:00',
+                visibility_end_mode: 'plan_end',
+            },
+        ], {
+            onlineSettings: {
+                visibility_start_mode: 'when_orderable',
+                visibility_start_week_offset: 2,
+                visibility_start_day_of_week: 0,
+                visibility_start_time: '15:00',
+                order_start_mode: 'scheduled',
+                order_start_week_offset: 2,
+                order_start_day_of_week: 0,
+                order_start_time: '15:00',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 4,
+                order_end_time: '16:00',
+                visibility_end_mode: 'plan_end',
+            },
+        })
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-04-13'
+        ;(wrapper.vm as any).currentDateTime = new Date('2026-04-01T20:42:22')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="available-plan-marker-2026-04-13"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="orderable-plan-marker-2026-04-13"]').exists()).toBe(false)
+    })
+
     it('combines existing menu-plan periods into connected start middle and end day classes', () => {
         const wrapper = mountMenuPlans()
         ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
@@ -221,5 +347,26 @@ describe('Restaurant menu plans component', () => {
         expect(endDayClasses['has-plan']).toBe(true)
         expect(endDayClasses['has-plan-end']).toBe(true)
         expect(endDayClasses['has-plan-start']).toBe(false)
+    })
+
+    it('shows the booked menu counter for each day', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-03-23',
+                start_date: '2026-03-23',
+                end_date: '2026-03-27',
+                is_available: true,
+                entries: [
+                    { id: 1, plan_date: '2026-03-25', booked_menu_count: 5 },
+                    { id: 2, plan_date: '2026-03-26', booked_menu_count: 2 },
+                ],
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-03-23'
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-25"]').text()).toBe('5')
+        expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-26"]').text()).toBe('2')
     })
 })

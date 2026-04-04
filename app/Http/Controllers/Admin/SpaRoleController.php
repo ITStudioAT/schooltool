@@ -3,13 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Role;
-use Illuminate\Http\Request;
 use App\Http\Requests\Admin\IndexRoleRequest;
 use App\Http\Requests\Admin\StoreRoleRequest;
 use App\Http\Requests\Admin\UpdateRoleRequest;
 use App\Http\Resources\Admin\RoleResource;
+use App\Models\Role;
 use App\Traits\PaginationTrait;
+use Illuminate\Http\Request;
 
 class SpaRoleController extends Controller
 {
@@ -33,6 +33,7 @@ class SpaRoleController extends Controller
         }
 
         $pagination = RoleResource::collection($query->paginate(config('spa.pagination')));
+
         return response()->json($this->makePagination($pagination), 200);
     }
 

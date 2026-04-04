@@ -516,4 +516,3 @@ describe('createSubjects', function () {
             ->assertJsonValidationErrors(['data.0.email_mentors.0']);
     });
 });
-

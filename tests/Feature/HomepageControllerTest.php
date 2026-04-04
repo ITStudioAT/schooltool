@@ -42,6 +42,7 @@ beforeEach(function () {
     ]);
 
     Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'lunch_user', 'guard_name' => 'web']);
 });
 
 describe('loadSchoolsForTool', function () {
@@ -186,6 +187,8 @@ describe('config', function () {
                 'licence',
                 'selectableSchools',
                 'schoolLicences',
+                'auth_check',
+                'auth_user',
                 'tool_module_statuses' => [
                     'register',
                     'tutoring',
@@ -197,10 +200,33 @@ describe('config', function () {
                 'teaching_active',
                 'restaurant' => [
                     'user_information_intro_html',
+                    'new_users_must_confirm_email',
                     'visible_menu_plans_count',
                     'orderable_menu_plans_count',
                 ],
             ]);
+    });
+
+    test('config includes the authenticated restaurant user for the selected school', function () {
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Günther',
+            'last_name' => 'Kron',
+            'email' => 'restaurant-user@test.local',
+        ]);
+        $user->assignRole('lunch_user');
+
+        $this->actingAs($user);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name.'&app=Restaurant');
+
+        $response->assertOk()
+            ->assertJsonPath('auth_check', true)
+            ->assertJsonPath('auth_user.id', $user->id)
+            ->assertJsonPath('auth_user.first_name', 'Günther')
+            ->assertJsonPath('auth_user.last_name', 'Kron')
+            ->assertJsonPath('auth_user.email', 'restaurant-user@test.local');
     });
 
     test('config returns selectable schools', function () {
@@ -284,6 +310,36 @@ describe('config', function () {
             ->assertJsonPath('tool_module_statuses.materials', 'inactive');
     });
 
+    test('config resolves module statuses from the selected school instead of the first school tool record', function () {
+        $otherSchool = School::factory()->create([
+            'short_name' => 'OTHER',
+            'is_selectable' => true,
+        ]);
+
+        SchoolTool::factory()->create([
+            'school_id' => $otherSchool->id,
+            'register_visible_user' => false,
+            'tutoring_visible_user' => false,
+            'teaching_visible_user' => false,
+            'materials_visible_user' => false,
+            'restaurant_visible_user' => false,
+        ]);
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'register_visible_user' => true,
+            'restaurant_visible_user' => true,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('register_active', true)
+            ->assertJsonPath('restaurant_active', true)
+            ->assertJsonPath('tool_module_statuses.register', 'active')
+            ->assertJsonPath('tool_module_statuses.restaurant', 'active');
+    });
+
     test('config includes the restaurant user information intro html for the selected school', function () {
         SchoolTool::factory()->create([
             'school_id' => $this->school->id,
@@ -294,6 +350,18 @@ describe('config', function () {
 
         $response->assertOk()
             ->assertJsonPath('restaurant.user_information_intro_html', '<p><strong>Willkommen</strong> im Restaurant.</p>');
+    });
+
+    test('config includes whether new restaurant users must be confirmed', function () {
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_new_users_must_confirm_email' => true,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.new_users_must_confirm_email', true);
     });
 
     test('config includes current visible and orderable restaurant menu plan counts', function () {
@@ -338,6 +406,138 @@ describe('config', function () {
 
         $response->assertOk()
             ->assertJsonPath('restaurant.visible_menu_plans_count', 2)
+            ->assertJsonPath('restaurant.orderable_menu_plans_count', 1);
+    });
+
+    test('config uses current online settings when no individual schedule values are enabled', function () {
+        Carbon::setTestNow('2026-03-23 16:00:00');
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_menu_visibility_start_mode' => 'scheduled',
+            'restaurant_menu_visibility_start_week_offset' => 0,
+            'restaurant_menu_visibility_start_day_of_week' => 5,
+            'restaurant_menu_visibility_start_time' => '23:00:00',
+            'restaurant_menu_order_start_mode' => 'scheduled',
+            'restaurant_menu_order_start_week_offset' => 0,
+            'restaurant_menu_order_start_day_of_week' => 5,
+            'restaurant_menu_order_start_time' => '23:00:00',
+            'restaurant_menu_order_end_week_offset' => 0,
+            'restaurant_menu_order_end_day_of_week' => 6,
+            'restaurant_menu_order_end_time' => '23:59:00',
+            'restaurant_menu_visibility_end_mode' => 'plan_end',
+        ]);
+
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-03-23',
+            'end_date' => '2026-03-27',
+            'is_available' => true,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 0,
+            'order_start_day_of_week' => 2,
+            'order_start_time' => '09:00:00',
+            'order_end_week_offset' => 0,
+            'order_end_day_of_week' => 2,
+            'order_end_time' => '12:00:00',
+            'visibility_end_mode' => 'plan_end',
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.visible_menu_plans_count', 0)
+            ->assertJsonPath('restaurant.orderable_menu_plans_count', 0);
+    });
+
+    test('config does not treat future menu plans as already orderable when older per-plan schedule fields differ', function () {
+        Carbon::setTestNow('2026-04-01 20:42:22');
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_menu_visibility_start_mode' => 'when_orderable',
+            'restaurant_menu_visibility_start_week_offset' => 2,
+            'restaurant_menu_visibility_start_day_of_week' => 0,
+            'restaurant_menu_visibility_start_time' => '15:00:00',
+            'restaurant_menu_order_start_mode' => 'scheduled',
+            'restaurant_menu_order_start_week_offset' => 2,
+            'restaurant_menu_order_start_day_of_week' => 0,
+            'restaurant_menu_order_start_time' => '15:00:00',
+            'restaurant_menu_order_end_week_offset' => 1,
+            'restaurant_menu_order_end_day_of_week' => 4,
+            'restaurant_menu_order_end_time' => '16:00:00',
+            'restaurant_menu_visibility_end_mode' => 'plan_end',
+        ]);
+
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-04-13',
+            'end_date' => '2026-04-16',
+            'is_available' => true,
+            'visibility_start_mode' => 'when_orderable',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 1,
+            'order_end_day_of_week' => 4,
+            'order_end_time' => '16:00:00',
+            'visibility_end_mode' => 'plan_end',
+            'use_individual_schedule_values' => false,
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.visible_menu_plans_count', 0)
+            ->assertJsonPath('restaurant.orderable_menu_plans_count', 0);
+    });
+
+    test('config prefers individual menu plan schedule values over global and plan schedule rules', function () {
+        Carbon::setTestNow('2026-03-23 16:00:00');
+
+        SchoolTool::factory()->create([
+            'school_id' => $this->school->id,
+            'restaurant_menu_visibility_start_mode' => 'scheduled',
+            'restaurant_menu_visibility_start_week_offset' => 0,
+            'restaurant_menu_visibility_start_day_of_week' => 5,
+            'restaurant_menu_visibility_start_time' => '23:00:00',
+            'restaurant_menu_order_start_mode' => 'scheduled',
+            'restaurant_menu_order_start_week_offset' => 0,
+            'restaurant_menu_order_start_day_of_week' => 5,
+            'restaurant_menu_order_start_time' => '23:00:00',
+            'restaurant_menu_order_end_week_offset' => 0,
+            'restaurant_menu_order_end_day_of_week' => 6,
+            'restaurant_menu_order_end_time' => '23:59:00',
+            'restaurant_menu_visibility_end_mode' => 'plan_end',
+        ]);
+
+        RestaurantMenuPlan::factory()->create([
+            'school_id' => $this->school->id,
+            'start_date' => '2026-04-06',
+            'end_date' => '2026-04-10',
+            'is_available' => true,
+            'visibility_start_mode' => 'scheduled',
+            'visibility_start_week_offset' => 0,
+            'visibility_start_day_of_week' => 5,
+            'visibility_start_time' => '23:00:00',
+            'order_start_mode' => 'scheduled',
+            'order_start_week_offset' => 0,
+            'order_start_day_of_week' => 5,
+            'order_start_time' => '23:00:00',
+            'order_end_week_offset' => 0,
+            'order_end_day_of_week' => 6,
+            'order_end_time' => '23:59:00',
+            'visibility_end_mode' => 'plan_end',
+            'use_individual_schedule_values' => true,
+            'visible_start_at' => '2026-03-22 12:00:00',
+            'visible_end_at' => '2026-03-30 23:59:00',
+            'order_start_at' => '2026-03-23 08:00:00',
+            'order_end_at' => '2026-03-23 17:00:00',
+        ]);
+
+        $response = $this->getJson('/api/homepage/config?school='.$this->school->short_name);
+
+        $response->assertOk()
+            ->assertJsonPath('restaurant.visible_menu_plans_count', 1)
             ->assertJsonPath('restaurant.orderable_menu_plans_count', 1);
     });
 
