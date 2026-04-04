@@ -5,8 +5,10 @@ use App\Models\RestaurantFood;
 use App\Models\RestaurantFreeDay;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
+use App\Models\RestaurantMenuPlanBooking;
 use App\Models\RestaurantMenuPlanEntry;
 use App\Models\School;
+use App\Models\User;
 use App\Services\RestaurantMenuPlanPdfService;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Barryvdh\DomPDF\PDF;
@@ -57,7 +59,7 @@ it('builds a menu plan pdf with free days and entry details', function () {
     $wrapper = Mockery::mock(PDF::class);
     $wrapper->shouldReceive('setPaper')
         ->once()
-        ->with('a4', 'portrait')
+        ->with('a4', 'landscape')
         ->andReturnSelf();
     $wrapper->shouldReceive('save')
         ->once()
@@ -94,6 +96,125 @@ it('builds a menu plan pdf with free days and entry details', function () {
         ->and($path)->toEndWith('.pdf');
 });
 
+it('builds a booking print pdf with separate pages per day and eating time', function () {
+    $school = School::factory()->create(['long_name' => 'Testschule']);
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $school->id,
+        'title' => "Fr\u{fc}hlingswoche",
+        'start_date' => '2026-03-23',
+        'end_date' => '2026-03-24',
+    ]);
+
+    $menuA = RestaurantMenu::factory()->create([
+        'school_id' => $school->id,
+        'title' => 'Pasta',
+    ]);
+    $menuB = RestaurantMenu::factory()->create([
+        'school_id' => $school->id,
+        'title' => 'Suppe',
+    ]);
+
+    $entryA = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-03-23',
+        'restaurant_menu_id' => $menuA->id,
+        'menu_title' => 'Pasta',
+    ]);
+    $entryB = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-03-23',
+        'restaurant_menu_id' => $menuB->id,
+        'menu_title' => 'Suppe',
+    ]);
+
+    $timeA = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '11:30:00',
+    ]);
+    $timeB = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '12:45:00',
+    ]);
+    $entryA->eatingTimes()->attach($timeA->id);
+    $entryB->eatingTimes()->attach($timeB->id);
+
+    $user = User::factory()->create([
+        'school_id' => $school->id,
+        'first_name' => 'Erika',
+        'last_name' => 'Muster',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'restaurant_menu_plan_entry_id' => $entryA->id,
+        'restaurant_eating_time_id' => $timeA->id,
+        'price' => 8.50,
+        'quantity' => 2,
+        'booked_at' => now(),
+        'metadata' => [
+            'recipients' => [
+                ['name' => 'Anna Beispiel', 'type' => 'child', 'import116_id' => null],
+                ['name' => 'Ben Beispiel', 'type' => 'child', 'import116_id' => null],
+            ],
+        ],
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $school->id,
+        'user_id' => $user->id,
+        'restaurant_menu_plan_entry_id' => $entryB->id,
+        'restaurant_eating_time_id' => $timeB->id,
+        'price' => 7.20,
+        'quantity' => 1,
+        'booked_at' => now(),
+        'metadata' => [
+            'recipients' => [
+                ['name' => 'Clara Beispiel', 'type' => 'other_person', 'import116_id' => null],
+            ],
+        ],
+    ]);
+
+    $wrapper = Mockery::mock(PDF::class);
+    $wrapper->shouldReceive('setPaper')
+        ->once()
+        ->with('a4', 'portrait')
+        ->andReturnSelf();
+    $wrapper->shouldReceive('save')
+        ->once()
+        ->withArgs(function (string $path): bool {
+            expect($path)->toContain('app/private/pdf')
+                ->and($path)->toContain('fruhlingswoche_bestellungen_')
+                ->and($path)->toEndWith('.pdf');
+
+            return true;
+        });
+
+    DomPdf::shouldReceive('loadView')
+        ->once()
+        ->withArgs(function (string $view, array $data): bool {
+            expect($view)->toBe('pdfs.restaurantMenuPlanBookings');
+            expect($data['plan']['title'])->toBe("Fr\u{fc}hlingswoche");
+            expect($data['plan']['school_name'])->toBe('Testschule');
+            expect($data['pages'])->toHaveCount(2);
+            expect($data['pages'][0]['date_label'])->toBe('23.03.2026');
+            expect($data['pages'][0]['time_label'])->toBe('11:30 Uhr');
+            expect($data['pages'][0]['rows'])->toHaveCount(2);
+            expect($data['pages'][0]['rows'][0]['customer_name'])->toBe('Anna Beispiel');
+            expect($data['pages'][0]['rows'][0]['menu_title'])->toBe('Pasta');
+            expect($data['pages'][1]['time_label'])->toBe('12:45 Uhr');
+            expect($data['pages'][1]['rows'][0]['customer_name'])->toBe('Clara Beispiel');
+
+            return true;
+        })
+        ->andReturn($wrapper);
+
+    $path = app(RestaurantMenuPlanPdfService::class)->createBookingsPdf($plan->fresh());
+
+    expect($path)->toContain('fruhlingswoche_bestellungen_')
+        ->and($path)->toEndWith('.pdf');
+});
+
 it('renders the compact weekly layout for the menu plan pdf', function () {
     $html = view('pdfs.restaurantMenuPlan', [
         'plan' => [
@@ -102,10 +223,10 @@ it('renders the compact weekly layout for the menu plan pdf', function () {
             'school_name' => 'Testschule',
             'generated_at' => '25.03.2026 09:15',
         ],
-        'days' => [
-            [
-                'weekday_label' => 'Montag',
-                'date_label' => '23.03.2026',
+        'days' => collect(range(0, 6))->map(function (int $offset): array {
+            return [
+                'weekday_label' => 'Tag '.$offset,
+                'date_label' => sprintf('%02d.03.2026', 23 + $offset),
                 'is_free_day' => false,
                 'entries' => [
                     [
@@ -124,14 +245,48 @@ it('renders the compact weekly layout for the menu plan pdf', function () {
                         ],
                     ],
                 ],
+            ];
+        })->all(),
+    ])->render();
+
+    expect($html)->toContain('margin: 6mm 6mm;')
+        ->and($html)->toContain('size: A4 landscape;')
+        ->and($html)->toContain('page-break-inside: avoid;')
+        ->and($html)->toContain('border-spacing: 2px;')
+        ->and($html)->toContain('class="week-table"')
+        ->and(substr_count($html, 'class="week-day"'))->toBe(7)
+        ->and($html)->toContain('entry-subline--comment')
+        ->and($html)->toContain('Backerbsensuppe');
+});
+
+it('renders the bookings print layout with separate print pages', function () {
+    $html = view('pdfs.restaurantMenuPlanBookings', [
+        'plan' => [
+            'title' => "Men\u{fc}plan",
+            'range_label' => '23.03.2026 - 24.03.2026',
+            'school_name' => 'Testschule',
+            'generated_at' => '25.03.2026 09:15',
+        ],
+        'pages' => [
+            [
+                'weekday_label' => 'Montag',
+                'date_label' => '23.03.2026',
+                'time_label' => '11:30 Uhr',
+                'rows' => [
+                    [
+                        'customer_name' => 'Anna Beispiel',
+                        'menu_title' => "Montagsmen\u{fc}",
+                    ],
+                ],
             ],
         ],
     ])->render();
 
-    expect($html)->toContain('margin: 6mm 6mm;')
-        ->and($html)->toContain('page-break-inside: avoid;')
-        ->and($html)->toContain('border-spacing: 2px;')
-        ->and($html)->toContain('class="week-table"')
-        ->and($html)->toContain('entry-subline--comment')
-        ->and($html)->toContain('Backerbsensuppe');
+    expect($html)->toContain('page-break-after: always;')
+        ->and($html)->toContain('Restaurant Bestellungen')
+        ->and($html)->toContain('font-size: 28px;')
+        ->and($html)->toContain('Tag:</span> Montag, 23.03.2026')
+        ->and($html)->toContain('Anna Beispiel')
+        ->and($html)->toContain('Montagsmen')
+        ->and($html)->not->toContain('Keine Bestellungen');
 });

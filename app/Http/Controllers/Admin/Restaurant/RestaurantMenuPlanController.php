@@ -9,6 +9,7 @@ use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Services\RestaurantMenuPlanPdfService;
 use App\Services\RestaurantMenuPlanService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantMenuPlanController extends Controller
@@ -116,7 +117,7 @@ class RestaurantMenuPlanController extends Controller
         ]);
     }
 
-    public function print(int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
+    public function print(Request $request, int $id, RestaurantMenuPlanService $service, RestaurantMenuPlanPdfService $pdfService): BinaryFileResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
@@ -128,7 +129,9 @@ class RestaurantMenuPlanController extends Controller
             abort(404, 'Menüplan nicht gefunden.');
         }
 
-        $path = $pdfService->createPdf($plan);
+        $path = $request->query('type') === 'bookings'
+            ? $pdfService->createBookingsPdf($plan)
+            : $pdfService->createPdf($plan);
 
         return response()
             ->download($path, basename($path), [

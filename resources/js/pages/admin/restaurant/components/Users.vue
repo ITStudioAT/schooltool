@@ -107,7 +107,8 @@
                     :key="user.id"
                     rounded="xl"
                     variant="outlined"
-                    class="restaurant-users-card">
+                    class="restaurant-users-card"
+                    :style="cardBusyStyle(user)">
                     <v-card-text class="restaurant-users-card__body pa-3">
                         <div class="restaurant-users-card__head">
                             <div class="restaurant-users-card__identity">
@@ -352,6 +353,24 @@ export default {
     },
 
     methods: {
+        isCardBusy(user) {
+            return this.confirmUserId === user.id || this.deleteUserId === user.id || this.sepaUserId === user.id
+        },
+        cardBusyStyle(user) {
+            const base = { transition: 'opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease' }
+
+            if (!this.isCardBusy(user)) {
+                return base
+            }
+
+            return {
+                ...base,
+                opacity: 0.5,
+                borderColor: 'rgb(8, 145, 178)',
+                boxShadow: 'inset 4px 0 0 0 rgb(8, 145, 178)',
+                pointerEvents: 'none',
+            }
+        },
         fullName(user) {
             const firstName = String(user?.first_name || '').trim()
             const lastName = String(user?.last_name || '').trim()

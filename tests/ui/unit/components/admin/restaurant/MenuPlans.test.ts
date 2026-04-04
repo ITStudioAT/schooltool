@@ -369,4 +369,22 @@ describe('Restaurant menu plans component', () => {
         expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-25"]').text()).toBe('5')
         expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-26"]').text()).toBe('2')
     })
+
+    it('opens the bookings print option with the bookings query parameter', () => {
+        const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const wrapper = mountMenuPlans()
+
+        ;(wrapper.vm as any).selectDay('2026-03-25')
+        ;(wrapper.vm as any).showPrintDialog = true
+        ;(wrapper.vm as any).openPrint('bookings')
+
+        expect(openSpy).toHaveBeenCalledWith(
+            '/api/admin/restaurant/menu-plans/mp-2026-03-23/print?type=bookings',
+            '_blank',
+            'noopener',
+        )
+        expect((wrapper.vm as any).showPrintDialog).toBe(false)
+
+        openSpy.mockRestore()
+    })
 })
