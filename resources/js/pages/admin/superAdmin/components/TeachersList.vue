@@ -98,8 +98,10 @@
                                         <div class="person-row crud-item-row">
                                             <div class="d-flex align-start" style="min-width: 0">
                                                 <div class="person-body" style="min-width: 0">
-                                                    <div class="person-name">{{ item.last_name }} {{ item.first_name }}</div>
-                                                    <div class="person-roles">{{ item.short || '-' }}</div>
+                                                    <div class="person-name">
+                                                        {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
+                                                    </div>
+                                                    <div class="person-roles">{{ item.email || '-' }}</div>
                                                 </div>
                                             </div>
                                         </div>

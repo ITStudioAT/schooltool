@@ -50,15 +50,17 @@
                                 <template #title>
                                     <div class="person-row crud-item-row">
                                         <div class="d-flex align-start" style="min-width: 0">
-                                            <div class="person-body" style="min-width: 0">
-                                                <div class="person-name d-flex align-center ga-1">
-                                                    <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
-                                                    {{ item.last_name }} {{ item.first_name }}
+                                                <div class="person-body" style="min-width: 0">
+                                                    <div class="person-name d-flex align-center ga-1">
+                                                        <v-icon v-if="!item.is_active" color="error" size="14" icon="mdi-lock" />
+                                                        <span>
+                                                            {{ item.last_name }} {{ item.first_name }}<span v-if="item.short"> ({{ item.short }})</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="person-roles">{{ item.email || '-' }}</div>
                                                 </div>
-                                                <div class="person-roles">{{ item.short || '-' }}</div>
                                             </div>
                                         </div>
-                                    </div>
                                 </template>
                             </v-list-item>
                         </v-list>
