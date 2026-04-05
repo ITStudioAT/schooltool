@@ -28,21 +28,9 @@
                     </span>
                 </v-btn>
                 <v-spacer />
-                <v-btn
-                    size="small"
-                    variant="outlined"
-                    color="white"
-                    prepend-icon="mdi-refresh"
-                    :disabled="isNavigationLocked"
-                    @click="refreshPage">
-                    Aktualisieren
-                </v-btn>
+                <v-btn size="small" variant="outlined" color="white" prepend-icon="mdi-refresh" :disabled="isNavigationLocked" @click="refreshPage">Aktualisieren</v-btn>
             </div>
-            <v-progress-linear
-                v-if="isRefreshing"
-                indeterminate
-                color="primary"
-                class="aba-nav__progress" />
+            <v-progress-linear v-if="isRefreshing" indeterminate color="primary" class="aba-nav__progress" />
         </v-sheet>
 
         <v-row class="w-100 ma-0" dense>
@@ -60,9 +48,7 @@
                 </v-card-title>
                 <v-divider />
                 <v-card-text>
-                    <div class="text-body-2 text-medium-emphasis mb-3">
-                        Wählen Sie das aktive Schuljahr für Ihren ABA-Bereich.
-                    </div>
+                    <div class="text-body-2 text-medium-emphasis mb-3">Wählen Sie das aktive Schuljahr für Ihren ABA-Bereich.</div>
 
                     <v-select
                         v-model="schoolyearDialogSelection"
@@ -77,13 +63,7 @@
                 </v-card-text>
                 <v-divider />
                 <v-card-actions>
-                    <v-btn
-                        variant="tonal"
-                        color="warning"
-                        :disabled="schoolyearSaveLoading"
-                        @click="cancelSchoolyearSwitch">
-                        Abbrechen
-                    </v-btn>
+                    <v-btn variant="tonal" color="warning" :disabled="schoolyearSaveLoading" @click="cancelSchoolyearSwitch">Abbrechen</v-btn>
                     <v-spacer />
                     <v-btn
                         variant="flat"
@@ -135,13 +115,6 @@ export default {
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gewählt'
         },
-        selectedRoleLabel() {
-            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
-            if (!roles.length) {
-                return 'Keine Rolle'
-            }
-            return roles.slice(0, 2).join(' / ')
-        },
         currentSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr'
         },
@@ -154,11 +127,6 @@ export default {
                     key: 'school',
                     text: this.selectedSchoolLabel,
                     icon: 'mdi-domain',
-                },
-                {
-                    key: 'role',
-                    text: this.selectedRoleLabel,
-                    icon: 'mdi-shield-account',
                 },
             ]
         },

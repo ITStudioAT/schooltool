@@ -6,87 +6,6 @@
             title="Abrechnung drucken"
             icon="mdi-receipt-text-outline"
             data-testid="restaurant-reports-billing-card">
-            <div class="billing-reports-section">
-                <div class="billing-reports-toolbar">
-                    <div>
-                        <div class="billing-reports-toolbar__eyebrow">Letzte Abrechnungen</div>
-                        <div class="billing-reports-toolbar__meta">
-                            {{ visibleBillingsLabel }}
-                        </div>
-                    </div>
-
-                    <div class="billing-reports-toolbar__actions">
-                        <v-btn
-                            size="small"
-                            variant="outlined"
-                            color="secondary"
-                            rounded="lg"
-                            :disabled="!hasPreviousBillingsWindow || isLoading"
-                            @click="showPreviousBillingsWindow">
-                            <v-icon icon="mdi-chevron-left" size="18" />
-                        </v-btn>
-                        <v-btn
-                            size="small"
-                            variant="outlined"
-                            color="secondary"
-                            rounded="lg"
-                            :disabled="!hasNextBillingsWindow || isLoading"
-                            @click="showNextBillingsWindow">
-                            <v-icon icon="mdi-chevron-right" size="18" />
-                        </v-btn>
-                    </div>
-                </div>
-
-                <v-progress-linear
-                    v-if="isLoading"
-                    indeterminate
-                    color="secondary"
-                    rounded
-                    class="mb-4" />
-
-                <v-alert
-                    v-else-if="!sortedBillings.length"
-                    type="info"
-                    variant="tonal"
-                    class="mb-3">
-                    Es wurden noch keine Abrechnungen erstellt.
-                </v-alert>
-
-                <div v-else class="billing-reports-list">
-                    <button
-                        v-for="billing in visibleBillings"
-                        :key="billing.id"
-                        type="button"
-                        class="billing-reports-item"
-                        :data-testid="`restaurant-billing-history-${billing.id}`"
-                        @click="openBillingPrint(billing.id)">
-                        <div class="billing-reports-item__head">
-                            <div>
-                                <div class="billing-reports-item__title">
-                                    {{ billing.period_label }}
-                                </div>
-                                <div class="billing-reports-item__range">
-                                    {{ billing.date_range_label }}
-                                </div>
-                            </div>
-
-                            <span class="billing-reports-pill billing-reports-pill--amount">
-                                {{ formatCurrency(billing.total_amount) }}
-                            </span>
-                        </div>
-
-                        <div class="billing-reports-item__meta">
-                            <span class="billing-reports-pill billing-reports-pill--muted">
-                                {{ billing.bookings_count }} Bestellung<span v-if="Number(billing.bookings_count) !== 1">en</span>
-                            </span>
-                            <span class="billing-reports-pill billing-reports-pill--muted">
-                                {{ billing.created_at }}
-                            </span>
-                        </div>
-                    </button>
-                </div>
-            </div>
-
             <div class="billing-reports-section billing-reports-section--weeks">
                 <div class="billing-reports-toolbar">
                     <div>
@@ -176,6 +95,87 @@
                     @click="confirmDialog = true">
                     Abrechnung drucken
                 </v-btn>
+            </div>
+
+            <div class="billing-reports-section">
+                <div class="billing-reports-toolbar">
+                    <div>
+                        <div class="billing-reports-toolbar__eyebrow">Letzte Abrechnungen</div>
+                        <div class="billing-reports-toolbar__meta">
+                            {{ visibleBillingsLabel }}
+                        </div>
+                    </div>
+
+                    <div class="billing-reports-toolbar__actions">
+                        <v-btn
+                            size="small"
+                            variant="outlined"
+                            color="secondary"
+                            rounded="lg"
+                            :disabled="!hasPreviousBillingsWindow || isLoading"
+                            @click="showPreviousBillingsWindow">
+                            <v-icon icon="mdi-chevron-left" size="18" />
+                        </v-btn>
+                        <v-btn
+                            size="small"
+                            variant="outlined"
+                            color="secondary"
+                            rounded="lg"
+                            :disabled="!hasNextBillingsWindow || isLoading"
+                            @click="showNextBillingsWindow">
+                            <v-icon icon="mdi-chevron-right" size="18" />
+                        </v-btn>
+                    </div>
+                </div>
+
+                <v-progress-linear
+                    v-if="isLoading"
+                    indeterminate
+                    color="secondary"
+                    rounded
+                    class="mb-4" />
+
+                <v-alert
+                    v-else-if="!sortedBillings.length"
+                    type="info"
+                    variant="tonal"
+                    class="mb-3">
+                    Es wurden noch keine Abrechnungen erstellt.
+                </v-alert>
+
+                <div v-else class="billing-reports-list">
+                    <button
+                        v-for="billing in visibleBillings"
+                        :key="billing.id"
+                        type="button"
+                        class="billing-reports-item"
+                        :data-testid="`restaurant-billing-history-${billing.id}`"
+                        @click="openBillingPrint(billing.id)">
+                        <div class="billing-reports-item__head">
+                            <div>
+                                <div class="billing-reports-item__title">
+                                    {{ billing.period_label }}
+                                </div>
+                                <div class="billing-reports-item__range">
+                                    {{ billing.date_range_label }}
+                                </div>
+                            </div>
+
+                            <span class="billing-reports-pill billing-reports-pill--amount">
+                                {{ formatCurrency(billing.total_amount) }}
+                            </span>
+                        </div>
+
+                        <div class="billing-reports-item__meta">
+                            <span class="billing-reports-pill billing-reports-pill--muted">
+                                {{ billing.bookings_count }} Bestellung<span v-if="Number(billing.bookings_count) !== 1">en</span>
+                            </span>
+                            <span class="billing-reports-pill billing-reports-pill--muted">
+                                {{ billing.created_at }}
+                            </span>
+                        </div>
+                    </button>
+                </div>
             </div>
         </ItsGridBox>
 

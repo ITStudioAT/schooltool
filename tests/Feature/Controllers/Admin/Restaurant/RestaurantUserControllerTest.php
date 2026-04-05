@@ -1,12 +1,14 @@
 <?php
 
 use App\Models\Import116;
+use App\Models\RestaurantSepaMandate;
 use App\Models\School;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Notifications\StandardEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -386,6 +388,46 @@ test('restaurant user sepa can be refused for a lunch user in the same school', 
         ->assertJsonPath('data.has_sepa', false);
 
     expect($user->fresh()->sepa_at)->toBeNull();
+});
+
+test('restaurant user sepa removal deletes stored mandates for the same school', function () {
+    $user = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'sepa_at' => now()->subDay(),
+    ]);
+    $user->assignRole('lunch_user');
+
+    RestaurantSepaMandate::query()->create([
+        'user_id' => $user->id,
+        'school_id' => $this->school->id,
+        'flow_uuid' => (string) Str::uuid(),
+        'status' => 'completed',
+        'entry_point' => 'login',
+        'account_holder_name' => 'Anna Mittag',
+        'address_line' => 'Musterweg 1, 5020 Salzburg',
+        'iban' => 'AT611904300234573201',
+        'bic' => 'BKAUATWW',
+        'child_entries' => [],
+        'sepa_payee_snapshot' => '<p>Zahlungsempfänger</p>',
+        'sepa_mandate_text_snapshot' => '<p>Mandatstext</p>',
+        'accepted_at' => now()->subDay(),
+        'confirmed_at' => now()->subDay(),
+        'completed_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->putJson("/api/admin/restaurant/users/{$user->id}/sepa", [
+        'data' => [
+            'has_sepa' => false,
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.id', $user->id)
+        ->assertJsonPath('data.has_sepa', false);
+
+    expect($user->fresh()->sepa_at)->toBeNull()
+        ->and(RestaurantSepaMandate::query()->where('user_id', $user->id)->exists())->toBeFalse();
 });
 
 test('restaurant lunch candidate can be confirmed for the same school after email verification', function () {

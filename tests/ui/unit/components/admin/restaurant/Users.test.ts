@@ -83,7 +83,7 @@ function mountUsers(storeOverrides: Record<string, unknown> = {}, routeQuery: Re
                 'v-chip': { template: '<span><slot /></span>' },
                 'v-icon': { template: '<i />' },
                 'v-alert': { template: '<div><slot /></div>' },
-                'v-dialog': { template: '<div><slot /></div>' },
+                'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
                 'v-pagination': { template: '<div class="v-pagination" />' },
                 'v-spacer': { template: '<div />' },
                 'v-text-field': {
@@ -112,7 +112,7 @@ describe('Restaurant users component', () => {
 
         expect(store.index).toHaveBeenCalledWith()
         expect(wrapper.text()).toContain('Restaurant-Benutzer suchen')
-        expect(wrapper.text()).toContain('Zu bestätigen')
+        expect(wrapper.text()).toContain('Benutzer zu bestätigen')
         expect(wrapper.text()).toContain('4')
         expect(wrapper.text()).toContain('Nur zu bestätigen')
         expect(wrapper.text()).toContain('Alle')
@@ -207,13 +207,30 @@ describe('Restaurant users component', () => {
         expect(store.index).toHaveBeenCalledWith(1)
     })
 
-    it('toggles the SEPA state for a user from the list', async () => {
+    it('opens a persistent confirmation dialog before removing SEPA', async () => {
         const { wrapper, store } = mountUsers()
         ;(wrapper.vm as any).restaurantUserStore = store
 
         await (wrapper.vm as any).toggleSepa(store.users[0])
 
+        expect(store.updateSepa).not.toHaveBeenCalled()
+        expect((wrapper.vm as any).sepaDialog).toBe(true)
+        expect((wrapper.vm as any).pendingSepaRemovalUser?.id).toBe(1)
+        expect(wrapper.text()).toContain('SEPA wirklich entfernen?')
+        expect(wrapper.text()).toContain('Dabei werden auch die gespeicherten SEPA-Lastschriftmandate für diesen Benutzer gelöscht.')
+    })
+
+    it('confirms the SEPA removal and reloads the current page', async () => {
+        const { wrapper, store } = mountUsers()
+        ;(wrapper.vm as any).restaurantUserStore = store
+
+        await (wrapper.vm as any).toggleSepa(store.users[0])
+        await (wrapper.vm as any).confirmSepaRemoval()
+
         expect(store.updateSepa).toHaveBeenCalledWith(1, false)
+        expect(store.index).toHaveBeenCalledWith(1)
+        expect((wrapper.vm as any).sepaDialog).toBe(false)
+        expect((wrapper.vm as any).pendingSepaRemovalUser).toBeNull()
     })
 
     it('confirms a pending restaurant user from the list', async () => {

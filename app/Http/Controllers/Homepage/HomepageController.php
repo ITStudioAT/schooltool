@@ -14,6 +14,7 @@ use App\Http\Requests\Homepage\RestaurantRegisterUserRequest;
 use App\Http\Requests\Homepage\RestaurantSendLoginCodeRequest;
 use App\Http\Requests\Homepage\RestaurantSepaCompleteRequest;
 use App\Http\Requests\Homepage\RestaurantSepaConfirmCodeRequest;
+use App\Http\Requests\Homepage\RestaurantSepaResendCodeRequest;
 use App\Http\Requests\Homepage\RestaurantSepaStoreRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
@@ -325,6 +326,15 @@ class HomepageController extends Controller
     ) {
         return response()->json(
             $restaurantSepaMandateService->confirmCode($request->validated()['data'], (string) $request->ip())
+        );
+    }
+
+    public function restaurantResendSepaMandateCode(
+        RestaurantSepaResendCodeRequest $request,
+        RestaurantSepaMandateService $restaurantSepaMandateService
+    ) {
+        return response()->json(
+            $restaurantSepaMandateService->resendCode($request->validated()['data'], (string) $request->ip())
         );
     }
 

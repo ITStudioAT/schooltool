@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Homepage;
 
+use App\Rules\Iban;
 use Illuminate\Foundation\Http\FormRequest;
 
 class RestaurantSepaStoreRequest extends FormRequest
@@ -18,7 +19,10 @@ class RestaurantSepaStoreRequest extends FormRequest
             'data.flow_uuid' => ['required', 'uuid'],
             'data.account_holder_name' => ['required', 'string', 'max:255'],
             'data.address_line' => ['required', 'string', 'max:500'],
-            'data.iban' => ['required', 'string', 'max:64'],
+            'data.postal_code' => ['required', 'string', 'max:16'],
+            'data.city' => ['required', 'string', 'max:255'],
+            'data.country' => ['required', 'string', 'max:255'],
+            'data.iban' => ['required', 'string', 'max:64', new Iban],
             'data.bic' => ['nullable', 'string', 'max:64'],
             'data.child_entries' => ['required', 'array', 'min:1'],
             'data.child_entries.*.name' => ['required', 'string', 'max:255'],

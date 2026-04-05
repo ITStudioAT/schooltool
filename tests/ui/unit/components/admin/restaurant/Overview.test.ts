@@ -53,13 +53,13 @@ describe('Restaurant overview component', () => {
         expect(wrapper.text()).toContain('Speisen')
         expect(wrapper.text()).toContain('Menüs')
         expect(wrapper.text()).toContain('Benutzer')
-        expect(wrapper.text()).toContain('Zu bestätigen')
+        expect(wrapper.text()).toContain('Benutzer zu bestätigen')
         expect(wrapper.text()).toContain('Zu Benutzern')
         expect(wrapper.text()).toContain('Nur zu bestätigen')
         expect(wrapper.text()).toContain('27')
         expect(wrapper.text()).toContain('5')
 
-        const pendingCard = wrapper.findAll('section').find((section) => section.text().includes('Zu bestätigen'))
+        const pendingCard = wrapper.findAll('section').find((section) => section.text().includes('Benutzer zu bestätigen'))
         expect(pendingCard?.attributes('data-color')).toBe('error')
     })
 
@@ -68,7 +68,7 @@ describe('Restaurant overview component', () => {
             lunch_users_pending_confirmation_count: 0,
         })
 
-        const pendingCard = wrapper.findAll('section').find((section) => section.text().includes('Zu bestätigen'))
+        const pendingCard = wrapper.findAll('section').find((section) => section.text().includes('Benutzer zu bestätigen'))
         expect(pendingCard?.attributes('data-color')).toBe('primary')
     })
 

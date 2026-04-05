@@ -31,18 +31,6 @@
             </div>
             <div class="restaurant-nav__actions">
                 <v-btn
-                    size="small"
-                    color="warning"
-                    variant="flat"
-                    rounded="xl"
-                    prepend-icon="mdi-refresh"
-                    :loading="isRefreshing"
-                    :disabled="isNavigationLocked || isRefreshing"
-                    @click="refreshPageData">
-                    Aktualisieren
-                </v-btn>
-
-                <v-btn
                     rounded="xl"
                     icon
                     size="small"
@@ -64,6 +52,7 @@
                 <MenuPlans v-if="main_action === 'menu-plans'" ref="menuPlansSection" />
                 <Reports v-if="main_action === 'reports'" />
                 <Users v-if="main_action === 'users'" />
+                <RestaurantSepa v-if="main_action === 'sepa'" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
@@ -82,11 +71,12 @@ import Foods from './components/Foods.vue'
 import Menus from './components/Menus.vue'
 import MenuPlans from './components/MenuPlans.vue'
 import Reports from './components/Reports.vue'
+import RestaurantSepa from './components/RestaurantSepa.vue'
 import Users from './components/Users.vue'
 import Settings from './components/Settings.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, Users, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -117,14 +107,6 @@ export default {
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gew\u00e4hlt'
         },
-        selectedRoleLabel() {
-            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
-            if (!roles.length) {
-                return 'Keine Rolle'
-            }
-
-            return roles.slice(0, 2).join(' / ')
-        },
         headerChips() {
             return [
                 {
@@ -138,6 +120,15 @@ export default {
                     icon: 'mdi-shield-account',
                 },
             ]
+        },
+        selectedRoleLabel() {
+            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
+
+            if (roles.length === 0) {
+                return 'Keine Rolle'
+            }
+
+            return roles.slice(0, 2).join(' / ')
         },
         activeSection() {
             const sections = {
@@ -169,6 +160,11 @@ export default {
                 users: {
                     label: 'Benutzer',
                     icon: 'mdi-account-multiple-outline',
+                    note: '',
+                },
+                sepa: {
+                    label: 'SEPA Verwaltung',
+                    icon: 'mdi-bank-transfer',
                     note: '',
                 },
                 settings: {
@@ -217,6 +213,12 @@ export default {
                     label: 'Benutzer',
                     meta: 'Personen verwalten',
                     icon: 'mdi-account-multiple-outline',
+                },
+                {
+                    key: 'sepa',
+                    label: 'SEPA Verwaltung',
+                    meta: 'SEPA verwalten',
+                    icon: 'mdi-bank-transfer',
                 },
             ]
         },

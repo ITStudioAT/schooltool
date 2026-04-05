@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Notifications\StandardEmail;
 use App\Notifications\StandardEmailWithAttachment;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Mail\Markdown;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
@@ -115,6 +116,24 @@ describe('StandardEmail Notification', function () {
         $mailMessage = $notification->toMail($user);
 
         expect($mailMessage->viewData['logo'])->toBe('path/to/logo.png');
+    });
+
+    it('renders the SEPA mail markdown view with a logo', function () {
+        $markdown = new Markdown(app('view'), [
+            'paths' => [resource_path('views/vendor/mail')],
+        ]);
+
+        $html = $markdown->render('spa::mails.homepage.sendSepaMandate', [
+            'data' => [
+                'subject' => 'SEPA-Lastschriftmandat als PDF',
+                'from_name' => 'Test School',
+            ],
+            'logo' => 'https://example.com/logo.png',
+        ])->toHtml();
+
+        expect($html)
+            ->toContain('SEPA-Lastschriftmandat als PDF')
+            ->toContain('bestätigte SEPA-Lastschriftmandat als PDF');
     });
 
     it('handles single attachment as string', function () {

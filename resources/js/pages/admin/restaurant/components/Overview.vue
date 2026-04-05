@@ -59,7 +59,7 @@ the<template>
                 <ItsGridBox
                     variant="overview"
                     :color="pendingConfirmationCardColor"
-                    title="Zu bestätigen"
+                    title="Benutzer zu bestätigen"
                     icon="mdi-account-clock-outline">
                     <div class="restaurant-overview-stat">{{ stats.lunch_users_pending_confirmation_count || 0 }}</div>
                     <div class="restaurant-overview-action">

@@ -89,13 +89,6 @@ export default {
         selectedSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || 'Kein Schuljahr gewählt'
         },
-        selectedRoleLabel() {
-            const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
-            if (!roles.length) {
-                return 'Keine Rolle'
-            }
-            return roles.slice(0, 2).join(' / ')
-        },
         headerChips() {
             return [
                 {
@@ -107,11 +100,6 @@ export default {
                     key: 'schoolyear',
                     text: this.selectedSchoolyearLabel,
                     icon: 'mdi-calendar-month-outline',
-                },
-                {
-                    key: 'role',
-                    text: this.selectedRoleLabel,
-                    icon: 'mdi-shield-account',
                 },
             ]
         },

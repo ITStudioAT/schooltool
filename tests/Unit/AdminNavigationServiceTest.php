@@ -429,6 +429,7 @@ describe('dashboardMenu', function () {
         expect($restaurantItem)
             ->not->toBeNull()
             ->and($restaurantItem['to'])->toBe('/admin/restaurant')
+            ->and($restaurantItem['active_paths'])->toBe(['/admin/restaurant'])
             ->and($restaurantItem['is_active'])->toBeTrue();
     });
 

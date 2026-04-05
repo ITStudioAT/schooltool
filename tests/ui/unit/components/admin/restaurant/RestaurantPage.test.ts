@@ -53,10 +53,10 @@ describe('Restaurant page navigation', () => {
         expect(restaurantStoreMock.loadSettings).toHaveBeenCalledTimes(1)
     })
 
-    it('builds the navigation items without the old settings entry', () => {
+    it('builds the navigation items with SEPA administration after users', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'reports', 'users'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa'])
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -160,6 +160,23 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.main_action).toBe('users')
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/users' })
+    })
+
+    it('switches to the sepa section when unlocked', () => {
+        const routerReplace = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'overview',
+            $router: { replace: routerReplace },
+            navigateTo(section: string) {
+                return (Restaurant as any).methods.navigateTo.call(this, section)
+            },
+        }
+
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'sepa')
+
+        expect(ctx.main_action).toBe('sepa')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/sepa' })
     })
 
     it('does not switch sections when locked', () => {

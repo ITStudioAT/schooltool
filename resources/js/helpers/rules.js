@@ -3,6 +3,7 @@ export function useValidationRulesSetup() {
         required,
         mail,
         mailOrNull,
+        iban,
         minLength,
         maxLength,
         exactLength,
@@ -20,6 +21,11 @@ export function useValidationRulesSetup() {
     }
 }
 
+const ibanCountryLengths = {
+    AT: 20,
+    DE: 22,
+}
+
 export function required() {
     return (v) => (v !== null && v !== undefined && v !== '') || 'Es muss etwas eingegeben werden.'
 }
@@ -32,6 +38,86 @@ export function mail() {
 
 export function passwordMatch(originalPassword) {
     return (v) => v === originalPassword || 'Kennwörter stimmen nicht überein.'
+}
+
+export function iban() {
+    return (v) => {
+        const result = validateIban(v)
+
+        return result.isValid || result.error || 'Die IBAN ist ungültig.'
+    }
+}
+
+export function validateIban(ibanValue) {
+    const normalizedIban = String(ibanValue ?? '').replace(/\s+/g, '').toUpperCase()
+
+    if (normalizedIban === '') {
+        return {
+            isValid: false,
+            normalizedIban,
+            countryCode: '',
+            error: 'Die IBAN darf nicht leer sein.',
+        }
+    }
+
+    if (!/^[A-Z0-9]+$/.test(normalizedIban)) {
+        return {
+            isValid: false,
+            normalizedIban,
+            countryCode: extractIbanCountryCode(normalizedIban),
+            error: 'Die IBAN darf nur Buchstaben und Ziffern enthalten.',
+        }
+    }
+
+    if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]+$/.test(normalizedIban)) {
+        return {
+            isValid: false,
+            normalizedIban,
+            countryCode: extractIbanCountryCode(normalizedIban),
+            error: 'Die IBAN hat kein gültiges Grundformat.',
+        }
+    }
+
+    const countryCode = normalizedIban.slice(0, 2)
+    const expectedLength = ibanCountryLengths[countryCode]
+
+    if (!expectedLength || normalizedIban.length !== expectedLength) {
+        return {
+            isValid: false,
+            normalizedIban,
+            countryCode,
+            error: 'Die IBAN-Länge ist für dieses Land ungültig.',
+        }
+    }
+
+    const rearranged = `${normalizedIban.slice(4)}${normalizedIban.slice(0, 4)}`
+    let remainder = 0
+
+    for (const character of rearranged) {
+        const digits = character >= 'A' && character <= 'Z'
+            ? String(character.charCodeAt(0) - 55)
+            : character
+
+        for (const digit of digits) {
+            remainder = ((remainder * 10) + Number(digit)) % 97
+        }
+    }
+
+    if (remainder !== 1) {
+        return {
+            isValid: false,
+            normalizedIban,
+            countryCode,
+            error: 'Die IBAN-Prüfziffer ist ungültig.',
+        }
+    }
+
+    return {
+        isValid: true,
+        normalizedIban,
+        countryCode,
+        error: null,
+    }
 }
 
 export function minLength(minLength) {
@@ -245,4 +331,8 @@ function checkShortDate(v) {
     if (month == 2) valid &&= day <= 29
 
     return valid
+}
+
+function extractIbanCountryCode(normalizedIban) {
+    return /^[A-Z]{2}/.test(normalizedIban) ? normalizedIban.slice(0, 2) : ''
 }

@@ -15,6 +15,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $entry_point
  * @property string|null $account_holder_name
  * @property string|null $address_line
+ * @property string|null $postal_code
+ * @property string|null $city
+ * @property string|null $country
  * @property string|null $iban
  * @property string|null $bic
  * @property array<int, array{name:string, schoolclass:string}>|null $child_entries
@@ -41,6 +44,9 @@ class RestaurantSepaMandate extends Model
         'entry_point',
         'account_holder_name',
         'address_line',
+        'postal_code',
+        'city',
+        'country',
         'iban',
         'bic',
         'child_entries',

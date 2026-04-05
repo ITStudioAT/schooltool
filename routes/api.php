@@ -97,6 +97,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/homepage/restaurant/confirm_email', [HomepageController::class, 'restaurantConfirmEmail'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/sepa/store', [HomepageController::class, 'restaurantStoreSepaMandate'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/sepa/confirm_code', [HomepageController::class, 'restaurantConfirmSepaMandateCode'])->middleware('tool-licensed:Restaurant');
+    Route::post('/homepage/restaurant/sepa/resend_code', [HomepageController::class, 'restaurantResendSepaMandateCode'])->middleware('tool-licensed:Restaurant');
     Route::post('/homepage/restaurant/sepa/complete', [HomepageController::class, 'restaurantCompleteSepaMandate'])->middleware('tool-licensed:Restaurant');
 
     // Restaurant booking routes
@@ -261,6 +262,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
         Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
+        Route::get('/admin/restaurant/sepa-users', [RestaurantUserController::class, 'sepaUsers']);
+        Route::get('/admin/restaurant/sepa-users/{flowUuid}/print', [RestaurantUserController::class, 'printSepaMandate']);
         Route::put('/admin/restaurant/users/{user}/confirm', [RestaurantUserController::class, 'confirm']);
         Route::delete('/admin/restaurant/users/{user}', [RestaurantUserController::class, 'destroy']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);

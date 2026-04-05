@@ -96,8 +96,11 @@ describe('Restaurant billing reports card', () => {
         const wrapper = mountBillingReportsCard()
 
         expect(wrapper.text()).toContain('Abrechnung drucken')
-        expect(wrapper.text()).toContain('Letzte Abrechnungen')
         expect(wrapper.text()).toContain('Kalenderwochen')
+        expect(wrapper.text()).toContain('Zeitraum')
+        expect(wrapper.text()).toContain('Letzte Abrechnungen')
+        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Zeitraum'))
+        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Letzte Abrechnungen'))
 
         await wrapper.find('[data-testid="restaurant-billing-history-4"]').trigger('click')
 
@@ -113,12 +116,12 @@ describe('Restaurant billing reports card', () => {
     it('extends the selection across connected weeks and shows a persistent confirmation dialog', async () => {
         const wrapper = mountBillingReportsCard()
 
-        expect(wrapper.text()).toContain('KW 15/2026')
+        expect(wrapper.text()).toContain('KW 15')
 
         await wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').trigger('click')
 
-        expect(wrapper.text()).toContain('KW 14-15/2026')
-        expect(wrapper.text()).toContain('30.03.2026 - 12.04.2026')
+        expect(wrapper.text()).toContain('KW 08-14/2026')
+        expect(wrapper.text()).toContain('16.02.2026 - 05.04.2026')
 
         const createButton = wrapper.findAll('button').find((button) => button.text().includes('Abrechnung drucken'))
         await createButton?.trigger('click')

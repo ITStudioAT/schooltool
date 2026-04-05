@@ -134,6 +134,7 @@ class AdminNavigationService
                     'icon' => 'mdi-silverware-fork-knife',
                     'to' => '/admin/restaurant',
                     'is_active' => ($restaurantLicenceStatus === 'active'),
+                    'active_paths' => ['/admin/restaurant'],
                 ] + $this->dashboardStatusMeta($restaurantLicenceStatus, $restaurantModuleStatus, 'Restaurant');
             }
         }

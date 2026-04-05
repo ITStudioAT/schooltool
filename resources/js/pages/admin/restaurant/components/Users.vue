@@ -4,7 +4,7 @@
             <template #header-actions>
                 <div class="d-flex ga-2 align-center flex-wrap">
                     <div class="restaurant-users-header-count" :class="{ 'is-attention': pendingConfirmationCount > 0 }">
-                        <span class="restaurant-users-header-count__label">Zu bestätigen</span>
+                        <span class="restaurant-users-header-count__label">Benutzer zu bestätigen</span>
                         <span class="restaurant-users-header-count__value">{{ pendingConfirmationCount }}</span>
                     </div>
 
@@ -27,22 +27,15 @@
                     </div>
 
                     <div class="restaurant-users-filter-toggle" role="group" aria-label="SEPA-Filter">
-                        <v-btn
-                            size="small"
-                            :color="only_without_sepa ? undefined : 'primary'"
-                            :variant="only_without_sepa ? 'text' : 'flat'"
-                            @click="setSepaFilter(false)">
+                        <v-btn size="small" :color="only_without_sepa ? undefined : 'primary'" :variant="only_without_sepa ? 'text' : 'flat'" @click="setSepaFilter(false)">
                             Alle
                         </v-btn>
-                        <v-btn
-                            size="small"
-                            :color="only_without_sepa ? 'primary' : undefined"
-                            :variant="only_without_sepa ? 'flat' : 'text'"
-                            @click="setSepaFilter(true)">
+                        <v-btn size="small" :color="only_without_sepa ? 'primary' : undefined" :variant="only_without_sepa ? 'flat' : 'text'" @click="setSepaFilter(true)">
                             ohne SEPA
                         </v-btn>
                     </div>
 
+                    <v-btn size="small" color="primary" variant="outlined" prepend-icon="mdi-refresh" @click="reloadUsers">Aktualisieren</v-btn>
                 </div>
             </template>
 
@@ -50,9 +43,7 @@
                 <div class="restaurant-users-search-panel__copy">
                     <div class="restaurant-users-search-panel__eyebrow">Restaurant</div>
                     <div class="restaurant-users-search-panel__headline">Restaurant-Benutzer suchen</div>
-                    <div class="restaurant-users-search-panel__meta">
-                        Suche nach Name, E-Mail-Adresse oder Klasse.
-                    </div>
+                    <div class="restaurant-users-search-panel__meta">Suche nach Name, E-Mail-Adresse oder Klasse.</div>
                 </div>
 
                 <div class="restaurant-users-search-panel__actions">
@@ -68,13 +59,7 @@
                         @keyup.enter="applySearch"
                         @click:clear="clearSearch" />
 
-                    <v-btn
-                        color="primary"
-                        variant="flat"
-                        prepend-icon="mdi-magnify"
-                        @click="applySearch">
-                        Suchen
-                    </v-btn>
+                    <v-btn color="primary" variant="flat" prepend-icon="mdi-magnify" @click="applySearch">Suchen</v-btn>
                 </div>
             </div>
 
@@ -82,19 +67,10 @@
                 <div class="restaurant-users-filter-banner__copy">
                     <div class="restaurant-users-filter-banner__eyebrow">Filter aktiv</div>
                     <div class="restaurant-users-filter-banner__title">Es werden nur Benutzer angezeigt, die noch bestätigt werden müssen.</div>
-                    <div class="restaurant-users-filter-banner__meta">
-                        Aktuell offen: {{ pendingConfirmationCount }}
-                    </div>
+                    <div class="restaurant-users-filter-banner__meta">Aktuell offen: {{ pendingConfirmationCount }}</div>
                 </div>
 
-                <v-btn
-                    size="small"
-                    color="error"
-                    variant="flat"
-                    prepend-icon="mdi-close-circle-outline"
-                    @click="setPendingConfirmationFilter(false)">
-                    Filter aufheben
-                </v-btn>
+                <v-btn size="small" color="error" variant="flat" prepend-icon="mdi-close-circle-outline" @click="setPendingConfirmationFilter(false)">Filter aufheben</v-btn>
             </div>
 
             <div class="restaurant-users-toolbar mb-4">
@@ -115,18 +91,10 @@
                 </div>
             </div>
 
-            <v-alert v-if="!users.length" type="info" variant="tonal" class="mb-3">
-                Keine Restaurant-Benutzer gefunden.
-            </v-alert>
+            <v-alert v-if="!users.length" type="info" variant="tonal" class="mb-3">Keine Restaurant-Benutzer gefunden.</v-alert>
 
             <div v-else class="restaurant-users-list">
-                <v-card
-                    v-for="user in users"
-                    :key="user.id"
-                    rounded="xl"
-                    variant="outlined"
-                    class="restaurant-users-card"
-                    :style="cardBusyStyle(user)">
+                <v-card v-for="user in users" :key="user.id" rounded="xl" variant="outlined" class="restaurant-users-card" :style="cardBusyStyle(user)">
                     <v-card-text class="restaurant-users-card__body pa-3">
                         <div class="restaurant-users-card__head">
                             <div class="restaurant-users-card__identity">
@@ -140,31 +108,19 @@
 
                             <div class="restaurant-users-card__controls">
                                 <div class="restaurant-users-card__state">
-                                    <v-chip
-                                        size="x-small"
-                                        :color="user.has_sepa ? 'success' : 'error'"
-                                        variant="tonal">
+                                    <v-chip size="x-small" :color="user.has_sepa ? 'success' : 'error'" variant="tonal">
                                         {{ user.has_sepa ? 'SEPA' : 'Kein SEPA' }}
                                     </v-chip>
 
-                                    <v-chip
-                                        size="x-small"
-                                        :color="user.is_verified ? 'success' : 'warning'"
-                                        variant="tonal">
+                                    <v-chip size="x-small" :color="user.is_verified ? 'success' : 'warning'" variant="tonal">
                                         {{ user.is_verified ? 'E-Mail ok' : 'E-Mail offen' }}
                                     </v-chip>
 
-                                    <v-chip
-                                        size="x-small"
-                                        :color="user.is_restaurant_confirmed ? 'success' : 'secondary'"
-                                        variant="tonal">
+                                    <v-chip size="x-small" :color="user.is_restaurant_confirmed ? 'success' : 'secondary'" variant="tonal">
                                         {{ user.is_confirmed ? 'Bestätigt' : 'Offen' }}
                                     </v-chip>
 
-                                    <v-chip
-                                        size="x-small"
-                                        :color="user.is_restaurant_confirmed ? 'success' : 'warning'"
-                                        variant="tonal">
+                                    <v-chip size="x-small" :color="user.is_restaurant_confirmed ? 'success' : 'warning'" variant="tonal">
                                         {{ user.is_restaurant_confirmed ? 'Restaurant bestätigt' : 'Restaurant offen' }}
                                     </v-chip>
                                 </div>
@@ -198,8 +154,8 @@
                                     :color="user.has_sepa ? 'warning' : 'success'"
                                     :variant="user.has_sepa ? 'outlined' : 'flat'"
                                     :prepend-icon="user.has_sepa ? 'mdi-close-circle-outline' : 'mdi-check-circle-outline'"
-                                    :loading="sepaUserId === user.id"
-                                    :disabled="sepaUserId === user.id || user.roles?.includes('lunch_candidate')"
+                                    :loading="sepaUserId === user.id || sepaRemovalUserId === user.id"
+                                    :disabled="sepaUserId === user.id || sepaRemovalUserId === user.id || user.roles?.includes('lunch_candidate')"
                                     @click="toggleSepa(user)">
                                     {{ user.has_sepa ? 'SEPA entfernen' : 'SEPA bestätigen' }}
                                 </v-btn>
@@ -212,12 +168,7 @@
                                 <div class="restaurant-users-card__origins">
                                     <span class="restaurant-users-card__origins-label">Herkunft</span>
                                     <div class="restaurant-users-card__origins-list">
-                                        <v-chip
-                                            v-for="originLabel in originLabels(user)"
-                                            :key="`${user.id}-${originLabel}`"
-                                            size="x-small"
-                                            variant="tonal"
-                                            color="info">
+                                        <v-chip v-for="originLabel in originLabels(user)" :key="`${user.id}-${originLabel}`" size="x-small" variant="tonal" color="info">
                                             {{ originLabel }}
                                         </v-chip>
                                     </div>
@@ -241,41 +192,25 @@
                         </div>
 
                         <div class="restaurant-users-card__children" v-if="user.import116_children?.length">
-                            <div class="restaurant-users-card__children-label">
-                                Kinder
-                            </div>
+                            <div class="restaurant-users-card__children-label">Kinder</div>
 
                             <div class="restaurant-users-card__children-list">
-                                <div
-                                    v-for="(child, index) in user.import116_children"
-                                    :key="`${user.id}-child-${index}`"
-                                    class="restaurant-users-card__children-item">
+                                <div v-for="(child, index) in user.import116_children" :key="`${user.id}-child-${index}`" class="restaurant-users-card__children-item">
                                     <span class="restaurant-users-card__children-name">{{ child.name || 'Unbekannt' }}</span>
-                                    <span
-                                        v-if="child.email"
-                                        class="restaurant-users-card__children-email">
+                                    <span v-if="child.email" class="restaurant-users-card__children-email">
                                         {{ child.email }}
                                     </span>
                                 </div>
                             </div>
                         </div>
-
                     </v-card-text>
                 </v-card>
             </div>
 
             <div class="restaurant-users-pagination" v-if="totalUsers > 0">
-                <div class="text-body-2 text-medium-emphasis">
-                    Seite {{ currentPage }} von {{ lastPage }}
-                </div>
+                <div class="text-body-2 text-medium-emphasis">Seite {{ currentPage }} von {{ lastPage }}</div>
 
-                <v-pagination
-                    v-if="lastPage > 1"
-                    v-model="currentPage"
-                    :length="lastPage"
-                    :total-visible="6"
-                    density="comfortable"
-                    @update:model-value="handlePageChange" />
+                <v-pagination v-if="lastPage > 1" v-model="currentPage" :length="lastPage" :total-visible="6" density="comfortable" @update:model-value="handlePageChange" />
             </div>
 
             <v-dialog v-model="deleteDialog" max-width="460" persistent>
@@ -308,6 +243,35 @@
                     </v-card-actions>
                 </v-card>
             </v-dialog>
+
+            <v-dialog v-model="sepaDialog" max-width="480" persistent>
+                <v-card rounded="xl">
+                    <v-card-title>SEPA wirklich entfernen?</v-card-title>
+
+                    <v-card-text>
+                        <div class="text-body-1">
+                            Soll das SEPA von
+                            <strong>{{ fullName(pendingSepaRemovalUser) }}</strong>
+                            wirklich entfernt werden?
+                        </div>
+
+                        <div class="text-body-2 text-medium-emphasis mt-3">Dabei werden auch die gespeicherten SEPA-Lastschriftmandate für diesen Benutzer gelöscht.</div>
+                    </v-card-text>
+
+                    <v-card-actions class="px-6 pb-5">
+                        <v-spacer />
+                        <v-btn variant="text" @click="closeSepaRemovalDialog">Abbrechen</v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            :loading="sepaRemovalUserId === pendingSepaRemovalUser?.id"
+                            :disabled="sepaRemovalUserId === pendingSepaRemovalUser?.id"
+                            @click="confirmSepaRemoval">
+                            SEPA entfernen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
         </ItsGridBox>
     </v-col>
 </template>
@@ -332,10 +296,13 @@ export default {
             restaurantUserStore: null,
             searchDraft: '',
             sepaUserId: null,
+            sepaRemovalUserId: null,
             confirmUserId: null,
             deleteUserId: null,
             deleteDialog: false,
+            sepaDialog: false,
             pendingDeleteUser: null,
+            pendingSepaRemovalUser: null,
         }
     },
 
@@ -351,7 +318,7 @@ export default {
             return Number(this.meta?.total || 0)
         },
         paginationSummary() {
-            if (! this.totalUsers) {
+            if (!this.totalUsers) {
                 return '0 - 0 von 0'
             }
 
@@ -378,7 +345,7 @@ export default {
 
     methods: {
         isCardBusy(user) {
-            return this.confirmUserId === user.id || this.deleteUserId === user.id || this.sepaUserId === user.id
+            return this.confirmUserId === user.id || this.deleteUserId === user.id || this.sepaUserId === user.id || this.sepaRemovalUserId === user.id
         },
         cardBusyStyle(user) {
             const base = { transition: 'opacity 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease' }
@@ -445,12 +412,43 @@ export default {
             await this.restaurantUserStore.index(1)
         },
         async toggleSepa(user) {
+            if (user?.has_sepa) {
+                this.openSepaRemovalDialog(user)
+                return
+            }
+
             this.sepaUserId = user?.id ?? null
 
             try {
-                await this.restaurantUserStore.updateSepa(user.id, ! user.has_sepa)
+                await this.restaurantUserStore.updateSepa(user.id, !user.has_sepa)
             } finally {
                 this.sepaUserId = null
+            }
+        },
+        openSepaRemovalDialog(user) {
+            this.pendingSepaRemovalUser = user ?? null
+            this.sepaDialog = true
+        },
+        closeSepaRemovalDialog() {
+            this.sepaDialog = false
+            this.pendingSepaRemovalUser = null
+        },
+        async confirmSepaRemoval() {
+            if (!this.pendingSepaRemovalUser?.id) {
+                return
+            }
+
+            this.sepaRemovalUserId = this.pendingSepaRemovalUser.id
+
+            try {
+                const removed = await this.restaurantUserStore.updateSepa(this.pendingSepaRemovalUser.id, false)
+
+                if (removed) {
+                    await this.restaurantUserStore.index(this.currentPage)
+                    this.closeSepaRemovalDialog()
+                }
+            } finally {
+                this.sepaRemovalUserId = null
             }
         },
         async confirmRestaurantUser(user) {
@@ -475,13 +473,11 @@ export default {
             this.pendingDeleteUser = null
         },
         async confirmDeleteCandidate() {
-            if (! this.pendingDeleteUser?.id) {
+            if (!this.pendingDeleteUser?.id) {
                 return
             }
 
-            const targetPage = this.users.length === 1 && this.currentPage > 1
-                ? this.currentPage - 1
-                : this.currentPage
+            const targetPage = this.users.length === 1 && this.currentPage > 1 ? this.currentPage - 1 : this.currentPage
 
             this.deleteUserId = this.pendingDeleteUser.id
 
@@ -517,9 +513,11 @@ export default {
                 delete query.only_without_sepa
             }
 
-            this.$router.replace({
-                query,
-            }).catch(() => {})
+            this.$router
+                .replace({
+                    query,
+                })
+                .catch(() => {})
         },
         isTruthyQueryValue(value) {
             return value === '1' || value === 1 || value === true || value === 'true'
@@ -548,9 +546,7 @@ export default {
     padding: 0.9rem 1rem;
     border: 1px solid rgba(14, 116, 144, 0.12);
     border-radius: 1.1rem;
-    background:
-        radial-gradient(circle at top left, rgba(224, 242, 254, 0.78), transparent 36%),
-        linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
+    background: radial-gradient(circle at top left, rgba(224, 242, 254, 0.78), transparent 36%), linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.92));
     box-shadow: 0 16px 32px -28px rgba(15, 23, 42, 0.42);
 }
 
@@ -563,9 +559,7 @@ export default {
     padding: 0.95rem 1rem;
     border: 1px solid rgba(220, 38, 38, 0.18);
     border-radius: 1.1rem;
-    background:
-        radial-gradient(circle at top left, rgba(254, 202, 202, 0.72), transparent 38%),
-        linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(254, 226, 226, 0.94));
+    background: radial-gradient(circle at top left, rgba(254, 202, 202, 0.72), transparent 38%), linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(254, 226, 226, 0.94));
     box-shadow: 0 16px 32px -28px rgba(127, 29, 29, 0.28);
 }
 

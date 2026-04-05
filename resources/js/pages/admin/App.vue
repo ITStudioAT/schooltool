@@ -18,6 +18,7 @@
                         :title="item.title"
                         :prepend-icon="item.icon"
                         :to="item.to"
+                        v-bind="routeItemBindings(item)"
                         :disabled="isMenuInteractionDisabled || !item.is_active"
                         @click="startNavigationLock(item.to)">
                         <template v-if="item.status_icon" #append>
@@ -196,6 +197,33 @@ export default {
             const currentRoute = this.$route?.fullPath || ''
             if (!resolvedTarget || resolvedTarget === currentRoute) return
             this.is_route_navigation_pending = true
+        },
+        routeItemBindings(item) {
+            return Array.isArray(item?.active_paths) && item.active_paths.length > 0
+                ? { active: this.isMenuItemActive(item) }
+                : {}
+        },
+        isMenuItemActive(item) {
+            const activePaths = Array.isArray(item?.active_paths) ? item.active_paths : []
+
+            if (!activePaths.length) {
+                return false
+            }
+
+            const currentPath = this.normalizeAdminPath(this.$route?.path)
+
+            return activePaths.some((activePath) => {
+                const normalizedActivePath = this.normalizeAdminPath(activePath)
+
+                return currentPath === normalizedActivePath || currentPath.startsWith(`${normalizedActivePath}/`)
+            })
+        },
+        normalizeAdminPath(path) {
+            if (typeof path !== 'string') {
+                return ''
+            }
+
+            return path.replace(/\/+$/, '')
         },
         async logout() {
             await this.adminStore.executeLogout()

@@ -134,27 +134,20 @@
                                 :key="`auth-booking-date-${group.dateKey}`"
                                 class="restaurant-auth-bookings__item"
                                 :class="{ 'restaurant-auth-bookings__item--today': group.dateKey === todayDateKey }">
-                                <div class="restaurant-auth-bookings__item-title">
-                                    {{ group.dayLabel }}, {{ group.dateLabel }}
-                                    <span v-if="group.dateKey === todayDateKey" class="restaurant-auth-bookings__today-badge">Heute</span>
-                                </div>
-
                                 <div class="restaurant-auth-bookings__entries">
                                     <div
                                         v-for="menuGroup in group.menuGroups"
                                         :key="`auth-booking-menu-${group.dateKey}-${menuGroup.menuKey}`"
                                         class="restaurant-auth-bookings__menu-group">
-                                        <div class="restaurant-auth-bookings__entry-title">
-                                            {{ menuGroup.menuTitle }}
-                                        </div>
-
                                         <div class="restaurant-auth-bookings__menu-items">
                                             <div
                                                 v-for="booking in menuGroup.bookings"
                                                 :key="`auth-booking-${booking.id}`"
                                                 class="restaurant-auth-bookings__entry">
                                                 <div class="restaurant-auth-bookings__copy">
-                                                    <div class="restaurant-auth-bookings__item-meta">
+                                                    <div class="restaurant-auth-bookings__item-meta restaurant-auth-bookings__item-meta--inline">
+                                                        <strong class="restaurant-auth-bookings__item-meta-part">{{ group.dayLabel }}, {{ group.dateLabel }}</strong>
+                                                        <span class="restaurant-auth-bookings__item-meta-part">{{ menuGroup.menuTitle }}</span>
                                                         <strong>{{ booking.quantity }}x</strong>
                                                         <span v-if="booking.eating_time"> um {{ formatEatingTime(booking.eating_time) }} Uhr</span>
                                                         <span v-if="bookingRecipientNames(booking)"> · {{ bookingRecipientNames(booking) }}</span>
@@ -787,7 +780,7 @@
                             Bitte füllen Sie das SEPA-Lastschriftmandat vollständig aus und bestätigen Sie es online.
                         </p>
 
-                        <v-form ref="sepaFormRef" @submit.prevent="submitRestaurantSepaMandate">
+                        <v-form ref="sepaFormRef" v-model="sepaFormValid" @submit.prevent="submitRestaurantSepaMandate">
                             <div class="restaurant-sepa-panel mb-4">
                                 <div class="restaurant-sepa-panel__title">Angaben zum Zahlungsempfänger (Gläubiger)</div>
                                 <div class="restaurant-sepa-richtext" v-html="sepaPayeeHtml || '<p>Nicht hinterlegt</p>'" />
@@ -806,7 +799,7 @@
 
                                 <v-textarea
                                     v-model="sepaForm.address_line"
-                                    label="Anschrift (Straße, Hausnummer, PLZ, Ort)"
+                                    label="Straße und Hausnummer"
                                     variant="outlined"
                                     density="compact"
                                     class="mb-3"
@@ -814,13 +807,47 @@
                                     auto-grow
                                     :rules="[required(), maxLength(500)]" />
 
+                                <v-row dense class="mb-3">
+                                    <v-col cols="12" md="4">
+                                        <v-text-field
+                                            v-model="sepaForm.postal_code"
+                                            label="PLZ"
+                                            variant="outlined"
+                                            density="compact"
+                                            :rules="[required(), maxLength(16)]" />
+                                    </v-col>
+
+                                    <v-col cols="12" md="8">
+                                        <v-text-field
+                                            v-model="sepaForm.city"
+                                            label="Ort"
+                                            variant="outlined"
+                                            density="compact"
+                                            :rules="[required(), maxLength(255)]" />
+                                    </v-col>
+                                </v-row>
+
                                 <v-text-field
-                                    v-model="sepaForm.iban"
-                                    label="IBAN"
+                                    v-model="sepaForm.country"
+                                    label="Land"
+                                    placeholder="Österreich"
                                     variant="outlined"
                                     density="compact"
                                     class="mb-3"
-                                    :rules="[required(), maxLength(64)]" />
+                                    :rules="[required(), maxLength(255)]" />
+
+                                <v-text-field
+                                    v-model="sepaForm.iban"
+                                    label="IBAN"
+                                    placeholder="AT12 3456 7890 1234 5678"
+                                    variant="outlined"
+                                    density="compact"
+                                    class="mb-3 restaurant-sepa-iban-field"
+                                    inputmode="text"
+                                    autocapitalize="characters"
+                                    spellcheck="false"
+                                    :rules="[required(), iban(), maxLength(64)]"
+                                    @update:model-value="onSepaIbanInput" />
 
                                 <v-text-field
                                     v-model="sepaForm.bic"
@@ -893,6 +920,17 @@
                             v-model="sepaCode"
                             autofocus
                             class="mb-3" />
+
+                        <div class="d-flex justify-end">
+                            <v-btn
+                                variant="text"
+                                color="#ea580c"
+                                class="text-none"
+                                :disabled="sepaLoading || !sepaFlow?.flow_uuid"
+                                @click.prevent="resendRestaurantSepaCode">
+                                Code erneut senden
+                            </v-btn>
+                        </div>
                     </template>
 
                     <template v-else>
@@ -911,7 +949,10 @@
                             <div class="restaurant-sepa-panel mb-4">
                                 <div class="restaurant-sepa-panel__title">Angaben zum Zahlungspflichtigen (Debitor / Kontoinhaber)</div>
                                 <div class="restaurant-sepa-preview__line"><strong>Name:</strong> {{ sepaForm.account_holder_name }}</div>
-                                <div class="restaurant-sepa-preview__line"><strong>Anschrift:</strong> {{ sepaForm.address_line }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>Straße:</strong> {{ sepaForm.address_line }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>PLZ:</strong> {{ sepaForm.postal_code }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>Ort:</strong> {{ sepaForm.city }}</div>
+                                <div class="restaurant-sepa-preview__line"><strong>Land:</strong> {{ sepaForm.country }}</div>
                                 <div class="restaurant-sepa-preview__line"><strong>IBAN:</strong> {{ sepaForm.iban }}</div>
                                 <div class="restaurant-sepa-preview__line"><strong>BIC:</strong> {{ sepaForm.bic || 'Nicht angegeben' }}</div>
                             </div>
@@ -934,7 +975,7 @@
                             <div class="restaurant-sepa-signature-row">
                                 <div class="restaurant-sepa-signature-box">
                                     <div class="restaurant-sepa-signature-box__label">Ort</div>
-                                    <div class="restaurant-sepa-signature-box__value">{{ schoolInfoName }}</div>
+                                    <div class="restaurant-sepa-signature-box__value">{{ sepaForm.city || 'Nicht angegeben' }}</div>
                                 </div>
                                 <div class="restaurant-sepa-signature-box">
                                     <div class="restaurant-sepa-signature-box__label">Datum</div>
@@ -946,6 +987,13 @@
                                     <div class="restaurant-sepa-signature-box__meta">Online bestätigt</div>
                                 </div>
                             </div>
+
+                            <v-checkbox
+                                v-model="sepaApprovalAccepted"
+                                color="#ea580c"
+                                hide-details
+                                class="mt-2"
+                                label="Einverstanden" />
                         </div>
                     </template>
                 </v-card-text>
@@ -984,8 +1032,9 @@
                         color="#ea580c"
                         class="text-none font-weight-bold"
                         :loading="sepaLoading"
+                        :disabled="!sepaApprovalAccepted"
                         @click="completeRestaurantSepaFlow">
-                        Okay
+                        Genehmigen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -1360,9 +1409,14 @@ export default {
             sepaFlow: null,
             sepaContextAction: null,
             sepaCode: '',
+            sepaApprovalAccepted: false,
+            sepaFormValid: false,
             sepaForm: {
                 account_holder_name: '',
                 address_line: '',
+                postal_code: '',
+                city: '',
+                country: 'Österreich',
                 iban: '',
                 bic: '',
                 accepted: false,
@@ -1462,7 +1516,14 @@ export default {
                 return false
             }
 
-            if (this.sepaForm.account_holder_name.trim() === '' || this.sepaForm.address_line.trim() === '' || this.sepaForm.iban.trim() === '') {
+            if (
+                this.sepaForm.account_holder_name.trim() === ''
+                || this.sepaForm.address_line.trim() === ''
+                || this.sepaForm.postal_code.trim() === ''
+                || this.sepaForm.city.trim() === ''
+                || this.sepaForm.country.trim() === ''
+                || this.sepaForm.iban.trim() === ''
+            ) {
                 return false
             }
 
@@ -1864,6 +1925,7 @@ export default {
             this.sepaCode = ''
             this.sepaError = ''
             this.sepaSuccess = ''
+            this.sepaApprovalAccepted = false
             this.syncSepaFormFromFlow()
             this.showSepaDialog = true
         },
@@ -1876,6 +1938,7 @@ export default {
             this.showSepaDialog = false
             this.sepaError = ''
             this.sepaSuccess = ''
+            this.sepaApprovalAccepted = false
         },
 
         syncSepaFormFromFlow() {
@@ -1890,11 +1953,30 @@ export default {
             this.sepaForm = {
                 account_holder_name: (flow.account_holder_name || '').toString(),
                 address_line: (flow.address_line || '').toString(),
-                iban: (flow.iban || '').toString(),
+                postal_code: (flow.postal_code || '').toString(),
+                city: (flow.city || '').toString(),
+                country: (flow.country || 'Österreich').toString(),
+                iban: this.formatSepaIbanDisplayValue(flow.iban || ''),
                 bic: (flow.bic || '').toString(),
                 accepted: flow.confirmed_at !== null || flow.accepted_at !== null,
                 child_entries: childEntries,
             }
+        },
+
+        onSepaIbanInput(value) {
+            this.sepaForm.iban = this.formatSepaIbanDisplayValue(value)
+        },
+
+        formatSepaIbanDisplayValue(value) {
+            const normalized = this.normalizeSepaIbanValue(value)
+            return normalized.replace(/(.{4})/g, '$1 ').trim()
+        },
+
+        normalizeSepaIbanValue(value) {
+            return String(value || '')
+                .replace(/[^A-Za-z0-9]/g, '')
+                .toUpperCase()
+                .slice(0, 34)
         },
 
         addSepaChild() {
@@ -1914,6 +1996,13 @@ export default {
                 return
             }
 
+            this.sepaFormValid = false
+            await this.$refs.sepaFormRef?.validate()
+
+            if (!this.sepaFormValid) {
+                return
+            }
+
             this.sepaLoading = true
             this.sepaError = ''
 
@@ -1923,7 +2012,10 @@ export default {
                         flow_uuid: this.sepaFlow.flow_uuid,
                         account_holder_name: this.sepaForm.account_holder_name.trim(),
                         address_line: this.sepaForm.address_line.trim(),
-                        iban: this.sepaForm.iban.trim(),
+                        postal_code: this.sepaForm.postal_code.trim(),
+                        city: this.sepaForm.city.trim(),
+                        country: this.sepaForm.country.trim() || 'Österreich',
+                        iban: this.normalizeSepaIbanValue(this.sepaForm.iban),
                         bic: this.sepaForm.bic.trim() || null,
                         child_entries: this.sepaForm.child_entries
                             .map((child) => ({
@@ -1972,8 +2064,33 @@ export default {
             }
         },
 
+        async resendRestaurantSepaCode() {
+            if (!this.sepaFlow?.flow_uuid || this.sepaLoading) {
+                return
+            }
+
+            this.sepaLoading = true
+            this.sepaError = ''
+
+            try {
+                const response = await axios.post('/api/homepage/restaurant/sepa/resend_code', {
+                    data: {
+                        flow_uuid: this.sepaFlow.flow_uuid,
+                    },
+                })
+
+                this.sepaFlow = response.data?.flow || this.sepaFlow
+                this.sepaSuccess = response.data?.message || 'Ein neuer Bestätigungscode wurde gesendet.'
+                this.sepaCode = ''
+            } catch (error) {
+                this.sepaError = error.response?.data?.message || 'Der Bestätigungscode konnte nicht erneut gesendet werden.'
+            } finally {
+                this.sepaLoading = false
+            }
+        },
+
         async completeRestaurantSepaFlow() {
-            if (!this.sepaFlow?.flow_uuid) {
+            if (!this.sepaFlow?.flow_uuid || !this.sepaApprovalAccepted) {
                 return
             }
 
@@ -3401,9 +3518,9 @@ export default {
 
 .restaurant-auth-bookings {
     display: grid;
-    gap: 10px;
-    padding: 14px 16px;
-    border-radius: 18px;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
     background: rgba(255, 255, 255, 0.82);
     border: 1px solid rgba(251, 146, 60, 0.16);
     box-shadow: 0 8px 24px rgba(120, 53, 15, 0.04);
@@ -3413,11 +3530,11 @@ export default {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
 }
 
 .restaurant-auth-bookings__eyebrow {
-    font-size: 0.68rem;
+    font-size: 0.64rem;
     font-weight: 800;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -3426,31 +3543,31 @@ export default {
 
 .restaurant-auth-bookings__title {
     margin: 2px 0 0;
-    font-size: 0.94rem;
+    font-size: 0.86rem;
     font-weight: 800;
     color: #111827;
 }
 
 .restaurant-auth-bookings__count {
     flex-shrink: 0;
-    padding: 5px 10px;
+    padding: 4px 8px;
     border-radius: 999px;
     background: rgba(255, 237, 213, 0.9);
     color: #9a3412;
-    font-size: 0.76rem;
+    font-size: 0.7rem;
     font-weight: 800;
 }
 
 .restaurant-auth-bookings__list {
     display: grid;
-    gap: 8px;
+    gap: 6px;
 }
 
 .restaurant-auth-bookings__item {
     display: grid;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 14px;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 12px;
     background: rgba(255, 247, 237, 0.86);
     border: 1px solid rgba(251, 146, 60, 0.18);
 }
@@ -3463,38 +3580,39 @@ export default {
 
 .restaurant-auth-bookings__entries {
     display: grid;
-    gap: 8px;
+    gap: 6px;
 }
 
 .restaurant-auth-bookings__menu-group {
     display: grid;
-    gap: 6px;
+    gap: 4px;
 }
 
 .restaurant-auth-bookings__menu-items {
     display: grid;
-    gap: 6px;
+    gap: 5px;
 }
 
 .restaurant-auth-bookings__entry {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    padding: 8px 10px;
-    border-radius: 12px;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.58);
 }
 
 .restaurant-auth-bookings__copy {
     min-width: 0;
+    flex: 1;
 }
 
 .restaurant-auth-bookings__item-title {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    font-size: 0.86rem;
+    gap: 6px;
+    font-size: 0.8rem;
     font-weight: 800;
     color: #1f2937;
 }
@@ -3502,32 +3620,46 @@ export default {
 .restaurant-auth-bookings__today-badge {
     display: inline-flex;
     align-items: center;
-    padding: 3px 8px;
+    padding: 2px 7px;
     border-radius: 999px;
     background: rgba(234, 88, 12, 0.14);
     color: #9a3412;
-    font-size: 0.68rem;
+    font-size: 0.64rem;
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
 }
 
 .restaurant-auth-bookings__entry-title {
-    font-size: 0.84rem;
+    font-size: 0.78rem;
     font-weight: 800;
     color: #1f2937;
 }
 
 .restaurant-auth-bookings__item-meta {
     margin-top: 1px;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: #6b7280;
     line-height: 1.4;
 }
 
+.restaurant-auth-bookings__item-meta--inline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 0;
+}
+
+.restaurant-auth-bookings__item-meta-part {
+    color: #111827;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
 .restaurant-auth-bookings__locked {
     flex-shrink: 0;
-    font-size: 0.76rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: #78716c;
 }
@@ -4181,6 +4313,20 @@ export default {
 .restaurant-sepa-richtext {
     color: #1e293b;
     line-height: 1.7;
+}
+
+.restaurant-sepa-iban-field :deep(input) {
+    font-size: 1.06rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+.restaurant-sepa-iban-field :deep(.v-field__input) {
+    padding-top: 8px;
+    padding-bottom: 8px;
 }
 
 .restaurant-sepa-child-row {

@@ -8,14 +8,18 @@ use App\Http\Requests\Admin\Restaurant\RestaurantUserSepaUpdateRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\UserResource;
 use App\Models\Import116;
+use App\Models\RestaurantSepaMandate;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\RestaurantHomepageAuthService;
+use App\Services\RestaurantSepaMandatePdfService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class RestaurantUserController extends Controller
 {
@@ -124,6 +128,22 @@ class RestaurantUserController extends Controller
             });
     }
 
+    private function completedSepaMandatesQuery(int $schoolId): Builder
+    {
+        return RestaurantSepaMandate::query()
+            ->with(['user.roles'])
+            ->where('school_id', $schoolId)
+            ->whereIn('entry_point', ['login', 'register'])
+            ->whereNotNull('completed_at')
+            ->whereHas('user', function (Builder $userQuery): void {
+                $userQuery
+                    ->whereNotNull('sepa_at')
+                    ->whereHas('roles', function (Builder $roleQuery): void {
+                        $roleQuery->where('name', 'lunch_user');
+                    });
+            });
+    }
+
     public function updateSepa(RestaurantUserSepaUpdateRequest $request, User $user): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
@@ -137,12 +157,131 @@ class RestaurantUserController extends Controller
             ->firstOrFail();
 
         $hasSepa = (bool) $request->validated()['data']['has_sepa'];
-        $targetUser->sepa_at = $hasSepa ? ($targetUser->sepa_at ?? now()) : null;
-        $targetUser->save();
+
+        DB::transaction(function () use ($authUser, $hasSepa, $targetUser): void {
+            $targetUser->sepa_at = $hasSepa ? ($targetUser->sepa_at ?? now()) : null;
+            $targetUser->save();
+
+            if (! $hasSepa) {
+                RestaurantSepaMandate::query()
+                    ->where('school_id', $authUser->school_id)
+                    ->where('user_id', $targetUser->id)
+                    ->delete();
+            }
+        });
 
         return response()->json([
             'data' => new UserResource($targetUser->fresh()->load('roles')),
         ]);
+    }
+
+    public function sepaUsers(): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $page = max(1, (int) request()->integer('page', 1));
+        $perPage = (int) config('schooltool.pagination');
+        $mandates = $this->completedSepaMandatesPaginator($authUser->school_id, $page, $perPage);
+
+        return response()->json([
+            'data' => $mandates->getCollection()->map(function (RestaurantSepaMandate $mandate): array {
+                return $this->sepaMandatePayload($mandate);
+            })->all(),
+            'meta' => (new PaginateResource($mandates))->toArray(request()),
+        ]);
+    }
+
+    public function printSepaMandate(
+        string $flowUuid,
+        RestaurantSepaMandatePdfService $pdfService
+    ): BinaryFileResponse {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $mandate = $this->completedSepaMandatesQuery($authUser->school_id)
+            ->where('flow_uuid', $flowUuid)
+            ->firstOrFail();
+
+        $path = $pdfService->createPdf($mandate);
+
+        return response()
+            ->download($path, basename($path), [
+                'Content-Type' => 'application/pdf',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ])
+            ->deleteFileAfterSend(true);
+    }
+
+    private function completedSepaMandatesPaginator(int $schoolId, int $page, int $perPage): LengthAwarePaginator
+    {
+        $mandates = $this->completedSepaMandatesQuery($schoolId)
+            ->get()
+            ->unique('user_id')
+            ->sort(function (RestaurantSepaMandate $left, RestaurantSepaMandate $right): int {
+                $leftUser = $left->user;
+                $rightUser = $right->user;
+
+                $lastNameComparison = strcmp(
+                    mb_strtolower(trim((string) ($leftUser?->last_name ?? ''))),
+                    mb_strtolower(trim((string) ($rightUser?->last_name ?? '')))
+                );
+
+                if ($lastNameComparison !== 0) {
+                    return $lastNameComparison;
+                }
+
+                $firstNameComparison = strcmp(
+                    mb_strtolower(trim((string) ($leftUser?->first_name ?? ''))),
+                    mb_strtolower(trim((string) ($rightUser?->first_name ?? '')))
+                );
+
+                if ($firstNameComparison !== 0) {
+                    return $firstNameComparison;
+                }
+
+                return strcmp(
+                    mb_strtolower(trim((string) ($leftUser?->email ?? ''))),
+                    mb_strtolower(trim((string) ($rightUser?->email ?? '')))
+                );
+            })
+            ->values();
+
+        $items = $mandates->forPage($page, $perPage)->values();
+
+        return new LengthAwarePaginator(
+            $items,
+            $mandates->count(),
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
+    }
+
+    private function sepaMandatePayload(RestaurantSepaMandate $mandate): array
+    {
+        $user = $mandate->user;
+        $fullName = trim(implode(' ', array_filter([
+            trim((string) $user?->first_name),
+            trim((string) $user?->last_name),
+        ])));
+
+        return [
+            'id' => (int) ($user?->id ?? 0),
+            'name' => $fullName !== '' ? $fullName : trim((string) ($user?->email ?? '')),
+            'email' => trim((string) ($user?->email ?? '')),
+            'schoolclass' => $user?->schoolclass ? (string) $user->schoolclass : null,
+            'flow_uuid' => $mandate->flow_uuid,
+            'entry_point' => $mandate->entry_point,
+            'entry_point_label' => $mandate->entry_point === 'register' ? 'Registrierung' : 'Login',
+            'completed_at' => $mandate->completed_at?->format('d.m.Y H:i'),
+        ];
     }
 
     public function confirm(User $user, RestaurantHomepageAuthService $restaurantHomepageAuthService): JsonResponse
