@@ -266,10 +266,22 @@
                                     </div>
 
                                     <div v-if="entry.menu?.foods?.length" class="rp-menu__foods">
-                                        <span v-for="food in entry.menu.foods" :key="food.id" class="rp-menu__food">
-                                            {{ food.title }}
-                                            <span v-if="food.allergens?.length" class="rp-menu__allergens">({{ food.allergens.join(', ') }})</span>
-                                        </span>
+                                        <div v-for="food in entry.menu.foods" :key="food.id" class="rp-menu__food-block">
+                                            <span class="rp-menu__food">
+                                                {{ food.title }}
+                                                <span v-if="food.allergens?.length" class="rp-menu__allergens">({{ food.allergens.join(', ') }})</span>
+                                            </span>
+                                            <div v-if="food.ingredient_icons?.length" class="rp-menu__icons-row">
+                                                <img
+                                                    v-for="icon in food.ingredient_icons"
+                                                    :key="icon.id"
+                                                    :src="icon.image_url"
+                                                    :alt="icon.title"
+                                                    :title="icon.title"
+                                                    class="rp-menu__ingredient-icon"
+                                                >
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <div v-if="entry.eating_times?.length" class="rp-menu__times">
@@ -3825,15 +3837,42 @@ export default {
 
 .rp-menu__foods {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px 8px;
+    flex-direction: column;
+    gap: 4px;
     margin-top: 6px;
+}
+
+.rp-menu__food-block {
+    display: flex;
+    flex-direction: column;
 }
 
 .rp-menu__food {
     font-size: 0.82rem;
     color: #4b5563;
     line-height: 1.5;
+}
+
+.rp-menu__icons-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 3px;
+    margin-bottom: 2px;
+}
+
+.rp-menu__ingredient-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+    cursor: pointer;
+}
+
+.rp-menu__ingredient-icon:hover {
+    transform: scale(3);
+    z-index: 10;
+    position: relative;
 }
 
 .rp-menu__allergens {

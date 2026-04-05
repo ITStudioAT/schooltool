@@ -40,7 +40,11 @@ describe('Restaurant page navigation', () => {
         vi.mocked(useMenuStore).mockReturnValue(menuStoreMock as never)
         vi.mocked(useRestaurantStore).mockReturnValue(restaurantStoreMock as never)
 
-        const ctx: Record<string, unknown> = {}
+        const ctx: Record<string, unknown> = {
+            loadPageData() {
+                return (Restaurant as any).methods.loadPageData.call(this)
+            },
+        }
         await (Restaurant as any).beforeMount.call(ctx)
 
         expect(ctx.adminStore).toBe(adminStoreMock)
@@ -52,7 +56,7 @@ describe('Restaurant page navigation', () => {
     it('builds the navigation items without the old settings entry', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'users'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'reports', 'users'])
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -118,6 +122,27 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.main_action).toBe('menu-plans')
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/menu-plans' })
+    })
+
+    it('refreshes the menu-plans section through the embedded component refresh handler', async () => {
+        const refreshData = vi.fn().mockResolvedValue(true)
+        const loadPageData = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            isNavigationLocked: false,
+            isRefreshing: false,
+            main_action: 'menu-plans',
+            $refs: {
+                menuPlansSection: {
+                    refreshData,
+                },
+            },
+            loadPageData,
+        }
+
+        await (Restaurant as any).methods.refreshPageData.call(ctx)
+
+        expect(refreshData).toHaveBeenCalledTimes(1)
+        expect(loadPageData).not.toHaveBeenCalled()
     })
 
     it('switches to the users section when unlocked', () => {

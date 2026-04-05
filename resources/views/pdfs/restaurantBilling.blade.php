@@ -10,7 +10,7 @@
 
         @page {
             margin: 8mm 9mm;
-            size: A4 landscape;
+            size: A4 portrait;
         }
 
         body {
@@ -146,7 +146,7 @@
         <table class="billing-table">
             <thead>
                 <tr>
-                    <th style="width: 28%;">Benutzer</th>
+                    <th style="width: 28%;">Kunde</th>
                     <th class="billing-table__summary">Preisstaffel</th>
                     <th style="width: 12%;" class="billing-table__count">Menge</th>
                     <th style="width: 14%;" class="billing-table__total">Summe</th>
@@ -168,7 +168,7 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="2" class="billing-table__overall-label">Gesamtsumme aller Benutzer</td>
+                    <td colspan="2" class="billing-table__overall-label">Gesamtsumme aller Kunden</td>
                     <td class="billing-table__count">{{ $overallQuantity }}</td>
                     <td class="billing-table__total">{{ $overallTotalLabel }}</td>
                 </tr>

@@ -74,7 +74,7 @@ class RestaurantMenuPlanPdfService
             'rows' => $this->buildOrderSummaryRows($plan),
             'totalOrders' => $this->totalOrdersForPlan($plan),
         ])
-            ->setPaper('a4', 'landscape')
+            ->setPaper('a4', 'portrait')
             ->save($path);
 
         return $path;
@@ -320,12 +320,12 @@ class RestaurantMenuPlanPdfService
 
         $customerNames = collect($this->bookingService->recipientsForBooking($booking))
             ->pluck('name')
-            ->map(fn (mixed $name): string => trim((string) $name))
+            ->map(fn (mixed $name): string => $this->formatCustomerName((string) $name))
             ->filter()
             ->values();
 
         if ($customerNames->isEmpty()) {
-            $customerNames = collect([$this->fallbackCustomerName($booking)]);
+            $customerNames = collect([$this->formatCustomerName($this->fallbackCustomerName($booking))]);
         }
 
         return $customerNames
@@ -411,6 +411,26 @@ class RestaurantMenuPlanPdfService
     private function fallbackCustomerName(RestaurantMenuPlanBooking $booking): string
     {
         return trim((string) ($booking->ordered_for_display ?: $booking->user?->full_name ?: $booking->user?->email ?: ''));
+    }
+
+    private function formatCustomerName(string $name): string
+    {
+        $normalizedName = trim($name);
+
+        if ($normalizedName === '') {
+            return '';
+        }
+
+        $parts = preg_split('/\s+/', $normalizedName, -1, PREG_SPLIT_NO_EMPTY);
+
+        if ($parts === false || count($parts) < 2) {
+            return $normalizedName;
+        }
+
+        $lastName = array_pop($parts);
+        $firstName = implode(' ', $parts);
+
+        return trim($lastName.' - '.$firstName);
     }
 
     private function formatDate(?Carbon $date): string

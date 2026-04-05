@@ -30,7 +30,7 @@ class RestaurantBillingPdfService
             'overallTotalLabel' => (string) ($snapshot['overall_total_amount_label'] ?? $this->formatPrice($billing->total_amount)),
             'overallQuantity' => (int) ($snapshot['overall_total_quantity'] ?? $billing->bookings_count),
         ])
-            ->setPaper('a4', 'landscape')
+            ->setPaper('a4', 'portrait')
             ->save($path);
 
         return $path;

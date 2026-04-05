@@ -24,7 +24,7 @@ class RestaurantMenuPlanController extends Controller
 
         return response()->json([
             'data' => RestaurantMenuPlanResource::collection($plans),
-        ]);
+        ], 200, $this->noStoreHeaders());
     }
 
     public function show(int $id, RestaurantMenuPlanService $service): JsonResponse
@@ -41,7 +41,7 @@ class RestaurantMenuPlanController extends Controller
 
         return response()->json([
             'data' => RestaurantMenuPlanResource::make($plan),
-        ]);
+        ], 200, $this->noStoreHeaders());
     }
 
     public function store(StoreRestaurantMenuPlanRequest $request, RestaurantMenuPlanService $service): JsonResponse
@@ -142,5 +142,17 @@ class RestaurantMenuPlanController extends Controller
                 'X-Content-Type-Options' => 'nosniff',
             ])
             ->deleteFileAfterSend(true);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function noStoreHeaders(): array
+    {
+        return [
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ];
     }
 }

@@ -20,15 +20,18 @@ function mountMenuPlans(
     options: {
         onlineSettings?: Record<string, unknown>
         routerPushImplementation?: () => Promise<unknown> | unknown
+        isLoaded?: boolean
+        loadImplementation?: () => Promise<unknown> | unknown
     } = {},
 ) {
     const routerPush = vi.fn(options.routerPushImplementation)
     const normalizedPlans = plans.map((plan) => ({ ...plan }))
+    const load = vi.fn(options.loadImplementation)
 
     vi.mocked(useMenuPlanStore).mockReturnValue({
         plans: normalizedPlans,
-        isLoaded: true,
-        load: vi.fn(),
+        isLoaded: options.isLoaded ?? true,
+        load,
         findPlanForDay: (isoDate: string) => normalizedPlans.find((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date) || null,
         planCountForDay: (isoDate: string) => normalizedPlans.filter((plan: any) => isoDate >= plan.start_date && isoDate <= plan.end_date).length,
         bookedMenuCountForDay: (isoDate: string) => normalizedPlans.reduce((sum: number, plan: any) => {
@@ -67,11 +70,11 @@ function mountMenuPlans(
     } as never)
 
     return mount(MenuPlans, {
-        global: {
-            mocks: {
-                $route: {
-                    query: routeQuery,
-                },
+            global: {
+                mocks: {
+                    $route: {
+                        query: routeQuery,
+                    },
                 $router: {
                     push: routerPush,
                 },
@@ -93,6 +96,33 @@ describe('Restaurant menu plans component', () => {
         const wrapper = mountMenuPlans({ week: '2026-04-15' })
 
         expect((wrapper.vm as any).currentWeekStartIso).toBe('2026-04-13')
+        expect(vi.mocked(useMenuPlanStore).mock.results.at(-1)?.value?.load).toHaveBeenCalledTimes(1)
+    })
+
+    it('reloads menu plans on entry even when the store was already loaded', () => {
+        mountMenuPlans({}, undefined, { isLoaded: true })
+
+        expect(vi.mocked(useMenuPlanStore).mock.results.at(-1)?.value?.load).toHaveBeenCalledTimes(1)
+    })
+
+    it('waits for the menu-plan reload before updating the refresh state', async () => {
+        let resolveLoad: (() => void) | null = null
+
+        const wrapper = mountMenuPlans({}, undefined, {
+            loadImplementation: () => new Promise((resolve) => {
+                resolveLoad = resolve
+            }),
+        })
+
+        const initialDateTime = (wrapper.vm as any).currentDateTime
+        const refreshPromise = (wrapper.vm as any).refreshData()
+
+        expect((wrapper.vm as any).currentDateTime).toBe(initialDateTime)
+
+        resolveLoad?.()
+        await refreshPromise
+
+        expect((wrapper.vm as any).currentDateTime).not.toBe(initialDateTime)
     })
 
     it('starts each displayed week on monday', () => {

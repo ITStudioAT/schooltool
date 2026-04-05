@@ -39,7 +39,7 @@ class RestaurantBookingService
             'metadata' => array_merge($data['metadata'] ?? [], [
                 'recipients' => $recipients,
             ]),
-            'booked_at' => Carbon::now(),
+            'booked_at' => isset($data['booked_at']) ? Carbon::parse($data['booked_at']) : Carbon::now(),
         ];
 
         $booking = RestaurantMenuPlanBooking::create($bookingData);

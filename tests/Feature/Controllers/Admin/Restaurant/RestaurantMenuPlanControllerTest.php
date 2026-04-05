@@ -66,6 +66,7 @@ test('index returns only plans from current school', function () {
     $this->actingAs($this->admin, 'sanctum')
         ->getJson('/api/admin/restaurant/menu-plans')
         ->assertOk()
+        ->assertHeader('cache-control', 'max-age=0, no-store, private')
         ->assertJsonCount(1, 'data');
 });
 
@@ -108,6 +109,7 @@ test('index returns booked menu counters for each entry day', function () {
     $this->actingAs($this->admin, 'sanctum')
         ->getJson('/api/admin/restaurant/menu-plans')
         ->assertOk()
+        ->assertHeader('cache-control', 'max-age=0, no-store, private')
         ->assertJsonPath('data.0.entries.0.plan_date', '2026-04-03')
         ->assertJsonPath('data.0.entries.0.booked_menu_count', 5);
 });
@@ -209,6 +211,7 @@ test('show returns plan with entries and eating time details', function () {
     $this->actingAs($this->admin, 'sanctum')
         ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")
         ->assertOk()
+        ->assertHeader('cache-control', 'max-age=0, no-store, private')
         ->assertJsonPath('data.id', $plan->id)
         ->assertJsonPath('data.is_available', true)
         ->assertJsonPath('data.visibility_start_mode', 'scheduled')

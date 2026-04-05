@@ -43,6 +43,7 @@
                 </v-btn>
 
                 <v-btn
+                    rounded="xl"
                     icon
                     size="small"
                     variant="text"
@@ -60,7 +61,7 @@
                 <Overview v-if="main_action === 'overview'" />
                 <Foods v-if="main_action === 'foods'" />
                 <Menus v-if="main_action === 'menus'" />
-                <MenuPlans v-if="main_action === 'menu-plans'" />
+                <MenuPlans v-if="main_action === 'menu-plans'" ref="menuPlansSection" />
                 <Reports v-if="main_action === 'reports'" />
                 <Users v-if="main_action === 'users'" />
                 <Settings v-if="main_action === 'settings'" />
@@ -231,13 +232,6 @@ export default {
         loadPageData() {
             return Promise.all([this.restaurantStore.loadSettings(), this.foodStore.index(), this.menuStore.index()])
         },
-        handleNavigation(target) {
-            if (this.isNavigationLocked) {
-                return
-            }
-
-            this.navigateTo(target)
-        },
         async refreshPageData() {
             if (this.isNavigationLocked || this.isRefreshing) {
                 return
@@ -246,10 +240,22 @@ export default {
             this.isRefreshing = true
 
             try {
+                if (this.main_action === 'menu-plans' && this.$refs.menuPlansSection?.refreshData) {
+                    await this.$refs.menuPlansSection.refreshData()
+                    return
+                }
+
                 await this.loadPageData()
             } finally {
                 this.isRefreshing = false
             }
+        },
+        handleNavigation(target) {
+            if (this.isNavigationLocked) {
+                return
+            }
+
+            this.navigateTo(target)
         },
         navigateTo(section) {
             this.main_action = section

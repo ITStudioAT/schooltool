@@ -43,7 +43,7 @@ it('builds a restaurant billing pdf from the stored snapshot', function () {
     $wrapper = Mockery::mock(PDF::class);
     $wrapper->shouldReceive('setPaper')
         ->once()
-        ->with('a4', 'landscape')
+        ->with('a4', 'portrait')
         ->andReturnSelf();
     $wrapper->shouldReceive('save')
         ->once()
@@ -124,6 +124,6 @@ it('renders the restaurant billing print layout with grouped user totals', funct
     expect($html)->toContain('Restaurant Abrechnung')
         ->and($html)->toContain('KW 13-14/2026')
         ->and($html)->toContain('3 x 5,20 € = 15,60 €')
-        ->and($html)->toContain('Gesamtsumme aller Benutzer')
+        ->and($html)->toContain('Gesamtsumme aller Kunden')
         ->and($html)->toContain('32,10 €');
 });

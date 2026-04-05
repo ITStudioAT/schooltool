@@ -1737,7 +1737,7 @@ export default {
 
 .online-settings__timeline {
     display: grid;
-    grid-template-columns: repeat(3, minmax(360px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     overflow-x: auto;
     padding-bottom: 4px;
@@ -1749,7 +1749,7 @@ export default {
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.78);
     padding: 12px;
-    min-width: 360px;
+    min-width: 0;
 }
 
 .online-settings__timeline-week-label {
@@ -1975,11 +1975,7 @@ export default {
     }
 
     .online-settings__timeline {
-        grid-template-columns: repeat(3, minmax(340px, 1fr));
-    }
-
-    .online-settings__timeline-week-card {
-        min-width: 340px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 </style>

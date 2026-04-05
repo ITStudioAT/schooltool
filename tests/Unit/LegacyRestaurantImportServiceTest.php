@@ -77,9 +77,8 @@ test('it imports legacy foods and menus idempotently', function () {
         ->and($mainFood->price)->toBe('8.90')
         ->and($mainFood->category?->title)->toBe('Hauptspeise');
     expect($mainFood->ingredientIcons()->pluck('restaurant_ingredient_icons.title')->all())
-        ->toEqualCanonicalizing(['Schwein', "\u{00D6}sterreich"]);
-    expect(RestaurantIngredientIcon::query()->where('school_id', $school->id)->pluck('title')->all())
-        ->toEqualCanonicalizing(['Schwein', "\u{00D6}sterreich"]);
+        ->toBeEmpty();
+    expect(RestaurantIngredientIcon::query()->where('school_id', $school->id)->count())->toBe(0);
 
     $menu = RestaurantMenu::query()
         ->where('school_id', $school->id)

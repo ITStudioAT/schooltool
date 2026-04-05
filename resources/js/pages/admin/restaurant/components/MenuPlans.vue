@@ -31,9 +31,6 @@
                                 <v-btn size="small" variant="outlined" color="secondary" rounded="lg" :disabled="isNavigatingToEditor" @click="goToNextWeek">
                                     <v-icon icon="mdi-chevron-right" size="18" />
                                 </v-btn>
-                                <v-btn size="small" variant="outlined" color="primary" rounded="lg" :disabled="isNavigatingToEditor" @click="refreshData" title="Daten aktualisieren">
-                                    <v-icon icon="mdi-refresh" size="18" />
-                                </v-btn>
                             </div>
                         </div>
 
@@ -84,6 +81,7 @@
                                         aria-label="Freier Tag">
                                         <v-icon icon="mdi-calendar-remove-outline" size="12" />
                                     </span>
+                                    <span v-if="day.weekNumber" class="mp-day__kw">KW {{ day.weekNumber }}</span>
                                     <span class="mp-day__num">{{ day.dayNumber }}</span>
                                     <span class="mp-day__mon">{{ day.monthShort }}</span>
                                     <span
@@ -386,9 +384,7 @@ export default {
         const store = useMenuPlanStore()
         const restaurantStore = useRestaurantStore()
 
-        if (! store.isLoaded) {
-            store.load()
-        }
+        store.load()
 
         if (! restaurantStore.settings) {
             restaurantStore.loadSettings()
@@ -487,8 +483,16 @@ export default {
                     hasFreigegebenPlan: this.freigegebenPlanCountForDay(iso) > 0,
                     bookedMenuCount: this.bookedMenuCountForDay(iso),
                     planCount,
+                    weekNumber: index === 0 ? this.getIsoWeekNumber(date) : null,
                 }
             })
+        },
+        getIsoWeekNumber(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7))
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+
+            return Math.ceil(((d - yearStart) / 86400000 + 1) / 7)
         },
         toDate(isoString) {
             return new Date(`${isoString}T00:00:00`)
@@ -788,23 +792,23 @@ export default {
 
             this.currentWeekStartIso = this.addDaysIso(this.currentWeekStartIso, 7)
         },
-        refreshData() {
+        async refreshData() {
             if (this.isNavigatingToEditor) {
                 return
             }
 
             const store = useMenuPlanStore()
             const restaurantStore = useRestaurantStore()
-            
+
             // Reload menu plans
-            store.load()
-            
+            await store.load()
+
             // Reload restaurant settings
-            restaurantStore.loadSettings()
-            
+            await restaurantStore.loadSettings()
+
             // Reload free days
-            this.loadVisibleFreeDays()
-            
+            await this.loadVisibleFreeDays()
+
             // Update current time for visibility/orderability calculations
             this.currentDateTime = new Date()
         },
@@ -1108,6 +1112,17 @@ export default {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(245, 158, 11, 0.18);
     z-index: 2;
+}
+
+.mp-day__kw {
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    font-size: 0.55rem;
+    font-weight: 700;
+    color: #6b7280;
+    letter-spacing: 0.02em;
+    line-height: 1;
 }
 
 .mp-day__num {

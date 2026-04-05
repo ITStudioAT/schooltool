@@ -134,9 +134,9 @@
                         class="billing-reports-week"
                         :class="{
                             'is-selected': isWeekSelected(week.week_start),
-                            'is-billed': week.is_billed,
+                            'is-range-first': isRangeFirst(week.week_start),
+                            'is-range-last': isRangeLast(week.week_start),
                         }"
-                        :disabled="week.is_billed"
                         :data-testid="`restaurant-billing-week-${week.week_start}`"
                         @click="toggleWeek(week)">
                         <div class="billing-reports-week__title">
@@ -148,8 +148,8 @@
                         <div class="billing-reports-week__state">
                             <span
                                 class="billing-reports-pill"
-                                :class="week.is_billed ? 'billing-reports-pill--past' : 'billing-reports-pill--active'">
-                                {{ week.is_billed ? 'Abgerechnet' : 'Offen' }}
+                                :class="weekStatePillClass(week)">
+                                {{ weekStateLabel(week) }}
                             </span>
                         </div>
                     </button>
@@ -168,7 +168,7 @@
                 </div>
 
                 <v-btn
-                    color="secondary"
+                    color="primary"
                     variant="tonal"
                     rounded="xl"
                     prepend-icon="mdi-receipt-text-plus-outline"
@@ -266,9 +266,11 @@ export default {
             return `${start}-${end} von ${this.sortedBillings.length}`
         },
         sortedWeeks() {
-            return [...(this.weeks || [])].sort((left, right) => {
-                return String(left?.week_start || '').localeCompare(String(right?.week_start || ''))
-            })
+            return [...(this.weeks || [])]
+                .filter((week) => week.is_billed !== true)
+                .sort((left, right) => {
+                    return String(left?.week_start || '').localeCompare(String(right?.week_start || ''))
+                })
         },
         visibleWeeks() {
             return this.sortedWeeks.slice(this.weeksWindowStart, this.weeksWindowStart + 8)
@@ -353,26 +355,13 @@ export default {
                 return
             }
 
-            const referenceIndex = this.resolveReferenceWeekIndex()
-            this.weeksWindowStart = Math.max(0, Math.min(referenceIndex - 3, this.weeksMaxWindowStart))
+            this.weeksWindowStart = Math.max(0, Math.min(this.sortedWeeks.length - 4, this.weeksMaxWindowStart))
 
-            const referenceWeek = this.sortedWeeks[referenceIndex]
-            const firstOpenWeek = referenceWeek?.is_billed !== true
-                ? referenceWeek
-                : this.sortedWeeks.find((week) => week.is_billed !== true)
+            const firstWeek = this.sortedWeeks[0] || null
 
-            this.selectionAnchor = firstOpenWeek?.week_start || null
-            this.selectionStart = firstOpenWeek?.week_start || null
-            this.selectionEnd = firstOpenWeek?.week_start || null
-        },
-        resolveReferenceWeekIndex() {
-            for (let index = this.sortedWeeks.length - 1; index >= 0; index -= 1) {
-                if (this.sortedWeeks[index]?.is_billed !== true) {
-                    return index
-                }
-            }
-
-            return this.sortedWeeks.length - 1
+            this.selectionAnchor = firstWeek?.week_start || null
+            this.selectionStart = firstWeek?.week_start || null
+            this.selectionEnd = firstWeek?.week_start || null
         },
         showPreviousBillingsWindow() {
             if (!this.hasPreviousBillingsWindow) {
@@ -403,7 +392,7 @@ export default {
             this.weeksWindowStart = Math.min(this.weeksMaxWindowStart, this.weeksWindowStart + 8)
         },
         toggleWeek(week) {
-            if (!week || week.is_billed) {
+            if (!week) {
                 return
             }
 
@@ -422,11 +411,6 @@ export default {
 
             const range = this.sortedWeeks.slice(Math.min(anchorIndex, targetIndex), Math.max(anchorIndex, targetIndex) + 1)
 
-            if (range.some((item) => item.is_billed)) {
-                this.setSelection(week.week_start, week.week_start, week.week_start)
-                return
-            }
-
             this.setSelection(
                 this.selectionAnchor,
                 range[0]?.week_start || week.week_start,
@@ -440,6 +424,20 @@ export default {
         },
         isWeekSelected(weekStart) {
             return this.selectedWeeks.some((week) => week.week_start === weekStart)
+        },
+        isRangeFirst(weekStart) {
+            return this.selectedWeeks.length > 0 && this.selectedWeeks[0].week_start === weekStart
+        },
+        isRangeLast(weekStart) {
+            return this.selectedWeeks.length > 0 && this.selectedWeeks[this.selectedWeeks.length - 1].week_start === weekStart
+        },
+        weekStatePillClass(week) {
+            return this.isWeekSelected(week.week_start)
+                ? 'billing-reports-pill--selected'
+                : 'billing-reports-pill--active'
+        },
+        weekStateLabel(week) {
+            return this.isWeekSelected(week.week_start) ? 'Ausgewählt' : 'Offen'
         },
         formatDate(isoString) {
             if (!isoString) {
@@ -644,11 +642,6 @@ export default {
     color: #0369a1;
 }
 
-.billing-reports-pill--past {
-    background: rgba(249, 115, 22, 0.12);
-    color: #c2410c;
-}
-
 .billing-reports-weeks {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -657,16 +650,56 @@ export default {
 
 .billing-reports-week.is-selected {
     border-color: #0f766e;
-    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    border-width: 2px;
+    background: linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0%, rgba(20, 184, 166, 0.10) 100%);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14), 0 4px 12px rgba(15, 118, 110, 0.10);
+    border-left: 4px solid #0f766e;
+    padding-left: 12px;
 }
 
-.billing-reports-week.is-billed {
-    background: rgba(248, 250, 252, 0.9);
-    color: #64748b;
+.billing-reports-week.is-selected .billing-reports-week__title {
+    color: #0f766e;
+}
+
+.billing-reports-week.is-range-first {
+    position: relative;
+}
+
+.billing-reports-week.is-range-first::before {
+    content: 'VON';
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #0f766e;
+    opacity: 0.7;
+}
+
+.billing-reports-week.is-range-last:not(.is-range-first) {
+    position: relative;
+}
+
+.billing-reports-week.is-range-last:not(.is-range-first)::before {
+    content: 'BIS';
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #0f766e;
+    opacity: 0.7;
 }
 
 .billing-reports-week__state {
     margin-top: 10px;
+}
+
+.billing-reports-pill--selected {
+    background: rgba(15, 118, 110, 0.16);
+    color: #0f766e;
 }
 
 .billing-reports-footer {

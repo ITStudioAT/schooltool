@@ -200,10 +200,10 @@ it('builds a booking print pdf with separate pages per day and eating time', fun
             expect($data['pages'][0]['date_label'])->toBe('23.03.2026');
             expect($data['pages'][0]['time_label'])->toBe('11:30 Uhr');
             expect($data['pages'][0]['rows'])->toHaveCount(2);
-            expect($data['pages'][0]['rows'][0]['customer_name'])->toBe('Anna Beispiel');
+            expect($data['pages'][0]['rows'][0]['customer_name'])->toBe('Beispiel - Anna');
             expect($data['pages'][0]['rows'][0]['menu_title'])->toBe('Pasta');
             expect($data['pages'][1]['time_label'])->toBe('12:45 Uhr');
-            expect($data['pages'][1]['rows'][0]['customer_name'])->toBe('Clara Beispiel');
+            expect($data['pages'][1]['rows'][0]['customer_name'])->toBe('Beispiel - Clara');
 
             return true;
         })
@@ -273,7 +273,7 @@ it('builds an order summary pdf with all days and menu booking counts', function
     $wrapper = Mockery::mock(PDF::class);
     $wrapper->shouldReceive('setPaper')
         ->once()
-        ->with('a4', 'landscape')
+        ->with('a4', 'portrait')
         ->andReturnSelf();
     $wrapper->shouldReceive('save')
         ->once()
@@ -372,7 +372,7 @@ it('renders the bookings print layout with separate print pages', function () {
                 'time_label' => '11:30 Uhr',
                 'rows' => [
                     [
-                        'customer_name' => 'Anna Beispiel',
+                        'customer_name' => 'Beispiel - Anna',
                         'menu_title' => "Montagsmen\u{fc}",
                     ],
                 ],
@@ -384,7 +384,10 @@ it('renders the bookings print layout with separate print pages', function () {
         ->and($html)->toContain('Restaurant Bestellungen')
         ->and($html)->toContain('font-size: 32px;')
         ->and($html)->toContain('Tag:</span> Montag, 23.03.2026')
-        ->and($html)->toContain('Anna Beispiel')
+        ->and($html)->toContain('width: 10mm;')
+        ->and($html)->toContain('booking-table__spacer-head')
+        ->and($html)->toContain('booking-table__spacer-cell')
+        ->and($html)->toContain('Beispiel - Anna')
         ->and($html)->toContain('Montagsmen')
         ->and($html)->not->toContain('Keine Bestellungen');
 });
@@ -423,7 +426,7 @@ it('renders the order summary print layout as a compact single table', function 
         ],
     ])->render();
 
-    expect($html)->toContain('size: A4 landscape;')
+    expect($html)->toContain('size: A4 portrait;')
         ->and($html)->toContain('Restaurant Menüsummen')
         ->and($html)->toContain('Gesamtbestellungen: 4')
         ->and($html)->toContain('Summe aller Bestellungen')

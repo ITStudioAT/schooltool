@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\RestaurantCategory;
 use App\Models\RestaurantFood;
-use App\Models\RestaurantIngredientIcon;
 use App\Models\RestaurantMenu;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -55,9 +54,7 @@ class LegacyRestaurantImportService
             $categorySortOrder = 10;
             $categoryIdsByTitle = [];
             $foodIdsByLegacyId = [];
-            $ingredientIconIdsByTitle = [];
-
-            $foods->each(function (array $legacyFood) use ($schoolId, &$summary, &$categorySortOrder, &$categoryIdsByTitle, &$foodIdsByLegacyId, &$ingredientIconIdsByTitle): void {
+            $foods->each(function (array $legacyFood) use ($schoolId, &$summary, &$categorySortOrder, &$categoryIdsByTitle, &$foodIdsByLegacyId): void {
                 $categoryId = null;
                 $categoryTitle = $legacyFood['category_title'];
 
@@ -105,7 +102,6 @@ class LegacyRestaurantImportService
                     $summary['foods_updated']++;
                 }
 
-                $this->syncImportedIngredientIcons($food, $schoolId, $legacyFood['ingredient_icon_titles'], $ingredientIconIdsByTitle);
                 $foodIdsByLegacyId[$legacyFood['legacy_food_id']] = (int) $food->id;
             });
 
@@ -172,10 +168,6 @@ class LegacyRestaurantImportService
             'description' => $this->normalizeNullableString($descriptionNormalization['text']),
             'category_title' => $this->normalizeNullableString($data['category'] ?? null),
             'allergens' => $this->normalizeAllergens($data['allergens'] ?? null),
-            'ingredient_icon_titles' => collect([
-                ...$titleNormalization['ingredient_icon_titles'],
-                ...$descriptionNormalization['ingredient_icon_titles'],
-            ])->unique()->values()->all(),
             'price' => $this->normalizeNullableDecimal($data['price'] ?? null),
         ];
     }
@@ -278,12 +270,10 @@ class LegacyRestaurantImportService
     private function normalizeLegacyText(mixed $value): array
     {
         $text = trim((string) $value);
-        $ingredientIconTitles = [];
 
         if ($text === '') {
             return [
                 'text' => '',
-                'ingredient_icon_titles' => [],
             ];
         }
 
@@ -291,22 +281,18 @@ class LegacyRestaurantImportService
             [
                 'pattern' => '/\x{1F41F}\s*\x{1F1E6}\x{1F1F9}/u',
                 'replacement' => ' ',
-                'ingredient_icon_titles' => ['Fisch', "\u{00D6}sterreich"],
             ],
             [
                 'pattern' => '/\bvom\s*\x{1F416}/u',
                 'replacement' => 'vom Schwein',
-                'ingredient_icon_titles' => ['Schwein'],
             ],
             [
                 'pattern' => '/\baus\s*\x{1F1E6}\x{1F1F9}/u',
                 'replacement' => "aus \u{00D6}sterreich",
-                'ingredient_icon_titles' => ["\u{00D6}sterreich"],
             ],
             [
                 'pattern' => '/(?<=\S)\s*\x{1F1E6}\x{1F1F9}\s*(?=\S)/u',
                 'replacement' => ' ',
-                'ingredient_icon_titles' => ["\u{00D6}sterreich"],
             ],
         ];
 
@@ -315,63 +301,12 @@ class LegacyRestaurantImportService
 
             if ($updatedText !== null && $updatedText !== $text) {
                 $text = $updatedText;
-                $ingredientIconTitles = [
-                    ...$ingredientIconTitles,
-                    ...$pattern['ingredient_icon_titles'],
-                ];
             }
         }
 
         return [
             'text' => trim((string) preg_replace('/\s{2,}/u', ' ', $text)),
-            'ingredient_icon_titles' => array_values(array_unique($ingredientIconTitles)),
         ];
-    }
-
-    private function syncImportedIngredientIcons(RestaurantFood $food, int $schoolId, array $desiredTitles, array &$ingredientIconIdsByTitle): void
-    {
-        $managedTitles = ['Fisch', 'Schwein', "\u{00D6}sterreich"];
-
-        $desiredIconIds = collect($desiredTitles)
-            ->filter(fn (string $title): bool => in_array($title, $managedTitles, true))
-            ->map(function (string $title) use ($schoolId, &$ingredientIconIdsByTitle): int {
-                if (! array_key_exists($title, $ingredientIconIdsByTitle)) {
-                    $ingredientIcon = RestaurantIngredientIcon::query()->firstOrCreate(
-                        [
-                            'school_id' => $schoolId,
-                            'title' => $title,
-                        ],
-                        [
-                            'image_path' => null,
-                            'sort_order' => $this->nextIngredientIconSortOrder($schoolId),
-                        ]
-                    );
-
-                    $ingredientIconIdsByTitle[$title] = (int) $ingredientIcon->id;
-                }
-
-                return $ingredientIconIdsByTitle[$title];
-            })
-            ->unique()
-            ->values();
-
-        $preservedIconIds = $food->ingredientIcons()
-            ->whereNotIn('title', $managedTitles)
-            ->pluck('restaurant_ingredient_icons.id')
-            ->map(fn ($id): int => (int) $id)
-            ->all();
-
-        $food->ingredientIcons()->sync([
-            ...$preservedIconIds,
-            ...$desiredIconIds->all(),
-        ]);
-    }
-
-    private function nextIngredientIconSortOrder(int $schoolId): int
-    {
-        return ((int) RestaurantIngredientIcon::query()
-            ->where('school_id', $schoolId)
-            ->max('sort_order')) + 10;
     }
 
     private function countMissingMenuFoodReferences(Collection $foods, Collection $menus): int

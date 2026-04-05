@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="de">
+
 <head>
     <meta charset="utf-8">
     <title>{{ $plan['title'] }} - Bestellungen</title>
@@ -92,7 +93,6 @@
         .booking-table {
             width: 100%;
             border-collapse: collapse;
-            table-layout: fixed;
         }
 
         .booking-table th,
@@ -101,6 +101,15 @@
             border: 1px solid #e5e7eb;
             text-align: left;
             vertical-align: top;
+        }
+
+        .booking-table .col-spacer {
+            width: 1cm;
+            padding: 0;
+        }
+
+        .booking-table .col-customer {
+            padding-left: 12px;
         }
 
         .booking-table th {
@@ -119,45 +128,48 @@
         .booking-table tr:nth-child(even) td {
             background: #fffaf5;
         }
-
     </style>
 </head>
+
 <body>
     @foreach($pages as $page)
-        <div class="print-page">
-            <section class="header">
-                <div class="eyebrow">Restaurant Bestellungen</div>
-                <h1 class="title">{{ $plan['title'] }}</h1>
-                <div class="day-label"><span class="day-label__prefix">Tag:</span> {{ $page['weekday_label'] }}, {{ $page['date_label'] }}</div>
-                <div class="meta"><strong>Zeitraum:</strong> {{ $plan['range_label'] }}</div>
-                @if($plan['school_name'] !== '')
-                    <div class="meta"><strong>Schule:</strong> {{ $plan['school_name'] }}</div>
-                @endif
-                <div class="meta"><strong>Erstellt am:</strong> {{ $plan['generated_at'] }}</div>
-                @if($page['time_label'])
-                    <div class="time-badge">Speisezeit: {{ $page['time_label'] }}</div>
-                @endif
-            </section>
+    <div class="print-page">
+        <section class="header">
+            <div class="eyebrow">Restaurant Bestellungen</div>
+            <h1 class="title">{{ $plan['title'] }}</h1>
+            <div class="day-label"><span class="day-label__prefix">Tag:</span> {{ $page['weekday_label'] }}, {{ $page['date_label'] }}</div>
+            <div class="meta"><strong>Zeitraum:</strong> {{ $plan['range_label'] }}</div>
+            @if($plan['school_name'] !== '')
+            <div class="meta"><strong>Schule:</strong> {{ $plan['school_name'] }}</div>
+            @endif
+            <div class="meta"><strong>Erstellt am:</strong> {{ $plan['generated_at'] }}</div>
+            @if($page['time_label'])
+            <div class="time-badge">Speisezeit: {{ $page['time_label'] }}</div>
+            @endif
+        </section>
 
-            <div class="summary">{{ count($page['rows']) }} Bestellung(en)</div>
+        <div class="summary">{{ count($page['rows']) }} Bestellung(en)</div>
 
-            <table class="booking-table">
-                <thead>
-                    <tr>
-                        <th style="width: 48%;">Kunde</th>
-                        <th style="width: 52%;">Men&uuml;</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach($page['rows'] as $row)
-                        <tr>
-                            <td>{{ $row['customer_name'] }}</td>
-                            <td>{{ $row['menu_title'] }}</td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
-        </div>
+        <table class="booking-table">
+            <thead>
+                <tr>
+                    <th class="col-spacer" style="width:1cm;padding:0;" aria-hidden="true"></th>
+                    <th class="col-customer">Kunde</th>
+                    <th>Men&uuml;</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($page['rows'] as $row)
+                <tr>
+                    <td class="col-spacer" style="width:1cm;padding:0;"></td>
+                    <td class="col-customer">{{ $row['customer_name'] }}</td>
+                    <td>{{ $row['menu_title'] }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
     @endforeach
 </body>
+
 </html>
