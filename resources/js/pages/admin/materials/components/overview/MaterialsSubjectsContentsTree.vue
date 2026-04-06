@@ -1,16 +1,30 @@
 <template>
     <div class="overview-subjects-tree">
-        <div class="overview-subjects-node-row overview-workspace-row">
-            <button
-                type="button"
-                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle"
-                :disabled="actionBusy"
-                :aria-expanded="workspaceExpanded ? 'true' : 'false'"
-                @click="toggleWorkspaceExpanded">
-                <v-icon size="18" :icon="workspaceExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
-                <v-icon size="20" icon="mdi-briefcase-outline" class="mr-2" />
-                <span>Workspace</span>
-            </button>
+        <div class="overview-subjects-top-nav d-flex align-center flex-wrap ga-2 mb-6">
+            <v-btn-toggle :model-value="activeSection" density="comfortable" color="primary" variant="outlined" divided mandatory class="overview-top-toggle">
+                <v-btn
+                    value="workspace"
+                    prepend-icon="mdi-briefcase-outline"
+                    :disabled="actionBusy"
+                    @click="toggleWorkspaceExpanded">
+                    Workspace
+                </v-btn>
+                <v-btn
+                    value="shared"
+                    prepend-icon="mdi-account-group-outline"
+                    :disabled="actionBusy"
+                    @click="toggleSharedForMeExpanded">
+                    Für mich geteilt
+                </v-btn>
+                <v-btn
+                    value="archive"
+                    prepend-icon="mdi-archive-outline"
+                    :disabled="actionBusy"
+                    @click="toggleSharedForMeArchiveExpanded">
+                    Archiv
+                </v-btn>
+            </v-btn-toggle>
+
             <v-btn
                 v-if="workspaceExpanded && enableCreateButtons"
                 size="small"
@@ -22,7 +36,7 @@
                 {{ isWorkspaceStructureButtonsVisible() ? 'Struktur schließen' : 'Struktur ändern' }}
             </v-btn>
             <v-btn
-                v-if="!isWorkspaceStructureButtonsVisible()"
+                v-if="workspaceExpanded && !isWorkspaceStructureButtonsVisible()"
                 size="x-small"
                 color="primary"
                 variant="tonal"
@@ -31,6 +45,212 @@
                 :title="'Teilen'"
                 :disabled="actionBusy"
                 @click.stop="handleWorkspaceShareClick" />
+        </div>
+
+        <div v-if="workspaceExpanded && items.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+            <v-btn
+                v-for="(subject, subjectIndex) in items"
+                :key="`overview-subjects-nav-${subject.id || subject.name}`"
+                size="default"
+                :variant="isWorkspaceSubjectExpanded(subject) ? 'flat' : 'outlined'"
+                :color="isWorkspaceSubjectExpanded(subject) ? 'primary' : undefined"
+                prepend-icon="mdi-book-education-outline"
+                :disabled="actionBusy"
+                class="overview-subjects-nav-btn"
+                @click="toggleWorkspaceSubjectExpanded(subject)">
+                {{ workspaceNodeTitle('subject', subject) }}
+            </v-btn>
+            <v-btn
+                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                size="small"
+                variant="outlined"
+                color="primary"
+                prepend-icon="mdi-plus"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceCreateSubjectDialog()">
+                Fach
+            </v-btn>
+        </div>
+
+        <div v-if="workspaceExpanded && selectedSubjectItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
+            <v-icon size="20" icon="mdi-book-education-outline" color="primary" />
+            <span class="overview-selected-subject__label">{{ workspaceNodeTitle('subject', selectedSubjectItem) }}</span>
+            <v-btn
+                v-if="hasPersistedNodeId(selectedSubjectItem.id) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-share-variant-outline"
+                :title="'Teilen'"
+                :disabled="actionBusy"
+                @click.stop="handleShareClick({ level: 'subject', id: selectedSubjectItem.id, label: workspaceNodeTitle('subject', selectedSubjectItem) })" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedSubjectItem.id) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-file-plus-outline"
+                :title="'Neues Material in Fach anlegen'"
+                :disabled="actionBusy"
+                @click="$emit('open-create', {
+                    level: 'subject',
+                    subject: String(workspaceNodeTitle('subject', selectedSubjectItem) || '').trim(),
+                    topic: '',
+                    unit: '',
+                })" />
+        </div>
+
+        <div v-if="workspaceExpanded && selectedSubjectItem && selectedSubjectItem.topics.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+            <v-btn
+                v-for="(topic, topicIndex) in selectedSubjectItem.topics"
+                :key="`overview-topics-nav-${topic.id || topic.name}`"
+                size="default"
+                :variant="isWorkspaceTopicExpanded(topic) ? 'flat' : 'outlined'"
+                :color="isWorkspaceTopicExpanded(topic) ? 'primary' : undefined"
+                prepend-icon="mdi-book-open-page-variant-outline"
+                :disabled="actionBusy"
+                class="overview-subjects-nav-btn"
+                @click="toggleWorkspaceTopicExpanded(topic)">
+                {{ workspaceNodeTitle('topic', topic) }}
+            </v-btn>
+            <v-btn
+                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                size="default"
+                variant="outlined"
+                color="primary"
+                prepend-icon="mdi-plus"
+                :disabled="actionBusy"
+                class="overview-subjects-nav-btn"
+                @click.stop="openWorkspaceCreateTopicDialog(selectedSubjectItem)">
+                Thema
+            </v-btn>
+        </div>
+
+        <div v-if="workspaceExpanded && selectedTopicItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
+            <v-icon size="20" icon="mdi-book-open-page-variant-outline" color="primary" />
+            <span class="overview-selected-subject__label">{{ workspaceNodeTitle('topic', selectedTopicItem) }}</span>
+            <v-btn
+                v-if="hasPersistedNodeId(selectedTopicItem.id) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-share-variant-outline"
+                :title="'Teilen'"
+                :disabled="actionBusy"
+                @click.stop="handleShareClick({ level: 'topic', id: selectedTopicItem.id, label: workspaceNodeTitle('topic', selectedTopicItem), parentLabel: selectedSubjectItem ? workspaceNodeTitle('subject', selectedSubjectItem) : '' })" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedTopicItem.id) && canCreateMaterialInTopic(selectedTopicItem) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-file-plus-outline"
+                :title="'Neues Material in Thema anlegen'"
+                :disabled="actionBusy"
+                @click="$emit('open-create', {
+                    level: 'topic',
+                    subject: selectedSubjectItem ? String(workspaceNodeTitle('subject', selectedSubjectItem) || '').trim() : '',
+                    topic: String(workspaceNodeTitle('topic', selectedTopicItem) || '').trim(),
+                    unit: '',
+                })" />
+        </div>
+
+        <div v-if="workspaceExpanded && selectedTopicItem && selectedTopicItem.units.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+            <v-btn
+                v-for="(unit, unitIndex) in selectedTopicItem.units"
+                :key="`overview-units-nav-${unit.id || unit.name}`"
+                size="default"
+                :variant="isWorkspaceUnitExpanded(unit) ? 'flat' : 'outlined'"
+                :color="isWorkspaceUnitExpanded(unit) ? 'primary' : undefined"
+                prepend-icon="mdi-circle-medium"
+                :disabled="actionBusy"
+                class="overview-subjects-nav-btn"
+                @click="toggleWorkspaceUnitExpanded(unit)">
+                {{ workspaceNodeTitle('unit', unit) }}
+            </v-btn>
+            <v-btn
+                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                size="default"
+                variant="outlined"
+                color="primary"
+                prepend-icon="mdi-plus"
+                :disabled="actionBusy"
+                class="overview-subjects-nav-btn"
+                @click.stop="openWorkspaceCreateUnitDialog(selectedTopicItem)">
+                Bereich
+            </v-btn>
+        </div>
+
+        <div v-if="workspaceExpanded && selectedUnitItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
+            <v-icon size="20" icon="mdi-circle-medium" color="primary" />
+            <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
+            <v-btn
+                v-if="hasPersistedNodeId(selectedUnitItem.id) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-share-variant-outline"
+                :title="'Teilen'"
+                :disabled="actionBusy"
+                @click.stop="handleShareClick({ level: 'unit', id: selectedUnitItem.id, label: workspaceNodeTitle('unit', selectedUnitItem), parentLabel: `${selectedSubjectItem ? workspaceNodeTitle('subject', selectedSubjectItem) : ''} / ${selectedTopicItem ? workspaceNodeTitle('topic', selectedTopicItem) : ''}` })" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id) && canCreateMaterialInUnit(selectedUnitItem) && !isWorkspaceStructureButtonsVisible()"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-file-plus-outline"
+                :title="'Neues Material in Bereich anlegen'"
+                :disabled="actionBusy"
+                @click="$emit('open-create', {
+                    level: 'unit',
+                    subject: selectedSubjectItem ? String(workspaceNodeTitle('subject', selectedSubjectItem) || '').trim() : '',
+                    topic: selectedTopicItem ? String(workspaceNodeTitle('topic', selectedTopicItem) || '').trim() : '',
+                    unit: String(workspaceNodeTitle('unit', selectedUnitItem) || '').trim(),
+                })" />
+        </div>
+
+        <div v-if="workspaceExpanded && visibleMaterials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3">
+            <v-card
+                v-for="material in visibleMaterials"
+                :key="`overview-material-card-${material.id}`"
+                class="overview-material-card"
+                variant="outlined"
+                rounded="lg"
+                @click="$emit('open-material', { id: material.id })">
+                <v-card-text class="pa-3">
+                    <div class="d-flex align-center ga-2 mb-2">
+                        <v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" />
+                        <span class="overview-material-card__title">{{ material.title }}</span>
+                    </div>
+                    <div class="d-flex align-center flex-wrap ga-2">
+                        <v-chip
+                            v-if="material.typeLabel"
+                            size="x-small"
+                            variant="outlined"
+                            :color="material.typeColor || 'primary'">
+                            {{ material.typeLabel }}
+                        </v-chip>
+                        <v-chip
+                            size="x-small"
+                            variant="tonal"
+                            :color="statusColorFn(material.status)">
+                            {{ statusLabelFn(material.status) }}
+                        </v-chip>
+                        <span v-if="material.attachmentsCount > 0" class="d-flex align-center text-caption text-medium-emphasis">
+                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
+                            {{ material.attachmentsCount }}
+                        </span>
+                        <v-icon
+                            v-if="showShareIndicator('material', material.id)"
+                            size="14"
+                            icon="mdi-share-variant"
+                            :color="shareIndicatorColorFn('material', material.id)" />
+                    </div>
+                </v-card-text>
+            </v-card>
+        </div>
+
+        <div v-if="workspaceExpanded && !visibleMaterials.length && !isWorkspaceStructureButtonsVisible() && (selectedUnitItem || selectedTopicItem || selectedSubjectItem)" class="text-body-2 text-medium-emphasis mt-2 mb-4">
+            Keine Materialien vorhanden.
         </div>
 
         <ul v-if="workspaceExpanded" class="overview-subjects-list">
@@ -738,21 +958,6 @@
                 @click.stop="openWorkspaceCreateSubjectDialog()">
                 Fach
             </v-btn>
-        </div>
-
-        <div
-            class="overview-subjects-node-row overview-workspace-row overview-shared-row"
-            :class="{ 'overview-shared-row--spaced': workspaceExpanded }">
-            <button
-                type="button"
-                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle overview-subjects-node--shared-toggle"
-                :disabled="actionBusy"
-                :aria-expanded="sharedForMeExpanded ? 'true' : 'false'"
-                @click="toggleSharedForMeExpanded">
-                <v-icon size="18" :icon="sharedForMeExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
-                <v-icon size="20" icon="mdi-account-group-outline" class="mr-2" />
-                <span>Für mich geteilt</span>
-            </button>
         </div>
 
         <div v-if="sharedForMeExpanded" class="overview-shared-content">
@@ -1515,19 +1720,6 @@
             </div>
         </div>
 
-        <div class="overview-subjects-node-row overview-workspace-row overview-shared-row overview-shared-row--archive">
-            <button
-                type="button"
-                class="overview-subjects-node overview-subjects-node--workspace overview-subjects-node--workspace-toggle overview-subjects-node--shared-toggle"
-                :disabled="actionBusy"
-                :aria-expanded="sharedForMeArchiveExpanded ? 'true' : 'false'"
-                @click="toggleSharedForMeArchiveExpanded">
-                <v-icon size="18" :icon="sharedForMeArchiveExpanded ? 'mdi-chevron-down' : 'mdi-chevron-right'" class="mr-1" />
-                <v-icon size="20" icon="mdi-archive-outline" class="mr-2" />
-                <span>Für mich geteilt - Archiv</span>
-            </button>
-        </div>
-
         <div v-if="sharedForMeArchiveExpanded" class="overview-shared-content overview-shared-content--archive">
             <div v-if="sharedObjectsForMeLoading" class="overview-shared-state">
                 Freigaben werden geladen...
@@ -2012,6 +2204,9 @@ export default {
             sharedNodeTitleOverrides: {},
             sharedStructureButtonsVisible: {},
             collapsedWorkspaceSubjects: {},
+            selectedSubjectKey: null,
+            selectedTopicKey: null,
+            selectedUnitKey: null,
             collapsedWorkspaceTopics: {},
             collapsedWorkspaceUnits: {},
             collapsedSharedSubjects: {},
@@ -2037,6 +2232,37 @@ export default {
             sharedDeleteDialogDeleting: false,
             expandedArchivedItems: {},
         }
+    },
+    computed: {
+        activeSection() {
+            if (this.workspaceExpanded) return 'workspace'
+            if (this.sharedForMeExpanded) return 'shared'
+            if (this.sharedForMeArchiveExpanded) return 'archive'
+            return undefined
+        },
+        selectedSubjectItem() {
+            if (!this.items?.length) return null
+            return this.items.find(s => this.isWorkspaceSubjectExpanded(s)) || null
+        },
+        selectedTopicItem() {
+            const subject = this.selectedSubjectItem
+            if (!subject?.topics?.length) return null
+            return subject.topics.find(t => this.isWorkspaceTopicExpanded(t)) || null
+        },
+        selectedUnitItem() {
+            const topic = this.selectedTopicItem
+            if (!topic?.units?.length) return null
+            return topic.units.find(u => this.isWorkspaceUnitExpanded(u)) || null
+        },
+        visibleMaterials() {
+            const unit = this.selectedUnitItem
+            if (unit?.materials?.length) return unit.materials
+            const topic = this.selectedTopicItem
+            if (!unit && topic?.materials?.length) return topic.materials
+            const subject = this.selectedSubjectItem
+            if (!topic && subject?.materials?.length) return subject.materials
+            return []
+        },
     },
     methods: {
         subjectHasChildren(subject) {
@@ -2065,21 +2291,23 @@ export default {
         },
         toggleWorkspaceExpanded() {
             if (this.actionBusy) return
+            if (this.workspaceExpanded) return
 
-            this.workspaceExpanded = !this.workspaceExpanded
+            this.workspaceExpanded = true
+            if (this.sharedForMeExpanded) this.$emit('toggle-shared-for-me-expanded')
+            if (this.sharedForMeArchiveExpanded) this.$emit('toggle-shared-for-me-archive-expanded')
         },
         workspaceSubjectKey(subject) {
             return this.workspaceNodeOverrideKey('subject', subject)
         },
         isWorkspaceSubjectExpanded(subject) {
             const key = this.workspaceSubjectKey(subject)
-            if (key === '') {
-                return this.initiallyCollapseHierarchy !== true
+            if (this.selectedSubjectKey === null) {
+                const firstSubject = this.items?.[0]
+                const firstKey = firstSubject ? this.workspaceSubjectKey(firstSubject) : ''
+                return key !== '' && key === firstKey
             }
-
-            return Object.prototype.hasOwnProperty.call(this.collapsedWorkspaceSubjects, key)
-                ? this.collapsedWorkspaceSubjects[key] === true
-                : this.initiallyCollapseHierarchy !== true
+            return key !== '' && key === this.selectedSubjectKey
         },
         toggleWorkspaceSubjectExpanded(subject) {
             if (this.actionBusy) return
@@ -2087,23 +2315,23 @@ export default {
             const key = this.workspaceSubjectKey(subject)
             if (key === '') return
 
-            this.collapsedWorkspaceSubjects = {
-                ...this.collapsedWorkspaceSubjects,
-                [key]: !this.isWorkspaceSubjectExpanded(subject),
-            }
+            if (this.selectedSubjectKey === key) return
+            this.selectedSubjectKey = key
+            this.selectedTopicKey = null
+            this.selectedUnitKey = null
         },
         workspaceTopicKey(topic) {
             return this.workspaceNodeOverrideKey('topic', topic)
         },
         isWorkspaceTopicExpanded(topic) {
             const key = this.workspaceTopicKey(topic)
-            if (key === '') {
-                return this.initiallyCollapseHierarchy !== true
+            if (this.selectedTopicKey === null) {
+                const subject = this.selectedSubjectItem
+                const firstTopic = subject?.topics?.[0]
+                const firstKey = firstTopic ? this.workspaceTopicKey(firstTopic) : ''
+                return key !== '' && key === firstKey
             }
-
-            return Object.prototype.hasOwnProperty.call(this.collapsedWorkspaceTopics, key)
-                ? this.collapsedWorkspaceTopics[key] === true
-                : this.initiallyCollapseHierarchy !== true
+            return key !== '' && key === this.selectedTopicKey
         },
         toggleWorkspaceTopicExpanded(topic) {
             if (this.actionBusy) return
@@ -2111,23 +2339,22 @@ export default {
             const key = this.workspaceTopicKey(topic)
             if (key === '') return
 
-            this.collapsedWorkspaceTopics = {
-                ...this.collapsedWorkspaceTopics,
-                [key]: !this.isWorkspaceTopicExpanded(topic),
-            }
+            if (this.selectedTopicKey === key) return
+            this.selectedTopicKey = key
+            this.selectedUnitKey = null
         },
         workspaceUnitKey(unit) {
             return this.workspaceNodeOverrideKey('unit', unit)
         },
         isWorkspaceUnitExpanded(unit) {
             const key = this.workspaceUnitKey(unit)
-            if (key === '') {
-                return this.initiallyCollapseHierarchy !== true
+            if (this.selectedUnitKey === null) {
+                const topic = this.selectedTopicItem
+                const firstUnit = topic?.units?.[0]
+                const firstKey = firstUnit ? this.workspaceUnitKey(firstUnit) : ''
+                return key !== '' && key === firstKey
             }
-
-            return Object.prototype.hasOwnProperty.call(this.collapsedWorkspaceUnits, key)
-                ? this.collapsedWorkspaceUnits[key] === true
-                : this.initiallyCollapseHierarchy !== true
+            return key !== '' && key === this.selectedUnitKey
         },
         toggleWorkspaceUnitExpanded(unit) {
             if (this.actionBusy) return
@@ -2135,10 +2362,8 @@ export default {
             const key = this.workspaceUnitKey(unit)
             if (key === '') return
 
-            this.collapsedWorkspaceUnits = {
-                ...this.collapsedWorkspaceUnits,
-                [key]: !this.isWorkspaceUnitExpanded(unit),
-            }
+            if (this.selectedUnitKey === key) return
+            this.selectedUnitKey = key
         },
         isWorkspaceStructureButtonsVisible() {
             return this.workspaceStructureExpanded === true
@@ -2149,12 +2374,18 @@ export default {
         },
         toggleSharedForMeExpanded() {
             if (this.actionBusy) return
+            if (this.sharedForMeExpanded) return
 
+            if (this.workspaceExpanded) this.workspaceExpanded = false
+            if (this.sharedForMeArchiveExpanded) this.$emit('toggle-shared-for-me-archive-expanded')
             this.$emit('toggle-shared-for-me-expanded')
         },
         toggleSharedForMeArchiveExpanded() {
             if (this.actionBusy) return
+            if (this.sharedForMeArchiveExpanded) return
 
+            if (this.workspaceExpanded) this.workspaceExpanded = false
+            if (this.sharedForMeExpanded) this.$emit('toggle-shared-for-me-expanded')
             this.$emit('toggle-shared-for-me-archive-expanded')
         },
         sharedSubjectKey(ruleId, subject, bucket = 'shared') {
@@ -3484,27 +3715,61 @@ export default {
     gap: var(--overview-root-gap);
 }
 
-.overview-workspace-row {
-    margin-bottom: var(--overview-root-gap);
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(140, 30, 55, 0.40);
-    border-left: 4px solid rgba(140, 30, 55, 0.65);
-    background: linear-gradient(90deg, rgba(140, 30, 55, 0.18) 0%, rgba(140, 30, 55, 0.09) 56%, rgba(255, 255, 255, 0.80) 100%);
-    box-shadow: 0 3px 12px rgba(100, 20, 40, 0.14);
+.overview-selected-subject__label {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #233d4c;
 }
 
-.overview-shared-row {
-    margin-bottom: 0;
-    background: linear-gradient(90deg, rgba(140, 30, 55, 0.14) 0%, rgba(140, 30, 55, 0.07) 56%, rgba(255, 255, 255, 0.78) 100%);
+.overview-material-card {
+    min-width: 220px;
+    max-width: 320px;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
 
-.overview-shared-row--spaced {
-    margin-top: 40px;
+.overview-material-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    transform: translateY(-1px);
 }
 
-.overview-shared-row--archive {
-    margin-top: 16px;
+.overview-material-card__title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #233d4c;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.overview-subjects-nav-btn {
+    text-transform: none;
+    letter-spacing: 0.01em;
+    font-weight: 600;
+    font-size: 0.95rem !important;
+}
+
+.overview-top-toggle {
+    border-color: rgba(140, 30, 55, 0.35);
+}
+
+.overview-top-toggle :deep(.v-btn) {
+    text-transform: none;
+    letter-spacing: 0.01em;
+    font-weight: 600;
+}
+
+.overview-top-toggle :deep(.v-btn--active) {
+    background: rgb(var(--v-theme-primary)) !important;
+    color: #fff !important;
+}
+
+.overview-top-toggle :deep(.v-btn--active .v-btn__overlay) {
+    opacity: 0 !important;
+}
+
+.overview-top-toggle :deep(.v-btn--active .v-icon) {
+    color: #fff !important;
 }
 
 .overview-subjects-list--child {
@@ -3612,12 +3877,12 @@ export default {
     font-size: 1.02rem;
     letter-spacing: 0.01em;
     color: #5a0d1e;
-    background: rgba(140, 30, 55, 0.18);
-    border: 1px solid rgba(140, 30, 55, 0.40);
+    background: transparent;
+    border: none;
 }
 
 .overview-subjects-node--workspace-toggle {
-    border: 1px solid rgba(140, 30, 55, 0.40);
+    border: none;
     cursor: pointer;
 }
 
@@ -3627,8 +3892,8 @@ export default {
 }
 
 .overview-subjects-node--shared-toggle {
-    background: rgba(140, 30, 55, 0.15);
-    border-color: rgba(140, 30, 55, 0.36);
+    background: transparent;
+    border: none;
 }
 
 .overview-subjects-node--topic {
