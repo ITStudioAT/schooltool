@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 
 class RestaurantImportCommand extends Command
 {
-    protected $signature = 'app:restaurant-import
+    protected $signature = 'restaurant:import-legacy
         {--school-id=1 : Target local school id}
         {--dry-run : Read and summarize without writing}';
 

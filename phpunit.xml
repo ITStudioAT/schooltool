@@ -26,6 +26,7 @@
         <!-- WARNING: PHPUnit/Pest uses the dedicated MySQL test database below and may drop/recreate it via RefreshDatabase or migrate:fresh. Never run destructive test commands without the owner's explicit approval. -->
         <env name="DB_CONNECTION" value="mysql"/>
         <env name="DB_DATABASE" value="pest_test"/>
+        <env name="DB_DATABASE_TEST" value="pest_test"/>
         <env name="DB_USERNAME" value="root"/>
         <env name="DB_PASSWORD" value=""/>
         <env name="MAIL_MAILER" value="array"/>

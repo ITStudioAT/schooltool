@@ -19,7 +19,9 @@ class DatabaseSafetyTest extends TestCase
         $status = DatabaseSafetyServiceProvider::getSafetyStatus();
 
         $this->assertEquals('testing', $status['environment']);
+        $this->assertEquals('mysql', $status['current_connection']);
         $this->assertEquals('pest_test', $status['current_database']);
+        $this->assertEquals('pest_test', $status['expected_testing_database']);
         $this->assertTrue($status['is_safe_for_testing']);
     }
 
@@ -45,6 +47,8 @@ class DatabaseSafetyTest extends TestCase
     {
         // This test verifies the safety check command can be executed
         $this->artisan('db:safety-check')
+            ->expectsOutputToContain('Expected Test Database')
+            ->expectsOutputToContain('DB_DATABASE=pest_test and DB_DATABASE_TEST=pest_test')
             ->assertExitCode(0);
     }
 }

@@ -37,7 +37,9 @@ class CheckDatabaseSafetyCommand extends Command
             ['Setting', 'Value'],
             [
                 ['Environment', $status['environment']],
+                ['Connection', $status['current_connection']],
                 ['Current Database', $status['current_database']],
+                ['Expected Test Database', $status['expected_testing_database']],
                 ['Safe for Testing', $status['is_safe_for_testing'] ? '✅ Yes' : '❌ No'],
                 ['Status', $status['warning']],
                 ['Checked At', $status['timestamp']],
@@ -49,7 +51,7 @@ class CheckDatabaseSafetyCommand extends Command
         // Show detailed information
         $this->info('📋 Safety Rules:');
         $this->line('1. Tests MUST NEVER delete or modify real production data.');
-        $this->line('2. Tests MUST use a separate testing database (configured in phpunit.xml).');
+        $this->line('2. Tests MUST use the exact testing database configured in phpunit.xml and database-safety.php.');
         $this->line('3. Migrations run during tests MUST only affect the testing database.');
         $this->line('4. Database operations in tests MUST be isolated and cleaned up after each test.');
         $this->line('5. Real user data MUST be protected from accidental deletion or modification.');
@@ -59,7 +61,7 @@ class CheckDatabaseSafetyCommand extends Command
         $phpunitConfig = $this->getPhpunitDatabaseConfig();
         $this->info('⚙️ PHPUnit Configuration:');
         $this->line("Test Database: {$phpunitConfig['database']}");
-        $this->line('Expected in phpunit.xml: DB_DATABASE=pest_test');
+        $this->line('Expected in phpunit.xml: DB_DATABASE=pest_test and DB_DATABASE_TEST=pest_test');
         $this->line('');
 
         // Additional warning for local environment using production database
@@ -76,25 +78,25 @@ class CheckDatabaseSafetyCommand extends Command
         // Final warning if unsafe for testing
         if (! $status['is_safe_for_testing']) {
             $this->error('🚨 CRITICAL WARNING:');
-            $this->error('Tests are configured to run against a production database!');
-            $this->error('Running tests will DELETE ALL PRODUCTION DATA!');
+            $this->error('Tests are configured to run against the wrong database!');
+            $this->error("Running tests can DELETE ALL DATA in the database configured for testing, and that must be '{$status['expected_testing_database']}'.");
             $this->error('');
             $this->error('Immediate Actions Required:');
             $this->error('1. STOP all test execution');
-            $this->error('2. Verify phpunit.xml has DB_DATABASE=pest_test');
-            $this->error('3. Ensure the "pest_test" database exists');
-            $this->error('4. Never run tests against "schooltool" database');
+            $this->error("2. Verify phpunit.xml has DB_DATABASE='{$status['expected_testing_database']}'");
+            $this->error("3. Ensure the '{$status['expected_testing_database']}' database exists");
+            $this->error('4. Never run tests against the production database');
             $this->error('');
             $this->error('This safety check will now THROW AN EXCEPTION to prevent data loss.');
 
             // Throw exception to prevent continuation
             throw new \RuntimeException(
-                'Database safety check failed: Tests would delete production data. '.
-                    'Check configuration and ensure tests use "pest_test" database.'
+                'Database safety check failed: Tests would delete the wrong database. '.
+                    'Check configuration and ensure tests use the configured test database.'
             );
         }
 
-        $this->info('✅ Database safety check passed. Tests are safe to run.');
+        $this->info("✅ Database safety check passed. Tests are safe to run against '{$status['expected_testing_database']}'.");
     }
 
     /**

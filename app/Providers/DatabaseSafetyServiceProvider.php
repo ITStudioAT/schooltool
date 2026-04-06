@@ -32,11 +32,16 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
     private function registerSafetyChecks(): void
     {
         $this->app->singleton('database.safety', function () {
+            $defaultConnection = (string) config('database.default');
+            $currentDatabase = (string) config("database.connections.{$defaultConnection}.database");
+
             return [
                 'is_testing_environment' => App::environment('testing'),
-                'current_database' => config('database.connections.mysql.database'),
-                'production_databases' => ['schooltool', 'production_db', 'live_db'],
-                'test_databases' => ['pest_test', 'testing', 'test'],
+                'current_connection' => $defaultConnection,
+                'current_database' => $currentDatabase,
+                'expected_testing_database' => (string) config('database-safety.rules.testing_database', 'pest_test'),
+                'production_databases' => (array) config('database-safety.verification.production_databases', ['schooltool', 'production_db', 'live_db']),
+                'test_databases' => (array) config('database-safety.verification.test_databases', ['pest_test', 'testing', 'test']),
             ];
         });
     }
@@ -53,15 +58,23 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
 
         $safety = $this->app->make('database.safety');
         $currentDb = $safety['current_database'];
+        $expectedTestingDb = $safety['expected_testing_database'];
         $productionDbs = $safety['production_databases'];
 
-        // Check if we're trying to run tests against a production database
-        if (in_array($currentDb, $productionDbs)) {
+        if ($currentDb !== $expectedTestingDb) {
+            throw new RuntimeException(
+                "SAFETY VIOLATION: Tests must use database '{$expectedTestingDb}', but '{$currentDb}' is configured. ".
+                    'This would delete the wrong data. '.
+                    "Set DB_DATABASE_TEST='{$expectedTestingDb}' and keep DB_DATABASE pointed at the test database when APP_ENV=testing."
+            );
+        }
+
+        if (in_array($currentDb, $productionDbs, true)) {
             throw new RuntimeException(
                 "SAFETY VIOLATION: Tests are attempting to run against production database '{$currentDb}'! ".
                     'This would delete all production data. '.
-                    "Tests must use a separate test database (configured in phpunit.xml as 'pest_test'). ".
-                    "Check your configuration and ensure DB_DATABASE is set to 'pest_test' in testing environment."
+                    "Tests must use a separate test database (configured in phpunit.xml as '{$expectedTestingDb}'). ".
+                    "Check your configuration and ensure DB_DATABASE is set to '{$expectedTestingDb}' in testing environment."
             );
         }
 
@@ -80,10 +93,12 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
             return true;
         }
 
-        $currentDb = config('database.connections.mysql.database');
-        $productionDbs = ['schooltool', 'production_db', 'live_db'];
+        $defaultConnection = (string) config('database.default');
+        $currentDb = (string) config("database.connections.{$defaultConnection}.database");
+        $expectedTestingDb = (string) config('database-safety.rules.testing_database', 'pest_test');
+        $productionDbs = (array) config('database-safety.verification.production_databases', ['schooltool', 'production_db', 'live_db']);
 
-        return ! in_array($currentDb, $productionDbs);
+        return $currentDb === $expectedTestingDb && ! in_array($currentDb, $productionDbs, true);
     }
 
     /**
@@ -91,13 +106,19 @@ class DatabaseSafetyServiceProvider extends ServiceProvider
      */
     public static function getSafetyStatus(): array
     {
+        $defaultConnection = (string) config('database.default');
+        $currentDb = (string) config("database.connections.{$defaultConnection}.database");
+        $expectedTestingDb = (string) config('database-safety.rules.testing_database', 'pest_test');
+
         return [
             'environment' => App::environment(),
-            'current_database' => config('database.connections.mysql.database'),
+            'current_connection' => $defaultConnection,
+            'current_database' => $currentDb,
+            'expected_testing_database' => $expectedTestingDb,
             'is_safe_for_testing' => self::isDatabaseSafeForTesting(),
             'warning' => ! self::isDatabaseSafeForTesting()
-                ? 'WARNING: Tests may delete production data!'
-                : 'Safe: Tests are using a test database.',
+                ? 'WARNING: Tests may delete production data or the wrong database!'
+                : "Safe: Tests are using '{$expectedTestingDb}'.",
             'timestamp' => now()->toDateTimeString(),
         ];
     }

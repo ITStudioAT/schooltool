@@ -28,6 +28,7 @@ return [
 
     'rules' => [
         'tests_use_separate_database' => true,
+        'testing_connection' => env('DB_CONNECTION_TEST', env('DB_CONNECTION', 'mysql')),
         'testing_database' => env('DB_DATABASE_TEST', 'pest_test'),
         'prevent_production_data_deletion' => true,
     ],

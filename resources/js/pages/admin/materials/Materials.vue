@@ -40,7 +40,7 @@
 
             <MaterialsMenu v-model="main_action" :disabled="isMenuLocked || adminStore?.is_struktur_modus" />
             <v-row class="w-100" dense>
-                <v-col cols="12" lg="10" xl="9" class="mx-auto">
+                <v-col cols="12" lg="10" xl="9">
                     <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
                     <MaterialsFreigabeView v-if="main_action === 'shared'" />
                     <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
