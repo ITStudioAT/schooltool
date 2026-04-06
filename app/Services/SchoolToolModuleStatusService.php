@@ -135,6 +135,13 @@ class SchoolToolModuleStatusService
         return (bool) $attributes[$this->adminVisibleField($moduleKey)];
     }
 
+    public function userVisibleForModule(string $moduleKey, ?School $school = null): bool
+    {
+        $attributes = $this->moduleAttributes($moduleKey, $school);
+
+        return (bool) $attributes[$this->userVisibleField($moduleKey)];
+    }
+
     public function userStatusForModule(string $moduleKey, ?School $school = null): string
     {
         $attributes = $this->moduleAttributes($moduleKey, $school);

@@ -11,14 +11,9 @@ class ImportLegacyRestaurantDataCommand extends Command
 {
     protected $signature = 'restaurant:import-legacy
         {school_id : Target school id}
-        {--source-host=127.0.0.1 : Legacy database host}
-        {--source-port=3306 : Legacy database port}
-        {--source-database=cdgym_info : Legacy database name}
-        {--source-username=root : Legacy database username}
-        {--source-password= : Legacy database password}
         {--dry-run : Read and summarize without writing}';
 
-    protected $description = 'Import legacy food and menu records from an external database into the restaurant tables.';
+    protected $description = 'Import legacy food and menu records from the configured legacy restaurant database into the restaurant tables.';
 
     public function handle(LegacyRestaurantImportService $service): int
     {
@@ -32,22 +27,9 @@ class ImportLegacyRestaurantDataCommand extends Command
 
         $connectionName = 'legacy_restaurant_import';
 
-        config([
-            "database.connections.$connectionName" => [
-                'driver' => 'mysql',
-                'host' => (string) $this->option('source-host'),
-                'port' => (int) $this->option('source-port'),
-                'database' => (string) $this->option('source-database'),
-                'username' => (string) $this->option('source-username'),
-                'password' => (string) $this->option('source-password'),
-                'charset' => 'utf8mb4',
-                'collation' => 'utf8mb4_unicode_ci',
-                'prefix' => '',
-                'prefix_indexes' => true,
-                'strict' => true,
-                'engine' => null,
-            ],
-        ]);
+        if (! $this->configureLegacyConnection($connectionName)) {
+            return self::FAILURE;
+        }
 
         DB::purge($connectionName);
 
@@ -85,5 +67,30 @@ class ImportLegacyRestaurantDataCommand extends Command
         $this->line('Missing menu food references: '.$summary['missing_menu_food_references']);
 
         return self::SUCCESS;
+    }
+
+    private function configureLegacyConnection(string $connectionName): bool
+    {
+        $legacyConnection = config('schooltool.legacy_restaurant');
+
+        if (! is_array($legacyConnection) || $legacyConnection === []) {
+            $this->error('Legacy restaurant database connection is not configured.');
+
+            return false;
+        }
+
+        config([
+            "database.connections.$connectionName" => array_merge([
+                'driver' => 'mysql',
+                'charset' => 'utf8mb4',
+                'collation' => 'utf8mb4_unicode_ci',
+                'prefix' => '',
+                'prefix_indexes' => true,
+                'strict' => true,
+                'engine' => null,
+            ], $legacyConnection),
+        ]);
+
+        return true;
     }
 }

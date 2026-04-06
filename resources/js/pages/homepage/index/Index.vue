@@ -313,16 +313,16 @@ export default {
             return this.config?.auth_check === true || this.moduleAllowsAccess(this.restaurantModuleStatus)
         },
         canShowRegister() {
-            return true
+            return this.isModuleVisible(this.registerModuleStatus)
         },
         canShowTutoring() {
-            return true
+            return this.isModuleVisible(this.tutoringModuleStatus)
         },
         canShowTeaching() {
-            return true
+            return this.isModuleVisible(this.teachingModuleStatus)
         },
         canShowRestaurant() {
-            return true
+            return this.isModuleVisible(this.restaurantModuleStatus)
         },
         isRegisterDisabled() {
             return this.registerStatus !== 'active' || !this.moduleAllowsAccess(this.registerModuleStatus)
@@ -397,7 +397,7 @@ export default {
             }
 
             if (moduleStatus === 'comming_soon') {
-                return { icon: 'mdi-progress-clock', label: 'Kommt bald' }
+                return { icon: 'mdi-progress-clock', label: 'Demnächst verfügbar' }
             }
 
             return null
@@ -413,7 +413,7 @@ export default {
 
             const message =
                 moduleStatus === 'comming_soon'
-                    ? `${toolLabel}: kommt bald.`
+                    ? `${toolLabel}: Demnächst verfügbar.`
                     : status === 'expired'
                     ? `${toolLabel}: Lizenz abgelaufen.`
                     : `${toolLabel}: Lizenz nicht vorhanden.`

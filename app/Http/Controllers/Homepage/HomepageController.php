@@ -171,6 +171,13 @@ class HomepageController extends Controller
             'teaching_active' => $moduleStatusService->allowsUserAccess($teachingModuleStatus),
             'materials_active' => $moduleStatusService->allowsUserAccess($materialsModuleStatus),
             'restaurant_active' => $moduleStatusService->allowsUserAccess($restaurantModuleStatus),
+            'tool_module_visibility' => [
+                'register' => $moduleStatusService->userVisibleForModule('register', $school),
+                'tutoring' => $moduleStatusService->userVisibleForModule('tutoring', $school),
+                'teaching' => $moduleStatusService->userVisibleForModule('teaching', $school),
+                'materials' => $moduleStatusService->userVisibleForModule('materials', $school),
+                'restaurant' => $moduleStatusService->userVisibleForModule('restaurant', $school),
+            ],
             'tool_module_statuses' => [
                 'register' => $registerModuleStatus,
                 'tutoring' => $tutoringModuleStatus,

@@ -196,6 +196,13 @@ describe('config', function () {
                     'materials',
                     'restaurant',
                 ],
+                'tool_module_visibility' => [
+                    'register',
+                    'tutoring',
+                    'teaching',
+                    'materials',
+                    'restaurant',
+                ],
                 'tutoring_active',
                 'teaching_active',
                 'restaurant' => [
@@ -307,7 +314,12 @@ describe('config', function () {
             ])
             ->assertJsonPath('tool_module_statuses.tutoring', 'comming_soon')
             ->assertJsonPath('tool_module_statuses.teaching', 'test_modus')
-            ->assertJsonPath('tool_module_statuses.materials', 'inactive');
+            ->assertJsonPath('tool_module_statuses.materials', 'inactive')
+            ->assertJsonPath('tool_module_visibility.register', true)
+            ->assertJsonPath('tool_module_visibility.tutoring', false)
+            ->assertJsonPath('tool_module_visibility.teaching', false)
+            ->assertJsonPath('tool_module_visibility.materials', false)
+            ->assertJsonPath('tool_module_visibility.restaurant', true);
     });
 
     test('config resolves module statuses from the selected school instead of the first school tool record', function () {

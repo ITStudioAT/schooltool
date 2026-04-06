@@ -61,28 +61,13 @@ return [
     | Verification
     |--------------------------------------------------------------------------
     |
-    | Methods to verify safety rules are being followed.
+    | Metadata for the runtime safety checks handled by the service provider.
     |
     */
 
     'verification' => [
-        'check_testing_environment' => function () {
-            return app()->environment('testing') &&
-                config('database.connections.mysql.database') === 'pest_test';
-        },
-        'ensure_test_database_is_used' => function () {
-            if (
-                app()->environment('testing') &&
-                config('database.connections.mysql.database') !== 'pest_test'
-            ) {
-                throw new RuntimeException(
-                    'SAFETY VIOLATION: Tests are attempting to run against production database! '.
-                        'This would delete all production data. '.
-                        'Tests must use a separate test database (configured in phpunit.xml as "pest_test"). '.
-                        'Check your configuration and ensure DB_DATABASE is set to "pest_test" in testing environment.'
-                );
-            }
-        },
+        'check_testing_environment' => true,
+        'ensure_test_database_is_used' => true,
         'production_databases' => ['schooltool', 'production_db', 'live_db'],
         'test_databases' => ['pest_test', 'testing', 'test'],
     ],

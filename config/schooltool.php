@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.29.3',
+    'version' => '3.29.4',
     'copyright' => '(c) 2025–2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -13,6 +13,17 @@ return [
     'sa_email' => env('SA_EMAIL', ''),
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
+
+    'legacy_restaurant' => [
+        'driver' => 'mysql',
+        'host' => env('LEGACY_RESTAURANT_DB_HOST', '127.0.0.1'),
+        'port' => env('LEGACY_RESTAURANT_DB_PORT', '3306'),
+        'database' => env('LEGACY_RESTAURANT_DB_DATABASE', 'cdgym_info'),
+        'username' => env('LEGACY_RESTAURANT_DB_USERNAME', 'root'),
+        'password' => env('LEGACY_RESTAURANT_DB_PASSWORD', ''),
+        // ...
+    ],
+
     'materials_restore_deleted_cards_limit' => (int) env('MATERIALS_RESTORE_DELETED_CARDS_LIMIT', 5),
     'materials_default_types' => [
         'Arbeitsblatt',

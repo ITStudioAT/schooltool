@@ -11,15 +11,10 @@ class SyncCdgymLunchUserSepaCommand extends Command
 {
     protected $signature = 'restaurant:sync-cdgym-lunch-user-sepa
         {--school-id=1 : Target local school id}
-        {--source-host=127.0.0.1 : Source database host}
-        {--source-port=3306 : Source database port}
-        {--source-database=cdgym_info : Source database name}
-        {--source-username=root : Source database username}
-        {--source-password= : Source database password}
         {--dry-run : Read and summarize without writing}
         {--live : Persist changes}';
 
-    protected $description = 'Sync SEPA information from legacy cdgym_info lunch_users into local lunch users.';
+    protected $description = 'Sync SEPA information from the configured legacy restaurant database into local lunch users.';
 
     public function handle(RestaurantCdgymLunchUserSepaSyncService $service): int
     {
@@ -41,22 +36,9 @@ class SyncCdgymLunchUserSepaCommand extends Command
         $apply = (bool) $this->option('live');
         $connectionName = 'legacy_cdgym_lunch_user_sepa_sync';
 
-        config([
-            "database.connections.$connectionName" => [
-                'driver' => 'mysql',
-                'host' => (string) $this->option('source-host'),
-                'port' => (int) $this->option('source-port'),
-                'database' => (string) $this->option('source-database'),
-                'username' => (string) $this->option('source-username'),
-                'password' => (string) $this->option('source-password'),
-                'charset' => 'utf8mb4',
-                'collation' => 'utf8mb4_unicode_ci',
-                'prefix' => '',
-                'prefix_indexes' => true,
-                'strict' => true,
-                'engine' => null,
-            ],
-        ]);
+        if (! $this->configureLegacyConnection($connectionName)) {
+            return self::FAILURE;
+        }
 
         DB::purge($connectionName);
 
@@ -96,5 +78,30 @@ class SyncCdgymLunchUserSepaCommand extends Command
         $this->line('Users cleared SEPA: '.$summary['users_cleared_sepa']);
 
         return self::SUCCESS;
+    }
+
+    private function configureLegacyConnection(string $connectionName): bool
+    {
+        $legacyConnection = config('schooltool.legacy_restaurant');
+
+        if (! is_array($legacyConnection) || $legacyConnection === []) {
+            $this->error('Legacy restaurant database connection is not configured.');
+
+            return false;
+        }
+
+        config([
+            "database.connections.$connectionName" => array_merge([
+                'driver' => 'mysql',
+                'charset' => 'utf8mb4',
+                'collation' => 'utf8mb4_unicode_ci',
+                'prefix' => '',
+                'prefix_indexes' => true,
+                'strict' => true,
+                'engine' => null,
+            ], $legacyConnection),
+        ]);
+
+        return true;
     }
 }

@@ -14,14 +14,9 @@ class RestaurantImportCommand extends Command
 {
     protected $signature = 'app:restaurant-import
         {--school-id=1 : Target local school id}
-        {--source-host=127.0.0.1 : Source database host}
-        {--source-port=3306 : Source database port}
-        {--source-database=cdgym_info : Source database name}
-        {--source-username=root : Source database username}
-        {--source-password= : Source database password}
         {--dry-run : Read and summarize without writing}';
 
-    protected $description = 'Import restaurant foods, menus, lunch users, and SEPA information from the legacy cdgym_info database.';
+    protected $description = 'Import restaurant foods, menus, lunch users, and SEPA information from the configured legacy restaurant database.';
 
     public function handle(
         LegacyRestaurantImportService $legacyRestaurantImportService,
@@ -40,7 +35,10 @@ class RestaurantImportCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
         $connectionName = 'legacy_restaurant_full_import';
 
-        $this->configureLegacyConnection($connectionName);
+        if (! $this->configureLegacyConnection($connectionName)) {
+            return self::FAILURE;
+        }
+
         DB::purge($connectionName);
 
         try {
@@ -147,24 +145,29 @@ class RestaurantImportCommand extends Command
         return self::SUCCESS;
     }
 
-    private function configureLegacyConnection(string $connectionName): void
+    private function configureLegacyConnection(string $connectionName): bool
     {
+        $legacyConnection = config('schooltool.legacy_restaurant');
+
+        if (! is_array($legacyConnection) || $legacyConnection === []) {
+            $this->error('Legacy restaurant database connection is not configured.');
+
+            return false;
+        }
+
         config([
-            "database.connections.$connectionName" => [
+            "database.connections.$connectionName" => array_merge([
                 'driver' => 'mysql',
-                'host' => (string) $this->option('source-host'),
-                'port' => (int) $this->option('source-port'),
-                'database' => (string) $this->option('source-database'),
-                'username' => (string) $this->option('source-username'),
-                'password' => (string) $this->option('source-password'),
                 'charset' => 'utf8mb4',
                 'collation' => 'utf8mb4_unicode_ci',
                 'prefix' => '',
                 'prefix_indexes' => true,
                 'strict' => true,
                 'engine' => null,
-            ],
+            ], $legacyConnection),
         ]);
+
+        return true;
     }
 
     /**
