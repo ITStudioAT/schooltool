@@ -26,17 +26,7 @@
             </v-btn-toggle>
 
             <v-btn
-                v-if="workspaceExpanded && enableCreateButtons"
-                size="small"
-                variant="tonal"
-                color="primary"
-                class="overview-workspace-structure-btn"
-                :disabled="actionBusy"
-                @click="toggleWorkspaceStructureButtons">
-                {{ isWorkspaceStructureButtonsVisible() ? 'Struktur schließen' : 'Struktur ändern' }}
-            </v-btn>
-            <v-btn
-                v-if="workspaceExpanded && !isWorkspaceStructureButtonsVisible()"
+                v-if="workspaceExpanded"
                 size="x-small"
                 color="primary"
                 variant="tonal"
@@ -47,7 +37,7 @@
                 @click.stop="handleWorkspaceShareClick" />
         </div>
 
-        <div v-if="workspaceExpanded && items.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+        <div v-if="workspaceExpanded" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(subject, subjectIndex) in items"
                 :key="`overview-subjects-nav-${subject.id || subject.name}`"
@@ -61,20 +51,56 @@
                 {{ workspaceNodeTitle('subject', subject) }}
             </v-btn>
             <v-btn
-                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                size="small"
-                variant="outlined"
+                v-if="enableCreateButtons"
+                size="default"
+                variant="text"
                 color="primary"
-                prepend-icon="mdi-plus"
+                icon="mdi-plus"
+                :title="'Fach hinzufügen'"
                 :disabled="actionBusy"
-                @click.stop="openWorkspaceCreateSubjectDialog()">
-                Fach
-            </v-btn>
+                class="overview-subjects-nav-btn"
+                @click.stop="openWorkspaceCreateSubjectDialog()" />
         </div>
 
         <div v-if="workspaceExpanded && selectedSubjectItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
             <v-icon size="20" icon="mdi-book-education-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('subject', selectedSubjectItem) }}</span>
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedSubjectItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-pencil"
+                :title="'Fach bearbeiten'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceRenameDialog('subject', selectedSubjectItem)" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedSubjectItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-left"
+                :title="'Nach links'"
+                :disabled="actionBusy || selectedSubjectIndex <= 0"
+                @click.stop="moveWorkspaceNode('subject', selectedSubjectItem, 'up')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedSubjectItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-right"
+                :title="'Nach rechts'"
+                :disabled="actionBusy || selectedSubjectIndex >= items.length - 1"
+                @click.stop="moveWorkspaceNode('subject', selectedSubjectItem, 'down')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedSubjectItem.id) && !selectedSubjectItem.topics.length && !selectedSubjectItem.materials.length"
+                size="x-small"
+                color="warning"
+                variant="tonal"
+                icon="mdi-delete-outline"
+                :title="'Fach löschen'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceDeleteDialog('subject', selectedSubjectItem)" />
             <v-btn
                 v-if="hasPersistedNodeId(selectedSubjectItem.id) && !isWorkspaceStructureButtonsVisible()"
                 size="x-small"
@@ -100,7 +126,32 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedSubjectItem && selectedSubjectItem.topics.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+        <div v-if="workspaceExpanded && selectedSubjectItem && selectedSubjectItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
+            <v-card
+                v-for="material in selectedSubjectItem.materials"
+                :key="`overview-material-card-subject-${material.id}`"
+                class="overview-material-card"
+                variant="outlined"
+                rounded="lg"
+                @click="$emit('open-material', { id: material.id })">
+                <v-card-text class="pa-3">
+                    <div class="d-flex align-center ga-2 mb-2">
+                        <v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" />
+                        <span class="overview-material-card__title">{{ material.title }}</span>
+                    </div>
+                    <div v-if="material.description" class="overview-material-card__description text-medium-emphasis mb-1">{{ material.description }}</div>
+                    <div class="d-flex align-center flex-wrap ga-2">
+                        <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip>
+                        <v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip>
+                        <span v-if="material.attachmentsCount > 0" class="d-flex align-center text-caption text-medium-emphasis">
+                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />{{ material.attachmentsCount }}
+                        </span>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </div>
+
+        <div v-if="workspaceExpanded && selectedSubjectItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(topic, topicIndex) in selectedSubjectItem.topics"
                 :key="`overview-topics-nav-${topic.id || topic.name}`"
@@ -114,21 +165,56 @@
                 {{ workspaceNodeTitle('topic', topic) }}
             </v-btn>
             <v-btn
-                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                v-if="enableCreateButtons"
                 size="default"
-                variant="outlined"
+                variant="text"
                 color="primary"
-                prepend-icon="mdi-plus"
+                icon="mdi-plus"
+                :title="'Thema hinzufügen'"
                 :disabled="actionBusy"
                 class="overview-subjects-nav-btn"
-                @click.stop="openWorkspaceCreateTopicDialog(selectedSubjectItem)">
-                Thema
-            </v-btn>
+                @click.stop="openWorkspaceCreateTopicDialog(selectedSubjectItem)" />
         </div>
 
         <div v-if="workspaceExpanded && selectedTopicItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
             <v-icon size="20" icon="mdi-book-open-page-variant-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('topic', selectedTopicItem) }}</span>
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedTopicItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-pencil"
+                :title="'Thema bearbeiten'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceRenameDialog('topic', selectedTopicItem)" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedTopicItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-left"
+                :title="'Nach links'"
+                :disabled="actionBusy || selectedTopicIndex <= 0"
+                @click.stop="moveWorkspaceNode('topic', selectedTopicItem, 'up')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedTopicItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-right"
+                :title="'Nach rechts'"
+                :disabled="actionBusy || selectedTopicIndex >= selectedSubjectItem.topics.length - 1"
+                @click.stop="moveWorkspaceNode('topic', selectedTopicItem, 'down')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedTopicItem.id) && !selectedTopicItem.units.length && !selectedTopicItem.materials.length"
+                size="x-small"
+                color="warning"
+                variant="tonal"
+                icon="mdi-delete-outline"
+                :title="'Thema löschen'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceDeleteDialog('topic', selectedTopicItem)" />
             <v-btn
                 v-if="hasPersistedNodeId(selectedTopicItem.id) && !isWorkspaceStructureButtonsVisible()"
                 size="x-small"
@@ -154,7 +240,32 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedTopicItem && selectedTopicItem.units.length" class="overview-subjects-nav d-flex flex-wrap ga-2 mb-4">
+        <div v-if="workspaceExpanded && selectedTopicItem && selectedTopicItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
+            <v-card
+                v-for="material in selectedTopicItem.materials"
+                :key="`overview-material-card-topic-${material.id}`"
+                class="overview-material-card"
+                variant="outlined"
+                rounded="lg"
+                @click="$emit('open-material', { id: material.id })">
+                <v-card-text class="pa-3">
+                    <div class="d-flex align-center ga-2 mb-2">
+                        <v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" />
+                        <span class="overview-material-card__title">{{ material.title }}</span>
+                    </div>
+                    <div v-if="material.description" class="overview-material-card__description text-medium-emphasis mb-1">{{ material.description }}</div>
+                    <div class="d-flex align-center flex-wrap ga-2">
+                        <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip>
+                        <v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip>
+                        <span v-if="material.attachmentsCount > 0" class="d-flex align-center text-caption text-medium-emphasis">
+                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />{{ material.attachmentsCount }}
+                        </span>
+                    </div>
+                </v-card-text>
+            </v-card>
+        </div>
+
+        <div v-if="workspaceExpanded && selectedTopicItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(unit, unitIndex) in selectedTopicItem.units"
                 :key="`overview-units-nav-${unit.id || unit.name}`"
@@ -168,21 +279,56 @@
                 {{ workspaceNodeTitle('unit', unit) }}
             </v-btn>
             <v-btn
-                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
+                v-if="enableCreateButtons"
                 size="default"
-                variant="outlined"
+                variant="text"
                 color="primary"
-                prepend-icon="mdi-plus"
+                icon="mdi-plus"
+                :title="'Bereich hinzufügen'"
                 :disabled="actionBusy"
                 class="overview-subjects-nav-btn"
-                @click.stop="openWorkspaceCreateUnitDialog(selectedTopicItem)">
-                Bereich
-            </v-btn>
+                @click.stop="openWorkspaceCreateUnitDialog(selectedTopicItem)" />
         </div>
 
         <div v-if="workspaceExpanded && selectedUnitItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
             <v-icon size="20" icon="mdi-circle-medium" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-pencil"
+                :title="'Bereich bearbeiten'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceRenameDialog('unit', selectedUnitItem)" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-left"
+                :title="'Nach links'"
+                :disabled="actionBusy || selectedUnitIndex <= 0"
+                @click.stop="moveWorkspaceNode('unit', selectedUnitItem, 'up')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id)"
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                icon="mdi-arrow-right"
+                :title="'Nach rechts'"
+                :disabled="actionBusy || selectedUnitIndex >= selectedTopicItem.units.length - 1"
+                @click.stop="moveWorkspaceNode('unit', selectedUnitItem, 'down')" />
+            <v-btn
+                v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id) && !selectedUnitItem.materials.length"
+                size="x-small"
+                color="warning"
+                variant="tonal"
+                icon="mdi-delete-outline"
+                :title="'Bereich löschen'"
+                :disabled="actionBusy"
+                @click.stop="openWorkspaceDeleteDialog('unit', selectedUnitItem)" />
             <v-btn
                 v-if="hasPersistedNodeId(selectedUnitItem.id) && !isWorkspaceStructureButtonsVisible()"
                 size="x-small"
@@ -208,10 +354,10 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && visibleMaterials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3">
+        <div v-if="workspaceExpanded && selectedUnitItem && selectedUnitItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
             <v-card
-                v-for="material in visibleMaterials"
-                :key="`overview-material-card-${material.id}`"
+                v-for="material in selectedUnitItem.materials"
+                :key="`overview-material-card-unit-${material.id}`"
                 class="overview-material-card"
                 variant="outlined"
                 rounded="lg"
@@ -221,744 +367,18 @@
                         <v-icon size="20" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || 'primary'" />
                         <span class="overview-material-card__title">{{ material.title }}</span>
                     </div>
+                    <div v-if="material.description" class="overview-material-card__description text-medium-emphasis mb-1">{{ material.description }}</div>
                     <div class="d-flex align-center flex-wrap ga-2">
-                        <v-chip
-                            v-if="material.typeLabel"
-                            size="x-small"
-                            variant="outlined"
-                            :color="material.typeColor || 'primary'">
-                            {{ material.typeLabel }}
-                        </v-chip>
-                        <v-chip
-                            size="x-small"
-                            variant="tonal"
-                            :color="statusColorFn(material.status)">
-                            {{ statusLabelFn(material.status) }}
-                        </v-chip>
+                        <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">{{ material.typeLabel }}</v-chip>
+                        <v-chip size="x-small" variant="tonal" :color="statusColorFn(material.status)">{{ statusLabelFn(material.status) }}</v-chip>
                         <span v-if="material.attachmentsCount > 0" class="d-flex align-center text-caption text-medium-emphasis">
-                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                            {{ material.attachmentsCount }}
+                            <v-icon size="12" icon="mdi-paperclip" class="mr-1" />{{ material.attachmentsCount }}
                         </span>
-                        <v-icon
-                            v-if="showShareIndicator('material', material.id)"
-                            size="14"
-                            icon="mdi-share-variant"
-                            :color="shareIndicatorColorFn('material', material.id)" />
                     </div>
                 </v-card-text>
             </v-card>
         </div>
 
-        <div v-if="workspaceExpanded && !visibleMaterials.length && !isWorkspaceStructureButtonsVisible() && (selectedUnitItem || selectedTopicItem || selectedSubjectItem)" class="text-body-2 text-medium-emphasis mt-2 mb-4">
-            Keine Materialien vorhanden.
-        </div>
-
-        <ul v-if="workspaceExpanded" class="overview-subjects-list">
-            <li
-                v-for="(subject, subjectIndex) in items"
-                :key="`overview-subjects-subject-${subject.id || subject.name}`"
-                class="overview-subjects-item">
-                <div v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()" class="overview-shared-structure-create-row">
-                    <v-btn
-                        prepend-icon="mdi-plus"
-                        size="small"
-                        density="comfortable"
-                        variant="outlined"
-                        color="primary"
-                        class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                        :disabled="actionBusy"
-                        title="Fach hinzufügen"
-                        aria-label="Fach hinzufügen"
-                        @click.stop="openWorkspaceCreateSubjectDialog({ beforeSubjectId: subject?.id })">
-                        Fach
-                    </v-btn>
-                </div>
-                <div class="overview-subjects-group" :style="subjectGroupStyleFn(subject)">
-                    <div class="overview-subjects-node-row">
-                        <div
-                            class="overview-subjects-node overview-subjects-node--subject"
-                            :class="{ 'overview-subjects-node--clickable': subjectHasChildren(subject) }"
-                            @click.stop="subjectHasChildren(subject) && !actionBusy ? toggleWorkspaceSubjectExpanded(subject) : undefined">
-                            <button
-                                v-if="subjectHasChildren(subject)"
-                                type="button"
-                                class="overview-subjects-node-toggle"
-                                :aria-expanded="isWorkspaceSubjectExpanded(subject) ? 'true' : 'false'"
-                                :aria-label="`Fach ${workspaceNodeTitle('subject', subject)} ein- oder ausklappen`"
-                                :disabled="actionBusy"
-                                @click.stop="toggleWorkspaceSubjectExpanded(subject)">
-                                <v-icon size="16" :icon="isWorkspaceSubjectExpanded(subject) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                            </button>
-                            <span v-else class="overview-subjects-node-toggle overview-subjects-node-toggle--empty" aria-hidden="true">
-                                <v-icon size="14" icon="mdi-minus" />
-                            </span>
-                            <v-icon size="16" icon="mdi-book-education-outline" class="mr-2" />
-                            <span>{{ workspaceNodeTitle('subject', subject) }}</span>
-                            <v-icon
-                                v-if="hasPersistedNodeId(subject.id) && showShareIndicator('subject', subject.id)"
-                                size="16"
-                                icon="mdi-share-variant"
-                                :color="shareIndicatorColorFn('subject', subject.id)"
-                                class="ml-1" />
-                            <div
-                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                class="overview-shared-hierarchy-node-inline-actions">
-                                <v-btn
-                                    icon="mdi-arrow-up"
-                                    size="x-small"
-                                    density="comfortable"
-                                    variant="text"
-                                    color="primary"
-                                    :disabled="actionBusy || subjectIndex === 0"
-                                    title="Fach nach oben"
-                                    @click.stop="moveWorkspaceNode('subject', subject, 'up')" />
-                                <v-btn
-                                    icon="mdi-arrow-down"
-                                    size="x-small"
-                                    density="comfortable"
-                                    variant="text"
-                                    color="primary"
-                                    :disabled="actionBusy || subjectIndex >= (items.length - 1)"
-                                    title="Fach nach unten"
-                                    @click.stop="moveWorkspaceNode('subject', subject, 'down')" />
-                                <v-btn
-                                    icon="mdi-pencil"
-                                    size="x-small"
-                                    density="comfortable"
-                                    variant="text"
-                                    color="primary"
-                                    :disabled="actionBusy"
-                                    title="Fach bearbeiten"
-                                    @click.stop="openWorkspaceRenameDialog('subject', subject)" />
-                                <v-btn
-                                    v-if="sharedSubjectCanDelete(subject)"
-                                    icon="mdi-delete-outline"
-                                    size="x-small"
-                                    density="comfortable"
-                                    variant="text"
-                                    color="warning"
-                                    :disabled="actionBusy"
-                                    title="Fach löschen"
-                                    @click.stop="openWorkspaceDeleteDialog('subject', subject)" />
-                            </div>
-                        </div>
-                        <v-btn
-                            v-if="hasPersistedNodeId(subject.id) && !isWorkspaceStructureButtonsVisible()"
-                            size="x-small"
-                            color="primary"
-                            variant="tonal"
-                            icon="mdi-share-variant-outline"
-                            class="overview-share-btn"
-                            :title="'Teilen'"
-                            :disabled="actionBusy"
-                            @click.stop="handleShareClick({ level: 'subject', id: subject.id, label: workspaceNodeTitle('subject', subject) })" />
-                        <v-btn
-                            v-if="enableCreateButtons && hasPersistedNodeId(subject.id) && !isWorkspaceStructureButtonsVisible()"
-                            size="x-small"
-                            color="primary"
-                            variant="tonal"
-                            icon="mdi-file-plus-outline"
-                            :title="'Neues Material in Fach anlegen'"
-                            :disabled="actionBusy"
-                            @click="$emit('open-create', {
-                                level: 'subject',
-                                subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
-                                topic: '',
-                                unit: '',
-                            })" />
-                    </div>
-
-                    <ul v-if="isWorkspaceSubjectExpanded(subject) && subject.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
-                        <li
-                            v-for="material in subject.materials"
-                            :key="`overview-subjects-subject-material-${subject.id || subject.name}-${material.id}`"
-                            class="overview-subjects-material-item">
-                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
-                            <button
-                                type="button"
-                                class="overview-subjects-material-link"
-                                :disabled="actionBusy"
-                                @click="$emit('open-material', { id: material.id })">
-                                {{ material.title }}
-                            </button>
-                            <v-btn
-                                v-if="hasPersistedNodeId(material.id)"
-                                size="x-small"
-                                color="primary"
-                                variant="tonal"
-                                icon="mdi-share-variant-outline"
-                                class="overview-share-btn overview-share-btn--material"
-                                :title="'Teilen'"
-                                :disabled="actionBusy"
-                                @click.stop="handleShareClick({
-                                    level: 'material',
-                                    id: material.id,
-                                    label: material.title,
-                                    parentLabel: workspaceNodeTitle('subject', subject),
-                                    kindLabel: material.typeLabel || '',
-                                    kindColor: material.typeColor || 'primary',
-                                    statusLabel: statusLabelFn(material.status),
-                                    statusColor: statusColorFn(material.status),
-                                    attachmentsCount: Number(material.attachmentsCount || 0),
-                                })" />
-                            <v-chip
-                                v-if="material.isLinked"
-                                size="x-small"
-                                variant="outlined"
-                                :color="linkedPermissionChipColor(material.linkedPermission)"
-                                class="overview-subjects-material-type">
-                                {{ linkedPermissionLabel(material) }}
-                            </v-chip>
-                            <v-chip
-                                v-if="material.typeLabel"
-                                size="x-small"
-                                variant="outlined"
-                                :color="material.typeColor || 'primary'"
-                                class="overview-subjects-material-type">
-                                {{ material.typeLabel }}
-                            </v-chip>
-                            <button
-                                v-if="material.attachmentsCount > 0"
-                                type="button"
-                                class="overview-subjects-material-count overview-subjects-material-count--button"
-                                :disabled="actionBusy"
-                                title="Anhänge verwalten"
-                                @click="openAttachments(material)">
-                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                {{ material.attachmentsCount }}
-                            </button>
-                            <v-chip
-                                size="x-small"
-                                variant="tonal"
-                                :color="statusColorFn(material.status)"
-                                class="overview-subjects-material-status">
-                                {{ statusLabelFn(material.status) }}
-                            </v-chip>
-                            <v-btn
-                                v-if="enableRemoveButtons && material.isLinked"
-                                size="x-small"
-                                color="warning"
-                                variant="text"
-                                density="comfortable"
-                                prepend-icon="mdi-link-off"
-                                :disabled="actionBusy"
-                                title="Link entfernen"
-                                @click="$emit('unlink-linked-material', material)">
-                                Link entfernen
-                            </v-btn>
-                            <v-icon
-                                v-if="showShareIndicator('material', material.id)"
-                                size="14"
-                                icon="mdi-share-variant"
-                                :color="shareIndicatorColorFn('material', material.id)"
-                                class="overview-subjects-share-icon" />
-                        </li>
-                    </ul>
-
-                    <ul v-if="isWorkspaceSubjectExpanded(subject) && subject.topics.length" class="overview-subjects-list overview-subjects-list--child">
-                        <li
-                            v-for="(topic, topicIndex) in subject.topics"
-                            :key="`overview-subjects-topic-${topic.id || `${subject.id || subject.name}-${topic.name}`}`"
-                            class="overview-subjects-item overview-subjects-topic-group"
-                            :style="topicGroupStyleFn(subject)">
-                            <div v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()" class="overview-shared-structure-create-row overview-shared-structure-create-row--topic">
-                                <v-btn
-                                    prepend-icon="mdi-plus"
-                                    size="small"
-                                    density="comfortable"
-                                    variant="outlined"
-                                    color="primary"
-                                    class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                                    :disabled="actionBusy"
-                                    title="Thema hinzufügen"
-                                    aria-label="Thema hinzufügen"
-                                    @click.stop="openWorkspaceCreateTopicDialog(subject, { beforeTopicId: topic?.id })">
-                                    Thema
-                                </v-btn>
-                            </div>
-                            <div class="overview-subjects-node-row">
-                                <div
-                                    class="overview-subjects-node overview-subjects-node--topic"
-                                    :class="{ 'overview-subjects-node--clickable': topicHasChildren(topic) }"
-                                    @click.stop="topicHasChildren(topic) && !actionBusy ? toggleWorkspaceTopicExpanded(topic) : undefined">
-                                    <button
-                                        v-if="topicHasChildren(topic)"
-                                        type="button"
-                                        class="overview-subjects-node-toggle"
-                                        :aria-expanded="isWorkspaceTopicExpanded(topic) ? 'true' : 'false'"
-                                        :aria-label="`Thema ${workspaceNodeTitle('topic', topic)} ein- oder ausklappen`"
-                                        :disabled="actionBusy"
-                                        @click.stop="toggleWorkspaceTopicExpanded(topic)">
-                                        <v-icon size="14" :icon="isWorkspaceTopicExpanded(topic) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                                    </button>
-                                    <v-icon
-                                        size="14"
-                                        :icon="topic.isLinked ? 'mdi-link-variant' : 'mdi-book-open-page-variant-outline'"
-                                        :color="topic.isLinked ? linkedPermissionChipColor(topic.linkedPermission) : undefined"
-                                        class="mr-2" />
-                                    <span>{{ workspaceNodeTitle('topic', topic) }}</span>
-                                    <v-chip
-                                        v-if="topic.isLinked"
-                                        size="x-small"
-                                        variant="outlined"
-                                        :color="linkedPermissionChipColor(topic.linkedPermission)"
-                                        class="overview-subjects-material-type">
-                                        {{ linkedPermissionLabel(topic) }}
-                                    </v-chip>
-                                    <v-icon
-                                        v-if="hasPersistedNodeId(topic.id) && showShareIndicator('topic', topic.id)"
-                                        size="15"
-                                        icon="mdi-share-variant"
-                                        :color="shareIndicatorColorFn('topic', topic.id)"
-                                        class="ml-1" />
-                                    <div
-                                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                        class="overview-shared-hierarchy-node-inline-actions">
-                                        <v-btn
-                                            icon="mdi-arrow-up"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="primary"
-                                            :disabled="actionBusy || topicIndex === 0"
-                                            title="Thema nach oben"
-                                            @click.stop="moveWorkspaceNode('topic', topic, 'up')" />
-                                        <v-btn
-                                            icon="mdi-arrow-down"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="primary"
-                                            :disabled="actionBusy || topicIndex >= (subject.topics.length - 1)"
-                                            title="Thema nach unten"
-                                            @click.stop="moveWorkspaceNode('topic', topic, 'down')" />
-                                        <v-btn
-                                            icon="mdi-pencil"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="primary"
-                                            :disabled="actionBusy"
-                                            title="Thema bearbeiten"
-                                            @click.stop="openWorkspaceRenameDialog('topic', topic)" />
-                                        <v-btn
-                                            v-if="sharedTopicCanDelete(topic)"
-                                            icon="mdi-delete-outline"
-                                            size="x-small"
-                                            density="comfortable"
-                                            variant="text"
-                                            color="warning"
-                                            :disabled="actionBusy"
-                                            title="Thema löschen"
-                                            @click.stop="openWorkspaceDeleteDialog('topic', topic)" />
-                                    </div>
-                                </div>
-                                <v-btn
-                                    v-if="hasPersistedNodeId(topic.id) && !isWorkspaceStructureButtonsVisible()"
-                                    size="x-small"
-                                    color="primary"
-                                    variant="tonal"
-                                    icon="mdi-share-variant-outline"
-                                    class="overview-share-btn"
-                                    :title="'Teilen'"
-                                    :disabled="actionBusy"
-                                    @click.stop="handleShareClick({ level: 'topic', id: topic.id, label: workspaceNodeTitle('topic', topic), parentLabel: workspaceNodeTitle('subject', subject) })" />
-                                <v-btn
-                                    v-if="enableCreateButtons && hasPersistedNodeId(topic.id) && canCreateMaterialInTopic(topic) && !isWorkspaceStructureButtonsVisible()"
-                                    size="x-small"
-                                    color="primary"
-                                    variant="tonal"
-                                    icon="mdi-file-plus-outline"
-                                    :title="'Neues Material in Thema anlegen'"
-                                    :disabled="actionBusy"
-                                    @click="$emit('open-create', {
-                                        level: 'topic',
-                                        subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
-                                        topic: String(workspaceNodeTitle('topic', topic) || '').trim(),
-                                        unit: '',
-                                    })" />
-                                <v-btn
-                                    v-if="enableRemoveButtons && hasPersistedNodeId(topic.id) && topic.isLinked"
-                                    size="x-small"
-                                    color="warning"
-                                    variant="text"
-                                    density="comfortable"
-                                    prepend-icon="mdi-link-off"
-                                    :disabled="actionBusy"
-                                    title="Link entfernen (ganzes Thema)"
-                                    @click="$emit('unlink-linked-topic', topic)">
-                                    Link entfernen
-                                </v-btn>
-                            </div>
-
-                            <ul v-if="isWorkspaceTopicExpanded(topic) && topic.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
-                                <li
-                                    v-for="material in topic.materials"
-                                    :key="`overview-subjects-topic-material-${topic.id || topic.name}-${material.id}`"
-                                    class="overview-subjects-material-item">
-                                    <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
-                                    <button
-                                        type="button"
-                                        class="overview-subjects-material-link"
-                                        :disabled="actionBusy"
-                                        @click="$emit('open-material', { id: material.id })">
-                                        {{ material.title }}
-                                    </button>
-                                    <v-btn
-                                        v-if="hasPersistedNodeId(material.id)"
-                                        size="x-small"
-                                        color="primary"
-                                        variant="tonal"
-                                        icon="mdi-share-variant-outline"
-                                        class="overview-share-btn overview-share-btn--material"
-                                        :title="'Teilen'"
-                                        :disabled="actionBusy"
-                                        @click.stop="handleShareClick({
-                                            level: 'material',
-                                            id: material.id,
-                                            label: material.title,
-                                            parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)}`,
-                                            kindLabel: material.typeLabel || '',
-                                            kindColor: material.typeColor || 'primary',
-                                            statusLabel: statusLabelFn(material.status),
-                                            statusColor: statusColorFn(material.status),
-                                            attachmentsCount: Number(material.attachmentsCount || 0),
-                                        })" />
-                                    <v-chip
-                                        v-if="material.isLinked"
-                                        size="x-small"
-                                        variant="outlined"
-                                        :color="linkedPermissionChipColor(material.linkedPermission)"
-                                        class="overview-subjects-material-type">
-                                        {{ linkedPermissionLabel(material) }}
-                                    </v-chip>
-                                    <v-chip
-                                        v-if="material.typeLabel"
-                                        size="x-small"
-                                        variant="outlined"
-                                        :color="material.typeColor || 'primary'"
-                                        class="overview-subjects-material-type">
-                                        {{ material.typeLabel }}
-                                    </v-chip>
-                                    <button
-                                        v-if="material.attachmentsCount > 0"
-                                        type="button"
-                                        class="overview-subjects-material-count overview-subjects-material-count--button"
-                                        :disabled="actionBusy"
-                                        title="Anhänge verwalten"
-                                        @click="openAttachments(material)">
-                                        <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                        {{ material.attachmentsCount }}
-                                    </button>
-                                    <v-chip
-                                        size="x-small"
-                                        variant="tonal"
-                                        :color="statusColorFn(material.status)"
-                                        class="overview-subjects-material-status">
-                                        {{ statusLabelFn(material.status) }}
-                                    </v-chip>
-                                    <v-btn
-                                        v-if="enableRemoveButtons && material.isLinked"
-                                        size="x-small"
-                                        color="warning"
-                                        variant="text"
-                                        density="comfortable"
-                                        prepend-icon="mdi-link-off"
-                                        :disabled="actionBusy"
-                                        title="Link entfernen"
-                                        @click="$emit('unlink-linked-material', material)">
-                                        Link entfernen
-                                    </v-btn>
-                                    <v-icon
-                                        v-if="showShareIndicator('material', material.id)"
-                                        size="14"
-                                        icon="mdi-share-variant"
-                                        :color="shareIndicatorColorFn('material', material.id)"
-                                        class="overview-subjects-share-icon" />
-                                </li>
-                            </ul>
-
-                            <ul v-if="isWorkspaceTopicExpanded(topic) && topic.units.length" class="overview-subjects-list overview-subjects-list--child">
-                                <li
-                                    v-for="(unit, unitIndex) in topic.units"
-                                    :key="`overview-subjects-unit-${unit.id || `${topic.id || topic.name}-${unit.name}`}`"
-                                    class="overview-subjects-item">
-                                    <div
-                                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                        class="overview-shared-structure-create-row overview-shared-structure-create-row--unit">
-                                        <v-btn
-                                            prepend-icon="mdi-plus"
-                                            size="small"
-                                            density="comfortable"
-                                            variant="outlined"
-                                            color="primary"
-                                            class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                                            :disabled="actionBusy"
-                                            title="Bereich hinzufügen"
-                                            aria-label="Bereich hinzufügen"
-                                            @click.stop="openWorkspaceCreateUnitDialog(topic, { beforeUnitId: unit?.id })">
-                                            Bereich
-                                        </v-btn>
-                                    </div>
-                                    <div class="overview-subjects-node-row">
-                                        <div
-                                            class="overview-subjects-node overview-subjects-node--unit"
-                                            :class="{ 'overview-subjects-node--clickable': unitHasChildren(unit) }"
-                                            @click.stop="unitHasChildren(unit) && !actionBusy ? toggleWorkspaceUnitExpanded(unit) : undefined">
-                                            <button
-                                                v-if="unitHasChildren(unit)"
-                                                type="button"
-                                                class="overview-subjects-node-toggle"
-                                                :aria-expanded="isWorkspaceUnitExpanded(unit) ? 'true' : 'false'"
-                                                :aria-label="`Bereich ${workspaceNodeTitle('unit', unit)} ein- oder ausklappen`"
-                                                :disabled="actionBusy"
-                                                @click.stop="toggleWorkspaceUnitExpanded(unit)">
-                                                <v-icon size="13" :icon="isWorkspaceUnitExpanded(unit) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                                            </button>
-                                            <v-icon
-                                                size="13"
-                                                :icon="unit.isLinked ? 'mdi-link-variant' : 'mdi-circle-medium'"
-                                                :color="unit.isLinked ? linkedPermissionChipColor(unit.linkedPermission) : undefined"
-                                                class="mr-1" />
-                                            <span>{{ workspaceNodeTitle('unit', unit) }}</span>
-                                            <v-chip
-                                                v-if="unit.isLinked"
-                                                size="x-small"
-                                                variant="outlined"
-                                                :color="linkedPermissionChipColor(unit.linkedPermission)"
-                                                class="overview-subjects-material-type">
-                                                {{ linkedPermissionLabel(unit) }}
-                                            </v-chip>
-                                            <v-icon
-                                                v-if="hasPersistedNodeId(unit.id) && showShareIndicator('unit', unit.id)"
-                                                size="14"
-                                                icon="mdi-share-variant"
-                                                :color="shareIndicatorColorFn('unit', unit.id)"
-                                                class="ml-1" />
-                                            <div
-                                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                                class="overview-shared-hierarchy-node-inline-actions">
-                                                <v-btn
-                                                    icon="mdi-arrow-up"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="primary"
-                                                    :disabled="actionBusy || unitIndex === 0"
-                                                    title="Bereich nach oben"
-                                                    @click.stop="moveWorkspaceNode('unit', unit, 'up')" />
-                                                <v-btn
-                                                    icon="mdi-arrow-down"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="primary"
-                                                    :disabled="actionBusy || unitIndex >= (topic.units.length - 1)"
-                                                    title="Bereich nach unten"
-                                                    @click.stop="moveWorkspaceNode('unit', unit, 'down')" />
-                                                <v-btn
-                                                    icon="mdi-pencil"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="primary"
-                                                    :disabled="actionBusy"
-                                                    title="Bereich bearbeiten"
-                                                    @click.stop="openWorkspaceRenameDialog('unit', unit)" />
-                                                <v-btn
-                                                    v-if="sharedUnitCanDelete(unit)"
-                                                    icon="mdi-delete-outline"
-                                                    size="x-small"
-                                                    density="comfortable"
-                                                    variant="text"
-                                                    color="warning"
-                                                    :disabled="actionBusy"
-                                                    title="Bereich löschen"
-                                                    @click.stop="openWorkspaceDeleteDialog('unit', unit)" />
-                                            </div>
-                                        </div>
-                                        <v-btn
-                                            v-if="hasPersistedNodeId(unit.id) && !isWorkspaceStructureButtonsVisible()"
-                                            size="x-small"
-                                            color="primary"
-                                            variant="tonal"
-                                            icon="mdi-share-variant-outline"
-                                            class="overview-share-btn"
-                                            :title="'Teilen'"
-                                            :disabled="actionBusy"
-                                            @click.stop="handleShareClick({ level: 'unit', id: unit.id, label: workspaceNodeTitle('unit', unit), parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)}` })" />
-                                        <v-btn
-                                            v-if="enableCreateButtons && hasPersistedNodeId(unit.id) && canCreateMaterialInUnit(unit) && !isWorkspaceStructureButtonsVisible()"
-                                            size="x-small"
-                                            color="primary"
-                                            variant="tonal"
-                                            icon="mdi-file-plus-outline"
-                                            :title="'Neues Material in Unterpunkt anlegen'"
-                                            :disabled="actionBusy"
-                                            @click="$emit('open-create', {
-                                                level: 'unit',
-                                                subject: String(workspaceNodeTitle('subject', subject) || '').trim(),
-                                                topic: String(workspaceNodeTitle('topic', topic) || '').trim(),
-                                                unit: String(workspaceNodeTitle('unit', unit) || '').trim(),
-                                            })" />
-                                        <v-btn
-                                            v-if="enableRemoveButtons && hasPersistedNodeId(unit.id) && unit.isLinked"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="text"
-                                            density="comfortable"
-                                            prepend-icon="mdi-link-off"
-                                            :disabled="actionBusy"
-                                            title="Link entfernen (ganze Einheit)"
-                                            @click="$emit('unlink-linked-unit', unit)">
-                                            Link entfernen
-                                        </v-btn>
-                                    </div>
-
-                                    <ul v-if="isWorkspaceUnitExpanded(unit) && unit.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-subjects-material-list">
-                                        <li
-                                            v-for="material in unit.materials"
-                                            :key="`overview-subjects-unit-material-${unit.id || unit.name}-${material.id}`"
-                                            class="overview-subjects-material-item">
-                                            <v-icon size="14" :icon="material.icon || 'mdi-file-document-outline'" :color="material.typeColor || undefined" />
-                                            <button
-                                                type="button"
-                                                class="overview-subjects-material-link"
-                                                :disabled="actionBusy"
-                                                @click="$emit('open-material', { id: material.id })">
-                                                {{ material.title }}
-                                            </button>
-                                            <v-btn
-                                                v-if="hasPersistedNodeId(material.id)"
-                                                size="x-small"
-                                                color="primary"
-                                                variant="tonal"
-                                                icon="mdi-share-variant-outline"
-                                                class="overview-share-btn overview-share-btn--material"
-                                                :title="'Teilen'"
-                                                :disabled="actionBusy"
-                                                @click.stop="handleShareClick({
-                                                    level: 'material',
-                                                    id: material.id,
-                                                    label: material.title,
-                                                    parentLabel: `${workspaceNodeTitle('subject', subject)} / ${workspaceNodeTitle('topic', topic)} / ${workspaceNodeTitle('unit', unit)}`,
-                                                    kindLabel: material.typeLabel || '',
-                                                    kindColor: material.typeColor || 'primary',
-                                                    statusLabel: statusLabelFn(material.status),
-                                                    statusColor: statusColorFn(material.status),
-                                                    attachmentsCount: Number(material.attachmentsCount || 0),
-                                                })" />
-                                            <v-chip
-                                                v-if="material.isLinked"
-                                                size="x-small"
-                                                variant="outlined"
-                                                :color="linkedPermissionChipColor(material.linkedPermission)"
-                                                class="overview-subjects-material-type">
-                                                {{ linkedPermissionLabel(material) }}
-                                            </v-chip>
-                                            <v-chip
-                                                v-if="material.typeLabel"
-                                                size="x-small"
-                                                variant="outlined"
-                                                :color="material.typeColor || 'primary'"
-                                                class="overview-subjects-material-type">
-                                                {{ material.typeLabel }}
-                                            </v-chip>
-                                            <button
-                                                v-if="material.attachmentsCount > 0"
-                                                type="button"
-                                                class="overview-subjects-material-count overview-subjects-material-count--button"
-                                                :disabled="actionBusy"
-                                                title="Anhänge verwalten"
-                                                @click="openAttachments(material)">
-                                                <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
-                                                {{ material.attachmentsCount }}
-                                            </button>
-                                            <v-chip
-                                                size="x-small"
-                                                variant="tonal"
-                                                :color="statusColorFn(material.status)"
-                                                class="overview-subjects-material-status">
-                                                {{ statusLabelFn(material.status) }}
-                                            </v-chip>
-                                            <v-btn
-                                                v-if="enableRemoveButtons && material.isLinked"
-                                                size="x-small"
-                                                color="warning"
-                                                variant="text"
-                                                density="comfortable"
-                                                prepend-icon="mdi-link-off"
-                                                :disabled="actionBusy"
-                                                title="Link entfernen"
-                                                @click="$emit('unlink-linked-material', material)">
-                                                Link entfernen
-                                            </v-btn>
-                                            <v-icon
-                                                v-if="showShareIndicator('material', material.id)"
-                                                size="14"
-                                                icon="mdi-share-variant"
-                                                :color="shareIndicatorColorFn('material', material.id)"
-                                                class="overview-subjects-share-icon" />
-                                        </li>
-                                    </ul>
-                                </li>
-                            </ul>
-                            <div
-                                v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                                class="overview-shared-structure-create-row overview-shared-structure-create-row--topic-bottom">
-                                <v-btn
-                                    prepend-icon="mdi-plus"
-                                    size="small"
-                                    density="comfortable"
-                                    variant="outlined"
-                                    color="primary"
-                                    class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                                    :disabled="actionBusy"
-                                    title="Bereich hinzufügen"
-                                    aria-label="Bereich hinzufügen"
-                                    @click.stop="openWorkspaceCreateUnitDialog(topic)">
-                                    Bereich
-                                </v-btn>
-                            </div>
-                        </li>
-                    </ul>
-                    <div
-                        v-if="enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-                        class="overview-shared-structure-create-row overview-shared-structure-create-row--subject-bottom">
-                        <v-btn
-                            prepend-icon="mdi-plus"
-                            size="small"
-                            density="comfortable"
-                            variant="outlined"
-                            color="primary"
-                            class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                            :disabled="actionBusy"
-                            title="Thema hinzufügen"
-                            aria-label="Thema hinzufügen"
-                            @click.stop="openWorkspaceCreateTopicDialog(subject)">
-                            Thema
-                        </v-btn>
-                    </div>
-                </div>
-            </li>
-        </ul>
-        <div
-            v-if="workspaceExpanded && enableCreateButtons && isWorkspaceStructureButtonsVisible()"
-            class="overview-shared-structure-create-row overview-shared-structure-create-row--bottom">
-            <v-btn
-                prepend-icon="mdi-plus"
-                size="small"
-                density="comfortable"
-                variant="outlined"
-                color="primary"
-                class="overview-shared-structure-create-button overview-shared-structure-create-button--subject"
-                :disabled="actionBusy"
-                title="Fach hinzufügen"
-                aria-label="Fach hinzufügen"
-                @click.stop="openWorkspaceCreateSubjectDialog()">
-                Fach
-            </v-btn>
-        </div>
 
         <div v-if="sharedForMeExpanded" class="overview-shared-content">
             <div v-if="sharedObjectsForMeLoading" class="overview-shared-state">
@@ -2244,24 +1664,29 @@ export default {
             if (!this.items?.length) return null
             return this.items.find(s => this.isWorkspaceSubjectExpanded(s)) || null
         },
+        selectedSubjectIndex() {
+            if (!this.items?.length || !this.selectedSubjectItem) return -1
+            return this.items.indexOf(this.selectedSubjectItem)
+        },
         selectedTopicItem() {
             const subject = this.selectedSubjectItem
             if (!subject?.topics?.length) return null
             return subject.topics.find(t => this.isWorkspaceTopicExpanded(t)) || null
+        },
+        selectedTopicIndex() {
+            const subject = this.selectedSubjectItem
+            if (!subject?.topics?.length || !this.selectedTopicItem) return -1
+            return subject.topics.indexOf(this.selectedTopicItem)
         },
         selectedUnitItem() {
             const topic = this.selectedTopicItem
             if (!topic?.units?.length) return null
             return topic.units.find(u => this.isWorkspaceUnitExpanded(u)) || null
         },
-        visibleMaterials() {
-            const unit = this.selectedUnitItem
-            if (unit?.materials?.length) return unit.materials
+        selectedUnitIndex() {
             const topic = this.selectedTopicItem
-            if (!unit && topic?.materials?.length) return topic.materials
-            const subject = this.selectedSubjectItem
-            if (!topic && subject?.materials?.length) return subject.materials
-            return []
+            if (!topic?.units?.length || !this.selectedUnitItem) return -1
+            return topic.units.indexOf(this.selectedUnitItem)
         },
     },
     methods: {
@@ -2302,11 +1727,7 @@ export default {
         },
         isWorkspaceSubjectExpanded(subject) {
             const key = this.workspaceSubjectKey(subject)
-            if (this.selectedSubjectKey === null) {
-                const firstSubject = this.items?.[0]
-                const firstKey = firstSubject ? this.workspaceSubjectKey(firstSubject) : ''
-                return key !== '' && key === firstKey
-            }
+            if (this.selectedSubjectKey === null) return false
             return key !== '' && key === this.selectedSubjectKey
         },
         toggleWorkspaceSubjectExpanded(subject) {
@@ -2325,12 +1746,7 @@ export default {
         },
         isWorkspaceTopicExpanded(topic) {
             const key = this.workspaceTopicKey(topic)
-            if (this.selectedTopicKey === null) {
-                const subject = this.selectedSubjectItem
-                const firstTopic = subject?.topics?.[0]
-                const firstKey = firstTopic ? this.workspaceTopicKey(firstTopic) : ''
-                return key !== '' && key === firstKey
-            }
+            if (this.selectedTopicKey === null) return false
             return key !== '' && key === this.selectedTopicKey
         },
         toggleWorkspaceTopicExpanded(topic) {
@@ -2348,12 +1764,7 @@ export default {
         },
         isWorkspaceUnitExpanded(unit) {
             const key = this.workspaceUnitKey(unit)
-            if (this.selectedUnitKey === null) {
-                const topic = this.selectedTopicItem
-                const firstUnit = topic?.units?.[0]
-                const firstKey = firstUnit ? this.workspaceUnitKey(firstUnit) : ''
-                return key !== '' && key === firstKey
-            }
+            if (this.selectedUnitKey === null) return false
             return key !== '' && key === this.selectedUnitKey
         },
         toggleWorkspaceUnitExpanded(unit) {
@@ -3722,8 +3133,8 @@ export default {
 }
 
 .overview-material-card {
-    min-width: 220px;
-    max-width: 320px;
+    width: 220px;
+    flex: 0 0 220px;
     cursor: pointer;
     transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
@@ -3742,11 +3153,31 @@ export default {
     white-space: nowrap;
 }
 
+.overview-material-card__description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    line-height: 1.3;
+    margin-top: -2px;
+}
+
 .overview-subjects-nav-btn {
     text-transform: none;
     letter-spacing: 0.01em;
     font-weight: 600;
     font-size: 0.95rem !important;
+}
+
+.overview-subjects-nav :deep(.v-btn--variant-text) {
+    align-self: center;
+    min-width: auto;
+}
+
+.overview-subjects-nav :deep(.v-btn--variant-text .v-icon) {
+    font-size: 1.8rem;
+    font-weight: 900;
+    -webkit-text-stroke: 1px currentColor;
 }
 
 .overview-top-toggle {

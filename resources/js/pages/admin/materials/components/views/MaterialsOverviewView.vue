@@ -4275,6 +4275,7 @@ export default {
                 const materialBase = {
                     id: cardId,
                     title: this.materialSortTitle(card),
+                    description: String(card?.source_text || card?.notes || '').trim(),
                     icon: this.sourceIcon(card),
                     isLinked: !!card?.is_linked,
                     linkedPermission: String(card?.linked_permission || '').trim(),
