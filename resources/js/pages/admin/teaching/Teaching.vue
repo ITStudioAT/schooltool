@@ -37,12 +37,17 @@
                 color="grey"
                 class="teaching-nav__settings-btn"
                 title="Unterricht-Einstellungen"
+                :disabled="isNavigationLocked"
                 @click="$router.push('/admin/settings?tab=teaching')">
                 <v-icon size="20">mdi-cog-outline</v-icon>
             </v-btn>
         </v-sheet>
 
-        <v-sheet v-if="courses.length && main_action === 'overview'" rounded="xl" class="teaching-subnav mb-2">
+        <v-sheet
+            v-if="courses.length && main_action === 'overview'"
+            rounded="xl"
+            class="teaching-subnav mb-2"
+            :class="{ 'is-locked': isNavigationLocked || isStudentDetailActive }">
             <div class="teaching-subnav__inner">
                 <div class="teaching-subnav__courses">
                     <v-btn
@@ -53,6 +58,7 @@
                         :variant="selected_course?.id === course.id ? 'flat' : 'tonal'"
                         :class="selected_course?.id === course.id ? 'teaching-subnav__course-btn--active' : 'teaching-subnav__course-btn--idle'"
                         class="teaching-subnav__course-btn"
+                        :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="handleCourseSelect(course)">
                         {{ course.title }}
                     </v-btn>
@@ -63,6 +69,7 @@
                     variant="tonal"
                     color="secondary"
                     title="Auswahl aufheben"
+                    :disabled="isNavigationLocked || isStudentDetailActive"
                     @click="handleCourseClear" />
                 <div class="teaching-subnav__actions ml-auto d-flex ga-2">
                     <v-btn
@@ -71,6 +78,7 @@
                         variant="tonal"
                         color="primary"
                         title="Fach bearbeiten"
+                        :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="handleEditCourse" />
                     <v-btn
                         v-if="selected_course"
@@ -78,6 +86,7 @@
                         variant="tonal"
                         color="warning"
                         title="Fach löschen"
+                        :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="show_delete_confirm = true" />
                     <v-btn
                         icon="mdi-plus"
@@ -85,6 +94,7 @@
                         color="success"
                         title="Neues Fach anlegen"
                         class="teaching-subnav__add-btn"
+                        :disabled="isNavigationLocked || isStudentDetailActive"
                         @click="handleNewCourse" />
                 </div>
             </div>
@@ -183,7 +193,10 @@ export default {
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         isNavigationLocked() {
-            return this.action != '' || this.action_2 != ''
+            return this.action != '' || this.isStudentDetailActive
+        },
+        isStudentDetailActive() {
+            return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gewählt'
@@ -237,11 +250,18 @@ export default {
                 return carry
             }, {})
         },
+        hasFreeLessonToday() {
+            const todayKey = this.todayDateKey()
+            if (!todayKey) return false
+
+            return this.isFreeCourseDate(this.selected_courseDate) && this.isCourseDateToday(this.selected_courseDate, todayKey)
+        },
         nextLessonStartAt() {
             const now = new Date(this.nowTs)
             let nearestTs = null
             this.myCourses.forEach((course) => {
                 ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
+                    if (this.isFreeCourseDate(cd)) return
                     const date = (cd?.date || '').toString().slice(0, 10)
                     const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
                     if (!hours.length) return
@@ -257,6 +277,7 @@ export default {
             let nearestEndTs = null
             this.myCourses.forEach((course) => {
                 ;(Array.isArray(course?.course_dates) ? course.course_dates : []).forEach((cd) => {
+                    if (this.isFreeCourseDate(cd)) return
                     const date = (cd?.date || '').toString().slice(0, 10)
                     const hours = (Array.isArray(cd?.hours) ? [...cd.hours] : []).map(Number).filter(Number.isFinite).sort((a, b) => a - b)
                     if (!hours.length) return
@@ -270,6 +291,9 @@ export default {
             return nearestEndTs ? new Date(nearestEndTs) : null
         },
         lessonStatusNote() {
+            if (this.hasFreeLessonToday) {
+                return 'Unterricht entfallen'
+            }
             if (this.activeLessonEndAt) {
                 const diffS = Math.max(0, Math.floor((this.activeLessonEndAt.getTime() - this.nowTs) / 1000))
                 const h = Math.floor(diffS / 3600)
@@ -468,9 +492,30 @@ export default {
         padTwo(v) {
             return String(v).padStart(2, '0')
         },
+        todayDateKey() {
+            const today = new Date(this.nowTs)
+            return `${today.getFullYear()}-${this.padTwo(today.getMonth() + 1)}-${this.padTwo(today.getDate())}`
+        },
+        isCourseDateToday(courseDate, todayKey = null) {
+            const date = (courseDate?.date || '').toString().slice(0, 10)
+            if (!date) return false
+            return date === (todayKey || this.todayDateKey())
+        },
+        isFreeCourseDate(courseDate) {
+            const status = Array.isArray(courseDate?.status) ? courseDate.status : []
+            const statusStr = status.join(' ').toLowerCase()
+            return statusStr.includes('frei')
+                || statusStr.includes('free')
+                || statusStr.includes('entfaellt')
+                || statusStr.includes('entfällt')
+                || statusStr.includes('entfallen')
+        },
         handleCourseSelect(course) {
             if (this.selected_course?.id === course.id) {
                 this.handleCourseClear()
+                return
+            }
+            if (this.isStudentDetailActive) {
                 return
             }
             this.selected_courseDate = null
@@ -586,6 +631,11 @@ export default {
     border: 1px solid rgba(99, 102, 241, 0.2);
     background: rgba(15, 23, 42, 0.7);
     padding: 8px 12px;
+}
+
+.teaching-subnav.is-locked {
+    opacity: 0.68;
+    pointer-events: none;
 }
 
 .teaching-subnav__inner {

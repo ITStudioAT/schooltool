@@ -15,21 +15,31 @@
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="w-100">
-                    <div class="d-flex flex-row flex-wrap ga-2 align-center w-100" v-if="courses_view_variant === 'v1'">
+                    <div
+                        class="d-flex flex-row flex-wrap ga-2 align-center w-100"
+                        :class="{ 'my-courses-v1-group--disabled': isStudentDetailActive }"
+                        v-if="courses_view_variant === 'v1'">
                         <v-chip-group v-model="selected_course_id" column>
-                            <v-chip v-for="course in courses" :key="course.id" :value="course.id" :color="selected_course?.id === course.id ? 'primary' : 'secondary'">
+                            <v-chip
+                                v-for="course in courses"
+                                :key="course.id"
+                                :value="course.id"
+                                :color="selected_course?.id === course.id ? 'primary' : 'secondary'"
+                                :disabled="isStudentDetailActive"
+                                class="my-courses-v1-chip">
                                 {{ course.title }} ({{ courseClassesText(course) }})
                             </v-chip>
                         </v-chip-group>
                     </div>
 
-                    <div v-else class="my-courses-v2-grid">
+                    <div v-else class="my-courses-v2-grid" :class="{ 'my-courses-v2-grid--disabled': isStudentDetailActive }">
                         <button
                             v-for="course in courses"
                             :key="course.id"
                             type="button"
                             class="my-courses-v2-card"
                             :class="{ 'is-selected': selected_course?.id === course.id }"
+                            :disabled="isStudentDetailActive"
                             @click="selectCourse(course)">
                             <div class="my-courses-v2-card__top">
                                 <span class="my-courses-v2-card__primary-class">{{ primaryCourseClass(course) }}</span>
@@ -380,6 +390,9 @@ export default {
             })
             return activeIds.size
         },
+        isStudentDetailActive() {
+            return !!this.selected_course_student
+        },
     },
 
     watch: {
@@ -728,6 +741,9 @@ export default {
             if (this.action === 'teaching_course_new_or_edit') {
                 return
             }
+            if (this.isStudentDetailActive) {
+                return
+            }
             if (!course) {
                 this.selected_course = null
                 this.selected_course_id = null
@@ -906,6 +922,23 @@ export default {
     text-align: left;
     cursor: pointer;
     transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.my-courses-v2-card:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    transform: none;
+    box-shadow: none;
+}
+
+.my-courses-v1-group--disabled,
+.my-courses-v2-grid--disabled {
+    pointer-events: none;
+}
+
+.my-courses-v1-chip:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
 }
 
 .my-courses-v2-card:hover {

@@ -15,12 +15,24 @@
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                <div v-if="!compactStudentView" class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
+                    <v-btn-toggle v-if="semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
                         <v-btn :value="1" size="small">1. Sem</v-btn>
                         <v-btn :value="2" size="small">2. Sem</v-btn>
                         <v-btn :value="3" size="small">1+2</v-btn>
                     </v-btn-toggle>
+                    <div class="ml-auto d-flex">
+                        <v-btn-toggle
+                            v-model="dateRangeSelection"
+                            multiple
+                            mandatory
+                            density="compact"
+                            color="primary">
+                            <v-btn value="before" size="small">Vorher</v-btn>
+                            <v-btn value="today" size="small">Heute</v-btn>
+                            <v-btn value="after" size="small">Später</v-btn>
+                        </v-btn-toggle>
+                    </div>
                 </div>
             </v-card-text>
         </v-card>
@@ -30,15 +42,15 @@
             <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                 <v-icon size="18">mdi-calendar-check</v-icon>
                 Termine
-                <v-chip v-if="filteredCourseDates?.length" size="x-small" color="primary" variant="tonal">
-                    {{ filteredCourseDates.length }}
+                <v-chip v-if="displayedCourseDates?.length" size="x-small" color="primary" variant="tonal">
+                    {{ displayedCourseDatesCount }}
                 </v-chip>
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact">
                     <v-list-item
-                        v-for="courseDate in filteredCourseDates"
+                        v-for="courseDate in displayedCourseDates"
                         :key="courseDate.id"
                         :disabled="isEditingContent && editing_content_id !== courseDate.id"
                         :class="courseDateRowClass(courseDate)"
@@ -158,7 +170,7 @@
                             </div>
                         </div>
                     </v-list-item>
-                    <v-list-item v-if="!filteredCourseDates?.length">
+                    <v-list-item v-if="!displayedCourseDates?.length">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Termine vorhanden.</v-list-item-title>
                     </v-list-item>
                 </v-list>
@@ -263,6 +275,13 @@ export default {
         return useValidationRulesSetup()
     },
 
+    props: {
+        compactStudentView: {
+            type: Boolean,
+            default: false,
+        },
+    },
+
     components: { ItsGridBox, ItsRichTextEditor },
 
     async beforeMount() {
@@ -294,6 +313,7 @@ export default {
             expanded_content_ids: [],
             editing_content_id: null,
             content_drafts: {},
+            dateRangeSelection: ['today'],
             data: {
                 from: '',
                 until: '',
@@ -340,6 +360,60 @@ export default {
                 if (semester === 2) return d.date >= this.sem2StartDate
                 return true
             })
+        },
+        displayedCourseDates() {
+            const dates = this.filteredCourseDates || []
+            if (!dates.length) return []
+
+            const activeCourseDateId = this.selected_courseDate?.id || this.highlightedDateId
+            let activeIndex = activeCourseDateId
+                ? dates.findIndex((courseDate) => String(courseDate.id) === String(activeCourseDateId))
+                : -1
+
+            if (activeIndex < 0 && this.selected_courseDate?.date) {
+                activeIndex = dates.findIndex((courseDate) => courseDate.date === this.selected_courseDate.date)
+            }
+
+            if (activeIndex < 0) {
+                activeIndex = 0
+            }
+
+            if (this.compactStudentView) {
+                const visibleDates = []
+                if (activeIndex > 0) {
+                    visibleDates.push(dates[activeIndex - 1])
+                }
+                visibleDates.push(dates[activeIndex])
+                if (activeIndex < dates.length - 1) {
+                    visibleDates.push(dates[activeIndex + 1])
+                }
+
+                return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)
+            }
+
+            const selectedRanges = Array.isArray(this.dateRangeSelection) && this.dateRangeSelection.length ? this.dateRangeSelection : ['today']
+            const includeBefore = selectedRanges.includes('before')
+            const includeToday = selectedRanges.includes('today')
+            const includeAfter = selectedRanges.includes('after')
+            const visibleDates = []
+            if (includeBefore) {
+                visibleDates.push(...dates.slice(0, activeIndex))
+            } else if (activeIndex > 0) {
+                visibleDates.push(dates[activeIndex - 1])
+            }
+            if (includeToday && dates[activeIndex]) {
+                visibleDates.push(dates[activeIndex])
+            }
+            if (includeAfter) {
+                visibleDates.push(...dates.slice(activeIndex + 1))
+            } else if (activeIndex < dates.length - 1) {
+                visibleDates.push(dates[activeIndex + 1])
+            }
+
+            return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)
+        },
+        displayedCourseDatesCount() {
+            return this.displayedCourseDates.length
         },
         generatedDates() {
             if (!this.data.from) return []
@@ -407,6 +481,10 @@ export default {
         },
         'config.user.teaching_active_semester'(val) {
             if (val) this.activeSemester = val
+        },
+        dateRangeSelection(val) {
+            if (Array.isArray(val) && val.length) return
+            this.dateRangeSelection = ['today']
         },
         'data.from'(val) {
             if (val && val instanceof Date) {

@@ -290,7 +290,7 @@ export default {
             return !Object.prototype.hasOwnProperty.call(map, String(studentId))
         },
         isFreeDate(courseDate) {
-            return Array.isArray(courseDate?.status) && courseDate.status.includes('free')
+            return Array.isArray(courseDate?.status) && (courseDate.status.includes('free') || courseDate.status.includes('entfaellt'))
         },
         isFutureDate(date) {
             const dateKey = this.normalizeDateKey(date)

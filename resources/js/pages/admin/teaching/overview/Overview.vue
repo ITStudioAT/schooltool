@@ -42,7 +42,13 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_infos || show_dates || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_students || show_infos || show_dates || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+        <v-row v-if="show_students">
+            <v-col>
+                <CourseDates compact-student-view />
+            </v-col>
+        </v-row>
+
         <v-row v-if="show_infos">
             <v-col>
                 <CourseInfos />
@@ -165,10 +171,13 @@ export default {
             'selected_course_student',
         ]),
         isControlLocked() {
-            return this.action != '' || this.action_2 != ''
+            return this.action != '' || this.isStudentDetailActive
         },
         contentLockStyle() {
-            return this.action_2 == 'course_student_view' ? 'pointer-events:none; opacity:0.6' : ''
+            return this.isStudentDetailActive ? 'pointer-events:none; opacity:0.6' : ''
+        },
+        isStudentDetailActive() {
+            return this.action_2 === 'course_student_view' || !!this.selected_course_student
         },
         teachingSchemas() {
             return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []

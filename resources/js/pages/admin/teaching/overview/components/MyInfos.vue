@@ -45,6 +45,12 @@
                     <v-divider />
                     <v-card-text class="pa-0">
                         <v-list density="compact">
+                            <v-list-item v-if="hasFreeLessonToday">
+                                <div class="d-flex align-center justify-space-between ga-2 w-100">
+                                    <div class="text-caption text-medium-emphasis">Heute</div>
+                                    <div class="text-body-1 font-weight-medium text-warning">Unterricht entfallen</div>
+                                </div>
+                            </v-list-item>
                             <v-list-item v-if="showActiveLessonEndCountdown">
                                 <div class="d-flex align-center justify-space-between ga-2 w-100">
                                     <div class="text-caption text-medium-emphasis">Untericht endet in:</div>
@@ -113,6 +119,7 @@
 import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
@@ -155,6 +162,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action_2']),
+        ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_my_infos']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         myCourses() {
@@ -205,10 +213,16 @@ export default {
             })
         },
         showLessonCountdownRows() {
-            return this.hasConfiguredSchoolHours && this.hasCourseHoursInMyCourses
+            return this.hasConfiguredSchoolHours && this.hasCourseHoursInMyCourses && !this.hasFreeLessonToday
         },
         showActiveLessonEndCountdown() {
             return this.showLessonCountdownRows && !!this.activeLessonEndAt
+        },
+        hasFreeLessonToday() {
+            const todayKey = this.todayDateKey()
+            if (!todayKey) return false
+
+            return this.isFreeCourseDate(this.selected_courseDate) && this.isCourseDateToday(this.selected_courseDate, todayKey)
         },
         nextLessonStartAt() {
             const now = new Date(this.nowTs)
@@ -218,6 +232,9 @@ export default {
             courses.forEach((course) => {
                 const courseDates = Array.isArray(course?.course_dates) ? course.course_dates : []
                 courseDates.forEach((courseDate) => {
+                    if (this.isFreeCourseDate(courseDate)) {
+                        return
+                    }
                     const date = (courseDate?.date || '').toString().slice(0, 10)
                     const hours = Array.isArray(courseDate?.hours)
                         ? [...courseDate.hours]
@@ -250,6 +267,9 @@ export default {
             courses.forEach((course) => {
                 const courseDates = Array.isArray(course?.course_dates) ? course.course_dates : []
                 courseDates.forEach((courseDate) => {
+                    if (this.isFreeCourseDate(courseDate)) {
+                        return
+                    }
                     const date = (courseDate?.date || '').toString().slice(0, 10)
                     const hours = Array.isArray(courseDate?.hours)
                         ? [...courseDate.hours]
@@ -400,6 +420,24 @@ export default {
                 if (item?.short_name) map.set(item.short_name, item.name || '')
             })
             return map
+        },
+        todayDateKey() {
+            const today = new Date(this.nowTs)
+            return `${today.getFullYear()}-${this.padTwo(today.getMonth() + 1)}-${this.padTwo(today.getDate())}`
+        },
+        isCourseDateToday(courseDate, todayKey = null) {
+            const date = (courseDate?.date || '').toString().slice(0, 10)
+            if (!date) return false
+            return date === (todayKey || this.todayDateKey())
+        },
+        isFreeCourseDate(courseDate) {
+            const status = Array.isArray(courseDate?.status) ? courseDate.status : []
+            const statusStr = status.join(' ').toLowerCase()
+            return statusStr.includes('frei')
+                || statusStr.includes('free')
+                || statusStr.includes('entfaellt')
+                || statusStr.includes('entfällt')
+                || statusStr.includes('entfallen')
         },
     },
 
