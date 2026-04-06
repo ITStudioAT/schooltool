@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title>Vegan icon</title>
+  <desc>Green square vegan badge with leaf symbol and text VEGAN</desc>
+
+  <rect x="6" y="6" width="116" height="116" rx="18" ry="18" fill="none" stroke="#1f8f3a" stroke-width="4"></rect>
+
+  <g transform="translate(0 2)">
+    <path d="M64 22
+             C50 23, 38 35, 38 50
+             C38 67, 50 78, 64 82
+             C78 78, 90 67, 90 50
+             C90 35, 78 23, 64 22Z" fill="#1f8f3a"></path>
+    <path d="M64 30
+             C57 38, 53 47, 52 58" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"></path>
+    <path d="M64 34 L64 74" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"></path>
+    <path d="M64 52 C56 48, 50 42, 47 34" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"></path>
+    <path d="M64 58 C72 54, 78 47, 81 39" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"></path>
+  </g>
+
+  <text x="64" y="102" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle" fill="#1f8f3a">VEGAN</text>
+</svg>
