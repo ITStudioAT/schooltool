@@ -13,7 +13,7 @@
             <v-btn v-if="action !== 'new_course_work' && action !== 'edit_course_work'" icon="mdi-plus" size="small" variant="tonal" @click="newWork" :disabled="!hasStudents" />
             <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving" />
             <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="is_saving" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_works = false" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="closeWorks" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
@@ -267,7 +267,12 @@
                                         {{ show_points_grading_view ? 'Punkte schließen' : 'Punkte' }}
                                     </v-btn>
                                 </div>
-                                <v-btn size="x-small" variant="tonal" color="primary" @click="toggleAllSinglePanels">
+                                <v-btn
+                                    v-if="!show_chip_grading_view"
+                                    size="x-small"
+                                    variant="tonal"
+                                    color="primary"
+                                    @click="toggleAllSinglePanels">
                                     {{ allSinglePanelsOpen ? 'Alle schließen' : 'Alle öffnen' }}
                                 </v-btn>
                             </div>
@@ -570,7 +575,7 @@ export default {
             bulk_comment: '',
             selected_student_ids: [],
             students_sort_mode: 'last_name_first_name',
-            show_chip_grading_view: false,
+            show_chip_grading_view: true,
             show_points_grading_view: false,
             comment_dialog_open: false,
             comment_dialog_group_index: null,
@@ -582,7 +587,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_infos', 'show_dates', 'show_works']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_student', 'show_students', 'show_infos', 'show_dates', 'show_works']),
         ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
         ...mapWritableState(useTeachingStore, ['settings']),
         selectedCourseClasses() {
@@ -1011,6 +1016,9 @@ export default {
             this.selected_student_ids = []
             this.show_chip_grading_view = false
             this.show_points_grading_view = !this.show_points_grading_view
+            if (!this.show_points_grading_view) {
+                this.show_chip_grading_view = true
+            }
         },
         setGroupWork(value) {
             const nextVal = !!value
@@ -1199,6 +1207,24 @@ export default {
                 this.is_initializing_form = false
             })
         },
+        closeWorks() {
+            this.show_works = false
+            this.selected_courseWork = null
+            if (this.courseStore.previous_selected_student) {
+                this.selected_course_student = this.courseStore.previous_selected_student
+                this.show_students = true
+                this.action_2 = 'course_student_view'
+                if (this.courseStore.previous_show_infos !== null) {
+                    this.show_infos = this.courseStore.previous_show_infos
+                }
+                if (this.courseStore.previous_show_dates !== null) {
+                    this.show_dates = this.courseStore.previous_show_dates
+                }
+                this.courseStore.previous_selected_student = null
+                this.courseStore.previous_show_infos = null
+                this.courseStore.previous_show_dates = null
+            }
+        },
         abortEdit() {
             this.action = ''
             this.selected_courseWork = null
@@ -1208,12 +1234,15 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
+            this.show_chip_grading_view = true
             this.show_points_grading_view = false
             this.closeCommentDialog()
 
             // If we came from student detail, return to it
             if (this.courseStore.previous_selected_student) {
                 this.selected_course_student = this.courseStore.previous_selected_student
+                this.show_students = true
+                this.show_works = false
                 this.action_2 = 'course_student_view'
 
                 // Restore the visibility status of Infos and Termine
@@ -1456,6 +1485,7 @@ export default {
             if (this.show_bulk_action) {
                 this.show_bulk_action = false
                 this.selected_student_ids = []
+                this.show_chip_grading_view = true
                 return
             }
             this.show_points_grading_view = false

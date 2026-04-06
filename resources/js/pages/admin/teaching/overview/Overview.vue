@@ -229,11 +229,12 @@ export default {
     },
 
     watch: {
-        selected_course(newCourse) {
+        selected_course(newCourse, oldCourse) {
             if (newCourse && !this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
                 const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']
                 this._urlPanelRestored = true
+                this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
                     this.show_students = urlPanel === 'students'
                     this.show_infos = urlPanel === 'infos'
@@ -245,6 +246,11 @@ export default {
                     return
                 }
             }
+            // Same course refreshed (e.g. after status toggle) – keep current panel
+            if (newCourse && this._lastCourseId === newCourse.id) {
+                return
+            }
+            this._lastCourseId = newCourse?.id
             this._urlPanelRestored = true
             this.show_students = true
             this.show_infos = false

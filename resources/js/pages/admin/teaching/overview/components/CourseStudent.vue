@@ -1,5 +1,12 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Schüler:in" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != ''">
+        <template #header-actions>
+            <v-btn-toggle v-if="semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
+                <v-btn :value="1" size="small">1. Sem</v-btn>
+                <v-btn :value="2" size="small">2. Sem</v-btn>
+                <v-btn :value="3" size="small">1+2</v-btn>
+            </v-btn-toggle>
+        </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
@@ -28,26 +35,83 @@
                             :disabled="!hasNextStudent"
                             @click="goToNextStudent" />
                     </div>
-                    <div class="d-flex align-center ga-2">
-                        <v-btn
-                            :color="show_auswertung ? 'success' : 'primary'"
-                            :variant="show_auswertung ? 'flat' : 'tonal'"
-                            :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
-                            :aria-pressed="show_auswertung ? 'true' : 'false'"
-                            :disabled="!hasAuswertungContent"
-                            @click="show_auswertung = !show_auswertung">
-                            Auswerten
-                        </v-btn>
-                        <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
-                    </div>
+                    <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
                 </v-card>
 
-                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
-                        <v-btn :value="1" size="small">1. Sem</v-btn>
-                        <v-btn :value="2" size="small">2. Sem</v-btn>
-                        <v-btn :value="3" size="small">1+2</v-btn>
-                    </v-btn-toggle>
+                <div class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <fieldset v-if="showBehaviourEnabled" class="benotung-fieldset">
+                        <legend class="text-caption text-medium-emphasis px-1">Verhalten</legend>
+                        <div class="d-flex flex-wrap align-center ga-2 pa-2">
+                            <template v-if="!is_editing_behaviour_grades">
+                                <template v-if="semesterCount === 2">
+                                    <v-chip size="small" variant="flat" :color="selected_course_student.behaviour_1_grade ? 'success' : 'default'">
+                                        1. Sem: {{ selected_course_student.behaviour_1_grade || '–' }}
+                                    </v-chip>
+                                    <v-chip size="small" variant="flat" :color="selected_course_student.behaviour_2_grade ? 'success' : 'default'">
+                                        2. Sem: {{ selected_course_student.behaviour_2_grade || '–' }}
+                                    </v-chip>
+                                </template>
+                                <v-chip v-else size="small" variant="flat" :color="selected_course_student.behaviour_grade ? 'success' : 'default'">
+                                    Note: {{ selected_course_student.behaviour_grade || '–' }}
+                                </v-chip>
+                                <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editBehaviourGrades" />
+                            </template>
+                            <template v-else>
+                                <template v-if="semesterCount === 2">
+                                    <v-text-field v-model="behaviour_grade_form.behaviour_1_grade" label="1. Sem" density="compact" hide-details style="max-width: 100px" />
+                                    <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
+                                </template>
+                                <v-text-field v-else v-model="behaviour_grade_form.behaviour_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
+                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveBehaviourGrades" />
+                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_behaviour_grades = false" />
+                            </template>
+                        </div>
+                    </fieldset>
+                    <v-spacer />
+                    <fieldset class="benotung-fieldset">
+                        <legend class="text-caption text-medium-emphasis px-1">Benotung</legend>
+                        <div class="d-flex flex-wrap align-center ga-2 pa-2">
+                            <template v-if="!is_editing_grades">
+                                <template v-if="semesterCount === 2">
+                                    <v-chip size="small" variant="flat" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
+                                        1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
+                                    </v-chip>
+                                    <v-chip size="small" variant="flat" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
+                                        2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
+                                    </v-chip>
+                                </template>
+                                <v-chip v-else size="small" variant="flat" :color="selected_course_student.sem_grade ? 'success' : 'default'">
+                                    Note: {{ selected_course_student.sem_grade || '–' }}
+                                </v-chip>
+                                <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
+                            </template>
+                            <template v-else>
+                                <template v-if="semesterCount === 2">
+                                    <v-text-field v-model="grade_form.sem_1_grade" label="1. Sem" density="compact" hide-details style="max-width: 100px" />
+                                    <v-text-field v-model="grade_form.sem_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
+                                </template>
+                                <v-text-field v-else v-model="grade_form.sem_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
+                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
+                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
+                            </template>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="d-flex flex-wrap align-center ga-2 mt-2">
+                    <v-btn v-if="!is_editing" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="editComment">Bem.</v-btn>
+                    <v-btn v-if="showBehaviourEnabled && !is_editing" flat tile size="small" color="warning" prepend-icon="mdi-account-alert" @click="newBehaviourEntry">Verhalten</v-btn>
+                    <v-btn v-if="!is_editing" flat tile size="small" color="amber" prepend-icon="mdi-star" @click="newStarEntry">Sterne</v-btn>
+                    <v-btn v-if="showBehaviourEnabled && !is_editing" flat tile size="small" color="info" prepend-icon="mdi-message-text" @click="newNotificationEntry">Verständigung</v-btn>
+                    <v-btn
+                        size="small"
+                        :color="show_auswertung ? 'success' : 'primary'"
+                        :variant="show_auswertung ? 'flat' : 'tonal'"
+                        :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
+                        :aria-pressed="show_auswertung ? 'true' : 'false'"
+                        :disabled="!hasAuswertungContent"
+                        @click="show_auswertung = !show_auswertung">
+                        Auswerten
+                    </v-btn>
                 </div>
 
                 <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">
@@ -259,13 +323,9 @@
 
                     </v-card-text>
                 </v-card>
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="selected_comment || is_editing" variant="outlined" class="mt-4">
                     <v-card-text v-if="!is_editing">
-                        <div class="text-body-2 course-comment" v-if="selected_comment" v-html="commentHtml"></div>
-                        <div class="text-body-2" v-else>Kein Kommentar vorhanden.</div>
-                        <div class="w-100 text-right">
-                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editComment" />
-                        </div>
+                        <div class="text-body-2 course-comment" v-html="commentHtml"></div>
                     </v-card-text>
                     <v-card-text v-else>
                         <v-form ref="form" @submit.prevent="saveComment">
@@ -286,7 +346,7 @@
                 <v-card variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
-                        Einträge
+                        Bewertungen
                         <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
                             {{ filteredEntries.length }}
                         </v-chip>
@@ -325,11 +385,6 @@
                                                 <v-icon start size="12">mdi-lock</v-icon>
                                                 Aus Arbeit
                                             </v-chip>
-                                            <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
-                                                {{ entryDisplayGrade(item.entry) }}
-                                            </v-chip>
-                                            <v-spacer />
-                                            <div class="entry-actions d-flex align-center ga-1">
                                             <v-btn
                                                 v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
                                                 icon="mdi-open-in-new"
@@ -337,6 +392,11 @@
                                                 color="info"
                                                 variant="tonal"
                                                 @click="jumpToWork(item.entry)" />
+                                            <v-spacer />
+                                            <div class="entry-actions d-flex align-center ga-1">
+                                            <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
+                                                {{ entryDisplayGrade(item.entry) }}
+                                            </v-chip>
                                             <v-btn v-if="!entryIsDerivedFromWork(item.entry)" icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
                                             <v-btn
                                                 v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id !== item.entry.id"
@@ -378,15 +438,13 @@
 
                 </v-card>
 
-                <v-card v-if="showBehaviourEnabled" variant="outlined" class="mt-4">
+                <v-card v-if="showBehaviourEnabled && filteredBehaviourEntries?.length" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-account-alert</v-icon>
                         Verhaltens-Einträge
                         <v-chip v-if="filteredBehaviourEntries?.length" size="x-small" color="warning" variant="flat">
                             {{ filteredBehaviourEntries.length }}
                         </v-chip>
-                        <v-spacer />
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newBehaviourEntry" />
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
@@ -444,13 +502,11 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="studentStars?.length" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-star</v-icon>
                         Sterne
                         <v-chip v-if="studentStars.length" size="x-small" color="amber-darken-2" variant="flat">{{ studentStars.length }}</v-chip>
-                        <v-spacer />
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newStarEntry" />
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
@@ -477,15 +533,13 @@
                     </v-card-text>
                 </v-card>
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="filteredNotificationEntries?.length" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-bell</v-icon>
                         Verständigungen
                         <v-chip v-if="filteredNotificationEntries?.length" size="x-small" color="secondary" variant="flat">
                             {{ filteredNotificationEntries.length }}
                         </v-chip>
-                        <v-spacer />
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newNotificationEntry" />
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
@@ -545,82 +599,6 @@
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungen vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
-                    </v-card-text>
-                </v-card>
-
-                <v-card variant="outlined" class="mt-4">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-school</v-icon>
-                        Semesternoten
-                        <v-spacer />
-                        <v-btn v-if="!is_editing_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
-                        <v-btn v-if="is_editing_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
-                        <v-btn v-if="is_editing_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text>
-                        <template v-if="!is_editing_grades">
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-chip variant="flat" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
-                                    1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
-                                </v-chip>
-                                <v-chip variant="flat" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
-                                    2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
-                                </v-chip>
-                            </div>
-                            <div class="d-flex flex-wrap ga-2" v-else>
-                                <v-chip variant="flat" :color="selected_course_student.sem_grade ? 'success' : 'default'">
-                                    Note: {{ selected_course_student.sem_grade || '–' }}
-                                </v-chip>
-                            </div>
-                        </template>
-                        <template v-else>
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-text-field v-model="grade_form.sem_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
-                                <v-text-field v-model="grade_form.sem_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
-                            </div>
-                            <div v-else>
-                                <v-text-field v-model="grade_form.sem_grade" label="Semesternote" density="compact" hide-details />
-                            </div>
-                        </template>
-                    </v-card-text>
-                </v-card>
-
-                <v-card v-if="showBehaviourEnabled" variant="outlined" class="mt-4">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-account-alert</v-icon>
-                        Verhaltensnoten
-                        <v-spacer />
-                        <v-btn v-if="!is_editing_behaviour_grades" icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editBehaviourGrades" />
-                        <v-btn v-if="is_editing_behaviour_grades" icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveBehaviourGrades" />
-                        <v-btn v-if="is_editing_behaviour_grades" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_behaviour_grades = false" />
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text>
-                        <template v-if="!is_editing_behaviour_grades">
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-chip variant="flat" :color="selected_course_student.behaviour_1_grade ? 'success' : 'default'">
-                                    1. Sem: {{ selected_course_student.behaviour_1_grade || '–' }}
-                                </v-chip>
-                                <v-chip variant="flat" :color="selected_course_student.behaviour_2_grade ? 'success' : 'default'">
-                                    2. Sem: {{ selected_course_student.behaviour_2_grade || '–' }}
-                                </v-chip>
-                            </div>
-                            <div class="d-flex flex-wrap ga-2" v-else>
-                                <v-chip variant="flat" :color="selected_course_student.behaviour_grade ? 'success' : 'default'">
-                                    Note: {{ selected_course_student.behaviour_grade || '–' }}
-                                </v-chip>
-                            </div>
-                        </template>
-                        <template v-else>
-                            <div class="d-flex flex-wrap ga-2" v-if="semesterCount === 2">
-                                <v-text-field v-model="behaviour_grade_form.behaviour_1_grade" label="1. Semester" density="compact" hide-details class="flex-grow-1" />
-                                <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Semester" density="compact" hide-details class="flex-grow-1" />
-                            </div>
-                            <div v-else>
-                                <v-text-field v-model="behaviour_grade_form.behaviour_grade" label="Verhaltensnote" density="compact" hide-details />
-                            </div>
-                        </template>
                     </v-card-text>
                 </v-card>
 
@@ -880,10 +858,14 @@ export default {
                 return !!d && d >= boundary
             })
             const result = []
-            result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
-            sem2.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
-            result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
-            sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            if (sem2.length) {
+                result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+                sem2.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
+            if (sem1.length) {
+                result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+                sem1.forEach((e) => result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e }))
+            }
             return result
         },
         filteredNotificationEntries() {
@@ -921,10 +903,14 @@ export default {
                 return !!d && d >= boundary
             })
             const result = []
-            result.push({ kind: 'header', key: 'notification-header-sem2', label: '2. Semester' })
-            sem2.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
-            result.push({ kind: 'header', key: 'notification-header-sem1', label: '1. Semester' })
-            sem1.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            if (sem2.length) {
+                result.push({ kind: 'header', key: 'notification-header-sem2', label: '2. Semester' })
+                sem2.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            }
+            if (sem1.length) {
+                result.push({ kind: 'header', key: 'notification-header-sem1', label: '1. Semester' })
+                sem1.forEach((e) => result.push({ kind: 'entry', key: `notification-${e.id}`, entry: e }))
+            }
             return result
         },
         teachingBehaviour() {
@@ -982,7 +968,9 @@ export default {
             return ''
         },
         selected_comment() {
-            return this.selected_course_student?.comment || ''
+            const raw = this.selected_course_student?.comment || ''
+            const stripped = raw.replace(/<[^>]*>/g, '').trim()
+            return stripped ? raw : ''
         },
         commentHtml() {
             const text = this.selected_comment
@@ -1251,16 +1239,20 @@ export default {
             })
             const result = []
             let stripeIndex = 0
-            result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
-            sem2.forEach((e) => {
-                result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
-                stripeIndex += 1
-            })
-            result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
-            sem1.forEach((e) => {
-                result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
-                stripeIndex += 1
-            })
+            if (sem2.length) {
+                result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
+                sem2.forEach((e) => {
+                    result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
+                    stripeIndex += 1
+                })
+            }
+            if (sem1.length) {
+                result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
+                sem1.forEach((e) => {
+                    result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
+                    stripeIndex += 1
+                })
+            }
             return result
         },
         courseStudentsList() {
@@ -2396,6 +2388,18 @@ export default {
 </script>
 
 <style scoped>
+.benotung-fieldset {
+    border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity, 0.12));
+    border-radius: 8px;
+    padding: 0;
+    margin: 0;
+}
+
+.benotung-fieldset legend {
+    margin-left: 8px;
+    font-size: 0.75rem;
+}
+
 .course-comment :deep(p) {
     margin: 0;
     min-height: 1.2em;

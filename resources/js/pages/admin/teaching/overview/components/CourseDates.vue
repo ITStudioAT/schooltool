@@ -33,15 +33,6 @@
                 <v-chip v-if="filteredCourseDates?.length" size="x-small" color="primary" variant="tonal">
                     {{ filteredCourseDates.length }}
                 </v-chip>
-                <v-spacer />
-                <v-btn
-                    :icon="show_contents ? 'mdi-eye' : 'mdi-eye-off'"
-                    size="x-small"
-                    variant="tonal"
-                    color="primary"
-                    :disabled="isEditingContent"
-                    @click="toggleContents"
-                    :title="show_contents ? 'Inhalte ausblenden' : 'Inhalte anzeigen'" />
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
@@ -118,13 +109,6 @@
                                         @click="toggleStatus(courseDate, 'pruefung')">
                                         P
                                     </v-btn>
-                                    <v-btn
-                                        :icon="isContentVisible(courseDate.id) ? 'mdi-eye' : 'mdi-eye-off'"
-                                        size="x-small"
-                                        color="primary"
-                                        variant="tonal"
-                                        :disabled="isEditingContent"
-                                        @click="toggleContentLine(courseDate.id)" />
                                     <v-btn
                                         icon="mdi-pencil"
                                         size="x-small"
