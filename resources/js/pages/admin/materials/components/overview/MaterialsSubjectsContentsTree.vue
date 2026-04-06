@@ -25,19 +25,23 @@
                 </v-btn>
             </v-btn-toggle>
 
+        </div>
+
+        <v-card v-if="workspaceExpanded" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <div class="overview-unit-card__header d-flex align-center ga-2">
+            <v-icon size="20" icon="mdi-briefcase-outline" color="primary" />
+            <span class="overview-selected-subject__label">Workspace</span>
             <v-btn
-                v-if="workspaceExpanded"
                 size="x-small"
                 color="primary"
                 variant="tonal"
                 icon="mdi-share-variant-outline"
-                class="overview-share-btn"
                 :title="'Teilen'"
                 :disabled="actionBusy"
                 @click.stop="handleWorkspaceShareClick" />
         </div>
 
-        <div v-if="workspaceExpanded" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(subject, subjectIndex) in items"
                 :key="`overview-subjects-nav-${subject.id || subject.name}`"
@@ -62,7 +66,8 @@
                 @click.stop="openWorkspaceCreateSubjectDialog()" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedSubjectItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
+        <v-card v-if="selectedSubjectItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <div class="overview-unit-card__header d-flex align-center ga-2">
             <v-icon size="20" icon="mdi-book-education-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('subject', selectedSubjectItem) }}</span>
             <v-btn
@@ -126,7 +131,7 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedSubjectItem && selectedSubjectItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
+        <div v-if="selectedSubjectItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
             <v-card
                 v-for="material in selectedSubjectItem.materials"
                 :key="`overview-material-card-subject-${material.id}`"
@@ -151,7 +156,7 @@
             </v-card>
         </div>
 
-        <div v-if="workspaceExpanded && selectedSubjectItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(topic, topicIndex) in selectedSubjectItem.topics"
                 :key="`overview-topics-nav-${topic.id || topic.name}`"
@@ -176,7 +181,8 @@
                 @click.stop="openWorkspaceCreateTopicDialog(selectedSubjectItem)" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedTopicItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
+        <v-card v-if="selectedTopicItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <div class="overview-unit-card__header d-flex align-center ga-2">
             <v-icon size="20" icon="mdi-book-open-page-variant-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('topic', selectedTopicItem) }}</span>
             <v-btn
@@ -240,7 +246,7 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedTopicItem && selectedTopicItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
+        <div v-if="selectedTopicItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
             <v-card
                 v-for="material in selectedTopicItem.materials"
                 :key="`overview-material-card-topic-${material.id}`"
@@ -265,14 +271,13 @@
             </v-card>
         </div>
 
-        <div v-if="workspaceExpanded && selectedTopicItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div v-if="selectedTopicItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
             <v-btn
                 v-for="(unit, unitIndex) in selectedTopicItem.units"
                 :key="`overview-units-nav-${unit.id || unit.name}`"
                 size="default"
                 :variant="isWorkspaceUnitExpanded(unit) ? 'flat' : 'outlined'"
                 :color="isWorkspaceUnitExpanded(unit) ? 'primary' : undefined"
-                prepend-icon="mdi-circle-medium"
                 :disabled="actionBusy"
                 class="overview-subjects-nav-btn"
                 @click="toggleWorkspaceUnitExpanded(unit)">
@@ -290,8 +295,8 @@
                 @click.stop="openWorkspaceCreateUnitDialog(selectedTopicItem)" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedUnitItem" class="overview-selected-subject d-flex align-center ga-2 mb-4">
-            <v-icon size="20" icon="mdi-circle-medium" color="primary" />
+        <v-card v-if="selectedUnitItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <div class="overview-unit-card__header d-flex align-center ga-2">
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
             <v-btn
                 v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id)"
@@ -354,7 +359,7 @@
                 })" />
         </div>
 
-        <div v-if="workspaceExpanded && selectedUnitItem && selectedUnitItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3 mb-4">
+        <div v-if="selectedUnitItem.materials.length && !isWorkspaceStructureButtonsVisible()" class="overview-materials-cards d-flex flex-wrap ga-3">
             <v-card
                 v-for="material in selectedUnitItem.materials"
                 :key="`overview-material-card-unit-${material.id}`"
@@ -378,6 +383,10 @@
                 </v-card-text>
             </v-card>
         </div>
+        </v-card>
+        </v-card>
+        </v-card>
+        </v-card>
 
 
         <div v-if="sharedForMeExpanded" class="overview-shared-content">
@@ -3160,6 +3169,22 @@ export default {
     font-size: 0.75rem;
     line-height: 1.3;
     margin-top: -2px;
+}
+
+.overview-unit-card {
+    position: relative;
+    overflow: visible;
+}
+
+.overview-unit-card__header {
+    position: relative;
+    top: -14px;
+    margin-bottom: -6px;
+    margin-left: 12px;
+    width: fit-content;
+    background: rgba(248, 239, 231, 0.96);
+    padding: 2px 10px;
+    border-radius: 8px;
 }
 
 .overview-subjects-nav-btn {
