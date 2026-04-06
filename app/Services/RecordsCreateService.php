@@ -38,7 +38,7 @@ class RecordsCreateService
 
             $attributes = collect($licence)->except('name')->toArray();
 
-            Licence::firstOrCreate(
+            Licence::updateOrCreate(
                 ['name' => $name],
                 $attributes
             );

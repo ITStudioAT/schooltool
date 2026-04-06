@@ -21,6 +21,12 @@ class AppUpdateCommand extends Command
         $this->info('🚀 Starting application update...');
         $this->line(str_repeat('.', 50));
 
+        // ✅ 0. Clear config cache first so fresh config values are used
+        $this->info('▶ CLEARING CONFIG CACHE');
+        Artisan::call('config:clear');
+        $this->info('✅ Config cache cleared');
+        $this->line(str_repeat('.', 50));
+
         // ✅ 1. Run migrations
         $this->info('▶ MIGRATIONS');
         Artisan::call('migrate', ['--force' => true]);
