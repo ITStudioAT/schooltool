@@ -12,6 +12,69 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 describe('MaterialsOverviewView', () => {
+    it('renders material type chips in the overview header row', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        const wrapper = shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    overviewViewMode: 'subjects_contents',
+                    isLoading: false,
+                    isDeletingId: null,
+                    isSavingEdit: false,
+                    isUnlinkingId: null,
+                    isUnlinkingUnitId: null,
+                    isUnlinkingTopicId: null,
+                    subjectsTreeWorkspaceStructureExpanded: false,
+                    allListedAttachmentBytes: 1468006,
+                    materialCardStore: {
+                        cards: [
+                            {
+                                attachments: [
+                                    { size_bytes: 1468006 },
+                                ],
+                            },
+                        ],
+                        config: {
+                            type_values: [
+                                { value: 'worksheet', label: 'Arbeitsblatt' },
+                                { value: 'assignment', label: 'Auftrag' },
+                            ],
+                            status_values: [
+                                { value: 'inbox', label: 'Inbox' },
+                                { value: 'done', label: 'Erledigt' },
+                            ],
+                        },
+                    },
+                }
+            },
+            global: {
+                renderStubDefaultSlot: true,
+                stubs: {
+                    MaterialsOverviewHeader: {
+                        template: '<div class="materials-overview-header-stub"><slot /></div>',
+                    },
+                    'v-chip': {
+                        template: '<span class="v-chip"><slot /></span>',
+                    },
+                },
+            },
+        })
+
+        try {
+            const header = wrapper.get('.materials-overview-header-stub')
+
+            expect(header.text()).toContain('Alle')
+            expect(header.text()).toContain('Arbeitsblatt')
+            expect(header.text()).toContain('Auftrag')
+            expect(header.text()).toContain('Inbox')
+            expect(header.text()).toContain('Erledigt')
+            expect(header.text()).toContain('Speicher: angezeigt 1.4 MB / alle 1.4 MB')
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
     it('keeps linked topic metadata from classification tree in subjects overview', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = {
@@ -2041,7 +2104,7 @@ describe('MaterialsOverviewView', () => {
         })
 
         expect(vm.createDialogOpen).toBe(true)
-        expect(vm.createClassificationEditorVisible).toBe(true)
+        expect(vm.createClassificationEditorVisible).toBe(false)
         expect(vm.createForm.classifications).toEqual([{ subject: 'Mathematik', topic: 'Algebra', unit: 'A1' }])
         expect(vm.createSharedContext).toEqual({
             ruleId: 77,

@@ -1,177 +1,122 @@
 <template>
-    <div class="material-filters-wrap mb-4">
+    <div class="materials-overview-filters-card mb-4">
         <div class="filter-section">
-            <div class="text-subtitle-2 mb-2">Fach filtern</div>
+            <div class="d-flex flex-wrap align-center ga-2">
+                <div class="text-subtitle-2 font-weight-medium materials-overview-filters-label">Fächer:</div>
 
-            <div class="d-flex flex-wrap ga-2">
-                <v-badge class="filter-chip-badge" inline :content="badgeCountContent(subjectAllCount)">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveSubjectFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveSubjectFilter ? undefined : 'primary'"
-                        :disabled="actionDisabled"
-                        @click="clearSubjectFilter()">
+                <v-btn
+                    size="default"
+                    :variant="hasActiveSubjectFilter ? 'outlined' : 'tonal'"
+                    :color="hasActiveSubjectFilter ? undefined : 'primary'"
+                    :disabled="actionDisabled"
+                    class="materials-overview-filter-btn"
+                    @click="clearSubjectFilter()">
+                    <span class="materials-overview-filter-btn__content">
                         Alle
-                    </v-chip>
-                </v-badge>
+                        <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                            {{ badgeCountContent(subjectAllCount) }}
+                        </span>
+                    </span>
+                </v-btn>
 
-                <v-badge
+                <v-btn
                     v-for="subject in subjectFilterOptions"
                     :key="`subject-filter-${subject}`"
-                    class="filter-chip-badge"
-                    inline
-                    :content="badgeCountContent(subjectFilterCount(subject))">
-                    <v-chip
-                        size="small"
-                        color="primary"
-                        :variant="isSubjectFilterActive(subject) ? 'flat' : 'tonal'"
-                        :disabled="actionDisabled"
-                        @click="toggleSubjectFilter(subject)">
+                    size="default"
+                    :variant="isSubjectFilterActive(subject) ? 'tonal' : 'outlined'"
+                    :color="isSubjectFilterActive(subject) ? 'primary' : undefined"
+                    :disabled="actionDisabled"
+                    class="materials-overview-filter-btn"
+                    @click="toggleSubjectFilter(subject)">
+                    <span class="materials-overview-filter-btn__content">
                         {{ subject }}
-                    </v-chip>
-                </v-badge>
+                        <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                            {{ badgeCountContent(subjectFilterCount(subject)) }}
+                        </span>
+                    </span>
+                </v-btn>
             </div>
 
             <div v-if="hasActiveSubjectFilter" class="subject-dependent-filters mt-3">
-                <div class="subject-dependent-filter">
-                    <div class="text-subtitle-2 mb-2">Thema filtern</div>
+                <div class="subject-dependent-filter-row">
+                    <div class="text-subtitle-2 font-weight-medium materials-overview-filters-label">Thema:</div>
 
                     <div class="d-flex flex-wrap ga-2">
-                        <v-badge class="filter-chip-badge" inline :content="badgeCountContent(topicAllCount)">
-                            <v-chip
-                                size="small"
-                                :variant="hasActiveTopicFilter ? 'tonal' : 'flat'"
-                                :color="hasActiveTopicFilter ? undefined : 'primary'"
-                                :disabled="actionDisabled"
-                                @click="clearTopicFilter()">
+                        <v-btn
+                            size="default"
+                            :variant="hasActiveTopicFilter ? 'outlined' : 'tonal'"
+                            :color="hasActiveTopicFilter ? undefined : 'primary'"
+                            :disabled="actionDisabled"
+                            class="materials-overview-filter-btn"
+                            @click="clearTopicFilter()">
+                            <span class="materials-overview-filter-btn__content">
                                 Alle
-                            </v-chip>
-                        </v-badge>
+                                <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                                    {{ badgeCountContent(topicAllCount) }}
+                                </span>
+                            </span>
+                        </v-btn>
 
-                        <v-badge
+                        <v-btn
                             v-for="topic in topicFilterOptions"
                             :key="`topic-filter-${topic}`"
-                            class="filter-chip-badge"
-                            inline
-                            :content="badgeCountContent(topicFilterCount(topic))">
-                            <v-chip
-                                size="small"
-                                color="primary"
-                                :variant="isTopicFilterActive(topic) ? 'flat' : 'tonal'"
-                                :disabled="actionDisabled"
-                                @click="toggleTopicFilter(topic)">
+                            size="default"
+                            :variant="isTopicFilterActive(topic) ? 'tonal' : 'outlined'"
+                            :color="isTopicFilterActive(topic) ? 'primary' : undefined"
+                            :disabled="actionDisabled"
+                            class="materials-overview-filter-btn"
+                            @click="toggleTopicFilter(topic)">
+                            <span class="materials-overview-filter-btn__content">
                                 {{ topic }}
-                            </v-chip>
-                        </v-badge>
+                                <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                                    {{ badgeCountContent(topicFilterCount(topic)) }}
+                                </span>
+                            </span>
+                        </v-btn>
                     </div>
                 </div>
 
                 <div v-if="hasActiveTopicFilter" class="subject-dependent-filter">
-                    <div class="text-subtitle-2 mb-2">Bereich filtern</div>
+                    <div class="d-flex flex-wrap align-center ga-2">
+                        <div class="text-subtitle-2 font-weight-medium materials-overview-filters-label">Bereich:</div>
 
-                    <div class="d-flex flex-wrap ga-2">
-                        <v-badge class="filter-chip-badge" inline :content="badgeCountContent(unitAllCount)">
-                            <v-chip
-                                size="small"
-                                :variant="hasActiveUnitFilter ? 'tonal' : 'flat'"
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-btn
+                                size="default"
+                                :variant="hasActiveUnitFilter ? 'outlined' : 'tonal'"
                                 :color="hasActiveUnitFilter ? undefined : 'primary'"
                                 :disabled="actionDisabled"
+                                class="materials-overview-filter-btn"
                                 @click="clearUnitFilter()">
-                                Alle
-                            </v-chip>
-                        </v-badge>
+                                <span class="materials-overview-filter-btn__content">
+                                    Alle
+                                    <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                                        {{ badgeCountContent(unitAllCount) }}
+                                    </span>
+                                </span>
+                            </v-btn>
 
-                        <v-badge
-                            v-for="unit in unitFilterOptions"
-                            :key="`unit-filter-${unit}`"
-                            class="filter-chip-badge"
-                            inline
-                            :content="badgeCountContent(unitFilterCount(unit))">
-                            <v-chip
-                                size="small"
-                                color="primary"
-                                :variant="isUnitFilterActive(unit) ? 'flat' : 'tonal'"
+                            <v-btn
+                                v-for="unit in unitFilterOptions"
+                                :key="`unit-filter-${unit}`"
+                                size="default"
+                                :variant="isUnitFilterActive(unit) ? 'tonal' : 'outlined'"
+                                :color="isUnitFilterActive(unit) ? 'primary' : undefined"
                                 :disabled="actionDisabled"
+                                class="materials-overview-filter-btn"
                                 @click="toggleUnitFilter(unit)">
-                                {{ unit }}
-                            </v-chip>
-                        </v-badge>
+                                <span class="materials-overview-filter-btn__content">
+                                    {{ unit }}
+                                    <span class="overview-subjects-material-count overview-subjects-material-count--button materials-overview-filter-count" aria-hidden="true">
+                                        {{ badgeCountContent(unitFilterCount(unit)) }}
+                                    </span>
+                                </span>
+                            </v-btn>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <div class="d-flex justify-end mb-2">
-            <v-tooltip location="top">
-                <template #activator="{ props }">
-                    <v-btn
-                        v-bind="props"
-                        :icon="showSecondaryFilters ? 'mdi-filter-variant-minus' : 'mdi-filter-variant-plus'"
-                        size="small"
-                        variant="text"
-                        color="primary"
-                        :disabled="actionDisabled"
-                        @click="toggleSecondaryFilters()" />
-                </template>
-                <span>
-                    {{ showSecondaryFilters ? 'Materialtyp- und Statusfilter ausblenden' : 'Materialtyp- und Statusfilter einblenden' }}
-                </span>
-            </v-tooltip>
-        </div>
-
-        <template v-if="showSecondaryFilters">
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Materialtyp filtern</div>
-
-                <div class="d-flex flex-wrap ga-2">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveTypeFilter ? undefined : 'primary'"
-                        :disabled="actionDisabled"
-                        @click="clearTypeFilter()">
-                        Alle
-                    </v-chip>
-
-                    <v-chip
-                        v-for="typeOption in typeFilterOptions"
-                        :key="`type-filter-${typeOption.value}`"
-                        size="small"
-                        :color="typeColor(typeOption.value) || 'primary'"
-                        :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
-                        :disabled="actionDisabled"
-                        @click="toggleTypeFilter(typeOption.value)">
-                        {{ typeOption.label }}
-                    </v-chip>
-                </div>
-            </div>
-
-            <div class="filter-section">
-                <div class="text-subtitle-2 mb-2">Status filtern</div>
-
-                <div class="d-flex flex-wrap ga-2">
-                    <v-chip
-                        size="small"
-                        :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
-                        :color="hasActiveStatusFilter ? undefined : 'primary'"
-                        :disabled="actionDisabled"
-                        @click="clearStatusFilter()">
-                        Alle
-                    </v-chip>
-
-                    <v-chip
-                        v-for="statusOption in statusFilterOptions"
-                        :key="`status-filter-${statusOption.value}`"
-                        size="small"
-                        :color="statusColor(statusOption.value)"
-                        :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
-                        :disabled="actionDisabled"
-                        @click="toggleStatusFilter(statusOption.value)">
-                        {{ statusOption.label }}
-                    </v-chip>
-                </div>
-            </div>
-        </template>
     </div>
 </template>
 
@@ -237,41 +182,16 @@ export default {
         unitFilterCount: functionProp,
         isUnitFilterActive: functionProp,
         toggleUnitFilter: functionProp,
-        showSecondaryFilters: {
-            type: Boolean,
-            default: false,
-        },
-        toggleSecondaryFilters: functionProp,
-        hasActiveTypeFilter: {
-            type: Boolean,
-            default: false,
-        },
-        clearTypeFilter: functionProp,
-        typeFilterOptions: {
-            type: Array,
-            default: () => [],
-        },
-        typeColor: functionProp,
-        isTypeFilterActive: functionProp,
-        toggleTypeFilter: functionProp,
-        hasActiveStatusFilter: {
-            type: Boolean,
-            default: false,
-        },
-        clearStatusFilter: functionProp,
-        statusFilterOptions: {
-            type: Array,
-            default: () => [],
-        },
-        statusColor: functionProp,
-        isStatusFilterActive: functionProp,
-        toggleStatusFilter: functionProp,
     },
 }
 </script>
 
 <style scoped>
-.material-filters-wrap {
+.materials-overview-filters-card {
+    background: rgba(var(--v-theme-info), 0.12);
+    border-top: 2px solid rgba(var(--v-theme-info), 0.28);
+    border-radius: 8px;
+    padding: 8px 12px;
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 12px;
@@ -282,11 +202,46 @@ export default {
     min-width: 0;
 }
 
+.materials-overview-filters-label {
+    flex: 0 0 auto;
+}
+
+.materials-overview-filter-btn {
+    text-transform: none;
+    letter-spacing: 0.01em;
+    font-weight: 400;
+    font-size: 0.82rem !important;
+}
+
+.materials-overview-filter-btn :deep(.v-btn__content) {
+    display: inline-flex;
+    align-items: center;
+}
+
+.materials-overview-filter-btn__content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.materials-overview-filter-count {
+    font-size: 0.68rem;
+    min-width: 1.2rem;
+    height: 1.2rem;
+    padding: 0 0.3rem;
+}
+
 .subject-dependent-filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    align-items: start;
+}
+
+.subject-dependent-filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
 }
 
 .subject-dependent-filter {

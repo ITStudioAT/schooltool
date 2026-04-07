@@ -7,7 +7,59 @@
             :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :struktur-modus="subjectsTreeWorkspaceStructureExpanded"
             @update:overview-view-mode="setOverviewMode"
-            @refresh="loadCards" />
+            @refresh="loadCards">
+            <div v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" class="materials-overview-header-subtitle text-caption text-medium-emphasis">
+                Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
+            </div>
+
+            <div class="materials-overview-secondary-filter-row d-flex align-center flex-wrap ga-2">
+                <div class="materials-overview-type-filter-row d-flex flex-wrap ga-2">
+                    <v-chip
+                        size="small"
+                        :variant="hasActiveTypeFilter ? 'tonal' : 'flat'"
+                        :color="hasActiveTypeFilter ? undefined : 'primary'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                        @click="clearTypeFilter()">
+                        Alle
+                    </v-chip>
+
+                    <v-chip
+                        v-for="typeOption in typeFilterOptions"
+                        :key="`header-type-filter-${typeOption.value}`"
+                        size="small"
+                        :color="typeColor(typeOption.value) || 'primary'"
+                        :variant="isTypeFilterActive(typeOption.value) ? 'flat' : 'tonal'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                        @click="toggleTypeFilter(typeOption.value)">
+                        {{ typeOption.label }}
+                    </v-chip>
+                </div>
+
+                <v-spacer />
+
+                <div class="materials-overview-status-filter-row d-flex flex-wrap justify-end ga-2">
+                    <v-chip
+                        size="small"
+                        :variant="hasActiveStatusFilter ? 'tonal' : 'flat'"
+                        :color="hasActiveStatusFilter ? undefined : 'primary'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                        @click="clearStatusFilter()">
+                        Alle
+                    </v-chip>
+
+                    <v-chip
+                        v-for="statusOption in statusFilterOptions"
+                        :key="`header-status-filter-${statusOption.value}`"
+                        size="small"
+                        :color="statusColor(statusOption.value)"
+                        :variant="isStatusFilterActive(statusOption.value) ? 'flat' : 'tonal'"
+                        :disabled="isLoading || isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
+                        @click="toggleStatusFilter(statusOption.value)">
+                        {{ statusOption.label }}
+                    </v-chip>
+                </div>
+            </div>
+        </MaterialsOverviewHeader>
 
         <Teleport to="body">
             <div v-if="subjectsTreeWorkspaceStructureExpanded" class="struktur-modus-fab">
@@ -45,26 +97,8 @@
             :unit-filter-options="unitFilterOptions"
             :unit-filter-count="unitFilterCount"
             :is-unit-filter-active="isUnitFilterActive"
-            :toggle-unit-filter="toggleUnitFilter"
-            :show-secondary-filters="showSecondaryFilters"
-            :toggle-secondary-filters="toggleSecondaryFilters"
-            :has-active-type-filter="hasActiveTypeFilter"
-            :clear-type-filter="clearTypeFilter"
-            :type-filter-options="typeFilterOptions"
-            :type-color="typeColor"
-            :is-type-filter-active="isTypeFilterActive"
-            :toggle-type-filter="toggleTypeFilter"
-            :has-active-status-filter="hasActiveStatusFilter"
-            :clear-status-filter="clearStatusFilter"
-            :status-filter-options="statusFilterOptions"
-            :status-color="statusColor"
-            :is-status-filter-active="isStatusFilterActive"
-            :toggle-status-filter="toggleStatusFilter" />
+            :toggle-unit-filter="toggleUnitFilter" />
 
-        <v-alert v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" type="info" variant="tonal" class="mb-4">
-            {{ displayedMaterials }}/{{ totalMaterials }} Material{{ totalMaterials === 1 ? '' : 'ien' }} angezeigt.
-            <span class="ml-2">• Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}</span>
-        </v-alert>
         <v-alert
             v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
             type="warning"
@@ -7571,6 +7605,11 @@ ${content}
 .materials-shell--struktur-modus {
     background: rgba(251, 140, 0, 0.18) !important;
     transition: background 0.3s ease;
+}
+
+.materials-overview-header-subtitle {
+    margin-top: -0.15rem;
+    margin-bottom: 0.35rem;
 }
 
 :global(.struktur-modus-fab) {

@@ -376,6 +376,89 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(screen.getByText('Lineare Gleichungen')).toBeInTheDocument()
     })
 
+    it('shows branch material counts on workspace selection buttons', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [
+                    {
+                        id: 91,
+                        title: 'Arbeitsblatt A',
+                        attachmentsCount: 0,
+                        status: 'inbox',
+                    },
+                ],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [
+                            {
+                                id: 92,
+                                title: 'Thema Material',
+                                attachmentsCount: 0,
+                                status: 'inbox',
+                            },
+                        ],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [
+                                    {
+                                        id: 93,
+                                        title: 'Einheitsmaterial',
+                                        attachmentsCount: 0,
+                                        status: 'inbox',
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 77,
+                    materialsCount: 4,
+                },
+            ],
+            archivedSharedObjectsForMe: [
+                {
+                    ruleId: 88,
+                    materialsCount: 5,
+                },
+            ],
+        })
+
+        expect(within(screen.getByRole('button', { name: 'Workspace' })).getByText('3')).toHaveClass('overview-subjects-material-count')
+        expect(within(screen.getByRole('button', { name: 'Für mich geteilt' })).getByText('4')).toHaveClass('overview-subjects-material-count')
+        expect(within(screen.getByRole('button', { name: 'Archiv' })).getByText('5')).toHaveClass('overview-subjects-material-count')
+
+        await openWorkspace()
+
+        const subjectButton = screen.getByText('Mathematik').closest('button')
+        expect(subjectButton).not.toBeNull()
+
+        expect(within(subjectButton as HTMLButtonElement).getByText('3')).toHaveClass('overview-subjects-material-count')
+
+        await fireEvent.click(subjectButton as HTMLButtonElement)
+
+        const topicButton = screen.getByText('Algebra').closest('button')
+        expect(topicButton).not.toBeNull()
+
+        expect(within(topicButton as HTMLButtonElement).getByText('2')).toHaveClass('overview-subjects-material-count')
+
+        await fireEvent.click(topicButton as HTMLButtonElement)
+
+        const unitButton = screen.getByText('Lineare Gleichungen').closest('button')
+        expect(unitButton).not.toBeNull()
+
+        expect(within(unitButton as HTMLButtonElement).getByText('1')).toHaveClass('overview-subjects-material-count')
+    })
+
     it('shows collapse toggles only for subjects topics and units with child elements', async () => {
         renderTree([
             {

@@ -8,6 +8,9 @@
                     :disabled="actionBusy"
                     @click="toggleWorkspaceExpanded">
                     Workspace
+                    <span v-if="workspaceMaterialsCount > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--toggle">
+                        {{ workspaceMaterialsCount }}
+                    </span>
                 </v-btn>
                 <v-btn
                     value="shared"
@@ -15,6 +18,9 @@
                     :disabled="actionBusy"
                     @click="toggleSharedForMeExpanded">
                     Für mich geteilt
+                    <span v-if="sharedMaterialsCount > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--toggle">
+                        {{ sharedMaterialsCount }}
+                    </span>
                 </v-btn>
                 <v-btn
                     value="archive"
@@ -22,6 +28,9 @@
                     :disabled="actionBusy"
                     @click="toggleSharedForMeArchiveExpanded">
                     Archiv
+                    <span v-if="archivedMaterialsCount > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--toggle">
+                        {{ archivedMaterialsCount }}
+                    </span>
                 </v-btn>
             </v-btn-toggle>
 
@@ -53,6 +62,9 @@
                 class="overview-subjects-nav-btn"
                 @click="toggleWorkspaceSubjectExpanded(subject)">
                 {{ workspaceNodeTitle('subject', subject) }}
+                <span v-if="nodeMaterialCount(subject) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">
+                    {{ nodeMaterialCount(subject) }}
+                </span>
             </v-btn>
             <v-btn
                 v-if="enableCreateButtons"
@@ -169,6 +181,9 @@
                 class="overview-subjects-nav-btn"
                 @click="toggleWorkspaceTopicExpanded(topic)">
                 {{ workspaceNodeTitle('topic', topic) }}
+                <span v-if="nodeMaterialCount(topic) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">
+                    {{ nodeMaterialCount(topic) }}
+                </span>
             </v-btn>
             <v-btn
                 v-if="enableCreateButtons"
@@ -284,6 +299,9 @@
                 class="overview-subjects-nav-btn"
                 @click="toggleWorkspaceUnitExpanded(unit)">
                 {{ workspaceNodeTitle('unit', unit) }}
+                <span v-if="nodeMaterialCount(unit) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">
+                    {{ nodeMaterialCount(unit) }}
+                </span>
             </v-btn>
             <v-btn
                 v-if="enableCreateButtons"
@@ -509,7 +527,7 @@
                                 :disabled="actionBusy"
                                 class="overview-subjects-nav-btn"
                                 @click="selectSharedSubject(item.ruleId, subject)">
-                                {{ sharedNodeTitle(item.ruleId, 'subject', subject) }}
+                                {{ sharedNodeTitle(item.ruleId, 'subject', subject) }}<span v-if="nodeMaterialCount(subject) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(subject) }}</span>
                             </v-btn>
                             <v-btn
                                 v-if="sharedItemSupportsSubjectCreate(item) && isSharedStructureButtonsVisible(item.ruleId)"
@@ -549,7 +567,7 @@
                             </div>
 
                             <div v-if="selectedSharedSubjectObj(item.ruleId, item).topics.length" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
-                                <v-btn v-for="topic in selectedSharedSubjectObj(item.ruleId, item).topics" :key="`shared-topic-nav-${item.ruleId}-${topic.id || topic.name}`" size="default" :variant="isSharedTopicSelected(item.ruleId, topic) ? 'tonal' : 'outlined'" :color="isSharedTopicSelected(item.ruleId, topic) ? 'primary' : undefined" prepend-icon="mdi-book-open-page-variant-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectSharedTopic(item.ruleId, topic)">{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}</v-btn>
+                                <v-btn v-for="topic in selectedSharedSubjectObj(item.ruleId, item).topics" :key="`shared-topic-nav-${item.ruleId}-${topic.id || topic.name}`" size="default" :variant="isSharedTopicSelected(item.ruleId, topic) ? 'tonal' : 'outlined'" :color="isSharedTopicSelected(item.ruleId, topic) ? 'primary' : undefined" prepend-icon="mdi-book-open-page-variant-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectSharedTopic(item.ruleId, topic)">{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}<span v-if="nodeMaterialCount(topic) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(topic) }}</span></v-btn>
                                 <v-btn v-if="sharedItemSupportsTopicCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" size="default" variant="text" color="primary" icon="mdi-plus" :title="'Thema hinzufügen'" :disabled="actionBusy" class="overview-subjects-nav-btn" @click.stop="openSharedCreateTopicDialog(item, selectedSharedSubjectObj(item.ruleId, item))" />
                             </div>
 
@@ -579,7 +597,7 @@
                                 </div>
 
                                 <div v-if="selectedSharedTopicObj(item.ruleId, item).units.length" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
-                                    <v-btn v-for="unit in selectedSharedTopicObj(item.ruleId, item).units" :key="`shared-unit-nav-${item.ruleId}-${unit.id || unit.name}`" size="default" :variant="isSharedUnitSelected(item.ruleId, unit) ? 'tonal' : 'outlined'" :color="isSharedUnitSelected(item.ruleId, unit) ? 'primary' : undefined" prepend-icon="mdi-bookmark-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectSharedUnit(item.ruleId, unit)">{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}</v-btn>
+                                <v-btn v-for="unit in selectedSharedTopicObj(item.ruleId, item).units" :key="`shared-unit-nav-${item.ruleId}-${unit.id || unit.name}`" size="default" :variant="isSharedUnitSelected(item.ruleId, unit) ? 'tonal' : 'outlined'" :color="isSharedUnitSelected(item.ruleId, unit) ? 'primary' : undefined" prepend-icon="mdi-bookmark-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectSharedUnit(item.ruleId, unit)">{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}<span v-if="nodeMaterialCount(unit) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(unit) }}</span></v-btn>
                                     <v-btn v-if="sharedItemSupportsUnitCreate(item) && isSharedStructureButtonsVisible(item.ruleId)" size="default" variant="text" color="primary" icon="mdi-plus" :title="'Bereich hinzufügen'" :disabled="actionBusy" class="overview-subjects-nav-btn" @click.stop="openSharedCreateUnitDialog(item, selectedSharedTopicObj(item.ruleId, item))" />
                                 </div>
 
@@ -688,7 +706,7 @@
                                 :disabled="actionBusy"
                                 class="overview-subjects-nav-btn"
                                 @click="selectArchivedSubject(item.ruleId, subject)">
-                                {{ sharedNodeTitle(item.ruleId, 'subject', subject) }}
+                                {{ sharedNodeTitle(item.ruleId, 'subject', subject) }}<span v-if="nodeMaterialCount(subject) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(subject) }}</span>
                             </v-btn>
                         </div>
 
@@ -709,7 +727,7 @@
                             </div>
 
                             <div v-if="selectedArchivedSubjectObj(item.ruleId, item).topics.length" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
-                                <v-btn v-for="topic in selectedArchivedSubjectObj(item.ruleId, item).topics" :key="`archived-topic-nav-${item.ruleId}-${topic.id || topic.name}`" size="default" :variant="isArchivedTopicSelected(item.ruleId, topic) ? 'tonal' : 'outlined'" :color="isArchivedTopicSelected(item.ruleId, topic) ? 'primary' : undefined" prepend-icon="mdi-book-open-page-variant-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectArchivedTopic(item.ruleId, topic)">{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}</v-btn>
+                                <v-btn v-for="topic in selectedArchivedSubjectObj(item.ruleId, item).topics" :key="`archived-topic-nav-${item.ruleId}-${topic.id || topic.name}`" size="default" :variant="isArchivedTopicSelected(item.ruleId, topic) ? 'tonal' : 'outlined'" :color="isArchivedTopicSelected(item.ruleId, topic) ? 'primary' : undefined" prepend-icon="mdi-book-open-page-variant-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectArchivedTopic(item.ruleId, topic)">{{ sharedNodeTitle(item.ruleId, 'topic', topic) }}<span v-if="nodeMaterialCount(topic) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(topic) }}</span></v-btn>
                             </div>
 
                             <v-card v-if="selectedArchivedTopicObj(item.ruleId, item)" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
@@ -729,7 +747,7 @@
                                 </div>
 
                                 <div v-if="selectedArchivedTopicObj(item.ruleId, item).units.length" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
-                                    <v-btn v-for="unit in selectedArchivedTopicObj(item.ruleId, item).units" :key="`archived-unit-nav-${item.ruleId}-${unit.id || unit.name}`" size="default" :variant="isArchivedUnitSelected(item.ruleId, unit) ? 'tonal' : 'outlined'" :color="isArchivedUnitSelected(item.ruleId, unit) ? 'primary' : undefined" prepend-icon="mdi-bookmark-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectArchivedUnit(item.ruleId, unit)">{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}</v-btn>
+                                <v-btn v-for="unit in selectedArchivedTopicObj(item.ruleId, item).units" :key="`archived-unit-nav-${item.ruleId}-${unit.id || unit.name}`" size="default" :variant="isArchivedUnitSelected(item.ruleId, unit) ? 'tonal' : 'outlined'" :color="isArchivedUnitSelected(item.ruleId, unit) ? 'primary' : undefined" prepend-icon="mdi-bookmark-outline" :disabled="actionBusy" class="overview-subjects-nav-btn" @click="selectArchivedUnit(item.ruleId, unit)">{{ sharedNodeTitle(item.ruleId, 'unit', unit) }}<span v-if="nodeMaterialCount(unit) > 0" aria-hidden="true" class="overview-subjects-material-count overview-subjects-material-count--button">{{ nodeMaterialCount(unit) }}</span></v-btn>
                                 </div>
 
                                 <v-card v-if="selectedArchivedUnitObj(item.ruleId, item)" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
@@ -1101,6 +1119,15 @@ export default {
             if (this.sharedForMeArchiveExpanded) return 'archive'
             return undefined
         },
+        workspaceMaterialsCount() {
+            return this.sectionMaterialCount(this.items)
+        },
+        sharedMaterialsCount() {
+            return this.cardsMaterialCount(this.sharedObjectsForMe)
+        },
+        archivedMaterialsCount() {
+            return this.cardsMaterialCount(this.archivedSharedObjectsForMe)
+        },
         selectedSubjectItem() {
             if (!this.items?.length) return null
             return this.items.find(s => this.isWorkspaceSubjectExpanded(s)) || null
@@ -1136,6 +1163,54 @@ export default {
             const topics = Array.isArray(subject?.topics) ? subject.topics : []
 
             return materials.length > 0 || topics.length > 0
+        },
+        sectionMaterialCount(items) {
+            const list = Array.isArray(items) ? items : []
+            let count = 0
+
+            for (const item of list) {
+                count += this.nodeMaterialCount(item)
+            }
+
+            return count
+        },
+        cardsMaterialCount(items) {
+            const list = Array.isArray(items) ? items : []
+            let count = 0
+
+            for (const item of list) {
+                count += this.sharedCardMaterialCount(item)
+            }
+
+            return count
+        },
+        nodeMaterialCount(node) {
+            if (!node || typeof node !== 'object') return 0
+
+            let count = Array.isArray(node.materials) ? node.materials.length : 0
+
+            if (Array.isArray(node.topics)) {
+                for (const topic of node.topics) {
+                    count += this.nodeMaterialCount(topic)
+                }
+            }
+
+            if (Array.isArray(node.units)) {
+                for (const unit of node.units) {
+                    count += this.nodeMaterialCount(unit)
+                }
+            }
+
+            return count
+        },
+        sharedCardMaterialCount(item) {
+            const directCount = Number(item?.materialsCount ?? 0)
+            if (Number.isFinite(directCount) && directCount > 0) {
+                return Math.round(directCount)
+            }
+
+            const hierarchy = Array.isArray(item?.hierarchy) ? item.hierarchy : []
+            return this.sectionMaterialCount(hierarchy)
         },
         topicHasChildren(topic) {
             const materials = Array.isArray(topic?.materials) ? topic.materials : []
@@ -2763,6 +2838,12 @@ export default {
     border-color: #ccc !important;
 }
 
+.overview-subjects-nav-btn :deep(.v-btn__content) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .overview-subjects-nav :deep(.v-btn--variant-text) {
     align-self: center;
     min-width: auto;
@@ -2782,6 +2863,12 @@ export default {
     text-transform: none;
     letter-spacing: 0.01em;
     font-weight: 600;
+}
+
+.overview-top-toggle :deep(.v-btn__content) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
 }
 
 .overview-top-toggle :deep(.v-btn--active) {
@@ -2999,23 +3086,70 @@ export default {
 .overview-subjects-material-count {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     margin-left: 6px;
-    padding: 0 6px;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.45rem;
     border-radius: 999px;
     border: 1px solid rgba(35, 61, 76, 0.2);
     background: rgba(35, 61, 76, 0.06);
     font-size: 0.74rem;
-    line-height: 1.2;
+    line-height: 1;
     color: rgba(35, 61, 76, 0.85);
+    flex-shrink: 0;
+    vertical-align: middle;
 }
 
 .overview-subjects-material-count--button {
     background: rgba(35, 61, 76, 0.06);
+    margin-left: 0;
     cursor: pointer;
+}
+
+.overview-subjects-nav-btn .overview-subjects-material-count--button {
+    margin-left: 0.45rem;
+    padding: 0;
+    min-width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    opacity: 0.85;
+}
+
+.overview-top-toggle .overview-subjects-material-count--toggle {
+    margin-left: 0.45rem;
+    padding: 0;
+    min-width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 0.75rem;
+    line-height: 1;
+    opacity: 0.92;
+}
+
+.overview-top-toggle .overview-subjects-material-count--button {
+    margin-left: 0;
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.34);
+    color: #fff;
 }
 
 .overview-subjects-material-count--button:hover:not(:disabled) {
     background: rgba(35, 61, 76, 0.12);
+}
+
+.overview-subjects-nav-btn .overview-subjects-material-count--button:hover:not(:disabled) {
+    background: transparent;
+}
+
+.overview-top-toggle .overview-subjects-material-count--button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.32);
 }
 
 .overview-subjects-material-count--button:focus-visible {
