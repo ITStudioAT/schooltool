@@ -2341,11 +2341,11 @@
         },
         {
             "name": "itstudioat/spa",
-            "version": "0.3.3",
+            "version": "0.3.4",
             "dist": {
                 "type": "path",
                 "url": "bootstrap/itstudioat-spa-moved",
-                "reference": "e08eef00e143ebb7d325bf3bea8bf5a2a51d7fd3"
+                "reference": "d521a97c5b8500ff6cd6c6fd7f818e377e830107"
             },
             "require": {
                 "illuminate/contracts": "^10.0||^11.0||^12.0||^13.0",

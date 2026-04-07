@@ -1,74 +1,194 @@
 <?php
 
-namespace App\Console\Commands {
-    function file_exists(string $path): bool
-    {
-        return false;
-    }
+namespace Tests\Feature\Console;
+
+use App\Console\Commands\AppUpdateCommand;
+use App\Services\InstallUpdateService;
+use App\Services\RecordsCreateService;
+use Illuminate\Console\OutputStyle;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
+use Mockery;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
+
+function fakeAppUpdateFiles(array $missingPaths = []): void
+{
+    File::shouldReceive('exists')
+        ->andReturnUsing(function (string $path) use ($missingPaths): bool {
+            return ! in_array($path, $missingPaths, true);
+        });
 }
 
-namespace Tests\Feature\Console {
-    use App\Console\Commands\AppUpdateCommand;
-    use App\Services\InstallUpdateService;
-    use App\Services\RecordsCreateService;
-    use Illuminate\Console\OutputStyle;
-    use Illuminate\Support\Facades\Artisan;
-    use Mockery;
-    use Symfony\Component\Console\Input\ArrayInput;
-    use Symfony\Component\Console\Output\BufferedOutput;
+function fakeAppUpdateProcesses(?string $npmCiError = null): void
+{
+    Process::fake(function ($process) use ($npmCiError) {
+        $command = implode(' ', $process->command);
 
-    it('runs update workflow without frontend build when package.json is absent', function () {
-        $install = Mockery::mock(InstallUpdateService::class);
-        $records = Mockery::mock(RecordsCreateService::class);
+        if (str_contains($command, 'node --version')) {
+            return Process::result('v22.18.0');
+        }
 
-        $install->shouldReceive('clearModels')->once();
-        $install->shouldReceive('createRoles')->with([
-            'super_admin',
-            'admin',
-            'register_admin',
-            'register_user',
-            'tutoring_user',
-            'tutoring_admin',
-            'teacher',
-            'lunch_admin',
-            'lunch_candidate',
-            'lunch_user',
-            'teaching_admin',
-            'materials_admin',
-            'student',
-            'materials_moderator',
-            'aba_teacher',
-        ])->once();
-        $install->shouldReceive('findOrCreateFolders')->once();
-        $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
-            ->once()
-            ->andReturn(['deleted' => [], 'failed' => []]);
-        $install->shouldReceive('clearDebugbar')->once();
-        $install->shouldReceive('normalizeRestaurantUserRoles')
-            ->once()
-            ->andReturn([
-                'restaurant_confirmed_backfilled' => 0,
-                'lunch_user_roles_assigned' => 0,
-                'lunch_candidate_roles_removed' => 0,
-            ]);
-        $records->shouldReceive('initRecords')->once();
+        if (str_contains($command, 'npm --version')) {
+            return Process::result('10.8.2');
+        }
 
-        app()->instance(InstallUpdateService::class, $install);
-        app()->instance(RecordsCreateService::class, $records);
+        if (str_contains($command, 'check_node_version.cjs')) {
+            return Process::result('Node v22.18.0 OK');
+        }
 
-        Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
-        Artisan::shouldReceive('output')->twice()->andReturn('');
-        Artisan::shouldReceive('call')->with('optimize:clear')->once()->andReturn(0);
-        Artisan::shouldReceive('call')->with('queue:restart')->once()->andReturn(0);
+        if (str_contains($command, 'npm ci')) {
+            if ($npmCiError !== null) {
+                return Process::result('', $npmCiError, 1);
+            }
 
-        $command = new AppUpdateCommand;
-        $command->setLaravel(app());
-        $input = new ArrayInput([]);
-        $output = new BufferedOutput;
-        $command->setOutput(new OutputStyle($input, $output));
+            return Process::result('npm ci complete');
+        }
 
-        $exitCode = $command->handle($install, $records);
+        if (str_contains($command, 'npm run build')) {
+            return Process::result('frontend build complete');
+        }
 
-        expect($exitCode)->toBe(0);
+        return Process::result('', 'Unexpected process: '.$command, 1);
     });
 }
+
+/**
+ * @return array{exit_code: int, output: string}
+ */
+function runAppUpdateCommand(InstallUpdateService $install, RecordsCreateService $records): array
+{
+    $command = app()->make(AppUpdateCommand::class);
+    $input = new ArrayInput([]);
+    $output = new BufferedOutput;
+
+    $command->setLaravel(app());
+    $command->setOutput(new OutputStyle($input, $output));
+
+    $exitCode = $command->handle($install, $records);
+
+    return [
+        'exit_code' => $exitCode,
+        'output' => $output->fetch(),
+    ];
+}
+
+it('runs the full update workflow end to end', function (): void {
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses();
+
+    $install = Mockery::mock(InstallUpdateService::class);
+    $records = Mockery::mock(RecordsCreateService::class);
+
+    $install->shouldReceive('clearModels')->once();
+    $install->shouldReceive('createRoles')->with([
+        'super_admin',
+        'admin',
+        'register_admin',
+        'register_user',
+        'tutoring_user',
+        'tutoring_admin',
+        'teacher',
+        'lunch_admin',
+        'lunch_candidate',
+        'lunch_user',
+        'teaching_admin',
+        'materials_admin',
+        'student',
+        'materials_moderator',
+        'aba_teacher',
+    ])->once();
+    $install->shouldReceive('findOrCreateFolders')->once();
+    $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
+        ->once()
+        ->andReturn(['deleted' => [], 'failed' => []]);
+    $install->shouldReceive('clearDebugbar')->once();
+    $install->shouldReceive('normalizeRestaurantUserRoles')
+        ->once()
+        ->andReturn([
+            'restaurant_confirmed_backfilled' => 0,
+            'lunch_user_roles_assigned' => 0,
+            'lunch_candidate_roles_removed' => 0,
+        ]);
+    $records->shouldReceive('initRecords')->once();
+
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
+
+    Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('output')->times(4)->andReturn('');
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(0);
+    expect($result['output'])->toContain('▶ PREFLIGHT VALIDATION');
+    expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
+    expect($result['output'])->toContain('▶ BUILDING FRONTEND');
+    expect($result['output'])->toContain('▶ CLEARING CONFIG CACHE');
+    expect($result['output'])->toContain('▶ MIGRATIONS');
+
+    Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'node --version'));
+    Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm --version'));
+    Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'check_node_version.cjs'));
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
+});
+
+it('fails fast when a required frontend file is missing', function (): void {
+    fakeAppUpdateFiles([base_path('package-lock.json')]);
+    Process::fake();
+
+    Artisan::spy();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(1);
+    expect($result['output'])->toContain('package-lock.json is missing; npm ci requires a lockfile.');
+
+    Process::assertNothingRan();
+    Artisan::shouldNotHaveReceived('call');
+    $install->shouldNotHaveReceived('clearModels');
+    $install->shouldNotHaveReceived('createRoles');
+    $install->shouldNotHaveReceived('findOrCreateFolders');
+    $install->shouldNotHaveReceived('pruneOrphanPrivateSchoolFolders');
+    $install->shouldNotHaveReceived('clearDebugbar');
+    $install->shouldNotHaveReceived('normalizeRestaurantUserRoles');
+    $records->shouldNotHaveReceived('initRecords');
+});
+
+it('stops before backend work when npm ci fails', function (): void {
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses('EBUSY: resource busy or locked, unlink node_modules\\esbuild\\bin.js');
+
+    Artisan::spy();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(1);
+    expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
+    expect($result['output'])->toContain('npm ci failed — aborting update.');
+
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
+    Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'));
+    Artisan::shouldNotHaveReceived('call');
+    $install->shouldNotHaveReceived('clearModels');
+    $install->shouldNotHaveReceived('createRoles');
+    $install->shouldNotHaveReceived('findOrCreateFolders');
+    $install->shouldNotHaveReceived('pruneOrphanPrivateSchoolFolders');
+    $install->shouldNotHaveReceived('clearDebugbar');
+    $install->shouldNotHaveReceived('normalizeRestaurantUserRoles');
+    $records->shouldNotHaveReceived('initRecords');
+});

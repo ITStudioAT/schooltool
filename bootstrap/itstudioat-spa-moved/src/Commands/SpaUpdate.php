@@ -2,26 +2,18 @@
 
 namespace Itstudioat\Spa\Commands;
 
-use App\Http\Controllers\Spa\InstallUpdateController;
 use Illuminate\Console\Command;
-use Illuminate\Http\Request;
 
 class SpaUpdate extends Command
 {
-    // Kein Argument in der Signature definieren
     protected $signature = 'spa:update';
 
-    protected $description = 'Führt ein Update der Applikation durch';
+    protected $description = 'Deprecated legacy SPA package command';
 
-    public function handle()
+    public function handle(): int
     {
-        $controller = app(InstallUpdateController::class);
+        $this->error('❌ spa:update is deprecated; use php artisan app:update instead.');
 
-        $request = Request::create('', 'GET');
-        $response = $controller->index($request);
-
-        $this->info('✅ Das Update wurde erfolreich ausgeführt!');
-
-        return Command::SUCCESS;
+        return self::FAILURE;
     }
 }

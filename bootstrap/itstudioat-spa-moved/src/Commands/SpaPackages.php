@@ -8,46 +8,12 @@ class SpaPackages extends Command
 {
     protected $signature = 'spa:packages';
 
-    protected $description = 'Installiere JS-Abhängigkeiten für spa';
+    protected $description = 'Deprecated legacy SPA package command';
 
-    public function handle()
+    public function handle(): int
     {
-        $deps = [
-            '@vitejs/plugin-vue',
-            'pinia',
-            'sass-embedded',
-            'vite-plugin-vuetify',
-            'vue',
-            'vue-router',
-            'vuetify',
-        ];
+        $this->error('❌ spa:packages is deprecated; use php artisan app:update instead.');
 
-        $devDeps = [
-            'axios',
-            'laravel-vite-plugin@^1.3.0',
-            'vite@^6.0.0',
-        ];
-
-        foreach ($deps as $pkg) {
-            if (strpos($pkg, '@') !== false && ! str_ends_with($pkg, '@latest')) {
-                $this->info("📦 Installing fixed {$pkg} ...");
-                exec("npm install {$pkg}");
-            } else {
-                $this->info("📦 Installing latest {$pkg} ...");
-                exec("npm install {$pkg}@latest");
-            }
-        }
-
-        foreach ($devDeps as $pkg) {
-            if (strpos($pkg, '@') !== false && ! str_ends_with($pkg, '@latest')) {
-                $this->info("📦 Installing fixed dev version {$pkg} ...");
-                exec("npm install --save-dev {$pkg}");
-            } else {
-                $this->info("📦 Installing latest dev {$pkg} ...");
-                exec("npm install --save-dev {$pkg}@latest");
-            }
-        }
-
-        $this->info('✅ Alle Pakete installiert.');
+        return self::FAILURE;
     }
 }

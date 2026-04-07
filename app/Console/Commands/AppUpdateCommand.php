@@ -6,13 +6,14 @@ use App\Services\InstallUpdateService;
 use App\Services\RecordsCreateService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
-use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 
 class AppUpdateCommand extends Command
 {
     protected $signature = 'app:update';
 
-    protected $description = 'Update application: migrations, records, roles, folders, and build assets';
+    protected $description = 'Update application: frontend build, migrations, records, roles, folders, and caches';
 
     public function handle(InstallUpdateService $service, RecordsCreateService $recordsCreateService): int
     {
@@ -21,27 +22,51 @@ class AppUpdateCommand extends Command
         $this->info('🚀 Starting application update...');
         $this->line(str_repeat('.', 50));
 
-        // ✅ 0. Clear config cache first so fresh config values are used
+        if (! $this->runPreflightChecks()) {
+            return self::FAILURE;
+        }
+
+        if (! $this->runFrontendUpdate()) {
+            return self::FAILURE;
+        }
+
+        $this->line(str_repeat('.', 50));
+
         $this->info('▶ CLEARING CONFIG CACHE');
-        Artisan::call('config:clear');
-        $this->info('✅ Config cache cleared');
+        if (! $this->runArtisanCommand('config:clear', [], 'config:clear')) {
+            return self::FAILURE;
+        }
         $this->line(str_repeat('.', 50));
 
-        // ✅ 1. Run migrations
         $this->info('▶ MIGRATIONS');
-        Artisan::call('migrate', ['--force' => true]);
-        $this->line(Artisan::output());
+        if (! $this->runArtisanCommand('migrate', ['--force' => true], 'Migrations')) {
+            return self::FAILURE;
+        }
         $this->line(str_repeat('.', 50));
 
-        // ✅Delete Records in Test-Models
         $this->info('▶ CLEAR TEST-FILES');
         $service->clearModels();
         $this->info('✅ Records in test-files deleted');
         $this->line(str_repeat('.', 50));
 
-        // ✅ Roles and records
         $this->info('▶ ROLES AND RECORDS');
-        $service->createRoles(['super_admin', 'admin', 'register_admin', 'register_user', 'tutoring_user', 'tutoring_admin', 'teacher', 'lunch_admin', 'lunch_candidate', 'lunch_user', 'teaching_admin', 'materials_admin', 'student', 'materials_moderator', 'aba_teacher']);
+        $service->createRoles([
+            'super_admin',
+            'admin',
+            'register_admin',
+            'register_user',
+            'tutoring_user',
+            'tutoring_admin',
+            'teacher',
+            'lunch_admin',
+            'lunch_candidate',
+            'lunch_user',
+            'teaching_admin',
+            'materials_admin',
+            'student',
+            'materials_moderator',
+            'aba_teacher',
+        ]);
         $this->info('✅ Roles checked');
 
         $recordsCreateService->initRecords();
@@ -70,49 +95,151 @@ class AppUpdateCommand extends Command
         $this->info('✅ Debugbar cleared');
         $this->line(str_repeat('.', 50));
 
-        // Frontend build (optional, if Node is available)
-        if (file_exists(base_path('package.json'))) {
-            $this->info('▶ BUILDING FRONTEND (npm run build)...');
-            $isWindows = PHP_OS_FAMILY === 'Windows';
-            $scriptDir = base_path('scripts');
-            $posixScript = $scriptDir.DIRECTORY_SEPARATOR.'build_frontend.sh';
-            $winScript = $scriptDir.DIRECTORY_SEPARATOR.'build_frontend.cmd';
-
-            if ($isWindows) {
-                $this->info('▶ Windows detected');
-                // Use array syntax to avoid shell interpretation issues with special characters
-                $process = new Process(['cmd', '/C', $winScript], base_path());
-            } else {
-                $this->info('▶ Non-Windows detected');
-                $process = new Process(['bash', '-lc', $posixScript], base_path());
-            }
-
-            $process->setTimeout(900); // 15 minutes
-            $process->run(function ($type, $buffer) {
-                echo $buffer;
-            });
-
-            if ($process->isSuccessful()) {
-                $this->info('✅ Frontend build completed');
-            } else {
-                $this->warn('⚠️ Frontend build failed — see logs above.');
-                $this->error($process->getOutput());
-                $this->error($process->getErrorOutput());
-            }
-        } else {
-            $this->warn('⚠️ No package.json found, skipping frontend build.');
-        }
-        $this->line(str_repeat('.', 50));
-        // ✅ 5. Clear all caches
         $this->info('▶ CLEARING CACHES');
-        Artisan::call('optimize:clear');
+        if (! $this->runArtisanCommand('optimize:clear', [], 'optimize:clear')) {
+            return self::FAILURE;
+        }
         $this->info('▶ RESTARTING QUEUES');
-        Artisan::call('queue:restart');
-        $this->line(Artisan::output());
+        if (! $this->runArtisanCommand('queue:restart', [], 'queue:restart')) {
+            return self::FAILURE;
+        }
         $this->info('✅ Caches cleared');
         $this->line(str_repeat('.', 50));
         $this->info('🏁 Application update finished!');
 
         return self::SUCCESS;
+    }
+
+    private function runPreflightChecks(): bool
+    {
+        $this->info('▶ PREFLIGHT VALIDATION');
+
+        $requiredFiles = [
+            'package.json' => 'package.json is missing; app:update needs the frontend toolchain.',
+            'package-lock.json' => 'package-lock.json is missing; npm ci requires a lockfile.',
+            'scripts/check_node_version.cjs' => 'scripts/check_node_version.cjs is missing; Node version compatibility cannot be verified.',
+            'scripts/build_frontend.sh' => 'scripts/build_frontend.sh is missing; the POSIX frontend wrapper should stay in sync.',
+            'scripts/build_frontend.cmd' => 'scripts/build_frontend.cmd is missing; the Windows frontend wrapper should stay in sync.',
+        ];
+
+        foreach ($requiredFiles as $relativePath => $message) {
+            if (! File::exists(base_path($relativePath))) {
+                $this->error('❌ '.$message);
+
+                return false;
+            }
+        }
+
+        if (! $this->runProcess(['node', '--version'], 'node availability check', 30)) {
+            return false;
+        }
+
+        if (! $this->runProcess(['npm', '--version'], 'npm availability check', 30)) {
+            return false;
+        }
+
+        if (! $this->runProcess(['node', base_path('scripts/check_node_version.cjs')], 'Node version compatibility check', 30)) {
+            return false;
+        }
+
+        $this->info('✅ Preflight validation passed');
+
+        return true;
+    }
+
+    private function runFrontendUpdate(): bool
+    {
+        $this->info('▶ INSTALLING FRONTEND DEPENDENCIES');
+        if (! $this->runProcess(['npm', 'ci'], 'npm ci', 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1'])) {
+            return false;
+        }
+
+        $this->info('▶ BUILDING FRONTEND');
+        if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1'])) {
+            return false;
+        }
+
+        $this->info('✅ Frontend build completed');
+
+        return true;
+    }
+
+    /**
+     * @param  array<int, string>  $command
+     * @param  array<string, string>  $environment
+     */
+    private function runProcess(array $command, string $description, int $timeoutSeconds, array $environment = []): bool
+    {
+        $process = Process::timeout($timeoutSeconds)
+            ->path(base_path());
+
+        if ($environment !== []) {
+            $process = $process->env($environment);
+        }
+
+        $result = $process->run($command, function (string $type, string $buffer): void {
+            echo $buffer;
+        });
+
+        if ($result->successful()) {
+            return true;
+        }
+
+        $this->error("❌ {$description} failed — aborting update.");
+
+        if ($description === 'npm ci') {
+            $this->maybeShowWindowsNodeModulesHint($result->output()."\n".$result->errorOutput());
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<int, string>  $parameters
+     */
+    private function runArtisanCommand(string $command, array $parameters, string $description): bool
+    {
+        if (Artisan::call($command, $parameters) !== 0) {
+            $this->error("❌ {$description} failed — aborting update.");
+
+            $output = trim((string) Artisan::output());
+            if ($output !== '') {
+                $this->line($output);
+            }
+
+            return false;
+        }
+
+        $output = trim((string) Artisan::output());
+        if ($output !== '') {
+            $this->line($output);
+        }
+
+        return true;
+    }
+
+    private function maybeShowWindowsNodeModulesHint(string $output): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        $normalizedOutput = strtolower($output);
+        if (! $this->looksLikeWindowsLockIssue($normalizedOutput)) {
+            return;
+        }
+
+        $this->warn('Hint: close editors/watchers and unlock node_modules/esbuild files, then rerun app:update.');
+    }
+
+    private function looksLikeWindowsLockIssue(string $output): bool
+    {
+        foreach (['ebusy', 'eperm', 'enotempty', 'locked', 'esbuild', 'node_modules'] as $needle) {
+            if (str_contains($output, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

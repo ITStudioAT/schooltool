@@ -7,9 +7,6 @@ use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 use Itstudioat\Spa\Commands\CreateUser;
 use Itstudioat\Spa\Commands\Fake\UserFake;
-use Itstudioat\Spa\Commands\SpaComplete;
-use Itstudioat\Spa\Commands\SpaPackages;
-use Itstudioat\Spa\Commands\SpaUpdate;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -25,9 +22,6 @@ class SpaServiceProvider extends PackageServiceProvider
             ->hasMigration('00001_update_users_table')
             ->hasCommands([
                 CreateUser::class,
-                SpaPackages::class,
-                SpaComplete::class,
-                SpaUpdate::class,
                 UserFake::class,
             ])
             ->hasInstallCommand(function (InstallCommand $command) {

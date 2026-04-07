@@ -26,7 +26,7 @@ function rememberTempPath(string $path): string
     return $path;
 }
 
-function createDocxFixture(string $contents = 'fake docx payload'): string
+function createUnitDocxFixture(string $contents = 'fake docx payload'): string
 {
     $tmp = tempnam(sys_get_temp_dir(), 'aba_docx_');
     if (! is_string($tmp) || $tmp === '') {
@@ -104,7 +104,7 @@ function createFakePandocBinary(bool $successful = true): string
 }
 
 test('extracts pandoc json ast from docx successfully', function () {
-    $docxPath = createDocxFixture();
+    $docxPath = createUnitDocxFixture();
     $fakePandoc = createFakePandocBinary(successful: true);
 
     config()->set('aba_pandoc.enabled', true);
@@ -123,7 +123,7 @@ test('extracts pandoc json ast from docx successfully', function () {
 });
 
 test('returns binary_not_found when configured pandoc binary is invalid', function () {
-    $docxPath = createDocxFixture();
+    $docxPath = createUnitDocxFixture();
 
     config()->set('aba_pandoc.enabled', true);
     config()->set('aba_pandoc.binary', sys_get_temp_dir().DIRECTORY_SEPARATOR.'missing-pandoc-binary');

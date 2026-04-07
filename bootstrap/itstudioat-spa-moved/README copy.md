@@ -7,7 +7,10 @@
 
 
 ## What is Laravel-Spa
-Laravel-Spa installs all necessary items for a fresh Laravel Single Page Application.
+This package is kept in the repository for legacy compatibility and reference.
+
+It is not the canonical deployment or update path for this application.
+Use `php artisan app:update` for the active update workflow.
 
 The installation uses next to laravel:
 - Vue with Vue-Router as Javascript-Framework and routing
@@ -52,16 +55,15 @@ laravel new new-laravel-app
 
 ### Create an empty database correspondig to the .env configuration
 
-### Install this package and run the install-commands
+### Historical package installation
 
 ```bash
 composer require itstudioat/spa
 ```
 
-```bash
-php artisan spa:install
-php artisan spa:complete
-```
+The package-specific `spa:*` commands are legacy scaffolding only. They are intentionally not part of the supported deployment workflow.
+
+> The supported deployment workflow is `php artisan app:update`.
 
 ### Make important entries in some files
 

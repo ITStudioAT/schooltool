@@ -27,7 +27,7 @@
 
         </div>
 
-        <v-card v-if="workspaceExpanded" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
+        <v-card v-if="workspaceExpanded" variant="flat" rounded="lg" class="overview-unit-card overview-unit-card--workspace mb-4 pa-4 pt-0">
         <div class="overview-unit-card__header d-flex align-center ga-2">
             <v-icon size="20" icon="mdi-briefcase-outline" color="primary" />
             <span class="overview-selected-subject__label">Workspace</span>
@@ -41,12 +41,12 @@
                 @click.stop="handleWorkspaceShareClick" />
         </div>
 
-        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
             <v-btn
                 v-for="(subject, subjectIndex) in items"
                 :key="`overview-subjects-nav-${subject.id || subject.name}`"
                 size="default"
-                :variant="isWorkspaceSubjectExpanded(subject) ? 'flat' : 'outlined'"
+                :variant="isWorkspaceSubjectExpanded(subject) ? 'tonal' : 'outlined'"
                 :color="isWorkspaceSubjectExpanded(subject) ? 'primary' : undefined"
                 prepend-icon="mdi-book-education-outline"
                 :disabled="actionBusy"
@@ -67,7 +67,8 @@
         </div>
 
         <v-card v-if="selectedSubjectItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
-        <div class="overview-unit-card__header d-flex align-center ga-2">
+        <div class="overview-unit-card__header overview-unit-card__header--subject d-flex align-center ga-2">
+            <span class="text-caption text-medium-emphasis font-weight-regular">Fach:</span>
             <v-icon size="20" icon="mdi-book-education-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('subject', selectedSubjectItem) }}</span>
             <v-btn
@@ -156,12 +157,12 @@
             </v-card>
         </div>
 
-        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
             <v-btn
                 v-for="(topic, topicIndex) in selectedSubjectItem.topics"
                 :key="`overview-topics-nav-${topic.id || topic.name}`"
                 size="default"
-                :variant="isWorkspaceTopicExpanded(topic) ? 'flat' : 'outlined'"
+                :variant="isWorkspaceTopicExpanded(topic) ? 'tonal' : 'outlined'"
                 :color="isWorkspaceTopicExpanded(topic) ? 'primary' : undefined"
                 prepend-icon="mdi-book-open-page-variant-outline"
                 :disabled="actionBusy"
@@ -182,7 +183,8 @@
         </div>
 
         <v-card v-if="selectedTopicItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
-        <div class="overview-unit-card__header d-flex align-center ga-2">
+        <div class="overview-unit-card__header overview-unit-card__header--subject d-flex align-center ga-2">
+            <span class="text-caption text-medium-emphasis font-weight-regular">Thema:</span>
             <v-icon size="20" icon="mdi-book-open-page-variant-outline" color="primary" />
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('topic', selectedTopicItem) }}</span>
             <v-btn
@@ -271,12 +273,12 @@
             </v-card>
         </div>
 
-        <div v-if="selectedTopicItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-4">
+        <div v-if="selectedTopicItem" class="overview-subjects-nav d-flex align-center flex-wrap ga-2 mb-12">
             <v-btn
                 v-for="(unit, unitIndex) in selectedTopicItem.units"
                 :key="`overview-units-nav-${unit.id || unit.name}`"
                 size="default"
-                :variant="isWorkspaceUnitExpanded(unit) ? 'flat' : 'outlined'"
+                :variant="isWorkspaceUnitExpanded(unit) ? 'tonal' : 'outlined'"
                 :color="isWorkspaceUnitExpanded(unit) ? 'primary' : undefined"
                 :disabled="actionBusy"
                 class="overview-subjects-nav-btn"
@@ -296,7 +298,8 @@
         </div>
 
         <v-card v-if="selectedUnitItem" variant="outlined" rounded="lg" class="overview-unit-card mb-4 pa-4 pt-0">
-        <div class="overview-unit-card__header d-flex align-center ga-2">
+        <div class="overview-unit-card__header overview-unit-card__header--subject d-flex align-center ga-2">
+            <span class="text-caption text-medium-emphasis font-weight-regular">Einheit:</span>
             <span class="overview-selected-subject__label">{{ workspaceNodeTitle('unit', selectedUnitItem) }}</span>
             <v-btn
                 v-if="enableCreateButtons && hasPersistedNodeId(selectedUnitItem.id)"
@@ -3174,6 +3177,15 @@ export default {
 .overview-unit-card {
     position: relative;
     overflow: visible;
+    border: 1px dotted #888 !important;
+}
+
+.overview-unit-card--workspace {
+    background-color: #e1f5fe !important;
+}
+
+.overview-unit-card--workspace :deep(.v-card__overlay) {
+    opacity: 0 !important;
 }
 
 .overview-unit-card__header {
@@ -3187,11 +3199,20 @@ export default {
     border-radius: 8px;
 }
 
+.overview-unit-card__header--subject {
+    background: #e1f5fe !important;
+    border: 1px dotted #888;
+}
+
 .overview-subjects-nav-btn {
     text-transform: none;
     letter-spacing: 0.01em;
-    font-weight: 600;
+    font-weight: 400;
     font-size: 0.95rem !important;
+}
+
+.overview-subjects-nav-btn.v-btn--variant-outlined {
+    border-color: #ccc !important;
 }
 
 .overview-subjects-nav :deep(.v-btn--variant-text) {
