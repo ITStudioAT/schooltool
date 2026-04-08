@@ -9,7 +9,7 @@
             @update:overview-view-mode="setOverviewMode"
             @refresh="loadCards">
             <div v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" class="materials-overview-header-subtitle text-caption text-medium-emphasis">
-                Speicher: angezeigt {{ shownListedAttachmentSizeLabel }} / alle {{ allListedAttachmentSizeLabel }}
+                Belegter Speicher: {{ allListedAttachmentSizeLabel }}
             </div>
 
             <div class="materials-overview-secondary-filter-row d-flex align-center flex-wrap ga-2">

@@ -350,8 +350,14 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain(`:class="{ 'is-highlighted': (licence.admin_licence_expired_count || 0) > 0 }"`)
         expect(source).toContain('.assignment-school-licence-row__counter-expired.is-highlighted')
         expect(source).toContain('color: rgb(var(--v-theme-error));')
-        expect(source).toContain('Gesamtkosten:')
-        expect(source).toContain('Gesamtspeicher:')
+        expect(source).toContain('class="user-licence-row py-1"')
+        expect(source).toContain('class="user-licence-row__header"')
+        expect(source).toContain('class="user-licence-row__identity"')
+        expect(source).toContain('class="user-licence-row__summary text-caption text-right text-no-wrap"')
+        expect(source).toContain('inkl. {{ formatStorage(userLicenceListStorageTotalGb(item)) }} /{{ formatPrice(userLicenceListPriceTotal(item)) }}')
+        expect(source).toContain('{{ formatPrice(userLicenceListPriceTotal(item)) }}')
+        expect(source).toContain('class="admin-user-row__summary text-caption text-right text-no-wrap"')
+        expect(source).toContain('inkl. {{ formatStorage(adminUserStorageTotalGbForUser(user)) }} /{{ formatPrice(adminUserBillingTotalForUser(user)) }}')
         expect(source).toContain('formatPrice(userLicenceListPriceTotal(item))')
         expect(source).toContain('formatStorage(userLicenceListStorageTotalGb(item))')
         expect(source).toContain('userLicenceListPriceTotal(user, licenceSource = null)')
@@ -376,7 +382,7 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('<template v-if="edit_school_licence">')
         expect(source).toContain('v-checkbox v-model="edit_no_date" label="Kein Ablaufdatum"')
         expect(source).toContain('v-date-input v-model="edit_valid_until" label="Gültig bis" :disabled="edit_no_date"')
-        expect(source).toContain('v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog"')
+        expect(source).toContain('<v-btn icon="mdi-close" variant="text" rounded="lg" density="compact" @click="closeEditLicenceDialog" />')
         expect(source).toContain('<v-card-actions class="d-flex pa-4 justify-space-between">')
         expect(source).toContain('<v-btn v-if="!(edit_licence_tab === \'admin\' && (edit_admin_user_edit_id || edit_admin_add_mode)) && !(edit_licence_tab === \'user\' && (edit_user_licence_user_edit_id || edit_user_licence_add_mode))" color="warning" variant="text" rounded="lg" @click="closeEditLicenceDialog">Schließen</v-btn>')
         expect(source).not.toContain('Benutzerlizenz schließen')
@@ -386,9 +392,8 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('admin-user-row__meta')
         expect(source).toContain('adminUserHasValidLicence(user)')
         expect(source).toContain('adminUserLicenceRuntimeLabel(user)')
-        expect(source).toContain('<span class="admin-user-row__meta" v-if="adminUserBillingTotalForUser(user) !== null || adminUserStorageTotalGbForUser(user) !== null">')
-        expect(source).toContain('Gesamt / Jahr: {{ formatPrice(adminUserBillingTotalForUser(user)) }}')
-        expect(source).toContain('&nbsp;Summe Speicher: {{ formatStorage(adminUserStorageTotalGbForUser(user)) }}')
+        expect(source).toContain('class="admin-user-row__summary text-caption text-right text-no-wrap"')
+        expect(source).toContain('inkl. {{ formatStorage(adminUserStorageTotalGbForUser(user)) }} /{{ formatPrice(adminUserBillingTotalForUser(user)) }}')
         expect(source).toContain('adminUserBillingTotalForUser(user)')
         expect(source).toContain('adminUserStorageTotalGbForUser(user)')
         expect(source).toContain('adminTeillizenzPreisLabel')
@@ -397,6 +402,14 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('setAdminUserValidUntilYesterday(user)')
         expect(source).toContain('setUserLicenceUserValidUntilYesterday(user)')
         expect(source).toContain('overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel())')
+        expect(source).toContain('Basis-Tarif / Jahr')
+        expect(source).toContain('Neuer Tarif / Jahr')
+        expect(source).toContain('title="Zusatz-Speicher Einheiten bearbeiten"')
+        expect(source).toContain('openAdminUserExtraStorageEdit(user)')
+        expect(source).toContain('openUserLicenceExtraStorageEdit(user)')
+        expect(source).toContain('edit_admin_user_extra_storage_editing')
+        expect(source).toContain('edit_user_licence_user_extra_storage_editing')
+        expect(source).toContain('overridePriceLabel(edit_user_licence_user_charged_price, effectiveUserBasePrice(), userBillingDefaultLabel())')
         expect(source).toContain("{{ overridePriceLabel(roleEntry.charged_price, selectedUserRolePlanPrice(roleEntry), 'Planpreis') }}")
         expect(source).toContain('selectedUserLicenceHasExtraStorage()')
         expect(source).toContain('selectedUserRoleExtraStorageTotal(roleEntry)')
@@ -409,9 +422,11 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('v-model="edit_admin_user_extra_storage_units"')
         expect(source).toContain('label="Zusatz-Speicher Einheiten"')
         expect(source).toContain('v-model="edit_admin_user_charged_price_draft"')
-        expect(source).toContain('v-model="edit_admin_user_extra_storage_unit_price"')
-        expect(source).toContain('<div v-if="!edit_admin_user_price_editing" class="d-flex justify-end mb-2">')
-        expect(source).toContain('<v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeAdminUserEdit">Zurück</v-btn>')
+        expect(source).toContain('crud-dialog-head__title')
+        expect(source).toContain('v-model="edit_user_licence_user_extra_storage_unit_price"')
+        expect(source).toContain('<v-btn icon="mdi-close" variant="text" rounded="lg" density="compact" @click="closeEditLicenceDialog" />')
+        expect(source).not.toContain('prepend-icon="mdi-arrow-left"')
+        expect(source).not.toContain('>Zurück<')
         expect(source).toContain('<span class="edit-licence-price-label">Preis je Einheit</span>')
         expect(source).toContain('<span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>')
         expect(source).toContain('formatPrice(adminUserExtraStorageTotal())')
@@ -422,7 +437,7 @@ describe('Super admin licence assignments', () => {
         expect(source).toContain('adminUserExtraStorageTotal()')
         expect(source).toContain('adminUserStorageTotalGb()')
         expect(source).toContain('label="Preis je Einheit (€)"')
-        expect(source).toContain(":placeholder=\"effectiveAdminExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveAdminExtraStorageUnitPrice()) : ''\"")
+        expect(source).toContain('v-model="edit_admin_user_extra_storage_unit_price"')
         expect(source).toContain(":placeholder=\"edit_licence_item ? editablePriceInputValue(edit_licence_item.school_price_per_year) : ''\"")
         expect(source).toContain(":placeholder=\"edit_licence_item ? editablePriceInputValue(edit_licence_item.school_extra_storage_step_price) : ''\"")
         expect(source).toContain('editablePriceInputValue(value)')
@@ -741,6 +756,38 @@ describe('Super admin licence assignments', () => {
 
         expect(ctx.yesterdayDate).toHaveBeenCalledTimes(1)
         expect(setUserLicenceUserValidUntil).toHaveBeenCalledWith(user, '2026-03-27')
+    })
+
+    it('derives the school year end from a start date without a trailing dot', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-08T12:00:00'))
+
+        try {
+            const methods = (LicenceSchools as any).methods
+            const computed = (LicenceSchools as any).computed
+            const ctx: any = {
+                edit_licence_item: {
+                    start_day_month: '01.08',
+                    end_day_month: null,
+                },
+                localDateKey: methods.localDateKey,
+                defaultValidUntil: methods.defaultValidUntil,
+                dayBefore: methods.dayBefore,
+                nextYearEndDate: methods.nextYearEndDate,
+                setLicenceValidUntil: vi.fn().mockResolvedValue(undefined),
+            }
+            ctx.effectiveEndDayMonth = computed.effectiveEndDayMonth.call(ctx)
+
+            expect(methods.dayBefore.call(ctx, '01.08')).toBe('31.07.')
+            expect(computed.effectiveEndDayMonth.call(ctx)).toBe('31.07.')
+            expect(methods.nextYearEndDate.call(ctx, computed.effectiveEndDayMonth.call(ctx))).toBe('2026-07-31')
+
+            await methods.setValidUntilNextYearEnd.call(ctx)
+
+            expect(ctx.setLicenceValidUntil).toHaveBeenCalledWith('2026-07-31')
+        } finally {
+            vi.useRealTimers()
+        }
     })
 
     it('calculates the school billing total from the billed price and storage units', () => {
@@ -1355,7 +1402,7 @@ describe('Super admin licence assignments', () => {
         expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
     })
 
-    it('saves admin billing with per-user extra storage units', async () => {
+    it('saves admin billing without changing storage settings', async () => {
         const methods = (LicenceSchools as any).methods
         const saveAdminUserRoles = vi.fn().mockResolvedValue(true)
         const loadAdminUsers = vi.fn().mockResolvedValue(undefined)
@@ -1382,11 +1429,11 @@ describe('Super admin licence assignments', () => {
 
         expect(saveAdminUserRoles).toHaveBeenCalledTimes(1)
         const patchFn = saveAdminUserRoles.mock.calls[0][1]
-        expect(patchFn({ name: 'teacher', assigned: false, charged_price: 25, extra_storage_units: 1 })).toMatchObject({
+        expect(patchFn({ name: 'teacher', assigned: false, charged_price: 25, extra_storage_units: 1, extra_storage_unit_price: '4.50' })).toMatchObject({
             assigned: true,
             charged_price: '12.50',
-            extra_storage_units: '4',
-            extra_storage_unit_price: '7.25',
+            extra_storage_units: 1,
+            extra_storage_unit_price: '4.50',
         })
         expect(loadAdminUsers).toHaveBeenCalledTimes(1)
         expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
@@ -1395,6 +1442,44 @@ describe('Super admin licence assignments', () => {
         expect(ctx.edit_admin_user_charged_price_draft).toBe('5,00')
         expect(ctx.edit_admin_user_extra_storage_units).toBe(4)
         expect(ctx.edit_admin_user_extra_storage_unit_price).toBe('7,25')
+    })
+
+    it('saves admin extra storage units without changing the charged price', async () => {
+        const methods = (LicenceSchools as any).methods
+        const saveAdminUserRoles = vi.fn().mockResolvedValue(true)
+        const loadAdminUsers = vi.fn().mockResolvedValue(undefined)
+        const refreshEditLicenceItem = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            edit_admin_user_extra_storage_units: '6',
+            edit_admin_user_extra_storage_unit_price: '8,75',
+            edit_licence_item: {
+                admin_role_names: ['teacher'],
+            },
+            adminRolesFromLicenceModel: vi.fn().mockReturnValue(['teacher']),
+            saveAdminUserRoles,
+            loadAdminUsers,
+            refreshEditLicenceItem,
+            adminUserStatusForUser: vi.fn().mockReturnValue({ charged_price: '100.00', extra_storage_units: 6, extra_storage_unit_price: '8.75' }),
+            effectiveAdminBasePrice: vi.fn().mockReturnValue('5.00'),
+            effectiveAdminExtraStorageUnitPrice: vi.fn().mockReturnValue('7.25'),
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
+            editablePriceInputValue: methods.editablePriceInputValue,
+        }
+
+        await methods.saveAdminUserExtraStorageUnits.call(ctx, { id: 44 })
+
+        expect(saveAdminUserRoles).toHaveBeenCalledTimes(1)
+        const patchFn = saveAdminUserRoles.mock.calls[0][1]
+        expect(patchFn({ name: 'teacher', assigned: false, charged_price: 25, extra_storage_units: 1, extra_storage_unit_price: '4.50' })).toMatchObject({
+            assigned: true,
+            charged_price: 25,
+            extra_storage_units: '6',
+            extra_storage_unit_price: '8.75',
+        })
+        expect(loadAdminUsers).toHaveBeenCalledTimes(1)
+        expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+        expect(ctx.edit_admin_user_extra_storage_editing).toBe(false)
+        expect(ctx.edit_admin_user_extra_storage_unit_price).toBe('8,75')
     })
 
     it('loads unassigned admin add candidates with empty search input', async () => {
@@ -1515,10 +1600,75 @@ describe('Super admin licence assignments', () => {
         expect(ctx.edit_admin_user_edit_id).toBeNull()
         expect(ctx.edit_admin_user_valid_until).toBeNull()
         expect(ctx.edit_admin_user_price_editing).toBe(false)
+        expect(ctx.edit_admin_user_extra_storage_editing).toBe(false)
         expect(ctx.edit_admin_user_charged_price).toBeNull()
         expect(ctx.edit_admin_user_charged_price_draft).toBeNull()
         expect(ctx.edit_admin_user_extra_storage_units).toBeNull()
         expect(ctx.edit_admin_user_extra_storage_unit_price).toBeNull()
+    })
+
+    it('saves user extra storage units without changing the charged price', async () => {
+        const methods = (LicenceSchools as any).methods
+        const saveUserLicenceUserRoles = vi.fn().mockResolvedValue(true)
+        const loadUserLicenceUsers = vi.fn().mockResolvedValue(undefined)
+        const refreshEditLicenceItem = vi.fn().mockResolvedValue(undefined)
+        const ctx: any = {
+            edit_user_licence_user_extra_storage_units: '8',
+            edit_user_licence_user_extra_storage_unit_price: '9,50',
+            edit_licence_item: {
+                user_role_names: ['student'],
+            },
+            userRolesFromLicenceModel: vi.fn().mockReturnValue(['student']),
+            saveUserLicenceUserRoles,
+            loadUserLicenceUsers,
+            refreshEditLicenceItem,
+            userLicenceUserStatusForUser: vi.fn().mockReturnValue({ charged_price: '120.00', extra_storage_units: 8, extra_storage_unit_price: '9.50' }),
+            effectiveUserBasePrice: vi.fn().mockReturnValue('5.00'),
+            effectiveUserExtraStorageUnitPrice: vi.fn().mockReturnValue('9.25'),
+            normalizedPriceInputValue: methods.normalizedPriceInputValue,
+            editablePriceInputValue: methods.editablePriceInputValue,
+        }
+
+        await methods.saveUserLicenceUserExtraStorageUnits.call(ctx, { id: 55 })
+
+        expect(saveUserLicenceUserRoles).toHaveBeenCalledTimes(1)
+        const patchFn = saveUserLicenceUserRoles.mock.calls[0][1]
+        expect(patchFn({ name: 'student', assigned: false, charged_price: 33, extra_storage_units: 2, extra_storage_unit_price: '4.25' })).toMatchObject({
+            assigned: true,
+            is_activated: true,
+            charged_price: 33,
+            extra_storage_units: '8',
+            extra_storage_unit_price: '9.50',
+        })
+        expect(loadUserLicenceUsers).toHaveBeenCalledTimes(1)
+        expect(refreshEditLicenceItem).toHaveBeenCalledTimes(1)
+        expect(ctx.edit_user_licence_user_extra_storage_editing).toBe(false)
+        expect(ctx.edit_user_licence_user_extra_storage_unit_price).toBe('9,50')
+    })
+
+    it('clears the focused user licence user edit state', () => {
+        const methods = (LicenceSchools as any).methods
+        const ctx: any = {
+            edit_user_licence_user_edit_id: 9,
+            edit_user_licence_user_valid_until: '2026-12-31',
+            edit_user_licence_user_price_editing: true,
+            edit_user_licence_user_extra_storage_editing: true,
+            edit_user_licence_user_charged_price: 15,
+            edit_user_licence_user_charged_price_draft: 15,
+            edit_user_licence_user_extra_storage_units: 4,
+            edit_user_licence_user_extra_storage_unit_price: 7,
+        }
+
+        methods.closeUserLicenceUserEdit.call(ctx)
+
+        expect(ctx.edit_user_licence_user_edit_id).toBeNull()
+        expect(ctx.edit_user_licence_user_valid_until).toBeNull()
+        expect(ctx.edit_user_licence_user_price_editing).toBe(false)
+        expect(ctx.edit_user_licence_user_extra_storage_editing).toBe(false)
+        expect(ctx.edit_user_licence_user_charged_price).toBeNull()
+        expect(ctx.edit_user_licence_user_charged_price_draft).toBeNull()
+        expect(ctx.edit_user_licence_user_extra_storage_units).toBeNull()
+        expect(ctx.edit_user_licence_user_extra_storage_unit_price).toBeNull()
     })
 
     it('distinguishes null and zero for charged price overrides', () => {

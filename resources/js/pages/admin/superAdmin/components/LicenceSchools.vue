@@ -274,9 +274,21 @@
                         v-if="school_licence_users.length >= 1">
                         <v-list-item v-for="item in school_licence_users" :key="`school-licence-user-${item.id}`" :value="item.id">
                             <template #title>
-                                <div class="d-flex flex-column ga-2 py-1">
-                                    <div class="text-body-1">{{ item.last_name }} {{ item.first_name }}</div>
-                                    <div class="text-caption text-medium-emphasis">{{ item.email }}</div>
+                                <div class="user-licence-row py-1">
+                                    <div class="user-licence-row__header">
+                                        <div class="user-licence-row__identity">
+                                            <div class="text-body-1">{{ item.last_name }} {{ item.first_name }}</div>
+                                            <div class="text-caption text-medium-emphasis">{{ item.email }}</div>
+                                        </div>
+                                        <div class="user-licence-row__summary text-caption text-right text-no-wrap">
+                                            <template v-if="userLicenceListStorageTotalGb(item) !== null">
+                                                inkl. {{ formatStorage(userLicenceListStorageTotalGb(item)) }} /{{ formatPrice(userLicenceListPriceTotal(item)) }}
+                                            </template>
+                                            <template v-else>
+                                                {{ formatPrice(userLicenceListPriceTotal(item)) }}
+                                            </template>
+                                        </div>
+                                    </div>
                                     <div class="d-flex flex-row flex-wrap align-center ga-2">
                                         <span class="text-caption text-medium-emphasis">Rollen (Lizenzmodell):</span>
                                         <template v-if="userRoleEntriesFromLicenceModel(item).length >= 1">
@@ -292,14 +304,6 @@
                                             </v-chip>
                                         </template>
                                         <span v-else class="text-caption text-medium-emphasis">-</span>
-                                    </div>
-                                    <div class="d-flex flex-row flex-wrap align-center ga-2">
-                                        <span class="text-caption text-medium-emphasis">Gesamtkosten:</span>
-                                        <span class="text-caption font-weight-medium">{{ formatPrice(userLicenceListPriceTotal(item)) }}</span>
-                                        <template v-if="userLicenceListStorageTotalGb(item) !== null">
-                                            <span class="text-caption text-medium-emphasis">Gesamtspeicher:</span>
-                                            <span class="text-caption font-weight-medium">{{ formatStorage(userLicenceListStorageTotalGb(item)) }}</span>
-                                        </template>
                                     </div>
                                 </div>
                             </template>
@@ -579,28 +583,28 @@
     </v-dialog>
 
     <v-dialog v-model="edit_licence_dialog" persistent max-width="640">
-        <v-card class="crud-dialog-card user-licence-user-dialog-solid">
-            <div class="crud-dialog-head">
-                <div>
-                    <div class="admin-card-eyebrow">Lizenz bearbeiten</div>
-                    <div class="admin-card-title" style="margin-top: 4px">
-                        {{ edit_licence_school ? edit_licence_school.long_name : '' }}
-                        <span v-if="edit_licence_item"> – {{ edit_licence_item.name }}</span>
+            <v-card class="crud-dialog-card user-licence-user-dialog-solid">
+                <div class="crud-dialog-head">
+                    <div class="crud-dialog-head__title">
+                        <div class="admin-card-eyebrow">Lizenz bearbeiten</div>
+                        <div class="admin-card-title" style="margin-top: 4px">
+                            {{ edit_licence_school ? edit_licence_school.long_name : '' }}
+                            <span v-if="edit_licence_item"> – {{ edit_licence_item.name }}</span>
+                        </div>
+                    </div>
+                    <div class="d-flex align-center" style="gap: 8px;">
+                        <v-btn
+                            v-if="canDeleteEditLicenceItem()"
+                            color="error"
+                            variant="text"
+                            rounded="lg"
+                            prepend-icon="mdi-link-off"
+                            @click="deleteLicenceFromDialog">
+                            Entfernen
+                        </v-btn>
+                        <v-btn icon="mdi-close" variant="text" rounded="lg" density="compact" @click="closeEditLicenceDialog" />
                     </div>
                 </div>
-                <div class="d-flex align-center" style="gap: 8px;">
-                    <v-btn
-                        v-if="canDeleteEditLicenceItem()"
-                        color="error"
-                        variant="text"
-                        rounded="lg"
-                        prepend-icon="mdi-link-off"
-                        @click="deleteLicenceFromDialog">
-                        Entfernen
-                    </v-btn>
-                    <v-btn v-if="!editLicenceCloseLocked" icon="mdi-close" variant="text" rounded="lg" @click="closeEditLicenceDialog" />
-                </div>
-            </div>
 
             <v-tabs v-model="edit_licence_tab" color="primary" class="edit-licence-tabs">
                 <v-tab
@@ -828,13 +832,14 @@
                                             <span>{{ user.last_name }} {{ user.first_name }}</span>
                                         </span>
                                         <span class="admin-user-row__email">{{ user.email }}</span>
-                                        <span class="admin-user-row__meta">{{ adminUserLicenceRuntimeLabel(user) }}</span>
-                                        <span class="admin-user-row__meta" v-if="adminUserBillingTotalForUser(user) !== null || adminUserStorageTotalGbForUser(user) !== null">
-                                            Gesamt / Jahr: {{ formatPrice(adminUserBillingTotalForUser(user)) }}
-                                            <template v-if="adminUserStorageTotalGbForUser(user) !== null">
-                                                &nbsp;Summe Speicher: {{ formatStorage(adminUserStorageTotalGbForUser(user)) }}
-                                            </template>
-                                        </span>
+                                    </div>
+                                    <div class="admin-user-row__summary text-caption text-right text-no-wrap">
+                                        <template v-if="adminUserStorageTotalGbForUser(user) !== null">
+                                            inkl. {{ formatStorage(adminUserStorageTotalGbForUser(user)) }} /{{ formatPrice(adminUserBillingTotalForUser(user)) }}
+                                        </template>
+                                        <template v-else>
+                                            {{ formatPrice(adminUserBillingTotalForUser(user)) }}
+                                        </template>
                                     </div>
                                     <div class="admin-user-row__actions">
                                         <span v-if="edit_admin_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>
@@ -848,11 +853,9 @@
                                             @click="toggleAdminUserEdit(user)" />
                                     </div>
                                 </div>
+                                <span class="admin-user-row__meta">{{ adminUserLicenceRuntimeLabel(user) }}</span>
 
                                 <div v-if="edit_admin_user_edit_id === user.id" class="admin-user-edit">
-                                    <div v-if="!edit_admin_user_price_editing" class="d-flex justify-end mb-2">
-                                        <v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeAdminUserEdit">Zurück</v-btn>
-                                    </div>
                                     <div class="edit-licence-price-grid mb-2">
                                         <div class="edit-licence-price-row">
                                             <span class="edit-licence-price-label">Gültig bis</span>
@@ -899,47 +902,69 @@
                                             </span>
                                         </div>
 
-                                        <div class="edit-licence-price-row">
-                                            <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
-                                            <span class="d-flex align-center" style="gap: 8px;">
-                                                <span class="edit-licence-price-value">
-                                                    {{ overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel()) }}
-                                                </span>
-                                                <v-btn
-                                                    v-if="!edit_admin_user_price_editing"
-                                                    size="x-small"
-                                                    variant="text"
-                                                    icon="mdi-pencil"
-                                                    density="compact"
-                                                    @click="edit_admin_user_price_editing = true" />
-                                            </span>
-                                        </div>
-                                        <template v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)">
+                                        <template v-if="!edit_admin_user_price_editing">
                                             <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
-                                                <span class="edit-licence-price-value">
-                                                    {{ overrideCountLabel(edit_admin_user_extra_storage_units, edit_licence_item?.admin_extra_storage_units, 'Tarif dieser Schule') }}
+                                                <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                                                <span class="d-flex align-center" style="gap: 8px;">
+                                                    <span class="edit-licence-price-value">
+                                                        {{ overridePriceLabel(edit_admin_user_charged_price, effectiveAdminBasePrice(), adminBillingDefaultLabel()) }}
+                                                    </span>
+                                                    <v-btn
+                                                        size="x-small"
+                                                        variant="text"
+                                                        icon="mdi-pencil"
+                                                        density="compact"
+                                                        @click="edit_admin_user_price_editing = true" />
                                                 </span>
                                             </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Preis je Einheit</span>
-                                                <span class="edit-licence-price-value">
-                                                    {{ overridePriceLabel(edit_admin_user_extra_storage_unit_price, effectiveAdminUserExtraStorageUnitPrice(), adminBillingDefaultLabel()) }}
-                                                </span>
-                                            </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
-                                                <span class="edit-licence-price-value">{{ formatPrice(adminUserExtraStorageTotal()) }}</span>
-                                            </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Summe Speicher</span>
-                                                <span class="edit-licence-price-value">{{ formatStorage(adminUserStorageTotalGb()) }}</span>
+                                            <template v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)">
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                                    <span class="d-flex align-center" style="gap: 8px;">
+                                                        <span class="edit-licence-price-value">
+                                                            {{ overrideCountLabel(edit_admin_user_extra_storage_units, edit_licence_item?.admin_extra_storage_units, 'Tarif dieser Schule') }}
+                                                        </span>
+                                                        <v-btn
+                                                            size="x-small"
+                                                            variant="text"
+                                                            icon="mdi-pencil"
+                                                            density="compact"
+                                                            title="Zusatz-Speicher Einheiten bearbeiten"
+                                                            @click="openAdminUserExtraStorageEdit(user)" />
+                                                    </span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Preis je Einheit</span>
+                                                    <span class="edit-licence-price-value">
+                                                        {{ overridePriceLabel(edit_admin_user_extra_storage_unit_price, effectiveAdminUserExtraStorageUnitPrice(), adminBillingDefaultLabel()) }}
+                                                    </span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
+                                                    <span class="edit-licence-price-value">{{ formatPrice(adminUserExtraStorageTotal()) }}</span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Summe Speicher</span>
+                                                    <span class="edit-licence-price-value">{{ formatStorage(adminUserStorageTotalGb()) }}</span>
+                                                </div>
+                                            </template>
+                                            <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                                <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(adminUserBillingTotal()) }}</span>
                                             </div>
                                         </template>
-                                        <div class="edit-licence-price-row edit-licence-price-row--sum">
-                                            <span class="edit-licence-price-label">Gesamt / Jahr</span>
-                                            <span class="edit-licence-price-value">{{ formatPrice(adminUserBillingTotal()) }}</span>
-                                        </div>
+                                        <template v-else>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(effectiveAdminBasePrice()) }}</span>
+                                            </div>
+                                            <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                                <span class="edit-licence-price-label">Neuer Tarif / Jahr</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ formatPrice(normalizedPriceInputValue(edit_admin_user_charged_price_draft) ?? effectiveAdminBasePrice()) }}
+                                                </span>
+                                            </div>
+                                        </template>
                                     </div>
 
                                     <template v-if="edit_admin_user_price_editing">
@@ -953,6 +978,12 @@
                                             hint="Leer lassen = Standard-Tarif, 0 = EUR 0"
                                             persistent-hint
                                             class="mb-2" />
+                                        <div class="d-flex justify-space-between">
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_admin_user_price_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveAdminUserBilling(user)">Speichern</v-btn>
+                                        </div>
+                                    </template>
+                                    <template v-else-if="edit_admin_user_extra_storage_editing">
                                         <v-row
                                             v-if="edit_licence_item && (edit_licence_item.admin_extra_storage_step_gb != null || edit_licence_item.admin_extra_storage_step_price != null)"
                                             dense
@@ -978,13 +1009,13 @@
                                                     variant="outlined"
                                                     clearable
                                                     :placeholder="effectiveAdminExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveAdminExtraStorageUnitPrice()) : ''"
-                                                    hint="Leer lassen = Standardpreis, 0 = EUR 0"
+                                                    hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
                                                     persistent-hint />
                                             </v-col>
                                         </v-row>
                                         <div class="d-flex justify-space-between">
-                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_admin_user_price_editing = false">Abbrechen</v-btn>
-                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveAdminUserBilling(user)">Speichern</v-btn>
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_admin_user_extra_storage_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveAdminUserExtraStorageUnits(user)">Speichern</v-btn>
                                         </div>
                                     </template>
                                 </div>
@@ -1071,13 +1102,14 @@
                                             <span>{{ user.last_name }} {{ user.first_name }}</span>
                                         </span>
                                         <span class="admin-user-row__email">{{ user.email }}</span>
-                                        <span class="admin-user-row__meta">{{ userLicenceUserRuntimeLabel(user) }}</span>
-                                        <span class="admin-user-row__meta" v-if="userLicenceUserBillingTotalForUser(user) !== null || userLicenceUserStorageTotalGbForUser(user) !== null">
-                                            Gesamt / Jahr: {{ formatPrice(userLicenceUserBillingTotalForUser(user)) }}
-                                            <template v-if="userLicenceUserStorageTotalGbForUser(user) !== null">
-                                                &nbsp;Summe Speicher: {{ formatStorage(userLicenceUserStorageTotalGbForUser(user)) }}
-                                            </template>
-                                        </span>
+                                    </div>
+                                    <div class="admin-user-row__summary text-caption text-right text-no-wrap">
+                                        <template v-if="userLicenceUserStorageTotalGbForUser(user) !== null">
+                                            inkl. {{ formatStorage(userLicenceUserStorageTotalGbForUser(user)) }} /{{ formatPrice(userLicenceUserBillingTotalForUser(user)) }}
+                                        </template>
+                                        <template v-else>
+                                            {{ formatPrice(userLicenceUserBillingTotalForUser(user)) }}
+                                        </template>
                                     </div>
                                     <div class="admin-user-row__actions">
                                         <span v-if="edit_user_licence_user_edit_id === user.id" class="admin-user-row__editing-hint">Benutzerlizenz wird bearbeitet</span>
@@ -1091,11 +1123,9 @@
                                             @click="toggleUserLicenceUserEdit(user)" />
                                     </div>
                                 </div>
+                                <span class="admin-user-row__meta">{{ userLicenceUserRuntimeLabel(user) }}</span>
 
                                 <div v-if="edit_user_licence_user_edit_id === user.id" class="admin-user-edit">
-                                    <div v-if="!edit_user_licence_user_price_editing" class="d-flex justify-end mb-2">
-                                        <v-btn color="warning" variant="text" size="small" rounded="lg" prepend-icon="mdi-arrow-left" @click="closeUserLicenceUserEdit">Zurück</v-btn>
-                                    </div>
                                     <div class="edit-licence-price-grid mb-2">
                                         <div class="edit-licence-price-row">
                                             <span class="edit-licence-price-label">Gültig bis</span>
@@ -1142,47 +1172,69 @@
                                             </span>
                                         </div>
 
-                                        <div class="edit-licence-price-row">
-                                            <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
-                                            <span class="d-flex align-center" style="gap: 8px;">
-                                                <span class="edit-licence-price-value">
-                                                    {{ overridePriceLabel(edit_user_licence_user_charged_price, effectiveUserBasePrice(), userBillingDefaultLabel()) }}
-                                                </span>
-                                                <v-btn
-                                                    v-if="!edit_user_licence_user_price_editing"
-                                                    size="x-small"
-                                                    variant="text"
-                                                    icon="mdi-pencil"
-                                                    density="compact"
-                                                    @click="edit_user_licence_user_price_editing = true" />
-                                            </span>
-                                        </div>
-                                        <template v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)">
+                                        <template v-if="!edit_user_licence_user_price_editing">
                                             <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
-                                                <span class="edit-licence-price-value">
-                                                    {{ overrideCountLabel(edit_user_licence_user_extra_storage_units, edit_licence_item?.user_extra_storage_units, 'Tarif dieser Schule') }}
+                                                <span class="edit-licence-price-label">Verrechneter Preis / Jahr</span>
+                                                <span class="d-flex align-center" style="gap: 8px;">
+                                                    <span class="edit-licence-price-value">
+                                                        {{ overridePriceLabel(edit_user_licence_user_charged_price, effectiveUserBasePrice(), userBillingDefaultLabel()) }}
+                                                    </span>
+                                                    <v-btn
+                                                        size="x-small"
+                                                        variant="text"
+                                                        icon="mdi-pencil"
+                                                        density="compact"
+                                                        @click="edit_user_licence_user_price_editing = true" />
                                                 </span>
                                             </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Preis je Einheit</span>
-                                                <span class="edit-licence-price-value">
-                                                    {{ overridePriceLabel(edit_user_licence_user_extra_storage_unit_price, effectiveUserLicenceUserExtraStorageUnitPrice(), userBillingDefaultLabel()) }}
-                                                </span>
-                                            </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
-                                                <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserExtraStorageTotal()) }}</span>
-                                            </div>
-                                            <div class="edit-licence-price-row">
-                                                <span class="edit-licence-price-label">Summe Speicher</span>
-                                                <span class="edit-licence-price-value">{{ formatStorage(userLicenceUserStorageTotalGb()) }}</span>
+                                            <template v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)">
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Zusatz-Speicher Einheiten</span>
+                                                    <span class="d-flex align-center" style="gap: 8px;">
+                                                        <span class="edit-licence-price-value">
+                                                            {{ overrideCountLabel(edit_user_licence_user_extra_storage_units, edit_licence_item?.user_extra_storage_units, 'Tarif dieser Schule') }}
+                                                        </span>
+                                                        <v-btn
+                                                            size="x-small"
+                                                            variant="text"
+                                                            icon="mdi-pencil"
+                                                            density="compact"
+                                                            title="Zusatz-Speicher Einheiten bearbeiten"
+                                                            @click="openUserLicenceExtraStorageEdit(user)" />
+                                                    </span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Preis je Einheit</span>
+                                                    <span class="edit-licence-price-value">
+                                                        {{ overridePriceLabel(edit_user_licence_user_extra_storage_unit_price, effectiveUserLicenceUserExtraStorageUnitPrice(), userBillingDefaultLabel()) }}
+                                                    </span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Zusatz-Speicher gesamt</span>
+                                                    <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserExtraStorageTotal()) }}</span>
+                                                </div>
+                                                <div class="edit-licence-price-row">
+                                                    <span class="edit-licence-price-label">Summe Speicher</span>
+                                                    <span class="edit-licence-price-value">{{ formatStorage(userLicenceUserStorageTotalGb()) }}</span>
+                                                </div>
+                                            </template>
+                                            <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                                <span class="edit-licence-price-label">Gesamt / Jahr</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserBillingTotal()) }}</span>
                                             </div>
                                         </template>
-                                        <div class="edit-licence-price-row edit-licence-price-row--sum">
-                                            <span class="edit-licence-price-label">Gesamt / Jahr</span>
-                                            <span class="edit-licence-price-value">{{ formatPrice(userLicenceUserBillingTotal()) }}</span>
-                                        </div>
+                                        <template v-else>
+                                            <div class="edit-licence-price-row">
+                                                <span class="edit-licence-price-label">Basis-Tarif / Jahr</span>
+                                                <span class="edit-licence-price-value">{{ formatPrice(effectiveUserBasePrice()) }}</span>
+                                            </div>
+                                            <div class="edit-licence-price-row edit-licence-price-row--sum">
+                                                <span class="edit-licence-price-label">Neuer Tarif / Jahr</span>
+                                                <span class="edit-licence-price-value">
+                                                    {{ formatPrice(normalizedPriceInputValue(edit_user_licence_user_charged_price_draft) ?? effectiveUserBasePrice()) }}
+                                                </span>
+                                            </div>
+                                        </template>
                                     </div>
 
                                     <template v-if="edit_user_licence_user_price_editing">
@@ -1196,6 +1248,12 @@
                                             hint="Leer lassen = Standard-Tarif, 0 = EUR 0"
                                             persistent-hint
                                             class="mb-2" />
+                                        <div class="d-flex justify-space-between">
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_user_licence_user_price_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveUserLicenceUserBilling(user)">Speichern</v-btn>
+                                        </div>
+                                    </template>
+                                    <template v-else-if="edit_user_licence_user_extra_storage_editing">
                                         <v-row
                                             v-if="edit_licence_item && (edit_licence_item.user_extra_storage_step_gb != null || edit_licence_item.user_extra_storage_step_price != null)"
                                             dense
@@ -1221,13 +1279,13 @@
                                                     variant="outlined"
                                                     clearable
                                                     :placeholder="effectiveUserExtraStorageUnitPrice() != null ? editablePriceInputValue(effectiveUserExtraStorageUnitPrice()) : ''"
-                                                    hint="Leer lassen = Standardpreis, 0 = EUR 0"
+                                                    hint="Leer lassen = Basis-Tarif, 0 = EUR 0"
                                                     persistent-hint />
                                             </v-col>
                                         </v-row>
                                         <div class="d-flex justify-space-between">
-                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_user_licence_user_price_editing = false">Abbrechen</v-btn>
-                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveUserLicenceUserBilling(user)">Speichern</v-btn>
+                                            <v-btn color="warning" variant="text" size="small" rounded="lg" @click="edit_user_licence_user_extra_storage_editing = false">Abbrechen</v-btn>
+                                            <v-btn color="success" variant="flat" size="small" rounded="lg" @click="saveUserLicenceUserExtraStorageUnits(user)">Speichern</v-btn>
                                         </div>
                                     </template>
                                 </div>
@@ -1338,6 +1396,7 @@ export default {
             edit_admin_user_edit_id: null,
             edit_admin_user_valid_until: null,
             edit_admin_user_price_editing: false,
+            edit_admin_user_extra_storage_editing: false,
             edit_admin_user_charged_price: null,
             edit_admin_user_charged_price_draft: null,
             edit_admin_user_extra_storage_units: null,
@@ -1350,6 +1409,7 @@ export default {
             edit_user_licence_user_edit_id: null,
             edit_user_licence_user_valid_until: null,
             edit_user_licence_user_price_editing: false,
+            edit_user_licence_user_extra_storage_editing: false,
             edit_user_licence_user_charged_price: null,
             edit_user_licence_user_charged_price_draft: null,
             edit_user_licence_user_extra_storage_units: null,
@@ -1786,8 +1846,8 @@ export default {
             return Math.ceil((fullYearPrice * daysRemaining) / 365)
         },
         dayBefore(dayMonth) {
-            // dayMonth format: "DD.MM." e.g. "01.08."
-            const match = dayMonth && dayMonth.match(/^(\d{2})\.(\d{2})\.$/)
+            // dayMonth format: "DD.MM" or "DD.MM." e.g. "01.08" or "01.08."
+            const match = dayMonth && dayMonth.match(/^(\d{2})\.(\d{2})\.?$/)
             if (!match) return '?'
             const date = new Date(2000, parseInt(match[2], 10) - 1, parseInt(match[1], 10))
             date.setDate(date.getDate() - 1)
@@ -1884,6 +1944,7 @@ export default {
             this.edit_admin_user_edit_id = null
             this.edit_admin_user_valid_until = null
             this.edit_admin_user_price_editing = false
+            this.edit_admin_user_extra_storage_editing = false
             this.edit_admin_user_charged_price = null
             this.edit_admin_user_charged_price_draft = null
             this.edit_admin_user_extra_storage_units = null
@@ -1896,6 +1957,7 @@ export default {
             this.edit_user_licence_user_edit_id = null
             this.edit_user_licence_user_valid_until = null
             this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_extra_storage_editing = false
             this.edit_user_licence_user_charged_price = null
             this.edit_user_licence_user_charged_price_draft = null
             this.edit_user_licence_user_extra_storage_units = null
@@ -2015,6 +2077,7 @@ export default {
             this.edit_admin_user_edit_id = null
             this.edit_admin_user_valid_until = null
             this.edit_admin_user_price_editing = false
+            this.edit_admin_user_extra_storage_editing = false
             this.edit_admin_user_charged_price = null
             this.edit_admin_user_charged_price_draft = null
             this.edit_admin_user_extra_storage_units = null
@@ -2360,6 +2423,7 @@ export default {
             this.edit_user_licence_user_edit_id = null
             this.edit_user_licence_user_valid_until = null
             this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_extra_storage_editing = false
             this.edit_user_licence_user_charged_price = null
             this.edit_user_licence_user_charged_price_draft = null
             this.edit_user_licence_user_extra_storage_units = null
@@ -2642,6 +2706,7 @@ export default {
             this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
             this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_extra_storage_editing = false
         },
         async saveUserLicenceUserRoles(user, patchFn) {
             if (!this.edit_licence_item?.school_licence_id) return false
@@ -2737,16 +2802,14 @@ export default {
         },
         async saveUserLicenceUserBilling(user) {
             const chargedPrice = this.normalizedPriceInputValue(this.edit_user_licence_user_charged_price_draft)
-            const extraStorageUnits = this.edit_user_licence_user_extra_storage_units !== '' ? this.edit_user_licence_user_extra_storage_units : null
-            const extraStorageUnitPrice = this.normalizedPriceInputValue(this.edit_user_licence_user_extra_storage_unit_price)
             const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
             const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
                 ...role,
                 assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
                 is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
                 charged_price: userRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
-                extra_storage_units: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnits : role.extra_storage_units,
-                extra_storage_unit_price: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnitPrice : role.extra_storage_unit_price,
+                extra_storage_units: role.extra_storage_units,
+                extra_storage_unit_price: role.extra_storage_unit_price,
             }))
             if (!ok) return
             this.edit_user_licence_user_price_editing = false
@@ -2757,6 +2820,42 @@ export default {
             this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
             this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             await this.refreshEditLicenceItem()
+        },
+        async saveUserLicenceUserExtraStorageUnits(user) {
+            const extraStorageUnits = this.edit_user_licence_user_extra_storage_units !== '' ? this.edit_user_licence_user_extra_storage_units : null
+            const extraStorageUnitPrice = this.normalizedPriceInputValue(this.edit_user_licence_user_extra_storage_unit_price)
+            const userRoleNames = new Set(this.userRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveUserLicenceUserRoles(user, (role) => ({
+                ...role,
+                assigned: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                is_activated: userRoleNames.has(String(role?.name || '').trim()) ? true : !!role.is_activated,
+                charged_price: role.charged_price,
+                extra_storage_units: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnits : role.extra_storage_units,
+                extra_storage_unit_price: userRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnitPrice : role.extra_storage_unit_price,
+            }))
+            if (!ok) return
+            this.edit_user_licence_user_extra_storage_editing = false
+            await this.loadUserLicenceUsers()
+            const status = this.userLicenceUserStatusForUser(user)
+            this.edit_user_licence_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_user_licence_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveUserBasePrice())
+            this.edit_user_licence_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_user_licence_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
+            await this.refreshEditLicenceItem()
+        },
+        openAdminUserExtraStorageEdit(user) {
+            if (this.edit_admin_user_edit_id !== user.id) {
+                this.toggleAdminUserEdit(user)
+            }
+            this.edit_admin_user_price_editing = false
+            this.edit_admin_user_extra_storage_editing = true
+        },
+        openUserLicenceExtraStorageEdit(user) {
+            if (this.edit_user_licence_user_edit_id !== user.id) {
+                this.toggleUserLicenceUserEdit(user)
+            }
+            this.edit_user_licence_user_price_editing = false
+            this.edit_user_licence_user_extra_storage_editing = true
         },
         toggleAdminUserEdit(user) {
             if (this.edit_admin_user_edit_id === user.id) {
@@ -2774,6 +2873,7 @@ export default {
             this.edit_admin_user_extra_storage_units = status?.extra_storage_units ?? null
             this.edit_admin_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
             this.edit_admin_user_price_editing = false
+            this.edit_admin_user_extra_storage_editing = false
         },
         async saveAdminUserRoles(user, patchFn) {
             if (!this.edit_licence_item?.school_licence_id) return false
@@ -2868,18 +2968,37 @@ export default {
         },
         async saveAdminUserBilling(user) {
             const chargedPrice = this.normalizedPriceInputValue(this.edit_admin_user_charged_price_draft)
+            const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
+            const ok = await this.saveAdminUserRoles(user, (role) => ({
+                ...role,
+                assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
+                charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                extra_storage_units: role.extra_storage_units,
+                extra_storage_unit_price: role.extra_storage_unit_price,
+            }))
+            if (!ok) return
+            this.edit_admin_user_price_editing = false
+            await this.loadAdminUsers()
+            const status = this.adminUserStatusForUser(user)
+            this.edit_admin_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
+            this.edit_admin_user_charged_price_draft = this.editablePriceInputValue(status?.charged_price ?? this.effectiveAdminBasePrice())
+            this.edit_admin_user_extra_storage_units = status?.extra_storage_units ?? null
+            this.edit_admin_user_extra_storage_unit_price = this.editablePriceInputValue(status?.extra_storage_unit_price)
+            await this.refreshEditLicenceItem()
+        },
+        async saveAdminUserExtraStorageUnits(user) {
             const extraStorageUnits = this.edit_admin_user_extra_storage_units !== '' ? this.edit_admin_user_extra_storage_units : null
             const extraStorageUnitPrice = this.normalizedPriceInputValue(this.edit_admin_user_extra_storage_unit_price)
             const adminRoleNames = new Set(this.adminRolesFromLicenceModel(this.edit_licence_item))
             const ok = await this.saveAdminUserRoles(user, (role) => ({
                 ...role,
                 assigned: adminRoleNames.has(String(role?.name || '').trim()) ? true : !!role.assigned,
-                charged_price: adminRoleNames.has(String(role?.name || '').trim()) ? chargedPrice : role.charged_price,
+                charged_price: role.charged_price,
                 extra_storage_units: adminRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnits : role.extra_storage_units,
                 extra_storage_unit_price: adminRoleNames.has(String(role?.name || '').trim()) ? extraStorageUnitPrice : role.extra_storage_unit_price,
             }))
             if (!ok) return
-            this.edit_admin_user_price_editing = false
+            this.edit_admin_user_extra_storage_editing = false
             await this.loadAdminUsers()
             const status = this.adminUserStatusForUser(user)
             this.edit_admin_user_charged_price = this.normalizedPriceInputValue(status?.charged_price)
@@ -3889,6 +4008,32 @@ export default {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-shrink: 0;
+}
+
+.admin-user-row__summary {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.user-licence-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.user-licence-row__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.user-licence-row__identity {
+    min-width: 0;
+}
+
+.user-licence-row__summary {
     flex-shrink: 0;
 }
 
