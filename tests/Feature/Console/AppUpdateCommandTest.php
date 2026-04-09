@@ -21,9 +21,16 @@ function fakeAppUpdateFiles(array $missingPaths = []): void
         });
 }
 
-function fakeAppUpdateProcesses(?string $npmCiError = null): void
+function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
 {
-    Process::fake(function ($process) use ($npmCiError) {
+    $npmCiErrors = match (true) {
+        is_array($npmCiError) => array_values($npmCiError),
+        $npmCiError !== null => [$npmCiError],
+        default => [],
+    };
+    $npmCiAttempt = 0;
+
+    Process::fake(function ($process) use ($npmCiErrors, &$npmCiAttempt) {
         $command = implode(' ', $process->command);
 
         if (str_contains($command, 'node --version')) {
@@ -39,8 +46,11 @@ function fakeAppUpdateProcesses(?string $npmCiError = null): void
         }
 
         if (str_contains($command, 'npm ci')) {
-            if ($npmCiError !== null) {
-                return Process::result('', $npmCiError, 1);
+            $currentError = $npmCiErrors[$npmCiAttempt] ?? null;
+            $npmCiAttempt++;
+
+            if ($currentError !== null) {
+                return Process::result('', $currentError, 1);
             }
 
             return Process::result('npm ci complete');
@@ -165,7 +175,11 @@ it('fails fast when a required frontend file is missing', function (): void {
 
 it('stops before backend work when npm ci fails', function (): void {
     fakeAppUpdateFiles();
-    fakeAppUpdateProcesses('EBUSY: resource busy or locked, unlink node_modules\\esbuild\\bin.js');
+    fakeAppUpdateProcesses([
+        'EBUSY: resource busy or locked, unlink node_modules\\esbuild\\bin.js',
+        'EBUSY: resource busy or locked, unlink node_modules\\esbuild\\bin.js',
+        'EBUSY: resource busy or locked, unlink node_modules\\esbuild\\bin.js',
+    ]);
 
     Artisan::spy();
 
@@ -181,7 +195,7 @@ it('stops before backend work when npm ci fails', function (): void {
     expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
     expect($result['output'])->toContain('npm ci failed — aborting update.');
 
-    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), PHP_OS_FAMILY === 'Windows' ? 3 : 1);
     Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'));
     Artisan::shouldNotHaveReceived('call');
     $install->shouldNotHaveReceived('clearModels');
@@ -191,4 +205,54 @@ it('stops before backend work when npm ci fails', function (): void {
     $install->shouldNotHaveReceived('clearDebugbar');
     $install->shouldNotHaveReceived('normalizeRestaurantUserRoles');
     $records->shouldNotHaveReceived('initRecords');
+});
+
+it('retries npm ci when a windows lock error is transient', function (): void {
+    if (PHP_OS_FAMILY !== 'Windows') {
+        $this->markTestSkipped('Windows-specific retry logic.');
+    }
+
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses([
+        'EPERM: operation not permitted, unlink C:\\laravel\\schooltool\\node_modules\\@esbuild\\win32-x64\\esbuild.exe',
+        'EBUSY: resource busy or locked, unlink C:\\laravel\\schooltool\\node_modules\\@esbuild\\win32-x64\\esbuild.exe',
+    ]);
+
+    $install = Mockery::mock(InstallUpdateService::class);
+    $records = Mockery::mock(RecordsCreateService::class);
+
+    $install->shouldReceive('clearModels')->once();
+    $install->shouldReceive('createRoles')->once();
+    $install->shouldReceive('findOrCreateFolders')->once();
+    $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
+        ->once()
+        ->andReturn(['deleted' => [], 'failed' => []]);
+    $install->shouldReceive('clearDebugbar')->once();
+    $install->shouldReceive('normalizeRestaurantUserRoles')
+        ->once()
+        ->andReturn([
+            'restaurant_confirmed_backfilled' => 0,
+            'lunch_user_roles_assigned' => 0,
+            'lunch_candidate_roles_removed' => 0,
+        ]);
+    $records->shouldReceive('initRecords')->once();
+
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
+
+    Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('output')->times(4)->andReturn('');
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(0);
+    expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 1 of 3');
+    expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 2 of 3');
+    expect($result['output'])->toContain('▶ BUILDING FRONTEND');
+
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 3);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
 });

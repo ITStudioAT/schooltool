@@ -133,6 +133,51 @@ describe('initRecords', function () {
 
         expect(Licence::where('name', 'Restaurant')->count())->toBe(1);
     });
+
+    it('normalizes licence day month values from config before persisting', function () {
+        Config::set('schooltool.licences', [
+            [
+                'name' => 'Config Licence',
+                'long_name' => 'Config Licence Long Name',
+                'price_per_year' => 200,
+                'start_day_month' => '01.08.',
+                'school_licence_enabled' => true,
+                'admin_licence_enabled' => false,
+                'admin_role_names' => null,
+                'user_licence_enabled' => false,
+                'user_role_names' => null,
+            ],
+        ]);
+
+        $this->service->initRecords();
+
+        $licence = Licence::where('name', 'Config Licence')->first();
+
+        expect($licence)->not->toBeNull()
+            ->and($licence->start_day_month)->toBe('08-01')
+            ->and($licence->end_day_month)->toBe('07-31');
+    });
+
+    it('fails fast with a clear exception when licence config day month is invalid', function () {
+        Config::set('schooltool.licences', [
+            [
+                'name' => 'Broken Licence',
+                'long_name' => 'Broken Licence Long Name',
+                'price_per_year' => 200,
+                'start_day_month' => '01/08',
+                'school_licence_enabled' => true,
+                'admin_licence_enabled' => false,
+                'admin_role_names' => null,
+                'user_licence_enabled' => false,
+                'user_role_names' => null,
+            ],
+        ]);
+
+        $this->expectException(UnexpectedValueException::class);
+        $this->expectExceptionMessage('Licence [Broken Licence] has invalid start_day_month [01/08] in config(schooltool.licences).');
+
+        $this->service->initRecords();
+    });
 });
 
 describe('firstOrCreateSchool (private method behavior)', function () {

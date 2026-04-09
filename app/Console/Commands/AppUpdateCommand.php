@@ -5,12 +5,17 @@ namespace App\Console\Commands;
 use App\Services\InstallUpdateService;
 use App\Services\RecordsCreateService;
 use Illuminate\Console\Command;
+use Illuminate\Contracts\Process\ProcessResult as ProcessResultContract;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 
 class AppUpdateCommand extends Command
 {
+    private const int WINDOWS_NPM_CI_MAX_ATTEMPTS = 3;
+
+    private const int WINDOWS_NPM_CI_RETRY_DELAY_SECONDS = 2;
+
     protected $signature = 'app:update';
 
     protected $description = 'Update application: frontend build, migrations, records, roles, folders, and caches';
@@ -150,7 +155,7 @@ class AppUpdateCommand extends Command
     private function runFrontendUpdate(): bool
     {
         $this->info('▶ INSTALLING FRONTEND DEPENDENCIES');
-        if (! $this->runProcess(['npm', 'ci'], 'npm ci', 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1'])) {
+        if (! $this->runNpmCi()) {
             return false;
         }
 
@@ -164,22 +169,47 @@ class AppUpdateCommand extends Command
         return true;
     }
 
+    private function runNpmCi(): bool
+    {
+        $attemptLimit = $this->npmCiAttemptLimit();
+        $combinedOutput = '';
+
+        for ($attempt = 1; $attempt <= $attemptLimit; $attempt++) {
+            $result = $this->executeProcess(['npm', 'ci'], 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1']);
+
+            if ($result->successful()) {
+                return true;
+            }
+
+            $combinedOutput = trim($result->output()."\n".$result->errorOutput());
+
+            if (! $this->shouldRetryNpmCi($combinedOutput, $attempt, $attemptLimit)) {
+                break;
+            }
+
+            $this->warn(sprintf(
+                'npm ci hit a Windows file lock on attempt %d of %d; retrying in %d seconds...',
+                $attempt,
+                $attemptLimit,
+                self::WINDOWS_NPM_CI_RETRY_DELAY_SECONDS,
+            ));
+
+            $this->pauseBeforeNpmCiRetry();
+        }
+
+        $this->error('❌ npm ci failed — aborting update.');
+        $this->maybeShowWindowsNodeModulesHint($combinedOutput);
+
+        return false;
+    }
+
     /**
      * @param  array<int, string>  $command
      * @param  array<string, string>  $environment
      */
     private function runProcess(array $command, string $description, int $timeoutSeconds, array $environment = []): bool
     {
-        $process = Process::timeout($timeoutSeconds)
-            ->path(base_path());
-
-        if ($environment !== []) {
-            $process = $process->env($environment);
-        }
-
-        $result = $process->run($command, function (string $type, string $buffer): void {
-            echo $buffer;
-        });
+        $result = $this->executeProcess($command, $timeoutSeconds, $environment);
 
         if ($result->successful()) {
             return true;
@@ -192,6 +222,24 @@ class AppUpdateCommand extends Command
         }
 
         return false;
+    }
+
+    /**
+     * @param  array<int, string>  $command
+     * @param  array<string, string>  $environment
+     */
+    private function executeProcess(array $command, int $timeoutSeconds, array $environment = []): ProcessResultContract
+    {
+        $process = Process::timeout($timeoutSeconds)
+            ->path(base_path());
+
+        if ($environment !== []) {
+            $process = $process->env($environment);
+        }
+
+        return $process->run($command, function (string $type, string $buffer): void {
+            echo $buffer;
+        });
     }
 
     /**
@@ -241,5 +289,36 @@ class AppUpdateCommand extends Command
         }
 
         return false;
+    }
+
+    private function npmCiAttemptLimit(): int
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return self::WINDOWS_NPM_CI_MAX_ATTEMPTS;
+        }
+
+        return 1;
+    }
+
+    private function shouldRetryNpmCi(string $output, int $attempt, int $attemptLimit): bool
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return false;
+        }
+
+        if ($attempt >= $attemptLimit) {
+            return false;
+        }
+
+        return $this->looksLikeWindowsLockIssue(strtolower($output));
+    }
+
+    private function pauseBeforeNpmCiRetry(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        sleep(self::WINDOWS_NPM_CI_RETRY_DELAY_SECONDS);
     }
 }
