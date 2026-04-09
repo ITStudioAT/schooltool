@@ -138,6 +138,10 @@
                         <LicenceSchools v-else-if="licence_models_action === 'schools'" />
                     </div>
 
+                    <div v-else-if="isSuperAdminTab && sub_action === 'storage_audit'" class="settings-storage-audit-wrap">
+                        <StorageAudit />
+                    </div>
+
                     <div v-else-if="isSuperAdminTab && sub_action === 'roles'" class="settings-roles-wrap">
                         <Roles />
                     </div>
@@ -237,6 +241,7 @@ import ActiveSchool from '@/pages/admin/superAdmin/components/ActiveSchool.vue'
 import UserImpersonation from '@/pages/admin/superAdmin/components/UserImpersonation.vue'
 import Teachers from '@/pages/admin/superAdmin/components/Teachers.vue'
 import TeachersList from '@/pages/admin/superAdmin/components/TeachersList.vue'
+import StorageAudit from '@/pages/admin/superAdmin/components/StorageAudit.vue'
 import TutoringSettings from '@/pages/admin/tutoring/components/Settings.vue'
 import TutoringSubjects from '@/pages/admin/tutoring/components/Subjects.vue'
 import TutoringUsers from '@/pages/admin/tutoring/components/Users.vue'
@@ -246,7 +251,7 @@ import Groups from '@/pages/admin/groups/Groups.vue'
 import RestaurantSettings from '@/pages/admin/restaurant/components/Settings.vue'
 
 export default {
-    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
+    components: { Schools, Schoolyears, Users, Licences, LicenceSchools, Roles, Log, RegisterUsers, ModuleStatusesCard, Profile, ActiveSchool, UserImpersonation, Teachers, TeachersList, StorageAudit, TutoringSettings, TutoringSubjects, TutoringUsers, TeachingAdmin, MaterialsSettingsView, Groups, RestaurantSettings },
 
     mounted() {
         this.syncRouteQuery()
@@ -538,6 +543,7 @@ export default {
                 { key: 'general', label: 'Grundeinstellungen', meta: 'Allgemein', icon: 'mdi-tune-variant' },
                 { key: 'schools', label: 'Schulen', meta: 'Verwaltung', icon: 'mdi-school' },
                 { key: 'licence_models', label: 'Lizenzen Modelle', meta: 'Lizenzverwaltung', icon: 'mdi-card-account-details' },
+                { key: 'storage_audit', label: 'Speicherprüfung', meta: 'R2 & Datenbank', icon: 'mdi-database-search' },
                 { key: 'roles', label: 'Rollen', meta: 'Rechte', icon: 'mdi-badge-account-horizontal-outline' },
                 { key: 'school_switch', label: 'Schule wechseln', meta: 'Aktive Schule', icon: 'mdi-swap-horizontal' },
                 { key: 'user_impersonation', label: 'Benutzer wechseln', meta: 'Übernahme', icon: 'mdi-account-switch' },
@@ -694,7 +700,7 @@ export default {
                 keys = ['general', 'categories', 'ingredient-icons', 'free-days', 'eating-times', 'users', 'sepa', 'online']
                 fallback = 'general'
             } else {
-                keys = ['general', 'schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation']
+                keys = ['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation']
                 fallback = 'general'
             }
 

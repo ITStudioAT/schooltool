@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\Materials\MaterialController;
 use App\Http\Controllers\Admin\Materials\MaterialFileSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialShareController;
 use App\Http\Controllers\Admin\Materials\MaterialStatusController;
+use App\Http\Controllers\Admin\Materials\MaterialStorageAuditController;
 use App\Http\Controllers\Admin\Materials\MaterialTypeController;
 use App\Http\Controllers\Admin\Materials\MaterialUserSettingsController;
 use App\Http\Controllers\Admin\Materials\MaterialWorkspaceController;
@@ -381,6 +382,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/teaching/course_student_category_evaluations', CourseStudentCategoryEvaluationController::class)->only(['index', 'store']);
         Route::apiResource('/admin/teaching/course_behaviour_entries', CourseBehaviourEntryController::class)->only(['index', 'store', 'update', 'destroy']);
     });
+
+    Route::get('/admin/materials/storage-audit', [MaterialStorageAuditController::class, 'show'])->middleware(['auth:sanctum']);
+    Route::post('/admin/materials/storage-audit/purge', [MaterialStorageAuditController::class, 'purge'])->middleware(['auth:sanctum']);
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {

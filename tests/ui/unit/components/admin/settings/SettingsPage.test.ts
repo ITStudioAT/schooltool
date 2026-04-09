@@ -60,7 +60,7 @@ describe('Admin settings page', () => {
             isAdminTab: false,
         })
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'roles', 'school_switch', 'user_impersonation'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['general', 'schools', 'licence_models', 'storage_audit', 'roles', 'school_switch', 'user_impersonation'])
         expect(items[0]).toMatchObject({
             key: 'general',
             label: 'Grundeinstellungen',
@@ -70,6 +70,10 @@ describe('Admin settings page', () => {
             label: 'Lizenzen Modelle',
         })
         expect(items[3]).toMatchObject({
+            key: 'storage_audit',
+            label: 'Speicherprüfung',
+        })
+        expect(items[4]).toMatchObject({
             key: 'roles',
             label: 'Rollen',
         })
@@ -307,6 +311,7 @@ describe('Admin settings page', () => {
                     ModuleStatusesCard: { template: '<div>ModuleStatusesCard Component</div>' },
                     Licences: { template: '<div>Licences Component</div>' },
                     LicenceSchools: { template: '<div>LicenceSchools Component</div>' },
+                    StorageAudit: { template: '<div>StorageAudit Component</div>' },
                     Roles: { template: '<div>Roles Component</div>' },
                     Log: { template: '<div>Log Component</div>' },
                 },
@@ -346,6 +351,20 @@ describe('Admin settings page', () => {
         expect(screen.getByText('Alle Lizenzen')).toBeInTheDocument()
         expect(screen.getByText('Lizenzvergaben')).toBeInTheDocument()
 
+        await fireEvent.click(screen.getByText('Speicherprüfung'))
+
+        await waitFor(() => {
+            expect(screen.getByText('StorageAudit Component')).toBeInTheDocument()
+        })
+
+        expect(container.querySelector('.settings-storage-audit-wrap')).not.toBeNull()
+
+        await fireEvent.click(screen.getByText('Lizenzen Modelle'))
+
+        await waitFor(() => {
+            expect(screen.getByText('Licences Component')).toBeInTheDocument()
+        })
+
         await fireEvent.click(screen.getByText('Lizenzvergaben'))
 
         await waitFor(() => {
@@ -366,10 +385,13 @@ describe('Admin settings page', () => {
 
         expect(source).toContain("<ModuleStatusesCard v-if=\"general_action === 'module_visibility'\" />")
         expect(source).toContain("<Licences v-else-if=\"general_action === 'licences'\" />")
+        expect(source).toContain("<StorageAudit />")
         expect(source).toContain("import ModuleStatusesCard from '@/pages/admin/settings/components/ModuleStatusesCard.vue'")
+        expect(source).toContain("import StorageAudit from '@/pages/admin/superAdmin/components/StorageAudit.vue'")
         expect(source).toContain('generalNavigationItems')
         expect(source).toContain('Sichtbarkeit Modul')
         expect(source).toContain("key: 'licences'")
+        expect(source).toContain("key: 'storage_audit'")
     })
 
     it('renders the overtaken schoolyears and users views on the admin settings tab', async () => {

@@ -24,6 +24,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\LicenceService;
 use Carbon\Carbon;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -1052,7 +1053,7 @@ class MaterialService
         $card = $attachment->materialCard()->first();
 
         if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
-            Storage::delete($attachment->file_path);
+            $this->deleteAttachmentFileFromAllDisks((string) $attachment->file_path);
         }
 
         $attachment->forceDelete();
@@ -1104,14 +1105,21 @@ class MaterialService
             ]);
         }
 
-        $stored = Storage::put($attachment->file_path, $normalizedHtml);
+        $disk = $this->resolveAttachmentStorageDisk((string) $attachment->file_path, true);
+        if (! $disk) {
+            throw ValidationException::withMessages([
+                'data.content_html' => 'Datei wurde nicht gefunden.',
+            ]);
+        }
+
+        $stored = $disk->put($attachment->file_path, $normalizedHtml);
         if (! $stored) {
             throw ValidationException::withMessages([
                 'data.content_html' => 'Text konnte nicht gespeichert werden.',
             ]);
         }
 
-        $sizeBytes = (int) (Storage::size($attachment->file_path) ?: strlen($normalizedHtml));
+        $sizeBytes = (int) ($disk->size($attachment->file_path) ?: strlen($normalizedHtml));
         $normalizedName = $this->normalizeOptionalName($name ?? $attachment->name ?? null);
         $normalizedName = $this->ensureHtmlAttachmentNameExtension($normalizedName);
 
@@ -3122,7 +3130,8 @@ class MaterialService
         }
 
         $filePath = trim((string) ($attachment->file_path ?? ''));
-        if ($filePath === '' || ! Storage::disk('local')->exists($filePath)) {
+        $disk = $this->resolveAttachmentStorageDisk($filePath, true);
+        if ($filePath === '' || ! $disk || ! $disk->exists($filePath)) {
             throw ValidationException::withMessages([
                 'data.content_html' => 'Datei wurde nicht gefunden.',
             ]);
@@ -4154,12 +4163,10 @@ class MaterialService
 
         foreach ($targetCard->attachments as $targetAttachment) {
             if ($targetAttachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $targetAttachment->file_path) {
-                Storage::delete($targetAttachment->file_path);
+                $this->deleteAttachmentFileFromAllDisks((string) $targetAttachment->file_path);
             }
             $targetAttachment->forceDelete();
         }
-
-        $disk = Storage::disk(config('filesystems.default'));
         foreach ($sourceCard->attachments as $sourceAttachment) {
             $attachmentType = trim((string) ($sourceAttachment->attachment_type ?? ''));
 
@@ -4182,7 +4189,8 @@ class MaterialService
             }
 
             $sourcePath = trim((string) ($sourceAttachment->file_path ?? ''));
-            if ($sourcePath === '' || ! $disk->exists($sourcePath)) {
+            $disk = $this->resolveAttachmentStorageDisk($sourcePath, true);
+            if ($sourcePath === '' || ! $disk || ! $disk->exists($sourcePath)) {
                 continue;
             }
 
@@ -4448,7 +4456,7 @@ class MaterialService
 
         foreach ($attachments as $attachment) {
             if ($attachment->attachment_type === MaterialCardAttachment::TYPE_FILE && $attachment->file_path) {
-                Storage::delete($attachment->file_path);
+                $this->deleteAttachmentFileFromAllDisks((string) $attachment->file_path);
             }
         }
 
@@ -4692,5 +4700,57 @@ class MaterialService
         $extension = preg_replace('/[^a-z0-9]+/i', '', $extension) ?: 'jpg';
 
         return mb_substr($baseName, 0, 200).'.'.$extension;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function attachmentStorageDiskCandidates(bool $allowSharedDiskFallback = false): array
+    {
+        $candidates = [
+            (string) config('filesystems.default'),
+            's3',
+            'local',
+            'public',
+        ];
+
+        if ($allowSharedDiskFallback) {
+            $configuredDisks = array_keys((array) config('filesystems.disks', []));
+            $candidates = [...$candidates, ...$configuredDisks];
+        }
+
+        return array_values(array_filter(array_unique($candidates), static fn (string $diskName): bool => $diskName !== ''));
+    }
+
+    private function resolveAttachmentStorageDisk(string $relativePath, bool $allowSharedDiskFallback = false): ?Filesystem
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return null;
+        }
+
+        foreach ($this->attachmentStorageDiskCandidates($allowSharedDiskFallback) as $diskName) {
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
+    }
+
+    private function deleteAttachmentFileFromAllDisks(string $relativePath): void
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return;
+        }
+
+        foreach ($this->attachmentStorageDiskCandidates(true) as $diskName) {
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                $disk->delete($path);
+            }
+        }
     }
 }

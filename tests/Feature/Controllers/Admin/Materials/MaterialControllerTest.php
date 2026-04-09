@@ -2671,6 +2671,56 @@ test('teacher can permanently delete a previously deleted card', function () {
     Storage::disk('local')->assertMissing($filePath);
 });
 
+test('teacher can permanently delete a previously deleted card stored on s3', function () {
+    Storage::fake('local');
+    Storage::fake('s3');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Mathematik',
+    ]);
+    $topic = $subject->topics()->create(['name' => 'Algebra']);
+    $unit = $topic->units()->create(['name' => 'Gleichungen']);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Final löschen',
+        'status' => 'inbox',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $filePath = 'materials/test/final-loeschen-s3.pdf';
+    Storage::disk('s3')->put($filePath, 'pdf-content');
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'final-loeschen-s3.pdf',
+        'file_path' => $filePath,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 11,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/cards/'.$card->id)
+        ->assertStatus(204);
+
+    expect(MaterialCard::onlyTrashed()->where('id', $card->id)->exists())->toBeTrue();
+
+    $this->deleteJson('/api/admin/materials/cards/deleted/'.$card->id)
+        ->assertStatus(204);
+
+    expect(MaterialCard::withTrashed()->where('id', $card->id)->exists())->toBeFalse();
+    Storage::disk('s3')->assertMissing($filePath);
+});
+
 test('restore deleted card recreates taxonomy path when original path was deleted', function () {
     $subject = MaterialSubject::query()->create([
         'user_id' => $this->teacher->id,
