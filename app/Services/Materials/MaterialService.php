@@ -2,6 +2,7 @@
 
 namespace App\Services\Materials;
 
+use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
@@ -17,9 +18,12 @@ use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUnitInboxImport;
 use App\Models\MaterialWorkspace;
+use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\LicenceService;
+use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
@@ -52,6 +56,7 @@ class MaterialService
     public function __construct(
         private readonly MaterialKeywordService $keywordService,
         private readonly MaterialWorkspaceService $workspaceService,
+        private readonly LicenceService $licenceService,
     ) {}
 
     public function config(User $user): array
@@ -80,6 +85,7 @@ class MaterialService
             'can_manage_file_settings' => $user->hasAnyRole(['admin', 'super_admin']) && $this->supportsSchoolFileSettings(),
             'user_settings' => $this->userSettingsForUser($user),
             'can_manage_user_settings' => $this->supportsUserMaterialsPaginationSettings(),
+            'storage_capacity_bytes' => $this->storageCapacityBytesForUser($user),
             'classification_tree' => $this->classificationTreeForUser($user),
         ];
     }
@@ -1470,6 +1476,196 @@ class MaterialService
         $user->save();
 
         return $this->userSettingsForUser($user->fresh());
+    }
+
+    private function storageCapacityBytesForUser(User $user): ?int
+    {
+        if ($user->school_id <= 0) {
+            return null;
+        }
+
+        $licence = Licence::query()
+            ->where('name', 'Materialientool')
+            ->first();
+
+        if (! $licence instanceof Licence) {
+            return null;
+        }
+
+        $schoolLicence = SchoolLicence::query()
+            ->where('school_id', (int) $user->school_id)
+            ->where('licence_id', (int) $licence->id)
+            ->first();
+
+        if (! $schoolLicence instanceof SchoolLicence) {
+            return null;
+        }
+
+        $configuration = $this->licenceService->normalizeStructuredLicenceConfiguration(array_merge(
+            $this->licenceService->editableLicenceConfiguration($licence),
+            is_array($schoolLicence->licence_model) ? $schoolLicence->licence_model : []
+        ));
+
+        $userRoleNames = $this->userRoleNamesForUser($user);
+        if ($userRoleNames === []) {
+            return null;
+        }
+
+        foreach (['admin', 'user'] as $type) {
+            $capacityBytes = $this->storageCapacityBytesForLicenceType(
+                user: $user,
+                schoolLicence: $schoolLicence,
+                configuration: $configuration,
+                userRoleNames: $userRoleNames,
+                type: $type
+            );
+
+            if ($capacityBytes !== null) {
+                return $capacityBytes;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, string>  $userRoleNames
+     */
+    private function storageCapacityBytesForLicenceType(
+        User $user,
+        SchoolLicence $schoolLicence,
+        array $configuration,
+        array $userRoleNames,
+        string $type
+    ): ?int {
+        $roleNames = $this->normalizeRoleNames($configuration[$type.'_role_names'] ?? []);
+        if ($roleNames === []) {
+            return null;
+        }
+
+        $matchingRoleNames = array_values(array_intersect($userRoleNames, $roleNames));
+        if ($matchingRoleNames === []) {
+            return null;
+        }
+
+        $includedGb = $this->positiveIntegerOrNull($configuration[$type.'_included_storage_gb'] ?? null);
+        $stepGb = $this->positiveIntegerOrNull($configuration[$type.'_extra_storage_step_gb'] ?? null);
+        if ($includedGb === null && $stepGb === null) {
+            return null;
+        }
+
+        $defaultExtraStorageUnits = $this->defaultExtraStorageUnitsForType($schoolLicence, $type);
+        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $candidateCapacities = [];
+
+        foreach ($matchingRoleNames as $roleName) {
+            $assignment = data_get($assignments, (string) $user->id.'.'.$roleName);
+            if (! is_array($assignment)) {
+                continue;
+            }
+
+            $isActivated = (bool) ($assignment['is_activated'] ?? false);
+            if (! $this->isStorageAssignmentActive($assignment['valid_until'] ?? null, $isActivated)) {
+                continue;
+            }
+
+            $units = $assignment['extra_storage_units'] ?? $defaultExtraStorageUnits;
+            $extraStorageUnits = is_numeric($units) && (int) $units >= 0 ? (int) $units : 0;
+            $capacityGb = ($includedGb ?? 0) + $extraStorageUnits * ($stepGb ?? 0);
+
+            $candidateCapacities[] = $capacityGb * 1024 * 1024 * 1024;
+        }
+
+        if ($candidateCapacities === []) {
+            return null;
+        }
+
+        return max($candidateCapacities);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function userRoleNamesForUser(User $user): array
+    {
+        return $user->roles()
+            ->pluck('name')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function defaultExtraStorageUnitsForType(SchoolLicence $schoolLicence, string $type): ?int
+    {
+        $value = $type === 'admin'
+            ? $schoolLicence->admin_extra_storage_units
+            : $schoolLicence->user_extra_storage_units;
+
+        return $this->positiveIntegerOrNull($value, allowZero: true);
+    }
+
+    private function positiveIntegerOrNull(mixed $value, bool $allowZero = false): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $normalized = (int) $value;
+        if ($normalized < 0 || (! $allowZero && $normalized === 0)) {
+            return null;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeRoleNames(mixed $roleNames): array
+    {
+        if (is_string($roleNames)) {
+            $decoded = json_decode($roleNames, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $roleNames = $decoded;
+            }
+        }
+
+        if (! is_array($roleNames)) {
+            return [];
+        }
+
+        $normalized = collect($roleNames)
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter();
+
+        if ($normalized->contains('*')) {
+            return ['*'];
+        }
+
+        return $normalized->unique()->values()->all();
+    }
+
+    private function isStorageAssignmentActive(mixed $validUntil, bool $isActivated): bool
+    {
+        if (! $isActivated) {
+            return false;
+        }
+
+        if ($validUntil === null || $validUntil === '') {
+            return true;
+        }
+
+        try {
+            return Carbon::parse((string) $validUntil)->startOfDay()->greaterThanOrEqualTo(now()->startOfDay());
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function createSubject(User $user, string $name, ?int $workspaceId = null, ?int $beforeSubjectId = null): MaterialSubject

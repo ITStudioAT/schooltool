@@ -17,6 +17,7 @@ use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
+use App\Models\SchoolUserLicence;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +58,11 @@ beforeEach(function () {
 
     $this->school = School::factory()->create();
     $this->schoolyear = Schoolyear::factory()->create(['school_id' => $this->school->id]);
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
 
     $makeUser = function (string $email, string $role): User {
         $user = User::factory()->create([
@@ -271,6 +277,57 @@ test('config exposes file settings and file setting management only for admin', 
         ->assertStatus(200)
         ->assertJsonPath('can_manage_file_settings', true)
         ->assertJsonPath('file_settings.max_upload_size_kb', 20480);
+});
+
+test('config exposes storage capacity from the active Materialientool admin licence', function () {
+    $licence = Licence::query()->firstWhere('name', 'Materialientool');
+    expect($licence)->not->toBeNull();
+
+    $licence->update([
+        'licence_schema_version' => 2,
+        'school_licence_enabled' => true,
+        'admin_licence_enabled' => true,
+        'admin_role_names' => ['admin'],
+        'admin_included_storage_gb' => 20,
+        'admin_extra_storage_step_gb' => 100,
+        'admin_extra_storage_step_price' => '5',
+    ]);
+
+    $schoolLicence = SchoolLicence::query()
+        ->where('school_id', $this->school->id)
+        ->where('licence_id', $licence->id)
+        ->first();
+
+    expect($schoolLicence)->not->toBeNull();
+
+    $schoolLicence->update([
+        'user_licence_assignments' => [
+            (string) $this->admin->id => [
+                'admin' => [
+                    'valid_until' => now()->addMonth()->toDateString(),
+                    'is_activated' => true,
+                    'extra_storage_units' => 0,
+                ],
+            ],
+        ],
+    ]);
+
+    SchoolUserLicence::query()->create([
+        'school_id' => $this->school->id,
+        'licence_id' => $licence->id,
+        'user_id' => $this->admin->id,
+        'assignment_type' => 'admin',
+        'valid_from' => now()->subMonth()->toDateString(),
+        'valid_until' => now()->addMonth()->toDateString(),
+        'base_price_per_year' => '5.00',
+        'charged_price' => '5.00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum');
+
+    $this->getJson('/api/admin/materials/config')
+        ->assertStatus(200)
+        ->assertJsonPath('storage_capacity_bytes', 21474836480);
 });
 
 test('config exposes user pagination settings for materials overview', function () {

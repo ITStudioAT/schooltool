@@ -44,6 +44,7 @@ describe('MaterialsOverviewView', () => {
                                 { value: 'inbox', label: 'Inbox' },
                                 { value: 'done', label: 'Erledigt' },
                             ],
+                            storage_capacity_bytes: 21474836480,
                         },
                     },
                 }
@@ -69,7 +70,7 @@ describe('MaterialsOverviewView', () => {
             expect(header.text()).toContain('Auftrag')
             expect(header.text()).toContain('Inbox')
             expect(header.text()).toContain('Erledigt')
-            expect(header.text()).toContain('Speicher: angezeigt 1.4 MB / alle 1.4 MB')
+            expect(header.text()).toContain('Belegter Speicher: 1.4 MB/20 GB')
         } finally {
             beforeMountSpy.mockRestore()
         }

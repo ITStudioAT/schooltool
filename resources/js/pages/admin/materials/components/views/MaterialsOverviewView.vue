@@ -9,7 +9,7 @@
             @update:overview-view-mode="setOverviewMode"
             @refresh="loadCards">
             <div v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" class="materials-overview-header-subtitle text-caption text-medium-emphasis">
-                Belegter Speicher: {{ allListedAttachmentSizeLabel }}
+                Belegter Speicher: {{ allListedAttachmentSizeLabel }}<span v-if="storageCapacityLabel">/{{ storageCapacityLabel }}</span>
             </div>
 
             <div class="materials-overview-secondary-filter-row d-flex align-center flex-wrap ga-2">
@@ -2005,6 +2005,21 @@ export default {
                 return this.formatBytes(bytes)
             }
             return this.shownListedAttachmentSizeLabel
+        },
+        storageCapacityBytes() {
+            const bytes = Number(this.materialCardStore?.config?.storage_capacity_bytes)
+            if (Number.isFinite(bytes) && bytes > 0) {
+                return bytes
+            }
+
+            return null
+        },
+        storageCapacityLabel() {
+            if (this.storageCapacityBytes === null) {
+                return ''
+            }
+
+            return this.formatBytes(this.storageCapacityBytes)
         },
         canSaveCreate() {
             return String(this.createForm.title || '').trim().length > 0
