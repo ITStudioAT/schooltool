@@ -498,6 +498,7 @@
                                         {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
                                     </v-btn>
                                     <v-btn
+                                        v-if="!show_bulk_action"
                                         size="x-small"
                                         :variant="show_chip_grading_view ? 'flat' : 'outlined'"
                                         :color="show_chip_grading_view ? 'secondary' : 'primary'"
@@ -526,15 +527,28 @@
                             <v-card v-if="show_bulk_action" variant="outlined" class="mt-3 pa-3">
                                 <div class="text-caption text-medium-emphasis mb-2">Note und/oder Kommentar für mehrere Schüler:innen setzen</div>
                                 <div class="d-flex flex-column ga-2">
-                                    <v-select
-                                        v-model="bulk_grade"
-                                        :items="gradeItemsForType"
-                                        item-title="title"
-                                        item-value="value"
-                                        label="Note"
-                                        density="compact"
-                                        hide-details
-                                        clearable />
+                                    <div class="d-flex flex-column ga-1">
+                                        <div class="text-caption text-medium-emphasis">Note</div>
+                                        <div class="d-flex flex-wrap ga-1">
+                                            <v-chip
+                                                size="small"
+                                                :variant="bulk_grade ? 'outlined' : 'flat'"
+                                                :color="bulk_grade ? 'default' : 'success'"
+                                                @click="bulk_grade = null">
+                                                —
+                                            </v-chip>
+                                            <v-chip
+                                                v-for="grade in gradeItemsForType"
+                                                :key="`bulk-grade-${grade.value}`"
+                                                size="small"
+                                                :title="grade.title"
+                                                :variant="bulk_grade === grade.value ? 'flat' : 'tonal'"
+                                                :color="bulk_grade === grade.value ? 'success' : 'default'"
+                                                @click="bulk_grade = grade.value">
+                                                {{ grade.value }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
                                     <v-textarea
                                         v-model="bulk_comment"
                                         label="Kommentar"
@@ -609,6 +623,13 @@
                                     variant="outlined"
                                     class="pa-2">
                                     <div class="d-flex align-center ga-2 flex-wrap">
+                                        <v-checkbox
+                                            v-if="show_bulk_action"
+                                            v-model="selected_student_ids"
+                                            :value="row.studentId"
+                                            density="compact"
+                                            hide-details
+                                            class="flex-grow-0 ma-0" />
                                         <v-chip v-if="row.classLabel" size="x-small" variant="tonal" color="primary">
                                             {{ row.classLabel }}
                                         </v-chip>
@@ -1847,10 +1868,7 @@ export default {
                 return
             }
             this.show_points_grading_view = false
-            this.show_chip_grading_view = false
-            if (!this.allSinglePanelsOpen) {
-                this.singlePanels = this.work_form.groups.map((_, idx) => idx)
-            }
+            this.show_chip_grading_view = true
             this.show_bulk_action = true
         },
         studentNameById(studentId) {
