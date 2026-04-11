@@ -137,4 +137,114 @@ describe('CourseWorks points mode', () => {
             { student_id: 12, points: 37.5 },
         ])
     })
+
+    it('renders the group dialog grade picker as clickable chips', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="d-flex flex-wrap ga-1 group-dialog-grade-chips"')
+        expect(source).toContain('@click="setGroupGrade(group_dialog_index, grade.value)"')
+        expect(source).not.toContain('v-model="work_form.groups[group_dialog_index].grade"')
+    })
+
+    it('renders group dialog students as removable chips with an inline add area toggle', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain(":icon=\"group_dialog_add_students_open ? 'mdi-close' : 'mdi-plus'\"")
+        expect(source).toContain('v-if="group_dialog_add_students_open" class="group-dialog-add-students"')
+        expect(source).toContain('@click="addStudentToGroup(group_dialog_index, student.value)"')
+        expect(source).toContain('@click:close="removeStudentFromGroup(group_dialog_index, studentId)"')
+        expect(source).not.toContain('<v-menu>')
+    })
+
+    it('updates the shared group grade when a chip is selected', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: {
+                groups: [{ grade: '3' }],
+            },
+        }
+
+        methods.setGroupGrade.call(ctx, 0, '1')
+        expect(ctx.work_form.groups[0].grade).toBe('1')
+
+        methods.setGroupGrade.call(ctx, 0, '')
+        expect(ctx.work_form.groups[0].grade).toBe('')
+    })
+
+    it('adds and removes students in the group dialog through helper methods', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: {
+                groups: [{ student_ids: [3] }],
+            },
+            group_dialog_add_students_open: true,
+            availableStudentItems(groupIndex: number) {
+                expect(groupIndex).toBe(0)
+
+                const items = [
+                    { value: 2, title: '1A Beta, Bea' },
+                    { value: 3, title: '1A Alpha, Ada' },
+                ]
+
+                const selectedIds = new Set((this.work_form.groups[groupIndex].student_ids || []).map(String))
+
+                return items.filter((item) => !selectedIds.has(String(item.value)))
+            },
+            updateGroupStudents(group: Record<string, any>, ids: number[]) {
+                group.student_ids = [...ids].sort((a, b) => a - b)
+            },
+        }
+
+        methods.addStudentToGroup.call(ctx, 0, 2)
+        expect(ctx.work_form.groups[0].student_ids).toEqual([2, 3])
+
+        methods.addStudentToGroup.call(ctx, 0, 5)
+        expect(ctx.work_form.groups[0].student_ids).toEqual([2, 3])
+        expect(ctx.group_dialog_add_students_open).toBe(false)
+
+        methods.removeStudentFromGroup.call(ctx, 0, 3)
+        expect(ctx.work_form.groups[0].student_ids).toEqual([2])
+    })
+
+    it('does not list students that are already in the current group as available', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: {
+                groups: [
+                    { student_ids: [3] },
+                    { student_ids: [9] },
+                ],
+            },
+            studentItems: [
+                { value: 2, title: '1A Beta, Bea' },
+                { value: 3, title: '1A Alpha, Ada' },
+                { value: 9, title: '1A Delta, Dan' },
+            ],
+        }
+
+        expect(methods.availableStudentItems.call(ctx, 0)).toEqual([
+            { value: 2, title: '1A Beta, Bea' },
+        ])
+    })
+
+    it('toggles the inline add-students area in the group dialog', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            group_dialog_add_students_open: false,
+        }
+
+        methods.toggleGroupStudentPicker.call(ctx)
+        expect(ctx.group_dialog_add_students_open).toBe(true)
+
+        methods.toggleGroupStudentPicker.call(ctx)
+        expect(ctx.group_dialog_add_students_open).toBe(false)
+    })
 })

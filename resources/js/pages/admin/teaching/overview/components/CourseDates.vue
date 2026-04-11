@@ -15,8 +15,8 @@
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <div v-if="!compactStudentView" class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
-                    <v-btn-toggle v-if="semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
+                <div class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
+                    <v-btn-toggle v-if="!compactStudentView && semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
                         <v-btn :value="1" size="small">1. Sem</v-btn>
                         <v-btn :value="2" size="small">2. Sem</v-btn>
                         <v-btn :value="3" size="small">1+2</v-btn>
@@ -378,36 +378,36 @@ export default {
                 activeIndex = 0
             }
 
-            if (this.compactStudentView) {
-                const visibleDates = []
-                if (activeIndex > 0) {
-                    visibleDates.push(dates[activeIndex - 1])
-                }
-                visibleDates.push(dates[activeIndex])
-                if (activeIndex < dates.length - 1) {
-                    visibleDates.push(dates[activeIndex + 1])
-                }
-
-                return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)
-            }
-
             const selectedRanges = Array.isArray(this.dateRangeSelection) && this.dateRangeSelection.length ? this.dateRangeSelection : ['today']
             const includeBefore = selectedRanges.includes('before')
             const includeToday = selectedRanges.includes('today')
             const includeAfter = selectedRanges.includes('after')
             const visibleDates = []
-            if (includeBefore) {
-                visibleDates.push(...dates.slice(0, activeIndex))
-            } else if (activeIndex > 0) {
-                visibleDates.push(dates[activeIndex - 1])
-            }
-            if (includeToday && dates[activeIndex]) {
-                visibleDates.push(dates[activeIndex])
-            }
-            if (includeAfter) {
-                visibleDates.push(...dates.slice(activeIndex + 1))
-            } else if (activeIndex < dates.length - 1) {
-                visibleDates.push(dates[activeIndex + 1])
+
+            if (this.compactStudentView) {
+                if (includeBefore) {
+                    visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - 1)))
+                }
+                if (activeIndex > 0) visibleDates.push(dates[activeIndex - 1])
+                if (dates[activeIndex]) visibleDates.push(dates[activeIndex])
+                if (activeIndex < dates.length - 1) visibleDates.push(dates[activeIndex + 1])
+                if (includeAfter) {
+                    visibleDates.push(...dates.slice(activeIndex + 2))
+                }
+            } else {
+                if (includeBefore) {
+                    visibleDates.push(...dates.slice(0, activeIndex))
+                } else if (activeIndex > 0) {
+                    visibleDates.push(dates[activeIndex - 1])
+                }
+                if (includeToday && dates[activeIndex]) {
+                    visibleDates.push(dates[activeIndex])
+                }
+                if (includeAfter) {
+                    visibleDates.push(...dates.slice(activeIndex + 1))
+                } else if (activeIndex < dates.length - 1) {
+                    visibleDates.push(dates[activeIndex + 1])
+                }
             }
 
             return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)

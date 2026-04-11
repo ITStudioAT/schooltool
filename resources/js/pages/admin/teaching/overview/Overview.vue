@@ -238,8 +238,14 @@ export default {
     },
 
     watch: {
-        selected_course(newCourse, oldCourse) {
-            if (newCourse && !this._urlPanelRestored) {
+        selected_course: {
+            immediate: true,
+            handler(newCourse, oldCourse) {
+            if (!newCourse) {
+                this._lastCourseId = null
+                return
+            }
+            if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
                 const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']
                 this._urlPanelRestored = true
@@ -256,10 +262,10 @@ export default {
                 }
             }
             // Same course refreshed (e.g. after status toggle) – keep current panel
-            if (newCourse && this._lastCourseId === newCourse.id) {
+            if (this._lastCourseId === newCourse.id) {
                 return
             }
-            this._lastCourseId = newCourse?.id
+            this._lastCourseId = newCourse.id
             this._urlPanelRestored = true
             this.show_students = true
             this.show_infos = false
@@ -268,6 +274,7 @@ export default {
             this.show_dates = false
             this.show_attendance = false
             this.show_performances = false
+            },
         },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {
