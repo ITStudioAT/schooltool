@@ -95,8 +95,57 @@
                         <v-card variant="outlined" class="pa-3">
                             <div class="text-caption text-medium-emphasis mb-2">Eintrag für mehrere Schüler:innen</div>
                             <v-form ref="bulkEntryForm" @submit.prevent="saveBulkEntry">
-                                <v-select v-model="bulk_entry_form.type" label="Typ" :items="workTypeItems" item-title="title" item-value="value" clearable />
-                                <v-select v-model="bulk_entry_form.grade" label="Note" :items="gradeItemsForType" item-title="title" item-value="value" clearable />
+                                <div class="d-flex align-start ga-4 flex-wrap mb-3">
+                                    <div class="d-flex flex-column ga-1">
+                                        <div class="text-caption text-medium-emphasis">Typ</div>
+                                        <div class="d-flex flex-wrap ga-1">
+                                            <v-chip
+                                                size="small"
+                                                :variant="bulk_entry_form.type ? 'outlined' : 'flat'"
+                                                :color="bulk_entry_form.type ? 'default' : 'success'"
+                                                @click="bulk_entry_form.type = null; bulk_entry_form.grade = null">
+                                                —
+                                            </v-chip>
+                                            <v-chip
+                                                v-for="type in workTypeItems"
+                                                :key="`bulk-type-${type.value}`"
+                                                size="small"
+                                                :title="type.title"
+                                                :variant="bulk_entry_form.type === type.value ? 'flat' : 'tonal'"
+                                                :color="bulk_entry_form.type === type.value ? 'success' : 'default'"
+                                                @click="bulk_entry_form.type = type.value; bulk_entry_form.grade = null">
+                                                {{ type.value }}
+                                            </v-chip>
+                                        </div>
+                                        <div v-if="selectedBulkTypeName" class="text-caption text-medium-emphasis">
+                                            {{ selectedBulkTypeName }}
+                                        </div>
+                                    </div>
+                                    <v-spacer />
+                                    <div class="d-flex flex-column ga-1 align-end">
+                                        <div class="text-caption text-medium-emphasis">Note</div>
+                                        <div class="d-flex flex-wrap ga-1 justify-end">
+                                            <v-chip
+                                                size="small"
+                                                :variant="bulk_entry_form.grade ? 'outlined' : 'flat'"
+                                                :color="bulk_entry_form.grade ? 'default' : 'success'"
+                                                @click="bulk_entry_form.grade = null">
+                                                —
+                                            </v-chip>
+                                            <v-chip
+                                                v-for="grade in gradeItemsForType"
+                                                :key="`bulk-grade-${grade.value}`"
+                                                size="small"
+                                                :title="grade.title"
+                                                :disabled="!bulk_entry_form.type"
+                                                :variant="bulk_entry_form.grade === grade.value ? 'flat' : 'tonal'"
+                                                :color="bulk_entry_form.grade === grade.value ? 'success' : 'default'"
+                                                @click="bulk_entry_form.grade = grade.value">
+                                                {{ grade.value }}
+                                            </v-chip>
+                                        </div>
+                                    </div>
+                                </div>
                                 <v-date-input v-model="bulk_entry_form.date" label="Datum" />
                                 <v-textarea v-model="bulk_entry_form.description" label="Beschreibung" rows="3" :counter="1024" :maxlength="1024" />
 
@@ -111,7 +160,7 @@
                                         variant="tonal"
                                         :disabled="!bulkEntryEnabled"
                                         type="submit">
-                                        {{ bulk_entry_form.student_ids.length ? `Auf ${bulk_entry_form.student_ids.length} Schüler:in(nen) anwenden` : 'Auf alle anwenden' }}
+                                        {{ bulk_entry_form.student_ids.length ? `Auf ${bulk_entry_form.student_ids.length} Schüler:in(nen) anwenden` : 'Auf ausgewählte Schüler:innen anwenden' }}
                                     </v-btn>
                                 </div>
                             </v-form>
@@ -363,6 +412,12 @@ export default {
                 value: work.short_name,
             }))
         },
+        selectedBulkTypeName() {
+            const selected = this.bulk_entry_form.type
+            if (!selected) return ''
+            const work = this.teachingWorks.find((w) => w.short_name === selected)
+            return work?.name || ''
+        },
         gradeItemsForType() {
             const selectedType = this.bulk_entry_form.type
             if (!selectedType) return []
@@ -387,10 +442,12 @@ export default {
         },
         bulkEntryEnabled() {
             if (!this.hasStudents) return false
+            if (!this.bulk_entry_form.student_ids?.length) return false
             const type = (this.bulk_entry_form.type || '').toString().trim()
             const grade = (this.bulk_entry_form.grade || '').toString().trim()
             const desc = (this.bulk_entry_form.description || '').toString().trim()
-            return !!(type || grade || desc)
+            if (type && !grade) return false
+            return !!(type || desc)
         },
         filteredImport116Students() {
             const list = this.import116_students || []
