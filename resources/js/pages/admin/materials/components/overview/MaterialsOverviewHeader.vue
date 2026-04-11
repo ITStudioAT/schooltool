@@ -1,38 +1,35 @@
 <template>
     <v-row align="center" class="mb-4">
-        <v-col cols="12" md="8">
+        <v-col cols="12" lg="5">
             <div class="text-h4 font-weight-bold mb-2">Übersicht</div>
         </v-col>
 
-        <v-col v-if="!strukturModus" cols="12" md="4">
-            <div class="materials-overview-header-actions d-flex align-center flex-nowrap ga-2 w-100">
-                <v-btn-toggle
+        <v-col v-if="!strukturModus" cols="12" lg="7">
+            <div class="materials-overview-header-actions">
+                <div
                     v-if="!hideOverviewModeToggle"
-                    :model-value="overviewViewMode"
-                    mandatory
-                    color="primary"
-                    variant="tonal"
-                    density="comfortable"
-                    class="overview-mode-toggle"
-                    @update:modelValue="$emit('update:overviewViewMode', $event)">
-                    <v-btn value="list" prepend-icon="mdi-format-list-bulleted">
-                        Liste
-                    </v-btn>
-                    <v-btn value="grid" prepend-icon="mdi-view-grid-outline">
-                        Karten
-                    </v-btn>
-                    <v-btn value="alpha" prepend-icon="mdi-sort-alphabetical-ascending">
-                        A-Z
-                    </v-btn>
-                    <v-btn value="subjects_contents" prepend-icon="mdi-file-tree-outline">
-                        Fächer/Inhalte
-                    </v-btn>
-                </v-btn-toggle>
+                    class="overview-mode-switcher"
+                    role="tablist"
+                    aria-label="Ansicht wählen">
+                    <button
+                        v-for="mode in modes"
+                        :key="mode.value"
+                        type="button"
+                        role="tab"
+                        :aria-selected="overviewViewMode === mode.value"
+                        :class="['overview-mode-switcher__item', { 'is-active': overviewViewMode === mode.value }]"
+                        :title="mode.label"
+                        @click="$emit('update:overviewViewMode', mode.value)">
+                        <v-icon :icon="mode.icon" size="20" class="overview-mode-switcher__icon" />
+                        <span class="overview-mode-switcher__label">{{ mode.label }}</span>
+                    </button>
+                </div>
 
                 <v-btn
                     prepend-icon="mdi-refresh"
                     color="primary"
                     variant="flat"
+                    rounded="lg"
                     class="materials-overview-header-refresh-btn"
                     :loading="isLoading"
                     :disabled="actionDisabled"
@@ -76,18 +73,98 @@ export default {
         },
     },
     emits: ['update:overviewViewMode', 'refresh'],
+    data() {
+        return {
+            modes: [
+                { value: 'list', label: 'Liste', icon: 'mdi-format-list-bulleted' },
+                { value: 'grid', label: 'Karten', icon: 'mdi-view-grid-outline' },
+                { value: 'alpha', label: 'A-Z', icon: 'mdi-sort-alphabetical-ascending' },
+                { value: 'subjects_contents', label: 'Fächer/Inhalte', icon: 'mdi-file-tree-outline' },
+            ],
+        }
+    },
 }
 </script>
 
 <style scoped>
-.overview-mode-toggle {
-    max-width: 100%;
+.materials-overview-header-actions {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 10px;
+    width: 100%;
     min-width: 0;
-    flex: 1 1 auto;
 }
 
-.materials-overview-header-actions {
+.overview-mode-switcher {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    flex: 1 1 0;
     min-width: 0;
+    padding: 4px;
+    background: rgba(var(--v-theme-surface-variant), 0.45);
+    border: 1px solid rgba(var(--v-theme-primary), 0.15);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.overview-mode-switcher__item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    min-height: 40px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(var(--v-theme-on-surface), 0.78);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.overview-mode-switcher__item:hover {
+    background: rgba(var(--v-theme-primary), 0.08);
+    color: rgb(var(--v-theme-primary));
+}
+
+.overview-mode-switcher__item:focus-visible {
+    outline: 2px solid rgb(var(--v-theme-primary));
+    outline-offset: 2px;
+}
+
+.overview-mode-switcher__item.is-active {
+    background: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-primary));
+    box-shadow: 0 2px 6px rgba(var(--v-theme-primary), 0.35);
+}
+
+.overview-mode-switcher__item.is-active:hover {
+    background: rgb(var(--v-theme-primary));
+    color: rgb(var(--v-theme-on-primary));
+}
+
+.overview-mode-switcher__icon {
+    flex-shrink: 0;
+}
+
+.overview-mode-switcher__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.materials-overview-header-refresh-btn {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 48px;
 }
 
 .materials-overview-header-row {
@@ -101,21 +178,27 @@ export default {
     min-height: 0;
 }
 
-.materials-overview-header-refresh-btn {
-    flex-shrink: 0;
+@media (max-width: 1279px) {
+    .overview-mode-switcher {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
-@media (max-width: 959px) {
-    .materials-overview-header-actions {
-        flex-wrap: wrap;
+@media (max-width: 599px) {
+    .overview-mode-switcher__label {
+        display: none;
     }
 
-    .overview-mode-toggle {
+    .overview-mode-switcher {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .overview-mode-switcher__item {
+        padding: 6px;
+    }
+
+    .materials-overview-header-refresh-btn {
         width: 100%;
-    }
-
-    .overview-mode-toggle :deep(.v-btn) {
-        flex: 1 1 0;
     }
 }
 </style>

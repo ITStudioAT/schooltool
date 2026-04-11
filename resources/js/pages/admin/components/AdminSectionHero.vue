@@ -42,6 +42,14 @@
                             <span>{{ resolvedActiveSection.label }}</span>
                         </div>
                         <div v-if="resolvedActiveSection.note" class="admin-section-hero__focus-note">{{ resolvedActiveSection.note }}</div>
+                        <div
+                            v-if="resolvedActiveSection.progress !== null"
+                            class="admin-section-hero__focus-progress"
+                            :title="`${resolvedActiveSection.progress}%`">
+                            <div
+                                class="admin-section-hero__focus-progress-fill"
+                                :style="{ width: `${resolvedActiveSection.progress}%` }"></div>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -146,10 +154,15 @@ export default {
         },
         resolvedActiveSection() {
             const section = this.activeSection || {}
+            const rawProgress = section.progress
+            const progress = typeof rawProgress === 'number' && Number.isFinite(rawProgress)
+                ? Math.max(0, Math.min(100, Math.round(rawProgress)))
+                : null
             return {
                 icon: section.icon || 'mdi-home',
                 label: section.label || 'Uebersicht',
                 note: section.note || '',
+                progress,
             }
         },
         currentUserChipText() {
@@ -256,5 +269,25 @@ export default {
     font-size: 0.82rem;
     opacity: 0.72;
     color: #fff;
+}
+
+.admin-section-hero__focus-progress {
+    position: relative;
+    margin-top: 8px;
+    height: 6px;
+    width: 100%;
+    border-radius: 999px;
+    background: rgba(239, 68, 68, 0.55);
+    box-shadow: inset 0 0 6px rgba(239, 68, 68, 0.45);
+    overflow: hidden;
+}
+
+.admin-section-hero__focus-progress-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(34, 197, 94, 0.95), rgba(134, 239, 172, 0.95));
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.55);
+    transition: width 0.4s ease;
 }
 </style>

@@ -26,6 +26,7 @@ use App\Services\LicenceService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,14 @@ class MaterialService
     private const DEFAULT_MATERIALS_PAGINATION_NUMBER = 30;
 
     private const DEFAULT_TYPE_ICON = 'mdi-file-document-outline';
+
+    private const DELETED_ITEM_TYPE_MATERIAL = 'material';
+
+    private const DELETED_ITEM_TYPE_SUBJECT = 'subject';
+
+    private const DELETED_ITEM_TYPE_TOPIC = 'topic';
+
+    private const DELETED_ITEM_TYPE_UNIT = 'unit';
 
     private ?bool $hasMaterialInboxImportsTableCache = null;
 
@@ -416,12 +425,6 @@ class MaterialService
     public function deleteCard(MaterialCard $card): void
     {
         $card->loadMissing('attachments', 'classifications.subject', 'classifications.topic', 'classifications.unit');
-        $restoreLimit = $this->restorableDeletedCardsLimit();
-        $this->trimRestorableDeletedCardsForUser(
-            userId: (int) $card->user_id,
-            keepCount: max(0, $restoreLimit - 1),
-            workspaceId: (int) ($card->workspace_id ?? 0),
-        );
 
         DB::transaction(function () use ($card) {
             $this->storeDeletedClassificationSnapshot($card);
@@ -436,11 +439,6 @@ class MaterialService
 
     public function restoreLastDeletedCard(User $user): ?MaterialCard
     {
-        $restoreLimit = $this->restorableDeletedCardsLimit();
-        if ($restoreLimit < 1) {
-            return null;
-        }
-
         $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
         if ($workspaceId === null) {
             return null;
@@ -472,7 +470,7 @@ class MaterialService
 
     public function restoreDeletedCard(User $user, int $cardId): ?MaterialCard
     {
-        if ($cardId <= 0 || $this->restorableDeletedCardsLimit() < 1) {
+        if ($cardId <= 0) {
             return null;
         }
 
@@ -536,11 +534,6 @@ class MaterialService
 
     public function deletedCardsRestoreList(User $user): array
     {
-        $limit = $this->restorableDeletedCardsLimit();
-        if ($limit < 1) {
-            return [];
-        }
-
         $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
         if ($workspaceId === null) {
             return [];
@@ -550,27 +543,449 @@ class MaterialService
             ->where('user_id', $user->id)
             ->where('workspace_id', $workspaceId)
             ->orderByDesc('deleted_at')
-            ->limit($limit)
             ->get();
 
         if ($cards->isEmpty()) {
             return [];
         }
 
-        $counts = MaterialCardAttachment::onlyTrashed()
-            ->whereIn('material_card_id', $cards->pluck('id')->all())
-            ->selectRaw('material_card_id, COUNT(*) as aggregate_count')
-            ->groupBy('material_card_id')
-            ->pluck('aggregate_count', 'material_card_id');
+        $cards->load([
+            'attachments' => fn ($query) => $query->withTrashed(),
+        ]);
 
-        return $cards->map(function (MaterialCard $card) use ($counts) {
+        return $cards->map(function (MaterialCard $card) {
+            $attachments = $card->attachments instanceof Collection ? $card->attachments : collect();
+
             return [
                 'id' => (int) $card->id,
                 'title' => trim((string) ($card->title ?? '')),
-                'attachments_count' => (int) ($counts[(int) $card->id] ?? 0),
+                'attachments_count' => (int) $attachments->count(),
+                'size_bytes' => (int) $attachments->sum(fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0))),
                 'deleted_at' => $card->deleted_at?->toDateTimeString(),
             ];
         })->values()->all();
+    }
+
+    public function deletedRestoreListForWorkspace(
+        User $user,
+        int $workspaceId,
+        string $scopeType = MaterialShareRule::SCOPE_ALL,
+        ?int $scopeId = null,
+    ): array {
+        if ($workspaceId <= 0) {
+            return [];
+        }
+
+        $normalizedScopeType = $this->normalizeDeletedRestoreScopeType($scopeType);
+        $normalizedScopeId = (int) ($scopeId ?? 0);
+
+        $cards = $this->deletedCardsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)->get();
+        $subjects = $this->deletedSubjectsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)->get();
+        $topics = $this->deletedTopicsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)->get();
+        $units = $this->deletedUnitsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)->get();
+        $cards->load([
+            'attachments' => fn ($query) => $query->withTrashed(),
+        ]);
+
+        $topicIds = $topics
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+        $unitIds = $units
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+        $subjectIds = $subjects
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        $deletedCardRows = $subjectIds->isEmpty() && $topicIds->isEmpty() && $unitIds->isEmpty()
+            ? new EloquentCollection
+            : MaterialCard::onlyTrashed()
+                ->where('user_id', (int) $user->id)
+                ->where('workspace_id', $workspaceId)
+                ->where(function ($query) use ($subjectIds, $topicIds, $unitIds) {
+                    if ($subjectIds->isNotEmpty()) {
+                        $query->whereHas('classifications', fn ($inner) => $inner->whereIn('subject_id', $subjectIds->all()));
+                    }
+                    if ($topicIds->isNotEmpty()) {
+                        $method = $subjectIds->isEmpty() ? 'whereHas' : 'orWhereHas';
+                        $query->{$method}('classifications', fn ($inner) => $inner->whereIn('topic_id', $topicIds->all()));
+                    }
+                    if ($unitIds->isNotEmpty()) {
+                        $method = $subjectIds->isEmpty() && $topicIds->isEmpty() ? 'whereHas' : 'orWhereHas';
+                        $query->{$method}('classifications', fn ($inner) => $inner->whereIn('unit_id', $unitIds->all()));
+                    }
+                })
+                ->with(['classifications'])
+                ->get(['id']);
+        $deletedCardRows->load([
+            'attachments' => fn ($query) => $query->withTrashed(),
+        ]);
+
+        $deletedCardCountsBySubject = [];
+        $deletedCardBytesBySubject = [];
+        $deletedCardCountsByTopic = [];
+        $deletedCardBytesByTopic = [];
+        $deletedCardCountsByUnit = [];
+        $deletedCardBytesByUnit = [];
+        foreach ($deletedCardRows as $deletedCardRow) {
+            $attachments = $deletedCardRow->attachments instanceof Collection ? $deletedCardRow->attachments : collect();
+            $cardBytes = (int) $attachments->sum(fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0)));
+            $subjectIdsForCard = [];
+            $topicIdsForCard = [];
+            $unitIdsForCard = [];
+
+            foreach ($deletedCardRow->classifications as $classification) {
+                $subjectId = (int) ($classification->subject_id ?? 0);
+                $topicId = (int) ($classification->topic_id ?? 0);
+                $unitId = (int) ($classification->unit_id ?? 0);
+
+                if ($subjectId > 0) {
+                    $subjectIdsForCard[$subjectId] = true;
+                }
+                if ($topicId > 0) {
+                    $topicIdsForCard[$topicId] = true;
+                }
+                if ($unitId > 0) {
+                    $unitIdsForCard[$unitId] = true;
+                }
+            }
+
+            foreach (array_keys($subjectIdsForCard) as $subjectId) {
+                $deletedCardCountsBySubject[$subjectId] = ($deletedCardCountsBySubject[$subjectId] ?? 0) + 1;
+                $deletedCardBytesBySubject[$subjectId] = ($deletedCardBytesBySubject[$subjectId] ?? 0) + $cardBytes;
+            }
+            foreach (array_keys($topicIdsForCard) as $topicId) {
+                $deletedCardCountsByTopic[$topicId] = ($deletedCardCountsByTopic[$topicId] ?? 0) + 1;
+                $deletedCardBytesByTopic[$topicId] = ($deletedCardBytesByTopic[$topicId] ?? 0) + $cardBytes;
+            }
+            foreach (array_keys($unitIdsForCard) as $unitId) {
+                $deletedCardCountsByUnit[$unitId] = ($deletedCardCountsByUnit[$unitId] ?? 0) + 1;
+                $deletedCardBytesByUnit[$unitId] = ($deletedCardBytesByUnit[$unitId] ?? 0) + $cardBytes;
+            }
+        }
+
+        $hiddenTopicIds = $topics
+            ->filter(fn (MaterialTopic $topic) => in_array((int) ($topic->subject_id ?? 0), $subjectIds->all(), true))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values()
+            ->all();
+        $hiddenUnitIds = $units
+            ->filter(function (MaterialUnit $unit) use ($subjectIds, $topicIds): bool {
+                $unitTopicId = (int) ($unit->topic_id ?? 0);
+                $unitSubjectId = (int) ($unit->topic?->subject?->id ?? 0);
+
+                return in_array($unitTopicId, $topicIds->all(), true)
+                    || in_array($unitSubjectId, $subjectIds->all(), true);
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values()
+            ->all();
+
+        $cards = $cards
+            ->filter(function (MaterialCard $card) use ($subjectIds, $topicIds, $unitIds): bool {
+                $classifications = $card->classifications instanceof Collection ? $card->classifications : collect();
+
+                foreach ($classifications as $classification) {
+                    $subjectId = (int) ($classification->subject_id ?? 0);
+                    $topicId = (int) ($classification->topic_id ?? 0);
+                    $unitId = (int) ($classification->unit_id ?? 0);
+
+                    if (
+                        in_array($subjectId, $subjectIds->all(), true)
+                        || in_array($topicId, $topicIds->all(), true)
+                        || in_array($unitId, $unitIds->all(), true)
+                    ) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })
+            ->values();
+        $topics = $topics
+            ->reject(fn (MaterialTopic $topic) => in_array((int) ($topic->id ?? 0), $hiddenTopicIds, true))
+            ->values();
+        $units = $units
+            ->reject(fn (MaterialUnit $unit) => in_array((int) ($unit->id ?? 0), $hiddenUnitIds, true))
+            ->values();
+
+        return collect()
+            ->merge($cards->map(fn (MaterialCard $card) => $this->serializeDeletedRestoreCardItem(
+                $card,
+                (int) (($card->attachments instanceof Collection ? $card->attachments : collect())->count()),
+                (int) (($card->attachments instanceof Collection ? $card->attachments : collect())->sum(
+                    fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0)),
+                )),
+            )))
+            ->merge($subjects->map(fn (MaterialSubject $subject) => $this->serializeDeletedRestoreStructureItem(
+                type: self::DELETED_ITEM_TYPE_SUBJECT,
+                id: (int) $subject->id,
+                title: trim((string) ($subject->name ?? '')),
+                deletedAt: $subject->deleted_at?->toDateTimeString(),
+                pathLabel: null,
+                materialsCount: (int) ($deletedCardCountsBySubject[(int) $subject->id] ?? 0),
+                sizeBytes: $this->deletedAttachmentBytesForClassificationScope($user, $workspaceId, self::DELETED_ITEM_TYPE_SUBJECT, (int) $subject->id),
+            )))
+            ->merge($topics->map(fn (MaterialTopic $topic) => $this->serializeDeletedRestoreStructureItem(
+                type: self::DELETED_ITEM_TYPE_TOPIC,
+                id: (int) $topic->id,
+                title: trim((string) ($topic->name ?? '')),
+                deletedAt: $topic->deleted_at?->toDateTimeString(),
+                pathLabel: trim((string) ($topic->subject_name ?? '')),
+                materialsCount: (int) ($deletedCardCountsByTopic[(int) $topic->id] ?? 0),
+                sizeBytes: $this->deletedAttachmentBytesForClassificationScope($user, $workspaceId, self::DELETED_ITEM_TYPE_TOPIC, (int) $topic->id),
+            )))
+            ->merge($units->map(fn (MaterialUnit $unit) => $this->serializeDeletedRestoreStructureItem(
+                type: self::DELETED_ITEM_TYPE_UNIT,
+                id: (int) $unit->id,
+                title: trim((string) ($unit->name ?? '')),
+                deletedAt: $unit->deleted_at?->toDateTimeString(),
+                pathLabel: $this->deletedUnitPathLabel($unit),
+                materialsCount: (int) ($deletedCardCountsByUnit[(int) $unit->id] ?? 0),
+                sizeBytes: $this->deletedAttachmentBytesForClassificationScope($user, $workspaceId, self::DELETED_ITEM_TYPE_UNIT, (int) $unit->id),
+            )))
+            ->filter(fn (array $item) => (int) ($item['id'] ?? 0) > 0)
+            ->sortByDesc(fn (array $item) => strtotime((string) ($item['deleted_at'] ?? '')) ?: 0)
+            ->values()
+            ->all();
+    }
+
+    public function restoreDeletedItemForWorkspace(
+        User $user,
+        int $workspaceId,
+        string $itemType,
+        int $itemId,
+        string $scopeType = MaterialShareRule::SCOPE_ALL,
+        ?int $scopeId = null,
+    ): ?array {
+        $normalizedType = $this->normalizeDeletedRestoreItemType($itemType);
+        if ($normalizedType === null || $workspaceId <= 0 || $itemId <= 0) {
+            return null;
+        }
+
+        $normalizedScopeType = $this->normalizeDeletedRestoreScopeType($scopeType);
+        $normalizedScopeId = (int) ($scopeId ?? 0);
+        $restorableItem = collect($this->deletedRestoreListForWorkspace($user, $workspaceId, $normalizedScopeType, $normalizedScopeId))
+            ->first(fn (array $item) => (string) ($item['type'] ?? '') === $normalizedType && (int) ($item['id'] ?? 0) === $itemId);
+
+        if (! is_array($restorableItem)) {
+            return null;
+        }
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_MATERIAL) {
+            $card = $this->deletedCardsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $card instanceof MaterialCard) {
+                return null;
+            }
+
+            DB::transaction(function () use ($card, $user): void {
+                $card->restore();
+                MaterialCardAttachment::onlyTrashed()
+                    ->where('material_card_id', (int) $card->id)
+                    ->restore();
+                $this->restoreClassificationPathForRestoredCard($card, $user);
+            });
+
+            return $this->serializeDeletedRestoreCardItem($card->fresh(), 0);
+        }
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_SUBJECT) {
+            $subject = $this->deletedSubjectsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $subject instanceof MaterialSubject) {
+                return null;
+            }
+
+            DB::transaction(function () use ($subject, $user, $workspaceId): void {
+                $this->restoreDeletedSubjectTree($subject);
+                $this->restoreDeletedCardsForClassificationScope(
+                    $user,
+                    $workspaceId,
+                    self::DELETED_ITEM_TYPE_SUBJECT,
+                    (int) $subject->id,
+                );
+            });
+
+            return $this->serializeDeletedRestoreStructureItem(
+                type: self::DELETED_ITEM_TYPE_SUBJECT,
+                id: (int) $subject->id,
+                title: trim((string) ($subject->name ?? '')),
+                deletedAt: null,
+                pathLabel: null,
+                materialsCount: (int) ($restorableItem['materials_count'] ?? 0),
+                sizeBytes: (int) ($restorableItem['size_bytes'] ?? 0),
+            );
+        }
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_TOPIC) {
+            $topic = $this->deletedTopicsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $topic instanceof MaterialTopic) {
+                return null;
+            }
+
+            DB::transaction(function () use ($topic, $user, $workspaceId): void {
+                $this->restoreDeletedTopicTree($topic);
+                $this->restoreDeletedCardsForClassificationScope(
+                    $user,
+                    $workspaceId,
+                    self::DELETED_ITEM_TYPE_TOPIC,
+                    (int) $topic->id,
+                );
+            });
+
+            $topic->loadMissing(['subject' => fn ($query) => $query->withTrashed()]);
+
+            return $this->serializeDeletedRestoreStructureItem(
+                type: self::DELETED_ITEM_TYPE_TOPIC,
+                id: (int) $topic->id,
+                title: trim((string) ($topic->name ?? '')),
+                deletedAt: null,
+                pathLabel: trim((string) ($topic->subject?->name ?? '')),
+                materialsCount: (int) ($restorableItem['materials_count'] ?? 0),
+                sizeBytes: (int) ($restorableItem['size_bytes'] ?? 0),
+            );
+        }
+
+        $unit = $this->deletedUnitsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+            ->whereKey($itemId)
+            ->first();
+        if (! $unit instanceof MaterialUnit) {
+            return null;
+        }
+
+        DB::transaction(function () use ($unit, $user, $workspaceId): void {
+            $this->restoreDeletedUnitTree($unit);
+            $this->restoreDeletedCardsForClassificationScope(
+                $user,
+                $workspaceId,
+                self::DELETED_ITEM_TYPE_UNIT,
+                (int) $unit->id,
+            );
+        });
+
+        $unit->loadMissing([
+            'topic' => fn ($topicQuery) => $topicQuery->withTrashed()->with([
+                'subject' => fn ($subjectQuery) => $subjectQuery->withTrashed(),
+            ]),
+        ]);
+
+        return $this->serializeDeletedRestoreStructureItem(
+            type: self::DELETED_ITEM_TYPE_UNIT,
+            id: (int) $unit->id,
+            title: trim((string) ($unit->name ?? '')),
+            deletedAt: null,
+            pathLabel: $this->deletedUnitPathLabel($unit),
+            materialsCount: (int) ($restorableItem['materials_count'] ?? 0),
+            sizeBytes: (int) ($restorableItem['size_bytes'] ?? 0),
+        );
+    }
+
+    public function purgeDeletedItemForWorkspace(
+        User $user,
+        int $workspaceId,
+        string $itemType,
+        int $itemId,
+        string $scopeType = MaterialShareRule::SCOPE_ALL,
+        ?int $scopeId = null,
+    ): bool {
+        $normalizedType = $this->normalizeDeletedRestoreItemType($itemType);
+        if ($normalizedType === null || $workspaceId <= 0 || $itemId <= 0) {
+            return false;
+        }
+
+        $normalizedScopeType = $this->normalizeDeletedRestoreScopeType($scopeType);
+        $normalizedScopeId = (int) ($scopeId ?? 0);
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_MATERIAL) {
+            $card = $this->deletedCardsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $card instanceof MaterialCard) {
+                return false;
+            }
+
+            DB::transaction(function () use ($card): void {
+                $this->forceDeleteDeletedCard($card);
+            });
+
+            return true;
+        }
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_SUBJECT) {
+            $subject = $this->deletedSubjectsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $subject instanceof MaterialSubject) {
+                return false;
+            }
+
+            DB::transaction(function () use ($user, $workspaceId, $subject): void {
+                $this->purgeDeletedCardsForClassificationScope(
+                    $user,
+                    $workspaceId,
+                    self::DELETED_ITEM_TYPE_SUBJECT,
+                    (int) $subject->id,
+                );
+                $this->forceDeleteDeletedSubjectTree($subject);
+            });
+
+            return true;
+        }
+
+        if ($normalizedType === self::DELETED_ITEM_TYPE_TOPIC) {
+            $topic = $this->deletedTopicsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+                ->whereKey($itemId)
+                ->first();
+            if (! $topic instanceof MaterialTopic) {
+                return false;
+            }
+
+            DB::transaction(function () use ($user, $workspaceId, $topic): void {
+                $this->purgeDeletedCardsForClassificationScope(
+                    $user,
+                    $workspaceId,
+                    self::DELETED_ITEM_TYPE_TOPIC,
+                    (int) $topic->id,
+                );
+                $this->forceDeleteDeletedTopicTree($topic);
+            });
+
+            return true;
+        }
+
+        $unit = $this->deletedUnitsQueryForWorkspaceScope($user, $workspaceId, $normalizedScopeType, $normalizedScopeId)
+            ->whereKey($itemId)
+            ->first();
+        if (! $unit instanceof MaterialUnit) {
+            return false;
+        }
+
+        DB::transaction(function () use ($user, $workspaceId, $unit): void {
+            $this->purgeDeletedCardsForClassificationScope(
+                $user,
+                $workspaceId,
+                self::DELETED_ITEM_TYPE_UNIT,
+                (int) $unit->id,
+            );
+            $unit->forceDelete();
+        });
+
+        return true;
     }
 
     private function storeDeletedClassificationSnapshot(MaterialCard $card): void
@@ -686,6 +1101,8 @@ class MaterialService
             ->exists();
 
         if ($hasClassifications) {
+            $this->restoreTrashedClassificationRelationsForCard($card);
+
             return;
         }
 
@@ -705,6 +1122,50 @@ class MaterialService
             'topic' => $topic,
             'unit' => $unit,
         ]]);
+    }
+
+    private function restoreTrashedClassificationRelationsForCard(MaterialCard $card): void
+    {
+        $classifications = MaterialCardClassification::query()
+            ->where('material_card_id', $card->id)
+            ->get(['subject_id', 'topic_id', 'unit_id']);
+
+        $subjectIds = $classifications
+            ->pluck('subject_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+        $topicIds = $classifications
+            ->pluck('topic_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+        $unitIds = $classifications
+            ->pluck('unit_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($subjectIds->isNotEmpty()) {
+            MaterialSubject::onlyTrashed()
+                ->whereIn('id', $subjectIds->all())
+                ->restore();
+        }
+
+        if ($topicIds->isNotEmpty()) {
+            MaterialTopic::onlyTrashed()
+                ->whereIn('id', $topicIds->all())
+                ->restore();
+        }
+
+        if ($unitIds->isNotEmpty()) {
+            MaterialUnit::onlyTrashed()
+                ->whereIn('id', $unitIds->all())
+                ->restore();
+        }
     }
 
     private function deletedClassificationSnapshotRowsForCard(MaterialCard $card): array
@@ -1729,7 +2190,7 @@ class MaterialService
         return $subject->fresh();
     }
 
-    public function deleteSubject(User $user, MaterialSubject $subject): void
+    public function deleteSubject(User $user, MaterialSubject $subject, bool $cascade = false): void
     {
         $this->assertSubjectBelongsToUser($user, $subject);
         $workspaceId = (int) ($subject->workspace_id ?? 0);
@@ -1753,7 +2214,7 @@ class MaterialService
                 ->filter(fn ($id) => $id > 0)
                 ->values();
 
-        $inUse = MaterialCardClassification::query()
+        $classificationQuery = MaterialCardClassification::query()
             ->where('subject_id', $subject->id)
             ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
             ->when(
@@ -1772,16 +2233,40 @@ class MaterialService
                     });
                 },
                 fn ($query) => $query->whereNull('topic_id')
-            )
-            ->exists();
+            );
 
-        if ($inUse) {
+        $inUse = (clone $classificationQuery)->exists();
+
+        if ($inUse && ! $cascade) {
             throw ValidationException::withMessages([
                 'data.name' => 'Fach kann nicht gelöscht werden, solange es in Materialien verwendet wird.',
             ]);
         }
 
-        $subject->delete();
+        if ($cascade) {
+            $this->cascadeDeleteMaterialCards($classificationQuery);
+        }
+
+        DB::transaction(function () use ($subject): void {
+            $topicIds = MaterialTopic::query()
+                ->where('subject_id', $subject->id)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->values();
+
+            if ($topicIds->isNotEmpty()) {
+                MaterialUnit::query()
+                    ->whereIn('topic_id', $topicIds->all())
+                    ->delete();
+
+                MaterialTopic::query()
+                    ->whereIn('id', $topicIds->all())
+                    ->delete();
+            }
+
+            $subject->delete();
+        });
     }
 
     public function moveSubject(User $user, MaterialSubject $subject, string $direction): bool
@@ -1886,7 +2371,7 @@ class MaterialService
         return $topic->fresh();
     }
 
-    public function deleteTopic(User $user, MaterialTopic $topic): void
+    public function deleteTopic(User $user, MaterialTopic $topic, bool $cascade = false): void
     {
         $this->assertTopicBelongsToUser($user, $topic);
         $topic->loadMissing('subject');
@@ -1902,7 +2387,7 @@ class MaterialService
             ->filter(fn ($id) => $id > 0)
             ->values();
 
-        $inUse = MaterialCardClassification::query()
+        $classificationQuery = MaterialCardClassification::query()
             ->where('topic_id', $topic->id)
             ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
             ->when(
@@ -1914,16 +2399,27 @@ class MaterialService
                     });
                 },
                 fn ($query) => $query->whereNull('unit_id')
-            )
-            ->exists();
+            );
 
-        if ($inUse) {
+        $inUse = (clone $classificationQuery)->exists();
+
+        if ($inUse && ! $cascade) {
             throw ValidationException::withMessages([
                 'data.name' => 'Thema kann nicht gelöscht werden, solange es in Materialien verwendet wird.',
             ]);
         }
 
-        $topic->delete();
+        if ($cascade) {
+            $this->cascadeDeleteMaterialCards($classificationQuery);
+        }
+
+        DB::transaction(function () use ($topic): void {
+            MaterialUnit::query()
+                ->where('topic_id', $topic->id)
+                ->delete();
+
+            $topic->delete();
+        });
     }
 
     public function moveTopic(User $user, MaterialTopic $topic, string $direction): bool
@@ -2018,7 +2514,7 @@ class MaterialService
         return $unit->fresh();
     }
 
-    public function deleteUnit(User $user, MaterialUnit $unit): void
+    public function deleteUnit(User $user, MaterialUnit $unit, bool $cascade = false): void
     {
         $this->assertUnitBelongsToUser($user, $unit);
         $unit->loadMissing('topic.subject');
@@ -2027,18 +2523,63 @@ class MaterialService
             $workspaceId = $this->activeWorkspaceIdForUser($user);
         }
 
-        $inUse = MaterialCardClassification::query()
+        $classificationQuery = MaterialCardClassification::query()
             ->whereHas('materialCard', fn ($query) => $query->where('workspace_id', $workspaceId))
-            ->where('unit_id', $unit->id)
-            ->exists();
+            ->where('unit_id', $unit->id);
 
-        if ($inUse) {
+        $inUse = (clone $classificationQuery)->exists();
+
+        if ($inUse && ! $cascade) {
             throw ValidationException::withMessages([
                 'data.name' => 'Einheit ist in Materialien verwendet und kann nicht gelöscht werden.',
             ]);
         }
 
+        if ($cascade) {
+            $this->cascadeDeleteMaterialCards($classificationQuery);
+        }
+
         $unit->delete();
+    }
+
+    public function clearWorkspace(User $user, MaterialWorkspace $workspace): void
+    {
+        if ((int) ($workspace->user_id ?? 0) !== (int) $user->id) {
+            throw ValidationException::withMessages([
+                'workspace' => ['Workspace wurde nicht gefunden.'],
+            ]);
+        }
+
+        MaterialCard::query()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', (int) $workspace->id)
+            ->get()
+            ->each(fn (MaterialCard $card) => $this->deleteCard($card));
+
+        MaterialSubject::query()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', (int) $workspace->id)
+            ->get()
+            ->each(fn (MaterialSubject $subject) => $this->deleteSubject($user, $subject));
+    }
+
+    private function cascadeDeleteMaterialCards($classificationQuery): void
+    {
+        $cardIds = (clone $classificationQuery)
+            ->pluck('material_card_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        if ($cardIds->isEmpty()) {
+            return;
+        }
+
+        MaterialCard::query()
+            ->whereIn('id', $cardIds->all())
+            ->get()
+            ->each(fn (MaterialCard $card) => $this->deleteCard($card));
     }
 
     public function moveUnit(User $user, MaterialUnit $unit, string $direction): bool
@@ -2797,14 +3338,30 @@ class MaterialService
         ];
 
         if (! $this->supportsClassificationSortOrder()) {
-            return MaterialSubject::query()->firstOrCreate($attributes);
+            $existingSubject = MaterialSubject::withTrashed()
+                ->where($attributes)
+                ->first();
+
+            if ($existingSubject instanceof MaterialSubject) {
+                if ($existingSubject->trashed()) {
+                    $existingSubject->restore();
+                }
+
+                return $existingSubject->fresh();
+            }
+
+            return MaterialSubject::query()->create($attributes);
         }
 
-        $existingSubject = MaterialSubject::query()
+        $existingSubject = MaterialSubject::withTrashed()
             ->where($attributes)
             ->first();
         if ($existingSubject instanceof MaterialSubject) {
-            return $existingSubject;
+            if ($existingSubject->trashed()) {
+                $existingSubject->restore();
+            }
+
+            return $existingSubject->fresh();
         }
 
         $normalizedBeforeSubjectId = (int) ($beforeSubjectId ?? 0);
@@ -2850,14 +3407,30 @@ class MaterialService
         ];
 
         if (! $this->supportsClassificationSortOrder()) {
-            return MaterialTopic::query()->firstOrCreate($attributes);
+            $existingTopic = MaterialTopic::withTrashed()
+                ->where($attributes)
+                ->first();
+
+            if ($existingTopic instanceof MaterialTopic) {
+                if ($existingTopic->trashed()) {
+                    $existingTopic->restore();
+                }
+
+                return $existingTopic->fresh();
+            }
+
+            return MaterialTopic::query()->create($attributes);
         }
 
-        $existingTopic = MaterialTopic::query()
+        $existingTopic = MaterialTopic::withTrashed()
             ->where($attributes)
             ->first();
         if ($existingTopic instanceof MaterialTopic) {
-            return $existingTopic;
+            if ($existingTopic->trashed()) {
+                $existingTopic->restore();
+            }
+
+            return $existingTopic->fresh();
         }
 
         return $this->createTopicWithOptionalPosition($subject, $name, $beforeTopicId);
@@ -2915,14 +3488,30 @@ class MaterialService
         ];
 
         if (! $this->supportsClassificationSortOrder()) {
-            return MaterialUnit::query()->firstOrCreate($attributes);
+            $existingUnit = MaterialUnit::withTrashed()
+                ->where($attributes)
+                ->first();
+
+            if ($existingUnit instanceof MaterialUnit) {
+                if ($existingUnit->trashed()) {
+                    $existingUnit->restore();
+                }
+
+                return $existingUnit->fresh();
+            }
+
+            return MaterialUnit::query()->create($attributes);
         }
 
-        $existingUnit = MaterialUnit::query()
+        $existingUnit = MaterialUnit::withTrashed()
             ->where($attributes)
             ->first();
         if ($existingUnit instanceof MaterialUnit) {
-            return $existingUnit;
+            if ($existingUnit->trashed()) {
+                $existingUnit->restore();
+            }
+
+            return $existingUnit->fresh();
         }
 
         return $this->createUnitWithOptionalPosition($topic, $name, $beforeUnitId);
@@ -4419,35 +5008,6 @@ class MaterialService
         return $this->materialInboxImportsHasImportModeColumnCache;
     }
 
-    private function restorableDeletedCardsLimit(): int
-    {
-        return max(1, (int) config('schooltool.materials_restore_deleted_cards_limit', 5));
-    }
-
-    private function trimRestorableDeletedCardsForUser(int $userId, int $keepCount, ?int $workspaceId = null): void
-    {
-        $keep = max(0, $keepCount);
-        $deletedCardsQuery = MaterialCard::onlyTrashed()
-            ->where('user_id', $userId)
-            ->orderByDesc('deleted_at')
-            ->orderByDesc('id');
-
-        if ((int) ($workspaceId ?? 0) > 0) {
-            $deletedCardsQuery->where('workspace_id', (int) $workspaceId);
-        }
-
-        $deletedCards = $deletedCardsQuery->get();
-
-        if ($deletedCards->count() <= $keep) {
-            return;
-        }
-
-        $cardsToPurge = $deletedCards->slice($keep)->values();
-        foreach ($cardsToPurge as $deletedCard) {
-            $this->forceDeleteDeletedCard($deletedCard);
-        }
-    }
-
     private function forceDeleteDeletedCard(MaterialCard $deletedCard): void
     {
         $attachments = MaterialCardAttachment::withTrashed()
@@ -4465,6 +5025,391 @@ class MaterialService
         }
 
         $deletedCard->forceDelete();
+    }
+
+    private function normalizeDeletedRestoreItemType(string $itemType): ?string
+    {
+        $normalized = trim(mb_strtolower($itemType));
+
+        return match ($normalized) {
+            self::DELETED_ITEM_TYPE_MATERIAL,
+            self::DELETED_ITEM_TYPE_SUBJECT,
+            self::DELETED_ITEM_TYPE_TOPIC,
+            self::DELETED_ITEM_TYPE_UNIT => $normalized,
+            default => null,
+        };
+    }
+
+    private function normalizeDeletedRestoreScopeType(string $scopeType): string
+    {
+        $normalized = trim(mb_strtolower($scopeType));
+
+        if (in_array($normalized, MaterialShareRule::SCOPES, true)) {
+            return $normalized;
+        }
+
+        return MaterialShareRule::SCOPE_ALL;
+    }
+
+    private function deletedCardsQueryForWorkspaceScope(
+        User $user,
+        int $workspaceId,
+        string $scopeType,
+        int $scopeId,
+    ) {
+        $query = MaterialCard::onlyTrashed()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id');
+
+        return $this->applyDeletedCardScope($query, $scopeType, $scopeId);
+    }
+
+    private function deletedSubjectsQueryForWorkspaceScope(
+        User $user,
+        int $workspaceId,
+        string $scopeType,
+        int $scopeId,
+    ) {
+        $query = MaterialSubject::onlyTrashed()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT && $scopeId > 0) {
+            $query->whereKey($scopeId);
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
+    private function deletedTopicsQueryForWorkspaceScope(
+        User $user,
+        int $workspaceId,
+        string $scopeType,
+        int $scopeId,
+    ) {
+        $allowedSubjectIds = MaterialSubject::withTrashed()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->select('id');
+
+        $query = MaterialTopic::onlyTrashed()
+            ->whereIn('subject_id', $allowedSubjectIds)
+            ->with(['subject' => fn ($subjectQuery) => $subjectQuery->withTrashed()])
+            ->select('material_topics.*')
+            ->selectSub(
+                MaterialSubject::withTrashed()
+                    ->select('name')
+                    ->whereColumn('material_subjects.id', 'material_topics.subject_id')
+                    ->limit(1),
+                'subject_name'
+            )
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT && $scopeId > 0) {
+            $query->where('subject_id', $scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC && $scopeId > 0) {
+            $query->whereKey($scopeId);
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
+    private function deletedUnitsQueryForWorkspaceScope(
+        User $user,
+        int $workspaceId,
+        string $scopeType,
+        int $scopeId,
+    ) {
+        $allowedSubjectIds = MaterialSubject::withTrashed()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId)
+            ->select('id');
+        $allowedTopicIds = MaterialTopic::withTrashed()
+            ->whereIn('subject_id', $allowedSubjectIds)
+            ->select('id');
+
+        $query = MaterialUnit::onlyTrashed()
+            ->whereIn('topic_id', $allowedTopicIds)
+            ->with([
+                'topic' => fn ($topicQuery) => $topicQuery->withTrashed()->with([
+                    'subject' => fn ($subjectQuery) => $subjectQuery->withTrashed(),
+                ]),
+            ])
+            ->orderByDesc('deleted_at')
+            ->orderByDesc('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_SUBJECT && $scopeId > 0) {
+            $topicIds = MaterialTopic::withTrashed()
+                ->where('subject_id', $scopeId)
+                ->pluck('id')
+                ->all();
+            $query->whereIn('topic_id', $topicIds ?: [0]);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC && $scopeId > 0) {
+            $query->where('topic_id', $scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT && $scopeId > 0) {
+            $query->whereKey($scopeId);
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            $query->whereRaw('1 = 0');
+        }
+
+        return $query;
+    }
+
+    private function applyDeletedCardScope($query, string $scopeType, int $scopeId)
+    {
+        if ($scopeType === MaterialShareRule::SCOPE_ALL || $scopeId <= 0) {
+            return $scopeType === MaterialShareRule::SCOPE_ALL ? $query : $query->whereRaw('1 = 0');
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            return $query->whereKey($scopeId);
+        }
+
+        return $query->whereHas('classifications', function ($classificationQuery) use ($scopeType, $scopeId) {
+            if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+                $classificationQuery->where('subject_id', $scopeId);
+
+                return;
+            }
+            if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+                $classificationQuery->where('topic_id', $scopeId);
+
+                return;
+            }
+            if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+                $classificationQuery->where('unit_id', $scopeId);
+
+                return;
+            }
+
+            $classificationQuery->whereRaw('1 = 0');
+        });
+    }
+
+    private function serializeDeletedRestoreCardItem(MaterialCard $card, int $attachmentsCount, int $sizeBytes = 0): array
+    {
+        return [
+            'type' => self::DELETED_ITEM_TYPE_MATERIAL,
+            'type_label' => $this->deletedRestoreItemTypeLabel(self::DELETED_ITEM_TYPE_MATERIAL),
+            'id' => (int) $card->id,
+            'title' => trim((string) ($card->title ?? '')),
+            'path_label' => $this->deletedCardPathLabel($card),
+            'attachments_count' => max(0, $attachmentsCount),
+            'materials_count' => 1,
+            'size_bytes' => max(0, $sizeBytes),
+            'deleted_at' => $card->deleted_at?->toDateTimeString(),
+        ];
+    }
+
+    private function serializeDeletedRestoreStructureItem(
+        string $type,
+        int $id,
+        string $title,
+        ?string $deletedAt,
+        ?string $pathLabel,
+        int $materialsCount,
+        int $sizeBytes = 0,
+    ): array {
+        return [
+            'type' => $type,
+            'type_label' => $this->deletedRestoreItemTypeLabel($type),
+            'id' => $id,
+            'title' => $title,
+            'path_label' => $pathLabel,
+            'attachments_count' => 0,
+            'materials_count' => max(0, $materialsCount),
+            'size_bytes' => max(0, $sizeBytes),
+            'deleted_at' => $deletedAt,
+        ];
+    }
+
+    private function deletedRestoreItemTypeLabel(string $type): string
+    {
+        return match ($type) {
+            self::DELETED_ITEM_TYPE_SUBJECT => 'Fach',
+            self::DELETED_ITEM_TYPE_TOPIC => 'Thema',
+            self::DELETED_ITEM_TYPE_UNIT => 'Bereich',
+            default => 'Material',
+        };
+    }
+
+    private function deletedCardPathLabel(MaterialCard $card): ?string
+    {
+        $subject = trim((string) ($card->subject ?? ''));
+        $topic = trim((string) ($card->area ?? ''));
+        $unit = trim((string) ($card->unit ?? ''));
+
+        $parts = array_values(array_filter([$subject, $topic, $unit], fn ($value) => $value !== ''));
+
+        return $parts === [] ? null : implode(' > ', $parts);
+    }
+
+    private function deletedUnitPathLabel(MaterialUnit $unit): ?string
+    {
+        $subject = trim((string) ($unit->topic?->subject?->name ?? ''));
+        $topic = trim((string) ($unit->topic?->name ?? ''));
+        $parts = array_values(array_filter([$subject, $topic], fn ($value) => $value !== ''));
+
+        return $parts === [] ? null : implode(' > ', $parts);
+    }
+
+    private function restoreDeletedSubjectTree(MaterialSubject $subject): void
+    {
+        if ($subject->trashed()) {
+            $subject->restore();
+        }
+
+        $topicIds = MaterialTopic::onlyTrashed()
+            ->where('subject_id', (int) $subject->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        if ($topicIds->isNotEmpty()) {
+            MaterialTopic::onlyTrashed()
+                ->whereIn('id', $topicIds->all())
+                ->restore();
+
+            MaterialUnit::onlyTrashed()
+                ->whereIn('topic_id', $topicIds->all())
+                ->restore();
+        }
+    }
+
+    private function restoreDeletedTopicTree(MaterialTopic $topic): void
+    {
+        $topic->loadMissing(['subject' => fn ($query) => $query->withTrashed()]);
+        if ($topic->subject instanceof MaterialSubject && $topic->subject->trashed()) {
+            $topic->subject->restore();
+        }
+
+        if ($topic->trashed()) {
+            $topic->restore();
+        }
+
+        MaterialUnit::onlyTrashed()
+            ->where('topic_id', (int) $topic->id)
+            ->restore();
+    }
+
+    private function restoreDeletedUnitTree(MaterialUnit $unit): void
+    {
+        $unit->loadMissing([
+            'topic' => fn ($topicQuery) => $topicQuery->withTrashed()->with([
+                'subject' => fn ($subjectQuery) => $subjectQuery->withTrashed(),
+            ]),
+        ]);
+
+        $topic = $unit->topic;
+        $subject = $topic?->subject;
+
+        if ($subject instanceof MaterialSubject && $subject->trashed()) {
+            $subject->restore();
+        }
+        if ($topic instanceof MaterialTopic && $topic->trashed()) {
+            $topic->restore();
+        }
+        if ($unit->trashed()) {
+            $unit->restore();
+        }
+    }
+
+    private function deletedCardsForClassificationScopeQuery(User $user, int $workspaceId, string $type, int $itemId)
+    {
+        $query = MaterialCard::onlyTrashed()
+            ->where('user_id', (int) $user->id)
+            ->where('workspace_id', $workspaceId);
+
+        if ($type === self::DELETED_ITEM_TYPE_SUBJECT) {
+            return $query->whereHas('classifications', fn ($classificationQuery) => $classificationQuery->where('subject_id', $itemId));
+        }
+        if ($type === self::DELETED_ITEM_TYPE_TOPIC) {
+            return $query->whereHas('classifications', fn ($classificationQuery) => $classificationQuery->where('topic_id', $itemId));
+        }
+
+        return $query->whereHas('classifications', fn ($classificationQuery) => $classificationQuery->where('unit_id', $itemId));
+    }
+
+    private function deletedAttachmentBytesForClassificationScope(User $user, int $workspaceId, string $type, int $itemId): int
+    {
+        $cards = $this->deletedCardsForClassificationScopeQuery($user, $workspaceId, $type, $itemId)
+            ->with([
+                'attachments' => fn ($query) => $query->withTrashed(),
+            ])
+            ->get();
+
+        return (int) $cards->sum(function (MaterialCard $card): int {
+            $attachments = $card->attachments instanceof Collection ? $card->attachments : collect();
+
+            return (int) $attachments->sum(
+                fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0)),
+            );
+        });
+    }
+
+    private function restoreDeletedCardsForClassificationScope(User $user, int $workspaceId, string $type, int $itemId): void
+    {
+        $cards = $this->deletedCardsForClassificationScopeQuery($user, $workspaceId, $type, $itemId)->get();
+
+        foreach ($cards as $card) {
+            $card->restore();
+
+            MaterialCardAttachment::onlyTrashed()
+                ->where('material_card_id', (int) $card->id)
+                ->restore();
+
+            $this->restoreClassificationPathForRestoredCard($card, $user);
+        }
+    }
+
+    private function purgeDeletedCardsForClassificationScope(User $user, int $workspaceId, string $type, int $itemId): void
+    {
+        $cards = $this->deletedCardsForClassificationScopeQuery($user, $workspaceId, $type, $itemId)->get();
+
+        foreach ($cards as $card) {
+            $this->forceDeleteDeletedCard($card);
+        }
+    }
+
+    private function forceDeleteDeletedSubjectTree(MaterialSubject $subject): void
+    {
+        $topicIds = MaterialTopic::withTrashed()
+            ->where('subject_id', (int) $subject->id)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        if ($topicIds->isNotEmpty()) {
+            MaterialUnit::withTrashed()
+                ->whereIn('topic_id', $topicIds->all())
+                ->forceDelete();
+
+            MaterialTopic::withTrashed()
+                ->whereIn('id', $topicIds->all())
+                ->forceDelete();
+        }
+
+        $subject->forceDelete();
+    }
+
+    private function forceDeleteDeletedTopicTree(MaterialTopic $topic): void
+    {
+        MaterialUnit::withTrashed()
+            ->where('topic_id', (int) $topic->id)
+            ->forceDelete();
+
+        $topic->forceDelete();
     }
 
     private function supportsClassificationTables(): bool

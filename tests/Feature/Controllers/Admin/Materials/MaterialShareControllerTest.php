@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Admin\Materials\MaterialShareController;
+use App\Jobs\ProcessMaterialInboxInsertJob;
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\MaterialCard;
@@ -25,8 +27,14 @@ use App\Models\Teacher;
 use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
+use App\Services\Materials\MaterialInboxImportStatusStore;
+use App\Services\Materials\MaterialKeywordService;
+use App\Services\Materials\MaterialService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -124,6 +132,84 @@ function workspaceEveryonePayload(string $permission = MaterialShareTarget::PERM
     ];
 }
 
+function createInboxFullAccessHierarchyForWorkspaceShare(object $test): array
+{
+    $creator = User::factory()->create([
+        'school_id' => $test->school->id,
+        'schoolyear_id' => $test->schoolyear->id,
+        'email' => 'creator-workspace-cascade-restore@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Informatik',
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Digitale Kompetenzen',
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'E-Mails',
+    ]);
+    $card = MaterialCard::query()->create([
+        'school_id' => $test->school->id,
+        'user_id' => $creator->id,
+        'title' => 'E-Mail-Auftrag',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'auftrag.pdf',
+        'size_bytes' => 2048,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $test->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $test->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    return compact('creator', 'subject', 'topic', 'unit', 'card', 'rule');
+}
+
+dataset('shared hierarchy cascade delete levels', [
+    'subject' => [
+        'deleteLevel' => 'subject',
+        'endpoint' => 'subjects',
+        'restoreType' => 'subject',
+        'expectedTitle' => 'Informatik',
+    ],
+    'topic' => [
+        'deleteLevel' => 'topic',
+        'endpoint' => 'topics',
+        'restoreType' => 'topic',
+        'expectedTitle' => 'Digitale Kompetenzen',
+    ],
+    'unit' => [
+        'deleteLevel' => 'unit',
+        'endpoint' => 'units',
+        'restoreType' => 'unit',
+        'expectedTitle' => 'E-Mails',
+    ],
+]);
+
 test('shares index requires authentication', function () {
     $this->getJson('/api/admin/materials/shares')
         ->assertStatus(401);
@@ -138,6 +224,7 @@ test('shares index denies regular user role', function () {
 
 test('inbox users aggregates creators who shared with current user', function () {
     $this->actingAs($this->materialsAdmin, 'sanctum');
+    Auth::login($this->materialsAdmin);
 
     $creatorA = User::factory()->create([
         'school_id' => $this->school->id,
@@ -296,6 +383,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect($response->json('data.0.shared_items'))->toBeArray();
     expect(count($response->json('data.0.shared_items')))->toBe(2);
     expect((string) $response->json('data.0.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_SUBJECT);
+    expect((int) $response->json('data.0.shared_items.0.scope_id'))->toBe((int) $subject->id);
     expect((string) $response->json('data.0.shared_items.0.scope_path_label'))->toContain(' - ');
     expect((string) $response->json('data.0.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_WRITE);
     expect((string) $response->json('data.0.shared_items.0.permission_label'))->toBe('LESEN/SCHREIBEN');
@@ -318,6 +406,7 @@ test('inbox users aggregates creators who shared with current user', function ()
     expect((int) $response->json('data.1.shared_rules_count'))->toBe(1);
     expect(count($response->json('data.1.shared_items')))->toBe(1);
     expect((string) $response->json('data.1.shared_items.0.scope_type'))->toBe(MaterialShareRule::SCOPE_TOPIC);
+    expect((int) $response->json('data.1.shared_items.0.scope_id'))->toBe((int) $topic->id);
     expect((string) $response->json('data.1.shared_items.0.scope_path_label'))->toContain(' - ');
     expect((string) $response->json('data.1.shared_items.0.permission'))->toBe(MaterialShareTarget::PERMISSION_READ_ONLY);
     expect((string) $response->json('data.1.shared_items.0.permission_label'))->toBe('NUR LESEN');
@@ -326,6 +415,49 @@ test('inbox users aggregates creators who shared with current user', function ()
 
     $ids = collect($response->json('data'))->pluck('id')->map(fn ($id) => (int) $id);
     expect($ids->contains((int) $this->materialsAdmin->id))->toBeFalse();
+});
+
+test('inbox users payload includes scope id for shared items', function () {
+    $this->actingAs($this->materialsAdmin, 'sanctum');
+    Auth::login($this->materialsAdmin);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'scope-id-creator@test.local',
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $subject->id,
+        'is_active' => true,
+    ]);
+
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $response = app(MaterialShareController::class)->inboxUsers();
+    $payload = $response->getData(true);
+    $sharedItems = collect($payload['data'] ?? [])
+        ->flatMap(fn (array $userRow) => is_array($userRow['shared_items'] ?? null) ? $userRow['shared_items'] : [])
+        ->values();
+
+    $matchingItem = $sharedItems->first(fn (array $item) => (int) ($item['rule_id'] ?? 0) === (int) $rule->id);
+
+    expect($matchingItem)->not->toBeNull();
+    expect((int) ($matchingItem['scope_id'] ?? 0))->toBe((int) $subject->id);
 });
 
 test('inbox users includes cross-school direct user shares', function () {
@@ -1574,8 +1706,8 @@ test('inbox full access deletes empty source subject topic and unit', function (
     $rule = MaterialShareRule::query()->create([
         'school_id' => $this->school->id,
         'created_by_user_id' => $creator->id,
-        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
-        'scope_id' => $subject->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
         'is_active' => true,
     ]);
     MaterialShareTarget::query()->create([
@@ -1585,28 +1717,192 @@ test('inbox full access deletes empty source subject topic and unit', function (
         'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
     ]);
 
-    $this->actingAs($this->materialsAdmin, 'sanctum');
+    Auth::login($this->materialsAdmin);
 
-    $this->deleteJson('/api/admin/materials/shares/inbox/units/'.$unit->id, [
-        'rule_id' => (int) $rule->id,
-    ])->assertNoContent();
+    $controller = app(MaterialShareController::class);
+    $service = app(MaterialService::class);
 
-    $this->deleteJson('/api/admin/materials/shares/inbox/topics/'.$topic->id, [
-        'rule_id' => (int) $rule->id,
-    ])->assertNoContent();
+    $deleteUnitResponse = $controller->destroyInboxUnit(
+        Request::create('/api/admin/materials/shares/inbox/units/'.$unit->id, 'DELETE', [
+            'rule_id' => (int) $rule->id,
+        ]),
+        $unit,
+        $service,
+    );
+    expect($deleteUnitResponse->getStatusCode())->toBe(204);
 
-    $this->deleteJson('/api/admin/materials/shares/inbox/subjects/'.$subject->id, [
-        'rule_id' => (int) $rule->id,
-    ])->assertNoContent();
+    $deleteTopicResponse = $controller->destroyInboxTopic(
+        Request::create('/api/admin/materials/shares/inbox/topics/'.$topic->id, 'DELETE', [
+            'rule_id' => (int) $rule->id,
+        ]),
+        $topic,
+        $service,
+    );
+    expect($deleteTopicResponse->getStatusCode())->toBe(204);
+
+    $deleteSubjectResponse = $controller->destroyInboxSubject(
+        Request::create('/api/admin/materials/shares/inbox/subjects/'.$subject->id, 'DELETE', [
+            'rule_id' => (int) $rule->id,
+        ]),
+        $subject,
+        $service,
+    );
+    expect($deleteSubjectResponse->getStatusCode())->toBe(204);
 
     expect(MaterialUnit::query()->find($unit->id))->toBeNull();
     expect(MaterialTopic::query()->find($topic->id))->toBeNull();
     expect(MaterialSubject::query()->find($subject->id))->toBeNull();
+});
 
-    $inbox = $this->getJson('/api/admin/materials/shares/inbox-users')
-        ->assertOk();
+test('inbox full access deletes non-empty shared hierarchy levels with cascade and restores them', function (
+    string $deleteLevel,
+    string $endpoint,
+    string $restoreType,
+    string $expectedTitle
+) {
+    $data = createInboxFullAccessHierarchyForWorkspaceShare($this);
 
-    expect($inbox->json('data.0.shared_items.0.hierarchy'))->toBe([]);
+    $subject = $data['subject'];
+    $topic = $data['topic'];
+    $unit = $data['unit'];
+    $card = $data['card'];
+    $rule = $data['rule'];
+
+    $targetId = match ($deleteLevel) {
+        'subject' => (int) $subject->id,
+        'topic' => (int) $topic->id,
+        'unit' => (int) $unit->id,
+        default => 0,
+    };
+
+    Auth::login($this->materialsAdmin);
+
+    $controller = app(MaterialShareController::class);
+    $service = app(MaterialService::class);
+
+    $deleteResponse = match ($deleteLevel) {
+        'subject' => $controller->destroyInboxSubject(
+            Request::create('/api/admin/materials/shares/inbox/'.$endpoint.'/'.$targetId, 'DELETE', [
+                'rule_id' => (int) $rule->id,
+                'data' => ['cascade' => true],
+            ]),
+            $subject,
+            $service,
+        ),
+        'topic' => $controller->destroyInboxTopic(
+            Request::create('/api/admin/materials/shares/inbox/'.$endpoint.'/'.$targetId, 'DELETE', [
+                'rule_id' => (int) $rule->id,
+                'data' => ['cascade' => true],
+            ]),
+            $topic,
+            $service,
+        ),
+        'unit' => $controller->destroyInboxUnit(
+            Request::create('/api/admin/materials/shares/inbox/'.$endpoint.'/'.$targetId, 'DELETE', [
+                'rule_id' => (int) $rule->id,
+                'data' => ['cascade' => true],
+            ]),
+            $unit,
+            $service,
+        ),
+    };
+    expect($deleteResponse->getStatusCode())->toBe(204);
+
+    expect(MaterialCard::withTrashed()->find($card->id)?->trashed())->toBeTrue();
+    expect(MaterialUnit::withTrashed()->find($unit->id)?->trashed())->toBeTrue();
+    expect(MaterialTopic::withTrashed()->find($topic->id)?->trashed())->toBe(in_array($deleteLevel, ['subject', 'topic'], true));
+    expect(MaterialSubject::withTrashed()->find($subject->id)?->trashed())->toBe($deleteLevel === 'subject');
+
+    $restoreListResponse = $controller->deletedInboxRestoreList(
+        Request::create('/api/admin/materials/shares/inbox/deleted-restore-list', 'GET', [
+            'rule_id' => (int) $rule->id,
+        ]),
+        $service,
+    );
+    expect($restoreListResponse->getStatusCode())->toBe(200);
+
+    $restoreListPayload = $restoreListResponse->getData(true);
+    expect($restoreListPayload['data'])->toHaveCount(1);
+    expect($restoreListPayload['data'][0]['type'])->toBe($restoreType);
+    expect($restoreListPayload['data'][0]['title'])->toBe($expectedTitle);
+    expect((int) $restoreListPayload['data'][0]['materials_count'])->toBe(1);
+
+    $restoreId = (int) ($restoreListPayload['data'][0]['id'] ?? 0);
+
+    $restoreResponse = $controller->restoreDeletedInboxItem(
+        Request::create('/api/admin/materials/shares/inbox/restore-deleted', 'POST', [
+            'rule_id' => (int) $rule->id,
+            'data' => [
+                'type' => $restoreType,
+                'id' => $restoreId,
+            ],
+        ]),
+        $service,
+    );
+    expect($restoreResponse->getStatusCode())->toBe(200);
+    expect((int) data_get($restoreResponse->getData(true), 'data.id'))->toBe($restoreId);
+
+    expect(MaterialCard::withTrashed()->find($card->id)?->trashed())->toBeFalse();
+    expect(MaterialUnit::withTrashed()->find($unit->id)?->trashed())->toBeFalse();
+    expect(MaterialTopic::withTrashed()->find($topic->id)?->trashed())->toBeFalse();
+    expect(MaterialSubject::withTrashed()->find($subject->id)?->trashed())->toBeFalse();
+})->with('shared hierarchy cascade delete levels');
+
+test('shared deleted restore list works when only deleted materials exist', function () {
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'shared-deleted-materials-only@test.local',
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Gelöschtes Material',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'blatt.pdf',
+        'size_bytes' => 1024,
+    ]);
+    $card->delete();
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->materialsAdmin->id,
+        'permission' => MaterialShareTarget::PERMISSION_FULL_ACCESS,
+    ]);
+
+    Auth::login($this->materialsAdmin);
+
+    $response = app(MaterialShareController::class)->deletedInboxRestoreList(
+        Request::create('/api/admin/materials/shares/inbox/deleted-restore-list', 'GET', [
+            'rule_id' => (int) $rule->id,
+        ]),
+        app(MaterialService::class),
+    );
+
+    expect($response->getStatusCode())->toBe(200);
+    expect($response->getData(true))->toHaveKey('data');
+    expect($response->getData(true)['data'])->toBeArray();
 });
 
 test('inbox read write can rename source hierarchy nodes', function () {
@@ -2483,7 +2779,12 @@ test('can copy shared material as original into own workspace with taxonomy type
         'licence_id' => $materialsLicence->id,
         'valid_until' => now()->addYear(),
     ]);
-
+    SchoolTool::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'active_schoolyear_id' => $recipientYear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
     $recipient = User::factory()->create([
         'school_id' => $recipientSchool->id,
         'schoolyear_id' => $recipientYear->id,
@@ -2668,6 +2969,12 @@ test('can einfächern shared material into selected target taxonomy', function (
         'licence_id' => $materialsLicence->id,
         'valid_until' => now()->addYear(),
     ]);
+    SchoolTool::factory()->create([
+        'school_id' => $recipientSchool->id,
+        'active_schoolyear_id' => $recipientYear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
 
     $recipient = User::factory()->create([
         'school_id' => $recipientSchool->id,
@@ -2803,23 +3110,13 @@ test('can einfächern shared material into selected target taxonomy', function (
 });
 
 test('can einfächern shared subject as full tree copy into local workspace', function () {
-    $materialsLicence = Licence::query()->firstWhere('name', 'Materialientool');
-    expect($materialsLicence)->not->toBeNull();
-
-    $recipientSchool = School::factory()->create(['is_selectable' => true]);
-    $recipientYear = Schoolyear::factory()->create(['school_id' => $recipientSchool->id]);
-    SchoolLicence::query()->create([
-        'school_id' => $recipientSchool->id,
-        'licence_id' => $materialsLicence->id,
-        'valid_until' => now()->addYear(),
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
     ]);
-
-    $recipient = User::factory()->create([
-        'school_id' => $recipientSchool->id,
-        'schoolyear_id' => $recipientYear->id,
-        'email' => 'recipient-subject-tree-copy@test.local',
-    ]);
-    $recipient->assignRole('materials_admin');
 
     $creator = User::factory()->create([
         'school_id' => $this->school->id,
@@ -2917,13 +3214,28 @@ test('can einfächern shared subject as full tree copy into local workspace', fu
     ]);
 
     $this->actingAs($recipient, 'sanctum');
+    Queue::fake();
 
     $response = $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$sourceSubject->id.'/insert-tree', [
         'rule_id' => (int) $rule->id,
     ])
-        ->assertOk()
-        ->assertJsonPath('message', 'Fachstruktur eingeordnet.')
-        ->assertJsonPath('data.copied_materials_count', 3);
+        ->assertAccepted()
+        ->assertJsonPath('message', 'Fach wird im Hintergrund eingeordnet.')
+        ->assertJsonPath('data.kind', 'subject_tree');
+
+    Queue::assertPushed(ProcessMaterialInboxInsertJob::class, function (ProcessMaterialInboxInsertJob $job) use ($recipient, $rule, $sourceSubject) {
+        return $job->authUserId === (int) $recipient->id
+            && (int) ($job->payload['rule_id'] ?? 0) === (int) $rule->id
+            && (int) ($job->payload['subject_id'] ?? 0) === (int) $sourceSubject->id;
+    });
+
+    $result = app(MaterialShareController::class)->runQueuedInboxSubjectTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        (int) $sourceSubject->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($result['copied_materials_count'] ?? 0))->toBe(3);
 
     $targetWorkspace = MaterialWorkspace::query()
         ->where('user_id', $recipient->id)
@@ -3003,13 +3315,14 @@ test('can einfächern shared subject as full tree copy into local workspace', fu
         ]);
     }
 
-    $this->postJson('/api/admin/materials/shares/inbox/subjects/'.$sourceSubject->id.'/insert-tree', [
-        'rule_id' => (int) $rule->id,
-    ])
-        ->assertOk()
-        ->assertJsonPath('message', 'Fachstruktur eingeordnet.')
-        ->assertJsonPath('data.subject_id', (int) $targetSubject->id)
-        ->assertJsonPath('data.copied_materials_count', 0);
+    $rerunResult = app(MaterialShareController::class)->runQueuedInboxSubjectTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        (int) $sourceSubject->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($rerunResult['subject_id'] ?? 0))->toBe((int) $targetSubject->id);
+    expect((int) ($rerunResult['copied_materials_count'] ?? 0))->toBe(0);
 
     expect(
         MaterialSubject::query()
@@ -3037,7 +3350,800 @@ test('can einfächern shared subject as full tree copy into local workspace', fu
             ->count()
     )->toBe(3);
 
-    expect((int) $response->json('data.subject_id'))->toBe((int) $targetSubject->id);
+    expect((string) $response->json('data.status'))->toBe('queued');
+});
+
+test('can einfächern shared workspace as full tree copy into local workspace', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-workspace-tree-copy@test.local',
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+
+    $mathSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $mathTopic = MaterialTopic::query()->create([
+        'subject_id' => $mathSubject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $mathUnit = MaterialUnit::query()->create([
+        'topic_id' => $mathTopic->id,
+        'name' => 'Terme',
+        'sort_order' => 1,
+    ]);
+
+    $languageSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Deutsch',
+        'sort_order' => 2,
+    ]);
+
+    $subjectCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Arbeitsblatt',
+        'source_text' => 'A',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $subjectCard->id,
+        'subject_id' => $mathSubject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $unitCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Uebungen',
+        'source_text' => 'B',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $unitCard->id,
+        'subject_id' => $mathSubject->id,
+        'topic_id' => $mathTopic->id,
+        'unit_id' => $mathUnit->id,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $unitCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_LINK,
+        'name' => 'Quelle',
+        'url' => 'https://example.org/algebra',
+    ]);
+
+    $secondSubjectCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Lesetraining',
+        'source_text' => 'C',
+        'status' => MaterialCard::STATUS_DONE,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $secondSubjectCard->id,
+        'subject_id' => $languageSubject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+    Queue::fake();
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/workspaces/'.$rule->id.'/insert-tree')
+        ->assertAccepted()
+        ->assertJsonPath('message', 'Workspace wird im Hintergrund eingeordnet.')
+        ->assertJsonPath('data.kind', 'workspace_tree');
+
+    Queue::assertPushed(ProcessMaterialInboxInsertJob::class, function (ProcessMaterialInboxInsertJob $job) use ($recipient, $rule) {
+        return $job->authUserId === (int) $recipient->id
+            && (int) ($job->payload['rule_id'] ?? 0) === (int) $rule->id
+            && (string) ($job->payload['kind'] ?? '') === 'workspace_tree';
+    });
+
+    $result = app(MaterialShareController::class)->runQueuedInboxWorkspaceTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($result['subjects_count'] ?? 0))->toBe(2);
+    expect((int) ($result['copied_materials_count'] ?? 0))->toBe(3);
+
+    $targetWorkspace = MaterialWorkspace::query()
+        ->where('user_id', $recipient->id)
+        ->first();
+    expect($targetWorkspace)->not->toBeNull();
+
+    $targetSubjects = MaterialSubject::query()
+        ->where('user_id', $recipient->id)
+        ->where('workspace_id', (int) $targetWorkspace->id)
+        ->orderBy('name')
+        ->get();
+    expect($targetSubjects->pluck('name')->all())->toBe(['Deutsch', 'Mathematik']);
+
+    $targetMathSubject = $targetSubjects->firstWhere('name', 'Mathematik');
+    $targetLanguageSubject = $targetSubjects->firstWhere('name', 'Deutsch');
+    expect($targetMathSubject)->not->toBeNull();
+    expect($targetLanguageSubject)->not->toBeNull();
+
+    $targetMathTopic = MaterialTopic::query()
+        ->where('subject_id', (int) $targetMathSubject->id)
+        ->where('name', 'Algebra')
+        ->first();
+    expect($targetMathTopic)->not->toBeNull();
+
+    $targetMathUnit = MaterialUnit::query()
+        ->where('topic_id', (int) $targetMathTopic->id)
+        ->where('name', 'Terme')
+        ->first();
+    expect($targetMathUnit)->not->toBeNull();
+
+    $copiedCards = MaterialCard::query()
+        ->where('user_id', $recipient->id)
+        ->where('workspace_id', (int) $targetWorkspace->id)
+        ->with(['attachments', 'classifications'])
+        ->get();
+    expect($copiedCards)->toHaveCount(3);
+
+    $copiedUnitCard = $copiedCards->firstWhere('title', 'Uebungen');
+    expect($copiedUnitCard)->not->toBeNull();
+    expect((int) ($copiedUnitCard->classifications->first()?->subject_id ?? 0))->toBe((int) $targetMathSubject->id);
+    expect((int) ($copiedUnitCard->classifications->first()?->topic_id ?? 0))->toBe((int) $targetMathTopic->id);
+    expect((int) ($copiedUnitCard->classifications->first()?->unit_id ?? 0))->toBe((int) $targetMathUnit->id);
+    expect((string) ($copiedUnitCard->attachments->firstWhere('attachment_type', MaterialCardAttachment::TYPE_LINK)?->url ?? ''))
+        ->toBe('https://example.org/algebra');
+
+    $this->assertDatabaseHas('material_inbox_imports', [
+        'target_user_id' => $recipient->id,
+        'source_rule_id' => $rule->id,
+        'source_material_id' => $subjectCard->id,
+    ]);
+    $this->assertDatabaseHas('material_inbox_imports', [
+        'target_user_id' => $recipient->id,
+        'source_rule_id' => $rule->id,
+        'source_material_id' => $unitCard->id,
+    ]);
+    $this->assertDatabaseHas('material_inbox_imports', [
+        'target_user_id' => $recipient->id,
+        'source_rule_id' => $rule->id,
+        'source_material_id' => $secondSubjectCard->id,
+    ]);
+
+    if (Schema::hasColumn('material_inbox_imports', 'import_mode')) {
+        $this->assertDatabaseHas('material_inbox_imports', [
+            'target_user_id' => $recipient->id,
+            'source_rule_id' => $rule->id,
+            'source_material_id' => $secondSubjectCard->id,
+            'import_mode' => MaterialInboxImport::MODE_COPY,
+        ]);
+    }
+
+    $rerunResult = app(MaterialShareController::class)->runQueuedInboxWorkspaceTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($rerunResult['workspace_id'] ?? 0))->toBe((int) $targetWorkspace->id);
+    expect((int) ($rerunResult['subjects_count'] ?? 0))->toBe(2);
+    expect((int) ($rerunResult['copied_materials_count'] ?? 0))->toBe(0);
+
+    expect(
+        MaterialSubject::query()
+            ->where('user_id', $recipient->id)
+            ->where('workspace_id', (int) $targetWorkspace->id)
+            ->count()
+    )->toBe(2);
+    expect(
+        MaterialCard::query()
+            ->where('user_id', $recipient->id)
+            ->where('workspace_id', (int) $targetWorkspace->id)
+            ->count()
+    )->toBe(3);
+
+    expect((string) $response->json('data.status'))->toBe('queued');
+});
+
+test('re-running shared subject tree insert syncs missing file attachments onto existing local cards', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-subject-tree-sync@test.local',
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Digitale Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Rechtliche Grundlagen',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Bereichsmaterial',
+        'source_text' => 'C',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/rechtliche-grundlagen.pdf', 'subject-tree-sync-file');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'rechtliche-grundlagen.pdf',
+        'file_path' => 'materials/source/rechtliche-grundlagen.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_SUBJECT,
+        'scope_id' => $sourceSubject->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $targetWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Digitale Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $targetUnit = MaterialUnit::query()->create([
+        'topic_id' => $targetTopic->id,
+        'name' => 'Rechtliche Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $existingCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'title' => 'Bereichsmaterial',
+        'source_text' => 'Lokale Kopie ohne Anhang',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $existingCard->id,
+        'subject_id' => $targetSubject->id,
+        'topic_id' => $targetTopic->id,
+        'unit_id' => $targetUnit->id,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $result = app(MaterialShareController::class)->runQueuedInboxSubjectTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        (int) $sourceSubject->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($result['copied_materials_count'] ?? 0))->toBe(0);
+
+    $existingCard->refresh();
+    $existingCard->load('attachments');
+
+    expect($existingCard->attachments)->toHaveCount(1);
+
+    $copiedAttachment = $existingCard->attachments->first();
+    expect($copiedAttachment)->not->toBeNull();
+    expect((string) ($copiedAttachment->name ?? ''))->toBe('rechtliche-grundlagen.pdf');
+    expect((int) ($copiedAttachment->size_bytes ?? 0))->toBe(2048);
+    expect((string) ($copiedAttachment->file_path ?? ''))->not->toBe('');
+    Storage::disk($disk)->assertExists((string) $copiedAttachment->file_path);
+    expect(Storage::disk($disk)->get((string) $copiedAttachment->file_path))->toBe('subject-tree-sync-file');
+});
+
+test('re-running shared workspace insert syncs missing file attachments onto existing local cards', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-workspace-tree-sync@test.local',
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Digitale Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Rechtliche Grundlagen',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Bereichsmaterial',
+        'source_text' => 'C',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => $sourceTopic->id,
+        'unit_id' => $sourceUnit->id,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/workspace-rechtliche-grundlagen.pdf', 'workspace-tree-sync-file');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'workspace-rechtliche-grundlagen.pdf',
+        'file_path' => 'materials/source/workspace-rechtliche-grundlagen.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 4096,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $targetWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Digitale Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $targetUnit = MaterialUnit::query()->create([
+        'topic_id' => $targetTopic->id,
+        'name' => 'Rechtliche Grundlagen',
+        'sort_order' => 1,
+    ]);
+    $existingCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'title' => 'Bereichsmaterial',
+        'source_text' => 'Lokale Kopie ohne Anhang',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $existingCard->id,
+        'subject_id' => $targetSubject->id,
+        'topic_id' => $targetTopic->id,
+        'unit_id' => $targetUnit->id,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $result = app(MaterialShareController::class)->runQueuedInboxWorkspaceTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($result['copied_materials_count'] ?? 0))->toBe(0);
+
+    $existingCard->refresh();
+    $existingCard->load('attachments');
+
+    expect($existingCard->attachments)->toHaveCount(1);
+
+    $copiedAttachment = $existingCard->attachments->first();
+    expect($copiedAttachment)->not->toBeNull();
+    expect((string) ($copiedAttachment->name ?? ''))->toBe('workspace-rechtliche-grundlagen.pdf');
+    expect((int) ($copiedAttachment->size_bytes ?? 0))->toBe(4096);
+    expect((string) ($copiedAttachment->file_path ?? ''))->not->toBe('');
+    Storage::disk($disk)->assertExists((string) $copiedAttachment->file_path);
+    expect(Storage::disk($disk)->get((string) $copiedAttachment->file_path))->toBe('workspace-tree-sync-file');
+});
+
+test('shared workspace insert copies file attachments from non-default storage disks', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-workspace-s3-copy@test.local',
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'title' => 'Netzwerk - Test',
+        'source_text' => 'C',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'subject_id' => $sourceSubject->id,
+        'topic_id' => null,
+        'unit_id' => null,
+    ]);
+
+    $defaultDisk = (string) config('filesystems.default', 'local');
+    Storage::fake($defaultDisk);
+    Storage::fake('s3');
+    Storage::disk('s3')->put('materials/source/netzwerk-test.docx', 'workspace-s3-copy-file');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'netzwerk-test.docx',
+        'file_path' => 'materials/source/netzwerk-test.docx',
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 8192,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $result = app(MaterialShareController::class)->runQueuedInboxWorkspaceTreeInsert(
+        (int) $recipient->id,
+        (int) $rule->id,
+        app(MaterialKeywordService::class),
+    );
+    expect((int) ($result['copied_materials_count'] ?? 0))->toBe(1);
+
+    $targetWorkspace = MaterialWorkspace::query()
+        ->where('user_id', $recipient->id)
+        ->first();
+    expect($targetWorkspace)->not->toBeNull();
+
+    $copiedCard = MaterialCard::query()
+        ->where('user_id', $recipient->id)
+        ->where('workspace_id', (int) $targetWorkspace->id)
+        ->with('attachments')
+        ->first();
+    expect($copiedCard)->not->toBeNull();
+    expect($copiedCard->attachments)->toHaveCount(1);
+
+    $copiedAttachment = $copiedCard->attachments->first();
+    expect($copiedAttachment)->not->toBeNull();
+    expect((int) ($copiedAttachment->size_bytes ?? 0))->toBe(8192);
+    expect((string) ($copiedAttachment->file_path ?? ''))->not->toBe('');
+    Storage::disk($defaultDisk)->assertExists((string) $copiedAttachment->file_path);
+    expect(Storage::disk($defaultDisk)->get((string) $copiedAttachment->file_path))->toBe('workspace-s3-copy-file');
+});
+
+test('shared topic insert dispatches queued import', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Informatik',
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Digitale Grundlagen',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_TOPIC,
+        'scope_id' => $sourceTopic->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $targetWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'name' => 'Informatik',
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+    Queue::fake();
+
+    $this->postJson('/api/admin/materials/shares/inbox/topics/'.$sourceTopic->id.'/insert-tree', [
+        'rule_id' => (int) $rule->id,
+        'target_subject_id' => (int) $targetSubject->id,
+    ])
+        ->assertAccepted()
+        ->assertJsonPath('message', 'Thema wird im Hintergrund eingeordnet.')
+        ->assertJsonPath('data.kind', 'topic_tree');
+
+    Queue::assertPushed(ProcessMaterialInboxInsertJob::class, function (ProcessMaterialInboxInsertJob $job) use ($recipient, $rule, $sourceTopic, $targetSubject) {
+        return $job->authUserId === (int) $recipient->id
+            && (string) ($job->payload['kind'] ?? '') === 'topic_tree'
+            && (int) ($job->payload['rule_id'] ?? 0) === (int) $rule->id
+            && (int) ($job->payload['topic_id'] ?? 0) === (int) $sourceTopic->id
+            && (int) ($job->payload['target_subject_id'] ?? 0) === (int) $targetSubject->id;
+    });
+});
+
+test('shared unit insert dispatches queued import', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+    ]);
+
+    $sourceWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $creator->id,
+        'name' => 'Quelle',
+        'is_default' => true,
+    ]);
+    $sourceSubject = MaterialSubject::query()->create([
+        'user_id' => $creator->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'name' => 'Informatik',
+    ]);
+    $sourceTopic = MaterialTopic::query()->create([
+        'subject_id' => $sourceSubject->id,
+        'name' => 'Digitale Grundlagen',
+    ]);
+    $sourceUnit = MaterialUnit::query()->create([
+        'topic_id' => $sourceTopic->id,
+        'name' => 'Rechtliche Grundlagen',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_UNIT,
+        'scope_id' => $sourceUnit->id,
+        'workspace_id' => $sourceWorkspace->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $targetWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'name' => 'Informatik',
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Digitale Grundlagen',
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+    Queue::fake();
+
+    $this->postJson('/api/admin/materials/shares/inbox/units/'.$sourceUnit->id.'/insert-tree', [
+        'rule_id' => (int) $rule->id,
+        'target_topic_id' => (int) $targetTopic->id,
+    ])
+        ->assertAccepted()
+        ->assertJsonPath('message', 'Bereich wird im Hintergrund eingeordnet.')
+        ->assertJsonPath('data.kind', 'unit_tree');
+
+    Queue::assertPushed(ProcessMaterialInboxInsertJob::class, function (ProcessMaterialInboxInsertJob $job) use ($recipient, $rule, $sourceUnit, $targetTopic) {
+        return $job->authUserId === (int) $recipient->id
+            && (string) ($job->payload['kind'] ?? '') === 'unit_tree'
+            && (int) ($job->payload['rule_id'] ?? 0) === (int) $rule->id
+            && (int) ($job->payload['unit_id'] ?? 0) === (int) $sourceUnit->id
+            && (int) ($job->payload['target_topic_id'] ?? 0) === (int) $targetTopic->id;
+    });
+});
+
+test('shared import status endpoint returns cached operation status for current user', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $statusStore = app(MaterialInboxImportStatusStore::class);
+    $operation = $statusStore->createQueuedOperation((int) $recipient->id, 'workspace_tree', [
+        'rule_id' => 99,
+    ]);
+    $statusStore->markCompleted((int) $recipient->id, (string) $operation['operation_id'], 'Workspace eingeordnet.', [
+        'workspace_id' => 55,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $this->getJson('/api/admin/materials/shares/inbox/import-operations/'.$operation['operation_id'])
+        ->assertOk()
+        ->assertJsonPath('data.status', 'completed')
+        ->assertJsonPath('data.message', 'Workspace eingeordnet.')
+        ->assertJsonPath('data.result.workspace_id', 55);
 });
 
 test('can einfächern shared material as link and overview marks it as linked with live updates', function () {
@@ -3051,7 +4157,6 @@ test('can einfächern shared material as link and overview marks it as linked wi
         'licence_id' => $materialsLicence->id,
         'valid_until' => now()->addYear(),
     ]);
-
     $recipient = User::factory()->create([
         'school_id' => $recipientSchool->id,
         'schoolyear_id' => $recipientYear->id,
@@ -4557,6 +5662,117 @@ test('shared item material insert creates missing target type and status definit
             expect((string) ($targetStatus->color ?? ''))->toBe('#2e7d32');
         }
     }
+});
+
+test('shared material insert syncs missing file attachments onto an existing local copy', function () {
+    $recipient = $this->materialsAdmin;
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'active_schoolyear_id' => $this->schoolyear->id,
+        'materials_visible_admin' => true,
+        'materials_visible_user' => true,
+    ]);
+
+    $targetWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $recipient->id,
+        'name' => 'Ziel',
+        'is_default' => true,
+    ]);
+    $targetSubject = MaterialSubject::query()->create([
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'name' => 'Deutsch',
+        'sort_order' => 1,
+    ]);
+    $targetTopic = MaterialTopic::query()->create([
+        'subject_id' => $targetSubject->id,
+        'name' => 'Literatur',
+        'sort_order' => 1,
+    ]);
+
+    $creator = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'source-material-sync@test.local',
+    ]);
+    $sourceCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $creator->id,
+        'title' => 'Geteiltes Material',
+        'source_text' => 'Original',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/source/geteiltes-material.pdf', 'material-insert-sync-file');
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $sourceCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'geteiltes-material.pdf',
+        'file_path' => 'materials/source/geteiltes-material.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 3072,
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $creator->id,
+        'scope_type' => MaterialShareRule::SCOPE_MATERIAL,
+        'scope_id' => $sourceCard->id,
+        'is_active' => true,
+    ]);
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $recipient->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_WRITE,
+    ]);
+
+    $existingCard = MaterialCard::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $recipient->id,
+        'workspace_id' => $targetWorkspace->id,
+        'title' => 'Geteiltes Material',
+        'source_text' => 'Lokale Kopie ohne Anhang',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $existingCard->id,
+        'subject_id' => $targetSubject->id,
+        'topic_id' => $targetTopic->id,
+        'unit_id' => null,
+    ]);
+
+    $this->actingAs($recipient, 'sanctum');
+
+    $response = $this->postJson('/api/admin/materials/shares/inbox/material-insert', [
+        'rule_id' => $rule->id,
+        'material_id' => $sourceCard->id,
+        'target_level' => 'topic',
+        'target_id' => $targetTopic->id,
+        'import_mode' => MaterialInboxImport::MODE_COPY,
+    ]);
+    $response
+        ->assertOk()
+        ->assertJsonPath('message', 'Material eingefächert.')
+        ->assertJsonPath('data.id', (int) $existingCard->id)
+        ->assertJsonPath('data.attachments_count', 1);
+
+    $existingCard->refresh();
+    $existingCard->load('attachments');
+
+    expect($existingCard->attachments)->toHaveCount(1);
+
+    $copiedAttachment = $existingCard->attachments->first();
+    expect($copiedAttachment)->not->toBeNull();
+    expect((string) ($copiedAttachment->name ?? ''))->toBe('geteiltes-material.pdf');
+    expect((int) ($copiedAttachment->size_bytes ?? 0))->toBe(3072);
+    expect((string) ($copiedAttachment->file_path ?? ''))->not->toBe('');
+    Storage::disk($disk)->assertExists((string) $copiedAttachment->file_path);
+    expect(Storage::disk($disk)->get((string) $copiedAttachment->file_path))->toBe('material-insert-sync-file');
 });
 
 test('copy as original keeps existing target type and status definitions', function () {

@@ -30,6 +30,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
+use App\Services\Materials\MaterialWorkspaceService;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -151,10 +152,91 @@ class MaterialController extends Controller
 
         return response()->json([
             'data' => $items,
-            'meta' => [
-                'limit' => max(1, (int) config('schooltool.materials_restore_deleted_cards_limit', 5)),
-            ],
         ], 200);
+    }
+
+    public function deletedWorkspaceRestoreList(MaterialService $service, MaterialWorkspaceService $workspaceService)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $workspace = $workspaceService->resolveActiveWorkspace($authUser);
+
+        if (! $workspace) {
+            return response()->json([
+                'data' => [],
+            ], 200);
+        }
+
+        $items = $service->deletedRestoreListForWorkspace($authUser, (int) $workspace->id);
+
+        return response()->json([
+            'data' => $items,
+        ], 200);
+    }
+
+    public function restoreDeletedWorkspaceItem(Request $request, MaterialService $service, MaterialWorkspaceService $workspaceService)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $workspace = $workspaceService->resolveActiveWorkspace($authUser);
+
+        if (! $workspace) {
+            return response()->json([
+                'message' => 'Kein aktiver Workspace vorhanden.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'data.type' => ['required', 'string', 'in:material,subject,topic,unit'],
+            'data.id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $item = $service->restoreDeletedItemForWorkspace(
+            $authUser,
+            (int) $workspace->id,
+            (string) ($validated['data']['type'] ?? ''),
+            (int) ($validated['data']['id'] ?? 0),
+        );
+
+        if ($item === null) {
+            return response()->json([
+                'message' => 'Das gelöschte Element konnte nicht wiederhergestellt werden.',
+            ], 404);
+        }
+
+        return response()->json([
+            'data' => $item,
+        ], 200);
+    }
+
+    public function purgeDeletedWorkspaceItem(Request $request, MaterialService $service, MaterialWorkspaceService $workspaceService)
+    {
+        $authUser = $this->authorizeForMaterials();
+        $workspace = $workspaceService->resolveActiveWorkspace($authUser);
+
+        if (! $workspace) {
+            return response()->json([
+                'message' => 'Kein aktiver Workspace vorhanden.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'data.type' => ['required', 'string', 'in:material,subject,topic,unit'],
+            'data.id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $deleted = $service->purgeDeletedItemForWorkspace(
+            $authUser,
+            (int) $workspace->id,
+            (string) ($validated['data']['type'] ?? ''),
+            (int) ($validated['data']['id'] ?? 0),
+        );
+
+        if (! $deleted) {
+            return response()->json([
+                'message' => 'Das gelöschte Element konnte nicht endgültig gelöscht werden.',
+            ], 404);
+        }
+
+        return response()->noContent();
     }
 
     public function show(MaterialCard $material_card, MaterialService $service)

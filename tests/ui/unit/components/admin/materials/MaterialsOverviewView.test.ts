@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowMount } from '@vue/test-utils'
-import axios from 'axios'
 import MaterialsOverviewView from '@/pages/admin/materials/components/views/MaterialsOverviewView.vue'
 
 const notificationNotifyMock = vi.fn()
@@ -12,6 +11,10 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 describe('MaterialsOverviewView', () => {
+    beforeEach(() => {
+        notificationNotifyMock.mockClear()
+    })
+
     it('renders material type chips in the overview header row', () => {
         const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
 
@@ -377,6 +380,97 @@ describe('MaterialsOverviewView', () => {
         expect(vm.subjectsTreeWorkspaceStructureExpanded).toBe(true)
     })
 
+    it('refreshes the overview and keeps the shared tree section plus shared source active', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const loadCards = vi.fn(async function (page, options) {
+            this.subjectsTreeSharedForMeExpanded = false
+            this.subjectsTreeSharedForMeArchiveExpanded = false
+            this.subjectsContentsSource = 'workspace'
+        })
+        const syncSubjectsTreeSectionToUrl = vi.fn()
+        const vm = {
+            ...methods,
+            isSubjectsContentsOverview: true,
+            forcedOverviewMode: '',
+            subjectsContentsSource: 'shared',
+            subjectsTreeSharedForMeExpanded: true,
+            subjectsTreeSharedForMeArchiveExpanded: false,
+            loadCards,
+            currentSubjectsTreeSection: methods.currentSubjectsTreeSection,
+            applySubjectsTreeSection: methods.applySubjectsTreeSection,
+            normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
+            syncSubjectsTreeSectionToUrl,
+            canSelectSubjectsContentsSource: methods.canSelectSubjectsContentsSource,
+        }
+
+        await methods.handleOverviewRefresh.call(vm)
+
+        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+        expect(vm.subjectsTreeSharedForMeExpanded).toBe(true)
+        expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(false)
+        expect(vm.subjectsContentsSource).toBe('shared')
+        expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('shared')
+    })
+
+    it('reads the workspace tree section from the url query', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+
+        window.history.pushState({}, '', '/admin/materials?main_action=overview&overview_section=archive')
+
+        expect(methods.readSubjectsTreeSectionFromUrl.call({
+            subjectsTreeSectionQueryKey: methods.subjectsTreeSectionQueryKey,
+            normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
+            $route: null,
+        })).toBe('archive')
+    })
+
+    it('syncs the workspace tree section into the current url', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const replaceState = vi.spyOn(window.history, 'replaceState')
+
+        window.history.pushState({}, '', '/admin/materials?main_action=overview')
+
+        methods.syncSubjectsTreeSectionToUrl.call({
+            subjectsTreeSectionQueryKey: methods.subjectsTreeSectionQueryKey,
+            normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
+            currentSubjectsTreeSection: methods.currentSubjectsTreeSection,
+            subjectsTreeSharedForMeExpanded: false,
+            subjectsTreeSharedForMeArchiveExpanded: true,
+        }, 'archive')
+
+        expect(replaceState).toHaveBeenCalled()
+        expect(window.location.search).toContain('main_action=overview')
+        expect(window.location.search).toContain('overview_section=archive')
+
+        replaceState.mockRestore()
+    })
+
+    it('toggles shared and archive tree sections while keeping the url in sync', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const syncSubjectsTreeSectionToUrl = vi.fn()
+        const vm = {
+            subjectsTreeSharedForMeExpanded: false,
+            subjectsTreeSharedForMeArchiveExpanded: false,
+            applySubjectsTreeSection: methods.applySubjectsTreeSection,
+            normalizeSubjectsTreeSection: methods.normalizeSubjectsTreeSection,
+            syncSubjectsTreeSectionToUrl,
+        }
+
+        methods.toggleSubjectsTreeSharedForMeExpanded.call(vm)
+        expect(vm.subjectsTreeSharedForMeExpanded).toBe(true)
+        expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(false)
+        expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('shared')
+
+        methods.toggleSubjectsTreeSharedForMeExpanded.call(vm)
+        expect(vm.subjectsTreeSharedForMeExpanded).toBe(false)
+        expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('workspace')
+
+        methods.toggleSubjectsTreeSharedForMeArchiveExpanded.call(vm)
+        expect(vm.subjectsTreeSharedForMeExpanded).toBe(false)
+        expect(vm.subjectsTreeSharedForMeArchiveExpanded).toBe(true)
+        expect(syncSubjectsTreeSectionToUrl).toHaveBeenLastCalledWith('archive')
+    })
+
     it('openShareDialog opens persistent dummy dialog when share actions are disabled', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const loadShareAssignments = vi.fn()
@@ -421,7 +515,7 @@ describe('MaterialsOverviewView', () => {
         expect(methods.sharedInsertLevelLabel.call({}, 'unknown')).toBe('Element')
     })
 
-    it('shows shared insert actions only when local workspace prerequisites exist', () => {
+    it('keeps shared insert actions visible even before local target structures are loaded', () => {
         const methods = MaterialsOverviewView?.methods || {}
 
         const noWorkspaceVm = {
@@ -429,9 +523,9 @@ describe('MaterialsOverviewView', () => {
             subjectsContentsOverviewItems: [],
         }
         expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'subject')).toBe(true)
-        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'topic')).toBe(false)
-        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'unit')).toBe(false)
-        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'material')).toBe(false)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'topic')).toBe(true)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'unit')).toBe(true)
+        expect(methods.canShowSharedInsertButton.call(noWorkspaceVm, 'material')).toBe(true)
 
         const subjectOnlyVm = {
             ...methods,
@@ -440,7 +534,7 @@ describe('MaterialsOverviewView', () => {
             ],
         }
         expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'topic')).toBe(true)
-        expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'unit')).toBe(false)
+        expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'unit')).toBe(true)
         expect(methods.canShowSharedInsertButton.call(subjectOnlyVm, 'material')).toBe(true)
 
         const topicVm = {
@@ -601,16 +695,153 @@ describe('MaterialsOverviewView', () => {
         })
     })
 
+    it('renders empty shared insert target messages in red', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+        const mountWithData = (overrides = {}) => shallowMount(MaterialsOverviewView, {
+            data() {
+                return {
+                    sharedTopicInsertDialogOpen: false,
+                    sharedUnitInsertDialogOpen: false,
+                    sharedMaterialInsertDialogOpen: false,
+                    sharedTopicInsertDraft: {
+                        ruleId: 31,
+                        topicId: 18,
+                        label: 'Digitale Kompetenzen',
+                        parentLabel: 'Medienbildung',
+                        targetSubjectId: null,
+                        nodeData: null,
+                    },
+                    sharedUnitInsertDraft: {
+                        ruleId: 32,
+                        unitId: 19,
+                        label: 'E-Mails',
+                        parentLabel: 'Digitale Kompetenzen',
+                        targetSubjectId: null,
+                        targetTopicId: null,
+                        nodeData: null,
+                    },
+                    sharedMaterialInsertDraft: {
+                        ruleId: 33,
+                        materialId: 91,
+                        label: 'Arbeitsblatt',
+                        parentLabel: 'Informatik / Digitale Kompetenzen / E-Mails',
+                        targetSubjectId: null,
+                        targetTopicId: null,
+                        targetUnitId: null,
+                        sourceTopicId: 21,
+                        sourceUnitId: 31,
+                    },
+                    subjectsContentsOverviewItems: [],
+                    ...overrides,
+                }
+            },
+            global: {
+                stubs: {
+                    MaterialsOverviewHeader: true,
+                    MaterialsOverviewSortBar: true,
+                    MaterialsSubjectsContentsTree: true,
+                    MaterialsOverviewFilters: true,
+                    MaterialsCardsList: true,
+                    MaterialsCardsGrid: true,
+                    MaterialsCardsAlphaList: true,
+                    MaterialsDetailDialog: true,
+                    MaterialsShareDialog: true,
+                    MaterialsCreateInlineForm: true,
+                    'v-dialog': { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    VDialog: { props: ['modelValue'], template: '<div v-if="modelValue"><slot /></div>' },
+                    'v-card': { template: '<div><slot /></div>' },
+                    VCard: { template: '<div><slot /></div>' },
+                    'v-card-title': { template: '<div><slot /></div>' },
+                    VCardTitle: { template: '<div><slot /></div>' },
+                    'v-card-text': { template: '<div><slot /></div>' },
+                    VCardText: { template: '<div><slot /></div>' },
+                    'v-card-actions': { template: '<div><slot /></div>' },
+                    VCardActions: { template: '<div><slot /></div>' },
+                    'v-btn': { template: '<button type="button"><slot /></button>' },
+                    VBtn: { template: '<button type="button"><slot /></button>' },
+                    'v-spacer': { template: '<div />' },
+                    VSpacer: { template: '<div />' },
+                },
+            },
+        })
+
+        try {
+            const topicWrapper = mountWithData({
+                sharedTopicInsertDialogOpen: true,
+            })
+            const unitWrapper = mountWithData({
+                sharedUnitInsertDialogOpen: true,
+                subjectsContentsOverviewItems: [
+                    {
+                        id: 7,
+                        name: 'Informatik',
+                        topics: [
+                            { id: 0, name: '' },
+                        ],
+                    },
+                ],
+                sharedUnitInsertDraft: {
+                    ruleId: 32,
+                    unitId: 19,
+                    label: 'E-Mails',
+                    parentLabel: 'Digitale Kompetenzen',
+                    targetSubjectId: 7,
+                    targetTopicId: null,
+                    nodeData: null,
+                },
+            })
+            const materialWrapper = mountWithData({
+                sharedMaterialInsertDialogOpen: true,
+                subjectsContentsOverviewItems: [
+                    {
+                        id: 7,
+                        name: 'Informatik',
+                        topics: [
+                            {
+                                id: 11,
+                                name: 'Digitale Kompetenzen',
+                                units: [],
+                            },
+                        ],
+                    },
+                ],
+                sharedMaterialInsertDraft: {
+                    ruleId: 33,
+                    materialId: 91,
+                    label: 'Arbeitsblatt',
+                    parentLabel: 'Informatik / Digitale Kompetenzen / E-Mails',
+                    targetSubjectId: 7,
+                    targetTopicId: 11,
+                    targetUnitId: null,
+                    sourceTopicId: 21,
+                    sourceUnitId: 31,
+                },
+            })
+
+            expect(topicWrapper.get('.text-error').text()).toContain('Es sind noch keine Fächer im Workspace vorhanden.')
+            expect(unitWrapper.get('.text-error').text()).toContain('Für das ausgewählte Fach sind keine Themen verfügbar.')
+            expect(materialWrapper.get('.text-error').text()).toContain('Für das ausgewählte Thema sind keine Bereiche vorhanden. Das Material wird im Thema eingeordnet.')
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
     it('confirms shared subject Einordnen and refreshes shared/workspace trees', async () => {
         const methods = MaterialsOverviewView?.methods || {}
-        const performSharedInboxMutation = vi.fn().mockResolvedValue({ subject_id: 99 })
-        const loadCards = vi.fn().mockResolvedValue(undefined)
-        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
+        const performSharedInboxMutationWithResponse = vi.fn().mockResolvedValue({
+            status: 202,
+            message: 'Fach wird im Hintergrund eingeordnet.',
+            data: {
+                operation_id: 'subject-op-1',
+                refresh_after_seconds: 3,
+            },
+        })
+        const trackPendingSharedImport = vi.fn().mockReturnValue(true)
         const vm = {
             ...methods,
-            performSharedInboxMutation,
-            loadCards,
-            loadSharedObjectsForMe,
+            performSharedInboxMutationWithResponse,
+            trackPendingSharedImport,
+            closeSharedSubjectInsertDialog: methods.closeSharedSubjectInsertDialog,
             sharedSubjectInsertDialogLoading: false,
             sharedSubjectInsertDialogOpen: true,
             sharedSubjectInsertDraft: {
@@ -622,7 +853,7 @@ describe('MaterialsOverviewView', () => {
 
         await methods.confirmSharedSubjectInsert.call(vm)
 
-        expect(performSharedInboxMutation).toHaveBeenCalledWith(
+        expect(performSharedInboxMutationWithResponse).toHaveBeenCalledWith(
             expect.objectContaining({
                 method: 'post',
                 url: '/api/admin/materials/shares/inbox/subjects/12/insert-tree',
@@ -631,8 +862,12 @@ describe('MaterialsOverviewView', () => {
                 },
             })
         )
-        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
-        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(trackPendingSharedImport).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 202 }),
+            expect.objectContaining({
+                queuedMessage: 'Fach "Digitale Grundlagen" wird im Hintergrund eingeordnet.',
+            })
+        )
         expect(vm.sharedSubjectInsertDialogOpen).toBe(false)
         expect(vm.sharedSubjectInsertDraft).toEqual({
             ruleId: null,
@@ -643,28 +878,22 @@ describe('MaterialsOverviewView', () => {
 
     it('confirms shared topic Einordnen into selected workspace subject and refreshes trees', async () => {
         const methods = MaterialsOverviewView?.methods || {}
-        const performSharedInboxMutation = vi.fn()
-            .mockResolvedValueOnce({ id: 501 })
-            .mockResolvedValueOnce({ id: 502 })
-        const loadCards = vi.fn().mockResolvedValue(undefined)
-        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
-        const ensureSharedTopicInsertTargetTopic = vi.fn().mockResolvedValue(120)
-        const ensureSharedTopicInsertTargetUnit = vi.fn().mockResolvedValue(220)
-        const collectSharedTopicInsertMaterials = vi.fn().mockReturnValue([
-            { id: 901, sourceUnitId: 0, sourceUnitName: '' },
-            { id: 902, sourceUnitId: 44, sourceUnitName: 'Kapitel A' },
-        ])
-        const closeSharedTopicInsertDialog = vi.fn()
+        const performSharedInboxMutationWithResponse = vi.fn().mockResolvedValue({
+            status: 202,
+            message: 'Thema wird im Hintergrund eingeordnet.',
+            data: {
+                operation_id: 'topic-op-1',
+                refresh_after_seconds: 3,
+            },
+        })
+        const trackPendingSharedImport = vi.fn().mockReturnValue(true)
         const vm = {
             ...methods,
-            performSharedInboxMutation,
-            loadCards,
-            loadSharedObjectsForMe,
-            ensureSharedTopicInsertTargetTopic,
-            ensureSharedTopicInsertTargetUnit,
-            collectSharedTopicInsertMaterials,
-            closeSharedTopicInsertDialog,
+            performSharedInboxMutationWithResponse,
+            trackPendingSharedImport,
+            closeSharedTopicInsertDialog: methods.closeSharedTopicInsertDialog,
             sharedTopicInsertDialogLoading: false,
+            sharedTopicInsertDialogOpen: true,
             sharedTopicInsertDraft: {
                 ruleId: 55,
                 topicId: 12,
@@ -677,34 +906,21 @@ describe('MaterialsOverviewView', () => {
 
         await methods.confirmSharedTopicInsert.call(vm)
 
-        expect(ensureSharedTopicInsertTargetTopic).toHaveBeenCalledWith(9, 'Digitale Kompetenzen')
-        expect(ensureSharedTopicInsertTargetUnit).toHaveBeenCalledWith(120, 'Kapitel A')
-        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        expect(performSharedInboxMutationWithResponse).toHaveBeenCalledWith(expect.objectContaining({
             method: 'post',
-            url: '/api/admin/materials/shares/inbox/material-insert',
+            url: '/api/admin/materials/shares/inbox/topics/12/insert-tree',
             data: {
                 rule_id: 55,
-                material_id: 901,
-                target_level: 'topic',
-                target_id: 120,
-                source_topic_id: 12,
+                target_subject_id: 9,
             },
         }))
-        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(2, expect.objectContaining({
-            method: 'post',
-            url: '/api/admin/materials/shares/inbox/material-insert',
-            data: {
-                rule_id: 55,
-                material_id: 902,
-                target_level: 'unit',
-                target_id: 220,
-                source_topic_id: 12,
-                source_unit_id: 44,
-            },
-        }))
-        expect(closeSharedTopicInsertDialog).toHaveBeenCalledWith(true)
-        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
-        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(trackPendingSharedImport).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 202 }),
+            expect.objectContaining({
+                queuedMessage: 'Thema "Digitale Kompetenzen" wird im Hintergrund eingeordnet.',
+            })
+        )
+        expect(vm.sharedTopicInsertDialogOpen).toBe(false)
     })
 
     it('reuses an existing target topic with the same name when shared topic Einordnen is confirmed', async () => {
@@ -791,26 +1007,22 @@ describe('MaterialsOverviewView', () => {
 
     it('confirms shared unit Einordnen into selected workspace topic and refreshes trees', async () => {
         const methods = MaterialsOverviewView?.methods || {}
-        const performSharedInboxMutation = vi.fn()
-            .mockResolvedValueOnce({ id: 601 })
-            .mockResolvedValueOnce({ id: 602 })
-        const loadCards = vi.fn().mockResolvedValue(undefined)
-        const loadSharedObjectsForMe = vi.fn().mockResolvedValue(undefined)
-        const ensureSharedUnitInsertTargetUnit = vi.fn().mockResolvedValue(320)
-        const collectSharedUnitInsertMaterials = vi.fn().mockReturnValue([
-            { id: 903, sourceUnitId: 44, sourceUnitName: 'E-Mails' },
-            { id: 904, sourceUnitId: 44, sourceUnitName: 'E-Mails' },
-        ])
-        const closeSharedUnitInsertDialog = vi.fn()
+        const performSharedInboxMutationWithResponse = vi.fn().mockResolvedValue({
+            status: 202,
+            message: 'Bereich wird im Hintergrund eingeordnet.',
+            data: {
+                operation_id: 'unit-op-1',
+                refresh_after_seconds: 3,
+            },
+        })
+        const trackPendingSharedImport = vi.fn().mockReturnValue(true)
         const vm = {
             ...methods,
-            performSharedInboxMutation,
-            loadCards,
-            loadSharedObjectsForMe,
-            ensureSharedUnitInsertTargetUnit,
-            collectSharedUnitInsertMaterials,
-            closeSharedUnitInsertDialog,
+            performSharedInboxMutationWithResponse,
+            trackPendingSharedImport,
+            closeSharedUnitInsertDialog: methods.closeSharedUnitInsertDialog,
             sharedUnitInsertDialogLoading: false,
+            sharedUnitInsertDialogOpen: true,
             sharedUnitInsertDraft: {
                 ruleId: 56,
                 unitId: 44,
@@ -824,32 +1036,21 @@ describe('MaterialsOverviewView', () => {
 
         await methods.confirmSharedUnitInsert.call(vm)
 
-        expect(ensureSharedUnitInsertTargetUnit).toHaveBeenCalledWith(120, 'E-Mails')
-        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        expect(performSharedInboxMutationWithResponse).toHaveBeenCalledWith(expect.objectContaining({
             method: 'post',
-            url: '/api/admin/materials/shares/inbox/material-insert',
+            url: '/api/admin/materials/shares/inbox/units/44/insert-tree',
             data: {
                 rule_id: 56,
-                material_id: 903,
-                target_level: 'unit',
-                target_id: 320,
-                source_unit_id: 44,
+                target_topic_id: 120,
             },
         }))
-        expect(performSharedInboxMutation).toHaveBeenNthCalledWith(2, expect.objectContaining({
-            method: 'post',
-            url: '/api/admin/materials/shares/inbox/material-insert',
-            data: {
-                rule_id: 56,
-                material_id: 904,
-                target_level: 'unit',
-                target_id: 320,
-                source_unit_id: 44,
-            },
-        }))
-        expect(closeSharedUnitInsertDialog).toHaveBeenCalledWith(true)
-        expect(loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
-        expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(trackPendingSharedImport).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 202 }),
+            expect.objectContaining({
+                queuedMessage: 'Bereich "E-Mails" wird im Hintergrund eingeordnet.',
+            })
+        )
+        expect(vm.sharedUnitInsertDialogOpen).toBe(false)
     })
 
     it('reuses an existing target unit with the same name when shared unit Einordnen is confirmed', async () => {
@@ -927,6 +1128,54 @@ describe('MaterialsOverviewView', () => {
         expect(loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
     })
 
+    it('reloads completed queued shared imports and refreshes the workspace data once', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const originalAxios = (globalThis as any).axios
+        const axiosGet = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    status: 'completed',
+                    message: 'Workspace eingeordnet.',
+                    refresh_after_seconds: 3,
+                },
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: axiosGet,
+        }
+        const vm = {
+            ...methods,
+            pendingSharedImportOperations: {
+                abc123: {
+                    operationId: 'abc123',
+                    refreshAfterSeconds: 3,
+                },
+            },
+            loadCards: vi.fn().mockResolvedValue(undefined),
+            loadSharedObjectsForMe: vi.fn().mockResolvedValue(undefined),
+            showWorkspaceAfterSharedInsert: vi.fn(),
+            clearPendingSharedImportReload: vi.fn(),
+            schedulePendingSharedImportReload: vi.fn(),
+        }
+
+        try {
+            await methods.reloadPendingSharedImportOperations.call(vm)
+
+            expect(axiosGet).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/import-operations/abc123')
+            expect(vm.showWorkspaceAfterSharedInsert).toHaveBeenCalledTimes(1)
+            expect(vm.loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
+            expect(vm.loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+            expect(notificationNotifyMock).toHaveBeenCalledWith(expect.objectContaining({
+                message: 'Workspace eingeordnet.',
+                type: 'success',
+            }))
+            expect(vm.pendingSharedImportOperations).toEqual({})
+            expect(vm.clearPendingSharedImportReload).toHaveBeenCalledTimes(1)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
     it('normalizes and sorts shared objects from inbox users response', () => {
         const methods = MaterialsOverviewView?.methods || {}
         const vm = {
@@ -946,6 +1195,7 @@ describe('MaterialsOverviewView', () => {
                 shared_items: [
                     {
                         rule_id: 15,
+                        scope_id: 501,
                         scope_type: 'material',
                         scope_label: 'Material',
                         scope_object_label: 'Zettel',
@@ -996,6 +1246,7 @@ describe('MaterialsOverviewView', () => {
             },
             {
                 label: 'Lehrer Zwei',
+                email: 'lehrer.zwei@example.test',
                 school_label: 'Abendgymnasium',
                 shared_items: [
                     {
@@ -1082,6 +1333,7 @@ describe('MaterialsOverviewView', () => {
         expect(cards).toHaveLength(7)
         expect(cards[0].ruleId).toBe(20)
         expect(cards[0].fromUserLabel).toBe('Lehrer Zwei')
+        expect(cards[0].fromUserEmail).toBe('lehrer.zwei@example.test')
         expect(cards[0].materialsCount).toBe(3)
         expect(cards[0].scopeObjectLabel).toBe('Teamraum Mathematik')
         expect(cards[0].scopePathLabel).toBe('Teamraum Mathematik')
@@ -1100,6 +1352,69 @@ describe('MaterialsOverviewView', () => {
         expect(cards[5].ruleId).toBe(16)
         expect(cards[6].ruleId).toBe(15)
         expect(cards[1].scopeLabel).toBe('Fach')
+    })
+
+    it('normalizes workspace tree selection payloads for created nodes', () => {
+        const methods = MaterialsOverviewView?.methods || {}
+
+        expect(methods.normalizeWorkspaceTreeSelection.call({}, {
+            level: 'subject',
+            nodeId: 5,
+        })).toEqual({
+            subjectId: 5,
+            topicId: null,
+            unitId: null,
+        })
+
+        expect(methods.normalizeWorkspaceTreeSelection.call({}, {
+            level: 'topic',
+            nodeId: 8,
+            parentSubjectId: 3,
+        })).toEqual({
+            subjectId: 3,
+            topicId: 8,
+            unitId: null,
+        })
+
+        expect(methods.normalizeWorkspaceTreeSelection.call({}, {
+            level: 'unit',
+            nodeId: 13,
+            parentSubjectId: 3,
+            parentTopicId: 8,
+        })).toEqual({
+            subjectId: 3,
+            topicId: 8,
+            unitId: 13,
+        })
+    })
+
+    it('keeps a temporary workspace tree selection while the workspace overview reloads', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const selectionsDuringLoad: any[] = []
+        const vm = {
+            subjectsTreeWorkspaceSelection: null,
+            normalizeWorkspaceTreeSelection: methods.normalizeWorkspaceTreeSelection,
+            loadCards: vi.fn(async () => {
+                selectionsDuringLoad.push(vm.subjectsTreeWorkspaceSelection)
+            }),
+        }
+
+        await methods.refreshWorkspaceStructureTree.call(vm, {
+            level: 'unit',
+            nodeId: 13,
+            parentSubjectId: 3,
+            parentTopicId: 8,
+        })
+
+        expect(selectionsDuringLoad).toEqual([
+            {
+                subjectId: 3,
+                topicId: 8,
+                unitId: 13,
+            },
+        ])
+        expect(vm.subjectsTreeWorkspaceSelection).toBeNull()
+        expect(vm.loadCards).toHaveBeenCalledWith(null, { forceFilterCountRefresh: true })
     })
 
     it('normalizes archived shared objects from inbox users response when requested', () => {
@@ -1176,6 +1491,7 @@ describe('MaterialsOverviewView', () => {
                     },
                     {
                         rule_id: 15,
+                        scope_id: 501,
                         scope_type: 'material',
                         scope_label: 'Material',
                         scope_object_label: 'Zettel',
@@ -1197,6 +1513,7 @@ describe('MaterialsOverviewView', () => {
 
         expect(cards).toHaveLength(3)
         expect(cards[0].ruleId).toBe(15)
+        expect(cards[0].scopeId).toBe(501)
     })
 
     it('preserves expanded shared tree cards across shared inbox reloads', async () => {
@@ -1500,6 +1817,7 @@ describe('MaterialsOverviewView', () => {
                             permission: 'read_write',
                             permissionLabel: 'LESEN/SCHREIBEN',
                             fromUserLabel: 'Lehrer Eins',
+                            fromUserEmail: 'lehrer.eins@example.test',
                             fromSchoolLabel: 'Abendgymnasium',
                             hierarchy: [
                                 {
@@ -1591,6 +1909,7 @@ describe('MaterialsOverviewView', () => {
                 .findAll('button')
                 .filter((button) => String(button.text() || '').trim() === 'Einordnen')
 
+            expect(wrapper.text()).toMatch(/Von:\s*Lehrer Eins \(lehrer\.eins@example\.test\)\s*·\s*Abendgymnasium/)
             expect(insertButtons.length).toBe(6)
         } finally {
             beforeMountSpy.mockRestore()
@@ -2524,5 +2843,277 @@ describe('MaterialsOverviewView', () => {
         })
         expect(vm.activeSharedRuleId).toBe(30)
         expect(vm.sharedObjectsForMeCards[0]?.ruleId).toBe(30)
+    })
+
+    it('loads deleted restore items for the workspace context', async () => {
+        const originalAxios = (globalThis as any).axios
+        const getSpy = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        type: 'unit',
+                        type_label: 'Bereich',
+                        id: 55,
+                        title: 'Einheit 5',
+                        path_label: 'Informatik > Digitale Kompetenzen',
+                        materials_count: 0,
+                        attachments_count: 0,
+                        size_bytes: 2048,
+                        deleted_at: '2026-04-11 12:00:00',
+                    },
+                ],
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: getSpy,
+        }
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        try {
+            const wrapper = shallowMount(MaterialsOverviewView, {
+                data() {
+                    return {
+                        deletedMaterialRestoreItems: [],
+                        deletedMaterialRestoreHidden: true,
+                        subjectsTreeSharedForMeExpanded: false,
+                        subjectsTreeSharedForMeArchiveExpanded: false,
+                        activeSharedRuleId: null,
+                        sharedObjectsForMeCards: [],
+                        overviewViewMode: 'list',
+                    }
+                },
+                global: {
+                    stubs: {
+                        MaterialsOverviewHeader: true,
+                    },
+                },
+            })
+
+            await wrapper.vm.refreshLastDeletedMaterialRestoreInfo()
+
+            expect(getSpy).toHaveBeenCalledWith('/api/admin/materials/deleted-restore-list')
+            expect(wrapper.vm.deletedMaterialRestoreItems).toEqual([
+                {
+                    id: 55,
+                    type: 'unit',
+                    typeLabel: 'Bereich',
+                    title: 'Einheit 5',
+                    pathLabel: 'Informatik > Digitale Kompetenzen',
+                    attachmentsCount: 0,
+                    materialsCount: 0,
+                    sizeBytes: 2048,
+                    deletedAt: '2026-04-11 12:00:00',
+                },
+            ])
+            expect(wrapper.vm.deletedMaterialRestoreHidden).toBe(false)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+            beforeMountSpy.mockRestore()
+        }
+    })
+
+    it('keeps the workspace restore context after a workspace tree refresh even when shared cards are active', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const originalAxios = (globalThis as any).axios
+        const getSpy = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        type: 'unit',
+                        type_label: 'Bereich',
+                        id: 55,
+                        title: 'Einheit 5',
+                        path_label: 'Informatik > Digitale Kompetenzen',
+                        materials_count: 0,
+                        attachments_count: 0,
+                        size_bytes: 2048,
+                        deleted_at: '2026-04-11 12:00:00',
+                    },
+                ],
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: getSpy,
+        }
+
+        const vm = {
+            ...methods,
+            deletedMaterialRestoreItems: [],
+            deletedMaterialRestoreHidden: true,
+            deletedMaterialRestoreContextOverride: null,
+            subjectsTreeSharedForMeExpanded: false,
+            subjectsTreeSharedForMeArchiveExpanded: false,
+            subjectsContentsSource: 'shared',
+            overviewViewMode: 'subjects_contents',
+            activeSharedRuleId: 14,
+            sharedObjectsForMeCards: [{ ruleId: 14 }],
+            subjectsTreeWorkspaceSelection: null,
+            loadCards: vi.fn().mockResolvedValue(undefined),
+            normalizeWorkspaceTreeSelection: methods.normalizeWorkspaceTreeSelection,
+        }
+
+        try {
+            await methods.refreshWorkspaceStructureTree.call(vm)
+
+            expect(getSpy).toHaveBeenCalledWith('/api/admin/materials/deleted-restore-list')
+            expect(vm.deletedMaterialRestoreContextOverride).toEqual({
+                source: 'workspace',
+                ruleId: null,
+            })
+            expect(vm.deletedMaterialRestoreItems[0]?.type).toBe('unit')
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('loads deleted restore items for the active shared rule', async () => {
+        const originalAxios = (globalThis as any).axios
+        const getSpy = vi.fn().mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        type: 'material',
+                        type_label: 'Material',
+                        id: 81,
+                        title: 'Arbeitsblatt',
+                        path_label: 'Biologie > Pflanzen > Blatt',
+                        materials_count: 1,
+                        attachments_count: 2,
+                        size_bytes: 4096,
+                        deleted_at: '2026-04-11 13:00:00',
+                    },
+                ],
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: getSpy,
+        }
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        try {
+            const wrapper = shallowMount(MaterialsOverviewView, {
+                data() {
+                    return {
+                        deletedMaterialRestoreItems: [],
+                        deletedMaterialRestoreHidden: true,
+                        subjectsTreeSharedForMeExpanded: true,
+                        subjectsTreeSharedForMeArchiveExpanded: false,
+                        activeSharedRuleId: 14,
+                        sharedObjectsForMeCards: [{ ruleId: 14 }],
+                        overviewViewMode: 'list',
+                    }
+                },
+                global: {
+                    stubs: {
+                        MaterialsOverviewHeader: true,
+                    },
+                },
+            })
+
+            await wrapper.vm.refreshLastDeletedMaterialRestoreInfo()
+
+            expect(getSpy).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/deleted-restore-list', {
+                params: {
+                    rule_id: 14,
+                },
+            })
+            expect(wrapper.vm.deletedMaterialRestoreItems[0]?.type).toBe('material')
+            expect(wrapper.vm.deletedMaterialRestoreItems[0]?.attachmentsCount).toBe(2)
+            expect(wrapper.vm.deletedMaterialRestoreItems[0]?.sizeBytes).toBe(4096)
+            expect(wrapper.vm.deletedMaterialRestoreItems[0]?.pathLabel).toBe('Biologie > Pflanzen > Blatt')
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+            beforeMountSpy.mockRestore()
+        }
+    })
+
+    it('renders deleted structure restore items with a visible element count', () => {
+        const beforeMountSpy = vi.spyOn(MaterialsOverviewView, 'beforeMount').mockImplementation(() => {})
+
+        try {
+            const wrapper = shallowMount(MaterialsOverviewView, {
+                data() {
+                    return {
+                        deletedMaterialRestoreItems: [
+                            {
+                                id: 12,
+                                type: 'subject',
+                                typeLabel: 'Fach',
+                                title: 'Informatik',
+                                pathLabel: '',
+                                attachmentsCount: 0,
+                                materialsCount: 31,
+                                sizeBytes: 26624,
+                                deletedAt: '2026-04-11 12:00:00',
+                            },
+                        ],
+                        deletedMaterialRestoreHidden: false,
+                        deletedMaterialRestoreContextOverride: {
+                            source: 'workspace',
+                            ruleId: null,
+                        },
+                        subjectsTreeSharedForMeExpanded: false,
+                        subjectsTreeSharedForMeArchiveExpanded: false,
+                        activeSharedRuleId: null,
+                        sharedObjectsForMeCards: [],
+                        overviewViewMode: 'list',
+                    }
+                },
+                global: {
+                    stubs: {
+                        MaterialsOverviewHeader: true,
+                    },
+                },
+            })
+
+            expect(wrapper.text()).toContain('Fach: Informatik')
+            expect(wrapper.text()).toContain('31 Elemente')
+            expect(wrapper.text()).toContain('26 KB')
+            expect(wrapper.text()).toContain('Gelöschte Elemente des Workspace (wiederherstellbar).')
+        } finally {
+            beforeMountSpy.mockRestore()
+        }
+    })
+
+    it('refreshes the shared restore list after deleting a shared material from the edit dialog', async () => {
+        const methods = MaterialsOverviewView?.methods || {}
+        const vm = {
+            ...methods,
+            editForm: {
+                id: 81,
+            },
+            isSavingEdit: false,
+            isDeletingEditedMaterial: false,
+            editDeleteConfirmDialogOpen: true,
+            isDeletingId: null,
+            editDeleteStep: 1,
+            editDeleteConfirmDialogLoading: false,
+            isEditSharedInboxMaterial: true,
+            canEditLinkedDeleteMaterial: true,
+            sharedInboxContextForCard: vi.fn().mockReturnValue({
+                ruleId: 14,
+                materialId: 81,
+            }),
+            deleteSharedMaterial: vi.fn().mockResolvedValue(true),
+            closeEditDialog: vi.fn().mockResolvedValue(undefined),
+            loadCards: vi.fn().mockResolvedValue(undefined),
+            loadSharedObjectsForMe: vi.fn().mockResolvedValue(undefined),
+            refreshLastDeletedMaterialRestoreInfo: vi.fn().mockResolvedValue(undefined),
+            materialCardStore: {
+                destroy: vi.fn(),
+            },
+        }
+
+        await methods.confirmDeleteFromEdit.call(vm)
+
+        expect(vm.deleteSharedMaterial).toHaveBeenCalledWith({
+            ruleId: 14,
+            materialId: 81,
+        })
+        expect(vm.loadSharedObjectsForMe).toHaveBeenCalledTimes(1)
+        expect(vm.refreshLastDeletedMaterialRestoreInfo).toHaveBeenCalledWith({
+            source: 'shared',
+            ruleId: 14,
+        })
     })
 })

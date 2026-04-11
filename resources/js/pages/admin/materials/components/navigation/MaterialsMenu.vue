@@ -24,6 +24,18 @@
             Geteilt
         </v-btn>
 
+        <v-btn
+            class="materials-menu-btn"
+            :class="{ 'materials-menu-btn--active': modelValue === 'permissions' }"
+            rounded="pill"
+            size="large"
+            variant="flat"
+            prepend-icon="mdi-information-outline"
+            :disabled="disabled"
+            @click="$emit('update:modelValue', 'permissions')">
+            Berechtigungen
+        </v-btn>
+
         <v-spacer />
 
         <v-btn

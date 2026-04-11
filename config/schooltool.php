@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.30.3',
+    'version' => '3.30.4',
     'copyright' => '(c) 2025 – 2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -24,7 +24,6 @@ return [
         // ...
     ],
 
-    'materials_restore_deleted_cards_limit' => (int) env('MATERIALS_RESTORE_DELETED_CARDS_LIMIT', 5),
     'materials_default_types' => [
         'Arbeitsblatt',
         'Merkblatt',

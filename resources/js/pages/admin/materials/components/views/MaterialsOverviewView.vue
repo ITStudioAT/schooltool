@@ -7,9 +7,10 @@
             :action-disabled="isDeletingId !== null || isSavingEdit || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null"
             :struktur-modus="subjectsTreeWorkspaceStructureExpanded"
             @update:overview-view-mode="setOverviewMode"
-            @refresh="loadCards">
+            @refresh="handleOverviewRefresh">
             <div v-if="!isSharedSubjectsContentsSource && !subjectsTreeWorkspaceStructureExpanded" class="materials-overview-header-subtitle text-caption text-medium-emphasis">
-                Belegter Speicher: {{ allListedAttachmentSizeLabel }}<span v-if="storageCapacityLabel">/{{ storageCapacityLabel }}</span>
+                Belegter Speicher: {{ allListedAttachmentSizeLabel }}
+                <span v-if="storageCapacityLabel">/{{ storageCapacityLabel }}</span>
             </div>
 
             <div class="materials-overview-secondary-filter-row d-flex align-center flex-wrap ga-2">
@@ -63,13 +64,7 @@
 
         <Teleport to="body">
             <div v-if="subjectsTreeWorkspaceStructureExpanded" class="struktur-modus-fab">
-                <v-btn
-                    color="warning"
-                    variant="flat"
-                    prepend-icon="mdi-close"
-                    @click="toggleSubjectsTreeWorkspaceStructureExpanded">
-                    Struktur schließen
-                </v-btn>
+                <v-btn color="warning" variant="flat" prepend-icon="mdi-close" @click="toggleSubjectsTreeWorkspaceStructureExpanded">Struktur schließen</v-btn>
             </div>
         </Teleport>
 
@@ -99,43 +94,39 @@
             :is-unit-filter-active="isUnitFilterActive"
             :toggle-unit-filter="toggleUnitFilter" />
 
-        <v-alert
-            v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && !deletedMaterialRestoreHidden"
-            type="warning"
-            variant="tonal"
-            class="mb-4">
+        <v-alert v-if="canShowDeletedRestoreList && !deletedMaterialRestoreHidden" type="warning" variant="tonal" class="mb-4">
             <div class="d-flex flex-column ga-3">
                 <div class="d-flex flex-column flex-md-row align-md-center ga-2">
-                    <div class="flex-grow-1">
-                        Gelöschte Materialien (wiederherstellbar, max. {{ deletedMaterialRestoreLimit }}).
-                    </div>
+                    <div class="flex-grow-1">{{ deletedRestoreListHeading }}</div>
                     <div class="d-flex ga-2">
-                        <v-btn
-                            size="small"
-                            variant="text"
-                            :disabled="isRestoringLastDeletedMaterial || isPurgingDeletedMaterial"
-                            @click="hideDeletedMaterialRestoreList">
+                        <v-btn size="small" variant="text" :disabled="isRestoringLastDeletedMaterial || isPurgingDeletedMaterial" @click="hideDeletedMaterialRestoreList">
                             Ausblenden
                         </v-btn>
                     </div>
                 </div>
 
                 <v-list class="bg-transparent pa-0">
-                    <v-list-item
-                        v-for="item in deletedMaterialRestoreItems"
-                        :key="`deleted-restore-item-${item.id}`"
-                        class="px-0 py-2">
+                    <v-list-item v-for="item in deletedMaterialRestoreItems" :key="`deleted-restore-item-${item.type}-${item.id}`" class="px-0 py-2">
                         <div class="d-flex flex-column flex-md-row align-md-center ga-2 w-100">
                             <div class="flex-grow-1">
                                 <div class="text-body-2 font-weight-medium">
-                                    {{ item.title || 'Material' }}
+                                    {{ item.typeLabel || 'Element' }}: {{ item.title || 'Ohne Titel' }}
+                                    <span v-if="item.type !== 'material' && Number(item.materialsCount || 0) > 0">
+                                        · {{ Number(item.materialsCount || 0) }} Element{{ Number(item.materialsCount || 0) === 1 ? '' : 'e' }}
+                                    </span>
                                 </div>
                                 <div class="text-caption text-medium-emphasis">
+                                    <span v-if="item.pathLabel">{{ item.pathLabel }} • </span>
                                     Gelöscht: {{ item.deletedAt ? formatDateTime(item.deletedAt) : 'unbekannt' }}
+                                    <span v-if="Number(item.sizeBytes || 0) > 0">
+                                        • {{ formatBytes(Number(item.sizeBytes || 0)) }}
+                                    </span>
                                     <span v-if="Number(item.attachmentsCount || 0) > 0">
                                         • {{ Number(item.attachmentsCount || 0) }} Anhang{{ Number(item.attachmentsCount || 0) === 1 ? '' : 'e' }}
                                     </span>
-                                    <span v-else>• keine Anhänge</span>
+                                    <span v-else-if="item.type === 'material' && Number(item.materialsCount || 0) > 0">
+                                        • {{ Number(item.materialsCount || 0) }} Material{{ Number(item.materialsCount || 0) === 1 ? '' : 'ien' }}
+                                    </span>
                                 </div>
                             </div>
                             <div>
@@ -146,7 +137,13 @@
                                         variant="flat"
                                         prepend-icon="mdi-restore"
                                         :loading="isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) === Number(item.id || 0)"
-                                        :disabled="isLoading || isSavingEdit || isDeletingId !== null || isPurgingDeletedMaterial || (isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) !== Number(item.id || 0))"
+                                        :disabled="
+                                            isLoading ||
+                                            isSavingEdit ||
+                                            isDeletingId !== null ||
+                                            isPurgingDeletedMaterial ||
+                                            (isRestoringLastDeletedMaterial && Number(restoringDeletedMaterialId || 0) !== Number(item.id || 0))
+                                        "
                                         @click="restoreDeletedMaterial(item)">
                                         Wiederherstellen
                                     </v-btn>
@@ -156,7 +153,13 @@
                                         variant="outlined"
                                         prepend-icon="mdi-delete-forever-outline"
                                         :loading="isPurgingDeletedMaterial && Number(purgingDeletedMaterialId || 0) === Number(item.id || 0)"
-                                        :disabled="isLoading || isSavingEdit || isDeletingId !== null || isRestoringLastDeletedMaterial || (isPurgingDeletedMaterial && Number(purgingDeletedMaterialId || 0) !== Number(item.id || 0))"
+                                        :disabled="
+                                            isLoading ||
+                                            isSavingEdit ||
+                                            isDeletingId !== null ||
+                                            isRestoringLastDeletedMaterial ||
+                                            (isPurgingDeletedMaterial && Number(purgingDeletedMaterialId || 0) !== Number(item.id || 0))
+                                        "
                                         @click="purgeDeletedMaterial(item)">
                                         Endgültig löschen
                                     </v-btn>
@@ -167,7 +170,14 @@
                 </v-list>
             </div>
         </v-alert>
-        <div v-if="!isSubjectsContentsOverview && !subjectsTreeWorkspaceStructureExpanded && !isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden" class="mb-4 d-flex justify-end">
+        <div
+            v-if="
+                !isSubjectsContentsOverview &&
+                !subjectsTreeWorkspaceStructureExpanded &&
+                canShowDeletedRestoreList &&
+                deletedMaterialRestoreHidden
+            "
+            class="mb-4 d-flex justify-end">
             <v-btn
                 size="small"
                 color="warning"
@@ -178,7 +188,10 @@
                 Restore-Liste einblenden
             </v-btn>
         </div>
-        <MaterialsOverviewSortBar v-if="!subjectsTreeWorkspaceStructureExpanded && !isSubjectsContentsOverview" :overview-sort-mode="overviewSortMode" @update:overview-sort-mode="setOverviewSortMode" />
+        <MaterialsOverviewSortBar
+            v-if="!subjectsTreeWorkspaceStructureExpanded && !isSubjectsContentsOverview"
+            :overview-sort-mode="overviewSortMode"
+            @update:overview-sort-mode="setOverviewSortMode" />
 
         <v-skeleton-loader v-if="!isSharedSubjectsContentsSource && isLoading && !hasCards" type="list-item-three-line@4" />
 
@@ -186,33 +199,33 @@
             <div v-if="!subjectsTreeWorkspaceStructureExpanded" class="d-flex flex-wrap align-center ga-2 mb-3">
                 <template v-if="showSubjectsContentsSourceToggle">
                     <div class="subjects-source-switch">
-                    <v-btn
-                        class="subjects-source-switch__btn"
-                        :class="{ 'subjects-source-switch__btn--active': isWorkspaceSubjectsContentsSource }"
-                        size="small"
-                        color="primary"
-                        prepend-icon="mdi-briefcase-outline"
-                        :variant="isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="setSubjectsContentsSource('workspace')">
-                        Mein Workspace
-                    </v-btn>
-                    <v-btn
-                        class="subjects-source-switch__btn"
-                        :class="{ 'subjects-source-switch__btn--active': !isWorkspaceSubjectsContentsSource }"
-                        size="small"
-                        color="primary"
-                        prepend-icon="mdi-account-multiple-outline"
-                        :variant="!isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
-                        :disabled="isLoading || isDeletingId !== null || isSavingEdit"
-                        @click="setSubjectsContentsSource('shared')">
-                        Für mich freigegeben
-                    </v-btn>
+                        <v-btn
+                            class="subjects-source-switch__btn"
+                            :class="{ 'subjects-source-switch__btn--active': isWorkspaceSubjectsContentsSource }"
+                            size="small"
+                            color="primary"
+                            prepend-icon="mdi-briefcase-outline"
+                            :variant="isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="setSubjectsContentsSource('workspace')">
+                            Mein Workspace
+                        </v-btn>
+                        <v-btn
+                            class="subjects-source-switch__btn"
+                            :class="{ 'subjects-source-switch__btn--active': !isWorkspaceSubjectsContentsSource }"
+                            size="small"
+                            color="primary"
+                            prepend-icon="mdi-account-multiple-outline"
+                            :variant="!isWorkspaceSubjectsContentsSource ? 'flat' : 'text'"
+                            :disabled="isLoading || isDeletingId !== null || isSavingEdit"
+                            @click="setSubjectsContentsSource('shared')">
+                            Für mich freigegeben
+                        </v-btn>
                     </div>
                 </template>
                 <v-spacer />
                 <v-btn
-                    v-if="!isSharedSubjectsContentsSource && deletedMaterialRestoreItems.length > 0 && deletedMaterialRestoreHidden"
+                    v-if="canShowDeletedRestoreList && deletedMaterialRestoreHidden"
                     size="small"
                     color="warning"
                     variant="outlined"
@@ -240,18 +253,10 @@
                     {{ sharedObjectsForMeError }}
                 </v-alert>
 
-                <v-alert v-else-if="sharedObjectsForMeCards.length === 0" type="info" variant="tonal" class="mb-0">
-                    Es sind aktuell keine Freigaben für dich vorhanden.
-                </v-alert>
+                <v-alert v-else-if="sharedObjectsForMeCards.length === 0" type="info" variant="tonal" class="mb-0">Es sind aktuell keine Freigaben für dich vorhanden.</v-alert>
 
                 <v-row v-else dense class="shared-objects-grid">
-                    <v-col
-                        v-for="item in sharedObjectsForMeCards"
-                        :key="`shared-object-${item.ruleId}`"
-                        cols="12"
-                        :sm="6"
-                        :md="4"
-                        :xl="3">
+                    <v-col v-for="item in sharedObjectsForMeCards" :key="`shared-object-${item.ruleId}`" cols="12" :sm="6" :md="4" :xl="3">
                         <v-card variant="outlined" class="shared-object-card h-100">
                             <v-card-text class="d-flex flex-column ga-2 pa-4">
                                 <div class="d-flex align-start justify-space-between ga-2">
@@ -259,7 +264,15 @@
                                         <div class="text-subtitle-1 font-weight-bold">
                                             {{ item.scopeObjectLabel }}
                                         </div>
-                                        <div v-if="!['topic', 'material', 'unit'].includes(String(item.scopeType || '').trim().toLocaleLowerCase()) && String(item.scopePathLabel || '').trim() !== ''" class="text-caption text-medium-emphasis">
+                                        <div
+                                            v-if="
+                                                !['topic', 'material', 'unit'].includes(
+                                                    String(item.scopeType || '')
+                                                        .trim()
+                                                        .toLocaleLowerCase()
+                                                ) && String(item.scopePathLabel || '').trim() !== ''
+                                            "
+                                            class="text-caption text-medium-emphasis">
                                             {{ item.scopePathLabel }}
                                         </div>
                                     </div>
@@ -277,20 +290,14 @@
 
                                 <div class="text-body-2">
                                     <span class="font-weight-medium">Von:</span>
-                                    {{ item.fromUserLabel }}
-                                    <span v-if="item.fromSchoolLabel" class="text-medium-emphasis"> · {{ item.fromSchoolLabel }}</span>
+                                    {{ sharedSenderLabel(item) }}
+                                    <span v-if="item.fromSchoolLabel" class="text-medium-emphasis">· {{ item.fromSchoolLabel }}</span>
                                 </div>
 
-                                <div class="text-caption text-medium-emphasis">
-                                    Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}
-                                </div>
+                                <div class="text-caption text-medium-emphasis">Freigegeben: {{ formatDateTime(item.sharedAt) || '-' }}</div>
 
                                 <div v-if="canExpandSharedHierarchy(item)" class="d-flex justify-end">
-                                    <v-btn
-                                        size="small"
-                                        variant="tonal"
-                                        color="primary"
-                                        @click.stop="toggleSharedHierarchy(item.ruleId)">
+                                    <v-btn size="small" variant="tonal" color="primary" @click.stop="toggleSharedHierarchy(item.ruleId)">
                                         {{ isSharedHierarchyOpen(item.ruleId) ? 'Schließen' : 'Anzeigen' }}
                                     </v-btn>
                                 </div>
@@ -300,9 +307,7 @@
                                         <div class="inbox-shared-object-title inbox-shared-object-title--all">
                                             <span>{{ item.scopeObjectLabel || 'Freigabe' }} ({{ item.materialsCount }})</span>
                                         </div>
-                                        <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">
-                                            Keine Hierarchie für diese Freigabe verfügbar.
-                                        </div>
+                                        <div v-if="item.hierarchy.length === 0" class="text-caption text-medium-emphasis">Keine Hierarchie für diese Freigabe verfügbar.</div>
                                         <div v-else class="inbox-shared-hierarchy">
                                             <div
                                                 v-for="subject in item.hierarchy"
@@ -317,19 +322,19 @@
                                                         color="secondary"
                                                         class="inbox-hierarchy-insert-btn"
                                                         prepend-icon="mdi-tray-arrow-down"
-                                                        @click.stop="openSharedInsertDraft({
-                                                            ruleId: item.ruleId,
-                                                            level: 'subject',
-                                                            targetId: Number.isFinite(Number(subject?.id)) ? Number(subject.id) : null,
-                                                            label: subject.name || 'Fach',
-                                                            parentLabel: '',
-                                                        })">
+                                                        @click.stop="
+                                                            openSharedInsertDraft({
+                                                                ruleId: item.ruleId,
+                                                                level: 'subject',
+                                                                targetId: Number.isFinite(Number(subject?.id)) ? Number(subject.id) : null,
+                                                                label: subject.name || 'Fach',
+                                                                parentLabel: '',
+                                                            })
+                                                        ">
                                                         Einordnen
                                                     </v-btn>
                                                 </div>
-                                                <div
-                                                    v-if="Array.isArray(subject.materials) && subject.materials.length > 0"
-                                                    class="inbox-hierarchy-material-lines">
+                                                <div v-if="Array.isArray(subject.materials) && subject.materials.length > 0" class="inbox-hierarchy-material-lines">
                                                     <div
                                                         v-for="material in subject.materials"
                                                         :key="`shared-hier-subject-material-${item.ruleId}-${material.id || material.title}`"
@@ -344,11 +349,7 @@
                                                             @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
                                                             {{ material.title }}
                                                         </span>
-                                                        <v-chip
-                                                            v-if="material.typeLabel"
-                                                            size="x-small"
-                                                            variant="outlined"
-                                                            :color="material.typeColor || 'primary'">
+                                                        <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">
                                                             {{ material.typeLabel }}
                                                         </v-chip>
                                                         <span
@@ -362,10 +363,7 @@
                                                             <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                             {{ material.attachmentsCount }}
                                                         </span>
-                                                        <v-chip
-                                                            size="x-small"
-                                                            variant="tonal"
-                                                            :color="material.statusColor || statusColor(material.status)">
+                                                        <v-chip size="x-small" variant="tonal" :color="material.statusColor || statusColor(material.status)">
                                                             {{ material.statusLabel || statusLabel(material.status) }}
                                                         </v-chip>
                                                         <v-btn
@@ -375,13 +373,15 @@
                                                             color="secondary"
                                                             class="inbox-hierarchy-insert-btn"
                                                             prepend-icon="mdi-tray-arrow-down"
-                                                            @click.stop="openSharedInsertDraft({
-                                                                ruleId: item.ruleId,
-                                                                level: 'material',
-                                                                targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
-                                                                label: material.title || 'Material',
-                                                                parentLabel: subject.name || '',
-                                                            })">
+                                                            @click.stop="
+                                                                openSharedInsertDraft({
+                                                                    ruleId: item.ruleId,
+                                                                    level: 'material',
+                                                                    targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                    label: material.title || 'Material',
+                                                                    parentLabel: subject.name || '',
+                                                                })
+                                                            ">
                                                             Einordnen
                                                         </v-btn>
                                                     </div>
@@ -399,20 +399,20 @@
                                                             color="secondary"
                                                             class="inbox-hierarchy-insert-btn"
                                                             prepend-icon="mdi-tray-arrow-down"
-                                                        @click.stop="openSharedInsertDraft({
-                                                            ruleId: item.ruleId,
-                                                            level: 'topic',
-                                                            targetId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
-                                                            label: topic.name || 'Thema',
-                                                            parentLabel: subject.name || '',
-                                                            nodeData: topic,
-                                                        })">
+                                                            @click.stop="
+                                                                openSharedInsertDraft({
+                                                                    ruleId: item.ruleId,
+                                                                    level: 'topic',
+                                                                    targetId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                                    label: topic.name || 'Thema',
+                                                                    parentLabel: subject.name || '',
+                                                                    nodeData: topic,
+                                                                })
+                                                            ">
                                                             Einordnen
                                                         </v-btn>
                                                     </div>
-                                                    <div
-                                                        v-if="Array.isArray(topic.materials) && topic.materials.length > 0"
-                                                        class="inbox-hierarchy-material-lines">
+                                                    <div v-if="Array.isArray(topic.materials) && topic.materials.length > 0" class="inbox-hierarchy-material-lines">
                                                         <div
                                                             v-for="material in topic.materials"
                                                             :key="`shared-hier-topic-material-${item.ruleId}-${material.id || material.title}`"
@@ -427,11 +427,7 @@
                                                                 @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
                                                                 {{ material.title }}
                                                             </span>
-                                                            <v-chip
-                                                                v-if="material.typeLabel"
-                                                                size="x-small"
-                                                                variant="outlined"
-                                                                :color="material.typeColor || 'primary'">
+                                                            <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">
                                                                 {{ material.typeLabel }}
                                                             </v-chip>
                                                             <span
@@ -445,10 +441,7 @@
                                                                 <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                                 {{ material.attachmentsCount }}
                                                             </span>
-                                                            <v-chip
-                                                                size="x-small"
-                                                                variant="tonal"
-                                                                :color="material.statusColor || statusColor(material.status)">
+                                                            <v-chip size="x-small" variant="tonal" :color="material.statusColor || statusColor(material.status)">
                                                                 {{ material.statusLabel || statusLabel(material.status) }}
                                                             </v-chip>
                                                             <v-btn
@@ -458,14 +451,16 @@
                                                                 color="secondary"
                                                                 class="inbox-hierarchy-insert-btn"
                                                                 prepend-icon="mdi-tray-arrow-down"
-                                                                @click.stop="openSharedInsertDraft({
-                                                                    ruleId: item.ruleId,
-                                                                    level: 'material',
-                                                                    targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
-                                                                    label: material.title || 'Material',
-                                                                    parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
-                                                                    sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
-                                                                })">
+                                                                @click.stop="
+                                                                    openSharedInsertDraft({
+                                                                        ruleId: item.ruleId,
+                                                                        level: 'material',
+                                                                        targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                        label: material.title || 'Material',
+                                                                        parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
+                                                                        sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                                    })
+                                                                ">
                                                                 Einordnen
                                                             </v-btn>
                                                         </div>
@@ -483,13 +478,15 @@
                                                                 color="secondary"
                                                                 class="inbox-hierarchy-insert-btn"
                                                                 prepend-icon="mdi-tray-arrow-down"
-                                                                @click.stop="openSharedInsertDraft({
-                                                                    ruleId: item.ruleId,
-                                                                    level: 'unit',
-                                                                    targetId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
-                                                                    label: unit.name || 'Bereich',
-                                                                    parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
-                                                                })">
+                                                                @click.stop="
+                                                                    openSharedInsertDraft({
+                                                                        ruleId: item.ruleId,
+                                                                        level: 'unit',
+                                                                        targetId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
+                                                                        label: unit.name || 'Bereich',
+                                                                        parentLabel: `${subject.name || ''} / ${topic.name || ''}`,
+                                                                    })
+                                                                ">
                                                                 Einordnen
                                                             </v-btn>
                                                         </div>
@@ -508,11 +505,7 @@
                                                                     @keydown.space.stop.prevent="openSharedMaterialDetail(item.ruleId, material)">
                                                                     {{ material.title }}
                                                                 </span>
-                                                                <v-chip
-                                                                    v-if="material.typeLabel"
-                                                                    size="x-small"
-                                                                    variant="outlined"
-                                                                    :color="material.typeColor || 'primary'">
+                                                                <v-chip v-if="material.typeLabel" size="x-small" variant="outlined" :color="material.typeColor || 'primary'">
                                                                     {{ material.typeLabel }}
                                                                 </v-chip>
                                                                 <span
@@ -526,10 +519,7 @@
                                                                     <v-icon size="12" icon="mdi-paperclip" class="mr-1" />
                                                                     {{ material.attachmentsCount }}
                                                                 </span>
-                                                                <v-chip
-                                                                    size="x-small"
-                                                                    variant="tonal"
-                                                                    :color="material.statusColor || statusColor(material.status)">
+                                                                <v-chip size="x-small" variant="tonal" :color="material.statusColor || statusColor(material.status)">
                                                                     {{ material.statusLabel || statusLabel(material.status) }}
                                                                 </v-chip>
                                                                 <v-btn
@@ -539,15 +529,17 @@
                                                                     color="secondary"
                                                                     class="inbox-hierarchy-insert-btn"
                                                                     prepend-icon="mdi-tray-arrow-down"
-                                                                    @click.stop="openSharedInsertDraft({
-                                                                        ruleId: item.ruleId,
-                                                                        level: 'material',
-                                                                        targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
-                                                                        label: material.title || 'Material',
-                                                                        parentLabel: `${subject.name || ''} / ${topic.name || ''} / ${unit.name || ''}`,
-                                                                        sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
-                                                                        sourceUnitId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
-                                                                    })">
+                                                                    @click.stop="
+                                                                        openSharedInsertDraft({
+                                                                            ruleId: item.ruleId,
+                                                                            level: 'material',
+                                                                            targetId: Number.isFinite(Number(material?.id)) ? Number(material.id) : null,
+                                                                            label: material.title || 'Material',
+                                                                            parentLabel: `${subject.name || ''} / ${topic.name || ''} / ${unit.name || ''}`,
+                                                                            sourceTopicId: Number.isFinite(Number(topic?.id)) ? Number(topic.id) : null,
+                                                                            sourceUnitId: Number.isFinite(Number(unit?.id)) ? Number(unit.id) : null,
+                                                                        })
+                                                                    ">
                                                                     Einordnen
                                                                 </v-btn>
                                                             </div>
@@ -564,23 +556,25 @@
                 </v-row>
             </template>
             <template v-else>
-                <v-progress-linear
-                    v-if="isLoadingSubjectsContentsOverview && subjectsContentsOverviewItems.length"
-                    indeterminate
-                    color="primary"
-                    rounded
-                    class="mb-3" />
+                <v-progress-linear v-if="isLoadingSubjectsContentsOverview && subjectsContentsOverviewItems.length" indeterminate color="primary" rounded class="mb-3" />
 
-                <v-progress-linear
-                    v-if="isLoadingSubjectsContentsOverview && !subjectsContentsOverviewItems.length"
-                    indeterminate
-                    color="primary"
-                    rounded
-                    class="mb-3" />
+                <v-progress-linear v-if="isLoadingSubjectsContentsOverview && !subjectsContentsOverviewItems.length" indeterminate color="primary" rounded class="mb-3" />
 
                 <MaterialsSubjectsContentsTree
                     :items="subjectsContentsOverviewItems"
-                    :action-busy="isLoading || isDeletingId !== null || isSavingEdit || isSavingCreate || isRemovingTreeClassification || isUnlinkingId !== null || isUnlinkingUnitId !== null || isUnlinkingTopicId !== null || isArchivingSharedRuleId !== null || isUnarchivingSharedRuleId !== null"
+                    :active-workspace="materialCardStore?.config?.workspace || null"
+                    :action-busy="
+                        isLoading ||
+                        isDeletingId !== null ||
+                        isSavingEdit ||
+                        isSavingCreate ||
+                        isRemovingTreeClassification ||
+                        isUnlinkingId !== null ||
+                        isUnlinkingUnitId !== null ||
+                        isUnlinkingTopicId !== null ||
+                        isArchivingSharedRuleId !== null ||
+                        isUnarchivingSharedRuleId !== null
+                    "
                     :enable-share-buttons="enableShareButtons"
                     :enable-create-buttons="!readOnlyMaterialActions"
                     :enable-remove-buttons="!readOnlyMaterialActions"
@@ -599,6 +593,7 @@
                     :archiving-shared-rule-id="isArchivingSharedRuleId"
                     :unarchiving-shared-rule-id="isUnarchivingSharedRuleId"
                     :workspace-structure-expanded="subjectsTreeWorkspaceStructureExpanded"
+                    :workspace-selection="subjectsTreeWorkspaceSelection"
                     :expanded-shared-items="subjectsTreeExpandedSharedItems"
                     @shared-node-created="refreshSharedStructureTree"
                     @shared-node-renamed="refreshSharedStructureTree"
@@ -739,14 +734,7 @@
                     <div class="text-caption text-medium-emphasis mb-1">Maximale Uploadgröße je Datei: {{ maxUploadSizeLabel }}</div>
                     <div class="text-caption text-medium-emphasis mb-3">Du kannst auch einen Web-Link oder ein Web-Bild hierher ziehen.</div>
                 </template>
-                <v-alert
-                    v-else
-                    type="info"
-                    variant="tonal"
-                    density="compact"
-                    class="mb-3">
-                    Anhänge hinzufügen ist für dieses verlinkte Material nicht erlaubt.
-                </v-alert>
+                <v-alert v-else type="info" variant="tonal" density="compact" class="mb-3">Anhänge hinzufügen ist für dieses verlinkte Material nicht erlaubt.</v-alert>
 
                 <v-alert v-if="!attachmentRows.length" type="info" variant="tonal" class="mb-0">Keine Anhänge vorhanden.</v-alert>
 
@@ -1008,7 +996,13 @@
             @save="handleEditSave"
             @cancel="closeEditDialog">
             <template #bottom-left>
-                <v-btn v-if="canEditLinkedDeleteMaterial" color="warning" variant="tonal" prepend-icon="mdi-delete" :disabled="isSavingEdit || isDeletingEditedMaterial" @click="startEditDeleteFlow">
+                <v-btn
+                    v-if="canEditLinkedDeleteMaterial"
+                    color="warning"
+                    variant="tonal"
+                    prepend-icon="mdi-delete"
+                    :disabled="isSavingEdit || isDeletingEditedMaterial"
+                    @click="startEditDeleteFlow">
                     Material löschen
                 </v-btn>
             </template>
@@ -1103,7 +1097,9 @@
                                             color="primary"
                                             variant="tonal"
                                             :title="'Text bearbeiten'"
-                                            :disabled="isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving || isEditLinkedReadOnly"
+                                            :disabled="
+                                                isSavingEdit || isAttachmentSaving(row.id) || isAttachmentDeleting(row.id) || textAttachmentEditorSaving || isEditLinkedReadOnly
+                                            "
                                             @click="openTextAttachmentEditor(row)" />
 
                                         <v-btn
@@ -1184,17 +1180,11 @@
             <v-card-title class="d-flex align-center ga-2">
                 <span class="text-h6">Material wirklich löschen?</span>
                 <v-spacer />
-                <v-btn
-                    icon="mdi-close"
-                    variant="text"
-                    :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading"
-                    @click="resetEditDeleteFlow" />
+                <v-btn icon="mdi-close" variant="text" :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading" @click="resetEditDeleteFlow" />
             </v-card-title>
 
             <v-card-text>
-                <v-alert type="warning" variant="tonal" class="mb-4">
-                    Das Material wird dauerhaft gelöscht. Vorhandene Anhänge werden ebenfalls gelöscht.
-                </v-alert>
+                <v-alert type="warning" variant="tonal" class="mb-4">Das Material wird dauerhaft gelöscht. Vorhandene Anhänge werden ebenfalls gelöscht.</v-alert>
 
                 <div class="text-subtitle-2 mb-1">Material</div>
                 <div class="text-body-2 mb-4">{{ editDeleteConfirmMaterialTitle || editForm.title || 'Ohne Titel' }}</div>
@@ -1203,15 +1193,10 @@
 
                 <v-progress-linear v-if="editDeleteConfirmDialogLoading" indeterminate color="warning" rounded class="mb-3" />
 
-                <v-alert v-else-if="!editDeleteConfirmAttachmentRows.length" type="info" variant="tonal" class="mb-0">
-                    Keine Anhänge vorhanden.
-                </v-alert>
+                <v-alert v-else-if="!editDeleteConfirmAttachmentRows.length" type="info" variant="tonal" class="mb-0">Keine Anhänge vorhanden.</v-alert>
 
                 <v-list v-else class="bg-transparent pa-0">
-                    <v-list-item
-                        v-for="row in editDeleteConfirmAttachmentRows"
-                        :key="`edit-delete-confirm-attachment-${row.id}`"
-                        class="px-0 py-2">
+                    <v-list-item v-for="row in editDeleteConfirmAttachmentRows" :key="`edit-delete-confirm-attachment-${row.id}`" class="px-0 py-2">
                         <div class="d-flex flex-column ga-1 w-100">
                             <div class="text-body-2 font-weight-medium">
                                 {{ attachmentDisplayName(row) }}
@@ -1225,12 +1210,7 @@
             </v-card-text>
 
             <v-card-actions class="px-6 pb-6 pt-2 d-flex flex-wrap justify-end ga-2">
-                <v-btn
-                    variant="text"
-                    :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading"
-                    @click="resetEditDeleteFlow">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="isDeletingEditedMaterial || editDeleteConfirmDialogLoading" @click="resetEditDeleteFlow">Abbrechen</v-btn>
                 <v-btn
                     color="error"
                     variant="flat"
@@ -1289,6 +1269,33 @@
         </v-card>
     </v-dialog>
 
+    <v-dialog v-model="sharedWorkspaceInsertDialogOpen" max-width="560" persistent>
+        <v-card rounded="xl">
+            <v-card-title class="text-h6">Workspace einordnen</v-card-title>
+            <v-card-text>
+                <p class="mb-2">
+                    Soll der Workspace
+                    <strong>{{ sharedWorkspaceInsertDraft.label || 'Workspace' }}</strong>
+                    mit allen enthaltenen Fächern in deinen Workspace eingeordnet werden?
+                </p>
+                <p class="text-body-2 text-medium-emphasis mb-0">Es werden alle Fächer inklusive Struktur und Materialien übernommen.</p>
+            </v-card-text>
+            <v-card-actions class="px-6 pb-5">
+                <v-spacer />
+                <v-btn variant="text" :disabled="sharedWorkspaceInsertDialogLoading" @click="closeSharedWorkspaceInsertDialog">Abbrechen</v-btn>
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-tray-arrow-down"
+                    :loading="sharedWorkspaceInsertDialogLoading"
+                    :disabled="sharedWorkspaceInsertDialogLoading"
+                    @click="confirmSharedWorkspaceInsert">
+                    Einordnen
+                </v-btn>
+            </v-card-actions>
+        </v-card>
+    </v-dialog>
+
     <v-dialog v-model="sharedSubjectInsertDialogOpen" max-width="560" persistent>
         <v-card rounded="xl">
             <v-card-title class="text-h6">Fach einordnen</v-card-title>
@@ -1298,18 +1305,11 @@
                     <strong>{{ sharedSubjectInsertDraft.label || 'Fach' }}</strong>
                     mit kompletter Struktur in deinen Workspace eingeordnet werden?
                 </p>
-                <p class="text-body-2 text-medium-emphasis mb-0">
-                    Es werden Themen, Bereiche und alle enthaltenen Materialien kopiert.
-                </p>
+                <p class="text-body-2 text-medium-emphasis mb-0">Es werden Themen, Bereiche und alle enthaltenen Materialien kopiert.</p>
             </v-card-text>
             <v-card-actions class="px-6 pb-5">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    :disabled="sharedSubjectInsertDialogLoading"
-                    @click="closeSharedSubjectInsertDialog">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="sharedSubjectInsertDialogLoading" @click="closeSharedSubjectInsertDialog">Abbrechen</v-btn>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -1332,12 +1332,8 @@
                     <strong>{{ sharedTopicInsertDraft.label || 'Thema' }}</strong>
                     in ein Fach deines Workspace eingeordnet werden?
                 </p>
-                <p class="text-body-2 text-medium-emphasis mb-4">
-                    Wähle das Zielfach. Dort wird das Thema mit enthaltenen Materialien eingeordnet.
-                </p>
-                <div v-if="sharedTopicInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
-                    Es sind noch keine Fächer im Workspace vorhanden.
-                </div>
+                <p class="text-body-2 text-medium-emphasis mb-4">Wähle das Zielfach. Dort wird das Thema mit enthaltenen Materialien eingeordnet.</p>
+                <div v-if="sharedTopicInsertSubjectOptions.length === 0" class="text-body-2 text-error">Es sind noch keine Fächer im Workspace vorhanden.</div>
                 <div v-else class="d-grid ga-2">
                     <v-btn
                         v-for="subject in sharedTopicInsertSubjectOptions"
@@ -1352,12 +1348,7 @@
             </v-card-text>
             <v-card-actions class="px-6 pb-5">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    :disabled="sharedTopicInsertDialogLoading"
-                    @click="closeSharedTopicInsertDialog">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="sharedTopicInsertDialogLoading" @click="closeSharedTopicInsertDialog">Abbrechen</v-btn>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -1380,13 +1371,9 @@
                     <strong>{{ sharedUnitInsertDraft.label || 'Bereich' }}</strong>
                     in ein Thema deines Workspace eingeordnet werden?
                 </p>
-                <p class="text-body-2 text-medium-emphasis mb-4">
-                    Wähle zuerst ein Fach mit Themen und danach das Zielthema.
-                </p>
+                <p class="text-body-2 text-medium-emphasis mb-4">Wähle zuerst ein Fach mit Themen und danach das Zielthema.</p>
 
-                <div v-if="sharedUnitInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
-                    Es sind noch keine passenden Fächer mit Themen im Workspace vorhanden.
-                </div>
+                <div v-if="sharedUnitInsertSubjectOptions.length === 0" class="text-body-2 text-error">Es sind noch keine passenden Fächer mit Themen im Workspace vorhanden.</div>
                 <template v-else>
                     <div class="text-caption font-weight-bold mb-2">Fach</div>
                     <div class="d-grid ga-2 mb-4">
@@ -1402,9 +1389,7 @@
                     </div>
 
                     <div class="text-caption font-weight-bold mb-2">Thema</div>
-                    <div v-if="sharedUnitInsertTopicOptions.length === 0" class="text-body-2 text-medium-emphasis">
-                        Für das ausgewählte Fach sind keine Themen verfügbar.
-                    </div>
+                    <div v-if="sharedUnitInsertTopicOptions.length === 0" class="text-body-2 text-error">Für das ausgewählte Fach sind keine Themen verfügbar.</div>
                     <div v-else class="d-grid ga-2">
                         <v-btn
                             v-for="topic in sharedUnitInsertTopicOptions"
@@ -1420,12 +1405,7 @@
             </v-card-text>
             <v-card-actions class="px-6 pb-5">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    :disabled="sharedUnitInsertDialogLoading"
-                    @click="closeSharedUnitInsertDialog">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="sharedUnitInsertDialogLoading" @click="closeSharedUnitInsertDialog">Abbrechen</v-btn>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -1452,9 +1432,7 @@
                     Wähle zuerst ein Fach. Optional kannst du das Material auch direkt in ein Thema oder in einen Bereich einordnen.
                 </p>
 
-                <div v-if="sharedMaterialInsertSubjectOptions.length === 0" class="text-body-2 text-medium-emphasis">
-                    Es sind noch keine Fächer im Workspace vorhanden.
-                </div>
+                <div v-if="sharedMaterialInsertSubjectOptions.length === 0" class="text-body-2 text-error">Es sind noch keine Fächer im Workspace vorhanden.</div>
                 <template v-else>
                     <div class="text-caption font-weight-bold mb-2">Fach</div>
                     <div class="d-grid ga-2 mb-4">
@@ -1470,7 +1448,7 @@
                     </div>
 
                     <div class="text-caption font-weight-bold mb-2">Thema</div>
-                    <div v-if="sharedMaterialInsertDraft.targetSubjectId && sharedMaterialInsertTopicOptions.length === 0" class="text-body-2 text-medium-emphasis mb-4">
+                    <div v-if="sharedMaterialInsertDraft.targetSubjectId && sharedMaterialInsertTopicOptions.length === 0" class="text-body-2 text-error mb-4">
                         Für das ausgewählte Fach sind keine Themen vorhanden. Das Material wird im Fach eingeordnet.
                     </div>
                     <div v-else-if="sharedMaterialInsertTopicOptions.length > 0" class="d-grid ga-2 mb-4">
@@ -1486,7 +1464,7 @@
                     </div>
 
                     <div v-if="sharedMaterialInsertDraft.targetTopicId" class="text-caption font-weight-bold mb-2">Bereich</div>
-                    <div v-if="sharedMaterialInsertDraft.targetTopicId && sharedMaterialInsertUnitOptions.length === 0" class="text-body-2 text-medium-emphasis">
+                    <div v-if="sharedMaterialInsertDraft.targetTopicId && sharedMaterialInsertUnitOptions.length === 0" class="text-body-2 text-error">
                         Für das ausgewählte Thema sind keine Bereiche vorhanden. Das Material wird im Thema eingeordnet.
                     </div>
                     <div v-else-if="sharedMaterialInsertUnitOptions.length > 0" class="d-grid ga-2">
@@ -1504,12 +1482,7 @@
             </v-card-text>
             <v-card-actions class="px-6 pb-5">
                 <v-spacer />
-                <v-btn
-                    variant="text"
-                    :disabled="sharedMaterialInsertDialogLoading"
-                    @click="closeSharedMaterialInsertDialog">
-                    Abbrechen
-                </v-btn>
+                <v-btn variant="text" :disabled="sharedMaterialInsertDialogLoading" @click="closeSharedMaterialInsertDialog">Abbrechen</v-btn>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -1523,10 +1496,7 @@
         </v-card>
     </v-dialog>
 
-    <MaterialShareDraftDialog
-        v-model="shareDummyDialogOpen"
-        :target="shareTarget"
-        @shares-changed="loadShareIndicators" />
+    <MaterialShareDraftDialog v-model="shareDummyDialogOpen" :target="shareTarget" @shares-changed="loadShareIndicators" />
 
     <MaterialShareDialog
         v-model="shareDialogOpen"
@@ -1544,6 +1514,7 @@
 import vueFilePond from 'vue-filepond/dist/vue-filepond.js'
 import 'filepond/dist/filepond.min.css'
 import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'
+import { nextTick } from 'vue'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import { useAdminStore } from '@/stores/admin/AdminStore'
@@ -1661,6 +1632,7 @@ export default {
             subjectsTreeSharedForMeExpanded: false,
             subjectsTreeSharedForMeArchiveExpanded: false,
             subjectsTreeWorkspaceStructureExpanded: false,
+            subjectsTreeWorkspaceSelection: null,
             subjectsTreeExpandedSharedItems: {},
             openSharedHierarchyCards: {},
             isLoadingSubjectsContentsOverview: false,
@@ -1697,7 +1669,7 @@ export default {
             editDeleteConfirmAttachmentRows: [],
             deletedMaterialRestoreItems: [],
             deletedMaterialRestoreHidden: true,
-            deletedMaterialRestoreLimit: 5,
+            deletedMaterialRestoreContextOverride: null,
             isRestoringLastDeletedMaterial: false,
             restoringDeletedMaterialId: null,
             isPurgingDeletedMaterial: false,
@@ -1724,6 +1696,12 @@ export default {
             textAttachmentEditorError: '',
             shareDialogOpen: false,
             shareDummyDialogOpen: false,
+            sharedWorkspaceInsertDialogOpen: false,
+            sharedWorkspaceInsertDialogLoading: false,
+            sharedWorkspaceInsertDraft: {
+                ruleId: null,
+                label: '',
+            },
             sharedSubjectInsertDialogOpen: false,
             sharedSubjectInsertDialogLoading: false,
             sharedSubjectInsertDraft: {
@@ -1766,6 +1744,8 @@ export default {
                 sourceTopicId: null,
                 sourceUnitId: null,
             },
+            pendingSharedImportOperations: {},
+            pendingSharedImportTimer: null,
             shareAssignmentsLoading: false,
             shareAssignmentsError: '',
             shareAssignments: [],
@@ -1784,6 +1764,23 @@ export default {
             const validIds = this.attachmentRows.map((row) => Number(row?.id)).filter((id) => Number.isFinite(id) && id > 0)
             this.resetAttachmentDeleteArmed(validIds)
             this.resetAttachmentNameEditing(validIds)
+        },
+        subjectsContentsSource() {
+            this.refreshLastDeletedMaterialRestoreInfo()
+        },
+        subjectsTreeSharedForMeExpanded() {
+            this.refreshLastDeletedMaterialRestoreInfo()
+        },
+        subjectsTreeSharedForMeArchiveExpanded() {
+            this.refreshLastDeletedMaterialRestoreInfo()
+        },
+        activeSharedRuleId() {
+            if (this.deletedRestoreContext?.source !== 'shared') return
+            this.refreshLastDeletedMaterialRestoreInfo()
+        },
+        sharedObjectsForMeCards() {
+            if (this.deletedRestoreContext?.source !== 'shared') return
+            this.refreshLastDeletedMaterialRestoreInfo()
         },
     },
     computed: {
@@ -1957,6 +1954,66 @@ export default {
         isSharedSubjectsContentsSource() {
             return this.isSubjectsContentsOverview && !this.isWorkspaceSubjectsContentsSource
         },
+        resolvedSharedRestoreRuleId() {
+            const activeRuleId = Number(this.activeSharedRuleId || 0)
+            if (Number.isFinite(activeRuleId) && activeRuleId > 0) {
+                return activeRuleId
+            }
+
+            const firstRuleId = Number(this.sharedObjectsForMeCards?.[0]?.ruleId || 0)
+            if (Number.isFinite(firstRuleId) && firstRuleId > 0) {
+                return firstRuleId
+            }
+
+            return null
+        },
+        deletedRestoreContext() {
+            const activeSection = this.currentSubjectsTreeSection()
+            if (activeSection === 'archive') {
+                return {
+                    source: 'none',
+                    ruleId: null,
+                }
+            }
+
+            if (activeSection === 'shared' || this.isSharedSubjectsContentsSource) {
+                return {
+                    source: 'shared',
+                    ruleId: this.resolvedSharedRestoreRuleId,
+                }
+            }
+
+            return {
+                source: 'workspace',
+                ruleId: null,
+            }
+        },
+        effectiveDeletedRestoreContext() {
+            const override = this.normalizeDeletedRestoreContext(this.deletedMaterialRestoreContextOverride)
+            if (override.source !== 'none' && Array.isArray(this.deletedMaterialRestoreItems) && this.deletedMaterialRestoreItems.length > 0) {
+                return override
+            }
+
+            return this.normalizeDeletedRestoreContext(this.deletedRestoreContext)
+        },
+        canShowDeletedRestoreList() {
+            if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) {
+                return false
+            }
+
+            if (this.effectiveDeletedRestoreContext?.source === 'shared') {
+                return Number(this.effectiveDeletedRestoreContext?.ruleId || 0) > 0
+            }
+
+            return this.effectiveDeletedRestoreContext?.source === 'workspace'
+        },
+        deletedRestoreListHeading() {
+            if (this.effectiveDeletedRestoreContext?.source === 'shared') {
+                return 'Gelöschte Elemente der Freigabe (wiederherstellbar).'
+            }
+
+            return 'Gelöschte Elemente des Workspace (wiederherstellbar).'
+        },
         currentMetaPage() {
             const value = Number(this.materialCardStore?.meta?.current_page || this.currentPage)
             if (!Number.isFinite(value) || value <= 0) return 1
@@ -2031,8 +2088,7 @@ export default {
             return this.normalizeLinkedPermission(this.editForm?.linked_permission)
         },
         isEditLinkedMaterial() {
-            return this.normalizeLinkedPermission(this.editForm?.linked_permission) !== ''
-                || this.editForm?.is_linked === true
+            return this.normalizeLinkedPermission(this.editForm?.linked_permission) !== '' || this.editForm?.is_linked === true
         },
         isEditSharedInboxMaterial() {
             const ruleId = Number(this.editForm?.shared_rule_id || 0)
@@ -2420,6 +2476,7 @@ export default {
     },
     beforeUnmount() {
         useAdminStore().is_struktur_modus = false
+        this.clearPendingSharedImportReload()
     },
     async beforeMount() {
         const metaToken = document?.head?.querySelector?.('meta[name="csrf-token"]')?.content
@@ -2448,6 +2505,7 @@ export default {
         } catch {
             this.showSecondaryFilters = false
         }
+        this.initializeSubjectsTreeSectionFromUrl()
         try {
             const response = await axios.get('/api/admin/token')
             const token = String(response?.data || '').trim()
@@ -2475,6 +2533,73 @@ export default {
         await this.refreshLastDeletedMaterialRestoreInfo()
     },
     methods: {
+        subjectsTreeSectionQueryKey() {
+            return 'overview_section'
+        },
+        currentSubjectsTreeSection() {
+            if (this.subjectsTreeSharedForMeArchiveExpanded) return 'archive'
+            if (this.subjectsTreeSharedForMeExpanded) return 'shared'
+            return 'workspace'
+        },
+        normalizeSubjectsTreeSection(value) {
+            const normalized = String(value || '')
+                .trim()
+                .toLowerCase()
+            if (normalized === 'shared') return 'shared'
+            if (normalized === 'archive') return 'archive'
+            return 'workspace'
+        },
+        readSubjectsTreeSectionFromUrl() {
+            const queryKey = this.subjectsTreeSectionQueryKey()
+            const routeValue = String(this.$route?.query?.[queryKey] || '').trim()
+            if (routeValue !== '') {
+                return this.normalizeSubjectsTreeSection(routeValue)
+            }
+
+            try {
+                const params = new URLSearchParams(String(window?.location?.search || ''))
+                return this.normalizeSubjectsTreeSection(params.get(queryKey))
+            } catch {
+                return 'workspace'
+            }
+        },
+        syncSubjectsTreeSectionToUrl(section = null) {
+            const nextSection = this.normalizeSubjectsTreeSection(section || this.currentSubjectsTreeSection())
+
+            try {
+                const currentUrl = new URL(String(window?.location?.href || ''), window?.location?.origin || 'http://localhost')
+                currentUrl.searchParams.set(this.subjectsTreeSectionQueryKey(), nextSection)
+                window.history.replaceState(window.history.state, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`)
+            } catch {
+                // Falls URL-Manipulation nicht verfügbar ist, bleibt nur der lokale Zustand.
+            }
+        },
+        applySubjectsTreeSection(section, { syncUrl = true } = {}) {
+            const nextSection = this.normalizeSubjectsTreeSection(section)
+            this.subjectsTreeSharedForMeExpanded = nextSection === 'shared'
+            this.subjectsTreeSharedForMeArchiveExpanded = nextSection === 'archive'
+
+            if (syncUrl) {
+                this.syncSubjectsTreeSectionToUrl(nextSection)
+            }
+        },
+        initializeSubjectsTreeSectionFromUrl() {
+            this.applySubjectsTreeSection(this.readSubjectsTreeSectionFromUrl(), { syncUrl: false })
+        },
+        async handleOverviewRefresh() {
+            const currentTreeSection = this.currentSubjectsTreeSection()
+            const currentSubjectsContentsSource = String(this.subjectsContentsSource || 'workspace').trim() === 'shared' ? 'shared' : 'workspace'
+
+            await this.loadCards(null, { forceFilterCountRefresh: true })
+
+            this.applySubjectsTreeSection(currentTreeSection)
+
+            if (this.isSubjectsContentsOverview && this.canSelectSubjectsContentsSource()) {
+                this.subjectsContentsSource = currentSubjectsContentsSource
+            }
+
+            await this.refreshLastDeletedMaterialRestoreInfo()
+        },
         workspaceHasInsertSubjectTarget() {
             const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
             return subjects.length > 0
@@ -2484,21 +2609,35 @@ export default {
             return subjects.some((subject) => Array.isArray(subject?.topics) && subject.topics.length > 0)
         },
         canShowSharedInsertButton(level) {
-            const normalizedLevel = String(level || '').trim().toLowerCase()
+            const normalizedLevel = String(level || '')
+                .trim()
+                .toLowerCase()
+            if (normalizedLevel === 'workspace') return true
             if (normalizedLevel === 'subject') return true
-            if (normalizedLevel === 'topic') return this.workspaceHasInsertSubjectTarget()
-            if (normalizedLevel === 'unit') return this.workspaceHasInsertTopicTarget()
-            if (normalizedLevel === 'material') return this.workspaceHasInsertSubjectTarget()
+            if (normalizedLevel === 'topic') return true
+            if (normalizedLevel === 'unit') return true
+            if (normalizedLevel === 'material') return true
             return false
         },
         sharedInsertLevelLabel(level) {
-            const normalized = String(level || '').trim().toLowerCase()
+            const normalized = String(level || '')
+                .trim()
+                .toLowerCase()
+            if (normalized === 'workspace') return 'Workspace'
             if (normalized === 'all') return 'Freigabe'
             if (normalized === 'subject') return 'Fach'
             if (normalized === 'topic') return 'Thema'
             if (normalized === 'unit') return 'Bereich'
             if (normalized === 'material') return 'Material'
             return 'Element'
+        },
+        closeSharedWorkspaceInsertDialog(force = false) {
+            if (this.sharedWorkspaceInsertDialogLoading && force !== true) return
+            this.sharedWorkspaceInsertDialogOpen = false
+            this.sharedWorkspaceInsertDraft = {
+                ruleId: null,
+                label: '',
+            }
         },
         closeSharedSubjectInsertDialog(force = false) {
             if (this.sharedSubjectInsertDialogLoading && force !== true) return
@@ -2565,6 +2704,31 @@ export default {
             this.sharedMaterialInsertDraft.targetTopicId = normalizedTopicId > 0 ? normalizedTopicId : null
             this.sharedMaterialInsertDraft.targetUnitId = null
         },
+        async confirmSharedWorkspaceInsert() {
+            if (this.sharedWorkspaceInsertDialogLoading) return
+
+            const ruleId = Number(this.sharedWorkspaceInsertDraft?.ruleId || 0)
+            if (!Number.isFinite(ruleId) || ruleId <= 0) return
+
+            this.sharedWorkspaceInsertDialogLoading = true
+            try {
+                const response = await this.performSharedInboxMutationWithResponse({
+                    method: 'post',
+                    url: `/api/admin/materials/shares/inbox/workspaces/${ruleId}/insert-tree`,
+                    errorMessage: 'Workspace konnte nicht eingeordnet werden.',
+                })
+
+                if (
+                    this.trackPendingSharedImport(response, {
+                        queuedMessage: `Workspace "${String(this.sharedWorkspaceInsertDraft?.label || 'Workspace').trim() || 'Workspace'}" wird im Hintergrund eingeordnet.`,
+                    })
+                ) {
+                    this.closeSharedWorkspaceInsertDialog(true)
+                }
+            } finally {
+                this.sharedWorkspaceInsertDialogLoading = false
+            }
+        },
         async confirmSharedSubjectInsert() {
             if (this.sharedSubjectInsertDialogLoading) return
 
@@ -2575,20 +2739,21 @@ export default {
 
             this.sharedSubjectInsertDialogLoading = true
             try {
-                const result = await this.performSharedInboxMutation({
+                const response = await this.performSharedInboxMutationWithResponse({
                     method: 'post',
                     url: `/api/admin/materials/shares/inbox/subjects/${subjectId}/insert-tree`,
                     data: {
                         rule_id: ruleId,
                     },
-                    successMessage: `Fach "${String(this.sharedSubjectInsertDraft?.label || 'Fach').trim() || 'Fach'}" eingeordnet.`,
                     errorMessage: 'Fach konnte nicht eingeordnet werden.',
                 })
 
-                if (result !== null) {
+                if (
+                    this.trackPendingSharedImport(response, {
+                        queuedMessage: `Fach "${String(this.sharedSubjectInsertDraft?.label || 'Fach').trim() || 'Fach'}" wird im Hintergrund eingeordnet.`,
+                    })
+                ) {
                     this.closeSharedSubjectInsertDialog(true)
-                    await this.loadCards(null, { forceFilterCountRefresh: true })
-                    await this.loadSharedObjectsForMe()
                 }
             } finally {
                 this.sharedSubjectInsertDialogLoading = false
@@ -2646,7 +2811,9 @@ export default {
         },
         findSharedTopicInsertExistingTopic(subjectId, topicName) {
             const normalizedSubjectId = Number(subjectId || 0)
-            const normalizedTopicName = String(topicName || '').trim().toLocaleLowerCase()
+            const normalizedTopicName = String(topicName || '')
+                .trim()
+                .toLocaleLowerCase()
             if (!Number.isFinite(normalizedSubjectId) || normalizedSubjectId <= 0 || normalizedTopicName === '') {
                 return 0
             }
@@ -2654,7 +2821,12 @@ export default {
             const subjects = Array.isArray(this.subjectsContentsOverviewItems) ? this.subjectsContentsOverviewItems : []
             const subject = subjects.find((item) => Number(item?.id || 0) === normalizedSubjectId)
             const topics = Array.isArray(subject?.topics) ? subject.topics : []
-            const existingTopic = topics.find((topic) => String(topic?.name || '').trim().toLocaleLowerCase() === normalizedTopicName)
+            const existingTopic = topics.find(
+                (topic) =>
+                    String(topic?.name || '')
+                        .trim()
+                        .toLocaleLowerCase() === normalizedTopicName
+            )
 
             return Number(existingTopic?.id || 0)
         },
@@ -2685,7 +2857,9 @@ export default {
         },
         findSharedUnitInsertExistingUnit(topicId, unitName) {
             const normalizedTopicId = Number(topicId || 0)
-            const normalizedUnitName = String(unitName || '').trim().toLocaleLowerCase()
+            const normalizedUnitName = String(unitName || '')
+                .trim()
+                .toLocaleLowerCase()
             if (!Number.isFinite(normalizedTopicId) || normalizedTopicId <= 0 || normalizedUnitName === '') {
                 return 0
             }
@@ -2697,7 +2871,12 @@ export default {
                     if (Number(topic?.id || 0) !== normalizedTopicId) continue
 
                     const units = Array.isArray(topic?.units) ? topic.units : []
-                    const existingUnit = units.find((unit) => String(unit?.name || '').trim().toLocaleLowerCase() === normalizedUnitName)
+                    const existingUnit = units.find(
+                        (unit) =>
+                            String(unit?.name || '')
+                                .trim()
+                                .toLocaleLowerCase() === normalizedUnitName
+                    )
                     return Number(existingUnit?.id || 0)
                 }
             }
@@ -2719,68 +2898,29 @@ export default {
             const sourceTopicId = Number(this.sharedTopicInsertDraft?.topicId || 0)
             const targetSubjectId = Number(this.sharedTopicInsertDraft?.targetSubjectId || 0)
             const topicLabel = String(this.sharedTopicInsertDraft?.label || '').trim() || 'Thema'
-            const topicNode = this.sharedTopicInsertDraft?.nodeData || null
             if (!Number.isFinite(ruleId) || ruleId <= 0) return
             if (!Number.isFinite(sourceTopicId) || sourceTopicId <= 0) return
             if (!Number.isFinite(targetSubjectId) || targetSubjectId <= 0) return
 
-            const materials = this.collectSharedTopicInsertMaterials(topicNode)
-            if (materials.length === 0) return
-
             this.sharedTopicInsertDialogLoading = true
             try {
-                const targetTopicId = await this.ensureSharedTopicInsertTargetTopic(targetSubjectId, topicLabel)
-                if (!Number.isFinite(targetTopicId) || targetTopicId <= 0) {
-                    throw new Error('target_topic_not_created')
-                }
-
-                const targetUnitIdsByName = new Map()
-                for (const material of materials) {
-                    let targetLevel = 'topic'
-                    let targetId = targetTopicId
-                    const sourceUnitId = Number(material?.sourceUnitId || 0)
-
-                    if (sourceUnitId > 0) {
-                        const cacheKey = String(material?.sourceUnitName || '').trim().toLocaleLowerCase()
-                        if (!targetUnitIdsByName.has(cacheKey)) {
-                            const targetUnitId = await this.ensureSharedTopicInsertTargetUnit(targetTopicId, material?.sourceUnitName || 'Einheit')
-                            if (!Number.isFinite(targetUnitId) || targetUnitId <= 0) {
-                                throw new Error('target_unit_not_created')
-                            }
-                            targetUnitIdsByName.set(cacheKey, targetUnitId)
-                        }
-                        targetLevel = 'unit'
-                        targetId = Number(targetUnitIdsByName.get(cacheKey) || 0)
-                    }
-
-                    const result = await this.performSharedInboxMutation({
-                        method: 'post',
-                        url: '/api/admin/materials/shares/inbox/material-insert',
-                        data: {
-                            rule_id: ruleId,
-                            material_id: Number(material?.id || 0),
-                            target_level: targetLevel,
-                            target_id: targetId,
-                            ...(sourceTopicId > 0 ? { source_topic_id: sourceTopicId } : {}),
-                            ...(sourceUnitId > 0 ? { source_unit_id: sourceUnitId } : {}),
-                        },
-                        errorMessage: 'Thema konnte nicht eingeordnet werden.',
-                    })
-
-                    if (result === null) {
-                        return
-                    }
-                }
-
-                useNotificationStore().notify({
-                    message: `Thema "${topicLabel}" eingeordnet.`,
-                    type: 'success',
-                    timeout: 2000,
+                const response = await this.performSharedInboxMutationWithResponse({
+                    method: 'post',
+                    url: `/api/admin/materials/shares/inbox/topics/${sourceTopicId}/insert-tree`,
+                    data: {
+                        rule_id: ruleId,
+                        target_subject_id: targetSubjectId,
+                    },
+                    errorMessage: 'Thema konnte nicht eingeordnet werden.',
                 })
 
-                this.closeSharedTopicInsertDialog(true)
-                await this.loadCards(null, { forceFilterCountRefresh: true })
-                await this.loadSharedObjectsForMe()
+                if (
+                    this.trackPendingSharedImport(response, {
+                        queuedMessage: `Thema "${topicLabel}" wird im Hintergrund eingeordnet.`,
+                    })
+                ) {
+                    this.closeSharedTopicInsertDialog(true)
+                }
             } finally {
                 this.sharedTopicInsertDialogLoading = false
             }
@@ -2792,49 +2932,29 @@ export default {
             const sourceUnitId = Number(this.sharedUnitInsertDraft?.unitId || 0)
             const targetTopicId = Number(this.sharedUnitInsertDraft?.targetTopicId || 0)
             const unitLabel = String(this.sharedUnitInsertDraft?.label || '').trim() || 'Bereich'
-            const unitNode = this.sharedUnitInsertDraft?.nodeData || null
             if (!Number.isFinite(ruleId) || ruleId <= 0) return
             if (!Number.isFinite(sourceUnitId) || sourceUnitId <= 0) return
             if (!Number.isFinite(targetTopicId) || targetTopicId <= 0) return
 
-            const materials = this.collectSharedUnitInsertMaterials(unitNode)
-            if (materials.length === 0) return
-
             this.sharedUnitInsertDialogLoading = true
             try {
-                const targetUnitId = await this.ensureSharedUnitInsertTargetUnit(targetTopicId, unitLabel)
-                if (!Number.isFinite(targetUnitId) || targetUnitId <= 0) {
-                    throw new Error('target_unit_not_created')
-                }
-
-                for (const material of materials) {
-                    const result = await this.performSharedInboxMutation({
-                        method: 'post',
-                        url: '/api/admin/materials/shares/inbox/material-insert',
-                        data: {
-                            rule_id: ruleId,
-                            material_id: Number(material?.id || 0),
-                            target_level: 'unit',
-                            target_id: targetUnitId,
-                            source_unit_id: sourceUnitId,
-                        },
-                        errorMessage: 'Bereich konnte nicht eingeordnet werden.',
-                    })
-
-                    if (result === null) {
-                        return
-                    }
-                }
-
-                useNotificationStore().notify({
-                    message: `Bereich "${unitLabel}" eingeordnet.`,
-                    type: 'success',
-                    timeout: 2000,
+                const response = await this.performSharedInboxMutationWithResponse({
+                    method: 'post',
+                    url: `/api/admin/materials/shares/inbox/units/${sourceUnitId}/insert-tree`,
+                    data: {
+                        rule_id: ruleId,
+                        target_topic_id: targetTopicId,
+                    },
+                    errorMessage: 'Bereich konnte nicht eingeordnet werden.',
                 })
 
-                this.closeSharedUnitInsertDialog(true)
-                await this.loadCards(null, { forceFilterCountRefresh: true })
-                await this.loadSharedObjectsForMe()
+                if (
+                    this.trackPendingSharedImport(response, {
+                        queuedMessage: `Bereich "${unitLabel}" wird im Hintergrund eingeordnet.`,
+                    })
+                ) {
+                    this.closeSharedUnitInsertDialog(true)
+                }
             } finally {
                 this.sharedUnitInsertDialogLoading = false
             }
@@ -2844,11 +2964,8 @@ export default {
 
             const ruleId = Number(this.sharedMaterialInsertDraft?.ruleId || 0)
             const materialId = Number(this.sharedMaterialInsertDraft?.materialId || 0)
-            const targetLevel = Number(this.sharedMaterialInsertDraft?.targetUnitId || 0) > 0
-                ? 'unit'
-                : Number(this.sharedMaterialInsertDraft?.targetTopicId || 0) > 0
-                    ? 'topic'
-                    : 'subject'
+            const targetLevel =
+                Number(this.sharedMaterialInsertDraft?.targetUnitId || 0) > 0 ? 'unit' : Number(this.sharedMaterialInsertDraft?.targetTopicId || 0) > 0 ? 'topic' : 'subject'
             const targetId = Number(this.sharedMaterialInsertTargetId || 0)
             const label = String(this.sharedMaterialInsertDraft?.label || '').trim() || 'Material'
             const sourceTopicId = Number(this.sharedMaterialInsertDraft?.sourceTopicId || 0)
@@ -2885,6 +3002,7 @@ export default {
                 })
 
                 this.closeSharedMaterialInsertDialog(true)
+                this.showWorkspaceAfterSharedInsert()
                 await this.loadCards(null, { forceFilterCountRefresh: true })
                 await this.loadSharedObjectsForMe()
             } finally {
@@ -2892,8 +3010,22 @@ export default {
             }
         },
         openSharedInsertDraft(payload = {}) {
-            const level = String(payload?.level || '').trim().toLowerCase()
+            const level = String(payload?.level || '')
+                .trim()
+                .toLowerCase()
             if (!this.canShowSharedInsertButton(level)) return
+
+            if (level === 'workspace') {
+                const ruleId = Number(payload?.ruleId || 0)
+                if (!Number.isFinite(ruleId) || ruleId <= 0) return
+
+                this.sharedWorkspaceInsertDraft = {
+                    ruleId,
+                    label: String(payload?.label || '').trim() || 'Workspace',
+                }
+                this.sharedWorkspaceInsertDialogOpen = true
+                return
+            }
 
             if (level === 'subject') {
                 const ruleId = Number(payload?.ruleId || 0)
@@ -3012,13 +3144,14 @@ export default {
             const sharedRuleId = Number(payload?.sharedRuleId || 0)
             const sharedNodeId = Number(payload?.sharedNodeId || 0)
             const sharedNodeLevel = String(payload?.sharedNodeLevel || '').trim()
-            const nextSharedContext = Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
-                ? {
-                    ruleId: sharedRuleId,
-                    nodeId: sharedNodeId,
-                    nodeLevel: sharedNodeLevel,
-                }
-                : null
+            const nextSharedContext =
+                Number.isFinite(sharedRuleId) && sharedRuleId > 0 && Number.isFinite(sharedNodeId) && sharedNodeId > 0
+                    ? {
+                          ruleId: sharedRuleId,
+                          nodeId: sharedNodeId,
+                          nodeLevel: sharedNodeLevel,
+                      }
+                    : null
 
             this.createForm = createDefaultEditForm()
             this.createSharedContext = nextSharedContext
@@ -3090,12 +3223,8 @@ export default {
             return cards.find((card) => Number(card?.ruleId || 0) === id) || null
         },
         normalizeSharedMaterialOptions(materialOptions) {
-            const statusValues = Array.isArray(materialOptions?.status_values)
-                ? materialOptions.status_values.map((option) => ({ ...option }))
-                : []
-            const typeValues = Array.isArray(materialOptions?.type_values)
-                ? materialOptions.type_values.map((option) => ({ ...option }))
-                : []
+            const statusValues = Array.isArray(materialOptions?.status_values) ? materialOptions.status_values.map((option) => ({ ...option })) : []
+            const typeValues = Array.isArray(materialOptions?.type_values) ? materialOptions.type_values.map((option) => ({ ...option })) : []
 
             return {
                 statusOptions: statusValues,
@@ -3109,15 +3238,11 @@ export default {
             if (!Number.isFinite(materialId) || materialId <= 0) return null
 
             const sharedRuleCard = this.sharedRuleCard(ruleId)
-            const permission = this.normalizeLinkedPermission(
-                card?.linked_permission ?? card?.linkedPermission ?? sharedRuleCard?.permission
-            ) || 'read_only'
-            const permissionLabel = String(
-                card?.linked_permission_label
-                || card?.linkedPermissionLabel
-                || sharedRuleCard?.permissionLabel
-                || this.linkedPermissionLabelForPermission(permission)
-            ).trim() || this.linkedPermissionLabelForPermission(permission)
+            const permission = this.normalizeLinkedPermission(card?.linked_permission ?? card?.linkedPermission ?? sharedRuleCard?.permission) || 'read_only'
+            const permissionLabel =
+                String(
+                    card?.linked_permission_label || card?.linkedPermissionLabel || sharedRuleCard?.permissionLabel || this.linkedPermissionLabelForPermission(permission)
+                ).trim() || this.linkedPermissionLabelForPermission(permission)
 
             return {
                 ruleId,
@@ -3317,7 +3442,9 @@ export default {
             }
         },
         sharedScopeIcon(scopeType) {
-            const normalized = String(scopeType || '').trim().toLocaleLowerCase()
+            const normalized = String(scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             if (normalized === 'all') return 'mdi-briefcase-outline'
             if (normalized === 'subject') return 'mdi-book-open-page-variant-outline'
             if (normalized === 'topic') return 'mdi-shape-outline'
@@ -3326,14 +3453,28 @@ export default {
             return 'mdi-share-variant-outline'
         },
         sharedPermissionColor(permission) {
-            const normalized = String(permission || '').trim().toLocaleLowerCase()
+            const normalized = String(permission || '')
+                .trim()
+                .toLocaleLowerCase()
             if (normalized === 'full_access') return 'error'
             if (normalized === 'read_write') return 'warning'
             if (normalized === 'read_append') return 'info'
             return 'primary'
         },
+        sharedSenderLabel(item) {
+            const label = String(item?.fromUserLabel || '').trim() || 'Benutzer'
+            const email = String(item?.fromUserEmail || '').trim()
+
+            if (email !== '') {
+                return `${label} (${email})`
+            }
+
+            return label
+        },
         sharedScopeTypeLabel(scopeType) {
-            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            const normalizedScopeType = String(scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             if (normalizedScopeType === 'all') return 'Workspace'
             if (normalizedScopeType === 'subject') return 'Fach'
             if (normalizedScopeType === 'topic') return 'Thema'
@@ -3345,7 +3486,9 @@ export default {
             return String(this.materialCardStore?.config?.workspace?.name || '').trim()
         },
         resolveSharedScopePathLabel(scopeType, scopePathLabel) {
-            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            const normalizedScopeType = String(scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             if (normalizedScopeType !== 'all') {
                 if (normalizedScopeType === 'subject') {
                     const normalizedPath = String(scopePathLabel || '').trim()
@@ -3361,7 +3504,9 @@ export default {
             return workspaceName || scopePathLabel
         },
         resolveSharedScopeObjectLabel(scopeType, scopeObjectLabel, scopePathLabel) {
-            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            const normalizedScopeType = String(scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             const objectLabel = String(scopeObjectLabel || '').trim()
             if (normalizedScopeType !== 'all') {
                 return objectLabel || 'Freigabe'
@@ -3378,7 +3523,9 @@ export default {
             return objectLabel || String(scopePathLabel || '').trim() || 'Freigabe'
         },
         sharedScopeSortOrder(scopeType) {
-            const normalizedScopeType = String(scopeType || '').trim().toLocaleLowerCase()
+            const normalizedScopeType = String(scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             if (normalizedScopeType === 'all') return 1
             if (normalizedScopeType === 'subject') return 2
             if (normalizedScopeType === 'topic') return 3
@@ -3387,12 +3534,18 @@ export default {
             return 9
         },
         sharedScopeAlphabeticKey(card) {
-            const scopeType = String(card?.scopeType || '').trim().toLocaleLowerCase()
+            const scopeType = String(card?.scopeType || '')
+                .trim()
+                .toLocaleLowerCase()
             if (scopeType === 'all') {
-                return String(card?.scopePathLabel || card?.scopeObjectLabel || '').trim().toLocaleLowerCase()
+                return String(card?.scopePathLabel || card?.scopeObjectLabel || '')
+                    .trim()
+                    .toLocaleLowerCase()
             }
 
-            return String(card?.scopeObjectLabel || card?.scopePathLabel || '').trim().toLocaleLowerCase()
+            return String(card?.scopeObjectLabel || card?.scopePathLabel || '')
+                .trim()
+                .toLocaleLowerCase()
         },
         sharedCardsWithActiveFirst(cards, activeRuleId = null) {
             const list = Array.isArray(cards) ? [...cards] : []
@@ -3439,10 +3592,8 @@ export default {
 
             const cards = []
             for (const userRow of rows) {
-                const fromUserLabel =
-                    String(userRow?.label || '').trim() ||
-                    String(userRow?.email || '').trim() ||
-                    'Benutzer'
+                const fromUserEmail = String(userRow?.email || '').trim()
+                const fromUserLabel = String(userRow?.label || '').trim() || fromUserEmail || 'Benutzer'
                 const fromSchoolLabel = String(userRow?.school_label || '').trim()
                 const fallbackSharedAt = String(userRow?.last_shared_at || '').trim()
                 const materialOptions = this.normalizeSharedMaterialOptions(userRow?.material_options)
@@ -3470,6 +3621,7 @@ export default {
                     cards.push({
                         ruleId,
                         scopeType,
+                        scopeId: Number(item?.scope_id || 0) || null,
                         scopeLabel,
                         scopeObjectLabel,
                         scopePathLabel,
@@ -3477,6 +3629,7 @@ export default {
                         permissionLabel,
                         sharedAt,
                         fromUserLabel,
+                        fromUserEmail,
                         fromSchoolLabel,
                         materialOptions,
                         hierarchy,
@@ -3496,17 +3649,17 @@ export default {
                 materials: Array.isArray(subject?.materials) ? subject.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
                 topics: Array.isArray(subject?.topics)
                     ? subject.topics.map((topic) => ({
-                        id: Number(topic?.id || 0),
-                        name: String(topic?.name || '').trim() || 'Ohne Thema',
-                        materials: Array.isArray(topic?.materials) ? topic.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
-                        units: Array.isArray(topic?.units)
-                            ? topic.units.map((unit) => ({
-                                id: Number(unit?.id || 0),
-                                name: String(unit?.name || '').trim() || 'Ohne Einheit',
-                                materials: Array.isArray(unit?.materials) ? unit.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
-                            }))
-                            : [],
-                    }))
+                          id: Number(topic?.id || 0),
+                          name: String(topic?.name || '').trim() || 'Ohne Thema',
+                          materials: Array.isArray(topic?.materials) ? topic.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
+                          units: Array.isArray(topic?.units)
+                              ? topic.units.map((unit) => ({
+                                    id: Number(unit?.id || 0),
+                                    name: String(unit?.name || '').trim() || 'Ohne Einheit',
+                                    materials: Array.isArray(unit?.materials) ? unit.materials.map((material) => this.normalizeSharedHierarchyMaterial(material)) : [],
+                                }))
+                              : [],
+                      }))
                     : [],
             }))
         },
@@ -3569,6 +3722,150 @@ export default {
                 })
 
                 return null
+            }
+        },
+        async performSharedInboxMutationWithResponse(config = {}) {
+            const notification = useNotificationStore()
+
+            try {
+                const response = await axios(config)
+
+                return {
+                    status: Number(response?.status || 0),
+                    message: String(response?.data?.message || '').trim(),
+                    data: response?.data?.data ?? response?.data ?? null,
+                }
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || config.errorMessage || 'Aktion konnte nicht ausgeführt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+
+                return null
+            }
+        },
+        trackPendingSharedImport(response, options = {}) {
+            if (!response || Number(response?.status || 0) !== 202) {
+                return false
+            }
+
+            const operationId = String(response?.data?.operation_id || '').trim()
+            if (operationId === '') {
+                return false
+            }
+
+            const refreshAfterSeconds = Math.max(Number(response?.data?.refresh_after_seconds || 3), 3)
+            this.pendingSharedImportOperations = {
+                ...this.pendingSharedImportOperations,
+                [operationId]: {
+                    operationId,
+                    refreshAfterSeconds,
+                },
+            }
+
+            useNotificationStore().notify({
+                message: String(options?.queuedMessage || response?.message || 'Einordnen läuft im Hintergrund.').trim() || 'Einordnen läuft im Hintergrund.',
+                type: 'info',
+                timeout: 2600,
+            })
+
+            this.schedulePendingSharedImportReload(refreshAfterSeconds)
+
+            return true
+        },
+        clearPendingSharedImportReload() {
+            if (this.pendingSharedImportTimer) {
+                clearTimeout(this.pendingSharedImportTimer)
+                this.pendingSharedImportTimer = null
+            }
+        },
+        schedulePendingSharedImportReload(delaySeconds = 3) {
+            this.clearPendingSharedImportReload()
+            const operationIds = Object.keys(this.pendingSharedImportOperations || {})
+            if (operationIds.length === 0) {
+                return
+            }
+
+            const normalizedDelay = Math.max(Number(delaySeconds || 3), 3)
+            this.pendingSharedImportTimer = setTimeout(
+                () => {
+                    this.pendingSharedImportTimer = null
+                    this.reloadPendingSharedImportOperations()
+                },
+                Math.min(normalizedDelay, 10) * 1000
+            )
+        },
+        async reloadPendingSharedImportOperations() {
+            const operationIds = Object.keys(this.pendingSharedImportOperations || {})
+            if (operationIds.length === 0) {
+                this.clearPendingSharedImportReload()
+                return
+            }
+
+            let hasCompletedOperation = false
+            let nextDelaySeconds = 3
+            const nextOperations = { ...this.pendingSharedImportOperations }
+            const notification = useNotificationStore()
+
+            for (const operationId of operationIds) {
+                try {
+                    const response = await axios.get(`/api/admin/materials/shares/inbox/import-operations/${operationId}`)
+                    const payload = response?.data?.data || null
+                    const status = String(payload?.status || '')
+                        .trim()
+                        .toLowerCase()
+                    nextDelaySeconds = Math.max(nextDelaySeconds, Number(payload?.refresh_after_seconds || 3))
+
+                    if (status === 'completed') {
+                        delete nextOperations[operationId]
+                        hasCompletedOperation = true
+                        notification.notify({
+                            message: String(payload?.message || 'Einordnen abgeschlossen.').trim() || 'Einordnen abgeschlossen.',
+                            type: 'success',
+                            timeout: 2600,
+                        })
+                        continue
+                    }
+
+                    if (status === 'failed') {
+                        delete nextOperations[operationId]
+                        notification.notify({
+                            message: String(payload?.message || 'Einordnen konnte nicht abgeschlossen werden.').trim() || 'Einordnen konnte nicht abgeschlossen werden.',
+                            type: 'error',
+                            timeout: 3200,
+                        })
+                        continue
+                    }
+
+                    nextOperations[operationId] = {
+                        operationId,
+                        refreshAfterSeconds: Math.max(Number(payload?.refresh_after_seconds || 3), 3),
+                    }
+                } catch (error) {
+                    delete nextOperations[operationId]
+                    notification.notify({
+                        status: error?.response?.status,
+                        message: 'Status von Einordnen konnte nicht geladen werden.',
+                        type: 'warning',
+                        timeout: 2800,
+                    })
+                }
+            }
+
+            this.pendingSharedImportOperations = nextOperations
+
+            if (hasCompletedOperation) {
+                this.showWorkspaceAfterSharedInsert()
+                await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.loadSharedObjectsForMe()
+            }
+
+            if (Object.keys(this.pendingSharedImportOperations || {}).length > 0) {
+                this.schedulePendingSharedImportReload(nextDelaySeconds)
+            } else {
+                this.clearPendingSharedImportReload()
             }
         },
         async updateSharedMaterial(context, data) {
@@ -3634,8 +3931,12 @@ export default {
             })
         },
         async addSharedImageUrlAttachment(context, url, name = '') {
-            const normalizedUrl = String(url ?? '').trim().slice(0, 2048)
-            const normalizedName = String(name ?? '').trim().slice(0, 255)
+            const normalizedUrl = String(url ?? '')
+                .trim()
+                .slice(0, 2048)
+            const normalizedName = String(name ?? '')
+                .trim()
+                .slice(0, 255)
 
             if (!normalizedUrl) {
                 const notification = useNotificationStore()
@@ -3692,7 +3993,10 @@ export default {
                     material_id: Number(context?.materialId || 0),
                     data: {
                         upload_id: String(uploadId ?? '').trim(),
-                        name: String(name ?? '').trim().slice(0, 255) || null,
+                        name:
+                            String(name ?? '')
+                                .trim()
+                                .slice(0, 255) || null,
                     },
                 },
                 successMessage: 'Datei-Anhang hinzugefügt.',
@@ -3707,7 +4011,9 @@ export default {
                     rule_id: Number(context?.ruleId || 0),
                     material_id: Number(context?.materialId || 0),
                     data: {
-                        name: String(name ?? '').trim().slice(0, 255),
+                        name: String(name ?? '')
+                            .trim()
+                            .slice(0, 255),
                     },
                 },
                 successMessage: 'Anhang umbenannt.',
@@ -3746,7 +4052,10 @@ export default {
                     material_id: Number(context?.materialId || 0),
                     data: {
                         content_html: String(contentHtml ?? '').trim(),
-                        name: String(name ?? '').trim().slice(0, 255) || null,
+                        name:
+                            String(name ?? '')
+                                .trim()
+                                .slice(0, 255) || null,
                     },
                 },
                 successMessage: 'Text-Anhang aktualisiert.',
@@ -3876,10 +4185,10 @@ export default {
             return `shared-item-${id}`
         },
         toggleSubjectsTreeSharedForMeExpanded() {
-            this.subjectsTreeSharedForMeExpanded = !this.subjectsTreeSharedForMeExpanded
+            this.applySubjectsTreeSection(this.subjectsTreeSharedForMeExpanded ? 'workspace' : 'shared')
         },
         toggleSubjectsTreeSharedForMeArchiveExpanded() {
-            this.subjectsTreeSharedForMeArchiveExpanded = !this.subjectsTreeSharedForMeArchiveExpanded
+            this.applySubjectsTreeSection(this.subjectsTreeSharedForMeArchiveExpanded ? 'workspace' : 'archive')
         },
         toggleSubjectsTreeWorkspaceStructureExpanded() {
             this.subjectsTreeWorkspaceStructureExpanded = !this.subjectsTreeWorkspaceStructureExpanded
@@ -3901,8 +4210,43 @@ export default {
             }
             this.reorderSharedObjectsForActiveRule(ruleId)
         },
-        async refreshSharedStructureTree() {
+        showWorkspaceAfterSharedInsert() {
+            this.subjectsContentsSource = 'workspace'
+            this.subjectsTreeSharedForMeExpanded = false
+            this.subjectsTreeSharedForMeArchiveExpanded = false
+            this.subjectsTreeExpandedSharedItems = {}
+            this.reorderSharedObjectsForActiveRule(null)
+        },
+        normalizeDeletedRestoreContext(context = null) {
+            const source = String(context?.source || '').trim().toLowerCase()
+            if (source === 'none') {
+                return {
+                    source: 'none',
+                    ruleId: null,
+                }
+            }
+
+            if (source === 'shared') {
+                const ruleId = Number(context?.ruleId || this.resolvedSharedRestoreRuleId || 0)
+
+                return {
+                    source: 'shared',
+                    ruleId: Number.isFinite(ruleId) && ruleId > 0 ? ruleId : null,
+                }
+            }
+
+            return {
+                source: 'workspace',
+                ruleId: null,
+            }
+        },
+        async refreshSharedStructureTree(context = null) {
             await this.loadSharedObjectsForMe()
+            const normalizedContext = this.normalizeDeletedRestoreContext({
+                source: 'shared',
+                ruleId: Number(context?.ruleId || this.activeSharedRuleId || this.resolvedSharedRestoreRuleId || 0) || null,
+            })
+            await this.refreshLastDeletedMaterialRestoreInfo(normalizedContext)
         },
         async archiveSharedRule(ruleId) {
             const normalizedRuleId = Number(ruleId || 0)
@@ -3952,8 +4296,62 @@ export default {
                 this.isUnarchivingSharedRuleId = null
             }
         },
-        async refreshWorkspaceStructureTree() {
+        normalizeWorkspaceTreeSelection(selection) {
+            if (!selection || typeof selection !== 'object') {
+                return null
+            }
+
+            const level = String(selection?.level || '')
+                .trim()
+                .toLowerCase()
+            const nodeId = Number(selection?.nodeId || 0)
+            const parentSubjectId = Number(selection?.parentSubjectId || 0)
+            const parentTopicId = Number(selection?.parentTopicId || 0)
+            const subjectId = Number(selection?.subjectId || 0)
+            const topicId = Number(selection?.topicId || 0)
+            const unitId = Number(selection?.unitId || 0)
+
+            if (level === 'subject' && nodeId > 0) {
+                return { subjectId: nodeId, topicId: null, unitId: null }
+            }
+            if (level === 'topic' && nodeId > 0) {
+                return {
+                    subjectId: parentSubjectId > 0 ? parentSubjectId : null,
+                    topicId: nodeId,
+                    unitId: null,
+                }
+            }
+            if (level === 'unit' && nodeId > 0) {
+                return {
+                    subjectId: parentSubjectId > 0 ? parentSubjectId : null,
+                    topicId: parentTopicId > 0 ? parentTopicId : null,
+                    unitId: nodeId,
+                }
+            }
+
+            if (subjectId > 0 || topicId > 0 || unitId > 0) {
+                return {
+                    subjectId: subjectId > 0 ? subjectId : null,
+                    topicId: topicId > 0 ? topicId : null,
+                    unitId: unitId > 0 ? unitId : null,
+                }
+            }
+
+            return null
+        },
+        async refreshWorkspaceStructureTree(selection = null) {
+            const nextSelection = this.normalizeWorkspaceTreeSelection(selection)
+            if (nextSelection) {
+                this.subjectsTreeWorkspaceSelection = nextSelection
+            }
+
             await this.loadCards(null, { forceFilterCountRefresh: true })
+            await this.refreshLastDeletedMaterialRestoreInfo({ source: 'workspace', ruleId: null })
+
+            if (nextSelection) {
+                await nextTick()
+                this.subjectsTreeWorkspaceSelection = null
+            }
         },
         canExpandSharedHierarchy(item) {
             return Array.isArray(item?.hierarchy) && item.hierarchy.length > 0
@@ -4000,9 +4398,7 @@ export default {
                 }
                 this.sharedObjectsForMeCards = nextCards
                 this.archivedSharedObjectsForMeCards = nextArchivedCards
-                const activeStillExists = this.sharedObjectsForMeCards.some(
-                    (card) => Number(card?.ruleId || 0) === Number(this.activeSharedRuleId || 0)
-                )
+                const activeStillExists = this.sharedObjectsForMeCards.some((card) => Number(card?.ruleId || 0) === Number(this.activeSharedRuleId || 0))
                 if (!activeStillExists) {
                     this.activeSharedRuleId = null
                 }
@@ -4368,9 +4764,9 @@ export default {
                             ? 'Diese Zuordnung entfernen'
                             : canUnlinkLinkedMaterial
                               ? 'Verlinktes Material kann über die letzte Zuordnung entkoppelt werden.'
-                            : hasPersistedClassifications
-                              ? 'Nicht möglich: Material hat nur 1 Zuordnung.'
-                              : 'Nicht möglich: Material hat keine gespeicherte Zuordnung.',
+                              : hasPersistedClassifications
+                                ? 'Nicht möglich: Material hat nur 1 Zuordnung.'
+                                : 'Nicht möglich: Material hat keine gespeicherte Zuordnung.',
                     }
 
                     const subjectNode = ensureSubject(subjectName)
@@ -5208,13 +5604,13 @@ export default {
                     const attachmentTitle = this.defaultLinkTitle(normalizedUrl)
                     const linkAdded = sharedContext
                         ? await this.addSharedLinkAttachment(sharedContext, {
-                            url: normalizedUrl,
-                            name: attachmentTitle,
-                        })
+                              url: normalizedUrl,
+                              name: attachmentTitle,
+                          })
                         : await this.materialCardStore.addLinkAttachment(cardId, {
-                            url: normalizedUrl,
-                            name: attachmentTitle,
-                        })
+                              url: normalizedUrl,
+                              name: attachmentTitle,
+                          })
 
                     if (!linkAdded) continue
                     changed = true
@@ -5489,6 +5885,7 @@ export default {
             if (deleted) {
                 this.closeDetailDialog()
                 await this.loadCards(null, { forceFilterCountRefresh: true })
+                await this.refreshLastDeletedMaterialRestoreInfo()
             }
         },
         async unlinkLinkedCard(card) {
@@ -5502,7 +5899,8 @@ export default {
                 this.isUnlinkingId !== null ||
                 this.isUnlinkingUnitId !== null ||
                 this.isUnlinkingTopicId !== null
-            ) return
+            )
+                return
 
             const cardId = Number(card?.id)
             if (!Number.isFinite(cardId) || cardId <= 0) return
@@ -5540,7 +5938,8 @@ export default {
                 this.isUnlinkingId !== null ||
                 this.isUnlinkingUnitId !== null ||
                 this.isUnlinkingTopicId !== null
-            ) return
+            )
+                return
 
             const unitId = Number(unit?.id)
             if (!Number.isFinite(unitId) || unitId <= 0) return
@@ -5583,7 +5982,8 @@ export default {
                 this.isUnlinkingId !== null ||
                 this.isUnlinkingUnitId !== null ||
                 this.isUnlinkingTopicId !== null
-            ) return
+            )
+                return
 
             const topicId = Number(topic?.id)
             if (!Number.isFinite(topicId) || topicId <= 0) return
@@ -5713,25 +6113,68 @@ export default {
             this.editDeleteConfirmDialogOpen = false
             this.editDeleteConfirmDialogLoading = false
         },
-        async refreshLastDeletedMaterialRestoreInfo() {
-            if (!this.materialCardStore || typeof this.materialCardStore.getDeletedRestoreList !== 'function') return
+        async refreshLastDeletedMaterialRestoreInfo(contextOverride = null) {
+            const notification = useNotificationStore()
+            const context = this.normalizeDeletedRestoreContext(contextOverride || this.deletedRestoreContext)
 
-            const result = await this.materialCardStore.getDeletedRestoreList()
-            const items = Array.isArray(result?.items) ? result.items : []
-            this.deletedMaterialRestoreLimit = Math.max(1, Number(result?.limit || this.deletedMaterialRestoreLimit || 5) || 5)
-
-            if (items.length === 0) {
+            if (context.source === 'none') {
                 this.deletedMaterialRestoreItems = []
                 this.deletedMaterialRestoreHidden = true
+                this.deletedMaterialRestoreContextOverride = null
                 return
             }
 
-            this.deletedMaterialRestoreItems = items.map((item) => ({
-                id: Number(item?.id || 0) || null,
-                title: String(item?.title || '').trim(),
-                attachmentsCount: Math.max(0, Number(item?.attachments_count ?? item?.attachmentsCount ?? 0) || 0),
-                deletedAt: String(item?.deleted_at ?? item?.deletedAt ?? '').trim(),
-            })).filter((item) => Number.isFinite(Number(item.id)) && Number(item.id) > 0)
+            if (context.source === 'shared' && (!Number.isFinite(Number(context.ruleId || 0)) || Number(context.ruleId || 0) <= 0)) {
+                this.deletedMaterialRestoreItems = []
+                this.deletedMaterialRestoreHidden = true
+                this.deletedMaterialRestoreContextOverride = null
+                return
+            }
+
+            try {
+                const response = context.source === 'shared'
+                    ? await axios.get('/api/admin/materials/shares/inbox/deleted-restore-list', {
+                        params: {
+                            rule_id: Number(context.ruleId || 0),
+                        },
+                    })
+                    : await axios.get('/api/admin/materials/deleted-restore-list')
+
+                const items = Array.isArray(response?.data?.data) ? response.data.data : []
+                if (items.length === 0) {
+                    this.deletedMaterialRestoreItems = []
+                    this.deletedMaterialRestoreHidden = true
+                    this.deletedMaterialRestoreContextOverride = null
+                    return
+                }
+
+                this.deletedMaterialRestoreItems = items
+                    .map((item) => ({
+                        id: Number(item?.id || 0) || null,
+                        type: String(item?.type || '').trim().toLowerCase(),
+                        typeLabel: String((item?.type_label ?? item?.typeLabel) || '').trim(),
+                        title: String(item?.title || '').trim(),
+                        pathLabel: String((item?.path_label ?? item?.pathLabel) || '').trim(),
+                        attachmentsCount: Math.max(0, Number(item?.attachments_count ?? item?.attachmentsCount ?? 0) || 0),
+                        materialsCount: Math.max(0, Number(item?.materials_count ?? item?.materialsCount ?? 0) || 0),
+                        sizeBytes: Math.max(0, Number(item?.size_bytes ?? item?.sizeBytes ?? 0) || 0),
+                        deletedAt: String(item?.deleted_at ?? item?.deletedAt ?? '').trim(),
+                    }))
+                    .filter((item) => Number.isFinite(Number(item.id)) && Number(item.id) > 0 && item.type !== '')
+
+                this.deletedMaterialRestoreContextOverride = context
+                this.deletedMaterialRestoreHidden = false
+            } catch (error) {
+                this.deletedMaterialRestoreItems = []
+                this.deletedMaterialRestoreHidden = true
+                this.deletedMaterialRestoreContextOverride = null
+                notification.notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Gelöschte Elemente konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            }
         },
         hideDeletedMaterialRestoreList() {
             if (this.isRestoringLastDeletedMaterial || this.isPurgingDeletedMaterial) return
@@ -5748,21 +6191,33 @@ export default {
             if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
             if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
 
-            const targetId = Number(item?.id || this.deletedMaterialRestoreItems[0]?.id || 0)
-            if (!Number.isFinite(targetId) || targetId <= 0) return
+            const targetItem = item || this.deletedMaterialRestoreItems[0] || null
+            const targetId = Number(targetItem?.id || 0)
+            const targetType = String(targetItem?.type || '').trim().toLowerCase()
+            const context = this.normalizeDeletedRestoreContext(this.effectiveDeletedRestoreContext)
+            if (!Number.isFinite(targetId) || targetId <= 0 || targetType === '') return
 
             this.isRestoringLastDeletedMaterial = true
             this.restoringDeletedMaterialId = targetId
             try {
-                const restored = await this.materialCardStore.restoreDeletedById(targetId)
-                if (!restored) {
-                    await this.refreshLastDeletedMaterialRestoreInfo()
-                    return
-                }
+                await axios.post(
+                    context.source === 'shared'
+                        ? '/api/admin/materials/shares/inbox/restore-deleted'
+                        : '/api/admin/materials/restore-deleted',
+                    {
+                        ...(context.source === 'shared' ? { rule_id: Number(context.ruleId || 0) } : {}),
+                        data: {
+                            type: targetType,
+                            id: targetId,
+                        },
+                    }
+                )
 
-                this.mergeCardIntoOverview(restored)
                 await this.loadCards(null, { forceFilterCountRefresh: true })
-                await this.refreshLastDeletedMaterialRestoreInfo()
+                if (context.source === 'shared') {
+                    await this.loadSharedObjectsForMe()
+                }
+                await this.refreshLastDeletedMaterialRestoreInfo(context)
             } finally {
                 this.isRestoringLastDeletedMaterial = false
                 this.restoringDeletedMaterialId = null
@@ -5773,19 +6228,34 @@ export default {
             if (!Array.isArray(this.deletedMaterialRestoreItems) || this.deletedMaterialRestoreItems.length === 0) return
             if (this.isLoading || this.isSavingEdit || this.isDeletingId !== null) return
 
-            const targetId = Number(item?.id || this.deletedMaterialRestoreItems[0]?.id || 0)
-            if (!Number.isFinite(targetId) || targetId <= 0) return
+            const targetItem = item || this.deletedMaterialRestoreItems[0] || null
+            const targetId = Number(targetItem?.id || 0)
+            const targetType = String(targetItem?.type || '').trim().toLowerCase()
+            const context = this.normalizeDeletedRestoreContext(this.effectiveDeletedRestoreContext)
+            if (!Number.isFinite(targetId) || targetId <= 0 || targetType === '') return
 
             this.isPurgingDeletedMaterial = true
             this.purgingDeletedMaterialId = targetId
             try {
-                const purged = await this.materialCardStore.purgeDeletedById(targetId)
-                if (!purged) {
-                    await this.refreshLastDeletedMaterialRestoreInfo()
-                    return
-                }
+                await axios.delete(
+                    context.source === 'shared'
+                        ? '/api/admin/materials/shares/inbox/deleted'
+                        : '/api/admin/materials/deleted',
+                    {
+                        data: {
+                            ...(context.source === 'shared' ? { rule_id: Number(context.ruleId || 0) } : {}),
+                            data: {
+                                type: targetType,
+                                id: targetId,
+                            },
+                        },
+                    }
+                )
 
-                await this.refreshLastDeletedMaterialRestoreInfo()
+                if (context.source === 'shared') {
+                    await this.loadSharedObjectsForMe()
+                }
+                await this.refreshLastDeletedMaterialRestoreInfo(context)
             } finally {
                 this.isPurgingDeletedMaterial = false
                 this.purgingDeletedMaterialId = null
@@ -5799,9 +6269,7 @@ export default {
 
             this.isDeletingId = cardId
             const sharedContext = this.sharedInboxContextForCard(this.editForm)
-            const deleted = sharedContext && this.isEditSharedInboxMaterial
-                ? await this.deleteSharedMaterial(sharedContext)
-                : await this.materialCardStore.destroy(cardId)
+            const deleted = sharedContext && this.isEditSharedInboxMaterial ? await this.deleteSharedMaterial(sharedContext) : await this.materialCardStore.destroy(cardId)
             this.isDeletingId = null
             this.editDeleteStep = 0
             this.editDeleteConfirmDialogOpen = false
@@ -5812,8 +6280,12 @@ export default {
                 await this.loadCards(null, { forceFilterCountRefresh: true })
                 if (sharedContext && this.isEditSharedInboxMaterial) {
                     await this.loadSharedObjectsForMe()
+                    await this.refreshLastDeletedMaterialRestoreInfo({
+                        source: 'shared',
+                        ruleId: Number(sharedContext?.ruleId || 0) || null,
+                    })
                 } else {
-                    await this.refreshLastDeletedMaterialRestoreInfo()
+                    await this.refreshLastDeletedMaterialRestoreInfo({ source: 'workspace', ruleId: null })
                 }
             }
         },
@@ -5886,9 +6358,7 @@ export default {
                     notes: this.toNullable(this.editForm.notes),
                 }
 
-                const updated = sharedContext
-                    ? await this.updateSharedMaterial(sharedContext, payload)
-                    : await this.materialCardStore.update(this.editForm.id, payload)
+                const updated = sharedContext ? await this.updateSharedMaterial(sharedContext, payload) : await this.materialCardStore.update(this.editForm.id, payload)
 
                 if (!updated) {
                     return
@@ -5925,11 +6395,7 @@ export default {
 
                     if (attachment.tempUpload) {
                         if (sharedContext) {
-                            await this.addSharedTempFileAttachment(
-                                sharedContext,
-                                attachment.tempUpload,
-                                this.toNullable(attachment.title) || attachment.fileName || ''
-                            )
+                            await this.addSharedTempFileAttachment(sharedContext, attachment.tempUpload, this.toNullable(attachment.title) || attachment.fileName || '')
                         } else {
                             await this.materialCardStore.addTempFileAttachment(
                                 this.editForm.id,
@@ -5943,17 +6409,9 @@ export default {
 
                     if (attachment.file instanceof File) {
                         if (sharedContext) {
-                            await this.addSharedFileAttachment(
-                                sharedContext,
-                                attachment.file,
-                                this.toNullable(attachment.title) || attachment.file.name || ''
-                            )
+                            await this.addSharedFileAttachment(sharedContext, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
                         } else {
-                            await this.materialCardStore.addFileAttachment(
-                                this.editForm.id,
-                                attachment.file,
-                                this.toNullable(attachment.title) || attachment.file.name || ''
-                            )
+                            await this.materialCardStore.addFileAttachment(this.editForm.id, attachment.file, this.toNullable(attachment.title) || attachment.file.name || '')
                         }
                     }
                 }
@@ -5975,15 +6433,14 @@ export default {
             this.isSavingCreate = true
             const title = String(this.createForm.title || '').trim()
             const classifications = this.normalizeClassifications(this.createForm.classifications)
-            const sharedCreateContext = this.createSharedContext
-                && Number(this.createSharedContext?.ruleId || 0) > 0
-                && Number(this.createSharedContext?.nodeId || 0) > 0
-                ? {
-                    ruleId: Number(this.createSharedContext.ruleId),
-                    nodeId: Number(this.createSharedContext.nodeId),
-                    nodeLevel: String(this.createSharedContext.nodeLevel || '').trim(),
-                }
-                : null
+            const sharedCreateContext =
+                this.createSharedContext && Number(this.createSharedContext?.ruleId || 0) > 0 && Number(this.createSharedContext?.nodeId || 0) > 0
+                    ? {
+                          ruleId: Number(this.createSharedContext.ruleId),
+                          nodeId: Number(this.createSharedContext.nodeId),
+                          nodeLevel: String(this.createSharedContext.nodeLevel || '').trim(),
+                      }
+                    : null
 
             const payload = {
                 title,
@@ -5992,16 +6449,14 @@ export default {
                 status: this.toNullable(this.createForm.status) || this.defaultStatusValue,
                 classifications,
             }
-            const saved = sharedCreateContext
-                ? await this.createSharedMaterial(sharedCreateContext, payload)
-                : await this.materialCardStore.quickStore(payload)
+            const saved = sharedCreateContext ? await this.createSharedMaterial(sharedCreateContext, payload) : await this.materialCardStore.quickStore(payload)
 
             if (saved?.id) {
                 const sharedAttachmentContext = sharedCreateContext
                     ? {
-                        ruleId: Number(sharedCreateContext.ruleId),
-                        materialId: Number(saved?.shared_material_id || saved?.id || 0),
-                    }
+                          ruleId: Number(sharedCreateContext.ruleId),
+                          materialId: Number(saved?.shared_material_id || saved?.id || 0),
+                      }
                     : null
                 const pendingAttachments = this.toPendingAttachments(this.createForm.pendingAttachments)
                 for (const attachment of pendingAttachments) {
@@ -6123,11 +6578,12 @@ export default {
                 const normalizedUnitId = Number.isFinite(unitId) && unitId > 0 ? Math.round(unitId) : null
                 const normalizedClassificationId = Number.isFinite(classificationId) && classificationId > 0 ? Math.round(classificationId) : null
 
-                const key = normalizedClassificationId !== null
-                    ? `classification:${normalizedClassificationId}`
-                    : normalizedSubjectId !== null || normalizedTopicId !== null || normalizedUnitId !== null
-                      ? `ids:${normalizedSubjectId || 0}|${normalizedTopicId || 0}|${normalizedUnitId || 0}`
-                      : `names:${subject.toLocaleLowerCase()}|${topic.toLocaleLowerCase()}|${unit.toLocaleLowerCase()}`
+                const key =
+                    normalizedClassificationId !== null
+                        ? `classification:${normalizedClassificationId}`
+                        : normalizedSubjectId !== null || normalizedTopicId !== null || normalizedUnitId !== null
+                          ? `ids:${normalizedSubjectId || 0}|${normalizedTopicId || 0}|${normalizedUnitId || 0}`
+                          : `names:${subject.toLocaleLowerCase()}|${topic.toLocaleLowerCase()}|${unit.toLocaleLowerCase()}`
                 if (seen.has(key)) continue
                 seen.add(key)
 
@@ -6472,9 +6928,7 @@ ${content}
 
             try {
                 const sharedContext = this.sharedInboxContextForAttachment(row)
-                const payload = sharedContext
-                    ? await this.fetchSharedTextAttachmentContent(sharedContext, id)
-                    : await this.materialCardStore.fetchTextAttachmentContent(id)
+                const payload = sharedContext ? await this.fetchSharedTextAttachmentContent(sharedContext, id) : await this.materialCardStore.fetchTextAttachmentContent(id)
                 if (!payload) {
                     this.textAttachmentEditorError = 'Text-Anhang konnte nicht geladen werden.'
                     return
@@ -6948,9 +7402,7 @@ ${content}
 
             try {
                 const sharedContext = this.sharedInboxContextForAttachment(row)
-                const updated = sharedContext
-                    ? await this.renameSharedAttachment(sharedContext, id, row.name)
-                    : await this.materialCardStore.renameAttachment(id, cardId, row.name)
+                const updated = sharedContext ? await this.renameSharedAttachment(sharedContext, id, row.name) : await this.materialCardStore.renameAttachment(id, cardId, row.name)
                 if (!updated) return
 
                 const nextName = this.normalizeAttachmentName(updated?.name) || this.normalizeAttachmentName(row.name)
@@ -6987,9 +7439,7 @@ ${content}
 
             try {
                 const sharedContext = this.sharedInboxContextForAttachment(row)
-                const deleted = sharedContext
-                    ? await this.deleteSharedAttachment(sharedContext, id)
-                    : await this.materialCardStore.deleteAttachment(id, cardId)
+                const deleted = sharedContext ? await this.deleteSharedAttachment(sharedContext, id) : await this.materialCardStore.deleteAttachment(id, cardId)
                 if (!deleted) return
 
                 this.attachmentRows = this.attachmentRows.filter((item) => item.id !== id)
@@ -7196,9 +7646,10 @@ ${content}
                 let response = null
                 let downloadUrl = initialDownloadUrl
 
-                const downloadOnce = async (url) => axios.get(url, {
-                    responseType: 'blob',
-                })
+                const downloadOnce = async (url) =>
+                    axios.get(url, {
+                        responseType: 'blob',
+                    })
 
                 try {
                     response = await downloadOnce(downloadUrl)
@@ -7237,9 +7688,7 @@ ${content}
                 const isNotFound = status === 404
                 notification.notify({
                     status: status || error.response?.status,
-                    message: isNotFound
-                        ? 'Datei ist derzeit nicht verfügbar.'
-                        : error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    message: isNotFound ? 'Datei ist derzeit nicht verfügbar.' : error.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })
@@ -7262,9 +7711,7 @@ ${content}
 
             const directMatch = freshAttachments.find((row) => Number(row?.id || 0) === currentId) || null
             const nameFallback = String(attachment?.name || '').trim()
-            const fallbackMatch = !directMatch && nameFallback !== ''
-                ? freshAttachments.find((row) => String(row?.name || '').trim() === nameFallback) || null
-                : null
+            const fallbackMatch = !directMatch && nameFallback !== '' ? freshAttachments.find((row) => String(row?.name || '').trim() === nameFallback) || null : null
             const target = directMatch || fallbackMatch
             if (!target) {
                 return ''
@@ -7408,10 +7855,7 @@ ${content}
                 const status = Number(error?.response?.status || 0)
                 notification.notify({
                     status: status || error.response?.status,
-                    message:
-                        status === 404
-                            ? 'Datei ist derzeit nicht verfügbar.'
-                            : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
+                    message: status === 404 ? 'Datei ist derzeit nicht verfügbar.' : error.response?.data?.message || 'Vorschau konnte nicht geladen werden.',
                     type: 'error',
                     timeout: 3000,
                 })

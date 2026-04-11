@@ -391,6 +391,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/materials/config', [MaterialController::class, 'config']);
         Route::post('/admin/materials/workspaces', [MaterialWorkspaceController::class, 'store']);
         Route::put('/admin/materials/workspaces/{material_workspace}', [MaterialWorkspaceController::class, 'update']);
+        Route::delete('/admin/materials/workspaces/{material_workspace}', [MaterialWorkspaceController::class, 'destroy']);
         Route::post('/admin/materials/subjects', [MaterialClassificationController::class, 'storeSubject']);
         Route::put('/admin/materials/subjects/{material_subject}', [MaterialClassificationController::class, 'updateSubject']);
         Route::delete('/admin/materials/subjects/{material_subject}', [MaterialClassificationController::class, 'destroySubject']);
@@ -416,10 +417,13 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/cards', [MaterialController::class, 'store']);
         Route::post('/admin/materials/cards/quick_store', [MaterialController::class, 'quickStore']);
         Route::get('/admin/materials/cards/deleted-restore-list', [MaterialController::class, 'deletedRestoreList']);
+        Route::get('/admin/materials/deleted-restore-list', [MaterialController::class, 'deletedWorkspaceRestoreList']);
         Route::get('/admin/materials/cards/last-deleted-restore-info', [MaterialController::class, 'lastDeletedRestoreInfo']);
         Route::post('/admin/materials/cards/restore-last-deleted', [MaterialController::class, 'restoreLastDeleted']);
         Route::post('/admin/materials/cards/restore-deleted/{card_id}', [MaterialController::class, 'restoreDeletedById'])->whereNumber('card_id');
+        Route::post('/admin/materials/restore-deleted', [MaterialController::class, 'restoreDeletedWorkspaceItem']);
         Route::delete('/admin/materials/cards/deleted/{card_id}', [MaterialController::class, 'purgeDeletedById'])->whereNumber('card_id');
+        Route::delete('/admin/materials/deleted', [MaterialController::class, 'purgeDeletedWorkspaceItem']);
         Route::get('/admin/materials/cards/{material_card}', [MaterialController::class, 'show']);
         Route::put('/admin/materials/cards/{material_card}', [MaterialController::class, 'update']);
         Route::post('/admin/materials/cards/{material_card}/unlink', [MaterialController::class, 'unlink']);
@@ -456,7 +460,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/materials/shares/inbox/subjects/{material_subject}/move', [MaterialShareController::class, 'moveInboxSubject']);
         Route::post('/admin/materials/shares/inbox/topics/{material_topic}/move', [MaterialShareController::class, 'moveInboxTopic']);
         Route::post('/admin/materials/shares/inbox/units/{material_unit}/move', [MaterialShareController::class, 'moveInboxUnit']);
+        Route::post('/admin/materials/shares/inbox/workspaces/{material_share_rule}/insert-tree', [MaterialShareController::class, 'insertInboxWorkspaceTree']);
         Route::post('/admin/materials/shares/inbox/subjects/{material_subject}/insert-tree', [MaterialShareController::class, 'insertInboxSubjectTree']);
+        Route::post('/admin/materials/shares/inbox/topics/{material_topic}/insert-tree', [MaterialShareController::class, 'insertInboxTopicTree']);
+        Route::post('/admin/materials/shares/inbox/units/{material_unit}/insert-tree', [MaterialShareController::class, 'insertInboxUnitTree']);
+        Route::get('/admin/materials/shares/inbox/import-operations/{operationId}', [MaterialShareController::class, 'inboxInsertOperationStatus']);
         Route::put('/admin/materials/shares/inbox/subjects/{material_subject}', [MaterialShareController::class, 'updateInboxSubject']);
         Route::put('/admin/materials/shares/inbox/topics/{material_topic}', [MaterialShareController::class, 'updateInboxTopic']);
         Route::put('/admin/materials/shares/inbox/units/{material_unit}', [MaterialShareController::class, 'updateInboxUnit']);
@@ -466,6 +474,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/materials/shares/inbox/subjects/{material_subject}', [MaterialShareController::class, 'destroyInboxSubject']);
         Route::delete('/admin/materials/shares/inbox/topics/{material_topic}', [MaterialShareController::class, 'destroyInboxTopic']);
         Route::delete('/admin/materials/shares/inbox/units/{material_unit}', [MaterialShareController::class, 'destroyInboxUnit']);
+        Route::get('/admin/materials/shares/inbox/deleted-restore-list', [MaterialShareController::class, 'deletedInboxRestoreList']);
+        Route::post('/admin/materials/shares/inbox/restore-deleted', [MaterialShareController::class, 'restoreDeletedInboxItem']);
+        Route::delete('/admin/materials/shares/inbox/deleted', [MaterialShareController::class, 'purgeDeletedInboxItem']);
         Route::post('/admin/materials/shares/inbox/material-attachments/link', [MaterialShareController::class, 'storeInboxLinkAttachment']);
         Route::post('/admin/materials/shares/inbox/material-attachments/image-url', [MaterialShareController::class, 'storeInboxRemoteImageAttachment']);
         Route::post('/admin/materials/shares/inbox/material-attachments/file', [MaterialShareController::class, 'storeInboxFileAttachment']);

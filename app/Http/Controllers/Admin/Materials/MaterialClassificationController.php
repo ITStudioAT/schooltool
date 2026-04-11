@@ -63,10 +63,10 @@ class MaterialClassificationController extends Controller
         ], 200);
     }
 
-    public function destroySubject(MaterialSubject $material_subject, MaterialService $service)
+    public function destroySubject(Request $request, MaterialSubject $material_subject, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
-        $service->deleteSubject($authUser, $material_subject);
+        $service->deleteSubject($authUser, $material_subject, $request->boolean('data.cascade'));
 
         return response()->noContent();
     }
@@ -155,10 +155,10 @@ class MaterialClassificationController extends Controller
         ], 200);
     }
 
-    public function destroyTopic(MaterialTopic $material_topic, MaterialService $service)
+    public function destroyTopic(Request $request, MaterialTopic $material_topic, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
-        $service->deleteTopic($authUser, $material_topic);
+        $service->deleteTopic($authUser, $material_topic, $request->boolean('data.cascade'));
 
         return response()->noContent();
     }
@@ -288,10 +288,10 @@ class MaterialClassificationController extends Controller
         ], 200);
     }
 
-    public function destroyUnit(MaterialUnit $material_unit, MaterialService $service)
+    public function destroyUnit(Request $request, MaterialUnit $material_unit, MaterialService $service)
     {
         $authUser = $this->authorizeForClassificationManagement();
-        $service->deleteUnit($authUser, $material_unit);
+        $service->deleteUnit($authUser, $material_unit, $request->boolean('data.cascade'));
 
         return response()->noContent();
     }

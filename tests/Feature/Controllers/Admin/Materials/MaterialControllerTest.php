@@ -22,7 +22,6 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -406,6 +405,87 @@ test('can rename own workspace', function () {
     ]);
 });
 
+test('can clear own workspace contents without deleting workspace itself', function () {
+    $this->actingAs($this->materialsModerator, 'sanctum');
+
+    $workspace = MaterialWorkspace::query()
+        ->where('user_id', (int) $this->materialsModerator->id)
+        ->orderBy('id')
+        ->first();
+    expect($workspace)->not->toBeNull();
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => (int) $this->materialsModerator->id,
+        'workspace_id' => (int) $workspace->id,
+        'name' => 'Mathematik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => (int) $subject->id,
+        'name' => 'Algebra',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => (int) $topic->id,
+        'name' => 'Terme',
+        'sort_order' => 1,
+    ]);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => (int) $this->school->id,
+        'user_id' => (int) $this->materialsModerator->id,
+        'workspace_id' => (int) $workspace->id,
+        'title' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_INBOX,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => (int) $card->id,
+        'subject_id' => (int) $subject->id,
+        'topic_id' => (int) $topic->id,
+        'unit_id' => (int) $unit->id,
+    ]);
+
+    $disk = (string) config('filesystems.default', 'local');
+    Storage::fake($disk);
+    Storage::disk($disk)->put('materials/test/workspace-clear.pdf', 'workspace-clear');
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => (int) $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'workspace-clear.pdf',
+        'file_path' => 'materials/test/workspace-clear.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 1024,
+    ]);
+
+    $this->deleteJson('/api/admin/materials/workspaces/'.(int) $workspace->id, [
+        'data' => [
+            'cascade' => true,
+        ],
+    ])->assertNoContent();
+
+    $this->assertDatabaseHas('material_workspaces', [
+        'id' => (int) $workspace->id,
+        'user_id' => (int) $this->materialsModerator->id,
+    ]);
+    $this->assertSoftDeleted('material_subjects', [
+        'id' => (int) $subject->id,
+    ]);
+    $this->assertSoftDeleted('material_topics', [
+        'id' => (int) $topic->id,
+    ]);
+    $this->assertSoftDeleted('material_units', [
+        'id' => (int) $unit->id,
+    ]);
+    $this->assertSoftDeleted('material_cards', [
+        'id' => (int) $card->id,
+    ]);
+    $this->assertSoftDeleted('material_card_attachments', [
+        'id' => (int) $attachment->id,
+    ]);
+    Storage::disk($disk)->assertExists('materials/test/workspace-clear.pdf');
+});
+
 test('config returns default material type options from schooltool config', function () {
     Config::set('schooltool.materials_default_types', ['Arbeitsblatt', 'Test']);
 
@@ -656,15 +736,15 @@ test('teacher can delete unused subject topic and unit', function () {
 
     $this->deleteJson('/api/admin/materials/units/'.$unitId)
         ->assertStatus(204);
-    $this->assertDatabaseMissing('material_units', ['id' => $unitId]);
+    $this->assertSoftDeleted('material_units', ['id' => $unitId]);
 
     $this->deleteJson('/api/admin/materials/topics/'.$topicId)
         ->assertStatus(204);
-    $this->assertDatabaseMissing('material_topics', ['id' => $topicId]);
+    $this->assertSoftDeleted('material_topics', ['id' => $topicId]);
 
     $this->deleteJson('/api/admin/materials/subjects/'.$subjectId)
         ->assertStatus(204);
-    $this->assertDatabaseMissing('material_subjects', ['id' => $subjectId]);
+    $this->assertSoftDeleted('material_subjects', ['id' => $subjectId]);
 });
 
 test('teacher cannot delete subject when only subject level is used in materials', function () {
@@ -772,6 +852,14 @@ test('teacher cannot delete topic when a unit below is used', function () {
         'topic_id' => $topic->id,
         'unit_id' => $unit->id,
     ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'variablen.pdf',
+        'file_path' => 'materials/variablen.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
+    ]);
 
     $this->actingAs($this->teacher, 'sanctum');
     $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
@@ -800,6 +888,14 @@ test('teacher cannot delete unit when used by materials', function () {
         'subject_id' => $subject->id,
         'topic_id' => $topic->id,
         'unit_id' => $unit->id,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'variablen.pdf',
+        'file_path' => 'materials/variablen.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
     ]);
 
     $this->actingAs($this->teacher, 'sanctum');
@@ -836,7 +932,7 @@ test('teacher can delete subject when only soft-deleted topic usage exists', fun
     $this->deleteJson('/api/admin/materials/subjects/'.$subject->id)
         ->assertStatus(204);
 
-    $this->assertDatabaseMissing('material_subjects', ['id' => $subject->id]);
+    $this->assertSoftDeleted('material_subjects', ['id' => $subject->id]);
 });
 
 test('teacher can delete topic when only soft-deleted unit usage exists', function () {
@@ -867,7 +963,7 @@ test('teacher can delete topic when only soft-deleted unit usage exists', functi
     $this->deleteJson('/api/admin/materials/topics/'.$topic->id)
         ->assertStatus(204);
 
-    $this->assertDatabaseMissing('material_topics', ['id' => $topic->id]);
+    $this->assertSoftDeleted('material_topics', ['id' => $topic->id]);
 });
 
 test('teacher can delete unit when only soft-deleted unit usage exists', function () {
@@ -898,7 +994,175 @@ test('teacher can delete unit when only soft-deleted unit usage exists', functio
     $this->deleteJson('/api/admin/materials/units/'.$unit->id)
         ->assertStatus(204);
 
-    $this->assertDatabaseMissing('material_units', ['id' => $unit->id]);
+    $this->assertSoftDeleted('material_units', ['id' => $unit->id]);
+});
+
+test('workspace deleted restore list restores a deleted unit', function () {
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'workspace_id' => MaterialWorkspace::query()->where('user_id', $this->teacher->id)->value('id'),
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Programmieren',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Variablen',
+        'sort_order' => 1,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/units/'.$unit->id)
+        ->assertNoContent();
+
+    $this->getJson('/api/admin/materials/deleted-restore-list')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.type', 'unit')
+        ->assertJsonPath('data.0.id', (int) $unit->id)
+        ->assertJsonPath('data.0.title', 'Variablen');
+
+    $this->postJson('/api/admin/materials/restore-deleted', [
+        'data' => [
+            'type' => 'unit',
+            'id' => (int) $unit->id,
+        ],
+    ])->assertSuccessful()
+        ->assertJsonPath('data.type', 'unit')
+        ->assertJsonPath('data.id', (int) $unit->id);
+
+    $this->assertNotSoftDeleted('material_units', ['id' => $unit->id]);
+});
+
+test('workspace deleted restore list shows only the deleted subject when a full subject tree was deleted', function () {
+    $workspaceId = MaterialWorkspace::query()->where('user_id', $this->teacher->id)->value('id');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspaceId,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Programmieren',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Variablen',
+        'sort_order' => 1,
+    ]);
+    $card = MaterialCard::query()->create([
+        'school_id' => $this->teacher->school_id,
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspaceId,
+        'title' => 'Arbeitsblatt Variablen',
+        'status' => MaterialCard::STATUS_INBOX,
+        'subject' => 'Informatik',
+        'area' => 'Programmieren',
+        'unit' => 'Variablen',
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'variablen.pdf',
+        'file_path' => 'materials/variablen.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 2048,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/subjects/'.$subject->id, [
+        'data' => [
+            'cascade' => true,
+        ],
+    ])->assertNoContent();
+
+    expect((int) MaterialCardAttachment::withTrashed()
+        ->where('material_card_id', $card->id)
+        ->sum('size_bytes'))->toBe(2048);
+
+    $response = $this->getJson('/api/admin/materials/deleted-restore-list')
+        ->assertSuccessful()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.type', 'subject')
+        ->assertJsonPath('data.0.id', (int) $subject->id)
+        ->assertJsonPath('data.0.title', 'Informatik');
+
+    expect($response->json('data.0.materials_count'))->toBe(1);
+    expect($response->json('data.0.size_bytes'))->toBe(2048);
+});
+
+test('materials restore list keeps older deleted units restorable', function () {
+    $workspaceId = MaterialWorkspace::query()->where('user_id', $this->teacher->id)->value('id');
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspaceId,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Programmieren',
+        'sort_order' => 1,
+    ]);
+    $unitOne = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Variablen',
+        'sort_order' => 1,
+    ]);
+    $unitTwo = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Schleifen',
+        'sort_order' => 2,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->deleteJson('/api/admin/materials/units/'.$unitOne->id)
+        ->assertNoContent();
+    $this->deleteJson('/api/admin/materials/units/'.$unitTwo->id)
+        ->assertNoContent();
+
+    $this->getJson('/api/admin/materials/deleted-restore-list')
+        ->assertSuccessful()
+        ->assertJsonMissingPath('meta')
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.type', 'unit')
+        ->assertJsonPath('data.0.id', (int) $unitTwo->id)
+        ->assertJsonPath('data.0.title', 'Schleifen')
+        ->assertJsonPath('data.1.type', 'unit')
+        ->assertJsonPath('data.1.id', (int) $unitOne->id)
+        ->assertJsonPath('data.1.title', 'Variablen');
+
+    $this->postJson('/api/admin/materials/restore-deleted', [
+        'data' => [
+            'type' => 'unit',
+            'id' => (int) $unitOne->id,
+        ],
+    ])->assertSuccessful()
+        ->assertJsonPath('data.id', (int) $unitOne->id);
+
+    $this->postJson('/api/admin/materials/restore-deleted', [
+        'data' => [
+            'type' => 'unit',
+            'id' => (int) $unitTwo->id,
+        ],
+    ])->assertSuccessful()
+        ->assertJsonPath('data.id', (int) $unitTwo->id);
 });
 
 test('config marks used taxonomy items as not deletable', function () {

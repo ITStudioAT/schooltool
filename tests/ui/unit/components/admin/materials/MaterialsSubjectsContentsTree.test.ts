@@ -87,14 +87,47 @@ const vuetifyStubs = {
             </div>
         `,
     },
+    'v-checkbox': {
+        props: ['modelValue', 'label', 'disabled'],
+        emits: ['update:modelValue'],
+        template: `
+            <label>
+                <input
+                    type="checkbox"
+                    :aria-label="label"
+                    :checked="modelValue"
+                    :disabled="disabled"
+                    @change="$emit('update:modelValue', $event.target.checked)" />
+                <span>{{ label }}</span>
+            </label>
+        `,
+    },
+    VCheckbox: {
+        props: ['modelValue', 'label', 'disabled'],
+        emits: ['update:modelValue'],
+        template: `
+            <label>
+                <input
+                    type="checkbox"
+                    :aria-label="label"
+                    :checked="modelValue"
+                    :disabled="disabled"
+                    @change="$emit('update:modelValue', $event.target.checked)" />
+                <span>{{ label }}</span>
+            </label>
+        `,
+    },
 }
 
 function renderTree(
     items: any[],
     options: {
+        activeWorkspace?: any
         enableCreateButtons?: boolean
         enableRemoveButtons?: boolean
         enableShareButtons?: boolean
+        workspaceSelection?: any
+        treeKey?: string
         sharedObjectsForMe?: any[]
         archivedSharedObjectsForMe?: any[]
         sharedObjectsForMeLoading?: boolean
@@ -133,10 +166,12 @@ function renderTree(
         template: `
             <MaterialsSubjectsContentsTree
                 :items="items"
+                :active-workspace="activeWorkspace"
                 :action-busy="false"
                 :enable-share-buttons="enableShareButtons"
                 :enable-create-buttons="enableCreateButtons"
                 :enable-remove-buttons="enableRemoveButtons"
+                :workspace-selection="workspaceSelection"
                 :show-share-indicators="false"
                 :share-indicator-color-fn="() => ''"
                 :status-color-fn="() => 'primary'"
@@ -152,6 +187,7 @@ function renderTree(
                 :workspace-structure-expanded="workspaceStructureExpanded"
                 :expanded-shared-items="expandedSharedItems"
                 :initially-collapse-hierarchy="initiallyCollapseHierarchy"
+                :key="treeKey"
                 @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
                 @toggle-shared-for-me-archive-expanded="toggleSharedForMeArchiveExpanded"
                 @toggle-workspace-structure-expanded="toggleWorkspaceStructureExpanded"
@@ -177,9 +213,12 @@ function renderTree(
         `,
         props: {
             items: { type: Array, required: true },
+            activeWorkspace: { type: Object, default: null },
             enableCreateButtons: { type: Boolean, default: false },
             enableShareButtons: { type: Boolean, default: false },
             enableRemoveButtons: { type: Boolean, default: false },
+            workspaceSelection: { type: Object, default: null },
+            treeKey: { type: String, default: 'default-tree' },
             sharedObjectsForMe: { type: Array, default: () => [] },
             archivedSharedObjectsForMe: { type: Array, default: () => [] },
             sharedObjectsForMeLoading: { type: Boolean, default: false },
@@ -191,9 +230,12 @@ function renderTree(
     return render(Host, {
         props: {
             items,
+            activeWorkspace: options.activeWorkspace ?? null,
             enableCreateButtons: options.enableCreateButtons === true,
             enableShareButtons: options.enableShareButtons === true,
             enableRemoveButtons: options.enableRemoveButtons === true,
+            workspaceSelection: options.workspaceSelection ?? null,
+            treeKey: String(options.treeKey || 'default-tree'),
             sharedObjectsForMe: Array.isArray(options.sharedObjectsForMe) ? options.sharedObjectsForMe : [],
             archivedSharedObjectsForMe: Array.isArray(options.archivedSharedObjectsForMe) ? options.archivedSharedObjectsForMe : [],
             sharedObjectsForMeLoading: options.sharedObjectsForMeLoading === true,
@@ -221,8 +263,8 @@ describe('MaterialsSubjectsContentsTree', () => {
         axiosMock.delete.mockReset()
     })
 
-    it('collapses and expands the workspace contents', async () => {
-        const { container } = renderTree([
+    it('switches between workspace and shared contents without showing both at once', async () => {
+        renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -236,23 +278,37 @@ describe('MaterialsSubjectsContentsTree', () => {
                     },
                 ],
             },
-        ])
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 77,
+                    scopeType: 'all',
+                    scopeLabel: 'Workspace',
+                    scopeObjectLabel: 'Geteiltes Fach',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [],
+                    materialsCount: 3,
+                },
+            ],
+        })
 
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
+        expect(screen.queryByText('Geteiltes Fach')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Fach hinzufügen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Thema hinzufügen')).not.toBeInTheDocument()
         expect(screen.queryByTitle('Bereich hinzufügen')).not.toBeInTheDocument()
-        expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
 
-        await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
 
         expect(screen.queryByText('Mathematik')).not.toBeInTheDocument()
-        expect(container.querySelector('.overview-shared-row--spaced')).toBeNull()
+        expect(screen.getByText('Geteiltes Fach')).toBeInTheDocument()
 
         await fireEvent.click(screen.getByRole('button', { name: /workspace/i }))
 
         expect(screen.getByText('Mathematik')).toBeInTheDocument()
-        expect(container.querySelector('.overview-shared-row--spaced')).not.toBeNull()
+        expect(screen.queryByText('Geteiltes Fach')).not.toBeInTheDocument()
     })
 
     it('collapses and expands a workspace subject', async () => {
@@ -459,6 +515,266 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(within(unitButton as HTMLButtonElement).getByText('1')).toHaveClass('overview-subjects-material-count')
     })
 
+    it('toggles selected workspace subject topic and unit buttons back off on repeated click', async () => {
+        renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ])
+
+        await openWorkspace()
+
+        const subjectButton = screen.getByRole('button', { name: /^Mathematik$/i })
+        await fireEvent.click(subjectButton)
+        expect(subjectButton).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Algebra$/i })).toBeInTheDocument()
+
+        await fireEvent.click(subjectButton)
+        expect(subjectButton).toHaveAttribute('variant', 'outlined')
+        expect(screen.queryByRole('button', { name: /^Algebra$/i })).not.toBeInTheDocument()
+
+        await fireEvent.click(subjectButton)
+        const topicButton = screen.getByRole('button', { name: /^Algebra$/i })
+        await fireEvent.click(topicButton)
+        expect(topicButton).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Lineare Gleichungen$/i })).toBeInTheDocument()
+
+        await fireEvent.click(topicButton)
+        expect(topicButton).toHaveAttribute('variant', 'outlined')
+        expect(screen.queryByRole('button', { name: /^Lineare Gleichungen$/i })).not.toBeInTheDocument()
+
+        await fireEvent.click(topicButton)
+        const unitButton = screen.getByRole('button', { name: /^Lineare Gleichungen$/i })
+        await fireEvent.click(unitButton)
+        expect(unitButton).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByText(/^Einheit:$/i)).toBeInTheDocument()
+
+        await fireEvent.click(unitButton)
+        expect(unitButton).toHaveAttribute('variant', 'outlined')
+        expect(screen.queryByText(/^Einheit:$/i)).not.toBeInTheDocument()
+    })
+
+    it('shows the workspace delete button only when the workspace has content', () => {
+        const filledTree = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [],
+            },
+        ], {
+            activeWorkspace: {
+                id: 50,
+                name: 'Workspace',
+            },
+            enableCreateButtons: true,
+        })
+
+        expect(screen.getByTitle('Workspace leeren')).toBeInTheDocument()
+
+        filledTree.unmount()
+
+        renderTree([], {
+            activeWorkspace: {
+                id: 50,
+                name: 'Workspace',
+            },
+            enableCreateButtons: true,
+        })
+
+        expect(screen.queryByTitle('Workspace leeren')).not.toBeInTheDocument()
+    })
+
+    it('keeps shared active when local workspace selection changes but shared stays expanded in props', async () => {
+        const Host = defineComponent({
+            components: { MaterialsSubjectsContentsTree },
+            data() {
+                return {
+                    items: [
+                        {
+                            id: 1,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                    sharedObjectsForMe: [
+                        {
+                            ruleId: 77,
+                            scopeType: 'all',
+                            scopeLabel: 'Workspace',
+                            scopeObjectLabel: 'Geteiltes Fach',
+                            permission: 'full_access',
+                            permissionLabel: 'VOLLZUGRIFF',
+                            fromUserLabel: 'Lehrer Eins',
+                            hierarchy: [],
+                            materialsCount: 3,
+                        },
+                    ],
+                    sharedForMeExpanded: true,
+                    sharedForMeArchiveExpanded: false,
+                    workspaceStructureExpanded: false,
+                    expandedSharedItems: {},
+                }
+            },
+            methods: {
+                forceWorkspaceSelection() {
+                    this.$refs.tree?.selectWorkspacePath?.({ subjectId: 1 })
+                },
+                toggleSharedItemExpanded(key) {
+                    const nextExpandedSharedItems = {
+                        ...this.expandedSharedItems,
+                    }
+
+                    nextExpandedSharedItems[key] = nextExpandedSharedItems[key] !== true
+                    this.expandedSharedItems = nextExpandedSharedItems
+                },
+            },
+            template: `
+                <div>
+                    <button type="button" @click="forceWorkspaceSelection">Workspace wiederherstellen</button>
+                    <MaterialsSubjectsContentsTree
+                        ref="tree"
+                        :items="items"
+                        :active-workspace="{ id: 50, name: 'Workspace' }"
+                        :action-busy="false"
+                        :enable-share-buttons="false"
+                        :enable-create-buttons="false"
+                        :enable-remove-buttons="false"
+                        :show-share-indicators="false"
+                        :share-indicator-color-fn="() => ''"
+                        :status-color-fn="() => 'primary'"
+                        :status-label-fn="() => 'Entwurf'"
+                        :subject-group-style-fn="() => ({})"
+                        :topic-group-style-fn="() => ({})"
+                        :shared-objects-for-me="sharedObjectsForMe"
+                        :archived-shared-objects-for-me="[]"
+                        :shared-objects-for-me-loading="false"
+                        :shared-objects-for-me-error="''"
+                        :shared-for-me-expanded="sharedForMeExpanded"
+                        :shared-for-me-archive-expanded="sharedForMeArchiveExpanded"
+                        :workspace-structure-expanded="workspaceStructureExpanded"
+                        :expanded-shared-items="expandedSharedItems"
+                        @toggle-shared-for-me-expanded="sharedForMeExpanded = !sharedForMeExpanded"
+                        @toggle-shared-for-me-archive-expanded="sharedForMeArchiveExpanded = !sharedForMeArchiveExpanded"
+                        @toggle-workspace-structure-expanded="workspaceStructureExpanded = !workspaceStructureExpanded"
+                        @toggle-shared-item-expanded="toggleSharedItemExpanded" />
+                </div>
+            `,
+        })
+
+        render(Host, {
+            global: {
+                stubs: vuetifyStubs,
+            },
+        })
+
+        expect(screen.queryByText('Mathematik')).not.toBeInTheDocument()
+        expect(screen.getByText('Geteiltes Fach')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Workspace wiederherstellen' }))
+
+        expect(screen.getByText('Geteiltes Fach')).toBeInTheDocument()
+    })
+
+    it('switches back to workspace when workspace is clicked from a shared refresh state', async () => {
+        const Host = defineComponent({
+            components: { MaterialsSubjectsContentsTree },
+            data() {
+                return {
+                    items: [
+                        {
+                            id: 1,
+                            name: 'Mathematik',
+                            materials: [],
+                            topics: [],
+                        },
+                    ],
+                    sharedObjectsForMe: [
+                        {
+                            ruleId: 77,
+                            scopeType: 'all',
+                            scopeLabel: 'Workspace',
+                            scopeObjectLabel: 'Geteiltes Fach',
+                            permission: 'full_access',
+                            permissionLabel: 'VOLLZUGRIFF',
+                            fromUserLabel: 'Lehrer Eins',
+                            hierarchy: [],
+                            materialsCount: 3,
+                        },
+                    ],
+                    sharedForMeExpanded: true,
+                    sharedForMeArchiveExpanded: false,
+                    workspaceStructureExpanded: false,
+                    expandedSharedItems: {},
+                }
+            },
+            methods: {
+                toggleSharedForMeExpanded() {
+                    this.sharedForMeExpanded = !this.sharedForMeExpanded
+                },
+                toggleSharedForMeArchiveExpanded() {
+                    this.sharedForMeArchiveExpanded = !this.sharedForMeArchiveExpanded
+                },
+            },
+            template: `
+                <MaterialsSubjectsContentsTree
+                    :items="items"
+                    :active-workspace="{ id: 50, name: 'Workspace' }"
+                    :action-busy="false"
+                    :enable-share-buttons="false"
+                    :enable-create-buttons="false"
+                    :enable-remove-buttons="false"
+                    :show-share-indicators="false"
+                    :share-indicator-color-fn="() => ''"
+                    :status-color-fn="() => 'primary'"
+                    :status-label-fn="() => 'Entwurf'"
+                    :subject-group-style-fn="() => ({})"
+                    :topic-group-style-fn="() => ({})"
+                    :shared-objects-for-me="sharedObjectsForMe"
+                    :archived-shared-objects-for-me="[]"
+                    :shared-objects-for-me-loading="false"
+                    :shared-objects-for-me-error="''"
+                    :shared-for-me-expanded="sharedForMeExpanded"
+                    :shared-for-me-archive-expanded="sharedForMeArchiveExpanded"
+                    :workspace-structure-expanded="workspaceStructureExpanded"
+                    :expanded-shared-items="expandedSharedItems"
+                    @toggle-shared-for-me-expanded="toggleSharedForMeExpanded"
+                    @toggle-shared-for-me-archive-expanded="toggleSharedForMeArchiveExpanded" />
+            `,
+        })
+
+        render(Host, {
+            global: {
+                stubs: vuetifyStubs,
+            },
+        })
+
+        expect(screen.getByText('Geteiltes Fach')).toBeInTheDocument()
+        expect(screen.queryByText('Mathematik')).not.toBeInTheDocument()
+
+        await fireEvent.click(screen.getByRole('button', { name: /^workspace$/i }))
+
+        expect(screen.queryByText('Geteiltes Fach')).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /^Mathematik$/i })).toBeInTheDocument()
+    })
+
     it('shows collapse toggles only for subjects topics and units with child elements', async () => {
         renderTree([
             {
@@ -595,7 +911,7 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(within(sharedItem).getByRole('button', { name: 'Thema Algebra ein- oder ausklappen' })).toBeInTheDocument()
         expect(within(sharedItem).queryByRole('button', { name: 'Bereich Leere Shared Unit ein- oder ausklappen' })).toBeNull()
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^archiv$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const archivedItem = screen.getByText('Archiviertes Fach').closest('.overview-shared-item') as HTMLElement
@@ -748,7 +1064,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             ],
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^archiv$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const toggle = screen.getByRole('button', { name: 'Bereich Lineare Gleichungen ein- oder ausklappen' })
@@ -767,7 +1083,7 @@ describe('MaterialsSubjectsContentsTree', () => {
     it('shows workspace Struktur ändern mode with node actions and emits workspace move refresh event', async () => {
         axiosMock.post.mockResolvedValue({ data: {} })
 
-        const { emitted } = renderTree([
+        const { emitted, rerender } = renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -842,7 +1158,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             },
         })
 
-        const { emitted } = renderTree([
+        const { emitted, rerender } = renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -873,13 +1189,9 @@ describe('MaterialsSubjectsContentsTree', () => {
         })
 
         await openWorkspace()
-        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
-
-        expect(screen.getAllByTitle('Bereich hinzufügen')).toHaveLength(3)
-
-        const geometrieRow = screen.getByText('Geometrie').closest('.overview-subjects-item') as HTMLElement
-
-        await fireEvent.click(within(geometrieRow).getByTitle('Bereich hinzufügen'))
+        await fireEvent.click(screen.getByRole('button', { name: /^Mathematik$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^Geometrie$/i }))
+        await fireEvent.click(screen.getByTitle('Bereich hinzufügen'))
 
         expect(screen.getByText('Bereich hinzufügen')).toBeInTheDocument()
 
@@ -901,6 +1213,55 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(51)
         expect((createdEvents[0]?.[0] as any)?.name).toBe('Prismen')
         expect((createdEvents[0]?.[0] as any)?.parentTopicId).toBe(12)
+
+        await rerender({
+            items: [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [
+                        {
+                            id: 11,
+                            name: 'Algebra',
+                            materials: [],
+                            units: [
+                                {
+                                    id: 21,
+                                    name: 'Lineare Gleichungen',
+                                    materials: [],
+                                },
+                            ],
+                        },
+                        {
+                            id: 12,
+                            name: 'Geometrie',
+                            materials: [],
+                            units: [
+                                {
+                                    id: 51,
+                                    name: 'Prismen',
+                                    materials: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            activeWorkspace: null,
+            enableCreateButtons: true,
+            enableShareButtons: false,
+            enableRemoveButtons: false,
+            sharedObjectsForMe: [],
+            archivedSharedObjectsForMe: [],
+            sharedObjectsForMeLoading: false,
+            sharedObjectsForMeError: '',
+            initiallyCollapseHierarchy: false,
+        })
+
+        expect(screen.getByRole('button', { name: /^Mathematik$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Geometrie$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Prismen$/i })).toHaveAttribute('variant', 'tonal')
     })
 
     it('shows Struktur ändern for an empty workspace and allows adding the first subject', async () => {
@@ -929,7 +1290,7 @@ describe('MaterialsSubjectsContentsTree', () => {
             },
         })
 
-        const { emitted } = renderTree([
+        const { emitted, rerender } = renderTree([
             {
                 id: 1,
                 name: 'Mathematik',
@@ -947,7 +1308,6 @@ describe('MaterialsSubjectsContentsTree', () => {
         })
 
         await openWorkspace()
-        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
         await fireEvent.click(screen.getAllByTitle('Fach hinzufügen')[0])
 
         const input = screen.getByRole('textbox', { name: 'Titel' })
@@ -958,7 +1318,6 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/subjects', {
             data: {
                 name: 'Biologie',
-                before_subject_id: 1,
             },
         })
 
@@ -967,6 +1326,309 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect((createdEvents[0]?.[0] as any)?.level).toBe('subject')
         expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(61)
         expect((createdEvents[0]?.[0] as any)?.name).toBe('Biologie')
+
+        await rerender({
+            items: [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [],
+                },
+                {
+                    id: 61,
+                    name: 'Biologie',
+                    materials: [],
+                    topics: [],
+                },
+                {
+                    id: 2,
+                    name: 'Biologie Alt',
+                    materials: [],
+                    topics: [],
+                },
+            ],
+            activeWorkspace: null,
+            enableCreateButtons: true,
+            enableShareButtons: false,
+            enableRemoveButtons: false,
+            sharedObjectsForMe: [],
+            archivedSharedObjectsForMe: [],
+            sharedObjectsForMeLoading: false,
+            sharedObjectsForMeError: '',
+            initiallyCollapseHierarchy: false,
+        })
+
+        expect(screen.getByRole('button', { name: /^Biologie$/i })).toHaveAttribute('variant', 'tonal')
+    })
+
+    it('keeps the workspace subject open and selects a newly created topic after refresh', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 71,
+                    name: 'Geometrie',
+                    subject_id: 1,
+                },
+            },
+        })
+
+        const { emitted, rerender } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [],
+                    },
+                ],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        await openWorkspace()
+        await fireEvent.click(screen.getByRole('button', { name: /^Mathematik$/i }))
+        await fireEvent.click(screen.getByTitle('Thema hinzufügen'))
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Geometrie')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/topics', {
+            data: {
+                subject_id: 1,
+                name: 'Geometrie',
+            },
+        })
+
+        const createdEvents = emitted('workspace-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('topic')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(71)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Geometrie')
+        expect((createdEvents[0]?.[0] as any)?.parentSubjectId).toBe(1)
+
+        await rerender({
+            items: [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [
+                        {
+                            id: 71,
+                            name: 'Geometrie',
+                            materials: [],
+                            units: [],
+                        },
+                        {
+                            id: 11,
+                            name: 'Algebra',
+                            materials: [],
+                            units: [],
+                        },
+                    ],
+                },
+            ],
+            activeWorkspace: null,
+            enableCreateButtons: true,
+            enableShareButtons: false,
+            enableRemoveButtons: false,
+            sharedObjectsForMe: [],
+            archivedSharedObjectsForMe: [],
+            sharedObjectsForMeLoading: false,
+            sharedObjectsForMeError: '',
+            initiallyCollapseHierarchy: false,
+        })
+
+        expect(screen.getByRole('button', { name: /^Mathematik$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Geometrie$/i })).toHaveAttribute('variant', 'tonal')
+    })
+
+    it('keeps the workspace path open and selects a newly created unit after refresh', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 81,
+                    name: 'Einheit 5',
+                    topic_id: 11,
+                },
+            },
+        })
+
+        const { emitted, rerender } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Bereich',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Einheit 1',
+                                materials: [],
+                            },
+                            {
+                                id: 22,
+                                name: 'Einheit 2',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            enableCreateButtons: true,
+        })
+
+        await openWorkspace()
+        await fireEvent.click(screen.getByRole('button', { name: /^Mathematik$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^Bereich$/i }))
+        await fireEvent.click(screen.getByTitle('Bereich hinzufügen'))
+
+        const input = screen.getByRole('textbox', { name: 'Titel' })
+        await fireEvent.update(input, 'Einheit 5')
+        await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
+
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/units', {
+            data: {
+                topic_id: 11,
+                name: 'Einheit 5',
+            },
+        })
+
+        const createdEvents = emitted('workspace-node-created') || []
+        expect(createdEvents).toHaveLength(1)
+        expect((createdEvents[0]?.[0] as any)?.level).toBe('unit')
+        expect((createdEvents[0]?.[0] as any)?.nodeId).toBe(81)
+        expect((createdEvents[0]?.[0] as any)?.name).toBe('Einheit 5')
+        expect((createdEvents[0]?.[0] as any)?.parentTopicId).toBe(11)
+
+        await rerender({
+            items: [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [
+                        {
+                            id: 11,
+                            name: 'Bereich',
+                            materials: [],
+                            units: [
+                                {
+                                    id: 21,
+                                    name: 'Einheit 1',
+                                    materials: [],
+                                },
+                                {
+                                    id: 22,
+                                    name: 'Einheit 2',
+                                    materials: [],
+                                },
+                                {
+                                    id: 81,
+                                    name: 'Einheit 5',
+                                    materials: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            activeWorkspace: null,
+            enableCreateButtons: true,
+            enableShareButtons: false,
+            enableRemoveButtons: false,
+            sharedObjectsForMe: [],
+            archivedSharedObjectsForMe: [],
+            sharedObjectsForMeLoading: false,
+            sharedObjectsForMeError: '',
+            initiallyCollapseHierarchy: false,
+        })
+
+        expect(screen.getByRole('button', { name: /^Mathematik$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Bereich$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Einheit 5$/i })).toHaveAttribute('variant', 'tonal')
+    })
+
+    it('restores the workspace path from parent selection after the tree remounts', async () => {
+        const { rerender } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Bereich',
+                        materials: [],
+                        units: [
+                            {
+                                id: 81,
+                                name: 'Einheit 5',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            enableCreateButtons: true,
+            treeKey: 'tree-a',
+        })
+
+        await rerender({
+            items: [
+                {
+                    id: 1,
+                    name: 'Mathematik',
+                    materials: [],
+                    topics: [
+                        {
+                            id: 11,
+                            name: 'Bereich',
+                            materials: [],
+                            units: [
+                                {
+                                    id: 81,
+                                    name: 'Einheit 5',
+                                    materials: [],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+            activeWorkspace: null,
+            enableCreateButtons: true,
+            enableShareButtons: false,
+            enableRemoveButtons: false,
+            workspaceSelection: {
+                subjectId: 1,
+                topicId: 11,
+                unitId: 81,
+            },
+            treeKey: 'tree-b',
+            sharedObjectsForMe: [],
+            archivedSharedObjectsForMe: [],
+            sharedObjectsForMeLoading: false,
+            sharedObjectsForMeError: '',
+            initiallyCollapseHierarchy: false,
+        })
+
+        expect(screen.getByRole('button', { name: /^Mathematik$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Bereich$/i })).toHaveAttribute('variant', 'tonal')
+        expect(screen.getByRole('button', { name: /^Einheit 5$/i })).toHaveAttribute('variant', 'tonal')
     })
 
     it('shows shared objects when Für mich geteilt is expanded', async () => {
@@ -986,6 +1648,7 @@ describe('MaterialsSubjectsContentsTree', () => {
                     permission: 'read_only',
                     permissionLabel: 'NUR LESEN',
                     fromUserLabel: 'Lehrer Eins',
+                    fromUserEmail: 'lehrer.eins@example.test',
                     fromSchoolLabel: 'CDGym',
                     materialsCount: 3,
                 },
@@ -998,7 +1661,7 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.getByText('Geteilte Mathematik')).toBeInTheDocument()
         expect(screen.getByText('Mathematik / Algebra')).toBeInTheDocument()
-        expect(screen.getByText(/Von: Lehrer Eins/i)).toBeInTheDocument()
+        expect(screen.getByText(/Von: Lehrer Eins \(lehrer\.eins@example\.test\)/i)).toBeInTheDocument()
 
         const sharedItem = container.querySelector('.overview-shared-item')
         expect(sharedItem).not.toBeNull()
@@ -1132,6 +1795,7 @@ describe('MaterialsSubjectsContentsTree', () => {
                     permission: 'read_only',
                     permissionLabel: 'NUR LESEN',
                     fromUserLabel: 'Lehrer Archiv',
+                    fromUserEmail: 'lehrer.archiv@example.test',
                     fromSchoolLabel: 'CDGym',
                     materialsCount: 2,
                 },
@@ -1140,11 +1804,11 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         expect(screen.queryByText('Archiviertes Thema')).not.toBeInTheDocument()
 
-        await fireEvent.click(screen.getByRole('button', { name: /für mich geteilt - archiv/i }))
+        await fireEvent.click(screen.getByRole('button', { name: /^archiv$/i }))
 
         expect(screen.getByText('Archiviertes Thema')).toBeInTheDocument()
         expect(screen.getByText('Thema')).toBeInTheDocument()
-        expect(screen.getByText(/Von: Lehrer Archiv/i)).toBeInTheDocument()
+        expect(screen.getByText(/Von: Lehrer Archiv \(lehrer\.archiv@example\.test\)/i)).toBeInTheDocument()
     })
 
     it('shows read-only archived hierarchy preview without structure actions', async () => {
@@ -1953,6 +2617,9 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByText('Informatik').closest('button') as HTMLButtonElement)
+        await fireEvent.click(screen.getByText('Digitale Kompetenzen').closest('button') as HTMLButtonElement)
+        await fireEvent.click(screen.getByText('EMails').closest('button') as HTMLButtonElement)
 
         const insertButtons = screen.getAllByRole('button', { name: 'Einordnen' })
         expect(insertButtons.length).toBeGreaterThanOrEqual(6)
@@ -1962,10 +2629,10 @@ describe('MaterialsSubjectsContentsTree', () => {
         const draftEvents = emitted('open-shared-insert-draft') || []
         expect(draftEvents).toHaveLength(1)
         expect((draftEvents[0]?.[0] as any)?.ruleId).toBe(81)
-        expect(['subject', 'topic', 'unit', 'material']).toContain((draftEvents[0]?.[0] as any)?.level)
+        expect(['workspace', 'subject', 'topic', 'unit', 'material']).toContain((draftEvents[0]?.[0] as any)?.level)
     })
 
-    it('shows only subject Einordnen when local workspace has no subject/topic targets', async () => {
+    it('keeps the shared Einordnen entry point visible even when no local target structure exists', async () => {
         renderTree([], {
             sharedObjectsForMe: [
                 {
@@ -2014,7 +2681,219 @@ describe('MaterialsSubjectsContentsTree', () => {
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
 
         const insertButtons = screen.getAllByRole('button', { name: 'Einordnen' })
-        expect(insertButtons).toHaveLength(1)
+        expect(insertButtons.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('opens Einordnen drafts for shared topic unit and material cards', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 83,
+                    scopeType: 'topic',
+                    scopeId: 210,
+                    scopeObjectLabel: 'Geteiltes Thema',
+                    scopePathLabel: 'Informatik',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [],
+                },
+                {
+                    ruleId: 84,
+                    scopeType: 'unit',
+                    scopeId: 310,
+                    scopeObjectLabel: 'Geteilter Bereich',
+                    scopePathLabel: 'Informatik / Grundlagen',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [],
+                },
+                {
+                    ruleId: 85,
+                    scopeType: 'material',
+                    scopeId: 410,
+                    scopeObjectLabel: 'Geteiltes Material',
+                    scopePathLabel: 'Informatik / Grundlagen / Bereich A',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Eins',
+                    hierarchy: [],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+
+        const topicCard = screen.getByText('Geteiltes Thema').closest('.overview-shared-item')
+        const unitCard = screen.getByText('Geteilter Bereich').closest('.overview-shared-item')
+        const materialCard = screen.getByText('Geteiltes Material').closest('.overview-shared-item')
+
+        expect(topicCard).not.toBeNull()
+        expect(unitCard).not.toBeNull()
+        expect(materialCard).not.toBeNull()
+
+        await fireEvent.click(within(topicCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+        await fireEvent.click(within(unitCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+        await fireEvent.click(within(materialCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+
+        const draftEvents = emitted('open-shared-insert-draft') || []
+        expect(draftEvents).toHaveLength(3)
+        expect((draftEvents[0]?.[0] as any)).toMatchObject({
+            ruleId: 83,
+            level: 'topic',
+            targetId: 210,
+        })
+        expect((draftEvents[1]?.[0] as any)).toMatchObject({
+            ruleId: 84,
+            level: 'unit',
+            targetId: 310,
+        })
+        expect((draftEvents[2]?.[0] as any)).toMatchObject({
+            ruleId: 85,
+            level: 'material',
+            targetId: 410,
+        })
+    })
+
+    it('opens shared material Einordnen drafts from subject topic and unit material cards', async () => {
+        const { emitted } = renderTree([
+            {
+                id: 1,
+                name: 'Mathematik',
+                materials: [],
+                topics: [
+                    {
+                        id: 11,
+                        name: 'Algebra',
+                        materials: [],
+                        units: [
+                            {
+                                id: 21,
+                                name: 'Lineare Gleichungen',
+                                materials: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 86,
+                    scopeType: 'all',
+                    scopeObjectLabel: 'Teamraum Informatik',
+                    scopePathLabel: 'Teamraum Informatik',
+                    permission: 'read_only',
+                    permissionLabel: 'NUR LESEN',
+                    fromUserLabel: 'Lehrer Zwei',
+                    hierarchy: [
+                        {
+                            id: 10,
+                            name: 'Informatik',
+                            materials: [
+                                {
+                                    id: 101,
+                                    title: 'Fachmaterial',
+                                    status: 'inbox',
+                                    statusLabel: 'Neu/Idee',
+                                    attachmentsCount: 0,
+                                },
+                            ],
+                            topics: [
+                                {
+                                    id: 20,
+                                    name: 'Digitale Kompetenzen',
+                                    materials: [
+                                        {
+                                            id: 102,
+                                            title: 'Themamaterial',
+                                            status: 'inbox',
+                                            statusLabel: 'Neu/Idee',
+                                            attachmentsCount: 0,
+                                        },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 30,
+                                            name: 'EMails',
+                                            materials: [
+                                                {
+                                                    id: 103,
+                                                    title: 'Bereichsmaterial',
+                                                    status: 'inbox',
+                                                    statusLabel: 'Neu/Idee',
+                                                    attachmentsCount: 0,
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByText('Informatik').closest('button') as HTMLButtonElement)
+        await fireEvent.click(screen.getByText('Digitale Kompetenzen').closest('button') as HTMLButtonElement)
+        await fireEvent.click(screen.getByText('EMails').closest('button') as HTMLButtonElement)
+
+        const subjectMaterialCard = screen.getByText('Fachmaterial').closest('.overview-material-card')
+        const topicMaterialCard = screen.getByText('Themamaterial').closest('.overview-material-card')
+        const unitMaterialCard = screen.getByText('Bereichsmaterial').closest('.overview-material-card')
+
+        expect(subjectMaterialCard).not.toBeNull()
+        expect(topicMaterialCard).not.toBeNull()
+        expect(unitMaterialCard).not.toBeNull()
+
+        await fireEvent.click(within(subjectMaterialCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+        await fireEvent.click(within(topicMaterialCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+        await fireEvent.click(within(unitMaterialCard as HTMLElement).getByRole('button', { name: 'Einordnen' }))
+
+        const draftEvents = emitted('open-shared-insert-draft') || []
+        expect(draftEvents).toHaveLength(3)
+        expect((draftEvents[0]?.[0] as any)).toMatchObject({
+            ruleId: 86,
+            level: 'material',
+            targetId: 101,
+        })
+        expect((draftEvents[1]?.[0] as any)).toMatchObject({
+            ruleId: 86,
+            level: 'material',
+            targetId: 102,
+            sourceTopicId: 20,
+        })
+        expect((draftEvents[2]?.[0] as any)).toMatchObject({
+            ruleId: 86,
+            level: 'material',
+            targetId: 103,
+            sourceTopicId: 20,
+            sourceUnitId: 30,
+        })
     })
 
     it('renders empty shared branches and direct materials on subject topic and unit level', async () => {
@@ -2901,12 +3780,12 @@ describe('MaterialsSubjectsContentsTree', () => {
 
         await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
         await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
-        await fireEvent.click(screen.getByRole('button', { name: 'Struktur ändern' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Leeres Fach' }))
         await fireEvent.click(screen.getByTitle('Fach löschen'))
 
-        const dialog = screen.getByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.').closest('div')
+        const dialog = screen.getByText('Wirklich löschen?').closest('div')
         expect(screen.getByText('Fach löschen')).toBeInTheDocument()
-        expect(screen.getAllByText('Leeres Fach')).toHaveLength(2)
+        expect(screen.getAllByText('Leeres Fach')).toHaveLength(3)
         expect(dialog).not.toBeNull()
 
         await fireEvent.click(screen.getByRole('button', { name: 'Löschen' }))
@@ -2915,9 +3794,93 @@ describe('MaterialsSubjectsContentsTree', () => {
         expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/subjects/11', {
             data: {
                 rule_id: 95,
+                data: {
+                    cascade: false,
+                },
             },
         })
-        expect(screen.queryByText('Wirklich löschen? Das ist nur möglich, wenn keine Materialien zugeordnet sind.')).not.toBeInTheDocument()
+        expect(screen.queryByText('Wirklich löschen?')).not.toBeInTheDocument()
+    })
+
+    it('shows shared delete buttons on every non-empty level and deletes with cascade under full access', async () => {
+        axiosMock.delete.mockResolvedValue({
+            data: {},
+        })
+
+        renderTree([], {
+            sharedObjectsForMe: [
+                {
+                    ruleId: 96,
+                    scopeObjectLabel: 'Workspace A',
+                    scopePathLabel: 'Workspace A',
+                    permission: 'full_access',
+                    permissionLabel: 'VOLLZUGRIFF',
+                    fromUserLabel: 'Lehrer Eins',
+                    materialsCount: 3,
+                    hierarchy: [
+                        {
+                            id: 12,
+                            name: 'Informatik',
+                            materials: [
+                                { id: 201, title: 'Fachmaterial' },
+                            ],
+                            topics: [
+                                {
+                                    id: 22,
+                                    name: 'Digitale Kompetenzen',
+                                    materials: [
+                                        { id: 202, title: 'Themenmaterial' },
+                                    ],
+                                    units: [
+                                        {
+                                            id: 32,
+                                            name: 'E-Mails',
+                                            materials: [
+                                                { id: 203, title: 'Unitmaterial' },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: /^für mich geteilt$/i }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Anzeigen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Informatik' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Digitale Kompetenzen' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'E-Mails' }))
+
+        expect(screen.getByTitle('Fach löschen')).toBeInTheDocument()
+        expect(screen.getByTitle('Thema löschen')).toBeInTheDocument()
+        expect(screen.getByTitle('Bereich löschen')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getByTitle('Thema löschen'))
+
+        expect(screen.getByText('Thema löschen')).toBeInTheDocument()
+        expect(screen.getByText('Dieses Element enthält Unterelemente oder Materialien. Diese werden beim Löschen unwiderruflich mitgelöscht.')).toBeInTheDocument()
+
+        const confirmButton = screen.getByRole('button', { name: 'Löschen' })
+        expect(confirmButton).toBeDisabled()
+
+        await fireEvent.click(screen.getByLabelText('Ja, alle enthaltenen Elemente und Materialien ebenfalls löschen'))
+
+        expect(confirmButton).not.toBeDisabled()
+
+        await fireEvent.click(confirmButton)
+
+        expect(axiosMock.delete).toHaveBeenCalledTimes(1)
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/materials/shares/inbox/topics/22', {
+            data: {
+                rule_id: 96,
+                data: {
+                    cascade: true,
+                },
+            },
+        })
     })
 
     it('renders linked permission chip on a linked topic', async () => {

@@ -16,6 +16,7 @@ use App\Http\Requests\Admin\Materials\MaterialTopicStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialTopicUpdateRequest;
 use App\Http\Requests\Admin\Materials\MaterialUnitStoreRequest;
 use App\Http\Requests\Admin\Materials\MaterialUnitUpdateRequest;
+use App\Jobs\ProcessMaterialInboxInsertJob;
 use App\Models\Import116;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
@@ -38,9 +39,11 @@ use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\Materials\MaterialInboxImportStatusStore;
 use App\Services\Materials\MaterialKeywordService;
 use App\Services\Materials\MaterialService;
 use App\Services\Materials\MaterialWorkspaceService;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -227,6 +230,7 @@ class MaterialShareController extends Controller
                         return [
                             'rule_id' => $ruleId,
                             'scope_type' => (string) $rule->scope_type,
+                            'scope_id' => $rule->scope_id ? (int) $rule->scope_id : null,
                             'scope_label' => $scopeLabel,
                             'scope_object_label' => $scopeObjectLabel,
                             'scope_path_label' => $this->resolveScopePathLabel($rule),
@@ -383,6 +387,7 @@ class MaterialShareController extends Controller
 
         $data = $request->validate([
             'rule_id' => ['required', 'integer', 'min:1'],
+            'data.cascade' => ['sometimes', 'boolean'],
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
@@ -693,7 +698,7 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
-        $service->deleteSubject($sourceOwner, $material_subject);
+        $service->deleteSubject($sourceOwner, $material_subject, $request->boolean('data.cascade'));
 
         return response()->noContent();
     }
@@ -708,6 +713,7 @@ class MaterialShareController extends Controller
 
         $data = $request->validate([
             'rule_id' => ['required', 'integer', 'min:1'],
+            'data.cascade' => ['sometimes', 'boolean'],
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
@@ -716,7 +722,7 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
-        $service->deleteTopic($sourceOwner, $material_topic);
+        $service->deleteTopic($sourceOwner, $material_topic, $request->boolean('data.cascade'));
 
         return response()->noContent();
     }
@@ -731,6 +737,7 @@ class MaterialShareController extends Controller
 
         $data = $request->validate([
             'rule_id' => ['required', 'integer', 'min:1'],
+            'data.cascade' => ['sometimes', 'boolean'],
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
@@ -739,7 +746,124 @@ class MaterialShareController extends Controller
 
         /** @var User $sourceOwner */
         $sourceOwner = $context['source_owner'];
-        $service->deleteUnit($sourceOwner, $material_unit);
+        $service->deleteUnit($sourceOwner, $material_unit, $request->boolean('data.cascade'));
+
+        return response()->noContent();
+    }
+
+    public function deletedInboxRestoreList(Request $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, (int) ($data['rule_id'] ?? 0));
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $this->assertInboxPermissionAllowsStructureEdit($permission);
+
+        $sourceOwner = $this->resolveInboxStructureOwner(null, $rule);
+        $workspaceId = $this->resolveInboxWorkspaceId($rule, $sourceOwner);
+        $items = $service->deletedRestoreListForWorkspace(
+            $sourceOwner,
+            $workspaceId,
+            (string) ($rule->scope_type ?? MaterialShareRule::SCOPE_ALL),
+            $rule->scope_id ? (int) $rule->scope_id : null,
+        );
+
+        return response()->json([
+            'data' => $items,
+        ], 200);
+    }
+
+    public function restoreDeletedInboxItem(Request $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'data.type' => ['required', 'string', 'in:material,subject,topic,unit'],
+            'data.id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, (int) ($data['rule_id'] ?? 0));
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $itemType = (string) ($data['data']['type'] ?? '');
+        if ($itemType === 'material') {
+            $this->assertInboxPermissionAllowsMaterialDelete($permission);
+        } else {
+            $this->assertInboxPermissionAllowsStructureEdit($permission);
+            $this->assertInboxRuleAllowsStructureEdit($rule);
+        }
+
+        $sourceOwner = $this->resolveInboxStructureOwner(null, $rule);
+        $workspaceId = $this->resolveInboxWorkspaceId($rule, $sourceOwner);
+        $item = $service->restoreDeletedItemForWorkspace(
+            $sourceOwner,
+            $workspaceId,
+            $itemType,
+            (int) ($data['data']['id'] ?? 0),
+            (string) ($rule->scope_type ?? MaterialShareRule::SCOPE_ALL),
+            $rule->scope_id ? (int) $rule->scope_id : null,
+        );
+
+        if ($item === null) {
+            return response()->json([
+                'message' => 'Das gelöschte Element konnte nicht wiederhergestellt werden.',
+            ], 404);
+        }
+
+        return response()->json([
+            'data' => $item,
+        ], 200);
+    }
+
+    public function purgeDeletedInboxItem(Request $request, MaterialService $service)
+    {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'data.type' => ['required', 'string', 'in:material,subject,topic,unit'],
+            'data.id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, (int) ($data['rule_id'] ?? 0));
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $permission = (string) ($ruleContext['permission'] ?? MaterialShareTarget::PERMISSION_READ_ONLY);
+        $itemType = (string) ($data['data']['type'] ?? '');
+        if ($itemType === 'material') {
+            $this->assertInboxPermissionAllowsMaterialDelete($permission);
+        } else {
+            $this->assertInboxPermissionAllowsStructureDelete($permission);
+            $this->assertInboxRuleAllowsStructureEdit($rule);
+        }
+
+        $sourceOwner = $this->resolveInboxStructureOwner(null, $rule);
+        $workspaceId = $this->resolveInboxWorkspaceId($rule, $sourceOwner);
+        $deleted = $service->purgeDeletedItemForWorkspace(
+            $sourceOwner,
+            $workspaceId,
+            $itemType,
+            (int) ($data['data']['id'] ?? 0),
+            (string) ($rule->scope_type ?? MaterialShareRule::SCOPE_ALL),
+            $rule->scope_id ? (int) $rule->scope_id : null,
+        );
+
+        if (! $deleted) {
+            return response()->json([
+                'message' => 'Das gelöschte Element konnte nicht endgültig gelöscht werden.',
+            ], 404);
+        }
 
         return response()->noContent();
     }
@@ -854,8 +978,7 @@ class MaterialShareController extends Controller
     public function insertInboxSubjectTree(
         Request $request,
         MaterialSubject $material_subject,
-        MaterialService $materialService,
-        MaterialKeywordService $keywordService,
+        MaterialInboxImportStatusStore $statusStore,
     ) {
         $authUser = $this->materialsShareUser();
         $this->abortIfShareTablesMissing();
@@ -865,25 +988,200 @@ class MaterialShareController extends Controller
         ]);
 
         $ruleId = (int) ($data['rule_id'] ?? 0);
+        $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+
+        $operation = $statusStore->createQueuedOperation(
+            (int) $authUser->id,
+            'subject_tree',
+            [
+                'rule_id' => $ruleId,
+                'subject_id' => (int) $material_subject->id,
+                'label' => trim((string) ($material_subject->name ?? '')) ?: 'Fach',
+            ],
+        );
+        ProcessMaterialInboxInsertJob::dispatch(
+            (int) $authUser->id,
+            (string) $operation['operation_id'],
+            [
+                'kind' => 'subject_tree',
+                'rule_id' => $ruleId,
+                'subject_id' => (int) $material_subject->id,
+            ],
+        )->afterCommit();
+
+        return response()->json([
+            'message' => 'Fach wird im Hintergrund eingeordnet.',
+            'data' => $operation,
+        ], 202);
+    }
+
+    public function insertInboxWorkspaceTree(
+        MaterialShareRule $material_share_rule,
+        MaterialInboxImportStatusStore $statusStore,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $ruleId = (int) $material_share_rule->id;
         $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
         /** @var MaterialShareRule $rule */
         $rule = $ruleContext['rule'];
-        $sourceSubjectId = (int) $material_subject->id;
 
-        $this->assertSubjectMatchesInboxRule($material_subject, $rule);
+        if ((int) $rule->id !== $ruleId) {
+            abort(404, 'Freigabe wurde nicht gefunden.');
+        }
+
+        if ((string) ($rule->scope_type ?? '') !== MaterialShareRule::SCOPE_ALL) {
+            abort(403, 'Nur Workspace-Freigaben können vollständig eingeordnet werden.');
+        }
+
+        $operation = $statusStore->createQueuedOperation(
+            (int) $authUser->id,
+            'workspace_tree',
+            [
+                'rule_id' => $ruleId,
+                'label' => 'Workspace',
+            ],
+        );
+        ProcessMaterialInboxInsertJob::dispatch(
+            (int) $authUser->id,
+            (string) $operation['operation_id'],
+            [
+                'kind' => 'workspace_tree',
+                'rule_id' => $ruleId,
+            ],
+        )->afterCommit();
+
+        return response()->json([
+            'message' => 'Workspace wird im Hintergrund eingeordnet.',
+            'data' => $operation,
+        ], 202);
+    }
+
+    public function insertInboxTopicTree(
+        Request $request,
+        MaterialTopic $material_topic,
+        MaterialInboxImportStatusStore $statusStore,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'target_subject_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $targetSubjectId = (int) ($data['target_subject_id'] ?? 0);
+        $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+
+        $operation = $statusStore->createQueuedOperation(
+            (int) $authUser->id,
+            'topic_tree',
+            [
+                'rule_id' => $ruleId,
+                'topic_id' => (int) $material_topic->id,
+                'target_subject_id' => $targetSubjectId,
+                'label' => trim((string) ($material_topic->name ?? '')) ?: 'Thema',
+            ],
+        );
+        ProcessMaterialInboxInsertJob::dispatch(
+            (int) $authUser->id,
+            (string) $operation['operation_id'],
+            [
+                'kind' => 'topic_tree',
+                'rule_id' => $ruleId,
+                'topic_id' => (int) $material_topic->id,
+                'target_subject_id' => $targetSubjectId,
+            ],
+        )->afterCommit();
+
+        return response()->json([
+            'message' => 'Thema wird im Hintergrund eingeordnet.',
+            'data' => $operation,
+        ], 202);
+    }
+
+    public function insertInboxUnitTree(
+        Request $request,
+        MaterialUnit $material_unit,
+        MaterialInboxImportStatusStore $statusStore,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $this->abortIfShareTablesMissing();
+
+        $data = $request->validate([
+            'rule_id' => ['required', 'integer', 'min:1'],
+            'target_topic_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $ruleId = (int) ($data['rule_id'] ?? 0);
+        $targetTopicId = (int) ($data['target_topic_id'] ?? 0);
+        $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+
+        $operation = $statusStore->createQueuedOperation(
+            (int) $authUser->id,
+            'unit_tree',
+            [
+                'rule_id' => $ruleId,
+                'unit_id' => (int) $material_unit->id,
+                'target_topic_id' => $targetTopicId,
+                'label' => trim((string) ($material_unit->name ?? '')) ?: 'Bereich',
+            ],
+        );
+        ProcessMaterialInboxInsertJob::dispatch(
+            (int) $authUser->id,
+            (string) $operation['operation_id'],
+            [
+                'kind' => 'unit_tree',
+                'rule_id' => $ruleId,
+                'unit_id' => (int) $material_unit->id,
+                'target_topic_id' => $targetTopicId,
+            ],
+        )->afterCommit();
+
+        return response()->json([
+            'message' => 'Bereich wird im Hintergrund eingeordnet.',
+            'data' => $operation,
+        ], 202);
+    }
+
+    public function inboxInsertOperationStatus(
+        string $operationId,
+        MaterialInboxImportStatusStore $statusStore,
+    ) {
+        $authUser = $this->materialsShareUser();
+        $status = $statusStore->getOperation((int) $authUser->id, $operationId);
+
+        if (! is_array($status)) {
+            abort(404, 'Einordnen-Auftrag wurde nicht gefunden.');
+        }
+
+        return response()->json([
+            'data' => $status,
+        ]);
+    }
+
+    private function importInboxSubjectTreeToWorkspace(
+        User $authUser,
+        MaterialShareRule $rule,
+        int $ruleId,
+        MaterialSubject $sourceSubject,
+        int $workspaceId,
+        MaterialService $materialService,
+        MaterialKeywordService $keywordService,
+    ): array {
+        $sourceSubjectId = (int) $sourceSubject->id;
+
+        $this->assertSubjectMatchesInboxRule($sourceSubject, $rule);
         $subjectHierarchy = $this->resolveInboxSubjectHierarchyNode($rule, $sourceSubjectId);
         if (! is_array($subjectHierarchy)) {
             abort(404, 'Fach wurde nicht gefunden.');
         }
 
         $sourceCards = $this->resolveInboxSourceCardsForSubject($rule, $sourceSubjectId);
-        $workspace = $this->workspaceService->createWorkspace($authUser, 'Workspace');
-        $workspaceId = (int) ($workspace->id ?? 0);
-        if ($workspaceId <= 0) {
-            abort(422, 'Workspace konnte nicht ermittelt werden.');
-        }
 
-        $result = DB::transaction(function () use (
+        return DB::transaction(function () use (
             $authUser,
             $materialService,
             $keywordService,
@@ -1061,9 +1359,12 @@ class MaterialShareController extends Controller
                         'classifications' => $targetClassifications,
                     ], $workspaceId);
 
-                    $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
-                    $keywordService->rebuild($createdCard->fresh());
                     $createdNow = true;
+                }
+
+                $syncedAttachments = $this->syncSourceAttachmentsToCard($sourceCard, $createdCard);
+                if ($createdNow || $syncedAttachments > 0) {
+                    $keywordService->rebuild($createdCard->fresh());
                 }
 
                 if ($this->hasMaterialInboxImportsTable()) {
@@ -1099,11 +1400,319 @@ class MaterialShareController extends Controller
                 'copied_materials_count' => $copiedMaterialsCount,
             ];
         });
+    }
 
-        return response()->json([
+    public function runQueuedInboxWorkspaceTreeInsert(
+        int $authUserId,
+        int $ruleId,
+        MaterialKeywordService $keywordService,
+    ): array {
+        $authUser = $this->materialsShareUserById($authUserId);
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+
+        if ((string) ($rule->scope_type ?? '') !== MaterialShareRule::SCOPE_ALL) {
+            abort(403, 'Nur Workspace-Freigaben können vollständig eingeordnet werden.');
+        }
+
+        $subjectHierarchy = collect($this->resolveScopeHierarchy($rule))
+            ->filter(fn (mixed $subject) => is_array($subject))
+            ->values();
+        $sourceSubjectIds = $subjectHierarchy
+            ->pluck('id')
+            ->map(fn (mixed $id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->values();
+
+        $sourceSubjects = MaterialSubject::query()
+            ->whereIn('id', $sourceSubjectIds->all())
+            ->get()
+            ->keyBy(fn (MaterialSubject $subject) => (int) $subject->id);
+
+        if ($sourceSubjectIds->count() !== $sourceSubjects->count()) {
+            abort(404, 'Mindestens ein Fach der Freigabe wurde nicht gefunden.');
+        }
+
+        $workspace = $this->workspaceService->createWorkspace($authUser, 'Workspace');
+        $workspaceId = (int) ($workspace->id ?? 0);
+        if ($workspaceId <= 0) {
+            abort(422, 'Workspace konnte nicht ermittelt werden.');
+        }
+
+        $importedSubjects = [];
+        $copiedMaterialsCount = 0;
+        $topicsCount = 0;
+        $unitsCount = 0;
+
+        foreach ($sourceSubjectIds as $sourceSubjectId) {
+            /** @var MaterialSubject|null $sourceSubject */
+            $sourceSubject = $sourceSubjects->get($sourceSubjectId);
+            if (! $sourceSubject instanceof MaterialSubject) {
+                abort(404, 'Fach wurde nicht gefunden.');
+            }
+
+            $importedSubject = $this->importInboxSubjectTreeToWorkspace(
+                $authUser,
+                $rule,
+                $ruleId,
+                $sourceSubject,
+                $workspaceId,
+                $this->materialService,
+                $keywordService,
+            );
+
+            $importedSubjects[] = $importedSubject;
+            $copiedMaterialsCount += (int) ($importedSubject['copied_materials_count'] ?? 0);
+            $topicsCount += (int) ($importedSubject['topics_count'] ?? 0);
+            $unitsCount += (int) ($importedSubject['units_count'] ?? 0);
+        }
+
+        return [
+            'message' => 'Workspace eingeordnet.',
+            'workspace_id' => $workspaceId,
+            'subjects_count' => count($importedSubjects),
+            'topics_count' => $topicsCount,
+            'units_count' => $unitsCount,
+            'copied_materials_count' => $copiedMaterialsCount,
+            'subjects' => $importedSubjects,
+        ];
+    }
+
+    public function runQueuedInboxSubjectTreeInsert(
+        int $authUserId,
+        int $ruleId,
+        int $sourceSubjectId,
+        MaterialKeywordService $keywordService,
+    ): array {
+        $authUser = $this->materialsShareUserById($authUserId);
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+        $sourceSubject = MaterialSubject::query()->findOrFail($sourceSubjectId);
+
+        $workspace = $this->workspaceService->createWorkspace($authUser, 'Workspace');
+        $workspaceId = (int) ($workspace->id ?? 0);
+        if ($workspaceId <= 0) {
+            abort(422, 'Workspace konnte nicht ermittelt werden.');
+        }
+
+        $result = $this->importInboxSubjectTreeToWorkspace(
+            $authUser,
+            $rule,
+            $ruleId,
+            $sourceSubject,
+            $workspaceId,
+            $this->materialService,
+            $keywordService,
+        );
+
+        return [
             'message' => 'Fachstruktur eingeordnet.',
-            'data' => $result,
-        ]);
+            ...$result,
+        ];
+    }
+
+    public function runQueuedInboxTopicTreeInsert(
+        int $authUserId,
+        int $ruleId,
+        int $sourceTopicId,
+        int $targetSubjectId,
+        MaterialKeywordService $keywordService,
+    ): array {
+        $authUser = $this->materialsShareUserById($authUserId);
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+
+        $sourceTopic = MaterialTopic::query()->with('subject')->findOrFail($sourceTopicId);
+        $sourceSubject = $sourceTopic->subject;
+        if (! $sourceSubject instanceof MaterialSubject) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        $this->assertSubjectMatchesInboxRule($sourceSubject, $rule);
+
+        $targetSubject = MaterialSubject::query()
+            ->where('user_id', (int) $authUser->id)
+            ->find($targetSubjectId);
+        if (! $targetSubject instanceof MaterialSubject) {
+            abort(404, 'Ziel-Fach wurde nicht gefunden.');
+        }
+
+        $sourceCards = $this->resolveInboxSourceCardsForTopic($rule, $sourceTopicId);
+        if ($sourceCards->isEmpty()) {
+            return [
+                'message' => 'Thema eingeordnet.',
+                'topic_id' => null,
+                'unit_ids' => [],
+                'copied_materials_count' => 0,
+            ];
+        }
+
+        $targetTopic = $this->findExistingTargetTopicForInsert($targetSubject, (string) ($sourceTopic->name ?? ''));
+        if (! $targetTopic instanceof MaterialTopic) {
+            $targetTopic = $this->materialService->createTopic(
+                $authUser,
+                $targetSubject,
+                (string) ($sourceTopic->name ?? 'Thema'),
+                false,
+            );
+        }
+
+        $targetUnitIds = [];
+        $copiedMaterialsCount = 0;
+        $processedTargets = [];
+
+        foreach ($sourceCards as $sourceCard) {
+            if (! $sourceCard instanceof MaterialCard) {
+                continue;
+            }
+
+            $classificationRows = $this->classificationRowsForCardAndScope(
+                $sourceCard,
+                (string) ($rule->scope_type ?? ''),
+                (int) ($rule->scope_id ?? 0),
+            );
+
+            foreach ($classificationRows as $row) {
+                if ((int) ($row['topic_id'] ?? 0) !== $sourceTopicId) {
+                    continue;
+                }
+
+                $payload = [
+                    'rule_id' => $ruleId,
+                    'material_id' => (int) $sourceCard->id,
+                    'target_level' => 'topic',
+                    'target_id' => (int) $targetTopic->id,
+                    'source_topic_id' => $sourceTopicId,
+                ];
+
+                $sourceUnitId = (int) ($row['unit_id'] ?? 0);
+                if ($sourceUnitId > 0) {
+                    $sourceUnit = MaterialUnit::query()->find($sourceUnitId);
+                    if (! $sourceUnit instanceof MaterialUnit) {
+                        continue;
+                    }
+
+                    $targetUnit = $this->findExistingTargetUnitForInsert($targetTopic, (string) ($sourceUnit->name ?? ''));
+                    if (! $targetUnit instanceof MaterialUnit) {
+                        $targetUnit = $this->materialService->createUnit(
+                            $authUser,
+                            $targetTopic,
+                            (string) ($sourceUnit->name ?? 'Bereich'),
+                            false,
+                        );
+                    }
+
+                    $targetUnitIds[(int) $targetUnit->id] = (int) $targetUnit->id;
+                    $payload['target_level'] = 'unit';
+                    $payload['target_id'] = (int) $targetUnit->id;
+                    $payload['source_unit_id'] = $sourceUnitId;
+                }
+
+                $processedKey = (int) $sourceCard->id.'|'.$payload['target_level'].'|'.(int) $payload['target_id'];
+                if (isset($processedTargets[$processedKey])) {
+                    continue;
+                }
+                $processedTargets[$processedKey] = true;
+
+                $result = $this->performInboxMaterialInsertForUser(
+                    $authUser,
+                    $payload,
+                    $keywordService,
+                );
+                $copiedMaterialsCount += (int) (($result['created_now'] ?? false) ? 1 : 0);
+            }
+        }
+
+        return [
+            'message' => 'Thema eingeordnet.',
+            'topic_id' => (int) $targetTopic->id,
+            'unit_ids' => array_values($targetUnitIds),
+            'copied_materials_count' => $copiedMaterialsCount,
+        ];
+    }
+
+    public function runQueuedInboxUnitTreeInsert(
+        int $authUserId,
+        int $ruleId,
+        int $sourceUnitId,
+        int $targetTopicId,
+        MaterialKeywordService $keywordService,
+    ): array {
+        $authUser = $this->materialsShareUserById($authUserId);
+        $ruleContext = $this->resolveInboxRuleAccessContext($authUser, $ruleId);
+        /** @var MaterialShareRule $rule */
+        $rule = $ruleContext['rule'];
+
+        $sourceUnit = MaterialUnit::query()->with('topic.subject')->findOrFail($sourceUnitId);
+        $sourceSubject = $sourceUnit->topic?->subject;
+        if (! $sourceSubject instanceof MaterialSubject) {
+            abort(404, 'Fach wurde nicht gefunden.');
+        }
+
+        $this->assertSubjectMatchesInboxRule($sourceSubject, $rule);
+
+        $targetTopic = MaterialTopic::query()
+            ->whereHas('subject', fn ($query) => $query->where('user_id', (int) $authUser->id))
+            ->find($targetTopicId);
+        if (! $targetTopic instanceof MaterialTopic) {
+            abort(404, 'Ziel-Thema wurde nicht gefunden.');
+        }
+
+        $sourceCards = $this->resolveInboxSourceCardsForUnit($rule, $sourceUnitId);
+        if ($sourceCards->isEmpty()) {
+            return [
+                'message' => 'Bereich eingeordnet.',
+                'unit_id' => null,
+                'copied_materials_count' => 0,
+            ];
+        }
+
+        $targetUnit = $this->findExistingTargetUnitForInsert($targetTopic, (string) ($sourceUnit->name ?? ''));
+        if (! $targetUnit instanceof MaterialUnit) {
+            $targetUnit = $this->materialService->createUnit(
+                $authUser,
+                $targetTopic,
+                (string) ($sourceUnit->name ?? 'Bereich'),
+                false,
+            );
+        }
+
+        $copiedMaterialsCount = 0;
+        $processedSourceCards = [];
+
+        foreach ($sourceCards as $sourceCard) {
+            if (! $sourceCard instanceof MaterialCard) {
+                continue;
+            }
+
+            $sourceCardId = (int) $sourceCard->id;
+            if (isset($processedSourceCards[$sourceCardId])) {
+                continue;
+            }
+            $processedSourceCards[$sourceCardId] = true;
+
+            $result = $this->performInboxMaterialInsertForUser(
+                $authUser,
+                [
+                    'rule_id' => $ruleId,
+                    'material_id' => $sourceCardId,
+                    'target_level' => 'unit',
+                    'target_id' => (int) $targetUnit->id,
+                    'source_unit_id' => $sourceUnitId,
+                ],
+                $keywordService,
+            );
+            $copiedMaterialsCount += (int) (($result['created_now'] ?? false) ? 1 : 0);
+        }
+
+        return [
+            'message' => 'Bereich eingeordnet.',
+            'unit_id' => (int) $targetUnit->id,
+            'copied_materials_count' => $copiedMaterialsCount,
+        ];
     }
 
     public function storeInboxLinkAttachment(MaterialCardLinkAttachmentStoreRequest $request, MaterialService $service)
@@ -1530,7 +2139,7 @@ class MaterialShareController extends Controller
                 'classifications' => $classifications,
             ]);
 
-            $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+            $this->syncSourceAttachmentsToCard($sourceCard, $createdCard);
             $keywordService->rebuild($createdCard->fresh());
 
             if ($this->hasMaterialInboxImportsTable()) {
@@ -1572,7 +2181,6 @@ class MaterialShareController extends Controller
 
     public function insertInboxMaterial(
         Request $request,
-        MaterialService $materialService,
         MaterialKeywordService $keywordService,
     ) {
         $authUser = $this->materialsShareUser();
@@ -1588,6 +2196,32 @@ class MaterialShareController extends Controller
             'source_topic_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
+        $result = $this->performInboxMaterialInsertForUser($authUser, $data, $keywordService);
+        /** @var MaterialCard $newCard */
+        $newCard = $result['card'];
+        $importMode = (string) ($result['import_mode'] ?? MaterialInboxImport::MODE_COPY);
+
+        return response()->json([
+            'message' => $importMode === MaterialInboxImport::MODE_LINK
+                ? 'Material als Link eingefächert.'
+                : 'Material eingefächert.',
+            'data' => [
+                'id' => (int) $newCard->id,
+                'title' => (string) ($newCard->title ?? ''),
+                'attachments_count' => (int) $newCard->attachments->count(),
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{card: MaterialCard, import_mode: string, created_now: bool}
+     */
+    private function performInboxMaterialInsertForUser(
+        User $authUser,
+        array $data,
+        MaterialKeywordService $keywordService,
+    ): array {
         $ruleId = (int) ($data['rule_id'] ?? 0);
         $materialId = (int) ($data['material_id'] ?? 0);
         $targetLevel = trim((string) ($data['target_level'] ?? ''));
@@ -1607,6 +2241,7 @@ class MaterialShareController extends Controller
         if ($importMode === MaterialInboxImport::MODE_LINK && $requestedSourceTopicId > 0 && ! $this->hasMaterialTopicInboxImportsTable()) {
             abort(409, 'Link-Modus für Themen erfordert eine aktuelle Migration.');
         }
+
         $authUserId = (int) $authUser->id;
         $authSchoolId = (int) $authUser->school_id;
 
@@ -1660,12 +2295,11 @@ class MaterialShareController extends Controller
         );
         $targetTopicIdForTopicImport = (int) ($targetClassification['topic_id'] ?? 0);
 
-        $newCard = DB::transaction(function () use (
+        return DB::transaction(function () use (
             $authUser,
             $sourceCard,
             $sourceTypeMeta,
             $sourceStatusMeta,
-            $materialService,
             $keywordService,
             $rule,
             $ruleId,
@@ -1678,7 +2312,7 @@ class MaterialShareController extends Controller
             $sourceUnitIdForUnitImport,
             $sourceTopicIdForTopicImport,
             $targetTopicIdForTopicImport,
-        ) {
+        ): array {
             $targetType = $this->ensureTargetMaterialType(
                 targetUser: $authUser,
                 sourceType: trim((string) ($sourceCard->type ?? '')),
@@ -1700,8 +2334,10 @@ class MaterialShareController extends Controller
                 )
                 : null;
 
+            $createdNow = false;
+
             if (! $createdCard) {
-                $createdCard = $materialService->createCard($authUser, [
+                $createdCard = $this->materialService->createCard($authUser, [
                     'title' => $cardTitle,
                     'source_url' => $sourceCard->source_url,
                     'source_text' => $sourceCard->source_text,
@@ -1711,8 +2347,15 @@ class MaterialShareController extends Controller
                     'classifications' => [$targetClassification],
                 ]);
                 $this->syncCardClassificationToResolvedTarget($createdCard, $targetClassification);
+                $createdNow = true;
+            }
 
-                $this->cloneSourceAttachmentsToCard($sourceCard, $createdCard);
+            $syncedAttachments = 0;
+            if ($importMode === MaterialInboxImport::MODE_COPY) {
+                $syncedAttachments = $this->syncSourceAttachmentsToCard($sourceCard, $createdCard);
+            }
+
+            if ($createdNow || $syncedAttachments > 0) {
                 $keywordService->rebuild($createdCard->fresh());
             }
 
@@ -1778,24 +2421,20 @@ class MaterialShareController extends Controller
                 );
             }
 
-            return $createdCard->fresh([
+            /** @var MaterialCard $freshCard */
+            $freshCard = $createdCard->fresh([
                 'attachments',
                 'classifications.subject',
                 'classifications.topic',
                 'classifications.unit',
             ]);
-        });
 
-        return response()->json([
-            'message' => $importMode === MaterialInboxImport::MODE_LINK
-                ? 'Material als Link eingefächert.'
-                : 'Material eingefächert.',
-            'data' => [
-                'id' => (int) $newCard->id,
-                'title' => (string) ($newCard->title ?? ''),
-                'attachments_count' => (int) $newCard->attachments->count(),
-            ],
-        ]);
+            return [
+                'card' => $freshCard,
+                'import_mode' => $importMode,
+                'created_now' => $createdNow,
+            ];
+        });
     }
 
     private function resolveTargetClassificationForInsert(User $user, string $targetLevel, int $targetId): ?array
@@ -2216,6 +2855,132 @@ class MaterialShareController extends Controller
         ]);
     }
 
+    private function resolveInboxSourceCardsForTopic(MaterialShareRule $rule, int $topicId): Collection
+    {
+        if ($topicId <= 0) {
+            return collect();
+        }
+
+        $scopeType = (string) ($rule->scope_type ?? '');
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+
+        $query = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->when($creatorUserId > 0, fn ($inner) => $inner->where('user_id', $creatorUserId))
+            ->when((int) ($rule->workspace_id ?? 0) > 0, fn ($inner) => $inner->where('workspace_id', (int) $rule->workspace_id))
+            ->whereHas('classifications', fn ($inner) => $inner->where('topic_id', $topicId))
+            ->with([
+                'attachments',
+                'classifications.subject:id,name,sort_order',
+                'classifications.topic:id,name,sort_order',
+                'classifications.unit:id,name,sort_order',
+            ])
+            ->orderBy('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereKey($scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('subject_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            if ($scopeId <= 0 || $scopeId !== $topicId) {
+                return collect();
+            }
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('unit_id', $scopeId));
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            return collect();
+        }
+
+        return $query->get([
+            'id',
+            'school_id',
+            'user_id',
+            'workspace_id',
+            'title',
+            'source_url',
+            'source_text',
+            'subject',
+            'area',
+            'unit',
+            'type',
+            'status',
+            'notes',
+        ]);
+    }
+
+    private function resolveInboxSourceCardsForUnit(MaterialShareRule $rule, int $unitId): Collection
+    {
+        if ($unitId <= 0) {
+            return collect();
+        }
+
+        $scopeType = (string) ($rule->scope_type ?? '');
+        $scopeId = (int) ($rule->scope_id ?? 0);
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+
+        $query = MaterialCard::query()
+            ->where('school_id', (int) $rule->school_id)
+            ->when($creatorUserId > 0, fn ($inner) => $inner->where('user_id', $creatorUserId))
+            ->when((int) ($rule->workspace_id ?? 0) > 0, fn ($inner) => $inner->where('workspace_id', (int) $rule->workspace_id))
+            ->whereHas('classifications', fn ($inner) => $inner->where('unit_id', $unitId))
+            ->with([
+                'attachments',
+                'classifications.subject:id,name,sort_order',
+                'classifications.topic:id,name,sort_order',
+                'classifications.unit:id,name,sort_order',
+            ])
+            ->orderBy('id');
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereKey($scopeId);
+        } elseif ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('subject_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+            if ($scopeId <= 0) {
+                return collect();
+            }
+            $query->whereHas('classifications', fn ($inner) => $inner->where('topic_id', $scopeId));
+        } elseif ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+            if ($scopeId <= 0 || $scopeId !== $unitId) {
+                return collect();
+            }
+        } elseif ($scopeType !== MaterialShareRule::SCOPE_ALL) {
+            return collect();
+        }
+
+        return $query->get([
+            'id',
+            'school_id',
+            'user_id',
+            'workspace_id',
+            'title',
+            'source_url',
+            'source_text',
+            'subject',
+            'area',
+            'unit',
+            'type',
+            'status',
+            'notes',
+        ]);
+    }
+
     private function resolveInboxSubjectHierarchyNode(MaterialShareRule $rule, int $subjectId): ?array
     {
         if ($subjectId <= 0) {
@@ -2550,6 +3315,32 @@ class MaterialShareController extends Controller
         }
 
         return null;
+    }
+
+    private function findExistingTargetTopicForInsert(MaterialSubject $targetSubject, string $name): ?MaterialTopic
+    {
+        $normalizedName = trim($name);
+        if ((int) ($targetSubject->id ?? 0) <= 0 || $normalizedName === '') {
+            return null;
+        }
+
+        return MaterialTopic::query()
+            ->where('subject_id', (int) $targetSubject->id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($normalizedName)])
+            ->first();
+    }
+
+    private function findExistingTargetUnitForInsert(MaterialTopic $targetTopic, string $name): ?MaterialUnit
+    {
+        $normalizedName = trim($name);
+        if ((int) ($targetTopic->id ?? 0) <= 0 || $normalizedName === '') {
+            return null;
+        }
+
+        return MaterialUnit::query()
+            ->where('topic_id', (int) $targetTopic->id)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($normalizedName)])
+            ->first();
     }
 
     private function normalizedClassificationKeys(array $classifications): array
@@ -3033,30 +3824,39 @@ class MaterialShareController extends Controller
         ]];
     }
 
-    private function cloneSourceAttachmentsToCard(MaterialCard $sourceCard, MaterialCard $targetCard): void
+    private function syncSourceAttachmentsToCard(MaterialCard $sourceCard, MaterialCard $targetCard): int
     {
+        $sourceCard->loadMissing('attachments');
+        $targetCard->loadMissing('attachments');
+
         $attachments = $sourceCard->attachments instanceof Collection ? $sourceCard->attachments : collect();
         if ($attachments->isEmpty()) {
-            return;
+            return 0;
         }
 
-        $diskName = (string) config('filesystems.default', 'local');
-        $disk = Storage::disk($diskName);
+        $targetDisk = Storage::disk((string) config('filesystems.default', 'local'));
+        $targetAttachments = $targetCard->attachments instanceof Collection ? $targetCard->attachments : collect();
+        $syncedAttachments = 0;
 
         foreach ($attachments as $sourceAttachment) {
             if (! $sourceAttachment instanceof MaterialCardAttachment) {
                 continue;
             }
 
+            if ($this->targetCardHasEquivalentAttachment($targetAttachments, $sourceAttachment)) {
+                continue;
+            }
+
             $attachmentType = (string) ($sourceAttachment->attachment_type ?? '');
             if ($attachmentType === MaterialCardAttachment::TYPE_LINK) {
-                $targetCard->attachments()->create([
+                $targetAttachments->push($targetCard->attachments()->create([
                     'attachment_type' => MaterialCardAttachment::TYPE_LINK,
                     'name' => $sourceAttachment->name,
                     'url' => $sourceAttachment->url,
                     'source_url' => $sourceAttachment->source_url,
                     'downloaded_at' => $sourceAttachment->downloaded_at,
-                ]);
+                ]));
+                $syncedAttachments++;
 
                 continue;
             }
@@ -3066,17 +3866,18 @@ class MaterialShareController extends Controller
             }
 
             $sourcePath = trim((string) ($sourceAttachment->file_path ?? ''));
-            if ($sourcePath === '' || ! $disk->exists($sourcePath)) {
+            $sourceDisk = $this->resolveAttachmentStorageDisk($sourcePath);
+            if ($sourcePath === '' || ! $sourceDisk instanceof Filesystem || ! $sourceDisk->exists($sourcePath)) {
                 continue;
             }
 
             $targetPath = $this->copiedAttachmentStoragePath($targetCard, $sourceAttachment);
-            $copied = $disk->copy($sourcePath, $targetPath);
+            $copied = $this->copyAttachmentToTargetDisk($sourceDisk, $targetDisk, $sourcePath, $targetPath);
             if (! $copied) {
                 continue;
             }
 
-            $targetCard->attachments()->create([
+            $targetAttachments->push($targetCard->attachments()->create([
                 'attachment_type' => MaterialCardAttachment::TYPE_FILE,
                 'name' => $sourceAttachment->name,
                 'file_path' => $targetPath,
@@ -3084,7 +3885,105 @@ class MaterialShareController extends Controller
                 'size_bytes' => $sourceAttachment->size_bytes,
                 'source_url' => $sourceAttachment->source_url,
                 'downloaded_at' => $sourceAttachment->downloaded_at,
-            ]);
+            ]));
+            $syncedAttachments++;
+        }
+
+        return $syncedAttachments;
+    }
+
+    /**
+     * @param  Collection<int, MaterialCardAttachment>  $targetAttachments
+     */
+    private function targetCardHasEquivalentAttachment(
+        Collection $targetAttachments,
+        MaterialCardAttachment $sourceAttachment
+    ): bool {
+        $attachmentType = trim((string) ($sourceAttachment->attachment_type ?? ''));
+
+        return $targetAttachments->contains(function ($targetAttachment) use ($attachmentType, $sourceAttachment): bool {
+            if (! $targetAttachment instanceof MaterialCardAttachment) {
+                return false;
+            }
+
+            if (trim((string) ($targetAttachment->attachment_type ?? '')) !== $attachmentType) {
+                return false;
+            }
+
+            if ($attachmentType === MaterialCardAttachment::TYPE_LINK) {
+                return trim((string) ($targetAttachment->name ?? '')) === trim((string) ($sourceAttachment->name ?? ''))
+                    && trim((string) ($targetAttachment->url ?? '')) === trim((string) ($sourceAttachment->url ?? ''))
+                    && trim((string) ($targetAttachment->source_url ?? '')) === trim((string) ($sourceAttachment->source_url ?? ''));
+            }
+
+            if ($attachmentType !== MaterialCardAttachment::TYPE_FILE) {
+                return false;
+            }
+
+            $targetPath = trim((string) ($targetAttachment->file_path ?? ''));
+            $targetDisk = $this->resolveAttachmentStorageDisk($targetPath);
+            if ($targetPath === '' || ! $targetDisk instanceof Filesystem || ! $targetDisk->exists($targetPath)) {
+                return false;
+            }
+
+            return trim((string) ($targetAttachment->name ?? '')) === trim((string) ($sourceAttachment->name ?? ''))
+                && trim((string) ($targetAttachment->mime_type ?? '')) === trim((string) ($sourceAttachment->mime_type ?? ''))
+                && (int) ($targetAttachment->size_bytes ?? 0) === (int) ($sourceAttachment->size_bytes ?? 0)
+                && trim((string) ($targetAttachment->source_url ?? '')) === trim((string) ($sourceAttachment->source_url ?? ''));
+        });
+    }
+
+    private function attachmentStorageDiskCandidates(): array
+    {
+        $candidates = [
+            (string) config('filesystems.default'),
+            's3',
+            'local',
+            'public',
+        ];
+
+        $configuredDisks = array_keys((array) config('filesystems.disks', []));
+        $candidates = [...$candidates, ...$configuredDisks];
+
+        return array_values(array_filter(array_unique($candidates), static fn (string $diskName): bool => $diskName !== ''));
+    }
+
+    private function resolveAttachmentStorageDisk(string $relativePath): ?Filesystem
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return null;
+        }
+
+        foreach ($this->attachmentStorageDiskCandidates() as $diskName) {
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
+    }
+
+    private function copyAttachmentToTargetDisk(
+        Filesystem $sourceDisk,
+        Filesystem $targetDisk,
+        string $sourcePath,
+        string $targetPath
+    ): bool {
+        if ($sourceDisk === $targetDisk) {
+            return $targetDisk->copy($sourcePath, $targetPath);
+        }
+
+        $stream = $sourceDisk->readStream($sourcePath);
+        if (! is_resource($stream)) {
+            return false;
+        }
+
+        try {
+            return $targetDisk->writeStream($targetPath, $stream);
+        } finally {
+            fclose($stream);
         }
     }
 
@@ -4634,6 +5533,20 @@ class MaterialShareController extends Controller
     private function materialsShareUser()
     {
         if (! $authUser = $this->userHasRole(['admin', 'materials_admin', 'materials_moderator'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $authUser;
+    }
+
+    private function materialsShareUserById(int $userId): User
+    {
+        $authUser = User::query()->find($userId);
+        if (! $authUser instanceof User) {
+            abort(404, 'Benutzer wurde nicht gefunden.');
+        }
+
+        if (! $authUser->hasAnyRole(['admin', 'materials_admin', 'materials_moderator'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 

@@ -355,11 +355,13 @@ export default {
                 : ''
             const lessonNote = this.lessonStatusNote || ''
             const overviewNote = [lessonNote, progressNote].filter(Boolean).join(' · ')
+            const progressValue = this.schoolyearStats !== null ? this.schoolyearStats.progress : null
             const sections = {
                 overview: {
                     label: 'Übersicht',
                     icon: 'mdi-view-dashboard-outline',
                     note: overviewNote,
+                    progress: progressValue,
                 },
                 settings: {
                     label: 'Einstellungen',

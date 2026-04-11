@@ -43,6 +43,7 @@
                 <v-col cols="12" lg="10" xl="9">
                     <MaterialsOverviewView v-if="main_action === 'overview'" :disable-sharing-features="true" />
                     <MaterialsFreigabeView v-if="main_action === 'shared'" />
+                    <MaterialsPermissionsView v-if="main_action === 'permissions'" />
                     <MaterialsNewView v-if="main_action === 'new_material'" @menu-lock-change="setMenuLocked" />
                 </v-col>
             </v-row>
@@ -81,6 +82,7 @@ import MaterialsMenu from './components/navigation/MaterialsMenu.vue'
 import MaterialsFreigabeView from './components/views/MaterialsFreigabeView.vue'
 import MaterialsOverviewView from './components/views/MaterialsOverviewView.vue'
 import MaterialsNewView from './components/views/MaterialsNewView.vue'
+import MaterialsPermissionsView from './components/views/MaterialsPermissionsView.vue'
 
 export default {
     name: 'Materials',
@@ -89,6 +91,7 @@ export default {
         MaterialsFreigabeView,
         MaterialsOverviewView,
         MaterialsNewView,
+        MaterialsPermissionsView,
     },
     data() {
         return {
@@ -210,7 +213,7 @@ export default {
                 return
             }
 
-            const allowed = ['overview', 'shared', 'new_material']
+            const allowed = ['overview', 'shared', 'permissions', 'new_material']
             if (allowed.includes(normalizedQueryValue)) {
                 this.main_action = normalizedQueryValue
                 if (queryValue !== normalizedQueryValue) {
@@ -223,7 +226,7 @@ export default {
         syncRouteMainAction(value) {
             if (this.$route?.path !== '/admin/materials') return
 
-            const allowed = ['overview', 'shared', 'new_material']
+            const allowed = ['overview', 'shared', 'permissions', 'new_material']
             const normalized = allowed.includes(String(value || '').trim()) ? String(value || '').trim() : 'overview'
             const current = String(this.$route?.query?.main_action || '').trim()
             if (current === normalized) return
