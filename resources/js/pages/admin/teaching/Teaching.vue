@@ -123,6 +123,7 @@
             <Admin v-if="main_action === 'admin'" />
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
+            <Curricula v-if="main_action === 'curricula'" />
         </v-row>
     </v-container>
 </template>
@@ -142,9 +143,10 @@ import Settings from './settings/Settings.vue'
 import Admin from './admin/Admin.vue'
 import Search from './search/Search.vue'
 import Schoolyear from './schoolyear/Schoolyear.vue'
+import Curricula from './curricula/Curricula.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear },
+    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, Curricula },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -383,6 +385,11 @@ export default {
                     icon: 'mdi-calendar-month-outline',
                     note: 'Aktives Schuljahr prüfen und wechseln.',
                 },
+                curricula: {
+                    label: 'Curricula',
+                    icon: 'mdi-book-education-outline',
+                    note: 'Lehrpläne und Kompetenzraster verwalten.',
+                },
             }
             return sections[this.main_action] || sections.overview
         },
@@ -407,6 +414,13 @@ export default {
                     label: 'Schuljahr',
                     meta: this.selectedSchoolyearLabel,
                     icon: 'mdi-calendar-month-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                },
+                {
+                    key: 'curricula',
+                    label: 'Curricula',
+                    meta: 'Lehrpläne & Raster',
+                    icon: 'mdi-book-education-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
                 },
                 {

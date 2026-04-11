@@ -51,6 +51,7 @@ use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
 use App\Http\Controllers\Admin\Teaching\CourseDateController;
 use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationController;
 use App\Http\Controllers\Admin\Teaching\CourseWorkController;
+use App\Http\Controllers\Admin\Teaching\CurriculumController;
 use App\Http\Controllers\Admin\Teaching\FileUploadController;
 use App\Http\Controllers\Admin\Teaching\HolidayController;
 use App\Http\Controllers\Admin\Teaching\Import116Controller;
@@ -364,6 +365,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
+        Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
