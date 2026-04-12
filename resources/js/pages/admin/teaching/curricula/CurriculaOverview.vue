@@ -231,6 +231,8 @@ export default {
                     title: this.form.title.trim(),
                     description: this.form.description?.trim() || null,
                     semester_count: this.form.semester_count ?? 2,
+                    free_weeks: this.editing?.free_weeks ?? [],
+                    topics: this.editing?.topics ?? [],
                 }
                 const result = this.editing
                     ? await this.curriculumStore.update(this.editing.id, payload)

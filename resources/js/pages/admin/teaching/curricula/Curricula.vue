@@ -36,7 +36,8 @@
         <CurriculumDetail
             v-else
             :curriculum="selectedCurriculum"
-            @back="closeCurriculum" />
+            @back="closeCurriculum"
+            @updated="updateCurriculum" />
     </v-col>
 </template>
 
@@ -62,6 +63,10 @@ export default {
             this.selectedCurriculum = null
         },
         openCurriculum(curriculum) {
+            this.selectedCurriculum = curriculum
+        },
+        updateCurriculum(curriculum) {
+            if (!this.selectedCurriculum || this.selectedCurriculum.id !== curriculum.id) return
             this.selectedCurriculum = curriculum
         },
         closeCurriculum() {

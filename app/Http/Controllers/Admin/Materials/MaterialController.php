@@ -907,7 +907,34 @@ class MaterialController extends Controller
             }
         }
 
+        foreach ($this->attachmentStorageFallbackDisks() as $disk) {
+            if ($disk->exists($path)) {
+                return $disk;
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * @return array<int, Filesystem>
+     */
+    private function attachmentStorageFallbackDisks(): array
+    {
+        $roots = [
+            storage_path('app/private'),
+            storage_path('app'),
+            storage_path('app/public'),
+        ];
+
+        return array_map(
+            static fn (string $root): Filesystem => Storage::build([
+                'driver' => 'local',
+                'root' => $root,
+                'throw' => false,
+            ]),
+            array_values(array_unique($roots))
+        );
     }
 
     private function assertCanReadAttachment(User $authUser, MaterialCardAttachment $attachment, Request $request): void
