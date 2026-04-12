@@ -119,7 +119,15 @@ class CurriculumController extends Controller
      *         assignment_type: string,
      *         month_key: ?string,
      *         month_keys: array<int, string>,
-     *         week_keys: array<int, string>
+     *         week_keys: array<int, string>,
+     *         units: array<int, array{
+     *             id: string,
+     *             title: string,
+     *             assignment_type: string,
+     *             month_key: ?string,
+     *             month_keys: array<int, string>,
+     *             week_keys: array<int, string>
+     *         }>
      *     }>
      * }
      */
@@ -166,6 +174,30 @@ class CurriculumController extends Controller
 
                     if (! $weekStart->isMonday()) {
                         $fail('Themen-Wochen müssen mit einem Montag gespeichert werden.');
+                    }
+                },
+            ],
+            'topics.*.units' => 'nullable|array',
+            'topics.*.units.*' => 'array',
+            'topics.*.units.*.id' => 'nullable|string|max:100',
+            'topics.*.units.*.title' => 'required|string|max:255',
+            'topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
+            'topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
+            'topics.*.units.*.month_keys' => 'nullable|array',
+            'topics.*.units.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
+            'topics.*.units.*.week_keys' => 'nullable|array',
+            'topics.*.units.*.week_keys.*' => [
+                'string',
+                'date_format:Y-m-d',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                    } catch (\Throwable) {
+                        return;
+                    }
+
+                    if (! $weekStart->isMonday()) {
+                        $fail('Einheiten-Wochen müssen mit einem Montag gespeichert werden.');
                     }
                 },
             ],
@@ -220,50 +252,107 @@ class CurriculumController extends Controller
      *     assignment_type: string,
      *     month_key: ?string,
      *     month_keys: array<int, string>,
-     *     week_keys: array<int, string>
+     *     week_keys: array<int, string>,
+     *     units: array<int, array{
+     *         id: string,
+     *         title: string,
+     *         assignment_type: string,
+     *         month_key: ?string,
+     *         month_keys: array<int, string>,
+     *         week_keys: array<int, string>
+     *     }>
      * }>
      */
     private function normalizeTopics(array $topics): array
     {
         return collect($topics)->values()->map(function (mixed $topic, int $index): array {
             $normalizedTopic = is_array($topic) ? $topic : [];
-            $title = trim((string) ($normalizedTopic['title'] ?? ''));
-            $assignmentType = trim((string) ($normalizedTopic['assignment_type'] ?? ''));
-            $monthKeys = $this->normalizeMonthKeys(
-                is_array($normalizedTopic['month_keys'] ?? null)
-                    ? $normalizedTopic['month_keys']
-                    : [($normalizedTopic['month_key'] ?? null)]
-            );
-            $weekKeys = $this->normalizeWeekKeys(is_array($normalizedTopic['week_keys'] ?? null) ? $normalizedTopic['week_keys'] : []);
-
-            if ($title === '') {
-                throw ValidationException::withMessages([
-                    "topics.{$index}.title" => 'Bitte einen gültigen Thementitel angeben.',
-                ]);
-            }
-
-            if ($assignmentType === 'month' && $monthKeys === []) {
-                throw ValidationException::withMessages([
-                    "topics.{$index}.month_keys" => 'Bitte mindestens einen Monat auswählen.',
-                ]);
-            }
-
-            if ($assignmentType === 'weeks' && $weekKeys === []) {
-                throw ValidationException::withMessages([
-                    "topics.{$index}.week_keys" => 'Bitte mindestens eine Woche auswählen.',
-                ]);
-            }
 
             return [
-                'id' => trim((string) ($normalizedTopic['id'] ?? '')) !== ''
-                    ? trim((string) $normalizedTopic['id'])
-                    : (string) Str::uuid(),
-                'title' => $title,
-                'assignment_type' => $assignmentType,
-                'month_key' => $assignmentType === 'month' ? $monthKeys[0] : null,
-                'month_keys' => $assignmentType === 'month' ? $monthKeys : [],
-                'week_keys' => $assignmentType === 'weeks' ? $weekKeys : [],
+                ...$this->normalizeScheduledItem(
+                    $normalizedTopic,
+                    "topics.{$index}",
+                    'Bitte einen gültigen Thementitel angeben.'
+                ),
+                'units' => $this->normalizeUnits(
+                    is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [],
+                    $index
+                ),
             ];
         })->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $units
+     * @return array<int, array{
+     *     id: string,
+     *     title: string,
+     *     assignment_type: string,
+     *     month_key: ?string,
+     *     month_keys: array<int, string>,
+     *     week_keys: array<int, string>
+     * }>
+     */
+    private function normalizeUnits(array $units, int $topicIndex): array
+    {
+        return collect($units)->values()->map(function (mixed $unit, int $unitIndex) use ($topicIndex): array {
+            return $this->normalizeScheduledItem(
+                is_array($unit) ? $unit : [],
+                "topics.{$topicIndex}.units.{$unitIndex}",
+                'Bitte einen gültigen Einheitentitel angeben.'
+            );
+        })->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{
+     *     id: string,
+     *     title: string,
+     *     assignment_type: string,
+     *     month_key: ?string,
+     *     month_keys: array<int, string>,
+     *     week_keys: array<int, string>
+     * }
+     */
+    private function normalizeScheduledItem(array $item, string $path, string $emptyTitleMessage): array
+    {
+        $title = trim((string) ($item['title'] ?? ''));
+        $assignmentType = trim((string) ($item['assignment_type'] ?? ''));
+        $monthKeys = $this->normalizeMonthKeys(
+            is_array($item['month_keys'] ?? null)
+                ? $item['month_keys']
+                : [($item['month_key'] ?? null)]
+        );
+        $weekKeys = $this->normalizeWeekKeys(is_array($item['week_keys'] ?? null) ? $item['week_keys'] : []);
+
+        if ($title === '') {
+            throw ValidationException::withMessages([
+                "{$path}.title" => $emptyTitleMessage,
+            ]);
+        }
+
+        if ($assignmentType === 'month' && $monthKeys === []) {
+            throw ValidationException::withMessages([
+                "{$path}.month_keys" => 'Bitte mindestens einen Monat auswählen.',
+            ]);
+        }
+
+        if ($assignmentType === 'weeks' && $weekKeys === []) {
+            throw ValidationException::withMessages([
+                "{$path}.week_keys" => 'Bitte mindestens eine Woche auswählen.',
+            ]);
+        }
+
+        return [
+            'id' => trim((string) ($item['id'] ?? '')) !== ''
+                ? trim((string) $item['id'])
+                : (string) Str::uuid(),
+            'title' => $title,
+            'assignment_type' => $assignmentType,
+            'month_key' => $assignmentType === 'month' ? $monthKeys[0] : null,
+            'month_keys' => $assignmentType === 'month' ? $monthKeys : [],
+            'week_keys' => $assignmentType === 'weeks' ? $weekKeys : [],
+        ];
     }
 }
