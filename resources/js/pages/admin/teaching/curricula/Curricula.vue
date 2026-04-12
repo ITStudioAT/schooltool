@@ -10,30 +10,63 @@
                     :variant="sub_action === item.key ? 'flat' : 'tonal'"
                     :color="sub_action === item.key ? 'primary' : 'secondary'"
                     class="curricula-submenu__btn"
-                    @click="sub_action = item.key">
+                    @click="handleSubmenu(item.key)">
                     <v-icon size="16" :icon="item.icon" class="mr-2" />
                     {{ item.label }}
                 </v-btn>
+
+                <v-chip
+                    v-if="selectedCurriculum"
+                    size="small"
+                    color="primary"
+                    variant="tonal"
+                    closable
+                    class="ml-2 font-weight-bold"
+                    @click:close="closeCurriculum">
+                    <v-icon size="14" class="mr-1">mdi-book-education-outline</v-icon>
+                    {{ selectedCurriculum.title }}
+                </v-chip>
             </div>
         </v-sheet>
 
-        <CurriculaOverview v-if="sub_action === 'overview'" />
+        <CurriculaOverview
+            v-if="!selectedCurriculum"
+            @select="openCurriculum" />
+
+        <CurriculumDetail
+            v-else
+            :curriculum="selectedCurriculum"
+            @back="closeCurriculum" />
     </v-col>
 </template>
 
 <script>
 import CurriculaOverview from './CurriculaOverview.vue'
+import CurriculumDetail from './CurriculumDetail.vue'
 
 export default {
     name: 'TeachingCurricula',
-    components: { CurriculaOverview },
+    components: { CurriculaOverview, CurriculumDetail },
     data() {
         return {
             sub_action: 'overview',
+            selectedCurriculum: null,
             submenuItems: [
                 { key: 'overview', label: 'Übersicht', icon: 'mdi-view-list-outline' },
             ],
         }
+    },
+    methods: {
+        handleSubmenu(key) {
+            this.sub_action = key
+            this.selectedCurriculum = null
+        },
+        openCurriculum(curriculum) {
+            this.selectedCurriculum = curriculum
+        },
+        closeCurriculum() {
+            this.selectedCurriculum = null
+        },
     },
 }
 </script>
@@ -48,6 +81,7 @@ export default {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    align-items: center;
 }
 
 .curricula-submenu__btn {

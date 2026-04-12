@@ -39,13 +39,16 @@
                     :key="curriculum.id"
                     class="curricula-overview__item mb-2 px-3"
                     min-height="44"
-                    rounded="lg">
+                    rounded="lg"
+                    style="cursor: pointer"
+                    @click="$emit('select', curriculum)">
                     <template #prepend>
                         <v-icon color="#a5b4fc" size="18" class="mr-2">mdi-book-education-outline</v-icon>
                     </template>
                     <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
-                    <v-list-item-subtitle v-if="curriculum.description" class="text-caption">
-                        {{ curriculum.description }}
+                    <v-list-item-subtitle class="text-caption">
+                        <span v-if="curriculum.description">{{ curriculum.description }} · </span>
+                        <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
                     </v-list-item-subtitle>
                     <template #append>
                         <v-btn
@@ -55,14 +58,14 @@
                             size="x-small"
                             class="mr-1"
                             title="Bearbeiten"
-                            @click="openEditDialog(curriculum)" />
+                            @click.stop="openEditDialog(curriculum)" />
                         <v-btn
                             icon="mdi-delete-outline"
                             variant="tonal"
                             color="warning"
                             size="x-small"
                             title="Löschen"
-                            @click="askDelete(curriculum)" />
+                            @click.stop="askDelete(curriculum)" />
                     </template>
                 </v-list-item>
             </v-list>
@@ -101,9 +104,21 @@
                         label="Beschreibung"
                         variant="outlined"
                         density="comfortable"
-                        rows="4"
+                        rows="3"
                         auto-grow
-                        :error-messages="formErrors.description" />
+                        :error-messages="formErrors.description"
+                        class="mb-2" />
+                    <div class="text-body-2 font-weight-medium mb-1">Anzahl Semester</div>
+                    <v-btn-toggle
+                        v-model="form.semester_count"
+                        mandatory
+                        color="primary"
+                        density="comfortable"
+                        rounded="lg"
+                        class="mb-1">
+                        <v-btn :value="1" variant="outlined" class="text-none px-6">1 Semester</v-btn>
+                        <v-btn :value="2" variant="outlined" class="text-none px-6">2 Semester</v-btn>
+                    </v-btn-toggle>
                 </v-card-text>
                 <v-card-actions class="px-4 pb-4">
                     <v-btn variant="tonal" :disabled="saving" @click="closeDialog">Abbrechen</v-btn>
@@ -140,6 +155,7 @@ import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 export default {
     name: 'TeachingCurriculaOverview',
+    emits: ['select'],
 
     data() {
         return {
@@ -149,7 +165,7 @@ export default {
             currentPage: 1,
             dialogOpen: false,
             editing: null,
-            form: { title: '', description: '' },
+            form: { title: '', description: '', semester_count: 2 },
             formErrors: {},
             saving: false,
             deleteDialogOpen: false,
@@ -185,7 +201,7 @@ export default {
         },
         openCreateDialog() {
             this.editing = null
-            this.form = { title: '', description: '' }
+            this.form = { title: '', description: '', semester_count: 2 }
             this.formErrors = {}
             this.dialogOpen = true
         },
@@ -194,6 +210,7 @@ export default {
             this.form = {
                 title: curriculum.title || '',
                 description: curriculum.description || '',
+                semester_count: curriculum.semester_count ?? 2,
             }
             this.formErrors = {}
             this.dialogOpen = true
@@ -213,6 +230,7 @@ export default {
                 const payload = {
                     title: this.form.title.trim(),
                     description: this.form.description?.trim() || null,
+                    semester_count: this.form.semester_count ?? 2,
                 }
                 const result = this.editing
                     ? await this.curriculumStore.update(this.editing.id, payload)
@@ -297,5 +315,10 @@ export default {
 
 .curricula-overview__total {
     color: #94a3b8;
+}
+
+.curricula-overview__semester-badge {
+    color: #a5b4fc;
+    font-weight: 600;
 }
 </style>

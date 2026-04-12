@@ -51,6 +51,7 @@ class CurriculumController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'semester_count' => 'nullable|integer|in:1,2',
         ]);
 
         $curriculum = TeachingCurriculum::create([
@@ -59,6 +60,7 @@ class CurriculumController extends Controller
             'user_id' => $auth_user->id,
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
+            'semester_count' => $validated['semester_count'] ?? 2,
         ]);
 
         return response()->json(['data' => $curriculum], 201);
@@ -78,6 +80,7 @@ class CurriculumController extends Controller
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'semester_count' => 'nullable|integer|in:1,2',
         ]);
 
         $curriculum->update($validated);

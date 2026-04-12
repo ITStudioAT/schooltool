@@ -15,6 +15,7 @@ class TeachingCurriculum extends Model
         'user_id',
         'title',
         'description',
+        'semester_count',
     ];
 
     public function school(): BelongsTo
