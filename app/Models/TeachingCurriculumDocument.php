@@ -15,6 +15,7 @@ class TeachingCurriculumDocument extends Model
         'mime_type',
         'size_bytes',
         'material_card_id',
+        'material_card_attachment_id',
     ];
 
     public function curriculum(): BelongsTo
@@ -25,5 +26,10 @@ class TeachingCurriculumDocument extends Model
     public function materialCard(): BelongsTo
     {
         return $this->belongsTo(MaterialCard::class);
+    }
+
+    public function materialAttachment(): BelongsTo
+    {
+        return $this->belongsTo(MaterialCardAttachment::class, 'material_card_attachment_id');
     }
 }

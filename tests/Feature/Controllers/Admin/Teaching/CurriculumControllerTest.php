@@ -87,6 +87,7 @@ test('teacher can create a curriculum with free weeks and topics', function () {
                     [
                         'id' => 'unit-all-1',
                         'title' => 'Lesetagebuch',
+                        'is_exam' => true,
                         'assignment_type' => 'month',
                         'month_keys' => ['2025-09', '2025-10', '2025-09'],
                     ],
@@ -120,18 +121,22 @@ test('teacher can create a curriculum with free weeks and topics', function () {
         ->assertJsonPath('data.free_weeks.0', '2025-12-22')
         ->assertJsonPath('data.free_weeks.1', '2026-02-16')
         ->assertJsonPath('data.topics.0.id', 'topic-all')
+        ->assertJsonPath('data.topics.0.assignment_type', 'none')
         ->assertJsonPath('data.topics.0.units.0.id', 'unit-all-1')
+        ->assertJsonPath('data.topics.0.units.0.is_exam', true)
         ->assertJsonPath('data.topics.0.units.0.month_key', '2025-09')
         ->assertJsonPath('data.topics.0.units.0.month_keys.1', '2025-10')
-        ->assertJsonPath('data.topics.1.month_key', '2025-10')
-        ->assertJsonPath('data.topics.1.month_keys.0', '2025-10')
-        ->assertJsonPath('data.topics.1.month_keys.1', '2025-11')
+        ->assertJsonPath('data.topics.1.month_key', '2025-11')
+        ->assertJsonPath('data.topics.1.month_keys.0', '2025-11')
         ->assertJsonPath('data.topics.1.units.0.week_keys.1', '2025-10-13')
         ->assertJsonPath('data.topics.2.week_keys.1', '2026-02-16');
 
     expect(TeachingCurriculum::query()->firstOrFail()->free_weeks)->toBe(['2025-12-22', '2026-02-16'])
         ->and(TeachingCurriculum::query()->firstOrFail()->topics)->toHaveCount(3)
-        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'])->toHaveCount(1);
+        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['assignment_type'])->toBe('none')
+        ->and(TeachingCurriculum::query()->firstOrFail()->topics[1]['month_keys'])->toBe(['2025-11'])
+        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'])->toHaveCount(1)
+        ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'][0]['is_exam'])->toBeTrue();
 });
 
 test('teacher can update curriculum free weeks and duplicates are normalized', function () {
@@ -300,6 +305,147 @@ test('curriculum topic units require valid week assignments', function () {
 
     $response->assertStatus(422)
         ->assertJsonValidationErrors(['topics.0.units.0.week_keys.0']);
+});
+
+test('unit date assignments remove overlapping topic dates', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Deutsch',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [
+            [
+                'id' => 'topic-overlap',
+                'title' => 'Schreiben',
+                'assignment_type' => 'month',
+                'month_key' => '2025-09',
+                'month_keys' => ['2025-09', '2025-10'],
+                'week_keys' => [],
+                'units' => [
+                    [
+                        'id' => 'unit-overlap',
+                        'title' => 'Bericht',
+                        'assignment_type' => 'none',
+                        'month_key' => null,
+                        'month_keys' => [],
+                        'week_keys' => [],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Deutsch',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-overlap',
+                'title' => 'Schreiben',
+                'assignment_type' => 'month',
+                'month_keys' => ['2025-09', '2025-10'],
+                'units' => [
+                    [
+                        'id' => 'unit-overlap',
+                        'title' => 'Bericht',
+                        'assignment_type' => 'weeks',
+                        'week_keys' => ['2025-09-08'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('data.topics.0.month_key', '2025-10')
+        ->assertJsonPath('data.topics.0.month_keys.0', '2025-10')
+        ->assertJsonPath('data.topics.0.units.0.week_keys.0', '2025-09-08');
+
+    expect($curriculum->fresh()->topics[0]['month_keys'])->toBe(['2025-10'])
+        ->and($curriculum->fresh()->topics[0]['units'][0]['week_keys'])->toBe(['2025-09-08']);
+});
+
+test('topic date assignments remove overlapping unit dates', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Sachunterricht',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [
+            [
+                'id' => 'topic-wins',
+                'title' => 'Natur',
+                'assignment_type' => 'none',
+                'month_key' => null,
+                'month_keys' => [],
+                'week_keys' => [],
+                'units' => [
+                    [
+                        'id' => 'unit-month',
+                        'title' => 'Bäume',
+                        'assignment_type' => 'month',
+                        'month_key' => '2025-09',
+                        'month_keys' => ['2025-09'],
+                        'week_keys' => [],
+                    ],
+                    [
+                        'id' => 'unit-week',
+                        'title' => 'Blätter',
+                        'assignment_type' => 'weeks',
+                        'month_key' => null,
+                        'month_keys' => [],
+                        'week_keys' => ['2025-10-06'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Sachunterricht',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-wins',
+                'title' => 'Natur',
+                'assignment_type' => 'month',
+                'month_keys' => ['2025-09', '2025-10'],
+                'units' => [
+                    [
+                        'id' => 'unit-month',
+                        'title' => 'Bäume',
+                        'assignment_type' => 'month',
+                        'month_keys' => ['2025-09'],
+                    ],
+                    [
+                        'id' => 'unit-week',
+                        'title' => 'Blätter',
+                        'assignment_type' => 'weeks',
+                        'week_keys' => ['2025-10-06'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertSuccessful()
+        ->assertJsonPath('data.topics.0.month_keys.0', '2025-09')
+        ->assertJsonPath('data.topics.0.month_keys.1', '2025-10')
+        ->assertJsonPath('data.topics.0.units.0.assignment_type', 'none')
+        ->assertJsonPath('data.topics.0.units.1.assignment_type', 'none');
+
+    expect($curriculum->fresh()->topics[0]['units'][0]['assignment_type'])->toBe('none')
+        ->and($curriculum->fresh()->topics[0]['units'][0]['month_keys'])->toBe([])
+        ->and($curriculum->fresh()->topics[0]['units'][1]['assignment_type'])->toBe('none')
+        ->and($curriculum->fresh()->topics[0]['units'][1]['week_keys'])->toBe([]);
 });
 
 test('curriculum topics normalize multiple month assignments', function () {

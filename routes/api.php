@@ -371,6 +371,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload']);
         Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext']);
         Route::post('/admin/teaching/curricula/{curriculum}/documents/attach-material', [CurriculumDocumentController::class, 'attachMaterial']);
+        Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/preview', [CurriculumDocumentController::class, 'preview']);
+        Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachments', [CurriculumDocumentController::class, 'materialAttachments']);
+        Route::patch('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachment', [CurriculumDocumentController::class, 'updateMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/download', [CurriculumDocumentController::class, 'download']);
         Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);

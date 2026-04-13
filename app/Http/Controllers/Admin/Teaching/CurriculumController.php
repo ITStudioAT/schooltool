@@ -123,6 +123,7 @@ class CurriculumController extends Controller
      *         units: array<int, array{
      *             id: string,
      *             title: string,
+     *             is_exam: bool,
      *             assignment_type: string,
      *             month_key: ?string,
      *             month_keys: array<int, string>,
@@ -181,6 +182,7 @@ class CurriculumController extends Controller
             'topics.*.units.*' => 'array',
             'topics.*.units.*.id' => 'nullable|string|max:100',
             'topics.*.units.*.title' => 'required|string|max:255',
+            'topics.*.units.*.is_exam' => 'sometimes|boolean',
             'topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
             'topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
             'topics.*.units.*.month_keys' => 'nullable|array',
@@ -208,7 +210,7 @@ class CurriculumController extends Controller
             ? $this->normalizeWeekKeys($validated['free_weeks'] ?? [])
             : collect($curriculum?->free_weeks ?? [])->values()->all();
         $validated['topics'] = $request->has('topics')
-            ? $this->normalizeTopics($validated['topics'] ?? [])
+            ? $this->normalizeTopics($validated['topics'] ?? [], is_array($curriculum?->topics) ? $curriculum->topics : [])
             : collect($curriculum?->topics ?? [])->values()->all();
 
         return $validated;
@@ -256,6 +258,7 @@ class CurriculumController extends Controller
      *     units: array<int, array{
      *         id: string,
      *         title: string,
+     *         is_exam: bool,
      *         assignment_type: string,
      *         month_key: ?string,
      *         month_keys: array<int, string>,
@@ -263,21 +266,31 @@ class CurriculumController extends Controller
      *     }>
      * }>
      */
-    private function normalizeTopics(array $topics): array
+    private function normalizeTopics(array $topics, array $existingTopics = []): array
     {
-        return collect($topics)->values()->map(function (mixed $topic, int $index): array {
+        $existingTopicsById = collect($existingTopics)
+            ->filter(fn (mixed $topic): bool => is_array($topic) && filled($topic['id'] ?? null))
+            ->mapWithKeys(fn (array $topic): array => [(string) $topic['id'] => $topic]);
+
+        return collect($topics)->values()->map(function (mixed $topic, int $index) use ($existingTopicsById): array {
             $normalizedTopic = is_array($topic) ? $topic : [];
+            $topicItem = $this->normalizeScheduledItem(
+                $normalizedTopic,
+                "topics.{$index}",
+                'Bitte einen gültigen Thementitel angeben.'
+            );
+            $units = $this->normalizeUnits(
+                is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [],
+                $index
+            );
+            $existingTopic = $existingTopicsById->get($topicItem['id']);
+            $winner = $this->resolveTopicAssignmentWinner($topicItem, $units, is_array($existingTopic) ? $existingTopic : null);
+
+            [$topicItem, $units] = $this->reconcileTopicUnitAssignments($topicItem, $units, $winner);
 
             return [
-                ...$this->normalizeScheduledItem(
-                    $normalizedTopic,
-                    "topics.{$index}",
-                    'Bitte einen gültigen Thementitel angeben.'
-                ),
-                'units' => $this->normalizeUnits(
-                    is_array($normalizedTopic['units'] ?? null) ? $normalizedTopic['units'] : [],
-                    $index
-                ),
+                ...$topicItem,
+                'units' => $units,
             ];
         })->all();
     }
@@ -287,6 +300,7 @@ class CurriculumController extends Controller
      * @return array<int, array{
      *     id: string,
      *     title: string,
+     *     is_exam: bool,
      *     assignment_type: string,
      *     month_key: ?string,
      *     month_keys: array<int, string>,
@@ -296,11 +310,16 @@ class CurriculumController extends Controller
     private function normalizeUnits(array $units, int $topicIndex): array
     {
         return collect($units)->values()->map(function (mixed $unit, int $unitIndex) use ($topicIndex): array {
-            return $this->normalizeScheduledItem(
-                is_array($unit) ? $unit : [],
-                "topics.{$topicIndex}.units.{$unitIndex}",
-                'Bitte einen gültigen Einheitentitel angeben.'
-            );
+            $normalizedUnit = is_array($unit) ? $unit : [];
+
+            return [
+                ...$this->normalizeScheduledItem(
+                    $normalizedUnit,
+                    "topics.{$topicIndex}.units.{$unitIndex}",
+                    'Bitte einen gültigen Einheitentitel angeben.'
+                ),
+                'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
+            ];
         })->all();
     }
 
@@ -354,5 +373,235 @@ class CurriculumController extends Controller
             'month_keys' => $assignmentType === 'month' ? $monthKeys : [],
             'week_keys' => $assignmentType === 'weeks' ? $weekKeys : [],
         ];
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $topic
+     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>  $units
+     * @param  array<string, mixed>|null  $existingTopic
+     */
+    private function resolveTopicAssignmentWinner(array $topic, array $units, ?array $existingTopic): ?string
+    {
+        if ($existingTopic === null) {
+            return 'units';
+        }
+
+        if ($this->assignmentsDiffer($topic, $existingTopic)) {
+            return 'topic';
+        }
+
+        if ($this->unitsAssignmentsDiffer($units, $existingTopic)) {
+            return 'units';
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $topic
+     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>  $units
+     * @return array{
+     *     0: array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>},
+     *     1: array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>
+     * }
+     */
+    private function reconcileTopicUnitAssignments(array $topic, array $units, ?string $winner): array
+    {
+        if ($winner === 'topic') {
+            return [
+                $topic,
+                collect($units)
+                    ->map(fn (array $unit): array => $this->removeAssignmentOverlap($unit, $topic))
+                    ->all(),
+            ];
+        }
+
+        if ($winner === 'units') {
+            $reconciledTopic = $topic;
+
+            foreach ($units as $unit) {
+                $reconciledTopic = $this->removeAssignmentOverlap($reconciledTopic, $unit);
+            }
+
+            return [$reconciledTopic, $units];
+        }
+
+        return [$topic, $units];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{assignment_type:string,month_keys:array<int,string>,week_keys:array<int,string>}
+     */
+    private function assignmentState(array $item): array
+    {
+        $assignmentType = trim((string) ($item['assignment_type'] ?? ''));
+        $assignmentType = in_array($assignmentType, ['none', 'all_weeks', 'month', 'weeks'], true) ? $assignmentType : 'none';
+
+        return [
+            'assignment_type' => $assignmentType,
+            'month_keys' => $assignmentType === 'month'
+                ? $this->normalizeMonthKeys(
+                    is_array($item['month_keys'] ?? null)
+                        ? $item['month_keys']
+                        : [($item['month_key'] ?? null)]
+                )
+                : [],
+            'week_keys' => $assignmentType === 'weeks'
+                ? $this->normalizeWeekKeys(is_array($item['week_keys'] ?? null) ? $item['week_keys'] : [])
+                : [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function hasActiveAssignment(array $item): bool
+    {
+        return $this->assignmentState($item)['assignment_type'] !== 'none';
+    }
+
+    /**
+     * @param  array<string, mixed>  $left
+     * @param  array<string, mixed>  $right
+     */
+    private function assignmentsDiffer(array $left, array $right): bool
+    {
+        return $this->assignmentState($left) !== $this->assignmentState($right);
+    }
+
+    /**
+     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>  $units
+     * @param  array<string, mixed>  $existingTopic
+     */
+    private function unitsAssignmentsDiffer(array $units, array $existingTopic): bool
+    {
+        $existingUnitsById = collect(is_array($existingTopic['units'] ?? null) ? $existingTopic['units'] : [])
+            ->filter(fn (mixed $unit): bool => is_array($unit) && filled($unit['id'] ?? null))
+            ->mapWithKeys(fn (array $unit): array => [(string) $unit['id'] => $unit]);
+
+        foreach ($units as $unit) {
+            $existingUnit = $existingUnitsById->get($unit['id']);
+
+            if ($existingUnit === null) {
+                if ($this->hasActiveAssignment($unit)) {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if ($this->assignmentsDiffer($unit, is_array($existingUnit) ? $existingUnit : [])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $target
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $blocking
+     * @return array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}
+     */
+    private function removeAssignmentOverlap(array $target, array $blocking): array
+    {
+        $targetState = $this->assignmentState($target);
+        $blockingState = $this->assignmentState($blocking);
+
+        if ($targetState['assignment_type'] === 'none' || $blockingState['assignment_type'] === 'none') {
+            return $target;
+        }
+
+        if ($targetState['assignment_type'] === 'all_weeks') {
+            return $this->clearAssignment($target);
+        }
+
+        if ($blockingState['assignment_type'] === 'all_weeks') {
+            return $this->clearAssignment($target);
+        }
+
+        if ($targetState['assignment_type'] === 'month') {
+            $blockingMonths = $blockingState['assignment_type'] === 'month'
+                ? $blockingState['month_keys']
+                : collect($blockingState['week_keys'])->map(fn (string $weekKey): string => $this->monthKeyFromWeekKey($weekKey))->unique()->values()->all();
+
+            $remainingMonthKeys = array_values(array_diff($targetState['month_keys'], $blockingMonths));
+
+            return $remainingMonthKeys === []
+                ? $this->clearAssignment($target)
+                : $this->applyMonthAssignment($target, $remainingMonthKeys);
+        }
+
+        $remainingWeekKeys = $targetState['week_keys'];
+
+        if ($blockingState['assignment_type'] === 'month') {
+            $remainingWeekKeys = collect($remainingWeekKeys)
+                ->reject(fn (string $weekKey): bool => in_array($this->monthKeyFromWeekKey($weekKey), $blockingState['month_keys'], true))
+                ->values()
+                ->all();
+        } else {
+            $remainingWeekKeys = array_values(array_diff($remainingWeekKeys, $blockingState['week_keys']));
+        }
+
+        return $remainingWeekKeys === []
+            ? $this->clearAssignment($target)
+            : $this->applyWeekAssignment($target, $remainingWeekKeys);
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $item
+     * @return array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}
+     */
+    private function clearAssignment(array $item): array
+    {
+        return [
+            ...$item,
+            'assignment_type' => 'none',
+            'month_key' => null,
+            'month_keys' => [],
+            'week_keys' => [],
+        ];
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $item
+     * @param  array<int, string>  $monthKeys
+     * @return array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}
+     */
+    private function applyMonthAssignment(array $item, array $monthKeys): array
+    {
+        $monthKeys = $this->normalizeMonthKeys($monthKeys);
+
+        return [
+            ...$item,
+            'assignment_type' => 'month',
+            'month_key' => $monthKeys[0] ?? null,
+            'month_keys' => $monthKeys,
+            'week_keys' => [],
+        ];
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $item
+     * @param  array<int, string>  $weekKeys
+     * @return array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}
+     */
+    private function applyWeekAssignment(array $item, array $weekKeys): array
+    {
+        $weekKeys = $this->normalizeWeekKeys($weekKeys);
+
+        return [
+            ...$item,
+            'assignment_type' => 'weeks',
+            'month_key' => null,
+            'month_keys' => [],
+            'week_keys' => $weekKeys,
+        ];
+    }
+
+    private function monthKeyFromWeekKey(string $weekKey): string
+    {
+        return CarbonImmutable::createFromFormat('Y-m-d', $weekKey)->format('Y-m');
     }
 }

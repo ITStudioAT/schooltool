@@ -21,7 +21,7 @@
                     <v-chip size="small" color="primary" variant="tonal" class="font-weight-bold">
                         {{ curriculum.semester_count ?? 2 }} Semester
                     </v-chip>
-                    <v-chip size="small" color="warning" variant="tonal" class="font-weight-bold">
+                    <v-chip size="small" color="success" variant="tonal" class="font-weight-bold">
                         {{ freeWeeksCount }} freie Wochen
                     </v-chip>
                     <div class="curriculum-detail__year-picker d-flex align-center ga-1">
@@ -77,20 +77,15 @@
         </div>
 
         <div class="curriculum-detail__body">
-            <div ref="calendarCol" class="curriculum-detail__calendar">
-                <v-alert
-                    type="info"
-                    variant="tonal"
-                    density="compact"
-                    rounded="xl"
-                    class="curriculum-detail__free-week-hint">
-                    {{ calendarHint }}
-                </v-alert>
+            <div class="curriculum-detail__calendar">
                 <div
                     v-for="(month, idx) in visibleMonths"
                     :key="month.key"
                     class="curriculum-detail__month"
-                    :class="{ 'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0 }"
+                    :class="{
+                        'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
+                        'curriculum-detail__month--with-exams': monthHasExamEntries(month),
+                    }"
                     :style="{ '--month-hue': monthHue(idx) }">
                     <div class="curriculum-detail__month-header">
                         <div class="curriculum-detail__month-name">{{ month.name }}</div>
@@ -98,7 +93,21 @@
                     </div>
                     <div v-if="topicsForMonth(month).length" class="curriculum-detail__month-topics">
                         <div class="curriculum-detail__month-topics-label">Themen</div>
-                        <div class="curriculum-detail__month-topics-text">{{ monthTopicsLabel(month) }}</div>
+                        <div class="curriculum-detail__month-topics-text">
+                            <span
+                                v-for="entry in topicsForMonth(month)"
+                                :key="entry.id"
+                                class="curriculum-detail__overview-entry"
+                                :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
+                                <v-icon
+                                    v-if="entry.isExam"
+                                    size="13"
+                                    class="curriculum-detail__overview-entry-icon">
+                                    mdi-clipboard-check-outline
+                                </v-icon>
+                                <span>{{ entry.title }}</span>
+                            </span>
+                        </div>
                     </div>
                     <div class="curriculum-detail__weeks">
                         <div
@@ -109,6 +118,7 @@
                                 'curriculum-detail__week--current': week.isCurrent,
                                 'curriculum-detail__week--free': isFreeWeek(week.weekKey),
                                 'curriculum-detail__week--with-topics': topicsForWeek(week.weekKey).length > 0,
+                                'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
                                 'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
                                 'curriculum-detail__week--topic-selected': isWeekAssignedToActiveTopic(week.weekKey),
                             }"
@@ -134,7 +144,19 @@
                                 {{ week.rangeLabel }}
                             </div>
                             <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-topics">
-                                {{ weekTopicsLabel(week.weekKey) }}
+                                <span
+                                    v-for="entry in topicsForWeek(week.weekKey)"
+                                    :key="entry.id"
+                                    class="curriculum-detail__overview-entry"
+                                    :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
+                                    <v-icon
+                                        v-if="entry.isExam"
+                                        size="13"
+                                        class="curriculum-detail__overview-entry-icon">
+                                        mdi-clipboard-check-outline
+                                    </v-icon>
+                                    <span>{{ entry.title }}</span>
+                                </span>
                             </div>
                             <div class="curriculum-detail__week-actions">
                                 <v-btn
@@ -151,7 +173,7 @@
                                 <v-chip
                                     v-if="isFreeWeek(week.weekKey)"
                                     size="x-small"
-                                    color="warning"
+                                    color="success"
                                     variant="flat"
                                     class="curriculum-detail__week-chip">
                                     frei
@@ -159,7 +181,7 @@
                                 <v-btn
                                     :icon="isFreeWeek(week.weekKey) ? 'mdi-calendar-remove-outline' : 'mdi-calendar-plus-outline'"
                                     variant="tonal"
-                                    color="warning"
+                                    color="success"
                                     size="x-small"
                                     :disabled="isPageActionLocked"
                                     :loading="isWeekSaving(week.weekKey)"
@@ -171,7 +193,7 @@
                 </div>
             </div>
 
-            <div class="curriculum-detail__side-card curriculum-detail__side-card--content" :style="{ minWidth: Math.round(calendarWidth * 1.5) + 'px' }">
+            <div class="curriculum-detail__side-card curriculum-detail__side-card--content">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-text-box-outline</v-icon>
@@ -181,9 +203,6 @@
                         <div class="curriculum-detail__content-toolbar">
                             <div>
                                 <div class="curriculum-detail__content-count">{{ curriculumTopics.length }} Themen</div>
-                                <div class="curriculum-detail__content-hint">
-                                    Themen können ohne Zuordnung, für das ganze Jahr, einzelne Monate oder Wochen geplant werden.
-                                </div>
                             </div>
                             <v-btn
                                 variant="flat"
@@ -214,16 +233,32 @@
                                                 size="x-small"
                                                 color="primary"
                                                 :variant="assignmentSummaryVariant(topic)"
-                                                class="curriculum-detail__topic-summary-chip">
+                                                :class="{
+                                                    'curriculum-detail__topic-summary-chip': true,
+                                                    'curriculum-detail__topic-meta-chip--interactive': topic.assignment_type !== 'none',
+                                                }"
+                                                @click.stop="topic.assignment_type !== 'none' && openTopicAssignmentEditor(topic, topic.assignment_type)">
                                                 {{ topicAssignmentSummary(topic) }}
                                             </v-chip>
+                                            <template v-else-if="topicInheritedAssignmentChips(topic).length">
+                                                <v-chip
+                                                    v-for="chip in topicInheritedAssignmentChips(topic)"
+                                                    :key="chip.key"
+                                                    size="x-small"
+                                                    :color="chip.color || 'primary'"
+                                                    variant="tonal">
+                                                    {{ chip.label }}
+                                                </v-chip>
+                                            </template>
                                             <template v-if="topic.assignment_type === 'month' && topic.month_keys.length">
                                                 <v-chip
                                                     v-for="monthKey in topic.month_keys"
                                                     :key="monthKey"
                                                     size="x-small"
                                                     color="primary"
-                                                    variant="flat">
+                                                    variant="flat"
+                                                    class="curriculum-detail__topic-meta-chip--interactive"
+                                                    @click.stop="openTopicAssignmentEditor(topic, 'month')">
                                                     {{ monthChipLabel(monthKey) }}
                                                 </v-chip>
                                             </template>
@@ -232,8 +267,10 @@
                                                     v-for="weekKey in topic.week_keys"
                                                     :key="weekKey"
                                                     size="x-small"
-                                                    color="primary"
-                                                    variant="flat">
+                                                    :color="weekAssignmentChipColor(weekKey)"
+                                                    variant="flat"
+                                                    class="curriculum-detail__topic-meta-chip--interactive"
+                                                    @click.stop="openTopicAssignmentEditor(topic, 'weeks')">
                                                     {{ weekChipLabel(weekKey) }}
                                                 </v-chip>
                                             </template>
@@ -361,15 +398,36 @@
                                         </div>
                                         <div
                                             v-if="topic.week_keys.length"
-                                            class="curriculum-detail__topic-meta-chips">
-                                            <v-chip
+                                            class="curriculum-detail__assignment-week-list">
+                                            <div
                                                 v-for="weekKey in topic.week_keys"
                                                 :key="weekKey"
-                                                size="x-small"
-                                                color="primary"
-                                                variant="flat">
-                                                {{ weekChipLabel(weekKey) }}
-                                            </v-chip>
+                                                class="curriculum-detail__assignment-week-row">
+                                                <v-chip
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="flat">
+                                                    {{ weekChipLabel(weekKey) }}
+                                                </v-chip>
+                                                <div class="curriculum-detail__assignment-week-controls">
+                                                    <v-btn
+                                                        icon="mdi-arrow-up"
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
+                                                        title="Eine Woche früher verschieben"
+                                                        @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
+                                                    <v-btn
+                                                        icon="mdi-arrow-down"
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
+                                                        title="Eine Woche später verschieben"
+                                                        @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -404,7 +462,11 @@
                                                             size="x-small"
                                                             color="primary"
                                                             :variant="assignmentSummaryVariant(unit)"
-                                                            class="curriculum-detail__topic-summary-chip">
+                                                            :class="{
+                                                                'curriculum-detail__topic-summary-chip': true,
+                                                                'curriculum-detail__topic-meta-chip--interactive': unit.assignment_type !== 'none',
+                                                            }"
+                                                            @click.stop="unit.assignment_type !== 'none' && openUnitAssignmentEditor(topic, unit, unit.assignment_type)">
                                                             {{ topicAssignmentSummary(unit) }}
                                                         </v-chip>
                                                         <template v-if="unit.assignment_type === 'month' && unit.month_keys.length">
@@ -413,7 +475,9 @@
                                                                 :key="monthKey"
                                                                 size="x-small"
                                                                 color="primary"
-                                                                variant="flat">
+                                                                variant="flat"
+                                                                class="curriculum-detail__topic-meta-chip--interactive"
+                                                                @click.stop="openUnitAssignmentEditor(topic, unit, 'month')">
                                                                 {{ monthChipLabel(monthKey) }}
                                                             </v-chip>
                                                         </template>
@@ -422,8 +486,10 @@
                                                                 v-for="weekKey in unit.week_keys"
                                                                 :key="weekKey"
                                                                 size="x-small"
-                                                                color="primary"
-                                                                variant="flat">
+                                                                :color="weekAssignmentChipColor(weekKey)"
+                                                                variant="flat"
+                                                                class="curriculum-detail__topic-meta-chip--interactive"
+                                                                @click.stop="openUnitAssignmentEditor(topic, unit, 'weeks')">
                                                                 {{ weekChipLabel(weekKey) }}
                                                             </v-chip>
                                                         </template>
@@ -551,15 +617,36 @@
                                                     </div>
                                                     <div
                                                         v-if="unit.week_keys.length"
-                                                        class="curriculum-detail__topic-meta-chips">
-                                                        <v-chip
+                                                        class="curriculum-detail__assignment-week-list">
+                                                        <div
                                                             v-for="weekKey in unit.week_keys"
                                                             :key="weekKey"
-                                                            size="x-small"
-                                                            color="primary"
-                                                            variant="flat">
-                                                            {{ weekChipLabel(weekKey) }}
-                                                        </v-chip>
+                                                            class="curriculum-detail__assignment-week-row">
+                                                            <v-chip
+                                                                size="x-small"
+                                                                color="primary"
+                                                                variant="flat">
+                                                                {{ weekChipLabel(weekKey) }}
+                                                            </v-chip>
+                                                            <div class="curriculum-detail__assignment-week-controls">
+                                                                <v-btn
+                                                                    icon="mdi-arrow-up"
+                                                                    variant="text"
+                                                                    color="primary"
+                                                                    size="x-small"
+                                                                    :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
+                                                                    title="Eine Woche früher verschieben"
+                                                                    @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
+                                                                <v-btn
+                                                                    icon="mdi-arrow-down"
+                                                                    variant="text"
+                                                                    color="primary"
+                                                                    size="x-small"
+                                                                    :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
+                                                                    title="Eine Woche später verschieben"
+                                                                    @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -593,7 +680,7 @@
                                 v-for="doc in documents"
                                 :key="doc.id"
                                 class="lehrplaene__item"
-                                :class="{ 'lehrplaene__item--active': previewDoc?.id === doc.id, 'lehrplaene__item--clickable': doc.source_type === 'upload' }"
+                                :class="{ 'lehrplaene__item--active': previewDoc?.id === doc.id, 'lehrplaene__item--clickable': ['upload', 'material'].includes(doc.source_type) }"
                                 @click="selectPreview(doc)">
                                 <v-icon
                                     size="16"
@@ -601,7 +688,12 @@
                                     class="mr-2 flex-shrink-0">
                                     {{ doc.source_type === 'material' ? 'mdi-package-variant-closed' : 'mdi-file-document-outline' }}
                                 </v-icon>
-                                <span class="lehrplaene__item-name text-truncate">{{ doc.name }}</span>
+                                <div class="lehrplaene__item-copy">
+                                    <span class="lehrplaene__item-name text-truncate">{{ doc.name }}</span>
+                                    <span v-if="doc.source_type === 'material'" class="lehrplaene__item-subtitle text-truncate">
+                                        {{ doc.selected_attachment_name || 'Anhang auswählen' }}
+                                    </span>
+                                </div>
                                 <v-chip
                                     v-if="doc.source_type === 'material'"
                                     size="x-small"
@@ -624,7 +716,7 @@
 
                         <div v-if="previewDoc" class="lehrplaene__preview mb-3">
                             <div class="lehrplaene__preview-header">
-                                <span class="text-truncate">{{ previewDoc.name }}</span>
+                                <span class="text-truncate">{{ previewDoc.selected_attachment_name || previewDoc.name }}</span>
                                 <v-btn
                                     icon="mdi-close"
                                     variant="text"
@@ -635,24 +727,25 @@
                             </div>
                             <div class="lehrplaene__preview-body">
                                 <iframe
-                                    v-if="previewIsPdf"
+                                    v-if="previewIsPdf && previewUrl"
                                     :src="previewUrl"
                                     class="lehrplaene__preview-iframe" />
                                 <img
-                                    v-else-if="previewIsImage"
+                                    v-else-if="previewIsImage && previewUrl"
                                     :src="previewUrl"
                                     class="lehrplaene__preview-image" />
                                 <div v-else class="text-center py-6">
                                     <v-icon size="40" color="#475569" class="mb-2">mdi-file-document-outline</v-icon>
                                     <div class="text-caption" style="color: #64748b">Vorschau nicht verfügbar.</div>
                                     <v-btn
+                                        v-if="previewDownloadUrl"
                                         variant="tonal"
                                         color="primary"
                                         size="small"
                                         rounded="lg"
                                         class="text-none mt-2"
                                         :disabled="isPageActionLocked"
-                                        :href="previewUrl"
+                                        :href="previewDownloadUrl"
                                         target="_blank">
                                         Herunterladen
                                     </v-btn>
@@ -812,6 +905,13 @@
                                     density="comfortable"
                                     hide-details="auto"
                                     class="mb-3" />
+                                <v-checkbox
+                                    v-model="unitForm.is_exam"
+                                    label="Prüfung"
+                                    color="warning"
+                                    density="comfortable"
+                                    hide-details
+                                    class="curriculum-detail__unit-exam-checkbox mb-3" />
                                 <div v-if="unitFormError" class="curriculum-detail__topic-form-error mb-3">
                                     {{ unitFormError }}
                                 </div>
@@ -884,6 +984,62 @@
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
+
+                <v-dialog v-model="materialAttachmentDialogOpen" max-width="640" persistent>
+                    <v-card rounded="xl">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                            <v-icon color="primary" size="22">mdi-paperclip</v-icon>
+                            Anhang auswählen
+                        </v-card-title>
+                        <v-card-text class="px-4 pb-2">
+                            <div class="text-body-2 mb-3" style="color: #475569">
+                                {{ materialAttachmentDocument?.name || 'Material' }}
+                            </div>
+                            <div v-if="materialAttachmentLoading" class="text-center py-6">
+                                <v-progress-circular indeterminate color="primary" size="24" />
+                            </div>
+                            <div v-else-if="materialAttachmentError" class="text-caption py-4" style="color: #b91c1c">
+                                {{ materialAttachmentError }}
+                            </div>
+                            <v-list
+                                v-else-if="materialAttachmentOptions.length"
+                                bg-color="transparent"
+                                density="compact"
+                                class="py-0"
+                                style="max-height: 360px; overflow-y: auto">
+                                <v-list-item
+                                    v-for="attachment in materialAttachmentOptions"
+                                    :key="attachment.id"
+                                    class="lehrplaene__material-item lehrplaene__attachment-item mb-1 px-3"
+                                    rounded="lg"
+                                    :active="selectedMaterialAttachmentId === attachment.id"
+                                    :disabled="savingMaterialAttachment"
+                                    @click="selectMaterialAttachment(attachment)">
+                                    <template #prepend>
+                                        <v-icon size="18" color="#a5b4fc" class="mr-2">
+                                            {{ attachment.mime_type?.startsWith('image/') ? 'mdi-file-image-outline' : 'mdi-file-document-outline' }}
+                                        </v-icon>
+                                    </template>
+                                    <v-list-item-title class="text-body-2">{{ attachment.name }}</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatBytes(attachment.size_bytes) }}</span>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-icon v-if="selectedMaterialAttachmentId === attachment.id" size="18" color="primary">
+                                            mdi-check-circle
+                                        </v-icon>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                            <div v-else class="text-center py-6 text-caption" style="color: #64748b">
+                                Dieses Material hat keine auswählbaren Anhänge.
+                            </div>
+                        </v-card-text>
+                        <v-card-actions class="px-4 pb-4">
+                            <v-btn variant="tonal" :disabled="savingMaterialAttachment" @click="closeMaterialAttachmentDialog">Schließen</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
             </div>
         </div>
     </div>
@@ -909,22 +1065,7 @@ export default {
     emits: ['back', 'updated'],
 
     mounted() {
-        this.$nextTick(() => {
-            const el = this.$refs.calendarCol
-            if (!el) return
-            this.calendarWidth = el.offsetWidth
-            this._resizeObserver = new ResizeObserver(() => {
-                this.calendarWidth = el.offsetWidth
-            })
-            this._resizeObserver.observe(el)
-        })
         this.loadDocuments()
-    },
-
-    beforeUnmount() {
-        if (this._resizeObserver) {
-            this._resizeObserver.disconnect()
-        }
     },
 
     data() {
@@ -942,11 +1083,16 @@ export default {
         return {
             selectedHalf: 'first',
             selectedYear: initYear,
-            calendarWidth: 0,
-            _resizeObserver: null,
             documents: [],
             docsLoading: false,
             materialDialogOpen: false,
+            materialAttachmentDialogOpen: false,
+            materialAttachmentDocument: null,
+            materialAttachmentOptions: [],
+            materialAttachmentLoading: false,
+            materialAttachmentError: null,
+            savingMaterialAttachment: false,
+            selectedMaterialAttachmentId: null,
             materialSearch: '',
             materialResults: [],
             materialsLoading: false,
@@ -985,19 +1131,22 @@ export default {
         },
 
         previewUrl() {
-            if (!this.previewDoc) return null
-            return `/api/admin/teaching/curricula/${this.curriculum.id}/documents/${this.previewDoc.id}/download`
+            return this.previewDoc?.preview_url || null
+        },
+
+        previewDownloadUrl() {
+            return this.previewDoc?.download_url || null
         },
 
         previewIsPdf() {
             if (!this.previewDoc) return false
-            const mime = (this.previewDoc.mime_type || '').toLowerCase()
+            const mime = (this.previewDoc.preview_mime_type || this.previewDoc.mime_type || '').toLowerCase()
             return mime === 'application/pdf'
         },
 
         previewIsImage() {
             if (!this.previewDoc) return false
-            const mime = (this.previewDoc.mime_type || '').toLowerCase()
+            const mime = (this.previewDoc.preview_mime_type || this.previewDoc.mime_type || '').toLowerCase()
             return mime.startsWith('image/')
         },
 
@@ -1016,14 +1165,6 @@ export default {
 
         curriculumScopeLabel() {
             return (this.curriculum.semester_count ?? 2) === 1 ? 'Ganzes Semester' : 'Ganzes Jahr'
-        },
-
-        calendarHint() {
-            if (this.isWeekSelectionActive && this.activeAssignmentItem) {
-                return `${this.activeAssignmentItemLabel} "${this.activeAssignmentItem.title}" ist im Wochenmodus aktiv. Wochen können links direkt ausgewählt werden, freie Wochen sind davon ausgenommen.`
-            }
-
-            return 'Wochen können direkt per Kalender-Icon als unterrichtsfrei markiert werden.'
         },
 
         assignableMonths() {
@@ -1149,6 +1290,7 @@ export default {
                 topicId,
                 id: unit?.id || null,
                 title: unit?.title || '',
+                is_exam: Boolean(unit?.is_exam),
             }
         },
 
@@ -1199,7 +1341,12 @@ export default {
         },
 
         normalizeUnit(unit = null, index = 0) {
-            return this.normalizeAssignmentEntry(unit, index, 'unit')
+            const normalizedUnit = unit && typeof unit === 'object' ? unit : {}
+
+            return {
+                ...this.normalizeAssignmentEntry(normalizedUnit, index, 'unit'),
+                is_exam: Boolean(normalizedUnit.is_exam),
+            }
         },
 
         buildUnitPayload(unit = null, overrides = {}) {
@@ -1207,6 +1354,407 @@ export default {
                 ...(unit && typeof unit === 'object' ? unit : {}),
                 ...overrides,
             })
+        },
+
+        assignmentState(item = null) {
+            const normalizedItem = item && typeof item === 'object' ? item : {}
+            const assignmentType = ['none', 'all_weeks', 'month', 'weeks'].includes(normalizedItem.assignment_type)
+                ? normalizedItem.assignment_type
+                : 'none'
+
+            return {
+                assignment_type: assignmentType,
+                month_keys: assignmentType === 'month' ? [...normalizedItem.month_keys] : [],
+                week_keys: assignmentType === 'weeks' ? [...normalizedItem.week_keys] : [],
+            }
+        },
+
+        clearAssignment(item = null) {
+            return {
+                ...(item && typeof item === 'object' ? item : {}),
+                assignment_type: 'none',
+                month_key: null,
+                month_keys: [],
+                week_keys: [],
+            }
+        },
+
+        applyMonthAssignment(item = null, monthKeys = []) {
+            const nextMonthKeys = [...new Set((Array.isArray(monthKeys) ? monthKeys : []).filter(Boolean).map((monthKey) => String(monthKey).trim()))].sort()
+
+            return {
+                ...(item && typeof item === 'object' ? item : {}),
+                assignment_type: 'month',
+                month_key: nextMonthKeys[0] ?? null,
+                month_keys: nextMonthKeys,
+                week_keys: [],
+            }
+        },
+
+        applyWeekAssignment(item = null, weekKeys = []) {
+            const nextWeekKeys = [...new Set((Array.isArray(weekKeys) ? weekKeys : []).filter(Boolean).map((weekKey) => String(weekKey).trim()))].sort()
+
+            return {
+                ...(item && typeof item === 'object' ? item : {}),
+                assignment_type: 'weeks',
+                month_key: null,
+                month_keys: [],
+                week_keys: nextWeekKeys,
+            }
+        },
+
+        monthKeyFromWeekKey(weekKey) {
+            return String(weekKey).slice(0, 7)
+        },
+
+        visibleWeekKeys() {
+            return this.visibleMonths.flatMap((month) => (
+                Array.isArray(month.weeks)
+                    ? month.weeks.map((week) => week.weekKey).filter(Boolean)
+                    : []
+            ))
+        },
+
+        shiftWeekKeyByWeeks(weekKey, delta) {
+            const baseDate = new Date(`${weekKey}T00:00:00`)
+            if (Number.isNaN(baseDate.getTime())) {
+                return null
+            }
+
+            const shiftedDate = new Date(baseDate)
+            shiftedDate.setDate(shiftedDate.getDate() + (delta * 7))
+
+            return this.formatDateKey(shiftedDate)
+        },
+
+        resolveShiftedWeekKey(weekKey, delta, validWeekKeys, freeWeekKeys) {
+            if (!weekKey || !Number.isInteger(delta) || delta === 0) {
+                return {
+                    weekKey,
+                    errorMessage: null,
+                }
+            }
+
+            const stepDirection = delta < 0 ? -1 : 1
+            let shiftedWeekKey = this.shiftWeekKeyByWeeks(weekKey, delta)
+
+            if (!shiftedWeekKey || !validWeekKeys.has(shiftedWeekKey)) {
+                return {
+                    weekKey: null,
+                    errorMessage: 'Die Wochensequenz kann nicht außerhalb des sichtbaren Zeitraums verschoben werden.',
+                }
+            }
+
+            while (freeWeekKeys.has(shiftedWeekKey)) {
+                shiftedWeekKey = this.shiftWeekKeyByWeeks(shiftedWeekKey, stepDirection)
+
+                if (!shiftedWeekKey || !validWeekKeys.has(shiftedWeekKey)) {
+                    return {
+                        weekKey: null,
+                        errorMessage: 'Die Wochensequenz kann nicht außerhalb des sichtbaren Zeitraums verschoben werden.',
+                    }
+                }
+            }
+
+            return {
+                weekKey: shiftedWeekKey,
+                errorMessage: null,
+            }
+        },
+
+        resolveWeekSequenceDelta(sourceWeekKey, delta, validWeekKeys, freeWeekKeys) {
+            const { weekKey, errorMessage } = this.resolveShiftedWeekKey(
+                sourceWeekKey,
+                delta,
+                validWeekKeys,
+                freeWeekKeys,
+            )
+
+            if (errorMessage || !weekKey) {
+                return {
+                    effectiveDelta: null,
+                    errorMessage,
+                }
+            }
+
+            const sourceDate = new Date(`${sourceWeekKey}T00:00:00`)
+            const targetDate = new Date(`${weekKey}T00:00:00`)
+
+            return {
+                effectiveDelta: Math.round((targetDate.getTime() - sourceDate.getTime()) / (7 * 24 * 60 * 60 * 1000)),
+                errorMessage: null,
+            }
+        },
+
+        assignmentStatesOverlap(first, second) {
+            if (!first || !second || first.assignment_type === 'none' || second.assignment_type === 'none') {
+                return false
+            }
+
+            if (first.assignment_type === 'all_weeks' || second.assignment_type === 'all_weeks') {
+                return true
+            }
+
+            if (first.assignment_type === 'month' && second.assignment_type === 'month') {
+                return first.month_keys.some((monthKey) => second.month_keys.includes(monthKey))
+            }
+
+            if (first.assignment_type === 'month' && second.assignment_type === 'weeks') {
+                return second.week_keys.some((weekKey) => first.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
+            }
+
+            if (first.assignment_type === 'weeks' && second.assignment_type === 'month') {
+                return first.week_keys.some((weekKey) => second.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
+            }
+
+            return first.week_keys.some((weekKey) => second.week_keys.includes(weekKey))
+        },
+
+        assignmentSequenceEntries() {
+            return this.curriculumTopics.flatMap((topic) => {
+                const entries = [{
+                    topicId: topic.id,
+                    unitId: null,
+                }]
+
+                topic.units.forEach((unit) => {
+                    entries.push({
+                        topicId: topic.id,
+                        unitId: unit.id,
+                    })
+                })
+
+                return entries
+            })
+        },
+
+        buildShiftedTopicsForWeekSequence(sourceWeekKey, delta) {
+            const validWeekKeys = new Set(this.visibleWeekKeys())
+            const freeWeekKeys = new Set(this.freeWeekKeys)
+            const sequenceEntries = this.assignmentSequenceEntries()
+            const sourceTopicId = this.activeTopicAssignmentId
+            const sourceUnitId = this.activeTopicAssignmentUnitId ?? null
+            const sourceSequenceIndex = sequenceEntries.findIndex((entry) => (
+                entry.topicId === sourceTopicId && entry.unitId === sourceUnitId
+            ))
+            const { effectiveDelta, errorMessage: deltaErrorMessage } = this.resolveWeekSequenceDelta(
+                sourceWeekKey,
+                delta,
+                validWeekKeys,
+                freeWeekKeys,
+            )
+            let hasShiftedWeeks = false
+            let errorMessage = deltaErrorMessage
+
+            if (sourceSequenceIndex === -1) {
+                return {
+                    topics: null,
+                    errorMessage: 'Die aktive Datumszuordnung konnte nicht gefunden werden.',
+                }
+            }
+
+            const shiftWeekKeys = (weekKeys, mode = 'all') => {
+                const nextWeekKeys = [...new Set((Array.isArray(weekKeys) ? weekKeys : []).filter(Boolean))]
+                    .map((weekKey) => {
+                        if (
+                            errorMessage
+                            || mode === 'none'
+                            || (mode === 'tail' && weekKey < sourceWeekKey)
+                        ) {
+                            return weekKey
+                        }
+
+                        hasShiftedWeeks = true
+
+                        const shiftedWeek = this.resolveShiftedWeekKey(
+                            weekKey,
+                            effectiveDelta,
+                            validWeekKeys,
+                            freeWeekKeys,
+                        )
+
+                        if (shiftedWeek.errorMessage || !shiftedWeek.weekKey) {
+                            errorMessage = shiftedWeek.errorMessage
+                            return weekKey
+                        }
+
+                        return shiftedWeek.weekKey
+                    })
+                    .sort()
+
+                if (!errorMessage && new Set(nextWeekKeys).size !== nextWeekKeys.length) {
+                    errorMessage = 'Durch das Verschieben würden Wochen doppelt belegt.'
+                }
+
+                return nextWeekKeys
+            }
+
+            const nextTopics = this.curriculumTopics.map((topic) => {
+                const topicSequenceIndex = sequenceEntries.findIndex((entry) => (
+                    entry.topicId === topic.id && entry.unitId === null
+                ))
+                let nextTopic = this.buildTopicPayload(topic)
+
+                if (nextTopic.assignment_type === 'weeks') {
+                    const topicShiftMode = topicSequenceIndex < sourceSequenceIndex
+                        ? 'none'
+                        : topicSequenceIndex === sourceSequenceIndex
+                            ? 'tail'
+                            : 'all'
+
+                    nextTopic = this.buildTopicPayload(nextTopic, {
+                        week_keys: shiftWeekKeys(nextTopic.week_keys, topicShiftMode),
+                    })
+                }
+
+                const nextUnits = nextTopic.units.map((unit) => {
+                    if (unit.assignment_type !== 'weeks') {
+                        return this.buildUnitPayload(unit)
+                    }
+
+                    const unitSequenceIndex = sequenceEntries.findIndex((entry) => (
+                        entry.topicId === topic.id && entry.unitId === unit.id
+                    ))
+                    const unitShiftMode = unitSequenceIndex < sourceSequenceIndex
+                        ? 'none'
+                        : unitSequenceIndex === sourceSequenceIndex
+                            ? 'tail'
+                            : 'all'
+
+                    return this.buildUnitPayload(unit, {
+                        week_keys: shiftWeekKeys(unit.week_keys, unitShiftMode),
+                    })
+                })
+
+                nextTopic = this.buildTopicPayload(nextTopic, { units: nextUnits })
+
+                if (!errorMessage) {
+                    const topicState = this.assignmentState(nextTopic)
+
+                    nextUnits.forEach((unit) => {
+                        if (errorMessage) {
+                            return
+                        }
+
+                        if (this.assignmentStatesOverlap(topicState, this.assignmentState(unit))) {
+                            errorMessage = 'Durch das Verschieben würden sich Datumszuordnungen innerhalb eines Themas überschneiden.'
+                        }
+                    })
+                }
+
+                return nextTopic
+            })
+
+            if (!errorMessage && !hasShiftedWeeks) {
+                errorMessage = 'Für diese Woche gibt es keine nachfolgenden Zuordnungen zum Verschieben.'
+            }
+
+            return {
+                topics: errorMessage ? null : nextTopics,
+                errorMessage,
+            }
+        },
+
+        canShiftWeekSequence(weekKey, delta) {
+            if (
+                this.topicSaving
+                || !this.isWeekSelectionActive
+                || !weekKey
+                || !Number.isInteger(delta)
+            ) {
+                return false
+            }
+
+            return !this.buildShiftedTopicsForWeekSequence(weekKey, delta).errorMessage
+        },
+
+        async shiftWeekSequence(weekKey, delta, fallbackMessage) {
+            if (this.topicSaving || !this.isWeekSelectionActive) {
+                return
+            }
+
+            const { topics, errorMessage } = this.buildShiftedTopicsForWeekSequence(weekKey, delta)
+
+            if (errorMessage || !topics) {
+                useNotificationStore().notify({
+                    message: errorMessage || fallbackMessage,
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            this.topicSaving = true
+
+            try {
+                await this.persistCurriculum({
+                    topics,
+                }, fallbackMessage)
+            } finally {
+                this.topicSaving = false
+            }
+        },
+
+        removeAssignmentOverlap(target, blocking) {
+            const targetState = this.assignmentState(target)
+            const blockingState = this.assignmentState(blocking)
+
+            if (targetState.assignment_type === 'none' || blockingState.assignment_type === 'none') {
+                return target
+            }
+
+            if (targetState.assignment_type === 'all_weeks' || blockingState.assignment_type === 'all_weeks') {
+                return this.clearAssignment(target)
+            }
+
+            if (targetState.assignment_type === 'month') {
+                const blockingMonths = blockingState.assignment_type === 'month'
+                    ? blockingState.month_keys
+                    : [...new Set(blockingState.week_keys.map((weekKey) => this.monthKeyFromWeekKey(weekKey)))]
+                const remainingMonthKeys = targetState.month_keys.filter((monthKey) => !blockingMonths.includes(monthKey))
+
+                return remainingMonthKeys.length
+                    ? this.applyMonthAssignment(target, remainingMonthKeys)
+                    : this.clearAssignment(target)
+            }
+
+            const remainingWeekKeys = blockingState.assignment_type === 'month'
+                ? targetState.week_keys.filter((weekKey) => !blockingState.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
+                : targetState.week_keys.filter((weekKey) => !blockingState.week_keys.includes(weekKey))
+
+            return remainingWeekKeys.length
+                ? this.applyWeekAssignment(target, remainingWeekKeys)
+                : this.clearAssignment(target)
+        },
+
+        reconcileTopicUnitAssignments(topic, winner = null) {
+            const normalizedTopic = this.buildTopicPayload(topic)
+            const units = normalizedTopic.units.map((unit) => this.buildUnitPayload(unit))
+
+            if (winner === 'topic') {
+                return {
+                    ...normalizedTopic,
+                    units: units.map((unit) => this.removeAssignmentOverlap(unit, normalizedTopic)),
+                }
+            }
+
+            if (winner === 'units') {
+                let nextTopic = normalizedTopic
+
+                units.forEach((unit) => {
+                    nextTopic = this.removeAssignmentOverlap(nextTopic, unit)
+                })
+
+                return {
+                    ...nextTopic,
+                    units,
+                }
+            }
+
+            return {
+                ...normalizedTopic,
+                units,
+            }
         },
 
         findTopic(topicId) {
@@ -1234,9 +1782,7 @@ export default {
                 return
             }
 
-            this.activeTopicAssignmentId = topic.id
-            this.activeTopicAssignmentUnitId = null
-            this.activeTopicAssignmentType = topic.assignment_type
+            this.openTopicAssignmentEditor(topic)
         },
 
         toggleUnitAssignmentEditor(topic, unit) {
@@ -1245,9 +1791,40 @@ export default {
                 return
             }
 
+            this.openUnitAssignmentEditor(topic, unit)
+        },
+
+        openTopicAssignmentEditor(topic, assignmentType = null) {
+            if (
+                !topic
+                || this.topicSaving
+                || this.isEditingTopic
+                || this.isEditingUnit
+                || (this.activeTopicAssignmentId !== null && !this.isTopicAssignmentEditorOpen(topic.id))
+            ) {
+                return
+            }
+
+            this.activeTopicAssignmentId = topic.id
+            this.activeTopicAssignmentUnitId = null
+            this.activeTopicAssignmentType = assignmentType ?? topic.assignment_type
+        },
+
+        openUnitAssignmentEditor(topic, unit, assignmentType = null) {
+            if (
+                !topic
+                || !unit
+                || this.topicSaving
+                || this.isEditingTopic
+                || this.isEditingUnit
+                || (this.activeTopicAssignmentId !== null && !this.isUnitAssignmentEditorOpen(topic.id, unit.id))
+            ) {
+                return
+            }
+
             this.activeTopicAssignmentId = topic.id
             this.activeTopicAssignmentUnitId = unit.id
-            this.activeTopicAssignmentType = unit.assignment_type
+            this.activeTopicAssignmentType = assignmentType ?? unit.assignment_type
         },
 
         promptDeleteTopic(topic) {
@@ -1347,12 +1924,102 @@ export default {
             return item?.assignment_type === 'all_weeks' ? 'flat' : 'tonal'
         },
 
+        overlappingWeekAssignmentKeys() {
+            const counts = new Map()
+
+            this.curriculumTopics.forEach((topic) => {
+                if (topic.assignment_type === 'weeks') {
+                    topic.week_keys.forEach((weekKey) => {
+                        counts.set(weekKey, (counts.get(weekKey) || 0) + 1)
+                    })
+                }
+
+                topic.units.forEach((unit) => {
+                    if (unit.assignment_type !== 'weeks') {
+                        return
+                    }
+
+                    unit.week_keys.forEach((weekKey) => {
+                        counts.set(weekKey, (counts.get(weekKey) || 0) + 1)
+                    })
+                })
+            })
+
+            return new Set(
+                [...counts.entries()]
+                    .filter(([, count]) => count > 1)
+                    .map(([weekKey]) => weekKey),
+            )
+        },
+
+        weekAssignmentChipColor(weekKey) {
+            return this.overlappingWeekAssignmentKeys().has(weekKey) ? 'warning' : 'primary'
+        },
+
+        topicInheritedAssignmentChips(topic) {
+            if (!topic || topic.assignment_type !== 'none' || !Array.isArray(topic.units)) {
+                return []
+            }
+
+            const monthKeys = new Set()
+            const weekKeys = new Set()
+            let hasAllWeeksAssignment = false
+
+            topic.units.forEach((unit) => {
+                const assignment = this.assignmentState(unit)
+
+                if (assignment.assignment_type === 'all_weeks') {
+                    hasAllWeeksAssignment = true
+                    return
+                }
+
+                if (assignment.assignment_type === 'month') {
+                    assignment.month_keys.forEach((monthKey) => monthKeys.add(monthKey))
+                    return
+                }
+
+                if (assignment.assignment_type === 'weeks') {
+                    assignment.week_keys.forEach((weekKey) => weekKeys.add(weekKey))
+                }
+            })
+
+            const chips = []
+
+            if (hasAllWeeksAssignment) {
+                chips.push({
+                    key: 'all-weeks',
+                    label: this.curriculumScopeLabel,
+                })
+            }
+
+            ;[...monthKeys].sort().forEach((monthKey) => {
+                chips.push({
+                    key: `month-${monthKey}`,
+                    label: this.monthChipLabel(monthKey),
+                })
+            })
+
+            ;[...weekKeys].sort().forEach((weekKey) => {
+                chips.push({
+                    key: `week-${weekKey}`,
+                    label: this.weekChipLabel(weekKey),
+                    color: this.weekAssignmentChipColor(weekKey),
+                })
+            })
+
+            return chips
+        },
+
         shouldShowAssignmentSummaryChip(item) {
             if (!item) {
                 return false
             }
 
             if (item.assignment_type === 'month' || item.assignment_type === 'weeks') {
+                return false
+            }
+
+            if (item.assignment_type === 'none' && this.topicInheritedAssignmentChips(item).length) {
                 return false
             }
 
@@ -1373,9 +2040,9 @@ export default {
                 }
 
                 if (topic.assignment_type === 'all_weeks') {
-                    entries.push({ id: topic.id, title: topic.title })
+                    entries.push({ id: topic.id, title: topic.title, isExam: false })
                 } else if (topic.assignment_type === 'month' && topic.month_keys.includes(monthKey)) {
-                    entries.push({ id: topic.id, title: topic.title })
+                    entries.push({ id: topic.id, title: topic.title, isExam: false })
                 }
 
                 topic.units.forEach((unit) => {
@@ -1384,12 +2051,20 @@ export default {
                     }
 
                     if (unit.assignment_type === 'all_weeks') {
-                        entries.push({ id: `${topic.id}-${unit.id}`, title: unit.title })
+                        entries.push({
+                            id: `${topic.id}-${unit.id}`,
+                            title: this.overviewUnitTitle(topic, unit),
+                            isExam: Boolean(unit.is_exam),
+                        })
                         return
                     }
 
                     if (unit.assignment_type === 'month' && unit.month_keys.includes(monthKey)) {
-                        entries.push({ id: `${topic.id}-${unit.id}`, title: unit.title })
+                        entries.push({
+                            id: `${topic.id}-${unit.id}`,
+                            title: this.overviewUnitTitle(topic, unit),
+                            isExam: Boolean(unit.is_exam),
+                        })
                     }
                 })
 
@@ -1397,10 +2072,8 @@ export default {
             })
         },
 
-        monthTopicsLabel(month) {
-            return this.topicsForMonth(month)
-                .map((topic) => topic.title)
-                .join(', ')
+        monthHasExamEntries(month) {
+            return this.topicsForMonth(month).some((entry) => entry.isExam)
         },
 
         topicsForWeek(weekKey) {
@@ -1412,12 +2085,16 @@ export default {
                 const entries = []
 
                 if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)) {
-                    entries.push({ id: topic.id, title: topic.title })
+                    entries.push({ id: topic.id, title: topic.title, isExam: false })
                 }
 
                 topic.units.forEach((unit) => {
                     if (Boolean(unit.title) && unit.assignment_type === 'weeks' && unit.week_keys.includes(weekKey)) {
-                        entries.push({ id: `${topic.id}-${unit.id}`, title: unit.title })
+                        entries.push({
+                            id: `${topic.id}-${unit.id}`,
+                            title: this.overviewUnitTitle(topic, unit),
+                            isExam: Boolean(unit.is_exam),
+                        })
                     }
                 })
 
@@ -1425,10 +2102,23 @@ export default {
             })
         },
 
-        weekTopicsLabel(weekKey) {
-            return this.topicsForWeek(weekKey)
-                .map((topic) => topic.title)
-                .join(', ')
+        weekHasExamEntries(weekKey) {
+            return this.topicsForWeek(weekKey).some((entry) => entry.isExam)
+        },
+
+        overviewUnitTitle(topic, unit) {
+            const topicTitle = topic?.title?.trim()
+            const unitTitle = unit?.title?.trim()
+
+            if (!unitTitle) {
+                return ''
+            }
+
+            if (!topicTitle) {
+                return unitTitle
+            }
+
+            return `${topicTitle}: ${unitTitle}`
         },
 
         isWeekAssignedToActiveTopic(weekKey) {
@@ -1562,7 +2252,7 @@ export default {
         async persistTopicAssignment(topicId, overrides, fallbackMessage) {
             const nextTopics = this.curriculumTopics.map((topic) => (
                 topic.id === topicId
-                    ? this.buildTopicPayload(topic, overrides)
+                    ? this.reconcileTopicUnitAssignments(this.buildTopicPayload(topic, overrides), 'topic')
                     : this.buildTopicPayload(topic)
             ))
 
@@ -1583,13 +2273,13 @@ export default {
                     return this.buildTopicPayload(topic)
                 }
 
-                return this.buildTopicPayload(topic, {
+                return this.reconcileTopicUnitAssignments(this.buildTopicPayload(topic, {
                     units: topic.units.map((unit) => (
                         unit.id === unitId
                             ? this.buildUnitPayload(unit, overrides)
                             : this.buildUnitPayload(unit)
                     )),
-                })
+                }), 'units')
             })
 
             this.topicSaving = true
@@ -1823,6 +2513,7 @@ export default {
             const normalizedUnit = this.buildUnitPayload(existingUnit, {
                 id: unitId,
                 title,
+                is_exam: this.unitForm.is_exam,
                 assignment_type: existingUnit?.assignment_type ?? 'none',
             })
 
@@ -2015,6 +2706,11 @@ export default {
 
         selectPreview(doc) {
             if (this.isPageActionLocked) return
+            if (doc.source_type === 'material') {
+                this.openMaterialAttachmentDialog(doc)
+                return
+            }
+
             if (doc.source_type !== 'upload') return
             this.previewDoc = this.previewDoc?.id === doc.id ? null : doc
         },
@@ -2054,15 +2750,110 @@ export default {
         async attachMaterial(card) {
             if (this.isPageActionLocked) return
             try {
-                await axios.post(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/attach-material`, {
+                const res = await axios.post(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/attach-material`, {
                     material_card_id: card.id,
                 })
+                const attachedDocument = res.data?.data || null
                 this.materialDialogOpen = false
                 this.showUploadOptions = false
                 await this.loadDocuments()
+                if (attachedDocument?.id) {
+                    const nextDocument = this.documents.find((document) => document.id === attachedDocument.id) || attachedDocument
+                    await this.openMaterialAttachmentDialog(nextDocument)
+                }
             } catch {
                 // silent
             }
+        },
+
+        async openMaterialAttachmentDialog(doc) {
+            if (this.isPageActionLocked || !doc || doc.source_type !== 'material') return
+
+            this.materialAttachmentDialogOpen = true
+            this.materialAttachmentDocument = doc
+            this.materialAttachmentOptions = []
+            this.materialAttachmentError = null
+            this.selectedMaterialAttachmentId = doc.material_card_attachment_id || null
+            this.materialAttachmentLoading = true
+
+            try {
+                const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/${doc.id}/material-attachments`)
+                this.materialAttachmentOptions = res.data?.data || []
+                this.selectedMaterialAttachmentId = res.data?.meta?.selected_attachment_id ?? doc.material_card_attachment_id ?? null
+            } catch {
+                this.materialAttachmentOptions = []
+                this.materialAttachmentError = 'Die Anhänge des Materials konnten nicht geladen werden.'
+            } finally {
+                this.materialAttachmentLoading = false
+            }
+        },
+
+        closeMaterialAttachmentDialog() {
+            this.materialAttachmentDialogOpen = false
+            this.materialAttachmentDocument = null
+            this.materialAttachmentOptions = []
+            this.materialAttachmentError = null
+            this.selectedMaterialAttachmentId = null
+        },
+
+        async selectMaterialAttachment(attachment) {
+            if (
+                this.isPageActionLocked
+                || this.savingMaterialAttachment
+                || !this.materialAttachmentDocument
+                || !attachment?.id
+            ) {
+                return
+            }
+
+            this.savingMaterialAttachment = true
+
+            try {
+                const res = await axios.patch(
+                    `/api/admin/teaching/curricula/${this.curriculum.id}/documents/${this.materialAttachmentDocument.id}/material-attachment`,
+                    {
+                        material_card_attachment_id: attachment.id,
+                    },
+                )
+
+                const updatedDocument = res.data?.data || null
+                if (!updatedDocument) {
+                    return
+                }
+
+                this.documents = this.documents.map((document) => (
+                    document.id === updatedDocument.id ? updatedDocument : document
+                ))
+                this.previewDoc = updatedDocument
+                this.savingMaterialAttachment = false
+                this.closeMaterialAttachmentDialog()
+            } catch {
+                this.materialAttachmentError = 'Der ausgewählte Anhang konnte nicht gespeichert werden.'
+            } finally {
+                this.savingMaterialAttachment = false
+            }
+        },
+
+        formatBytes(bytes) {
+            const size = Number(bytes)
+            if (!Number.isFinite(size) || size <= 0) {
+                return ''
+            }
+
+            if (size < 1024) {
+                return `${size} B`
+            }
+
+            const units = ['KB', 'MB', 'GB']
+            let value = size / 1024
+            let unitIndex = 0
+
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024
+                unitIndex += 1
+            }
+
+            return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
         },
     },
 }
@@ -2122,11 +2913,7 @@ export default {
     align-items: flex-start;
     gap: 16px;
     flex-shrink: 0;
-}
-
-.curriculum-detail__free-week-hint {
-    width: 100%;
-    max-width: 420px;
+    width: clamp(430px, 29vw, 500px);
 }
 
 .curriculum-detail__month {
@@ -2162,13 +2949,17 @@ export default {
 }
 
 .curriculum-detail__month-year {
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: 600;
     color: #64748b;
 }
 
 .curriculum-detail__month--with-topics {
     box-shadow: 0 0 0 1px rgba(165, 180, 252, 0.08), 0 14px 30px rgba(15, 23, 42, 0.24);
+}
+
+.curriculum-detail__month--with-exams {
+    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2), 0 14px 30px rgba(120, 53, 15, 0.22);
 }
 
 .curriculum-detail__month-topics {
@@ -2188,13 +2979,36 @@ export default {
 }
 
 .curriculum-detail__month-topics-text {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    column-gap: 10px;
+    row-gap: 4px;
     color: #dbeafe;
     font-size: 0.78rem;
     font-weight: 600;
     line-height: 1.3;
+}
+
+.curriculum-detail__overview-entry {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    color: inherit;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.curriculum-detail__overview-entry--exam {
+    color: #fde68a;
+    text-shadow: 0 0 12px rgba(245, 158, 11, 0.24);
+}
+
+.curriculum-detail__overview-entry-icon {
+    color: currentColor;
+    flex-shrink: 0;
 }
 
 /* ---------- Weeks ---------- */
@@ -2203,7 +3017,7 @@ export default {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 6px;
+    gap: 4px;
     width: 100%;
 }
 
@@ -2250,16 +3064,15 @@ export default {
 }
 
 .curriculum-detail__week--free {
-    background: rgba(245, 158, 11, 0.12) !important;
-    border-color: rgba(245, 158, 11, 0.35) !important;
-    box-shadow: 0 0 16px rgba(245, 158, 11, 0.1);
+    background: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.35) !important;
+    box-shadow: 0 0 16px rgba(34, 197, 94, 0.12);
 }
 
 .curriculum-detail__week--with-topics {
     border-color: rgba(96, 165, 250, 0.48);
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(30, 41, 59, 0.9) 42%, rgba(15, 23, 42, 0.82));
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
-    padding-bottom: 24px;
 }
 
 .curriculum-detail__week--with-topics:hover {
@@ -2272,7 +3085,7 @@ export default {
     display: flex;
     flex-direction: column;
     align-items: center;
-    min-width: 36px;
+    min-width: 32px;
     flex-shrink: 0;
 }
 
@@ -2294,7 +3107,7 @@ export default {
 /* ---------- Days grid ---------- */
 .curriculum-detail__week-days {
     display: flex;
-    gap: 3px;
+    gap: 2px;
     flex: 1;
 }
 
@@ -2303,8 +3116,8 @@ export default {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 38px;
     border-radius: 10px;
     background: rgba(30, 41, 59, 0.5);
     border: 1px solid rgba(148, 163, 184, 0.06);
@@ -2323,7 +3136,7 @@ export default {
 }
 
 .curriculum-detail__day-name {
-    font-size: 0.58rem;
+    font-size: 0.54rem;
     font-weight: 700;
     color: #64748b;
     text-transform: uppercase;
@@ -2352,12 +3165,12 @@ export default {
     color: #475569;
     font-weight: 500;
     white-space: nowrap;
-    min-width: 80px;
+    min-width: 64px;
     text-align: right;
 }
 
 .curriculum-detail__week--free .curriculum-detail__week-range {
-    color: #fcd34d;
+    color: #86efac;
 }
 
 .curriculum-detail__week--with-topics .curriculum-detail__week-range {
@@ -2373,13 +3186,14 @@ export default {
 }
 
 .curriculum-detail__week-topics {
-    position: absolute;
-    left: 12px;
-    right: 112px;
-    bottom: 6px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    order: 4;
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    column-gap: 10px;
+    row-gap: 4px;
+    margin-top: -2px;
     color: #dbeafe;
     font-size: 0.74rem;
     font-weight: 600;
@@ -2390,6 +3204,17 @@ export default {
 .curriculum-detail__week--with-topics .curriculum-detail__week-topics {
     color: #eff6ff;
     text-shadow: 0 1px 10px rgba(37, 99, 235, 0.22);
+}
+
+.curriculum-detail__week--with-exams {
+    border-color: rgba(251, 191, 36, 0.26);
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.68) 0%, rgba(120, 53, 15, 0.18) 100%);
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.06), 0 8px 18px rgba(120, 53, 15, 0.14);
+}
+
+.curriculum-detail__week--with-exams .curriculum-detail__week-topics {
+    color: #fef3c7;
+    text-shadow: 0 1px 14px rgba(245, 158, 11, 0.28);
 }
 
 .curriculum-detail__week-chip {
@@ -2431,6 +3256,11 @@ export default {
         radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 34%),
         linear-gradient(135deg, rgba(30, 41, 59, 0.96) 0%, rgba(17, 24, 39, 0.98) 100%);
     box-shadow: 0 16px 36px rgba(2, 6, 23, 0.34);
+}
+
+.curriculum-detail__side-card--content {
+    width: clamp(420px, 36vw, 640px);
+    max-width: 100%;
 }
 
 .curriculum-detail__side-card--content .curriculum-detail__side-card-body {
@@ -2576,6 +3406,10 @@ export default {
     font-weight: 600;
 }
 
+.curriculum-detail__topic-meta-chip--interactive {
+    cursor: pointer;
+}
+
 .curriculum-detail__topic-meta-chips {
     display: flex;
     flex-wrap: wrap;
@@ -2640,6 +3474,15 @@ export default {
     line-height: 1.35;
 }
 
+.curriculum-detail__unit-exam-checkbox :deep(.v-selection-control) {
+    min-height: 34px;
+}
+
+.curriculum-detail__unit-exam-checkbox :deep(.v-label) {
+    color: #334155;
+    font-weight: 600;
+}
+
 .curriculum-detail__unit-empty {
     margin-left: 14px;
     font-size: 0.8rem;
@@ -2647,8 +3490,16 @@ export default {
 }
 
 .curriculum-detail__topic-assignment-panel {
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
-    padding-top: 10px;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(129, 140, 248, 0.34);
+    background:
+        linear-gradient(180deg, rgba(49, 46, 129, 0.18), rgba(15, 23, 42, 0.48)),
+        rgba(15, 23, 42, 0.72);
+    box-shadow:
+        inset 0 0 0 1px rgba(165, 180, 252, 0.06),
+        0 10px 24px rgba(15, 23, 42, 0.28);
 }
 
 .curriculum-detail__topic-assignment-options {
@@ -2656,14 +3507,16 @@ export default {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(129, 140, 248, 0.16);
 }
 
 .curriculum-detail__topic-assignment-months,
 .curriculum-detail__topic-assignment-weeks {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
+    gap: 10px;
+    margin-top: 12px;
 }
 
 .curriculum-detail__topic-assignment-weeks {
@@ -2671,9 +3524,38 @@ export default {
     align-items: flex-start;
 }
 
+.curriculum-detail__assignment-week-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+
+.curriculum-detail__assignment-week-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__assignment-week-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
 .curriculum-detail__topic-assignment-hint {
     font-size: 0.8rem;
-    color: #bfdbfe;
+    color: #dbeafe;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.18);
 }
 
 .curriculum-detail__assignment-chip {
@@ -2748,10 +3630,23 @@ export default {
     border: 1px solid rgba(148, 163, 184, 0.08);
 }
 
+.lehrplaene__item-copy {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
 .lehrplaene__item-name {
     font-size: 0.82rem;
     color: #cbd5e1;
     font-weight: 500;
+}
+
+.lehrplaene__item-subtitle {
+    font-size: 0.72rem;
+    color: #94a3b8;
 }
 
 .lehrplaene__item--clickable {
@@ -2816,6 +3711,11 @@ export default {
     background: rgba(99, 102, 241, 0.12);
 }
 
+.lehrplaene__attachment-item.v-list-item--active {
+    background: rgba(99, 102, 241, 0.18);
+    border-color: rgba(129, 140, 248, 0.34);
+}
+
 @media (max-width: 900px) {
     .curriculum-detail__body {
         grid-template-columns: 1fr;
@@ -2825,17 +3725,16 @@ export default {
     .curriculum-detail__side-card {
         position: static;
     }
+
+    .curriculum-detail__side-card--content {
+        width: 100%;
+    }
 }
 
 @media (max-width: 700px) {
-    .curriculum-detail__week-topics {
-        left: 10px;
-        right: 92px;
-    }
-
     .curriculum-detail__day {
-        width: 34px;
-        height: 36px;
+        width: 30px;
+        height: 34px;
     }
 
     .curriculum-detail__week-range {
