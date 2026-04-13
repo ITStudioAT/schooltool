@@ -49,6 +49,27 @@
                     </div>
                 </div>
             </div>
+            <v-sheet rounded="xl" class="curriculum-detail__view-toolbar pa-3 mt-3">
+                <div class="curriculum-detail__week-view">
+                    <div class="curriculum-detail__week-view-label">Wochenansicht</div>
+                    <v-btn-toggle
+                        v-model="weekDisplayMode"
+                        mandatory
+                        color="primary"
+                        density="compact"
+                        rounded="lg"
+                        class="curriculum-detail__week-view-toggle">
+                        <v-btn value="days" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                            <v-icon size="15" class="mr-1">mdi-calendar-week</v-icon>
+                            Mit Tagen
+                        </v-btn>
+                        <v-btn value="compact" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                            <v-icon size="15" class="mr-1">mdi-view-compact-outline</v-icon>
+                            Ohne Tage
+                        </v-btn>
+                    </v-btn-toggle>
+                </div>
+            </v-sheet>
         </div>
 
         <div v-if="(curriculum.semester_count ?? 2) === 1" class="curriculum-detail__semester-picker mb-4">
@@ -76,8 +97,12 @@
             </v-sheet>
         </div>
 
-        <div class="curriculum-detail__body">
-            <div class="curriculum-detail__calendar">
+        <div
+            class="curriculum-detail__body"
+            :class="{ 'curriculum-detail__body--compact-calendar': isCompactWeekView }">
+            <div
+                class="curriculum-detail__calendar"
+                :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }">
                 <div
                     v-for="(month, idx) in visibleMonths"
                     :key="month.key"
@@ -119,6 +144,7 @@
                                 'curriculum-detail__week--free': isFreeWeek(week.weekKey),
                                 'curriculum-detail__week--with-topics': topicsForWeek(week.weekKey).length > 0,
                                 'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
+                                'curriculum-detail__week--compact': isCompactWeekView,
                                 'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
                                 'curriculum-detail__week--topic-selected': isWeekAssignedToActiveTopic(week.weekKey),
                             }"
@@ -127,7 +153,7 @@
                                 <span class="curriculum-detail__week-kw">KW</span>
                                 <span class="curriculum-detail__week-num">{{ week.kw }}</span>
                             </div>
-                            <div class="curriculum-detail__week-days">
+                            <div v-if="showWeekdays" class="curriculum-detail__week-days">
                                 <div
                                     v-for="day in week.days"
                                     :key="day.date"
@@ -664,7 +690,7 @@
                 </div>
             </div>
 
-            <div class="curriculum-detail__side-card">
+            <div class="curriculum-detail__side-card curriculum-detail__side-card--documents">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-book-open-page-variant-outline</v-icon>
@@ -1083,6 +1109,7 @@ export default {
         return {
             selectedHalf: 'first',
             selectedYear: initYear,
+            weekDisplayMode: 'days',
             documents: [],
             docsLoading: false,
             materialDialogOpen: false,
@@ -1203,6 +1230,14 @@ export default {
 
         isPageActionLocked() {
             return this.isEditingTopic || this.isEditingUnit || this.activeTopicAssignmentId !== null
+        },
+
+        showWeekdays() {
+            return this.weekDisplayMode === 'days'
+        },
+
+        isCompactWeekView() {
+            return !this.showWeekdays
         },
 
         activeTopicAssignmentTopic() {
@@ -2871,6 +2906,11 @@ export default {
     gap: 16px;
 }
 
+.curriculum-detail__meta {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .curriculum-detail__title {
     font-size: 1.4rem;
     font-weight: 700;
@@ -2887,6 +2927,36 @@ export default {
 .curriculum-detail__picker-sheet {
     border: 1px solid rgba(99, 102, 241, 0.2);
     background: rgba(15, 23, 42, 0.7);
+}
+
+.curriculum-detail__view-toolbar {
+    border: 1px solid rgba(99, 102, 241, 0.16);
+    background: rgba(15, 23, 42, 0.55);
+}
+
+.curriculum-detail__week-view {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.curriculum-detail__week-view-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+
+.curriculum-detail__week-view-btn {
+    color: #c7d2fe !important;
+    border-color: rgba(148, 163, 184, 0.35) !important;
+}
+
+.curriculum-detail__week-view-toggle .v-btn--active.curriculum-detail__week-view-btn {
+    color: #fff !important;
 }
 
 .semester-toggle__btn {
@@ -2906,6 +2976,10 @@ export default {
     gap: 16px;
 }
 
+.curriculum-detail__body--compact-calendar {
+    grid-template-columns: auto clamp(420px, 36vw, 640px) minmax(420px, 1fr);
+}
+
 /* ---------- Calendar ---------- */
 .curriculum-detail__calendar {
     display: flex;
@@ -2914,6 +2988,14 @@ export default {
     gap: 16px;
     flex-shrink: 0;
     width: clamp(430px, 29vw, 500px);
+}
+
+.curriculum-detail__calendar--compact {
+    width: clamp(250px, 18vw, 300px);
+}
+
+.curriculum-detail__calendar--compact .curriculum-detail__month {
+    width: min(100%, 300px);
 }
 
 .curriculum-detail__month {
@@ -3034,6 +3116,11 @@ export default {
     position: relative;
     width: 100%;
     box-sizing: border-box;
+}
+
+.curriculum-detail__week--compact {
+    gap: 8px;
+    padding: 6px 8px;
 }
 
 .curriculum-detail__week:hover {
@@ -3169,6 +3256,10 @@ export default {
     text-align: right;
 }
 
+.curriculum-detail__week--compact .curriculum-detail__week-range {
+    min-width: auto;
+}
+
 .curriculum-detail__week--free .curriculum-detail__week-range {
     color: #86efac;
 }
@@ -3260,6 +3351,12 @@ export default {
 
 .curriculum-detail__side-card--content {
     width: clamp(420px, 36vw, 640px);
+    max-width: 100%;
+}
+
+.curriculum-detail__side-card--documents {
+    width: 100%;
+    min-width: 420px;
     max-width: 100%;
 }
 
@@ -3717,9 +3814,32 @@ export default {
 }
 
 @media (max-width: 900px) {
+    .curriculum-detail__title-row {
+        flex-direction: column;
+    }
+
+    .curriculum-detail__meta {
+        justify-content: flex-start;
+    }
+
+    .curriculum-detail__week-view {
+        align-items: flex-start;
+        justify-content: flex-start;
+        flex-direction: column;
+    }
+
     .curriculum-detail__body {
         grid-template-columns: 1fr;
         width: auto;
+    }
+
+    .curriculum-detail__calendar,
+    .curriculum-detail__calendar--compact {
+        width: 100%;
+    }
+
+    .curriculum-detail__side-card--documents {
+        min-width: 0;
     }
 
     .curriculum-detail__side-card {
