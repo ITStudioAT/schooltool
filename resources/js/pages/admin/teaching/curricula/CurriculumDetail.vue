@@ -50,24 +50,45 @@
                 </div>
             </div>
             <v-sheet rounded="xl" class="curriculum-detail__view-toolbar pa-3 mt-3">
-                <div class="curriculum-detail__week-view">
-                    <div class="curriculum-detail__week-view-label">Wochenansicht</div>
-                    <v-btn-toggle
-                        v-model="weekDisplayMode"
-                        mandatory
-                        color="primary"
-                        density="compact"
-                        rounded="lg"
-                        class="curriculum-detail__week-view-toggle">
-                        <v-btn value="days" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                            <v-icon size="15" class="mr-1">mdi-calendar-week</v-icon>
-                            Mit Tagen
-                        </v-btn>
-                        <v-btn value="compact" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                            <v-icon size="15" class="mr-1">mdi-view-compact-outline</v-icon>
-                            Ohne Tage
-                        </v-btn>
-                    </v-btn-toggle>
+                <div class="curriculum-detail__view-toolbar-row">
+                    <div class="curriculum-detail__week-view">
+                        <div class="curriculum-detail__week-view-label">Wochenansicht</div>
+                        <v-btn-toggle
+                            v-model="weekDisplayMode"
+                            mandatory
+                            color="primary"
+                            density="compact"
+                            rounded="lg"
+                            class="curriculum-detail__week-view-toggle">
+                            <v-btn value="days" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-calendar-week</v-icon>
+                                Mit Tagen
+                            </v-btn>
+                            <v-btn value="compact" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-view-compact-outline</v-icon>
+                                Ohne Tage
+                            </v-btn>
+                        </v-btn-toggle>
+                    </div>
+                    <div class="curriculum-detail__week-view">
+                        <div class="curriculum-detail__week-view-label">Lehrpläne</div>
+                        <v-btn-toggle
+                            v-model="showLehrplaeneCard"
+                            mandatory
+                            color="primary"
+                            density="compact"
+                            rounded="lg"
+                            class="curriculum-detail__week-view-toggle">
+                            <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-eye-outline</v-icon>
+                                Anzeigen
+                            </v-btn>
+                            <v-btn :value="false" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-eye-off-outline</v-icon>
+                                Ausblenden
+                            </v-btn>
+                        </v-btn-toggle>
+                    </div>
                 </div>
             </v-sheet>
         </div>
@@ -221,7 +242,7 @@
                 </div>
             </v-sheet>
 
-            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--content curriculum-detail__side-card--scrollable">
+            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--content">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-text-box-outline</v-icon>
@@ -692,7 +713,7 @@
                 </div>
             </v-sheet>
 
-            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
+            <v-sheet v-if="showLehrplaeneCard" rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-book-open-page-variant-outline</v-icon>
@@ -1112,6 +1133,7 @@ export default {
             selectedHalf: 'first',
             selectedYear: initYear,
             weekDisplayMode: 'days',
+            showLehrplaeneCard: true,
             documents: [],
             docsLoading: false,
             materialDialogOpen: false,
@@ -2936,12 +2958,18 @@ export default {
     background: rgba(15, 23, 42, 0.55);
 }
 
+.curriculum-detail__view-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+}
+
 .curriculum-detail__week-view {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 6px;
+    gap: 8px;
 }
 
 .curriculum-detail__week-view-label {

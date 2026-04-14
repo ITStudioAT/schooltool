@@ -280,8 +280,14 @@ export default {
 }
 
 .curricula-overview__toolbar {
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(30, 41, 59, 0.75);
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 52%),
+        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.93));
+    box-shadow:
+        0 10px 24px rgba(15, 23, 42, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    color: #0f172a;
 }
 
 .curricula-overview__toolbar-inner {
@@ -297,30 +303,35 @@ export default {
 }
 
 .curricula-overview__list {
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(30, 41, 59, 0.75);
-    color: #e2e8f0;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 52%),
+        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.93));
+    box-shadow:
+        0 10px 24px rgba(15, 23, 42, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    color: #0f172a;
 }
 
 .curricula-overview__item {
-    background: rgba(15, 23, 42, 0.55);
-    border: 1px solid rgba(99, 102, 241, 0.18);
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .curricula-overview__empty {
-    color: #cbd5e1;
+    color: #1e293b;
 }
 
 .curricula-overview__empty .text-caption {
-    color: #94a3b8;
+    color: #475569;
 }
 
 .curricula-overview__total {
-    color: #94a3b8;
+    color: #475569;
 }
 
 .curricula-overview__semester-badge {
-    color: #a5b4fc;
+    color: #4338ca;
     font-weight: 600;
 }
 </style>
