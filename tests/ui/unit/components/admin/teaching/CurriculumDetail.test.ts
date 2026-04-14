@@ -122,10 +122,19 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain(".curriculum-detail__calendar--compact {")
         expect(source).toContain('width: clamp(250px, 18vw, 300px);')
         expect(source).toContain('.curriculum-detail__calendar--compact .curriculum-detail__month {')
+        expect(source).toContain(':style="weekAssignmentStyle(week.weekKey)"')
         expect(source).toContain('.curriculum-detail__week--with-topics {')
-        expect(source).toContain('border-right: 4px solid rgba(79, 70, 229, 0.9) !important;')
+        expect(source).toContain('border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;')
+        expect(source).toContain(':style="calendarHighlightStyle"')
+        expect(source).toContain("'--calendar-highlight-accent': this.highlightedTopicAccentColor")
+        expect(source).toContain("'--week-assignment-accent': accentColor")
+        expect(source).toContain('border-right: 4px solid var(--week-assignment-accent, var(--calendar-highlight-accent, rgba(79, 70, 229, 0.9))) !important;')
+        expect(source).toContain('.curriculum-detail__overview-entry--exam {')
+        expect(source).toContain('color: #4f46e5;')
         expect(source).toContain('.curriculum-detail__week--with-topics:hover {')
         expect(source).toContain('.curriculum-detail__week--with-exams {')
+        expect(source).toContain('.curriculum-detail__week--with-exams .curriculum-detail__week-topics {')
+        expect(source.lastIndexOf('.curriculum-detail__week--topic-selected,')).toBeGreaterThan(source.indexOf('.curriculum-detail__week--with-exams {'))
         expect(source).not.toContain('.curriculum-detail__body--compact-calendar .curriculum-detail__side-card--content {')
     })
 
@@ -170,9 +179,130 @@ describe('CurriculumDetail week card view mode', () => {
 
         await unitRow.trigger('click')
 
-        expect((wrapper.vm as any).selectedTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).selectedTopicId).toBeNull()
         expect((wrapper.vm as any).selectedUnitTopicId).toBeNull()
         expect((wrapper.vm as any).selectedUnitId).toBeNull()
+        expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
         expect(wrapper.find('.curriculum-detail__unit-item').classes()).not.toContain('curriculum-detail__unit-item--selected')
+    })
+
+    it('highlights the assigned month and week area when selecting a topic or unit', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'month',
+                    month_keys: ['2025-09'],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-15'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const septemberMonth = wrapper.findAll('.curriculum-detail__month')[0]
+        const septemberWeeks = septemberMonth.findAll('.curriculum-detail__week')
+        const topicRow = wrapper.find('.curriculum-detail__topic-item .curriculum-detail__topic-row')
+        const unitRow = wrapper.find('.curriculum-detail__unit-item .curriculum-detail__topic-row')
+
+        expect(septemberMonth.exists()).toBe(true)
+        expect(septemberWeeks).toHaveLength(5)
+        expect(septemberMonth.classes()).not.toContain('curriculum-detail__month--topic-selected')
+        expect(septemberWeeks[2].classes()).not.toContain('curriculum-detail__week--topic-selected')
+
+        await topicRow.trigger('click')
+
+        expect(septemberMonth.classes()).toContain('curriculum-detail__month--topic-selected')
+        expect(septemberWeeks[0].classes()).toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[4].classes()).toContain('curriculum-detail__week--topic-selected')
+
+        await unitRow.trigger('click')
+
+        expect(septemberMonth.classes()).toContain('curriculum-detail__month--topic-selected')
+        expect(septemberWeeks[0].classes()).not.toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[2].classes()).toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[4].classes()).not.toContain('curriculum-detail__week--topic-selected')
+    })
+
+    it('includes unit assignments when highlighting a selected topic', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-15'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const septemberMonth = wrapper.findAll('.curriculum-detail__month')[0]
+        const septemberWeeks = septemberMonth.findAll('.curriculum-detail__week')
+        const topicRow = wrapper.find('.curriculum-detail__topic-item .curriculum-detail__topic-row')
+
+        await topicRow.trigger('click')
+
+        expect(septemberMonth.classes()).toContain('curriculum-detail__month--topic-selected')
+        expect(septemberWeeks[0].classes()).not.toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[2].classes()).toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[4].classes()).not.toContain('curriculum-detail__week--topic-selected')
+    })
+
+    it('uses the parent topic color for assigned week borders', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'weeks',
+                    month_keys: [],
+                    week_keys: ['2025-09-08'],
+                    units: [],
+                },
+                {
+                    id: 'topic-2',
+                    title: 'Rechtschreibung',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Kommasetzung',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-15'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        expect((wrapper.vm as any).weekAssignmentAccentColor('2025-09-08')).toBe('hsl(200, 70%, 48%)')
+        expect((wrapper.vm as any).weekAssignmentAccentColor('2025-09-15')).toBe('hsl(232, 70%, 48%)')
+        expect((wrapper.vm as any).weekAssignmentStyle('2025-09-15')).toEqual({
+            '--week-assignment-accent': 'hsl(232, 70%, 48%)',
+        })
     })
 })

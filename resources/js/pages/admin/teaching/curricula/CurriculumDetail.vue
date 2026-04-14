@@ -124,7 +124,8 @@
             <v-sheet rounded="xl" class="curriculum-detail__calendar-scroll pa-2">
                 <div
                     class="curriculum-detail__calendar"
-                    :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }">
+                    :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }"
+                    :style="calendarHighlightStyle">
                     <div
                         v-for="(month, idx) in visibleMonths"
                         :key="month.key"
@@ -132,6 +133,7 @@
                         :class="{
                             'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
                             'curriculum-detail__month--with-exams': monthHasExamEntries(month),
+                            'curriculum-detail__month--topic-selected': isMonthAssignedToHighlightedItem(month),
                         }"
                         :style="{ '--month-hue': monthHue(idx) }">
                         <div class="curriculum-detail__month-header">
@@ -168,8 +170,9 @@
                                     'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
                                     'curriculum-detail__week--compact': isCompactWeekView,
                                     'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
-                                    'curriculum-detail__week--topic-selected': isWeekAssignedToActiveTopic(week.weekKey),
+                                    'curriculum-detail__week--topic-selected': isWeekAssignedToHighlightedItem(week.weekKey),
                                 }"
+                                :style="weekAssignmentStyle(week.weekKey)"
                                 @click="handleWeekClick(week.weekKey)">
                                 <div class="curriculum-detail__week-number">
                                     <span class="curriculum-detail__week-kw">KW</span>
@@ -1286,6 +1289,56 @@ export default {
             return this.activeTopicAssignmentUnit ?? this.activeTopicAssignmentTopic
         },
 
+        selectedTopic() {
+            if (!this.selectedTopicId) {
+                return null
+            }
+
+            return this.curriculumTopics.find((topic) => topic.id === this.selectedTopicId) ?? null
+        },
+
+        selectedAssignmentItems() {
+            if (this.selectedTopic && this.selectedUnitTopicId === this.selectedTopic.id && this.selectedUnitId) {
+                const selectedUnit = this.selectedTopic.units.find((unit) => unit.id === this.selectedUnitId) ?? null
+
+                return selectedUnit ? [selectedUnit] : []
+            }
+
+            if (this.selectedTopic && this.isTopicSelected(this.selectedTopic.id)) {
+                return [this.selectedTopic, ...this.selectedTopic.units]
+            }
+
+            return []
+        },
+
+        highlightedAssignmentItems() {
+            return this.activeAssignmentItem ? [this.activeAssignmentItem] : this.selectedAssignmentItems
+        },
+
+        highlightedTopic() {
+            return this.activeTopicAssignmentTopic ?? this.selectedTopic
+        },
+
+        highlightedTopicAccentColor() {
+            if (!this.highlightedTopic) {
+                return null
+            }
+
+            const topicIndex = this.curriculumTopics.findIndex((topic) => topic.id === this.highlightedTopic.id)
+
+            if (topicIndex === -1) {
+                return null
+            }
+
+            return `hsl(${this.topicHue(topicIndex)}, 70%, 48%)`
+        },
+
+        calendarHighlightStyle() {
+            return this.highlightedTopicAccentColor
+                ? { '--calendar-highlight-accent': this.highlightedTopicAccentColor }
+                : {}
+        },
+
         activeAssignmentItemLabel() {
             return this.activeTopicAssignmentUnit ? 'Einheit' : 'Thema'
         },
@@ -2105,9 +2158,9 @@ export default {
                 }
 
                 if (topic.assignment_type === 'all_weeks') {
-                    entries.push({ id: topic.id, title: topic.title, isExam: false })
+                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
                 } else if (topic.assignment_type === 'month' && topic.month_keys.includes(monthKey)) {
-                    entries.push({ id: topic.id, title: topic.title, isExam: false })
+                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
                 }
 
                 topic.units.forEach((unit) => {
@@ -2118,6 +2171,7 @@ export default {
                     if (unit.assignment_type === 'all_weeks') {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
+                            topicId: topic.id,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2127,6 +2181,7 @@ export default {
                     if (unit.assignment_type === 'month' && unit.month_keys.includes(monthKey)) {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
+                            topicId: topic.id,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2150,13 +2205,14 @@ export default {
                 const entries = []
 
                 if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)) {
-                    entries.push({ id: topic.id, title: topic.title, isExam: false })
+                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
                 }
 
                 topic.units.forEach((unit) => {
                     if (Boolean(unit.title) && unit.assignment_type === 'weeks' && unit.week_keys.includes(weekKey)) {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
+                            topicId: topic.id,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2165,6 +2221,24 @@ export default {
 
                 return entries
             })
+        },
+
+        weekAssignmentAccentColor(weekKey) {
+            const firstAssignedEntry = this.topicsForWeek(weekKey)[0]
+
+            if (!firstAssignedEntry?.topicId) {
+                return null
+            }
+
+            return this.topicAccentColor(firstAssignedEntry.topicId)
+        },
+
+        weekAssignmentStyle(weekKey) {
+            const accentColor = this.weekAssignmentAccentColor(weekKey)
+
+            return accentColor
+                ? { '--week-assignment-accent': accentColor }
+                : {}
         },
 
         weekHasExamEntries(weekKey) {
@@ -2186,8 +2260,53 @@ export default {
             return `${topicTitle}: ${unitTitle}`
         },
 
-        isWeekAssignedToActiveTopic(weekKey) {
-            return this.activeAssignmentItem?.week_keys?.includes(weekKey) ?? false
+        isMonthAssignedToHighlightedItem(month) {
+            const monthKey = month?.assignmentKey
+            const assignmentItems = this.highlightedAssignmentItems
+
+            if (!monthKey || assignmentItems.length === 0) {
+                return false
+            }
+
+            return assignmentItems.some((assignmentItem) => {
+                if (assignmentItem.assignment_type === 'all_weeks') {
+                    return true
+                }
+
+                if (assignmentItem.assignment_type === 'month') {
+                    return assignmentItem.month_keys.includes(monthKey)
+                }
+
+                if (assignmentItem.assignment_type === 'weeks') {
+                    return assignmentItem.week_keys.some((weekKey) => this.monthKeyFromWeekKey(weekKey) === monthKey)
+                }
+
+                return false
+            })
+        },
+
+        isWeekAssignedToHighlightedItem(weekKey) {
+            const assignmentItems = this.highlightedAssignmentItems
+
+            if (assignmentItems.length === 0) {
+                return false
+            }
+
+            return assignmentItems.some((assignmentItem) => {
+                if (assignmentItem.assignment_type === 'all_weeks') {
+                    return true
+                }
+
+                if (assignmentItem.assignment_type === 'weeks') {
+                    return assignmentItem.week_keys.includes(weekKey)
+                }
+
+                if (assignmentItem.assignment_type === 'month') {
+                    return assignmentItem.month_keys.includes(this.monthKeyFromWeekKey(weekKey))
+                }
+
+                return false
+            })
         },
 
         isWeekSelectableForTopic(weekKey) {
@@ -2285,6 +2404,20 @@ export default {
             return (base + idx * 32) % 360
         },
 
+        topicAccentColor(topicId) {
+            if (!topicId) {
+                return null
+            }
+
+            const topicIndex = this.curriculumTopics.findIndex((topic) => topic.id === topicId)
+
+            if (topicIndex === -1) {
+                return null
+            }
+
+            return `hsl(${this.topicHue(topicIndex)}, 70%, 48%)`
+        },
+
         isTopicSelected(topicId) {
             return this.selectedTopicId === topicId && this.selectedUnitId === null
         },
@@ -2304,7 +2437,7 @@ export default {
         toggleSelectedUnit(topicId, unitId) {
             const shouldDeselectUnit = this.isUnitSelected(topicId, unitId)
 
-            this.selectedTopicId = topicId
+            this.selectedTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitId = shouldDeselectUnit ? null : unitId
         },
@@ -3121,6 +3254,11 @@ export default {
     box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.22), 0 14px 30px rgba(127, 29, 29, 0.22);
 }
 
+.curriculum-detail__month--topic-selected {
+    border-color: rgba(99, 102, 241, 0.46);
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.18), 0 14px 30px rgba(79, 70, 229, 0.14);
+}
+
 .curriculum-detail__month-topics {
     display: flex;
     flex-direction: column;
@@ -3161,7 +3299,7 @@ export default {
 }
 
 .curriculum-detail__overview-entry--exam {
-    color: #dc2626;
+    color: #4f46e5;
     text-shadow: none;
 }
 
@@ -3261,14 +3399,14 @@ export default {
 
 .curriculum-detail__week--with-topics {
     border-color: rgba(96, 165, 250, 0.48);
-    border-right: 4px solid rgba(79, 70, 229, 0.9) !important;
+    border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(30, 41, 59, 0.9) 42%, rgba(15, 23, 42, 0.82));
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
 }
 
 .curriculum-detail__week--with-topics:hover {
     border-color: rgba(96, 165, 250, 0.48);
-    border-right: 4px solid rgba(79, 70, 229, 0.9) !important;
+    border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
 }
 
@@ -3404,13 +3542,17 @@ export default {
 
 .curriculum-detail__week--with-exams {
     border-color: rgba(220, 38, 38, 0.45) !important;
-    border-right: 4px solid rgba(220, 38, 38, 0.92) !important;
     box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.1), 0 8px 18px rgba(127, 29, 29, 0.14);
 }
 
 .curriculum-detail__week--with-exams .curriculum-detail__week-topics {
-    color: #b91c1c !important;
+    color: #4f46e5 !important;
     text-shadow: none !important;
+}
+
+.curriculum-detail__week--topic-selected,
+.curriculum-detail__week--topic-selected:hover {
+    border-right: 4px solid var(--week-assignment-accent, var(--calendar-highlight-accent, rgba(79, 70, 229, 0.9))) !important;
 }
 
 .curriculum-detail__week-chip {
