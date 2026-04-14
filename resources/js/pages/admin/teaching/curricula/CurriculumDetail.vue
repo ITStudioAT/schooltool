@@ -89,6 +89,25 @@
                             </v-btn>
                         </v-btn-toggle>
                     </div>
+                    <div class="curriculum-detail__week-view">
+                        <div class="curriculum-detail__week-view-label">Volle Monate</div>
+                        <v-btn-toggle
+                            v-model="collapseFullMonths"
+                            mandatory
+                            color="primary"
+                            density="compact"
+                            rounded="lg"
+                            class="curriculum-detail__week-view-toggle">
+                            <v-btn :value="false" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-arrow-expand-vertical</v-icon>
+                                Immer zeigen
+                            </v-btn>
+                            <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-arrow-collapse-vertical</v-icon>
+                                Einklappen
+                            </v-btn>
+                        </v-btn-toggle>
+                    </div>
                 </div>
             </v-sheet>
         </div>
@@ -134,31 +153,45 @@
                             'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
                             'curriculum-detail__month--with-exams': monthHasExamEntries(month),
                             'curriculum-detail__month--topic-selected': isMonthAssignedToHighlightedItem(month),
+                            'curriculum-detail__month--collapsed': shouldCollapseMonth(month),
                         }"
                         :style="{ '--month-hue': monthHue(idx) }">
                         <div class="curriculum-detail__month-header">
                             <div class="curriculum-detail__month-name">{{ month.name }}</div>
                             <div class="curriculum-detail__month-year">{{ month.year }}</div>
                         </div>
-                        <div v-if="topicsForMonth(month).length" class="curriculum-detail__month-topics">
-                            <div class="curriculum-detail__month-topics-label">Themen</div>
+                        <div v-if="monthOverviewEntries(month).length" class="curriculum-detail__month-topics">
+                            <div v-if="!shouldCollapseMonth(month)" class="curriculum-detail__month-topics-label">Themen</div>
                             <div class="curriculum-detail__month-topics-text">
-                                <span
-                                    v-for="entry in topicsForMonth(month)"
-                                    :key="entry.id"
-                                    class="curriculum-detail__overview-entry"
-                                    :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
-                                    <v-icon
-                                        v-if="entry.isExam"
-                                        size="13"
-                                        class="curriculum-detail__overview-entry-icon">
-                                        mdi-clipboard-check-outline
-                                    </v-icon>
-                                    <span>{{ entry.title }}</span>
-                                </span>
+                                <div
+                                    v-for="group in monthOverviewGroups(month)"
+                                    :key="group.id"
+                                    class="curriculum-detail__month-topic-line">
+                                    <template v-if="group.units.length">
+                                        <span class="curriculum-detail__month-topic-name">{{ `${group.topicTitle}: ` }}</span>
+                                        <span class="curriculum-detail__month-topic-units">
+                                            <span
+                                                v-for="(unit, unitIndex) in group.units"
+                                                :key="unit.id"
+                                                class="curriculum-detail__overview-entry"
+                                                :class="{ 'curriculum-detail__overview-entry--exam': unit.isExam }">
+                                                <v-icon
+                                                    v-if="unit.isExam"
+                                                    size="13"
+                                                    class="curriculum-detail__overview-entry-icon">
+                                                    mdi-clipboard-check-outline
+                                                </v-icon>
+                                                <span class="curriculum-detail__month-topic-unit">
+                                                    {{ unit.title }}<span v-if="unitIndex < group.units.length - 1">,</span>
+                                                </span>
+                                            </span>
+                                        </span>
+                                    </template>
+                                    <span v-else class="curriculum-detail__month-topic-name">{{ group.topicTitle }}</span>
+                                </div>
                             </div>
                         </div>
-                        <div class="curriculum-detail__weeks">
+                        <div v-if="!shouldCollapseMonth(month)" class="curriculum-detail__weeks">
                             <div
                                 v-for="(week, wIdx) in month.weeks"
                                 :key="wIdx"
@@ -379,7 +412,7 @@
                                     class="curriculum-detail__topic-assignment-panel">
                                     <div class="curriculum-detail__topic-assignment-options">
                                         <v-btn
-                                            variant="tonal"
+                                            :variant="activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'"
                                             size="x-small"
                                             rounded="lg"
                                             class="text-none"
@@ -399,7 +432,7 @@
                                             {{ curriculumScopeLabel }}
                                         </v-btn>
                                         <v-btn
-                                            variant="tonal"
+                                            :variant="activeTopicAssignmentType === 'month' ? 'flat' : 'tonal'"
                                             size="x-small"
                                             rounded="lg"
                                             class="text-none"
@@ -409,7 +442,7 @@
                                             Monate
                                         </v-btn>
                                         <v-btn
-                                            variant="tonal"
+                                            :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
                                             size="x-small"
                                             rounded="lg"
                                             class="text-none"
@@ -507,10 +540,21 @@
                                             v-for="(unit, unitIndex) in topic.units"
                                             :key="unit.id"
                                             class="curriculum-detail__unit-item"
-                                            :class="{ 'curriculum-detail__unit-item--selected': isUnitSelected(topic.id, unit.id) }">
-                                            <div class="curriculum-detail__topic-row" @click="toggleSelectedUnit(topic.id, unit.id)">
+                                            :class="{ 'curriculum-detail__unit-item--selected': isUnitSelected(topic.id, unit.id) }"
+                                            @click="toggleSelectedUnit(topic.id, unit.id)">
+                                            <div class="curriculum-detail__topic-row">
                                                 <div class="curriculum-detail__topic-main">
-                                                    <div class="curriculum-detail__unit-title">{{ unit.title }}</div>
+                                                    <div class="curriculum-detail__unit-title-row">
+                                                        <div class="curriculum-detail__unit-title">{{ unit.title }}</div>
+                                                        <v-chip
+                                                            v-if="unit.is_exam"
+                                                            size="x-small"
+                                                            color="primary"
+                                                            variant="tonal"
+                                                            class="curriculum-detail__unit-exam-chip">
+                                                            Prüfung
+                                                        </v-chip>
+                                                    </div>
                                                     <div class="curriculum-detail__topic-meta-chips">
                                                         <v-chip
                                                             v-if="shouldShowAssignmentSummaryChip(unit)"
@@ -550,7 +594,7 @@
                                                         </template>
                                                     </div>
                                                 </div>
-                                                <div class="curriculum-detail__topic-actions">
+                                                <div class="curriculum-detail__topic-actions" @click.stop>
                                                     <v-btn
                                                         icon="mdi-arrow-up"
                                                         variant="text"
@@ -596,10 +640,11 @@
 
                                             <div
                                                 v-if="isUnitAssignmentEditorOpen(topic.id, unit.id)"
-                                                class="curriculum-detail__topic-assignment-panel">
+                                                class="curriculum-detail__topic-assignment-panel"
+                                                @click.stop>
                                                 <div class="curriculum-detail__topic-assignment-options">
                                                     <v-btn
-                                                        variant="tonal"
+                                                        :variant="activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'"
                                                         size="x-small"
                                                         rounded="lg"
                                                         class="text-none"
@@ -619,7 +664,7 @@
                                                         {{ curriculumScopeLabel }}
                                                     </v-btn>
                                                     <v-btn
-                                                        variant="tonal"
+                                                        :variant="activeTopicAssignmentType === 'month' ? 'flat' : 'tonal'"
                                                         size="x-small"
                                                         rounded="lg"
                                                         class="text-none"
@@ -629,7 +674,7 @@
                                                         Monate
                                                     </v-btn>
                                                     <v-btn
-                                                        variant="tonal"
+                                                        :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
                                                         size="x-small"
                                                         rounded="lg"
                                                         class="text-none"
@@ -1140,6 +1185,7 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             showLehrplaeneCard: true,
+            collapseFullMonths: false,
             selectedTopicId: null,
             selectedUnitTopicId: null,
             selectedUnitId: null,
@@ -1900,7 +1946,7 @@ export default {
                 return
             }
 
-            this.openTopicAssignmentEditor(topic)
+            this.openTopicAssignmentEditor(topic, this.defaultAssignmentEditorType(topic.assignment_type))
         },
 
         toggleUnitAssignmentEditor(topic, unit) {
@@ -1909,7 +1955,11 @@ export default {
                 return
             }
 
-            this.openUnitAssignmentEditor(topic, unit)
+            this.openUnitAssignmentEditor(topic, unit, this.defaultAssignmentEditorType(unit.assignment_type))
+        },
+
+        defaultAssignmentEditorType(assignmentType) {
+            return assignmentType === 'month' ? 'month' : 'weeks'
         },
 
         openTopicAssignmentEditor(topic, assignmentType = null) {
@@ -2158,9 +2208,21 @@ export default {
                 }
 
                 if (topic.assignment_type === 'all_weeks') {
-                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        title: topic.title,
+                        isExam: false,
+                    })
                 } else if (topic.assignment_type === 'month' && topic.month_keys.includes(monthKey)) {
-                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        title: topic.title,
+                        isExam: false,
+                    })
                 }
 
                 topic.units.forEach((unit) => {
@@ -2172,6 +2234,8 @@ export default {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
                             topicId: topic.id,
+                            topicTitle: topic.title,
+                            unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2182,6 +2246,8 @@ export default {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
                             topicId: topic.id,
+                            topicTitle: topic.title,
+                            unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2193,7 +2259,7 @@ export default {
         },
 
         monthHasExamEntries(month) {
-            return this.topicsForMonth(month).some((entry) => entry.isExam)
+            return this.monthOverviewEntries(month).some((entry) => entry.isExam)
         },
 
         topicsForWeek(weekKey) {
@@ -2205,7 +2271,13 @@ export default {
                 const entries = []
 
                 if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)) {
-                    entries.push({ id: topic.id, topicId: topic.id, title: topic.title, isExam: false })
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        title: topic.title,
+                        isExam: false,
+                    })
                 }
 
                 topic.units.forEach((unit) => {
@@ -2213,6 +2285,8 @@ export default {
                         entries.push({
                             id: `${topic.id}-${unit.id}`,
                             topicId: topic.id,
+                            topicTitle: topic.title,
+                            unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
                         })
@@ -2221,6 +2295,82 @@ export default {
 
                 return entries
             })
+        },
+
+        weekEntriesForMonth(month) {
+            if (!Array.isArray(month?.weeks)) {
+                return []
+            }
+
+            const entryMap = new Map()
+
+            month.weeks.forEach((week) => {
+                this.topicsForWeek(week.weekKey).forEach((entry) => {
+                    if (!entryMap.has(entry.id)) {
+                        entryMap.set(entry.id, entry)
+                    }
+                })
+            })
+
+            return [...entryMap.values()]
+        },
+
+        isMonthFullyAssigned(month) {
+            if (!Array.isArray(month?.weeks) || month.weeks.length === 0) {
+                return false
+            }
+
+            return month.weeks.every((week) => this.isFreeWeek(week.weekKey) || this.topicsForWeek(week.weekKey).length > 0)
+        },
+
+        shouldCollapseMonth(month) {
+            return this.collapseFullMonths && this.isMonthFullyAssigned(month)
+        },
+
+        monthOverviewEntries(month) {
+            const monthEntries = this.topicsForMonth(month)
+
+            if (!this.shouldCollapseMonth(month)) {
+                return monthEntries
+            }
+
+            const entryMap = new Map(monthEntries.map((entry) => [entry.id, entry]))
+
+            this.weekEntriesForMonth(month).forEach((entry) => {
+                if (!entryMap.has(entry.id)) {
+                    entryMap.set(entry.id, entry)
+                }
+            })
+
+            return [...entryMap.values()]
+        },
+
+        monthOverviewGroups(month) {
+            const groups = new Map()
+
+            this.monthOverviewEntries(month).forEach((entry) => {
+                const groupId = entry.topicId ?? entry.id
+                const topicTitle = entry.topicTitle ?? entry.title
+                const currentGroup = groups.get(groupId) ?? {
+                    id: groupId,
+                    topicTitle,
+                    units: [],
+                }
+
+                if (entry.unitTitle) {
+                    if (!currentGroup.units.some((unit) => unit.id === entry.id)) {
+                        currentGroup.units.push({
+                            id: entry.id,
+                            title: entry.unitTitle,
+                            isExam: entry.isExam,
+                        })
+                    }
+                }
+
+                groups.set(groupId, currentGroup)
+            })
+
+            return [...groups.values()]
         },
 
         weekAssignmentAccentColor(weekKey) {
@@ -2258,6 +2408,10 @@ export default {
             }
 
             return `${topicTitle}: ${unitTitle}`
+        },
+
+        isWeekAssignedToActiveTopic(weekKey) {
+            return this.activeAssignmentItem?.week_keys?.includes(weekKey) ?? false
         },
 
         isMonthAssignedToHighlightedItem(month) {
@@ -3259,6 +3413,11 @@ export default {
     box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.18), 0 14px 30px rgba(79, 70, 229, 0.14);
 }
 
+.curriculum-detail__month--collapsed .curriculum-detail__month-topics {
+    padding-bottom: 14px;
+    border-bottom: none;
+}
+
 .curriculum-detail__month-topics {
     display: flex;
     flex-direction: column;
@@ -3277,15 +3436,35 @@ export default {
 
 .curriculum-detail__month-topics-text {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     align-items: flex-start;
-    column-gap: 10px;
-    row-gap: 4px;
+    gap: 4px;
     color: #000;
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: 500;
     line-height: 1.3;
 }
+
+.curriculum-detail__month-topic-line {
+    display: block;
+}
+
+.curriculum-detail__month-topic-name {
+    font-weight: 700;
+}
+
+.curriculum-detail__month-topic-units {
+    font-weight: 500;
+}
+
+.curriculum-detail__month-topic-units .curriculum-detail__overview-entry:not(:last-child) {
+    margin-right: 0.3rem;
+}
+
+.curriculum-detail__month-topic-unit {
+    font-weight: 500;
+}
+
 
 .curriculum-detail__overview-entry {
     display: inline-flex;
@@ -3542,7 +3721,12 @@ export default {
 
 .curriculum-detail__week--with-exams {
     border-color: rgba(220, 38, 38, 0.45) !important;
+    border-right: 4px solid #4f46e5 !important;
     box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.1), 0 8px 18px rgba(127, 29, 29, 0.14);
+}
+
+.curriculum-detail__week--with-exams:hover {
+    border-right: 4px solid #4f46e5 !important;
 }
 
 .curriculum-detail__week--with-exams .curriculum-detail__week-topics {
@@ -3886,25 +4070,23 @@ export default {
         radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 60%),
         linear-gradient(180deg, rgba(238, 242, 255, 0.95), rgba(224, 231, 255, 0.85));
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .curriculum-detail__unit-item > .curriculum-detail__topic-row {
-    cursor: pointer;
     transition: background 0.15s, box-shadow 0.15s;
     border-radius: 8px;
 }
 
 .curriculum-detail__unit-item--selected {
-    border-color: rgba(79, 70, 229, 0.42);
-    box-shadow:
-        0 0 0 2px rgba(129, 140, 248, 0.22),
-        0 8px 18px rgba(79, 70, 229, 0.12);
-}
-
-.curriculum-detail__unit-item--selected > .curriculum-detail__topic-row {
+    border-color: rgba(129, 140, 248, 0.52);
     background:
-        linear-gradient(135deg, rgba(129, 140, 248, 0.18), rgba(129, 140, 248, 0.05) 70%),
-        rgba(255, 255, 255, 0.58);
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.18), transparent 60%),
+        linear-gradient(180deg, rgba(224, 231, 255, 0.98), rgba(199, 210, 254, 0.94));
+    box-shadow:
+        0 0 0 1px rgba(165, 180, 252, 0.16),
+        0 0 18px rgba(99, 102, 241, 0.16);
 }
 
 .curriculum-detail__unit-title {
@@ -3912,6 +4094,17 @@ export default {
     font-weight: 500;
     color: #1e293b;
     line-height: 1.35;
+}
+
+.curriculum-detail__unit-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__unit-exam-chip {
+    font-weight: 700;
 }
 
 .curriculum-detail__unit-exam-checkbox :deep(.v-selection-control) {
@@ -3951,6 +4144,29 @@ export default {
     border-bottom: 1px solid rgba(129, 140, 248, 0.16);
 }
 
+.curriculum-detail__topic-assignment-options :deep(.v-btn) {
+    color: #cbd5e1 !important;
+}
+
+.curriculum-detail__topic-assignment-options :deep(.v-btn--variant-tonal) {
+    background: rgba(148, 163, 184, 0.14) !important;
+    border: 1px solid rgba(148, 163, 184, 0.16) !important;
+}
+
+.curriculum-detail__topic-assignment-options :deep(.v-btn--variant-flat) {
+    color: #eff6ff !important;
+    background: linear-gradient(135deg, rgba(79, 70, 229, 0.92), rgba(99, 102, 241, 0.82)) !important;
+    border: 1px solid rgba(199, 210, 254, 0.42) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+        0 0 0 1px rgba(99, 102, 241, 0.26),
+        0 8px 18px rgba(79, 70, 229, 0.28);
+}
+
+.curriculum-detail__topic-assignment-options :deep(.v-btn--variant-text) {
+    color: #e2e8f0 !important;
+}
+
 .curriculum-detail__topic-assignment-months,
 .curriculum-detail__topic-assignment-weeks {
     display: flex;
@@ -3985,6 +4201,10 @@ export default {
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+}
+
+.curriculum-detail__assignment-week-controls :deep(.v-btn) {
+    color: #cbd5e1 !important;
 }
 
 .curriculum-detail__topic-assignment-hint {
