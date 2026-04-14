@@ -3012,7 +3012,10 @@ export default {
 
 /* ---------- Calendar ---------- */
 .curriculum-detail__calendar-scroll {
-    max-height: calc(100vh - 180px);
+    position: sticky;
+    top: 72px;
+    align-self: flex-start;
+    max-height: calc(100vh - 84px);
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
@@ -3389,11 +3392,20 @@ export default {
 }
 
 .curriculum-detail__side-card--content .curriculum-detail__side-card-inner {
-    border-color: rgba(129, 140, 248, 0.28);
+    border: 1px solid rgba(15, 23, 42, 0.12);
     background:
-        radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 34%),
-        linear-gradient(135deg, rgba(30, 41, 59, 0.96) 0%, rgba(17, 24, 39, 0.98) 100%);
-    box-shadow: 0 16px 36px rgba(2, 6, 23, 0.34);
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 52%),
+        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.93));
+    box-shadow:
+        0 10px 24px rgba(15, 23, 42, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    color: #0f172a;
+}
+
+.curriculum-detail__side-card--content .curriculum-detail__side-card-header {
+    color: #0f172a;
+    border-bottom-color: rgba(30, 41, 59, 0.1);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(219, 234, 254, 0.36));
 }
 
 .curriculum-detail__side-card--content {
@@ -3407,8 +3419,29 @@ export default {
     max-width: 100%;
 }
 
+.curriculum-detail__side-card--documents .curriculum-detail__side-card-inner {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.18), transparent 52%),
+        linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.93));
+    box-shadow:
+        0 10px 24px rgba(15, 23, 42, 0.11),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    color: #0f172a;
+}
+
+.curriculum-detail__side-card--documents .curriculum-detail__side-card-header {
+    color: #0f172a;
+    border-bottom-color: rgba(30, 41, 59, 0.1);
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.5), rgba(219, 234, 254, 0.36));
+}
+
+.curriculum-detail__side-card--documents .curriculum-detail__side-card-body {
+    color: #1e293b;
+}
+
 .curriculum-detail__side-card--content .curriculum-detail__side-card-body {
-    color: #e5eefc;
+    color: #1e293b;
 }
 
 .curriculum-detail__content-toolbar {
@@ -3421,22 +3454,22 @@ export default {
 .curriculum-detail__content-count {
     font-size: 0.9rem;
     font-weight: 700;
-    color: #e2e8f0;
+    color: #0f172a;
 }
 
 .curriculum-detail__content-hint {
     font-size: 0.8rem;
-    color: #bfdbfe;
+    color: #475569;
     line-height: 1.45;
     margin-top: 4px;
 }
 
 .curriculum-detail__topic-form {
     border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    background: linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.84));
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.96));
     padding: 14px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .curriculum-detail__topic-form-actions {
@@ -3516,8 +3549,9 @@ export default {
     gap: 10px;
     padding: 12px;
     border-radius: 12px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: linear-gradient(180deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.78));
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
 .curriculum-detail__topic-row {
@@ -3542,7 +3576,7 @@ export default {
 .curriculum-detail__topic-title {
     font-size: 1.05rem;
     font-weight: 700;
-    color: #e2e8f0;
+    color: #0f172a;
     line-height: 1.35;
 }
 
@@ -3564,7 +3598,7 @@ export default {
 .curriculum-detail__topic-meta-text {
     margin-top: 8px;
     font-size: 0.8rem;
-    color: #bfdbfe;
+    color: #475569;
 }
 
 .curriculum-detail__topic-actions {
@@ -3575,7 +3609,7 @@ export default {
 }
 
 .curriculum-detail__unit-section {
-    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    border-top: 1px solid rgba(15, 23, 42, 0.1);
     padding-top: 10px;
 }
 
@@ -3589,7 +3623,7 @@ export default {
 .curriculum-detail__unit-count {
     font-size: 0.78rem;
     font-weight: 700;
-    color: #94a3b8;
+    color: #475569;
     letter-spacing: 0.02em;
 }
 
@@ -3607,14 +3641,17 @@ export default {
 .curriculum-detail__unit-item {
     padding: 10px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    background: rgba(15, 23, 42, 0.34);
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    background:
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 60%),
+        linear-gradient(180deg, rgba(238, 242, 255, 0.95), rgba(224, 231, 255, 0.85));
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
 .curriculum-detail__unit-title {
     font-size: 0.88rem;
     font-weight: 500;
-    color: #cbd5e1;
+    color: #1e293b;
     line-height: 1.35;
 }
 
@@ -3708,7 +3745,7 @@ export default {
 
 .curriculum-detail__topic-empty {
     font-size: 0.84rem;
-    color: #cbd5e1;
+    color: #475569;
 }
 
 .curriculum-detail__content-add-btn,
@@ -3770,8 +3807,10 @@ export default {
     align-items: center;
     padding: 6px 8px;
     border-radius: 8px;
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 60%),
+        linear-gradient(180deg, rgba(238, 242, 255, 0.95), rgba(224, 231, 255, 0.85));
+    border: 1px solid rgba(99, 102, 241, 0.18);
 }
 
 .lehrplaene__item-copy {
@@ -3784,13 +3823,13 @@ export default {
 
 .lehrplaene__item-name {
     font-size: 0.82rem;
-    color: #cbd5e1;
+    color: #0f172a;
     font-weight: 500;
 }
 
 .lehrplaene__item-subtitle {
     font-size: 0.72rem;
-    color: #94a3b8;
+    color: #475569;
 }
 
 .lehrplaene__item--clickable {
@@ -3810,9 +3849,10 @@ export default {
 /* ---------- Preview ---------- */
 .lehrplaene__preview {
     border-radius: 12px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(255, 255, 255, 0.84);
     overflow: hidden;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
 .lehrplaene__preview-header {
@@ -3820,10 +3860,10 @@ export default {
     align-items: center;
     justify-content: space-between;
     padding: 6px 10px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.1);
     font-size: 0.78rem;
     font-weight: 600;
-    color: #a5b4fc;
+    color: #4338ca;
 }
 
 .lehrplaene__preview-body {
