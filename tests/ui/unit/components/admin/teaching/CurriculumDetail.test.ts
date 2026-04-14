@@ -12,6 +12,7 @@ vi.mock('@/stores/spa/NotificationStore', () => ({
 }))
 
 const loadDocumentsSpy = vi.spyOn((CurriculumDetail as any).methods, 'loadDocuments').mockResolvedValue(undefined)
+const openMaterialAttachmentDialogSpy = vi.spyOn((CurriculumDetail as any).methods, 'openMaterialAttachmentDialog').mockResolvedValue(undefined)
 
 function buildCurriculum(overrides: Record<string, unknown> = {}) {
     return {
@@ -76,10 +77,12 @@ function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}
 describe('CurriculumDetail week card view mode', () => {
     afterEach(() => {
         loadDocumentsSpy.mockClear()
+        openMaterialAttachmentDialogSpy.mockClear()
     })
 
     afterAll(() => {
         loadDocumentsSpy.mockRestore()
+        openMaterialAttachmentDialogSpy.mockRestore()
     })
 
     it('switches between weekday and compact week cards', async () => {
@@ -91,11 +94,14 @@ describe('CurriculumDetail week card view mode', () => {
         expect(wrapper.text()).toContain('Immer zeigen')
         expect(wrapper.text()).toContain('Einklappen')
         expect(wrapper.vm.showWeekdays).toBe(true)
+        expect((wrapper.vm as any).collapseFullMonths).toBe(true)
+        expect((wrapper.vm as any).showLehrplaeneCard).toBe(false)
         expect(wrapper.findAll('.curriculum-detail__week-days').length).toBeGreaterThan(0)
         expect(wrapper.find('.curriculum-detail__calendar-scroll').exists()).toBe(true)
         expect(wrapper.find('.curriculum-detail__side-card--content').exists()).toBe(true)
         expect(wrapper.find('.curriculum-detail__side-card--content.curriculum-detail__side-card--scrollable').exists()).toBe(false)
-        expect(wrapper.find('.curriculum-detail__side-card--documents.curriculum-detail__side-card--scrollable').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--documents.curriculum-detail__side-card--scrollable').exists()).toBe(false)
+        expect(wrapper.findAll('button').filter((button) => button.text().trim() === 'Thema')).toHaveLength(2)
         expect(wrapper.find('.curriculum-detail__calendar').classes()).not.toContain('curriculum-detail__calendar--compact')
 
         await wrapper.setData({ weekDisplayMode: 'compact' })
@@ -121,6 +127,9 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('Volle Monate')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
+        expect(source).toContain('class="curriculum-detail__content-footer"')
+        expect(source).toContain('class="curriculum-detail__unit-summary"')
+        expect(source).toContain('Verteilen')
         expect(source).toContain('.curriculum-detail__calendar-scroll {')
         expect(source).toContain('.curriculum-detail__side-card--scrollable {')
         expect(source).toContain('overflow-y: auto;')
@@ -231,12 +240,12 @@ describe('CurriculumDetail week card view mode', () => {
     })
 
     it('scrolls the calendar to the assigned week when selecting a unit', async () => {
-        const scrollIntoView = vi.fn()
-        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+        const scrollTo = vi.fn()
+        const originalScrollTo = HTMLElement.prototype.scrollTo
 
-        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
             configurable: true,
-            value: scrollIntoView,
+            value: scrollTo,
         })
 
         try {
@@ -269,27 +278,26 @@ describe('CurriculumDetail week card view mode', () => {
             await unitItem.trigger('click')
             await wrapper.vm.$nextTick()
 
-            expect(scrollIntoView).toHaveBeenCalledTimes(1)
-            expect(scrollIntoView).toHaveBeenCalledWith({
-                block: 'start',
-                inline: 'nearest',
+            expect(scrollTo).toHaveBeenCalledTimes(1)
+            expect(scrollTo).toHaveBeenCalledWith({
+                top: expect.any(Number),
                 behavior: 'smooth',
             })
         } finally {
-            Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
                 configurable: true,
-                value: originalScrollIntoView,
+                value: originalScrollTo,
             })
         }
     })
 
     it('scrolls the calendar to the assigned week when opening unit date assignment editing', async () => {
-        const scrollIntoView = vi.fn()
-        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+        const scrollTo = vi.fn()
+        const originalScrollTo = HTMLElement.prototype.scrollTo
 
-        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
             configurable: true,
-            value: scrollIntoView,
+            value: scrollTo,
         })
 
         try {
@@ -321,16 +329,15 @@ describe('CurriculumDetail week card view mode', () => {
             ;(wrapper.vm as any).openUnitAssignmentEditor(topic, unit, 'weeks')
             await wrapper.vm.$nextTick()
 
-            expect(scrollIntoView).toHaveBeenCalledTimes(1)
-            expect(scrollIntoView).toHaveBeenCalledWith({
-                block: 'start',
-                inline: 'nearest',
+            expect(scrollTo).toHaveBeenCalledTimes(1)
+            expect(scrollTo).toHaveBeenCalledWith({
+                top: expect.any(Number),
                 behavior: 'smooth',
             })
         } finally {
-            Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
                 configurable: true,
-                value: originalScrollIntoView,
+                value: originalScrollTo,
             })
         }
     })
@@ -373,6 +380,103 @@ describe('CurriculumDetail week card view mode', () => {
         expect(unitItems[0].find('.curriculum-detail__unit-exam-chip').exists()).toBe(true)
         expect(unitItems[1].text()).not.toContain('Prüfung')
         expect(unitItems[1].find('.curriculum-detail__unit-exam-chip').exists()).toBe(false)
+    })
+
+    it('distributes unassigned units to the next visible weeks while skipping free and occupied weeks', async () => {
+        const wrapper = mountCurriculumDetail({
+            free_weeks: ['2025-09-22'],
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Nomen',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-08'],
+                        },
+                        {
+                            id: 'unit-2',
+                            title: 'Verben',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                        {
+                            id: 'unit-3',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                    ],
+                },
+                {
+                    id: 'topic-2',
+                    title: 'Literatur',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-4',
+                            title: 'Textanalyse',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-15'],
+                        },
+                    ],
+                },
+            ],
+        })
+        const persistCurriculumMock = vi.spyOn(wrapper.vm as any, 'persistCurriculum').mockResolvedValue({
+            id: 15,
+        })
+        const topic = (wrapper.vm as any).curriculumTopics[0]
+
+        try {
+            expect((wrapper.vm as any).canDistributeTopicUnits(topic)).toBe(true)
+
+            await (wrapper.vm as any).distributeTopicUnits(topic)
+
+            expect(persistCurriculumMock).toHaveBeenCalledTimes(1)
+            expect(persistCurriculumMock).toHaveBeenCalledWith({
+                topics: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'topic-1',
+                        units: expect.arrayContaining([
+                            expect.objectContaining({
+                                id: 'unit-1',
+                                assignment_type: 'weeks',
+                                week_keys: ['2025-09-08'],
+                            }),
+                            expect.objectContaining({
+                                id: 'unit-2',
+                                assignment_type: 'weeks',
+                                week_keys: ['2025-09-29'],
+                            }),
+                            expect.objectContaining({
+                                id: 'unit-3',
+                                assignment_type: 'weeks',
+                                week_keys: ['2025-10-06'],
+                            }),
+                        ]),
+                    }),
+                ]),
+            }, 'Einheiten konnten nicht verteilt werden.')
+            expect((wrapper.vm as any).topicSaving).toBe(false)
+        } finally {
+            persistCurriculumMock.mockRestore()
+        }
     })
 
     it('opens Datumszuordnung bearbeiten in week mode so week selection is possible', () => {
@@ -614,6 +718,8 @@ describe('CurriculumDetail week card view mode', () => {
             ],
         })
 
+        await wrapper.setData({ collapseFullMonths: false })
+
         const monthsBeforeCollapse = wrapper.findAll('.curriculum-detail__month')
 
         expect(monthsBeforeCollapse[0].findAll('.curriculum-detail__week')).toHaveLength(5)
@@ -632,5 +738,164 @@ describe('CurriculumDetail week card view mode', () => {
         expect(monthsAfterCollapse[0].find('.curriculum-detail__month-topic-units').text()).toContain('Satzbau')
         expect(monthsAfterCollapse[1].classes()).not.toContain('curriculum-detail__month--collapsed')
         expect(monthsAfterCollapse[1].find('.curriculum-detail__weeks').exists()).toBe(true)
+    })
+
+    it('opens a collapsed assigned month when a matching unit is selected', async () => {
+        const wrapper = mountCurriculumDetail({
+            free_weeks: ['2025-09-29'],
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-01', '2025-09-08', '2025-09-15', '2025-09-22'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const septemberMonthBeforeSelection = wrapper.findAll('.curriculum-detail__month')[0]
+
+        expect(septemberMonthBeforeSelection.classes()).toContain('curriculum-detail__month--collapsed')
+        expect(septemberMonthBeforeSelection.find('.curriculum-detail__weeks').exists()).toBe(false)
+
+        await (wrapper.vm as any).toggleSelectedUnit('topic-1', 'unit-1')
+        await wrapper.vm.$nextTick()
+
+        const septemberMonthAfterSelection = wrapper.findAll('.curriculum-detail__month')[0]
+
+        expect(septemberMonthAfterSelection.classes()).not.toContain('curriculum-detail__month--collapsed')
+        expect(septemberMonthAfterSelection.classes()).toContain('curriculum-detail__month--topic-selected')
+        expect(septemberMonthAfterSelection.find('.curriculum-detail__weeks').exists()).toBe(true)
+        expect(septemberMonthAfterSelection.findAll('.curriculum-detail__week')[0].classes()).toContain('curriculum-detail__week--topic-selected')
+    })
+
+    it('opens selected material attachments directly in the preview frame', async () => {
+        const wrapper = mountCurriculumDetail()
+
+        const selectedMaterialDocument = {
+            id: 901,
+            source_type: 'material',
+            name: 'Lehrplan aus Materialien',
+            material_card_attachment_id: 55,
+            selected_attachment_name: 'Lehrplan.docx',
+            preview_mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            preview_url: '/api/admin/teaching/curricula/15/documents/901/preview',
+            download_url: '/api/admin/teaching/curricula/15/documents/901/download',
+        }
+
+        const unselectedMaterialDocument = {
+            id: 902,
+            source_type: 'material',
+            name: 'Noch ohne Anhang',
+            material_card_attachment_id: null,
+            selected_attachment_name: null,
+            preview_mime_type: null,
+            preview_url: null,
+            download_url: null,
+        }
+
+        await wrapper.setData({
+            documents: [selectedMaterialDocument, unselectedMaterialDocument],
+            showLehrplaeneCard: true,
+        })
+
+        ;(wrapper.vm as any).selectPreview(selectedMaterialDocument)
+        await wrapper.vm.$nextTick()
+
+        expect(openMaterialAttachmentDialogSpy).not.toHaveBeenCalled()
+        expect((wrapper.vm as any).previewDoc).toEqual(selectedMaterialDocument)
+        expect((wrapper.vm as any).previewUsesIframe).toBe(true)
+        expect(wrapper.find('.lehrplaene__preview-iframe').attributes('src')).toBe(selectedMaterialDocument.preview_url)
+
+        ;(wrapper.vm as any).selectPreview(unselectedMaterialDocument)
+
+        expect(openMaterialAttachmentDialogSpy).toHaveBeenCalledWith(unselectedMaterialDocument)
+    })
+
+    it('requires confirmation before removing a curriculum document', async () => {
+        const wrapper = mountCurriculumDetail()
+        const originalAxios = (globalThis as any).axios
+        const deleteMock = vi.fn().mockResolvedValue({ data: null })
+        ;(globalThis as any).axios = {
+            delete: deleteMock,
+        }
+
+        const document = {
+            id: 903,
+            source_type: 'upload',
+            name: 'Deutsch Lehrplan.pdf',
+            preview_url: '/api/admin/teaching/curricula/15/documents/903/preview',
+            download_url: '/api/admin/teaching/curricula/15/documents/903/download',
+        }
+
+        try {
+            await wrapper.setData({
+                documents: [document],
+                previewDoc: document,
+            })
+
+            ;(wrapper.vm as any).removeDocument(document)
+
+            expect(deleteMock).not.toHaveBeenCalled()
+            expect((wrapper.vm as any).documentDeleteDialogOpen).toBe(true)
+            expect((wrapper.vm as any).documentToDelete).toEqual(document)
+
+            await (wrapper.vm as any).confirmDocumentDelete()
+
+            expect(deleteMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/documents/903')
+            expect((wrapper.vm as any).documentDeleteDialogOpen).toBe(false)
+            expect((wrapper.vm as any).documentToDelete).toBeNull()
+            expect((wrapper.vm as any).previewDoc).toBeNull()
+            expect((wrapper.vm as any).documents).toEqual([])
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('shows attachment counts and a selection hint for materials with multiple files', async () => {
+        const wrapper = mountCurriculumDetail()
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue'), 'utf8')
+
+        await wrapper.setData({
+            materialDialogOpen: true,
+            materialResults: [
+                {
+                    id: 77,
+                    title: 'Biologie Lehrplan',
+                    subject: 'Biologie',
+                    attachments_count: 3,
+                },
+            ],
+            materialAttachmentDialogOpen: true,
+            materialAttachmentDocument: {
+                id: 77,
+                name: 'Biologie Lehrplan',
+            },
+            materialAttachmentOptions: [
+                { id: 1, name: 'Teil A.pdf', mime_type: 'application/pdf', size_bytes: 10 },
+                { id: 2, name: 'Teil B.pdf', mime_type: 'application/pdf', size_bytes: 10 },
+            ],
+            materialAttachmentLoading: false,
+            materialAttachmentError: null,
+        })
+
+        expect((wrapper.vm as any).materialFileAttachmentCount({ attachments_count: 3 })).toBe(3)
+        expect((wrapper.vm as any).materialAttachmentCountLabel({ attachments_count: 3 })).toBe('3 Anhänge')
+        expect((wrapper.vm as any).materialPickerSubtitle({
+            subject: 'Biologie',
+            attachments_count: 3,
+        })).toBe('Biologie · 3 Anhänge')
+        expect(source).toContain('Dieses Material hat mehrere Anhänge. Bitte den Anhang auswählen, der angezeigt werden soll.')
     })
 })

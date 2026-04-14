@@ -71,25 +71,6 @@
                         </v-btn-toggle>
                     </div>
                     <div class="curriculum-detail__week-view">
-                        <div class="curriculum-detail__week-view-label">Lehrpläne</div>
-                        <v-btn-toggle
-                            v-model="showLehrplaeneCard"
-                            mandatory
-                            color="primary"
-                            density="compact"
-                            rounded="lg"
-                            class="curriculum-detail__week-view-toggle">
-                            <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-eye-outline</v-icon>
-                                Anzeigen
-                            </v-btn>
-                            <v-btn :value="false" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-eye-off-outline</v-icon>
-                                Ausblenden
-                            </v-btn>
-                        </v-btn-toggle>
-                    </div>
-                    <div class="curriculum-detail__week-view">
                         <div class="curriculum-detail__week-view-label">Volle Monate</div>
                         <v-btn-toggle
                             v-model="collapseFullMonths"
@@ -105,6 +86,25 @@
                             <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
                                 <v-icon size="15" class="mr-1">mdi-arrow-collapse-vertical</v-icon>
                                 Einklappen
+                            </v-btn>
+                        </v-btn-toggle>
+                    </div>
+                    <div class="curriculum-detail__week-view">
+                        <div class="curriculum-detail__week-view-label">Lehrpläne</div>
+                        <v-btn-toggle
+                            v-model="showLehrplaeneCard"
+                            mandatory
+                            color="primary"
+                            density="compact"
+                            rounded="lg"
+                            class="curriculum-detail__week-view-toggle">
+                            <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-eye-outline</v-icon>
+                                Anzeigen
+                            </v-btn>
+                            <v-btn :value="false" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
+                                <v-icon size="15" class="mr-1">mdi-eye-off-outline</v-icon>
+                                Ausblenden
                             </v-btn>
                         </v-btn-toggle>
                     </div>
@@ -523,7 +523,19 @@
 
                                 <div class="curriculum-detail__unit-section">
                                     <div class="curriculum-detail__unit-toolbar">
-                                        <div class="curriculum-detail__unit-count">{{ topic.units.length }} Einheiten</div>
+                                        <div class="curriculum-detail__unit-summary">
+                                            <div class="curriculum-detail__unit-count">{{ topic.units.length }} Einheiten</div>
+                                            <v-btn
+                                                variant="text"
+                                                color="primary"
+                                                size="x-small"
+                                                rounded="lg"
+                                                class="text-none"
+                                                :disabled="isPageActionLocked || topicSaving || !canDistributeTopicUnits(topic)"
+                                                @click="distributeTopicUnits(topic)">
+                                                Verteilen
+                                            </v-btn>
+                                        </div>
                                         <v-btn
                                             variant="text"
                                             color="primary"
@@ -762,6 +774,20 @@
                         <div v-else class="curriculum-detail__topic-empty mt-4">
                             Noch keine Themen definiert.
                         </div>
+
+                        <div class="curriculum-detail__content-footer">
+                            <v-btn
+                                variant="flat"
+                                color="primary"
+                                size="small"
+                                rounded="lg"
+                                prepend-icon="mdi-plus"
+                                class="text-none curriculum-detail__content-add-btn"
+                                :disabled="isPageActionLocked"
+                                @click="openTopicForm()">
+                                Thema
+                            </v-btn>
+                        </div>
                     </div>
                 </div>
             </v-sheet>
@@ -805,6 +831,16 @@
                                     Material
                                 </v-chip>
                                 <v-btn
+                                    v-if="doc.source_type === 'material'"
+                                    icon="mdi-paperclip"
+                                    variant="text"
+                                    size="x-small"
+                                    color="primary"
+                                    class="ml-1 flex-shrink-0"
+                                    :disabled="isPageActionLocked"
+                                    title="Anhang auswählen"
+                                    @click.stop="openMaterialAttachmentDialog(doc)" />
+                                <v-btn
                                     icon="mdi-close"
                                     variant="text"
                                     size="x-small"
@@ -829,7 +865,7 @@
                             </div>
                             <div class="lehrplaene__preview-body">
                                 <iframe
-                                    v-if="previewIsPdf && previewUrl"
+                                    v-if="previewUsesIframe && previewUrl"
                                     :src="previewUrl"
                                     class="lehrplaene__preview-iframe" />
                                 <img
@@ -1074,7 +1110,16 @@
                                         <v-icon size="18" color="#a5b4fc" class="mr-2">mdi-package-variant-closed</v-icon>
                                     </template>
                                     <v-list-item-title class="text-body-2">{{ card.title }}</v-list-item-title>
-                                    <v-list-item-subtitle v-if="card.subject" class="text-caption">{{ card.subject }}</v-list-item-subtitle>
+                                    <v-list-item-subtitle class="text-caption">{{ materialPickerSubtitle(card) }}</v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip
+                                            v-if="materialFileAttachmentCount(card) > 0"
+                                            size="x-small"
+                                            color="primary"
+                                            variant="tonal">
+                                            {{ materialAttachmentCountLabel(card) }}
+                                        </v-chip>
+                                    </template>
                                 </v-list-item>
                             </v-list>
                             <div v-else class="text-center py-4 text-caption" style="color: #64748b">
@@ -1096,6 +1141,12 @@
                         <v-card-text class="px-4 pb-2">
                             <div class="text-body-2 mb-3" style="color: #475569">
                                 {{ materialAttachmentDocument?.name || 'Material' }}
+                            </div>
+                            <div
+                                v-if="materialAttachmentOptions.length > 1"
+                                class="text-caption mb-3"
+                                style="color: #475569">
+                                Dieses Material hat mehrere Anhänge. Bitte den Anhang auswählen, der angezeigt werden soll.
                             </div>
                             <div v-if="materialAttachmentLoading" class="text-center py-6">
                                 <v-progress-circular indeterminate color="primary" size="24" />
@@ -1139,6 +1190,39 @@
                         </v-card-text>
                         <v-card-actions class="px-4 pb-4">
                             <v-btn variant="tonal" :disabled="savingMaterialAttachment" @click="closeMaterialAttachmentDialog">Schließen</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+
+                <v-dialog v-model="documentDeleteDialogOpen" max-width="420" persistent>
+                    <v-card rounded="xl">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                            <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                            Lehrplan entfernen
+                        </v-card-title>
+                        <v-card-text class="px-4 pb-2">
+                            <div class="text-body-2" style="color: #475569">
+                                Soll
+                                <strong>{{ documentToDelete?.selected_attachment_name || documentToDelete?.name }}</strong>
+                                wirklich aus den Lehrplänen entfernt werden?
+                            </div>
+                        </v-card-text>
+                        <v-card-actions class="px-4 pb-4">
+                            <v-spacer />
+                            <v-btn
+                                variant="text"
+                                color="secondary"
+                                :disabled="documentDeleteLoading"
+                                @click="closeDocumentDeleteDialog">
+                                Abbrechen
+                            </v-btn>
+                            <v-btn
+                                color="error"
+                                variant="flat"
+                                :loading="documentDeleteLoading"
+                                @click="confirmDocumentDelete">
+                                Entfernen
+                            </v-btn>
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
@@ -1186,8 +1270,8 @@ export default {
             selectedHalf: 'first',
             selectedYear: initYear,
             weekDisplayMode: 'days',
-            showLehrplaeneCard: true,
-            collapseFullMonths: false,
+            showLehrplaeneCard: false,
+            collapseFullMonths: true,
             selectedTopicId: null,
             selectedUnitTopicId: null,
             selectedUnitId: null,
@@ -1218,6 +1302,9 @@ export default {
             activeTopicAssignmentType: null,
             contentDeleteDialogOpen: false,
             contentToDelete: null,
+            documentDeleteDialogOpen: false,
+            documentDeleteLoading: false,
+            documentToDelete: null,
             topicForm: {
                 id: null,
                 title: '',
@@ -1256,6 +1343,10 @@ export default {
             if (!this.previewDoc) return false
             const mime = (this.previewDoc.preview_mime_type || this.previewDoc.mime_type || '').toLowerCase()
             return mime.startsWith('image/')
+        },
+
+        previewUsesIframe() {
+            return Boolean(this.previewUrl) && !this.previewIsImage
         },
 
         freeWeekKeys() {
@@ -1566,6 +1657,70 @@ export default {
                 month_key: null,
                 month_keys: [],
                 week_keys: nextWeekKeys,
+            }
+        },
+
+        buildTopicUnitDistribution(topic) {
+            if (!topic || !Array.isArray(topic.units) || topic.units.length === 0) {
+                return {
+                    units: [],
+                    assignedCount: 0,
+                }
+            }
+
+            const visibleWeekKeys = this.visibleWeekKeys()
+            const weekIndexMap = new Map(visibleWeekKeys.map((weekKey, index) => [weekKey, index]))
+            const unavailableWeekKeys = new Set([
+                ...this.freeWeekKeys,
+                ...visibleWeekKeys.filter((weekKey) => this.topicsForWeek(weekKey).length > 0),
+            ])
+            let nextWeekIndex = -1
+            let assignedCount = 0
+
+            const units = topic.units.map((unit) => {
+                const nextUnit = this.buildUnitPayload(unit)
+
+                if (nextUnit.assignment_type === 'weeks') {
+                    const assignedIndexes = nextUnit.week_keys
+                        .map((weekKey) => weekIndexMap.get(weekKey))
+                        .filter((weekIndex) => Number.isInteger(weekIndex))
+
+                    if (assignedIndexes.length > 0) {
+                        nextWeekIndex = Math.max(nextWeekIndex, ...assignedIndexes)
+                    }
+
+                    return nextUnit
+                }
+
+                if (nextUnit.assignment_type !== 'none') {
+                    return nextUnit
+                }
+
+                let candidateIndex = nextWeekIndex + 1
+
+                while (
+                    candidateIndex < visibleWeekKeys.length
+                    && unavailableWeekKeys.has(visibleWeekKeys[candidateIndex])
+                ) {
+                    candidateIndex += 1
+                }
+
+                if (candidateIndex >= visibleWeekKeys.length) {
+                    return nextUnit
+                }
+
+                const assignedWeekKey = visibleWeekKeys[candidateIndex]
+
+                unavailableWeekKeys.add(assignedWeekKey)
+                nextWeekIndex = candidateIndex
+                assignedCount += 1
+
+                return this.applyWeekAssignment(nextUnit, [assignedWeekKey])
+            })
+
+            return {
+                units,
+                assignedCount,
             }
         },
 
@@ -1951,6 +2106,42 @@ export default {
             this.openTopicAssignmentEditor(topic, this.defaultAssignmentEditorType(topic.assignment_type))
         },
 
+        canDistributeTopicUnits(topic) {
+            return this.buildTopicUnitDistribution(topic).assignedCount > 0
+        },
+
+        async distributeTopicUnits(topic) {
+            if (this.isPageActionLocked || this.topicSaving) {
+                return
+            }
+
+            const distribution = this.buildTopicUnitDistribution(topic)
+
+            if (!distribution.assignedCount) {
+                return
+            }
+
+            const nextTopics = this.curriculumTopics.map((entry) => {
+                if (entry.id !== topic.id) {
+                    return this.buildTopicPayload(entry)
+                }
+
+                return this.reconcileTopicUnitAssignments(this.buildTopicPayload(entry, {
+                    units: distribution.units,
+                }), 'units')
+            })
+
+            this.topicSaving = true
+
+            try {
+                await this.persistCurriculum({
+                    topics: nextTopics,
+                }, 'Einheiten konnten nicht verteilt werden.')
+            } finally {
+                this.topicSaving = false
+            }
+        },
+
         toggleUnitAssignmentEditor(topic, unit) {
             if (this.isUnitAssignmentEditorOpen(topic.id, unit.id)) {
                 this.closeTopicAssignmentEditor()
@@ -2328,7 +2519,11 @@ export default {
         },
 
         shouldCollapseMonth(month) {
-            return this.collapseFullMonths && this.isMonthFullyAssigned(month)
+            if (!this.collapseFullMonths || !this.isMonthFullyAssigned(month)) {
+                return false
+            }
+
+            return !this.isMonthAssignedToHighlightedItem(month)
         },
 
         monthOverviewEntries(month) {
@@ -2625,15 +2820,29 @@ export default {
         },
 
         scrollHighlightedCalendarIntoView() {
+            const calendarScrollElement = this.calendarScrollElement()
             const targetElement = this.firstHighlightedCalendarElement()
 
-            if (targetElement && typeof targetElement.scrollIntoView === 'function') {
-                targetElement.scrollIntoView({
-                    block: 'start',
-                    inline: 'nearest',
+            if (!calendarScrollElement || !targetElement) {
+                return
+            }
+
+            const containerRect = calendarScrollElement.getBoundingClientRect()
+            const targetRect = targetElement.getBoundingClientRect()
+            const top = Math.max(
+                0,
+                calendarScrollElement.scrollTop + (targetRect.top - containerRect.top) - 12,
+            )
+
+            if (typeof calendarScrollElement.scrollTo === 'function') {
+                calendarScrollElement.scrollTo({
+                    top,
                     behavior: 'smooth',
                 })
+                return
             }
+
+            calendarScrollElement.scrollTop = top
         },
 
         isTopicSelected(topicId) {
@@ -3160,6 +3369,11 @@ export default {
         selectPreview(doc) {
             if (this.isPageActionLocked) return
             if (doc.source_type === 'material') {
+                if (doc.material_card_attachment_id && doc.preview_url) {
+                    this.previewDoc = this.previewDoc?.id === doc.id ? null : doc
+                    return
+                }
+
                 this.openMaterialAttachmentDialog(doc)
                 return
             }
@@ -3168,14 +3382,40 @@ export default {
             this.previewDoc = this.previewDoc?.id === doc.id ? null : doc
         },
 
-        async removeDocument(doc) {
+        removeDocument(doc) {
+            if (this.isPageActionLocked || !doc) return
+            this.documentToDelete = doc
+            this.documentDeleteDialogOpen = true
+        },
+
+        closeDocumentDeleteDialog() {
+            if (this.documentDeleteLoading) return
+            this.documentDeleteDialogOpen = false
+            this.documentToDelete = null
+        },
+
+        async confirmDocumentDelete() {
             if (this.isPageActionLocked) return
+            if (!this.documentToDelete?.id) {
+                this.closeDocumentDeleteDialog()
+                return
+            }
+
+            this.documentDeleteLoading = true
+            let wasDeleted = false
+
             try {
-                await axios.delete(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/${doc.id}`)
-                if (this.previewDoc?.id === doc.id) this.previewDoc = null
-                this.documents = this.documents.filter((d) => d.id !== doc.id)
+                await axios.delete(`/api/admin/teaching/curricula/${this.curriculum.id}/documents/${this.documentToDelete.id}`)
+                if (this.previewDoc?.id === this.documentToDelete.id) this.previewDoc = null
+                this.documents = this.documents.filter((d) => d.id !== this.documentToDelete.id)
+                wasDeleted = true
             } catch {
                 // silent
+            } finally {
+                this.documentDeleteLoading = false
+                if (wasDeleted) {
+                    this.closeDocumentDeleteDialog()
+                }
             }
         },
 
@@ -3207,11 +3447,20 @@ export default {
                     material_card_id: card.id,
                 })
                 const attachedDocument = res.data?.data || null
+                const attachmentCount = this.materialFileAttachmentCount(card)
                 this.materialDialogOpen = false
                 this.showUploadOptions = false
                 await this.loadDocuments()
                 if (attachedDocument?.id) {
                     const nextDocument = this.documents.find((document) => document.id === attachedDocument.id) || attachedDocument
+                    if (attachmentCount === 1) {
+                        await this.openMaterialAttachmentDialog(nextDocument)
+                        if (this.materialAttachmentOptions.length === 1) {
+                            await this.selectMaterialAttachment(this.materialAttachmentOptions[0])
+                        }
+                        return
+                    }
+
                     await this.openMaterialAttachmentDialog(nextDocument)
                 }
             } catch {
@@ -3307,6 +3556,38 @@ export default {
             }
 
             return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+        },
+
+        materialFileAttachmentCount(card) {
+            const count = Number(card?.attachments_count ?? 0)
+            return Number.isFinite(count) && count > 0 ? count : 0
+        },
+
+        materialAttachmentCountLabel(card) {
+            const count = this.materialFileAttachmentCount(card)
+            if (count === 1) {
+                return '1 Anhang'
+            }
+
+            return `${count} Anhänge`
+        },
+
+        materialPickerSubtitle(card) {
+            const parts = []
+            const subject = typeof card?.subject === 'string' ? card.subject.trim() : ''
+            const attachmentCount = this.materialFileAttachmentCount(card)
+
+            if (subject !== '') {
+                parts.push(subject)
+            }
+
+            if (attachmentCount > 0) {
+                parts.push(this.materialAttachmentCountLabel(card))
+            } else {
+                parts.push('Keine Anhänge')
+            }
+
+            return parts.join(' · ')
         },
     },
 }
@@ -3925,6 +4206,12 @@ export default {
     margin-top: 4px;
 }
 
+.curriculum-detail__content-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
 .curriculum-detail__topic-form {
     border-radius: 14px;
     border: 1px solid rgba(15, 23, 42, 0.12);
@@ -4114,6 +4401,12 @@ export default {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.curriculum-detail__unit-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .curriculum-detail__unit-count {
