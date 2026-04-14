@@ -91,7 +91,8 @@ describe('CurriculumDetail week card view mode', () => {
         expect(wrapper.vm.showWeekdays).toBe(true)
         expect(wrapper.findAll('.curriculum-detail__week-days').length).toBeGreaterThan(0)
         expect(wrapper.find('.curriculum-detail__calendar-scroll').exists()).toBe(true)
-        expect(wrapper.find('.curriculum-detail__side-card--content.curriculum-detail__side-card--scrollable').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--content').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--content.curriculum-detail__side-card--scrollable').exists()).toBe(false)
         expect(wrapper.find('.curriculum-detail__side-card--documents.curriculum-detail__side-card--scrollable').exists()).toBe(true)
         expect(wrapper.find('.curriculum-detail__calendar').classes()).not.toContain('curriculum-detail__calendar--compact')
 
@@ -112,7 +113,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('class="curriculum-detail__calendar-scroll pa-2"')
         expect(source).toContain("'curriculum-detail__calendar--compact': isCompactWeekView")
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
-        expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content curriculum-detail__side-card--scrollable"')
+        expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
         expect(source).toContain('.curriculum-detail__calendar-scroll {')
         expect(source).toContain('.curriculum-detail__side-card--scrollable {')
         expect(source).toContain('overflow-y: auto;')
@@ -121,6 +122,57 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain(".curriculum-detail__calendar--compact {")
         expect(source).toContain('width: clamp(250px, 18vw, 300px);')
         expect(source).toContain('.curriculum-detail__calendar--compact .curriculum-detail__month {')
+        expect(source).toContain('.curriculum-detail__week--with-topics {')
+        expect(source).toContain('border-right: 4px solid rgba(79, 70, 229, 0.9) !important;')
+        expect(source).toContain('.curriculum-detail__week--with-topics:hover {')
+        expect(source).toContain('.curriculum-detail__week--with-exams {')
         expect(source).not.toContain('.curriculum-detail__body--compact-calendar .curriculum-detail__side-card--content {')
+    })
+
+    it('allows selecting and deselecting units independently inside a topic', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const unitRow = wrapper.find('.curriculum-detail__unit-item .curriculum-detail__topic-row')
+        const topicItem = wrapper.find('.curriculum-detail__topic-item')
+
+        expect(unitRow.exists()).toBe(true)
+        expect(topicItem.exists()).toBe(true)
+        expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
+        expect(wrapper.find('.curriculum-detail__unit-item').classes()).not.toContain('curriculum-detail__unit-item--selected')
+
+        await unitRow.trigger('click')
+
+        expect((wrapper.vm as any).selectedTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).selectedUnitTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).selectedUnitId).toBe('unit-1')
+        expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
+        expect(wrapper.find('.curriculum-detail__unit-item').classes()).toContain('curriculum-detail__unit-item--selected')
+
+        await unitRow.trigger('click')
+
+        expect((wrapper.vm as any).selectedTopicId).toBe('topic-1')
+        expect((wrapper.vm as any).selectedUnitTopicId).toBeNull()
+        expect((wrapper.vm as any).selectedUnitId).toBeNull()
+        expect(wrapper.find('.curriculum-detail__unit-item').classes()).not.toContain('curriculum-detail__unit-item--selected')
     })
 })

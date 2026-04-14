@@ -271,8 +271,9 @@
                                 v-for="(topic, topicIndex) in curriculumTopics"
                                 :key="topic.id"
                                 class="curriculum-detail__topic-item"
+                                :class="{ 'curriculum-detail__topic-item--selected': isTopicSelected(topic.id) }"
                                 :style="{ '--topic-hue': topicHue(topicIndex) }">
-                                <div class="curriculum-detail__topic-row">
+                                <div class="curriculum-detail__topic-row" @click="toggleSelectedTopic(topic.id)">
                                     <div class="curriculum-detail__topic-main">
                                         <div class="curriculum-detail__topic-title-row">
                                             <div class="curriculum-detail__topic-title">{{ topic.title }}</div>
@@ -502,9 +503,10 @@
                                         <div
                                             v-for="(unit, unitIndex) in topic.units"
                                             :key="unit.id"
-                                            class="curriculum-detail__unit-item">
-                                            <div class="curriculum-detail__topic-row">
-                                                    <div class="curriculum-detail__topic-main">
+                                            class="curriculum-detail__unit-item"
+                                            :class="{ 'curriculum-detail__unit-item--selected': isUnitSelected(topic.id, unit.id) }">
+                                            <div class="curriculum-detail__topic-row" @click="toggleSelectedUnit(topic.id, unit.id)">
+                                                <div class="curriculum-detail__topic-main">
                                                     <div class="curriculum-detail__unit-title">{{ unit.title }}</div>
                                                     <div class="curriculum-detail__topic-meta-chips">
                                                         <v-chip
@@ -1135,6 +1137,9 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             showLehrplaeneCard: true,
+            selectedTopicId: null,
+            selectedUnitTopicId: null,
+            selectedUnitId: null,
             documents: [],
             docsLoading: false,
             materialDialogOpen: false,
@@ -2280,6 +2285,30 @@ export default {
             return (base + idx * 32) % 360
         },
 
+        isTopicSelected(topicId) {
+            return this.selectedTopicId === topicId && this.selectedUnitId === null
+        },
+
+        toggleSelectedTopic(topicId) {
+            const shouldDeselectTopic = this.isTopicSelected(topicId)
+
+            this.selectedTopicId = shouldDeselectTopic ? null : topicId
+            this.selectedUnitTopicId = null
+            this.selectedUnitId = null
+        },
+
+        isUnitSelected(topicId, unitId) {
+            return this.selectedUnitTopicId === topicId && this.selectedUnitId === unitId
+        },
+
+        toggleSelectedUnit(topicId, unitId) {
+            const shouldDeselectUnit = this.isUnitSelected(topicId, unitId)
+
+            this.selectedTopicId = topicId
+            this.selectedUnitTopicId = shouldDeselectUnit ? null : topicId
+            this.selectedUnitId = shouldDeselectUnit ? null : unitId
+        },
+
         buildCurriculumPayload(overrides = {}) {
             return {
                 title: this.curriculum.title,
@@ -3047,18 +3076,15 @@ export default {
 }
 
 .curriculum-detail__month {
-    --accent: hsl(var(--month-hue), 65%, 68%);
-    --accent-dim: hsl(var(--month-hue), 45%, 22%);
+    --accent: hsl(var(--month-hue), 70%, 42%);
+    --accent-dim: hsl(var(--month-hue), 50%, 88%);
     --accent-glow: hsl(var(--month-hue), 70%, 50%);
+    --month-tint: hsla(var(--month-hue), 80%, 55%, 0.12);
     border-radius: 20px;
-    border: 1px solid hsl(var(--month-hue), 50%, 30%, 0.35);
-    background: linear-gradient(
-        135deg,
-        hsl(var(--month-hue), 35%, 12%, 0.85) 0%,
-        rgba(15, 23, 42, 0.85) 100%
-    );
+    border: 1px solid hsla(var(--month-hue), 55%, 45%, 0.3);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
     overflow: hidden;
-    backdrop-filter: blur(12px);
     width: 100%;
     box-sizing: border-box;
 }
@@ -3068,7 +3094,10 @@ export default {
     align-items: baseline;
     justify-content: space-between;
     padding: 14px 20px 8px;
-    border-bottom: 1px solid hsl(var(--month-hue), 50%, 30%, 0.25);
+    background:
+        linear-gradient(135deg, var(--month-tint), transparent 70%),
+        rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid hsla(var(--month-hue), 55%, 45%, 0.28);
 }
 
 .curriculum-detail__month-name {
@@ -3081,7 +3110,7 @@ export default {
 .curriculum-detail__month-year {
     font-size: 0.76rem;
     font-weight: 600;
-    color: #64748b;
+    color: #475569;
 }
 
 .curriculum-detail__month--with-topics {
@@ -3089,7 +3118,7 @@ export default {
 }
 
 .curriculum-detail__month--with-exams {
-    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2), 0 14px 30px rgba(120, 53, 15, 0.22);
+    box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.22), 0 14px 30px rgba(127, 29, 29, 0.22);
 }
 
 .curriculum-detail__month-topics {
@@ -3105,7 +3134,7 @@ export default {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(191, 219, 254, 0.88);
+    color: #000;
 }
 
 .curriculum-detail__month-topics-text {
@@ -3114,7 +3143,7 @@ export default {
     align-items: flex-start;
     column-gap: 10px;
     row-gap: 4px;
-    color: #dbeafe;
+    color: #000;
     font-size: 0.78rem;
     font-weight: 600;
     line-height: 1.3;
@@ -3132,8 +3161,8 @@ export default {
 }
 
 .curriculum-detail__overview-entry--exam {
-    color: #fde68a;
-    text-shadow: 0 0 12px rgba(245, 158, 11, 0.24);
+    color: #dc2626;
+    text-shadow: none;
 }
 
 .curriculum-detail__overview-entry-icon {
@@ -3158,8 +3187,11 @@ export default {
     gap: 10px;
     padding: 6px 10px;
     border-radius: 12px;
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 60%),
+        linear-gradient(180deg, rgba(238, 242, 255, 0.95), rgba(224, 231, 255, 0.85)) !important;
+    border: 1px solid rgba(99, 102, 241, 0.18) !important;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
     transition: background 0.2s, border-color 0.2s;
     position: relative;
     width: 100%;
@@ -3172,8 +3204,31 @@ export default {
 }
 
 .curriculum-detail__week:hover {
-    background: rgba(30, 41, 59, 0.7);
-    border-color: rgba(148, 163, 184, 0.18);
+    border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+.curriculum-detail__week .curriculum-detail__week-kw,
+.curriculum-detail__week .curriculum-detail__day-name {
+    color: #475569;
+}
+
+.curriculum-detail__week .curriculum-detail__week-num,
+.curriculum-detail__week .curriculum-detail__day-num {
+    color: #1e293b;
+}
+
+.curriculum-detail__week .curriculum-detail__week-range {
+    color: #475569 !important;
+}
+
+.curriculum-detail__week .curriculum-detail__week-topics {
+    color: #1e293b !important;
+    text-shadow: none !important;
+}
+
+.curriculum-detail__week .curriculum-detail__day {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(99, 102, 241, 0.12);
 }
 
 .curriculum-detail__week--topic-selectable {
@@ -3206,13 +3261,15 @@ export default {
 
 .curriculum-detail__week--with-topics {
     border-color: rgba(96, 165, 250, 0.48);
+    border-right: 4px solid rgba(79, 70, 229, 0.9) !important;
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(30, 41, 59, 0.9) 42%, rgba(15, 23, 42, 0.82));
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
 }
 
 .curriculum-detail__week--with-topics:hover {
-    border-color: rgba(125, 211, 252, 0.58);
-    box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.18), 0 0 22px rgba(56, 189, 248, 0.2);
+    border-color: rgba(96, 165, 250, 0.48);
+    border-right: 4px solid rgba(79, 70, 229, 0.9) !important;
+    box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
 }
 
 /* ---------- Week number ---------- */
@@ -3346,14 +3403,14 @@ export default {
 }
 
 .curriculum-detail__week--with-exams {
-    border-color: rgba(251, 191, 36, 0.26);
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.68) 0%, rgba(120, 53, 15, 0.18) 100%);
-    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.06), 0 8px 18px rgba(120, 53, 15, 0.14);
+    border-color: rgba(220, 38, 38, 0.45) !important;
+    border-right: 4px solid rgba(220, 38, 38, 0.92) !important;
+    box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.1), 0 8px 18px rgba(127, 29, 29, 0.14);
 }
 
 .curriculum-detail__week--with-exams .curriculum-detail__week-topics {
-    color: #fef3c7;
-    text-shadow: 0 1px 14px rgba(245, 158, 11, 0.28);
+    color: #b91c1c !important;
+    text-shadow: none !important;
 }
 
 .curriculum-detail__week-chip {
@@ -3565,10 +3622,25 @@ export default {
 
 .curriculum-detail__topic-item > .curriculum-detail__topic-row {
     padding: 12px 14px 10px;
+    cursor: pointer;
     background:
         linear-gradient(135deg, var(--topic-tint), transparent 70%),
         rgba(255, 255, 255, 0.6);
     border-bottom: 1px solid hsla(var(--topic-hue, 220), 55%, 45%, 0.28);
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.curriculum-detail__topic-item--selected {
+    border-color: hsla(var(--topic-hue, 220), 70%, 45%, 0.6);
+    box-shadow:
+        0 0 0 2px hsla(var(--topic-hue, 220), 70%, 55%, 0.35),
+        0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.curriculum-detail__topic-item--selected > .curriculum-detail__topic-row {
+    background:
+        linear-gradient(135deg, hsla(var(--topic-hue, 220), 80%, 55%, 0.22), hsla(var(--topic-hue, 220), 80%, 55%, 0.08) 70%),
+        rgba(255, 255, 255, 0.6);
 }
 
 .curriculum-detail__topic-item > .curriculum-detail__topic-row .curriculum-detail__topic-title {
@@ -3672,6 +3744,25 @@ export default {
         radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent 60%),
         linear-gradient(180deg, rgba(238, 242, 255, 0.95), rgba(224, 231, 255, 0.85));
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+}
+
+.curriculum-detail__unit-item > .curriculum-detail__topic-row {
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s;
+    border-radius: 8px;
+}
+
+.curriculum-detail__unit-item--selected {
+    border-color: rgba(79, 70, 229, 0.42);
+    box-shadow:
+        0 0 0 2px rgba(129, 140, 248, 0.22),
+        0 8px 18px rgba(79, 70, 229, 0.12);
+}
+
+.curriculum-detail__unit-item--selected > .curriculum-detail__topic-row {
+    background:
+        linear-gradient(135deg, rgba(129, 140, 248, 0.18), rgba(129, 140, 248, 0.05) 70%),
+        rgba(255, 255, 255, 0.58);
 }
 
 .curriculum-detail__unit-title {
