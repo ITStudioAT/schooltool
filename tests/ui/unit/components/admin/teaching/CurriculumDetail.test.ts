@@ -113,6 +113,9 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain("v-if=\"showWeekdays\"")
         expect(source).toContain("'curriculum-detail__body--compact-calendar': isCompactWeekView")
         expect(source).toContain('class="curriculum-detail__calendar-scroll pa-2"')
+        expect(source).toContain('ref="calendarScroll"')
+        expect(source).toContain(':data-month-key="month.assignmentKey"')
+        expect(source).toContain(':data-week-key="week.weekKey"')
         expect(source).toContain("'curriculum-detail__calendar--compact': isCompactWeekView")
         expect(source).toContain('v-model="collapseFullMonths"')
         expect(source).toContain('Volle Monate')
@@ -171,6 +174,10 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('border: 1px solid rgba(199, 210, 254, 0.42) !important;')
         expect(source).toContain('0 8px 18px rgba(79, 70, 229, 0.28);')
         expect(source).toContain('.curriculum-detail__assignment-week-controls :deep(.v-btn) {')
+        expect(source).toContain('scrollHighlightedCalendarIntoView() {')
+        expect(source).toContain('this.$nextTick(() => this.scrollHighlightedCalendarIntoView())')
+        expect(source).toContain('this.activeTopicAssignmentType = assignmentType ?? topic.assignment_type')
+        expect(source).toContain('this.activeTopicAssignmentType = assignmentType ?? unit.assignment_type')
         expect(source.lastIndexOf('.curriculum-detail__week--topic-selected,')).toBeGreaterThan(source.indexOf('.curriculum-detail__week--with-exams {'))
         expect(source).not.toContain('.curriculum-detail__body--compact-calendar .curriculum-detail__side-card--content {')
     })
@@ -221,6 +228,111 @@ describe('CurriculumDetail week card view mode', () => {
         expect((wrapper.vm as any).selectedUnitId).toBeNull()
         expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
         expect(unitItem.classes()).not.toContain('curriculum-detail__unit-item--selected')
+    })
+
+    it('scrolls the calendar to the assigned week when selecting a unit', async () => {
+        const scrollIntoView = vi.fn()
+        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            configurable: true,
+            value: scrollIntoView,
+        })
+
+        try {
+            const wrapper = mountCurriculumDetail({
+                topics: [
+                    {
+                        id: 'topic-1',
+                        title: 'Grammatik',
+                        assignment_type: 'none',
+                        month_keys: [],
+                        week_keys: [],
+                        units: [
+                            {
+                                id: 'unit-1',
+                                title: 'Satzbau',
+                                is_exam: false,
+                                assignment_type: 'weeks',
+                                month_keys: [],
+                                week_keys: ['2025-09-15'],
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            const unitItem = wrapper.find('.curriculum-detail__unit-item')
+
+            expect(unitItem.exists()).toBe(true)
+
+            await unitItem.trigger('click')
+            await wrapper.vm.$nextTick()
+
+            expect(scrollIntoView).toHaveBeenCalledTimes(1)
+            expect(scrollIntoView).toHaveBeenCalledWith({
+                block: 'start',
+                inline: 'nearest',
+                behavior: 'smooth',
+            })
+        } finally {
+            Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+                configurable: true,
+                value: originalScrollIntoView,
+            })
+        }
+    })
+
+    it('scrolls the calendar to the assigned week when opening unit date assignment editing', async () => {
+        const scrollIntoView = vi.fn()
+        const originalScrollIntoView = HTMLElement.prototype.scrollIntoView
+
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            configurable: true,
+            value: scrollIntoView,
+        })
+
+        try {
+            const wrapper = mountCurriculumDetail({
+                topics: [
+                    {
+                        id: 'topic-1',
+                        title: 'Grammatik',
+                        assignment_type: 'none',
+                        month_keys: [],
+                        week_keys: [],
+                        units: [
+                            {
+                                id: 'unit-1',
+                                title: 'Satzbau',
+                                is_exam: false,
+                                assignment_type: 'weeks',
+                                month_keys: [],
+                                week_keys: ['2025-09-15'],
+                            },
+                        ],
+                    },
+                ],
+            })
+
+            const topic = (wrapper.vm as any).curriculumTopics[0]
+            const unit = topic.units[0]
+
+            ;(wrapper.vm as any).openUnitAssignmentEditor(topic, unit, 'weeks')
+            await wrapper.vm.$nextTick()
+
+            expect(scrollIntoView).toHaveBeenCalledTimes(1)
+            expect(scrollIntoView).toHaveBeenCalledWith({
+                block: 'start',
+                inline: 'nearest',
+                behavior: 'smooth',
+            })
+        } finally {
+            Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+                configurable: true,
+                value: originalScrollIntoView,
+            })
+        }
     })
 
     it('shows an exam marker for units marked as Prüfung in the Inhalte card', () => {

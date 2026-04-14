@@ -140,7 +140,7 @@
         <div
             class="curriculum-detail__body"
             :class="{ 'curriculum-detail__body--compact-calendar': isCompactWeekView }">
-            <v-sheet rounded="xl" class="curriculum-detail__calendar-scroll pa-2">
+            <v-sheet ref="calendarScroll" rounded="xl" class="curriculum-detail__calendar-scroll pa-2">
                 <div
                     class="curriculum-detail__calendar"
                     :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }"
@@ -155,6 +155,7 @@
                             'curriculum-detail__month--topic-selected': isMonthAssignedToHighlightedItem(month),
                             'curriculum-detail__month--collapsed': shouldCollapseMonth(month),
                         }"
+                        :data-month-key="month.assignmentKey"
                         :style="{ '--month-hue': monthHue(idx) }">
                         <div class="curriculum-detail__month-header">
                             <div class="curriculum-detail__month-name">{{ month.name }}</div>
@@ -205,6 +206,7 @@
                                     'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
                                     'curriculum-detail__week--topic-selected': isWeekAssignedToHighlightedItem(week.weekKey),
                                 }"
+                                :data-week-key="week.weekKey"
                                 :style="weekAssignmentStyle(week.weekKey)"
                                 @click="handleWeekClick(week.weekKey)">
                                 <div class="curriculum-detail__week-number">
@@ -1976,6 +1978,7 @@ export default {
             this.activeTopicAssignmentId = topic.id
             this.activeTopicAssignmentUnitId = null
             this.activeTopicAssignmentType = assignmentType ?? topic.assignment_type
+            this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
         },
 
         openUnitAssignmentEditor(topic, unit, assignmentType = null) {
@@ -1993,6 +1996,7 @@ export default {
             this.activeTopicAssignmentId = topic.id
             this.activeTopicAssignmentUnitId = unit.id
             this.activeTopicAssignmentType = assignmentType ?? unit.assignment_type
+            this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
         },
 
         promptDeleteTopic(topic) {
@@ -2572,6 +2576,66 @@ export default {
             return `hsl(${this.topicHue(topicIndex)}, 70%, 48%)`
         },
 
+        calendarScrollElement() {
+            const calendarScrollRef = this.$refs.calendarScroll
+
+            if (calendarScrollRef instanceof HTMLElement) {
+                return calendarScrollRef
+            }
+
+            if (calendarScrollRef?.$el instanceof HTMLElement) {
+                return calendarScrollRef.$el
+            }
+
+            return null
+        },
+
+        firstHighlightedCalendarElement() {
+            const calendarScrollElement = this.calendarScrollElement()
+
+            if (!calendarScrollElement) {
+                return null
+            }
+
+            for (const month of this.visibleMonths) {
+                if (!this.isMonthAssignedToHighlightedItem(month)) {
+                    continue
+                }
+
+                if (!this.shouldCollapseMonth(month)) {
+                    const firstAssignedWeek = month.weeks.find((week) => this.isWeekAssignedToHighlightedItem(week.weekKey))
+
+                    if (firstAssignedWeek) {
+                        const weekElement = calendarScrollElement.querySelector(`[data-week-key="${firstAssignedWeek.weekKey}"]`)
+
+                        if (weekElement instanceof HTMLElement) {
+                            return weekElement
+                        }
+                    }
+                }
+
+                const monthElement = calendarScrollElement.querySelector(`[data-month-key="${month.assignmentKey}"]`)
+
+                if (monthElement instanceof HTMLElement) {
+                    return monthElement
+                }
+            }
+
+            return null
+        },
+
+        scrollHighlightedCalendarIntoView() {
+            const targetElement = this.firstHighlightedCalendarElement()
+
+            if (targetElement && typeof targetElement.scrollIntoView === 'function') {
+                targetElement.scrollIntoView({
+                    block: 'start',
+                    inline: 'nearest',
+                    behavior: 'smooth',
+                })
+            }
+        },
+
         isTopicSelected(topicId) {
             return this.selectedTopicId === topicId && this.selectedUnitId === null
         },
@@ -2582,6 +2646,10 @@ export default {
             this.selectedTopicId = shouldDeselectTopic ? null : topicId
             this.selectedUnitTopicId = null
             this.selectedUnitId = null
+
+            if (!shouldDeselectTopic) {
+                this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
+            }
         },
 
         isUnitSelected(topicId, unitId) {
@@ -2594,6 +2662,10 @@ export default {
             this.selectedTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitTopicId = shouldDeselectUnit ? null : topicId
             this.selectedUnitId = shouldDeselectUnit ? null : unitId
+
+            if (!shouldDeselectUnit) {
+                this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
+            }
         },
 
         buildCurriculumPayload(overrides = {}) {
