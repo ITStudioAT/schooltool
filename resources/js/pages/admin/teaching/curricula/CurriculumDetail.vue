@@ -270,7 +270,8 @@
                             <div
                                 v-for="(topic, topicIndex) in curriculumTopics"
                                 :key="topic.id"
-                                class="curriculum-detail__topic-item">
+                                class="curriculum-detail__topic-item"
+                                :style="{ '--topic-hue': topicHue(topicIndex) }">
                                 <div class="curriculum-detail__topic-row">
                                     <div class="curriculum-detail__topic-main">
                                         <div class="curriculum-detail__topic-title-row">
@@ -2274,6 +2275,11 @@ export default {
             return (base + idx * 28) % 360
         },
 
+        topicHue(idx) {
+            const base = 200
+            return (base + idx * 32) % 360
+        },
+
         buildCurriculumPayload(overrides = {}) {
             return {
                 title: this.curriculum.title,
@@ -3544,14 +3550,34 @@ export default {
 }
 
 .curriculum-detail__topic-item {
+    --topic-accent: hsl(var(--topic-hue, 220), 70%, 48%);
+    --topic-tint: hsla(var(--topic-hue, 220), 80%, 55%, 0.12);
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
+    gap: 0;
+    padding: 0;
     border-radius: 12px;
-    border: 1px solid rgba(15, 23, 42, 0.1);
+    border: 1px solid hsla(var(--topic-hue, 220), 55%, 45%, 0.3);
     background: rgba(255, 255, 255, 0.84);
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+    overflow: hidden;
+}
+
+.curriculum-detail__topic-item > .curriculum-detail__topic-row {
+    padding: 12px 14px 10px;
+    background:
+        linear-gradient(135deg, var(--topic-tint), transparent 70%),
+        rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid hsla(var(--topic-hue, 220), 55%, 45%, 0.28);
+}
+
+.curriculum-detail__topic-item > .curriculum-detail__topic-row .curriculum-detail__topic-title {
+    color: var(--topic-accent);
+}
+
+.curriculum-detail__topic-item > .curriculum-detail__unit-section {
+    padding: 12px 14px 14px;
+    border-top: none;
 }
 
 .curriculum-detail__topic-row {
