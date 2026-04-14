@@ -2,10 +2,10 @@
     <v-card class="storage-audit-panel pa-4 pa-md-6" rounded="xl" elevation="0">
         <div class="d-flex flex-wrap align-start justify-space-between ga-4 mb-4">
             <div>
-                <div class="text-overline text-primary font-weight-bold">Speicherprüfung</div>
-                <h2 class="text-h5 font-weight-bold">Cloudflare vs. Datenbank</h2>
+                <div class="text-overline text-primary font-weight-bold">Lokale Materialdateien</div>
+                <h2 class="text-h5 font-weight-bold">Aktive Schule aus Cloudflare lokal bereitstellen</h2>
                 <div class="text-body-2 text-medium-emphasis">
-                    Vergleich der aktiven Schule und aller Schulen zusammen. Bucket-Reste sind Objekte ohne Datenbankzeile.
+                    Wenn du die Online-Datenbank lokal eingespielt hast, kannst du hier alle Materialdateien der aktiven Schule aus Cloudflare in den lokalen Speicher laden. Bereits vorhandene lokale Dateien bleiben unverändert.
                 </div>
             </div>
 
@@ -30,6 +30,22 @@
             Stand: {{ formatReadableDateTime(generatedAt) }}
         </v-alert>
 
+        <div v-if="isLoading" class="mb-4">
+            <v-progress-linear
+                color="primary"
+                height="6"
+                rounded
+                :model-value="loadingProgressPercent" />
+            <div class="text-caption text-medium-emphasis mt-2">
+                Speicherprüfung läuft • {{ loadingProgressPercent }} %
+                <span v-if="loadingProgressMessage"> • {{ loadingProgressMessage }}</span>
+            </div>
+        </div>
+
+        <v-alert type="info" variant="tonal" class="mb-4">
+            Geteilte oder verknüpfte Materialien sowie gelöschte, aber wiederherstellbare Materialien sind berücksichtigt. Beim Laden zählt jede Datei nur einmal, auch wenn sie in mehreren Karten vorkommt.
+        </v-alert>
+
         <v-alert v-if="statusMessage" type="success" variant="tonal" class="mb-4">
             {{ statusMessage }}
         </v-alert>
@@ -50,48 +66,40 @@
                             </div>
                         </div>
 
-                        <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-database-search">
-                            {{ report.bucket.object_count }} Objekte
-                        </v-chip>
+                        <div class="d-flex flex-wrap justify-end ga-2">
+                            <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-database-search">
+                                {{ report.bucket.object_count }} Objekte
+                            </v-chip>
+                            <v-chip size="small" variant="tonal" color="primary" prepend-icon="mdi-harddisk">
+                                Belegt {{ formatBytes(report.bucket.total_bytes) }}
+                            </v-chip>
+                        </div>
                     </div>
 
                     <div class="storage-audit-summary-head mb-3">
                         <div>
-                            <div class="text-subtitle-2 font-weight-bold">Zusätzliche Kennzahlen</div>
+                            <div class="text-subtitle-2 font-weight-bold">Was ist hier zu tun?</div>
                             <div class="text-caption text-medium-emphasis">
-                                Einordnung von DB-Volumen, Bucket-Volumen und Restanteilen
+                                Drei einfache Fälle: lokal nachladen, manuell prüfen oder online aufräumen
                             </div>
                         </div>
                     </div>
 
                     <div class="storage-audit-kpi-grid mb-4">
                         <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">Bucket gesamt</div>
-                            <div class="storage-audit-kpi__value">{{ formatBytes(report.bucket.total_bytes) }}</div>
+                            <div class="storage-audit-kpi__label">Lokal fehlt noch</div>
+                            <div class="storage-audit-kpi__value">{{ report.differences.local_missing.count }}</div>
+                            <div class="storage-audit-kpi__meta">{{ formatBytes(report.differences.local_missing.total_bytes) }}</div>
                         </v-sheet>
                         <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">DB live</div>
-                            <div class="storage-audit-kpi__value">{{ formatBytes(report.database.live.total_bytes) }}</div>
+                            <div class="storage-audit-kpi__label">Fehlt auch online</div>
+                            <div class="storage-audit-kpi__value">{{ report.differences.database_only.count }}</div>
+                            <div class="storage-audit-kpi__meta">{{ formatBytes(report.differences.database_only.total_bytes) }}</div>
                         </v-sheet>
                         <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">DB gelöscht</div>
-                            <div class="storage-audit-kpi__value">{{ formatBytes(report.database.trashed.total_bytes) }}</div>
-                        </v-sheet>
-                        <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">Bucket-Reste</div>
-                            <div class="storage-audit-kpi__value">{{ formatBytes(report.differences.bucket_only.total_bytes) }}</div>
-                        </v-sheet>
-                        <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">DB gesamt</div>
-                            <div class="storage-audit-kpi__value">{{ formatBytes(databaseTotalBytes(report)) }}</div>
-                        </v-sheet>
-                        <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">Bucket vs. DB gesamt</div>
-                            <div class="storage-audit-kpi__value">{{ formatSignedBytes(bucketVsDatabaseTotalBytes(report)) }}</div>
-                        </v-sheet>
-                        <v-sheet class="storage-audit-kpi pa-3" rounded="lg">
-                            <div class="storage-audit-kpi__label">Bucket-Reste Anteil</div>
-                            <div class="storage-audit-kpi__value">{{ formatPercent(report.differences.bucket_only.total_bytes, report.bucket.total_bytes) }}</div>
+                            <div class="storage-audit-kpi__label">Nur online ohne Materialeintrag</div>
+                            <div class="storage-audit-kpi__value">{{ report.differences.bucket_only.count }}</div>
+                            <div class="storage-audit-kpi__meta">{{ formatBytes(report.differences.bucket_only.total_bytes) }}</div>
                         </v-sheet>
                     </div>
 
@@ -103,16 +111,43 @@
                         {{ analysisText(report) }}
                     </v-alert>
 
-                    <div class="storage-audit-section-head">
+                    <div v-if="report.scope_key === 'active_school'" class="storage-audit-section-head">
                         <div>
-                            <div class="text-subtitle-2 font-weight-bold">Verwaiste Dateien</div>
+                            <div class="text-subtitle-2 font-weight-bold">Alle Materialdateien dieser Schule lokal laden</div>
                             <div class="text-caption text-medium-emphasis">
-                                Objekte im Bucket, für die keine Datenbankzeile existiert
+                                Diese Dateien sind online vorhanden. Fehlende lokale Dateien werden automatisch ergänzt.
                             </div>
                         </div>
                         <div class="d-flex flex-column align-end ga-2">
                             <div class="text-caption text-medium-emphasis">
-                                {{ report.differences.bucket_only.count }} Einträge
+                                {{ report.cloud_sync_source.count }} Dateien
+                            </div>
+                            <v-btn
+                                v-if="report.scope_key === 'active_school'"
+                                color="primary"
+                                variant="flat"
+                                size="small"
+                                prepend-icon="mdi-cloud-download-outline"
+                                :disabled="report.cloud_sync_source.count === 0 || isSyncing"
+                                @click="syncLocalFiles(report)">
+                                Alle Dateien lokal laden
+                            </v-btn>
+                        </div>
+                    </div>
+                    <v-alert v-if="report.scope_key === 'active_school' && report.cloud_sync_source.count === 0" type="success" variant="tonal" class="mb-4">
+                        Für diese Schule wurden online keine Materialdateien gefunden.
+                    </v-alert>
+
+                    <div class="storage-audit-section-head">
+                        <div>
+                            <div class="text-subtitle-2 font-weight-bold">Nur online, ohne Materialeintrag</div>
+                            <div class="text-caption text-medium-emphasis">
+                                Diese Dateien liegen noch in Cloudflare, haben aber keinen Materialeintrag mehr
+                            </div>
+                        </div>
+                        <div class="d-flex flex-column align-end ga-2">
+                            <div class="text-caption text-medium-emphasis">
+                                {{ report.differences.bucket_only.count }} Dateien
                             </div>
                             <v-btn
                                 color="error"
@@ -121,7 +156,7 @@
                                 prepend-icon="mdi-delete-sweep"
                                 :disabled="report.differences.bucket_only.count === 0 || isPurging"
                                 @click="openPurgeDialog(report)">
-                                Alle verwaisten Dateien löschen
+                                Nur-online-Dateien löschen
                             </v-btn>
                         </div>
                     </div>
@@ -153,9 +188,9 @@
 
                     <div class="storage-audit-section-head">
                         <div>
-                            <div class="text-subtitle-2 font-weight-bold">DB ohne Bucket-Datei</div>
+                            <div class="text-subtitle-2 font-weight-bold">Fehlt auch online</div>
                             <div class="text-caption text-medium-emphasis">
-                                Datenbankzeilen, deren Datei im Bucket fehlt
+                                Diese Materialeinträge zeigen auf eine Datei, die weder lokal noch in Cloudflare gefunden wurde
                             </div>
                         </div>
                         <div class="text-caption text-medium-emphasis">
@@ -169,15 +204,25 @@
                             :key="`${report.scope_key}-database-only-${item.id}`"
                             class="px-0">
                             <template #title>
-                                <div class="storage-audit-path text-body-2">
-                                    {{ item.file_path }}
+                                <div class="text-body-2 font-weight-medium">
+                                    {{ formatDatabaseOnlyAttachmentLabel(report, item) }}
                                 </div>
                             </template>
                             <template #subtitle>
-                                <span>{{ item.material_card_title || 'Material' }}</span>
                                 <span v-if="item.deleted_at"> • gelöscht {{ formatReadableDateTime(item.deleted_at) }}</span>
                                 <span> • {{ formatBytes(item.size_bytes) }}</span>
                             </template>
+                            <div class="mt-2 d-flex justify-end">
+                                <v-btn
+                                    color="error"
+                                    variant="text"
+                                    size="small"
+                                    prepend-icon="mdi-delete"
+                                    :disabled="isDeletingBrokenAttachment"
+                                    @click="openBrokenAttachmentDeleteDialog(report, item)">
+                                    Defekten Anhang löschen
+                                </v-btn>
+                            </div>
                         </v-list-item>
 
                         <v-list-item v-if="report.has_more_database_only_attachments" class="px-0">
@@ -187,12 +232,33 @@
                         </v-list-item>
                     </v-list>
                     <v-alert v-else type="success" variant="tonal">
-                        Keine fehlenden Dateien in der Datenbank gefunden.
+                        Keine Einträge gefunden, die auch online fehlen.
                     </v-alert>
                 </v-card>
             </v-col>
         </v-row>
     </v-card>
+
+    <v-dialog v-model="isSyncDialogOpen" persistent max-width="620">
+        <v-card class="pa-4 pa-md-6" rounded="xl">
+            <div class="text-overline text-primary font-weight-bold">Materialdateien lokal laden</div>
+            <div class="text-subtitle-1 font-weight-bold mb-2">
+                Download läuft im Hintergrund
+            </div>
+            <div class="text-body-2 text-medium-emphasis mb-4">
+                {{ syncDialogMessage }}
+            </div>
+            <v-progress-linear
+                color="primary"
+                height="8"
+                rounded
+                :model-value="syncProgressPercent" />
+            <div class="text-caption text-medium-emphasis mt-2">
+                {{ syncProgressPercent }} %
+                <span v-if="syncProgressMessage"> • {{ syncProgressMessage }}</span>
+            </div>
+        </v-card>
+    </v-dialog>
 
     <v-dialog v-model="isPurgeDialogOpen" persistent max-width="620">
         <v-card class="pa-4 pa-md-6" rounded="xl">
@@ -222,11 +288,41 @@
             </div>
         </v-card>
     </v-dialog>
+
+    <v-dialog v-model="isBrokenAttachmentDeleteDialogOpen" persistent max-width="620">
+        <v-card class="pa-4 pa-md-6" rounded="xl">
+            <div class="text-overline text-error font-weight-bold">Defekten Anhang löschen</div>
+            <div class="text-subtitle-1 font-weight-bold mb-2">
+                {{ brokenAttachmentDeleteDialogTitle() }}
+            </div>
+            <div class="text-body-2 text-medium-emphasis mb-4">
+                {{ brokenAttachmentDeleteDialogMessage() }}
+            </div>
+            <v-alert type="warning" variant="tonal" class="mb-4">
+                Die Datei ist bereits lokal und online nicht mehr vorhanden. Es wird nur der defekte Anhang aus der Materialkarte entfernt.
+            </v-alert>
+            <div class="d-flex justify-end ga-2">
+                <v-btn variant="text" :disabled="isDeletingBrokenAttachment" @click="closeBrokenAttachmentDeleteDialog">
+                    Abbrechen
+                </v-btn>
+                <v-btn
+                    color="error"
+                    variant="flat"
+                    prepend-icon="mdi-delete"
+                    :loading="isDeletingBrokenAttachment"
+                    :disabled="!brokenAttachmentDeleteDialog"
+                    @click="confirmBrokenAttachmentDelete">
+                    Anhang löschen
+                </v-btn>
+            </div>
+        </v-card>
+    </v-dialog>
 </template>
 
 <script>
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
     data() {
@@ -234,11 +330,25 @@ export default {
             reports: [],
             generatedAt: '',
             isLoading: false,
+            loadingProgressPercent: 0,
+            loadingProgressMessage: '',
+            auditOperationId: '',
+            auditPollTimeoutId: null,
+            syncOperationId: '',
+            syncPollTimeoutId: null,
+            syncProgressPercent: 0,
+            syncProgressMessage: '',
+            syncDialogMessage: '',
+            isSyncDialogOpen: false,
             errorMessage: '',
             statusMessage: '',
             isPurging: false,
+            isSyncing: false,
             isPurgeDialogOpen: false,
             purgeDialogReport: null,
+            isDeletingBrokenAttachment: false,
+            isBrokenAttachmentDeleteDialogOpen: false,
+            brokenAttachmentDeleteDialog: null,
         }
     },
 
@@ -259,29 +369,169 @@ export default {
     },
 
     methods: {
+        resetAuditProgress() {
+            this.loadingProgressPercent = 0
+            this.loadingProgressMessage = ''
+            this.auditOperationId = ''
+        },
+        clearAuditPolling() {
+            if (this.auditPollTimeoutId) {
+                clearTimeout(this.auditPollTimeoutId)
+                this.auditPollTimeoutId = null
+            }
+        },
+        resetSyncState() {
+            this.syncOperationId = ''
+            this.syncProgressPercent = 0
+            this.syncProgressMessage = ''
+            this.syncDialogMessage = ''
+            this.isSyncDialogOpen = false
+        },
+        clearSyncPolling() {
+            if (this.syncPollTimeoutId) {
+                clearTimeout(this.syncPollTimeoutId)
+                this.syncPollTimeoutId = null
+            }
+        },
+        applyAuditOperationState(operation) {
+            this.loadingProgressPercent = Number(operation?.progress || 0)
+            this.loadingProgressMessage = String(operation?.message || '')
+        },
+        applySyncOperationState(operation) {
+            this.syncProgressPercent = Number(operation?.progress || 0)
+            this.syncProgressMessage = String(operation?.message || '')
+        },
+        scheduleAuditPolling(operationId, refreshAfterSeconds = 1) {
+            this.clearAuditPolling()
+
+            this.auditPollTimeoutId = window.setTimeout(() => {
+                this.pollAuditStatus(operationId)
+            }, Math.max(1, Number(refreshAfterSeconds || 1)) * 1000)
+        },
+        scheduleSyncPolling(operationId, refreshAfterSeconds = 1) {
+            this.clearSyncPolling()
+
+            this.syncPollTimeoutId = window.setTimeout(() => {
+                this.pollSyncStatus(operationId)
+            }, Math.max(1, Number(refreshAfterSeconds || 1)) * 1000)
+        },
+        async pollAuditStatus(operationId) {
+            try {
+                const response = await axios.get(`/api/admin/materials/storage-audit/operations/${operationId}`)
+                const operation = response.data?.data || null
+                if (!operation) {
+                    throw new Error('Der Prüfstatus ist leer.')
+                }
+
+                this.auditOperationId = String(operation.operation_id || operationId)
+                this.applyAuditOperationState(operation)
+
+                if (operation.status === 'completed') {
+                    this.reports = operation?.result?.reports || []
+                    this.generatedAt = operation?.result?.generated_at || ''
+                    this.isLoading = false
+                    this.clearAuditPolling()
+
+                    return
+                }
+
+                if (operation.status === 'failed') {
+                    this.errorMessage = operation?.message || 'Speicherprüfung konnte nicht geladen werden.'
+                    this.isLoading = false
+                    this.clearAuditPolling()
+
+                    return
+                }
+
+                this.scheduleAuditPolling(this.auditOperationId, operation?.refresh_after_seconds || 1)
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Speicherprüfung konnte nicht geladen werden.'
+                this.isLoading = false
+                this.clearAuditPolling()
+            }
+        },
+        async pollSyncStatus(operationId) {
+            try {
+                const response = await axios.get(`/api/admin/materials/storage-audit/sync-operations/${operationId}`)
+                const operation = response.data?.data || null
+                if (!operation) {
+                    throw new Error('Der Download-Status ist leer.')
+                }
+
+                this.syncOperationId = String(operation.operation_id || operationId)
+                this.applySyncOperationState(operation)
+
+                if (operation.status === 'completed') {
+                    this.clearSyncPolling()
+                    await this.loadAudit()
+                    this.isSyncing = false
+                    this.isSyncDialogOpen = false
+
+                    useNotificationStore().notify({
+                        message: operation?.message || 'Der Download der Materialdateien ist abgeschlossen.',
+                        type: 'success',
+                    })
+
+                    return
+                }
+
+                if (operation.status === 'failed') {
+                    this.errorMessage = operation?.message || 'Die Materialdateien konnten nicht lokal geladen werden.'
+                    this.isSyncing = false
+                    this.isSyncDialogOpen = false
+                    this.clearSyncPolling()
+
+                    useNotificationStore().notify({
+                        message: this.errorMessage,
+                        type: 'error',
+                    })
+
+                    return
+                }
+
+                this.scheduleSyncPolling(this.syncOperationId, operation?.refresh_after_seconds || 1)
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Die Materialdateien der aktiven Schule konnten nicht lokal geladen werden.'
+                this.isSyncing = false
+                this.isSyncDialogOpen = false
+                this.clearSyncPolling()
+
+                useNotificationStore().notify({
+                    message: this.errorMessage,
+                    type: 'error',
+                })
+            }
+        },
         async loadAudit() {
             if (!this.config?.is_auth) {
                 return
             }
 
+            this.clearAuditPolling()
             this.isLoading = true
+            this.resetAuditProgress()
             this.errorMessage = ''
             this.statusMessage = ''
 
             try {
-                const params = {}
+                const payload = {}
                 if (this.selectedSchoolId > 0) {
-                    params.school_id = this.selectedSchoolId
+                    payload.school_id = this.selectedSchoolId
                 }
 
-                const response = await axios.get('/api/admin/materials/storage-audit', { params })
-                this.reports = response.data?.data?.reports || []
-                this.generatedAt = response.data?.data?.generated_at || ''
+                const response = await axios.post('/api/admin/materials/storage-audit/start', payload)
+                const operation = response.data?.data || null
+                if (!operation?.operation_id) {
+                    throw new Error('Die Speicherprüfung konnte nicht gestartet werden.')
+                }
+
+                this.auditOperationId = String(operation.operation_id)
+                this.applyAuditOperationState(operation)
+                await this.pollAuditStatus(this.auditOperationId)
             } catch (error) {
                 this.reports = []
                 this.generatedAt = ''
                 this.errorMessage = error?.response?.data?.message || 'Speicherprüfung konnte nicht geladen werden.'
-            } finally {
                 this.isLoading = false
             }
         },
@@ -309,6 +559,28 @@ export default {
             this.isPurgeDialogOpen = false
             this.purgeDialogReport = null
         },
+        openBrokenAttachmentDeleteDialog(report, item) {
+            const attachmentId = Number(item?.id || 0)
+            if (attachmentId <= 0) {
+                return
+            }
+
+            this.brokenAttachmentDeleteDialog = {
+                attachment_id: attachmentId,
+                scope_key: String(report?.scope_key || ''),
+                school_id: Number(report?.school?.id || 0) || null,
+                label: this.formatDatabaseOnlyAttachmentLabel(report, item),
+            }
+            this.isBrokenAttachmentDeleteDialogOpen = true
+        },
+        closeBrokenAttachmentDeleteDialog() {
+            if (this.isDeletingBrokenAttachment) {
+                return
+            }
+
+            this.isBrokenAttachmentDeleteDialogOpen = false
+            this.brokenAttachmentDeleteDialog = null
+        },
         async confirmPurge() {
             if (!this.purgeDialogReport) {
                 return
@@ -335,6 +607,77 @@ export default {
                 this.errorMessage = error?.response?.data?.message || 'Verwaiste Dateien konnten nicht gelöscht werden.'
             } finally {
                 this.isPurging = false
+            }
+        },
+        async confirmBrokenAttachmentDelete() {
+            if (!this.brokenAttachmentDeleteDialog) {
+                return
+            }
+
+            this.isDeletingBrokenAttachment = true
+            this.errorMessage = ''
+
+            try {
+                const payload = {
+                    scope_key: this.brokenAttachmentDeleteDialog.scope_key,
+                }
+
+                if (this.brokenAttachmentDeleteDialog.school_id) {
+                    payload.school_id = this.brokenAttachmentDeleteDialog.school_id
+                }
+
+                const response = await axios.delete(
+                    `/api/admin/materials/storage-audit/database-only-attachments/${this.brokenAttachmentDeleteDialog.attachment_id}`,
+                    { data: payload },
+                )
+
+                await this.loadAudit()
+                this.statusMessage = response.data?.message || 'Der defekte Anhang wurde entfernt.'
+                this.closeBrokenAttachmentDeleteDialog()
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Der defekte Anhang konnte nicht gelöscht werden.'
+            } finally {
+                this.isDeletingBrokenAttachment = false
+            }
+        },
+        async syncLocalFiles(report) {
+            const cloudSyncCount = Number(report?.cloud_sync_source?.count || 0)
+            if (report?.scope_key !== 'active_school' || cloudSyncCount <= 0 || this.isSyncing) {
+                return
+            }
+
+            this.isSyncing = true
+            this.errorMessage = ''
+            this.statusMessage = ''
+            this.clearSyncPolling()
+            this.resetSyncState()
+
+            try {
+                const payload = {
+                    scope_key: report.scope_key,
+                }
+
+                if (report?.school?.id) {
+                    payload.school_id = report.school.id
+                }
+
+                const response = await axios.post('/api/admin/materials/storage-audit/sync-local', payload)
+                const operation = response.data?.data || null
+                if (!operation?.operation_id) {
+                    throw new Error('Der Download konnte nicht gestartet werden.')
+                }
+
+                this.syncOperationId = String(operation.operation_id)
+                this.syncDialogMessage = response.data?.message || 'Der Download der Materialdateien wurde im Hintergrund gestartet.'
+                this.isSyncDialogOpen = true
+                this.applySyncOperationState(operation)
+                await this.pollSyncStatus(this.syncOperationId)
+            } catch (error) {
+                this.errorMessage = error?.response?.data?.message || 'Die Materialdateien der aktiven Schule konnten nicht lokal geladen werden.'
+                this.isSyncing = false
+                this.clearSyncPolling()
+                this.resetSyncState()
+            } finally {
             }
         },
         formatBytes(bytes) {
@@ -397,6 +740,32 @@ export default {
 
             return `${day}.${month}.${year}, ${hour}:${minute} Uhr`
         },
+        formatDatabaseOnlyAttachmentLabel(report, item) {
+            const parts = [
+                item?.subject_name,
+                item?.topic_name,
+                item?.unit_name,
+                item?.material_card_title || 'Material',
+            ]
+                .map((value) => String(value || '').trim())
+                .filter((value) => value.length > 0)
+
+            const baseLabel = parts.join(' - ') || 'Material'
+            const schoolId = this.databaseOnlyAttachmentSchoolId(report, item)
+
+            return schoolId > 0 ? `${baseLabel} • Schule ${schoolId}` : baseLabel
+        },
+        databaseOnlyAttachmentSchoolId(report, item) {
+            const directSchoolId = Number(item?.school_id || report?.school?.id || 0)
+            if (directSchoolId > 0) {
+                return directSchoolId
+            }
+
+            const filePath = String(item?.file_path || '').trim()
+            const schoolMatch = filePath.match(/materials\/schools\/(\d+)\//)
+
+            return schoolMatch ? Number(schoolMatch[1] || 0) : 0
+        },
         databaseTotalBytes(report) {
             return Number(report?.database?.all?.total_bytes || 0)
         },
@@ -410,37 +779,61 @@ export default {
 
             return `${this.purgeDialogReport.scope_label}: ${this.purgeDialogReport.school_label}`
         },
+        brokenAttachmentDeleteDialogTitle() {
+            if (!this.brokenAttachmentDeleteDialog) {
+                return 'Defekten Anhang löschen'
+            }
+
+            return this.brokenAttachmentDeleteDialog.label
+        },
+        brokenAttachmentDeleteDialogMessage() {
+            if (!this.brokenAttachmentDeleteDialog) {
+                return ''
+            }
+
+            return `Der Eintrag "${this.brokenAttachmentDeleteDialog.label}" wird aus der Materialkarte entfernt.`
+        },
         purgeDialogMessage() {
             if (!this.purgeDialogReport) {
                 return ''
             }
 
             const countLabel = this.purgeDialogReport.count === 1 ? 'Datei' : 'Dateien'
-            return `${this.purgeDialogReport.count} verwaiste ${countLabel} mit insgesamt ${this.formatBytes(this.purgeDialogReport.bytes)} werden dauerhaft aus dem Bucket entfernt.`
+            return `${this.purgeDialogReport.count} ${countLabel} ohne Materialeintrag mit insgesamt ${this.formatBytes(this.purgeDialogReport.bytes)} werden dauerhaft aus dem Bucket entfernt.`
         },
         analysisText(report) {
             if (!report) {
                 return ''
             }
 
-            const bucketOnlyBytes = Number(report?.differences?.bucket_only?.total_bytes || 0)
-            const trashedBytes = Number(report?.database?.trashed?.total_bytes || 0)
-            const databaseOnlyBytes = Number(report?.differences?.database_only?.total_bytes || 0)
+            const cloudSyncCount = Number(report?.cloud_sync_source?.count || 0)
+            const localMissingCount = Number(report?.differences?.local_missing?.count || 0)
+            const databaseOnlyCount = Number(report?.differences?.database_only?.count || 0)
+            const bucketOnlyCount = Number(report?.differences?.bucket_only?.count || 0)
+            const trashedCount = Number(report?.database?.trashed?.count || 0)
 
-            if (bucketOnlyBytes > 0) {
-                return `Gelöschte Anhänge belegen noch ${this.formatBytes(trashedBytes)}. Zusätzlich liegen ${this.formatBytes(bucketOnlyBytes)} verwaiste Dateien ohne Datenbankzeile vor.`
+            if (report?.scope_key === 'active_school' && cloudSyncCount > 0) {
+                return `Mit einem Klick startest du den Hintergrund-Download für ${cloudSyncCount} Materialdateien der aktiven Schule. ${trashedCount > 0 ? `Gelöschte, aber wiederherstellbare Materialien sind mit berücksichtigt (${trashedCount}).` : ''}`.trim()
             }
 
-            if (trashedBytes > 0) {
-                return `Gelöschte Anhänge belegen noch ${this.formatBytes(trashedBytes)} bis der Purge sie entfernt.`
+            if (localMissingCount > 0) {
+                return `${localMissingCount} Dateien fehlen noch lokal.`
             }
 
-            if (databaseOnlyBytes > 0) {
-                return `Es gibt ${this.formatBytes(databaseOnlyBytes)} Datenbankeinträge ohne Bucket-Datei.`
+            if (databaseOnlyCount > 0) {
+                return `${databaseOnlyCount} Materialeinträge müssen manuell geprüft werden, weil die Datei auch online fehlt.`
             }
 
-            return 'Bucket und Datenbank stimmen auf dieser Ebene überein.'
+            if (bucketOnlyCount > 0) {
+                return `${bucketOnlyCount} Dateien liegen nur noch online und können hier aufgeräumt werden.`
+            }
+
+            return 'Für diesen Bereich ist aktuell nichts zu tun.'
         },
+    },
+    beforeUnmount() {
+        this.clearAuditPolling()
+        this.clearSyncPolling()
     },
 }
 </script>
@@ -482,6 +875,12 @@ export default {
     font-size: 18px;
     font-weight: 700;
     color: rgba(15, 23, 42, 0.96);
+}
+
+.storage-audit-kpi__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    color: rgba(15, 23, 42, 0.68);
 }
 
 .storage-audit-section-head {

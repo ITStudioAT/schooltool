@@ -1,23 +1,35 @@
 <?php
 
+use App\Jobs\BuildMaterialStorageAuditJob;
+use App\Jobs\SyncActiveSchoolMaterialFilesToLocalJob;
 use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
+use App\Models\MaterialSubject;
+use App\Models\MaterialTopic;
+use App\Models\MaterialUnit;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
+use App\Services\Materials\MaterialStorageAuditStatusStore;
+use App\Services\Materials\MaterialStorageSyncStatusStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
+    Queue::fake();
+
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
 
+    Storage::fake('local');
     Storage::fake('s3');
 
     $this->activeSchool = School::factory()->create([
@@ -90,6 +102,13 @@ beforeEach(function (): void {
         'status' => MaterialCard::STATUS_INBOX,
         'keywords' => [],
     ]);
+    $this->activeMissingOnlineCard = MaterialCard::query()->create([
+        'school_id' => $this->activeSchool->id,
+        'user_id' => $this->superAdmin->id,
+        'title' => 'Irgendwas',
+        'status' => MaterialCard::STATUS_INBOX,
+        'keywords' => [],
+    ]);
     $this->activeTrashedCard = MaterialCard::query()->create([
         'school_id' => $this->activeSchool->id,
         'user_id' => $this->superAdmin->id,
@@ -104,8 +123,16 @@ beforeEach(function (): void {
         'status' => MaterialCard::STATUS_INBOX,
         'keywords' => [],
     ]);
+    $this->otherLinkedCard = MaterialCard::query()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherSchoolUser->id,
+        'title' => 'Geteilte Datei',
+        'status' => MaterialCard::STATUS_INBOX,
+        'keywords' => [],
+    ]);
 
     $this->activeLivePath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$this->activeLiveCard->id}/live.pdf";
+    $this->activeMissingOnlinePath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$this->activeMissingOnlineCard->id}/missing.docx";
     $this->activeTrashedPath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$this->activeTrashedCard->id}/deleted.pdf";
     $this->activeOrphanPath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/orphans/active-orphan.pdf";
     $this->otherLivePath = "materials/schools/{$this->otherSchool->id}/users/{$this->otherSchoolUser->id}/cards/{$this->otherLiveCard->id}/other.pdf";
@@ -124,6 +151,14 @@ beforeEach(function (): void {
         'file_path' => $this->activeLivePath,
         'mime_type' => 'application/pdf',
         'size_bytes' => 100,
+    ]);
+    $this->activeMissingOnlineAttachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $this->activeMissingOnlineCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'missing.docx',
+        'file_path' => $this->activeMissingOnlinePath,
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 50,
     ]);
 
     $this->activeTrashedAttachment = MaterialCardAttachment::query()->create([
@@ -145,6 +180,36 @@ beforeEach(function (): void {
         'mime_type' => 'application/pdf',
         'size_bytes' => 400,
     ]);
+    $this->otherLinkedAttachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $this->otherLinkedCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'linked-live.pdf',
+        'file_path' => $this->activeLivePath,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 100,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->superAdmin->id,
+        'name' => 'Informatik',
+        'sort_order' => 1,
+    ]);
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Netzwerke',
+        'sort_order' => 1,
+    ]);
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Sicherheit',
+        'sort_order' => 1,
+    ]);
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $this->activeMissingOnlineCard->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
 });
 
 test('super_admin can load storage reconciliation for active school and all schools', function (): void {
@@ -156,31 +221,114 @@ test('super_admin can load storage reconciliation for active school and all scho
         ->assertJsonPath('data.reports.0.school.id', $this->activeSchool->id)
         ->assertJsonPath('data.reports.0.bucket.object_count', 3)
         ->assertJsonPath('data.reports.0.bucket.total_bytes', 600)
-        ->assertJsonPath('data.reports.0.database.live.count', 1)
-        ->assertJsonPath('data.reports.0.database.live.total_bytes', 100)
+        ->assertJsonPath('data.reports.0.cloud_sync_source.count', 2)
+        ->assertJsonPath('data.reports.0.cloud_sync_source.total_bytes', 300)
+        ->assertJsonPath('data.reports.0.database.live.count', 2)
+        ->assertJsonPath('data.reports.0.database.live.total_bytes', 150)
         ->assertJsonPath('data.reports.0.database.trashed.count', 1)
         ->assertJsonPath('data.reports.0.database.trashed.total_bytes', 200)
-        ->assertJsonPath('data.reports.0.database.all.count', 2)
-        ->assertJsonPath('data.reports.0.database.all.total_bytes', 300)
+        ->assertJsonPath('data.reports.0.database.all.count', 3)
+        ->assertJsonPath('data.reports.0.database.all.total_bytes', 350)
         ->assertJsonPath('data.reports.0.differences.bucket_only.count', 1)
         ->assertJsonPath('data.reports.0.differences.bucket_only.total_bytes', 300)
+        ->assertJsonPath('data.reports.0.differences.database_only.count', 1)
+        ->assertJsonPath('data.reports.0.differences.database_only.total_bytes', 50)
+        ->assertJsonPath('data.reports.0.differences.local_missing.count', 2)
+        ->assertJsonPath('data.reports.0.differences.local_missing.total_bytes', 300)
         ->assertJsonPath('data.reports.0.bucket_only_objects.0.path', $this->activeOrphanPath)
         ->assertJsonPath('data.reports.0.bucket_only_objects.0.size_bytes', 300)
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.file_path', $this->activeMissingOnlinePath)
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.school_id', $this->activeSchool->id)
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.subject_name', 'Informatik')
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.topic_name', 'Netzwerke')
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.unit_name', 'Sicherheit')
+        ->assertJsonPath('data.reports.0.database_only_attachments.0.material_card_title', 'Irgendwas')
+        ->assertJsonPath('data.reports.0.local_missing_files.0.path', $this->activeTrashedPath)
+        ->assertJsonPath('data.reports.0.local_missing_files.1.path', $this->activeLivePath)
+        ->assertJsonPath('data.reports.0.local_missing_files.0.reference_count', 1)
+        ->assertJsonPath('data.reports.0.cloud_sync_files.0.path', $this->activeTrashedPath)
+        ->assertJsonPath('data.reports.0.cloud_sync_files.1.path', $this->activeLivePath)
         ->assertJsonPath('data.reports.1.scope_key', 'all_schools')
         ->assertJsonPath('data.reports.1.bucket.object_count', 5)
         ->assertJsonPath('data.reports.1.bucket.total_bytes', 1500)
-        ->assertJsonPath('data.reports.1.database.live.count', 2)
-        ->assertJsonPath('data.reports.1.database.live.total_bytes', 500)
+        ->assertJsonPath('data.reports.1.cloud_sync_source.count', 3)
+        ->assertJsonPath('data.reports.1.cloud_sync_source.total_bytes', 700)
+        ->assertJsonPath('data.reports.1.database.live.count', 4)
+        ->assertJsonPath('data.reports.1.database.live.total_bytes', 650)
         ->assertJsonPath('data.reports.1.database.trashed.count', 1)
         ->assertJsonPath('data.reports.1.database.trashed.total_bytes', 200)
-        ->assertJsonPath('data.reports.1.database.all.count', 3)
-        ->assertJsonPath('data.reports.1.database.all.total_bytes', 700)
+        ->assertJsonPath('data.reports.1.database.all.count', 5)
+        ->assertJsonPath('data.reports.1.database.all.total_bytes', 850)
         ->assertJsonPath('data.reports.1.differences.bucket_only.count', 2)
         ->assertJsonPath('data.reports.1.differences.bucket_only.total_bytes', 800)
+        ->assertJsonPath('data.reports.1.differences.database_only.count', 1)
+        ->assertJsonPath('data.reports.1.differences.database_only.total_bytes', 50)
+        ->assertJsonPath('data.reports.1.differences.local_missing.count', 3)
+        ->assertJsonPath('data.reports.1.differences.local_missing.total_bytes', 700)
         ->assertJsonPath('data.reports.1.bucket_only_objects.0.path', $this->otherOrphanPath)
         ->assertJsonPath('data.reports.1.bucket_only_objects.0.size_bytes', 500)
         ->assertJsonPath('data.reports.1.bucket_only_objects.1.path', $this->activeOrphanPath)
-        ->assertJsonPath('data.reports.1.bucket_only_objects.1.size_bytes', 300);
+        ->assertJsonPath('data.reports.1.bucket_only_objects.1.size_bytes', 300)
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.file_path', $this->activeMissingOnlinePath)
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.school_id', $this->activeSchool->id)
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.subject_name', 'Informatik')
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.topic_name', 'Netzwerke')
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.unit_name', 'Sicherheit')
+        ->assertJsonPath('data.reports.1.database_only_attachments.0.material_card_title', 'Irgendwas');
+});
+
+test('super_admin can start storage audit in background and fetch its status', function (): void {
+    $startResponse = $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/start', [
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $startResponse->assertStatus(202)
+        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.progress', 0)
+        ->assertJsonPath('data.context.school_id', $this->activeSchool->id);
+
+    $operationId = (string) $startResponse->json('data.operation_id');
+
+    Queue::assertPushed(BuildMaterialStorageAuditJob::class, function (BuildMaterialStorageAuditJob $job) use ($operationId): bool {
+        return $job->authUserId === $this->superAdmin->id
+            && $job->operationId === $operationId
+            && $job->schoolId === $this->activeSchool->id;
+    });
+
+    app(MaterialStorageAuditStatusStore::class)->markProgress(
+        $this->superAdmin->id,
+        $operationId,
+        4,
+        10,
+        'Alle Schulen: Bucket-Dateien werden geprüft.',
+    );
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->getJson("/api/admin/materials/storage-audit/operations/{$operationId}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'running')
+        ->assertJsonPath('data.progress', 40)
+        ->assertJsonPath('data.completed_steps', 4)
+        ->assertJsonPath('data.total_steps', 10)
+        ->assertJsonPath('data.message', 'Alle Schulen: Bucket-Dateien werden geprüft.');
+});
+
+test('active school audit does not mark linked source files from another school as missing online', function (): void {
+    $response = $this->actingAs($this->superAdmin, 'sanctum')
+        ->getJson('/api/admin/materials/storage-audit?school_id='.$this->otherSchool->id);
+
+    $response->assertOk()
+        ->assertJsonPath('data.reports.0.scope_key', 'active_school')
+        ->assertJsonPath('data.reports.0.school.id', $this->otherSchool->id)
+        ->assertJsonPath('data.reports.0.database.live.count', 2)
+        ->assertJsonPath('data.reports.0.database.live.total_bytes', 500)
+        ->assertJsonPath('data.reports.0.cloud_sync_source.count', 2)
+        ->assertJsonPath('data.reports.0.cloud_sync_source.total_bytes', 500)
+        ->assertJsonPath('data.reports.0.differences.database_only.count', 0)
+        ->assertJsonPath('data.reports.0.differences.database_only.total_bytes', 0)
+        ->assertJsonPath('data.reports.0.differences.local_missing.count', 2)
+        ->assertJsonPath('data.reports.0.differences.local_missing.total_bytes', 500);
 });
 
 test('super_admin can delete bucket relicts for the active school and for all schools', function (): void {
@@ -213,14 +361,114 @@ test('super_admin can delete bucket relicts for the active school and for all sc
     Storage::disk('s3')->assertExists($this->activeLivePath);
 });
 
+test('super_admin can queue active school material sync', function (): void {
+    $activeResponse = $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/sync-local', [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $activeResponse->assertStatus(202)
+        ->assertJsonPath('message', 'Der Download der Materialdateien wurde im Hintergrund gestartet.')
+        ->assertJsonPath('data.status', 'queued')
+        ->assertJsonPath('data.progress', 0)
+        ->assertJsonPath('data.scope_key', 'active_school')
+        ->assertJsonPath('data.school_id', $this->activeSchool->id);
+
+    $operationId = (string) $activeResponse->json('data.operation_id');
+
+    Queue::assertPushed(SyncActiveSchoolMaterialFilesToLocalJob::class, function (SyncActiveSchoolMaterialFilesToLocalJob $job) use ($operationId): bool {
+        return $job->authUserId === $this->superAdmin->id
+            && $job->operationId === $operationId
+            && $job->schoolId === $this->activeSchool->id;
+    });
+});
+
+test('super_admin can fetch active school material sync status', function (): void {
+    $startResponse = $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/sync-local', [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $operationId = (string) $startResponse->json('data.operation_id');
+
+    app(MaterialStorageSyncStatusStore::class)->markProgress(
+        $this->superAdmin->id,
+        $operationId,
+        2,
+        5,
+        'Datei 2 von 5 verarbeitet.',
+    );
+
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->getJson("/api/admin/materials/storage-audit/sync-operations/{$operationId}")
+        ->assertOk()
+        ->assertJsonPath('data.status', 'running')
+        ->assertJsonPath('data.progress', 40)
+        ->assertJsonPath('data.completed_steps', 2)
+        ->assertJsonPath('data.total_steps', 5)
+        ->assertJsonPath('data.message', 'Datei 2 von 5 verarbeitet.');
+});
+
+test('sync local rejects all schools scope', function (): void {
+    $this->actingAs($this->superAdmin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/sync-local', [
+            'scope_key' => 'all_schools',
+        ])
+        ->assertStatus(422);
+});
+
+test('super_admin can delete a broken database only attachment from storage audit', function (): void {
+    $response = $this->actingAs($this->superAdmin, 'sanctum')
+        ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeMissingOnlineAttachment->id}", [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.attachment_id', $this->activeMissingOnlineAttachment->id)
+        ->assertJsonPath('data.scope_key', 'active_school')
+        ->assertJsonPath('data.school_id', $this->activeSchool->id);
+
+    expect(MaterialCardAttachment::withTrashed()->find($this->activeMissingOnlineAttachment->id))->toBeNull();
+});
+
 test('admin users cannot access the storage reconciliation endpoint', function (): void {
     $this->actingAs($this->admin, 'sanctum')
         ->getJson('/api/admin/materials/storage-audit')
         ->assertStatus(403);
 
     $this->actingAs($this->admin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/start', [
+            'school_id' => $this->activeSchool->id,
+        ])
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
         ->postJson('/api/admin/materials/storage-audit/purge', [
             'scope_key' => 'all_schools',
+        ])
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/materials/storage-audit/operations/not-found')
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson('/api/admin/materials/storage-audit/sync-local', [
+            'scope_key' => 'all_schools',
+        ])
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/materials/storage-audit/sync-operations/not-found')
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->deleteJson('/api/admin/materials/storage-audit/database-only-attachments/123', [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
         ])
         ->assertStatus(403);
 });

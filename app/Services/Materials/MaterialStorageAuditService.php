@@ -3,6 +3,7 @@
 namespace App\Services\Materials;
 
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
 use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,16 +22,60 @@ class MaterialStorageAuditService
      */
     public function auditForUser(User $user, ?int $schoolId = null): array
     {
+        return $this->auditForUserWithProgress($user, $schoolId);
+    }
+
+    /**
+     * @param  callable(int, int, string): void|null  $progressCallback
+     * @return array{
+     *     reports: array<int, array<string, mixed>>,
+     *     generated_at: string
+     * }
+     */
+    public function auditForUserWithProgress(User $user, ?int $schoolId = null, ?callable $progressCallback = null): array
+    {
         $selectedSchoolId = $schoolId > 0
             ? $schoolId
             : (int) ($user->selectedSchool?->id ?? $user->school_id ?? 0);
 
+        $scopeCount = $selectedSchoolId > 0 ? 2 : 1;
+        $totalSteps = $scopeCount * 5;
+        $completedSteps = 0;
+
+        $advanceProgress = function (string $message) use (&$completedSteps, $totalSteps, $progressCallback): void {
+            $completedSteps++;
+
+            if (is_callable($progressCallback)) {
+                $progressCallback($completedSteps, $totalSteps, $message);
+            }
+        };
+
         $reports = [];
         if ($selectedSchoolId > 0) {
-            $reports[] = $this->auditForSchool($selectedSchoolId, 'Aktive Schule');
+            $activeSchoolAttachments = $this->fileAttachmentsForSchool($selectedSchoolId)->get();
+            $advanceProgress('Aktive Schule: Materialeinträge werden geladen.');
+
+            $reports[] = $this->buildReport(
+                scopeKey: 'active_school',
+                scopeLabel: 'Aktive Schule',
+                bucketPrefix: 'materials/schools/'.$selectedSchoolId,
+                school: School::query()->find($selectedSchoolId),
+                attachments: $activeSchoolAttachments,
+                progressCallback: fn (string $message): mixed => $advanceProgress('Aktive Schule: '.$message),
+            );
         }
 
-        $reports[] = $this->auditForAllSchools();
+        $allSchoolAttachments = $this->fileAttachmentsForAllSchools()->get();
+        $advanceProgress('Alle Schulen: Materialeinträge werden geladen.');
+
+        $reports[] = $this->buildReport(
+            scopeKey: 'all_schools',
+            scopeLabel: 'Alle Schulen',
+            bucketPrefix: 'materials',
+            school: null,
+            attachments: $allSchoolAttachments,
+            progressCallback: fn (string $message): mixed => $advanceProgress('Alle Schulen: '.$message),
+        );
 
         return [
             'reports' => $reports,
@@ -68,6 +113,21 @@ class MaterialStorageAuditService
         );
     }
 
+    public function isDatabaseOnlyAttachment(MaterialCardAttachment $attachment): bool
+    {
+        if ($attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $attachment->file_path) {
+            return false;
+        }
+
+        $path = $this->normalizeStoragePath((string) $attachment->file_path);
+        if ($path === '') {
+            return false;
+        }
+
+        return ! Storage::disk('local')->exists($path)
+            && ! Storage::disk('s3')->exists($path);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -99,6 +159,56 @@ class MaterialStorageAuditService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function syncCloudObjectsToLocalForUser(User $user, string $scopeKey, ?int $schoolId = null): array
+    {
+        if ($scopeKey === 'active_school') {
+            $selectedSchoolId = $schoolId > 0
+                ? $schoolId
+                : (int) ($user->selectedSchool?->id ?? $user->school_id ?? 0);
+
+            if ($selectedSchoolId <= 0) {
+                return $this->syncCloudObjectsToLocalForScope('active_school', 'Aktive Schule', collect());
+            }
+
+            return $this->syncCloudObjectsToLocalForSchool($selectedSchoolId);
+        }
+
+        return $this->syncCloudObjectsToLocalForScope(
+            scopeKey: 'all_schools',
+            scopeLabel: 'Alle Schulen',
+            attachments: $this->fileAttachmentsForAllSchools()->get(),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function syncCloudObjectsToLocalForSchool(int $schoolId): array
+    {
+        return $this->syncCloudObjectsToLocalForSchoolWithProgress($schoolId);
+    }
+
+    /**
+     * @param  callable(int, int, string): void|null  $progressCallback
+     * @return array<string, mixed>
+     */
+    public function syncCloudObjectsToLocalForSchoolWithProgress(int $schoolId, ?callable $progressCallback = null): array
+    {
+        if ($schoolId <= 0) {
+            return $this->syncCloudObjectsToLocalForScope('active_school', 'Aktive Schule', collect(), $progressCallback);
+        }
+
+        return $this->syncCloudObjectsToLocalForScope(
+            scopeKey: 'active_school',
+            scopeLabel: 'Aktive Schule',
+            attachments: $this->fileAttachmentsForSchool($schoolId)->get(),
+            progressCallback: $progressCallback,
+        );
+    }
+
+    /**
      * @return Builder<MaterialCardAttachment>
      */
     private function fileAttachmentsForAllSchools(): Builder
@@ -110,7 +220,25 @@ class MaterialStorageAuditService
             ->with([
                 'materialCard' => fn ($query) => $query
                     ->withTrashed()
-                    ->select(['id', 'school_id', 'user_id', 'title']),
+                    ->select(['id', 'school_id', 'user_id', 'title'])
+                    ->with([
+                        'classifications' => fn ($classificationQuery) => $classificationQuery
+                            ->select(['id', 'material_card_id', 'subject_id', 'topic_id', 'unit_id'])
+                            ->with([
+                                'subject:id,name',
+                                'topic' => fn ($topicQuery) => $topicQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'subject_id', 'name']),
+                                'topic.subject:id,name',
+                                'unit' => fn ($unitQuery) => $unitQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'topic_id', 'name']),
+                                'unit.topic' => fn ($topicQuery) => $topicQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'subject_id', 'name']),
+                                'unit.topic.subject:id,name',
+                            ]),
+                    ]),
             ]);
     }
 
@@ -129,7 +257,25 @@ class MaterialStorageAuditService
             ->with([
                 'materialCard' => fn ($query) => $query
                     ->withTrashed()
-                    ->select(['id', 'school_id', 'user_id', 'title']),
+                    ->select(['id', 'school_id', 'user_id', 'title'])
+                    ->with([
+                        'classifications' => fn ($classificationQuery) => $classificationQuery
+                            ->select(['id', 'material_card_id', 'subject_id', 'topic_id', 'unit_id'])
+                            ->with([
+                                'subject:id,name',
+                                'topic' => fn ($topicQuery) => $topicQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'subject_id', 'name']),
+                                'topic.subject:id,name',
+                                'unit' => fn ($unitQuery) => $unitQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'topic_id', 'name']),
+                                'unit.topic' => fn ($topicQuery) => $topicQuery
+                                    ->withTrashed()
+                                    ->select(['id', 'subject_id', 'name']),
+                                'unit.topic.subject:id,name',
+                            ]),
+                    ]),
             ]);
     }
 
@@ -142,18 +288,36 @@ class MaterialStorageAuditService
         string $scopeLabel,
         string $bucketPrefix,
         ?School $school,
-        Collection $attachments
+        Collection $attachments,
+        ?callable $progressCallback = null,
     ): array {
         $bucketFiles = $this->bucketFiles($bucketPrefix);
+        if (is_callable($progressCallback)) {
+            $progressCallback('Bucket-Dateien werden geprüft.');
+        }
+
+        $cloudBackedFiles = $this->cloudBackedFiles($attachments);
 
         $liveAttachments = $attachments->filter(fn (MaterialCardAttachment $attachment): bool => ! $attachment->trashed());
         $trashedAttachments = $attachments->filter(fn (MaterialCardAttachment $attachment): bool => $attachment->trashed());
+        if (is_callable($progressCallback)) {
+            $progressCallback('Cloud- und Datenbankdateien werden abgeglichen.');
+        }
 
         $bucketOnlyObjects = $this->bucketOnlyObjectsFromFiles($bucketFiles, $attachments);
         $databaseOnlyAttachments = $this->databaseOnlyAttachmentsFromFiles($bucketFiles, $attachments);
+        $localMissingFiles = $this->localMissingFilesFromCloud($attachments);
 
         $bucketOnlyBytes = $this->sumBytesFromArrays($bucketOnlyObjects);
         $databaseOnlyBytes = $this->sumAttachmentBytes($databaseOnlyAttachments);
+        $localMissingBytes = $this->sumBytesFromArrays($localMissingFiles);
+        if (is_callable($progressCallback)) {
+            $progressCallback('Unterschiede werden berechnet.');
+        }
+
+        if (is_callable($progressCallback)) {
+            $progressCallback('Ergebnis wird vorbereitet.');
+        }
 
         return [
             'scope_key' => $scopeKey,
@@ -167,6 +331,10 @@ class MaterialStorageAuditService
             'bucket' => [
                 'object_count' => count($bucketFiles),
                 'total_bytes' => $this->sumBytesFromArrays($bucketFiles),
+            ],
+            'cloud_sync_source' => [
+                'count' => $cloudBackedFiles->count(),
+                'total_bytes' => $this->sumBytesFromArrays($cloudBackedFiles),
             ],
             'database' => [
                 'live' => [
@@ -191,6 +359,10 @@ class MaterialStorageAuditService
                     'count' => $databaseOnlyAttachments->count(),
                     'total_bytes' => $databaseOnlyBytes,
                 ],
+                'local_missing' => [
+                    'count' => $localMissingFiles->count(),
+                    'total_bytes' => $localMissingBytes,
+                ],
                 'bucket_vs_live' => [
                     'total_bytes' => max(0, $this->sumBytesFromArrays($bucketFiles) - $this->sumAttachmentBytes($liveAttachments)),
                 ],
@@ -213,11 +385,16 @@ class MaterialStorageAuditService
                 ->take(self::MAX_RECONCILIATION_ITEMS)
                 ->map(function (MaterialCardAttachment $attachment): array {
                     $card = $attachment->materialCard;
+                    $classificationContext = $this->classificationContextForAttachment($attachment);
 
                     return [
                         'id' => (int) $attachment->id,
                         'material_card_id' => (int) ($attachment->material_card_id ?? 0),
                         'material_card_title' => (string) ($card?->title ?? ''),
+                        'school_id' => (int) ($card?->school_id ?? 0),
+                        'subject_name' => $classificationContext['subject_name'],
+                        'topic_name' => $classificationContext['topic_name'],
+                        'unit_name' => $classificationContext['unit_name'],
                         'user_id' => (int) ($card?->user_id ?? 0),
                         'file_path' => (string) ($attachment->file_path ?? ''),
                         'size_bytes' => (int) ($attachment->size_bytes ?? 0),
@@ -225,9 +402,70 @@ class MaterialStorageAuditService
                     ];
                 })
                 ->all(),
+            'local_missing_files' => $localMissingFiles
+                ->sortByDesc(fn (array $item): int => (int) ($item['size_bytes'] ?? 0))
+                ->values()
+                ->take(self::MAX_RECONCILIATION_ITEMS)
+                ->all(),
+            'cloud_sync_files' => $cloudBackedFiles
+                ->sortByDesc(fn (array $item): int => (int) ($item['size_bytes'] ?? 0))
+                ->values()
+                ->take(self::MAX_RECONCILIATION_ITEMS)
+                ->all(),
             'has_more_bucket_only_objects' => $bucketOnlyObjects->count() > self::MAX_RECONCILIATION_ITEMS,
             'has_more_database_only_attachments' => $databaseOnlyAttachments->count() > self::MAX_RECONCILIATION_ITEMS,
+            'has_more_local_missing_files' => $localMissingFiles->count() > self::MAX_RECONCILIATION_ITEMS,
+            'has_more_cloud_sync_files' => $cloudBackedFiles->count() > self::MAX_RECONCILIATION_ITEMS,
         ];
+    }
+
+    /**
+     * @return array{
+     *     subject_name: string,
+     *     topic_name: string,
+     *     unit_name: string
+     * }
+     */
+    private function classificationContextForAttachment(MaterialCardAttachment $attachment): array
+    {
+        $classification = $attachment->materialCard?->classifications
+            ?->sortByDesc(fn (MaterialCardClassification $item): int => $this->classificationSpecificity($item))
+            ->first();
+
+        if (! $classification instanceof MaterialCardClassification) {
+            return [
+                'subject_name' => '',
+                'topic_name' => '',
+                'unit_name' => '',
+            ];
+        }
+
+        $unit = $classification->unit;
+        $topic = $unit?->topic ?? $classification->topic;
+        $subject = $topic?->subject ?? $classification->subject;
+
+        return [
+            'subject_name' => (string) ($subject?->name ?? ''),
+            'topic_name' => (string) ($topic?->name ?? ''),
+            'unit_name' => (string) ($unit?->name ?? ''),
+        ];
+    }
+
+    private function classificationSpecificity(MaterialCardClassification $classification): int
+    {
+        if ((int) ($classification->unit_id ?? 0) > 0) {
+            return 3;
+        }
+
+        if ((int) ($classification->topic_id ?? 0) > 0) {
+            return 2;
+        }
+
+        if ((int) ($classification->subject_id ?? 0) > 0) {
+            return 1;
+        }
+
+        return 0;
     }
 
     /**
@@ -259,6 +497,112 @@ class MaterialStorageAuditService
             'deleted_count' => count($bucketOnlyPaths),
             'deleted_bytes' => $this->sumBytesFromArrays($bucketOnlyObjects),
             'deleted_paths' => $bucketOnlyPaths,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, MaterialCardAttachment>  $attachments
+     * @return array<string, mixed>
+     */
+    private function syncCloudObjectsToLocalForScope(
+        string $scopeKey,
+        string $scopeLabel,
+        Collection $attachments,
+        ?callable $progressCallback = null,
+    ): array {
+        $localDisk = Storage::disk('local');
+        $cloudFiles = $this->cloudBackedFiles($attachments);
+
+        $syncedPaths = [];
+        $alreadyLocalPaths = [];
+        $failedPaths = [];
+        $syncedBytes = 0;
+        $alreadyLocalBytes = 0;
+        $totalFiles = $cloudFiles->count();
+        $completedFiles = 0;
+
+        if (is_callable($progressCallback)) {
+            $progressCallback(0, $totalFiles, $totalFiles > 0
+                ? 'Materialdateien werden lokal bereitgestellt.'
+                : 'Es wurden keine Cloud-Dateien zum Herunterladen gefunden.');
+        }
+
+        foreach ($cloudFiles as $file) {
+            $path = $this->normalizeStoragePath((string) ($file['path'] ?? ''));
+            $sizeBytes = max(0, (int) ($file['size_bytes'] ?? 0));
+
+            if ($path === '') {
+                continue;
+            }
+
+            if ($localDisk->exists($path)) {
+                $alreadyLocalPaths[] = $path;
+                $alreadyLocalBytes += $sizeBytes;
+                $completedFiles++;
+
+                if (is_callable($progressCallback)) {
+                    $progressCallback($completedFiles, $totalFiles, "Datei {$completedFiles} von {$totalFiles} verarbeitet.");
+                }
+
+                continue;
+            }
+
+            $directory = dirname($path);
+            if ($directory !== '.' && ! $localDisk->directoryExists($directory)) {
+                $localDisk->makeDirectory($directory);
+            }
+
+            $stream = Storage::disk('s3')->readStream($path);
+            if (! is_resource($stream)) {
+                $failedPaths[] = $path;
+                $completedFiles++;
+
+                if (is_callable($progressCallback)) {
+                    $progressCallback($completedFiles, $totalFiles, "Datei {$completedFiles} von {$totalFiles} verarbeitet.");
+                }
+
+                continue;
+            }
+
+            try {
+                $written = $localDisk->writeStream($path, $stream);
+            } finally {
+                fclose($stream);
+            }
+
+            if (! $written) {
+                $failedPaths[] = $path;
+                $completedFiles++;
+
+                if (is_callable($progressCallback)) {
+                    $progressCallback($completedFiles, $totalFiles, "Datei {$completedFiles} von {$totalFiles} verarbeitet.");
+                }
+
+                continue;
+            }
+
+            $syncedPaths[] = $path;
+            $syncedBytes += $sizeBytes;
+            $completedFiles++;
+
+            if (is_callable($progressCallback)) {
+                $progressCallback($completedFiles, $totalFiles, "Datei {$completedFiles} von {$totalFiles} verarbeitet.");
+            }
+        }
+
+        return [
+            'scope_key' => $scopeKey,
+            'scope_label' => $scopeLabel,
+            'total_count' => $cloudFiles->count(),
+            'total_bytes' => $this->sumBytesFromArrays($cloudFiles),
+            'already_local_count' => count($alreadyLocalPaths),
+            'already_local_bytes' => $alreadyLocalBytes,
+            'already_local_paths' => $alreadyLocalPaths,
+            'synced_count' => count($syncedPaths),
+            'synced_bytes' => $syncedBytes,
+            'synced_paths' => $syncedPaths,
+            'failed_count' => count($failedPaths),
+            'failed_paths' => $failedPaths,
         ];
     }
 
@@ -319,13 +663,86 @@ class MaterialStorageAuditService
      */
     private function databaseOnlyAttachmentsFromFiles(array $bucketFiles, Collection $attachments): Collection
     {
-        $bucketPathSet = array_fill_keys(array_map([$this, 'normalizeStoragePath'], array_column($bucketFiles, 'path')), true);
+        $localDisk = Storage::disk('local');
+        $cloudDisk = Storage::disk('s3');
 
         return $attachments
-            ->filter(function (MaterialCardAttachment $attachment) use ($bucketPathSet): bool {
+            ->filter(function (MaterialCardAttachment $attachment) use ($localDisk, $cloudDisk): bool {
                 $path = $this->normalizeStoragePath((string) $attachment->file_path);
 
-                return $path !== '' && ! isset($bucketPathSet[$path]);
+                return $path !== ''
+                    && ! $localDisk->exists($path)
+                    && ! $cloudDisk->exists($path);
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, MaterialCardAttachment>  $attachments
+     * @return Collection<int, MaterialCardAttachment>
+     */
+    private function localMissingFilesFromCloud(Collection $attachments): Collection
+    {
+        $localDisk = Storage::disk('local');
+        $cloudDisk = Storage::disk('s3');
+
+        return $attachments
+            ->filter(function (MaterialCardAttachment $attachment) use ($localDisk, $cloudDisk): bool {
+                $path = $this->normalizeStoragePath((string) $attachment->file_path);
+
+                return $path !== ''
+                    && ! $localDisk->exists($path)
+                    && $cloudDisk->exists($path);
+            })
+            ->groupBy(fn (MaterialCardAttachment $attachment): string => $this->normalizeStoragePath((string) $attachment->file_path))
+            ->map(function (Collection $group, string $path): array {
+                $preferredAttachment = $group
+                    ->sortBy(fn (MaterialCardAttachment $attachment): int => $attachment->trashed() ? 1 : 0)
+                    ->first();
+
+                $preferredCard = $preferredAttachment?->materialCard;
+
+                return [
+                    'path' => $path,
+                    'size_bytes' => (int) ($group->max(fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0))) ?? 0),
+                    'reference_count' => $group->count(),
+                    'live_reference_count' => $group->filter(fn (MaterialCardAttachment $attachment): bool => ! $attachment->trashed())->count(),
+                    'trashed_reference_count' => $group->filter(fn (MaterialCardAttachment $attachment): bool => $attachment->trashed())->count(),
+                    'material_card_title' => (string) ($preferredCard?->title ?? ''),
+                ];
+            })
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, MaterialCardAttachment>  $attachments
+     */
+    private function cloudBackedFiles(Collection $attachments): Collection
+    {
+        $cloudDisk = Storage::disk('s3');
+
+        return $attachments
+            ->filter(function (MaterialCardAttachment $attachment) use ($cloudDisk): bool {
+                $path = $this->normalizeStoragePath((string) $attachment->file_path);
+
+                return $path !== '' && $cloudDisk->exists($path);
+            })
+            ->groupBy(fn (MaterialCardAttachment $attachment): string => $this->normalizeStoragePath((string) $attachment->file_path))
+            ->map(function (Collection $group, string $path): array {
+                $preferredAttachment = $group
+                    ->sortBy(fn (MaterialCardAttachment $attachment): int => $attachment->trashed() ? 1 : 0)
+                    ->first();
+
+                $preferredCard = $preferredAttachment?->materialCard;
+
+                return [
+                    'path' => $path,
+                    'size_bytes' => (int) ($group->max(fn (MaterialCardAttachment $attachment): int => max(0, (int) ($attachment->size_bytes ?? 0))) ?? 0),
+                    'reference_count' => $group->count(),
+                    'live_reference_count' => $group->filter(fn (MaterialCardAttachment $attachment): bool => ! $attachment->trashed())->count(),
+                    'trashed_reference_count' => $group->filter(fn (MaterialCardAttachment $attachment): bool => $attachment->trashed())->count(),
+                    'material_card_title' => (string) ($preferredCard?->title ?? ''),
+                ];
             })
             ->values();
     }
