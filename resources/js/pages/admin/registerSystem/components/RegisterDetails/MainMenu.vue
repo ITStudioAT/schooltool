@@ -65,8 +65,8 @@ export default {
 
 <style scoped>
 .rd-nav {
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
     padding: 10px;
     display: flex;
     align-items: center;

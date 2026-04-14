@@ -43,11 +43,12 @@
                                 @click="toggleRegister(selected_register)" />
                             <v-btn
                                 v-if="selected_register"
-                                variant="tonal"
-                                color="secondary"
+                                variant="flat"
+                                color="primary"
                                 size="small"
                                 prepend-icon="mdi-arrow-right"
                                 to="/admin/register_system/details"
+                                class="rs-details-btn"
                                 :disabled="action !== ''">
                                 Details
                             </v-btn>
@@ -74,7 +75,6 @@
                             class="rs-list-item"
                             :class="{ 'rs-list-item--selected': register.id === selected_register?.id }"
                             @click="setSelectedRegister(register)">
-                            <div class="rs-list-item__dot" :class="register.is_active ? 'rs-list-item__dot--active' : 'rs-list-item__dot--inactive'"></div>
                             <div class="rs-list-item__name">{{ register.name }}</div>
                             <div class="ml-auto">
                                 <v-chip
@@ -338,10 +338,10 @@ export default {
 
 <style scoped>
 .rs-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rs-card__header {
@@ -370,13 +370,13 @@ export default {
 .rs-card__header-title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
     line-height: 1.2;
 }
 
 .rs-card__header-sub {
     font-size: 0.76rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.68);
     margin-top: 1px;
 }
 
@@ -384,7 +384,7 @@ export default {
     display: flex;
     align-items: center;
     font-size: 0.84rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.68);
     padding: 6px 0;
 }
 
@@ -401,12 +401,12 @@ export default {
     padding: 9px 10px;
     border-radius: 9px;
     cursor: pointer;
-    border: 1px solid transparent;
+    border: 1px solid rgba(16, 38, 58, 0.18);
     transition: background 0.15s;
 }
 
 .rs-list-item:hover {
-    background: rgba(148, 163, 184, 0.08);
+    background: rgba(46, 104, 171, 0.045);
 }
 
 .rs-list-item--selected {
@@ -433,8 +433,14 @@ export default {
 .rs-list-item__name {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #e2e8f0;
+    color: #10263a;
     flex: 1;
+}
+
+.rs-details-btn {
+    font-weight: 700 !important;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
 }
 
 .rs-list-item__badge {
@@ -446,9 +452,9 @@ export default {
     display: flex;
     align-items: flex-start;
     font-size: 0.8rem;
-    color: #64748b;
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    color: rgba(16, 38, 58, 0.72);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.1);
     border-radius: 8px;
     padding: 10px 12px;
 }
@@ -456,16 +462,16 @@ export default {
 .rs-field-label {
     display: block;
     font-size: 0.76rem;
-    color: #94a3b8;
+    color: rgba(16, 38, 58, 0.68);
     margin-bottom: 6px;
     letter-spacing: 0.02em;
 }
 
 .rs-field-group {
-    border: 1px solid rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(16, 38, 58, 0.1);
     border-radius: 10px;
     padding: 4px 8px;
-    background: rgba(15, 23, 42, 0.3);
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .rs-field-group__row {
@@ -476,14 +482,14 @@ export default {
 }
 
 .rs-dialog-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.96)) !important;
+    color: #10263a !important;
 }
 
 .rs-dialog-card :deep(.toolbar .v-btn) {
-    color: #94a3b8;
-    border-color: rgba(148, 163, 184, 0.22) !important;
+    color: #64748b;
+    border-color: rgba(16, 38, 58, 0.16) !important;
 }
 
 .rs-dialog-card :deep(.toolbar .v-btn--variant-flat) {
@@ -496,12 +502,12 @@ export default {
 }
 
 .rs-dialog-card :deep(.editor-content) {
-    border-color: rgba(148, 163, 184, 0.22) !important;
-    background: rgba(15, 23, 42, 0.5);
-    color: #e2e8f0;
+    border-color: rgba(16, 38, 58, 0.16) !important;
+    background: rgba(255, 255, 255, 0.82);
+    color: #10263a;
 }
 
 .rs-dialog-card :deep(.ProseMirror) {
-    color: #e2e8f0;
+    color: #10263a;
 }
 </style>

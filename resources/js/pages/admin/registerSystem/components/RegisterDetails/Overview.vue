@@ -101,10 +101,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
     height: 100%;
 }
 
@@ -139,7 +139,7 @@ export default {
 .rd-card__header-title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
 }
 
 .rd-status-badge {
@@ -170,7 +170,7 @@ export default {
 }
 
 .rd-status-badge--closed {
-    background: rgba(148, 163, 184, 0.1);
+    background: rgba(148, 163, 184, 0.12);
     color: #64748b;
 }
 
@@ -190,18 +190,18 @@ export default {
     justify-content: space-between;
     padding: 6px 10px;
     border-radius: 8px;
-    background: rgba(15, 23, 42, 0.4);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
 }
 
 .rd-stat-label {
     font-size: 0.84rem;
-    color: #94a3b8;
+    color: rgba(16, 38, 58, 0.68);
 }
 
 .rd-stat-value {
     font-size: 1rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
 }
 </style>

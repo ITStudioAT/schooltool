@@ -100,78 +100,28 @@
         <div
             class="curriculum-detail__body"
             :class="{ 'curriculum-detail__body--compact-calendar': isCompactWeekView }">
-            <div
-                class="curriculum-detail__calendar"
-                :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }">
+            <v-sheet rounded="xl" class="curriculum-detail__calendar-scroll pa-2">
                 <div
-                    v-for="(month, idx) in visibleMonths"
-                    :key="month.key"
-                    class="curriculum-detail__month"
-                    :class="{
-                        'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
-                        'curriculum-detail__month--with-exams': monthHasExamEntries(month),
-                    }"
-                    :style="{ '--month-hue': monthHue(idx) }">
-                    <div class="curriculum-detail__month-header">
-                        <div class="curriculum-detail__month-name">{{ month.name }}</div>
-                        <div class="curriculum-detail__month-year">{{ month.year }}</div>
-                    </div>
-                    <div v-if="topicsForMonth(month).length" class="curriculum-detail__month-topics">
-                        <div class="curriculum-detail__month-topics-label">Themen</div>
-                        <div class="curriculum-detail__month-topics-text">
-                            <span
-                                v-for="entry in topicsForMonth(month)"
-                                :key="entry.id"
-                                class="curriculum-detail__overview-entry"
-                                :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
-                                <v-icon
-                                    v-if="entry.isExam"
-                                    size="13"
-                                    class="curriculum-detail__overview-entry-icon">
-                                    mdi-clipboard-check-outline
-                                </v-icon>
-                                <span>{{ entry.title }}</span>
-                            </span>
+                    class="curriculum-detail__calendar"
+                    :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }">
+                    <div
+                        v-for="(month, idx) in visibleMonths"
+                        :key="month.key"
+                        class="curriculum-detail__month"
+                        :class="{
+                            'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
+                            'curriculum-detail__month--with-exams': monthHasExamEntries(month),
+                        }"
+                        :style="{ '--month-hue': monthHue(idx) }">
+                        <div class="curriculum-detail__month-header">
+                            <div class="curriculum-detail__month-name">{{ month.name }}</div>
+                            <div class="curriculum-detail__month-year">{{ month.year }}</div>
                         </div>
-                    </div>
-                    <div class="curriculum-detail__weeks">
-                        <div
-                            v-for="(week, wIdx) in month.weeks"
-                            :key="wIdx"
-                            class="curriculum-detail__week"
-                            :class="{
-                                'curriculum-detail__week--current': week.isCurrent,
-                                'curriculum-detail__week--free': isFreeWeek(week.weekKey),
-                                'curriculum-detail__week--with-topics': topicsForWeek(week.weekKey).length > 0,
-                                'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
-                                'curriculum-detail__week--compact': isCompactWeekView,
-                                'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
-                                'curriculum-detail__week--topic-selected': isWeekAssignedToActiveTopic(week.weekKey),
-                            }"
-                            @click="handleWeekClick(week.weekKey)">
-                            <div class="curriculum-detail__week-number">
-                                <span class="curriculum-detail__week-kw">KW</span>
-                                <span class="curriculum-detail__week-num">{{ week.kw }}</span>
-                            </div>
-                            <div v-if="showWeekdays" class="curriculum-detail__week-days">
-                                <div
-                                    v-for="day in week.days"
-                                    :key="day.date"
-                                    class="curriculum-detail__day"
-                                    :class="{
-                                        'curriculum-detail__day--today': day.isToday,
-                                        'curriculum-detail__day--outside': day.outsideMonth,
-                                    }">
-                                    <span class="curriculum-detail__day-name">{{ day.dayName }}</span>
-                                    <span class="curriculum-detail__day-num">{{ day.dayNum }}</span>
-                                </div>
-                            </div>
-                            <div class="curriculum-detail__week-range">
-                                {{ week.rangeLabel }}
-                            </div>
-                            <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-topics">
+                        <div v-if="topicsForMonth(month).length" class="curriculum-detail__month-topics">
+                            <div class="curriculum-detail__month-topics-label">Themen</div>
+                            <div class="curriculum-detail__month-topics-text">
                                 <span
-                                    v-for="entry in topicsForWeek(week.weekKey)"
+                                    v-for="entry in topicsForMonth(month)"
                                     :key="entry.id"
                                     class="curriculum-detail__overview-entry"
                                     :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
@@ -184,42 +134,94 @@
                                     <span>{{ entry.title }}</span>
                                 </span>
                             </div>
-                            <div class="curriculum-detail__week-actions">
-                                <v-btn
-                                    v-if="isWeekSelectionActive"
-                                    :icon="isWeekAssignedToActiveTopic(week.weekKey) ? 'mdi-check-circle' : 'mdi-circle-outline'"
-                                    variant="text"
-                                    color="primary"
-                                    size="x-small"
-                                    :disabled="topicSaving || isEditingTopic || isFreeWeek(week.weekKey)"
-                                    :title="isFreeWeek(week.weekKey)
-                                        ? 'Freie Wochen können keinem Thema zugeordnet werden'
-                                        : (isWeekAssignedToActiveTopic(week.weekKey) ? 'Woche vom Thema entfernen' : 'Woche dem Thema zuordnen')"
-                                    @click.stop="handleWeekClick(week.weekKey)" />
-                                <v-chip
-                                    v-if="isFreeWeek(week.weekKey)"
-                                    size="x-small"
-                                    color="success"
-                                    variant="flat"
-                                    class="curriculum-detail__week-chip">
-                                    frei
-                                </v-chip>
-                                <v-btn
-                                    :icon="isFreeWeek(week.weekKey) ? 'mdi-calendar-remove-outline' : 'mdi-calendar-plus-outline'"
-                                    variant="tonal"
-                                    color="success"
-                                    size="x-small"
-                                    :disabled="isPageActionLocked"
-                                    :loading="isWeekSaving(week.weekKey)"
-                                    :title="isFreeWeek(week.weekKey) ? 'Freie Woche entfernen' : 'Woche als frei markieren'"
-                                    @click.stop="toggleFreeWeek(week.weekKey)" />
+                        </div>
+                        <div class="curriculum-detail__weeks">
+                            <div
+                                v-for="(week, wIdx) in month.weeks"
+                                :key="wIdx"
+                                class="curriculum-detail__week"
+                                :class="{
+                                    'curriculum-detail__week--current': week.isCurrent,
+                                    'curriculum-detail__week--free': isFreeWeek(week.weekKey),
+                                    'curriculum-detail__week--with-topics': topicsForWeek(week.weekKey).length > 0,
+                                    'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
+                                    'curriculum-detail__week--compact': isCompactWeekView,
+                                    'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
+                                    'curriculum-detail__week--topic-selected': isWeekAssignedToActiveTopic(week.weekKey),
+                                }"
+                                @click="handleWeekClick(week.weekKey)">
+                                <div class="curriculum-detail__week-number">
+                                    <span class="curriculum-detail__week-kw">KW</span>
+                                    <span class="curriculum-detail__week-num">{{ week.kw }}</span>
+                                </div>
+                                <div v-if="showWeekdays" class="curriculum-detail__week-days">
+                                    <div
+                                        v-for="day in week.days"
+                                        :key="day.date"
+                                        class="curriculum-detail__day"
+                                        :class="{
+                                            'curriculum-detail__day--today': day.isToday,
+                                            'curriculum-detail__day--outside': day.outsideMonth,
+                                        }">
+                                        <span class="curriculum-detail__day-name">{{ day.dayName }}</span>
+                                        <span class="curriculum-detail__day-num">{{ day.dayNum }}</span>
+                                    </div>
+                                </div>
+                                <div class="curriculum-detail__week-range">
+                                    {{ week.rangeLabel }}
+                                </div>
+                                <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-topics">
+                                    <span
+                                        v-for="entry in topicsForWeek(week.weekKey)"
+                                        :key="entry.id"
+                                        class="curriculum-detail__overview-entry"
+                                        :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
+                                        <v-icon
+                                            v-if="entry.isExam"
+                                            size="13"
+                                            class="curriculum-detail__overview-entry-icon">
+                                            mdi-clipboard-check-outline
+                                        </v-icon>
+                                        <span>{{ entry.title }}</span>
+                                    </span>
+                                </div>
+                                <div class="curriculum-detail__week-actions">
+                                    <v-btn
+                                        v-if="isWeekSelectionActive"
+                                        :icon="isWeekAssignedToActiveTopic(week.weekKey) ? 'mdi-check-circle' : 'mdi-circle-outline'"
+                                        variant="text"
+                                        color="primary"
+                                        size="x-small"
+                                        :disabled="topicSaving || isEditingTopic || isFreeWeek(week.weekKey)"
+                                        :title="isFreeWeek(week.weekKey)
+                                            ? 'Freie Wochen können keinem Thema zugeordnet werden'
+                                            : (isWeekAssignedToActiveTopic(week.weekKey) ? 'Woche vom Thema entfernen' : 'Woche dem Thema zuordnen')"
+                                        @click.stop="handleWeekClick(week.weekKey)" />
+                                    <v-chip
+                                        v-if="isFreeWeek(week.weekKey)"
+                                        size="x-small"
+                                        color="success"
+                                        variant="flat"
+                                        class="curriculum-detail__week-chip">
+                                        frei
+                                    </v-chip>
+                                    <v-btn
+                                        :icon="isFreeWeek(week.weekKey) ? 'mdi-calendar-remove-outline' : 'mdi-calendar-plus-outline'"
+                                        variant="tonal"
+                                        color="success"
+                                        size="x-small"
+                                        :disabled="isPageActionLocked"
+                                        :loading="isWeekSaving(week.weekKey)"
+                                        :title="isFreeWeek(week.weekKey) ? 'Freie Woche entfernen' : 'Woche als frei markieren'"
+                                        @click.stop="toggleFreeWeek(week.weekKey)" />
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            </v-sheet>
 
-            <div class="curriculum-detail__side-card curriculum-detail__side-card--content">
+            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--content curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-text-box-outline</v-icon>
@@ -688,9 +690,9 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </v-sheet>
 
-            <div class="curriculum-detail__side-card curriculum-detail__side-card--documents">
+            <v-sheet rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
                         <v-icon size="20" color="#a5b4fc" class="mr-2">mdi-book-open-page-variant-outline</v-icon>
@@ -1066,7 +1068,7 @@
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
-            </div>
+            </v-sheet>
         </div>
     </div>
 </template>
@@ -2981,6 +2983,15 @@ export default {
 }
 
 /* ---------- Calendar ---------- */
+.curriculum-detail__calendar-scroll {
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    background: rgba(15, 23, 42, 0.32);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
 .curriculum-detail__calendar {
     display: flex;
     flex-direction: column;
@@ -3317,6 +3328,14 @@ export default {
 .curriculum-detail__side-card {
     position: sticky;
     top: 12px;
+}
+
+.curriculum-detail__side-card--scrollable {
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    background: transparent;
 }
 
 .curriculum-detail__side-card-inner {

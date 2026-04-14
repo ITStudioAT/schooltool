@@ -161,10 +161,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-card__header { display: flex; align-items: center; gap: 10px; }
@@ -175,13 +175,13 @@ export default {
     background: rgba(99, 102, 241, 0.18); color: #818cf8; flex-shrink: 0;
 }
 
-.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #10263a; }
 
 .rd-booking-group__header {
     display: flex; align-items: center; flex-wrap: wrap;
-    font-size: 0.78rem; color: #64748b;
-    background: rgba(15, 23, 42, 0.4);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    font-size: 0.78rem; color: rgba(16, 38, 58, 0.62);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
     border-radius: 8px; padding: 6px 10px; margin-bottom: 4px;
 }
 
@@ -191,23 +191,23 @@ export default {
 
 .rd-booking-item { border-radius: 8px !important; }
 
-.rd-booking-item__name { font-size: 0.88rem; font-weight: 600; color: #e2e8f0; }
+.rd-booking-item__name { font-size: 0.88rem; font-weight: 600; color: #10263a; }
 
 .rd-booking-item__meta {
     display: flex; flex-wrap: wrap; gap: 8px;
-    font-size: 0.76rem; color: #64748b; margin-top: 2px;
+    font-size: 0.76rem; color: rgba(16, 38, 58, 0.62); margin-top: 2px;
 }
 
 .rd-booking-item__student {
     display: flex; align-items: center; flex-wrap: wrap;
-    font-size: 0.8rem; color: #94a3b8; margin-top: 2px;
+    font-size: 0.8rem; color: rgba(16, 38, 58, 0.68); margin-top: 2px;
 }
 
-.rd-booking-item__note { color: #64748b; margin-top: 2px; }
+.rd-booking-item__note { color: rgba(16, 38, 58, 0.62); margin-top: 2px; }
 
 :deep(.v-list-item) {
-    background: rgba(15, 23, 42, 0.4) !important;
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
 }
 
 :deep(.v-list-item--active) {
@@ -217,12 +217,12 @@ export default {
 
 :deep(.v-list-item__content),
 :deep(.v-list-item-title) {
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-dialog-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.96)) !important;
+    color: #10263a !important;
 }
 </style>

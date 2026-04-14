@@ -118,10 +118,10 @@ export default {
 
 <style scoped>
 .rs-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rs-card__header {
@@ -150,14 +150,14 @@ export default {
 .rs-card__header-title {
     font-size: 0.92rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
 }
 
 .rs-card__empty {
     display: flex;
     align-items: center;
     font-size: 0.84rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.68);
     padding: 6px 0;
 }
 
@@ -179,7 +179,7 @@ export default {
 }
 
 .rs-list-item:hover {
-    background: rgba(148, 163, 184, 0.08);
+    background: rgba(46, 104, 171, 0.045);
 }
 
 .rs-list-item--selected {
@@ -208,11 +208,11 @@ export default {
 .rs-list-item__name {
     font-size: 0.9rem;
     font-weight: 600;
-    color: #e2e8f0;
+    color: #10263a;
 }
 
 .rs-list-item__meta {
     font-size: 0.76rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.68);
 }
 </style>

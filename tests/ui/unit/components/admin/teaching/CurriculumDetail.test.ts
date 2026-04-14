@@ -65,7 +65,7 @@ function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}
                 'v-list-item-subtitle': { template: '<div><slot /></div>' },
                 'v-list-item-title': { template: '<div><slot /></div>' },
                 'v-progress-circular': { template: '<div />' },
-                'v-sheet': { template: '<div><slot /></div>' },
+                'v-sheet': { template: '<div v-bind="$attrs"><slot /></div>' },
                 'v-spacer': { template: '<div />' },
                 'v-text-field': { template: '<input />' },
             },
@@ -90,6 +90,9 @@ describe('CurriculumDetail week card view mode', () => {
         expect(wrapper.text()).toContain('Ohne Tage')
         expect(wrapper.vm.showWeekdays).toBe(true)
         expect(wrapper.findAll('.curriculum-detail__week-days').length).toBeGreaterThan(0)
+        expect(wrapper.find('.curriculum-detail__calendar-scroll').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--content.curriculum-detail__side-card--scrollable').exists()).toBe(true)
+        expect(wrapper.find('.curriculum-detail__side-card--documents.curriculum-detail__side-card--scrollable').exists()).toBe(true)
         expect(wrapper.find('.curriculum-detail__calendar').classes()).not.toContain('curriculum-detail__calendar--compact')
 
         await wrapper.setData({ weekDisplayMode: 'compact' })
@@ -106,8 +109,13 @@ describe('CurriculumDetail week card view mode', () => {
 
         expect(source).toContain("v-if=\"showWeekdays\"")
         expect(source).toContain("'curriculum-detail__body--compact-calendar': isCompactWeekView")
+        expect(source).toContain('class="curriculum-detail__calendar-scroll pa-2"')
         expect(source).toContain("'curriculum-detail__calendar--compact': isCompactWeekView")
-        expect(source).toContain('curriculum-detail__side-card curriculum-detail__side-card--documents')
+        expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
+        expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content curriculum-detail__side-card--scrollable"')
+        expect(source).toContain('.curriculum-detail__calendar-scroll {')
+        expect(source).toContain('.curriculum-detail__side-card--scrollable {')
+        expect(source).toContain('overflow-y: auto;')
         expect(source).toContain('.curriculum-detail__body--compact-calendar {')
         expect(source).toContain('grid-template-columns: auto clamp(420px, 36vw, 640px) minmax(420px, 1fr);')
         expect(source).toContain(".curriculum-detail__calendar--compact {")

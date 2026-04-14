@@ -255,9 +255,9 @@ export default {
 <style scoped>
 .module-status-card {
     background:
-        linear-gradient(180deg, rgba(15, 23, 42, 0.94) 0%, rgba(15, 23, 42, 0.88) 100%) !important;
-    border: 1px solid rgba(99, 102, 241, 0.16);
-    box-shadow: 0 18px 40px rgba(2, 6, 23, 0.24);
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 250, 255, 0.92) 100%) !important;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    box-shadow: 0 18px 40px rgba(16, 38, 58, 0.12);
 }
 
 .module-status-card__scope-chip {
@@ -266,17 +266,17 @@ export default {
 }
 
 .module-status-card__eyebrow {
-    color: rgba(165, 180, 252, 0.82);
+    color: rgba(16, 38, 58, 0.68);
     letter-spacing: 0.08em;
 }
 
 .module-status-card__title {
-    color: #f8fafc;
+    color: #10263a;
     font-weight: 700;
 }
 
 .module-status-card__subtitle {
-    color: rgba(226, 232, 240, 0.72);
+    color: rgba(16, 38, 58, 0.68);
 }
 
 .module-status-card__grid {
@@ -291,18 +291,18 @@ export default {
     align-items: center;
     padding: 12px 14px;
     border-radius: 16px;
-    background: rgba(15, 23, 42, 0.78);
-    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.1);
 }
 
 .module-status-card__module {
-    color: #f8fafc;
+    color: #10263a;
     font-weight: 700;
     font-size: 0.97rem;
 }
 
 .module-status-card__meta {
-    color: rgba(191, 219, 254, 0.72);
+    color: rgba(16, 38, 58, 0.68);
     font-size: 0.8rem;
     margin-top: 3px;
 }
@@ -349,7 +349,7 @@ export default {
 }
 
 .module-status-card__toggle :deep(.v-label) {
-    color: #f8fafc;
+    color: #10263a;
     font-size: 0.84rem;
     font-weight: 600;
     letter-spacing: 0.01em;
