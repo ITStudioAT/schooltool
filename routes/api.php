@@ -384,7 +384,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     });
 
     Route::get('/admin/materials/storage-audit', [MaterialStorageAuditController::class, 'show'])->middleware(['auth:sanctum']);
+    Route::post('/admin/materials/storage-audit/start', [MaterialStorageAuditController::class, 'startAudit'])->middleware(['auth:sanctum']);
+    Route::get('/admin/materials/storage-audit/operations/{operationId}', [MaterialStorageAuditController::class, 'auditStatus'])->middleware(['auth:sanctum']);
     Route::post('/admin/materials/storage-audit/purge', [MaterialStorageAuditController::class, 'purge'])->middleware(['auth:sanctum']);
+    Route::post('/admin/materials/storage-audit/sync-local', [MaterialStorageAuditController::class, 'syncLocal'])->middleware(['auth:sanctum']);
+    Route::get('/admin/materials/storage-audit/sync-operations/{operationId}', [MaterialStorageAuditController::class, 'syncStatus'])->middleware(['auth:sanctum']);
+    Route::delete('/admin/materials/storage-audit/database-only-attachments/{attachmentId}', [MaterialStorageAuditController::class, 'destroyDatabaseOnlyAttachment'])->middleware(['auth:sanctum']);
 
     /* SANCTUM - admin, materials_admin, materials_moderator */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:materials_access', 'tool-licensed:Materialientool,auto,scope:materials_access'])->group(function () {
