@@ -106,26 +106,31 @@
                             <div class="status-row">
                                 <div class="status-copy">
                                     <div class="status-name">Gesamtstatus</div>
-                                    <div class="status-note" v-if="test_step != 999">Tests aktiv oder noch nicht abgeschlossen</div>
+                                    <div class="status-note" v-if="queue_test_status == 'unknown' && cron_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
+                                    <div class="status-note" v-else-if="test_step != 999">Tests aktiv oder noch nicht abgeschlossen</div>
                                     <div class="status-note" v-else>Letzte Prüfserie abgeschlossen</div>
                                 </div>
-                                <div class="status-badge" :class="test_step == 999 ? (all_tests_result == 1 ? 'is-success' : 'is-error') : 'is-waiting'">
+                                <div class="status-badge" :class="queue_test_status == 'unknown' && cron_test_status == 'unknown' ? 'is-waiting' : test_step == 999 ? (all_tests_result == 1 ? 'is-success' : 'is-error') : 'is-waiting'">
                                     <v-icon
                                         size="16"
                                         :icon="
-                                            test_step == 999
-                                                ? all_tests_result == 1
-                                                    ? 'mdi-check-circle'
-                                                    : 'mdi-alert-circle'
-                                                : 'mdi-dots-horizontal-circle'
+                                            queue_test_status == 'unknown' && cron_test_status == 'unknown'
+                                                ? 'mdi-help-circle-outline'
+                                                : test_step == 999
+                                                  ? all_tests_result == 1
+                                                      ? 'mdi-check-circle'
+                                                      : 'mdi-alert-circle'
+                                                  : 'mdi-dots-horizontal-circle'
                                         " />
                                     <span>
                                         {{
-                                            test_step == 999
-                                                ? all_tests_result == 1
-                                                    ? 'OK'
-                                                    : 'Fehler'
-                                                : 'Läuft / wartend'
+                                            queue_test_status == 'unknown' && cron_test_status == 'unknown'
+                                                ? 'Unbekannt'
+                                                : test_step == 999
+                                                  ? all_tests_result == 1
+                                                      ? 'OK'
+                                                      : 'Fehler'
+                                                  : 'Läuft / wartend'
                                         }}
                                     </span>
                                 </div>
@@ -134,7 +139,8 @@
                             <div class="status-row">
                                 <div class="status-copy">
                                     <div class="status-name">Warteschlange</div>
-                                    <div class="status-note" v-if="queue_test_status == 'waiting'">Test wartend</div>
+                                    <div class="status-note" v-if="queue_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
+                                    <div class="status-note" v-else-if="queue_test_status == 'waiting'">Test wartend</div>
                                     <div class="status-note" v-else-if="queue_test_status == 'running'">Queue-Test aktiv</div>
                                     <div class="status-note" v-else>Queue-Test abgeschlossen</div>
                                 </div>
@@ -149,9 +155,11 @@
                                                     : 'mdi-alert-circle'
                                                 : queue_test_status == 'running'
                                                   ? 'mdi-loading'
-                                                  : 'mdi-clock-outline'
+                                                  : queue_test_status == 'unknown'
+                                                    ? 'mdi-help-circle-outline'
+                                                    : 'mdi-clock-outline'
                                         " />
-                                    <span>{{ queue_test_status }}</span>
+                                    <span>{{ queue_test_status == 'unknown' ? 'Unbekannt' : queue_test_status }}</span>
                                 </div>
                             </div>
 
@@ -160,6 +168,7 @@
                                     <div class="status-name">Cron / Timer</div>
                                     <div class="status-note" v-if="cron_test_status == 'finished'">{{ cron_status?.health_at || 'Zeit unbekannt' }}</div>
                                     <div class="status-note" v-else-if="cron_test_status == 'running'">Prüfung aktiv (1-2 min möglich)</div>
+                                    <div class="status-note" v-else-if="cron_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
                                     <div class="status-note" v-else>Prüfung wartend</div>
                                 </div>
                                 <div class="status-badge" :class="cron_test_status == 'finished' ? (cron_test_result == 1 ? 'is-success' : 'is-error') : cron_test_status == 'running' ? 'is-running' : 'is-waiting'">
@@ -173,9 +182,11 @@
                                                     : 'mdi-alert-circle'
                                                 : cron_test_status == 'running'
                                                   ? 'mdi-loading'
-                                                  : 'mdi-clock-outline'
+                                                  : cron_test_status == 'unknown'
+                                                    ? 'mdi-help-circle-outline'
+                                                    : 'mdi-clock-outline'
                                         " />
-                                    <span>{{ cron_test_status }}</span>
+                                    <span>{{ cron_test_status == 'unknown' ? 'Unbekannt' : cron_test_status }}</span>
                                 </div>
                             </div>
                         </div>
@@ -425,9 +436,6 @@ export default {
         if (this.config?.is_auth) {
             await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
         }
-        if (this.config?.is_auth && this.isAllowed(['admin', 'super_admin'])) {
-            this.runTests()
-        }
         this.adminStore.is_loading--
     },
 
@@ -440,9 +448,9 @@ export default {
             schoolStore: null,
             test_step: 0,
             all_tests_result: 0,
-            queue_test_status: 'waiting',
+            queue_test_status: 'unknown',
             queue_test_result: 0,
-            cron_test_status: 'waiting',
+            cron_test_status: 'unknown',
             cron_test_result: 0,
             activation_dialog_open: false,
             activation_dialog_loading: false,

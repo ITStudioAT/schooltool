@@ -1959,8 +1959,8 @@ export default {
         },
         pointsGradeForWork(work, points) {
             if (!work || work.calculation !== 'points') return null
-            const table = work.points_table || []
-            const fallbackGrade = (work.points_sonst_grade || '').toString().trim()
+            const table = (work.semester_points_table || []).length ? work.semester_points_table : (work.points_table || [])
+            const fallbackGrade = (work.semester_points_sonst_grade || work.points_sonst_grade || '').toString().trim()
             if (!table.length) return fallbackGrade || null
             const sorted = [...table].sort((a, b) => (b.min_points ?? 0) - (a.min_points ?? 0))
             const found = sorted.find((row) => points >= (row.min_points ?? 0))
@@ -1985,7 +1985,7 @@ export default {
             return category.value != null || (category.grade != null && category.grade !== '')
         },
         pointsGradeForAnyWork(points) {
-            const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && (w.points_table || []).length)
+            const pointsWork = this.teachingWorks.find((w) => w.calculation === 'points' && ((w.semester_points_table || []).length || (w.points_table || []).length))
             return pointsWork ? this.pointsGradeForWork(pointsWork, points) : null
         },
         entryIsDerivedFromWork(entry) {

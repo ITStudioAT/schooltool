@@ -1602,13 +1602,20 @@ describe('settings and semester endpoints', function () {
             ['grade' => '1', 'min_points' => 3],
         ];
         $payload['teaching_schemas'][0]['works'][0]['points_sonst_grade'] = '2';
+        $payload['teaching_schemas'][0]['works'][0]['semester_points_table'] = [
+            ['grade' => '1', 'min_points' => 5],
+            ['grade' => '2', 'min_points' => 3],
+        ];
+        $payload['teaching_schemas'][0]['works'][0]['semester_points_sonst_grade'] = '5';
 
         $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
 
         $response->assertOk()
             ->assertJsonPath('settings.teaching_schemas.0.works.0.points_note_enabled', true)
             ->assertJsonPath('settings.teaching_schemas.0.works.0.points_table.0.grade', '1')
-            ->assertJsonPath('settings.teaching_schemas.0.works.0.points_sonst_grade', '2');
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.points_sonst_grade', '2')
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.semester_points_table.0.grade', '1')
+            ->assertJsonPath('settings.teaching_schemas.0.works.0.semester_points_sonst_grade', '5');
 
         expect(TeachingSchema::query()
             ->where('user_id', $this->admin->id)
@@ -1627,7 +1634,19 @@ describe('settings and semester endpoints', function () {
                 ->where('schoolyear_id', $this->schoolyear->id)
                 ->where('schema_id', 'schema-points-note')
                 ->first()?->works[0]['points_sonst_grade'] ?? null)
-            ->toBe('2');
+            ->toBe('2')
+            ->and(TeachingSchema::query()
+                ->where('user_id', $this->admin->id)
+                ->where('schoolyear_id', $this->schoolyear->id)
+                ->where('schema_id', 'schema-points-note')
+                ->first()?->works[0]['semester_points_table'][0]['grade'] ?? null)
+            ->toBe('1')
+            ->and(TeachingSchema::query()
+                ->where('user_id', $this->admin->id)
+                ->where('schoolyear_id', $this->schoolyear->id)
+                ->where('schema_id', 'schema-points-note')
+                ->first()?->works[0]['semester_points_sonst_grade'] ?? null)
+            ->toBe('5');
     });
 
     test('save_settings renames behaviour type in course entries for all students of the school', function () {

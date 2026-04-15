@@ -470,13 +470,15 @@ class TeachingService
                         ['grade' => '~', 'name' => 'Mittel', 'value' => '0'],
                         ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''],
                     ],
-                    'points_table' => [
+                    'points_table' => [],
+                    'points_sonst_grade' => null,
+                    'semester_points_table' => [
                         ['grade' => '1', 'min_points' => 3],
                         ['grade' => '2', 'min_points' => 2],
                         ['grade' => '3', 'min_points' => 1],
                         ['grade' => '4', 'min_points' => 0],
-                        ['grade' => '5', 'min_points' => -999],
                     ],
+                    'semester_points_sonst_grade' => '5',
                 ],
                 [
                     'short_name' => 'SA',
@@ -493,6 +495,8 @@ class TeachingService
                         ['grade' => 'NA', 'name' => 'NICHT ABGEGEBEN', 'value' => ''],
                     ],
                     'points_table' => [],
+                    'semester_points_table' => [],
+                    'semester_points_sonst_grade' => null,
                 ],
             ],
             'grading' => [
@@ -865,6 +869,8 @@ class TeachingService
 
                 $work['grades'] = $grades;
 
+                $work = $this->normalizeSemesterPointsConfiguration($work);
+
                 $defaultGrade = trim((string) ($work['default_grade'] ?? ''));
                 if ($defaultGrade === '') {
                     $work['default_grade'] = null;
@@ -890,5 +896,76 @@ class TeachingService
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $work
+     * @return array<string, mixed>
+     */
+    private function normalizeSemesterPointsConfiguration(array $work): array
+    {
+        if (($work['calculation'] ?? null) !== 'points') {
+            $work['semester_points_table'] = is_array($work['semester_points_table'] ?? null)
+                ? $work['semester_points_table']
+                : [];
+            $work['semester_points_sonst_grade'] = $this->nullableTrimmedString($work['semester_points_sonst_grade'] ?? null);
+
+            return $work;
+        }
+
+        if (array_key_exists('semester_points_table', $work)) {
+            $work['semester_points_table'] = is_array($work['semester_points_table'] ?? null)
+                ? $work['semester_points_table']
+                : [];
+            $work['semester_points_sonst_grade'] = $this->nullableTrimmedString($work['semester_points_sonst_grade'] ?? null);
+
+            return $work;
+        }
+
+        $legacyPointsTable = is_array($work['points_table'] ?? null) ? $work['points_table'] : [];
+        $split = $this->splitPointsTableFallback($legacyPointsTable);
+
+        $work['semester_points_table'] = $split['table'];
+        $work['semester_points_sonst_grade'] = $this->nullableTrimmedString($work['semester_points_sonst_grade'] ?? null)
+            ?? $split['fallback']
+            ?? $this->nullableTrimmedString($work['points_sonst_grade'] ?? null);
+
+        return $work;
+    }
+
+    /**
+     * @param  array<int, mixed>  $pointsTable
+     * @return array{table: array<int, mixed>, fallback: ?string}
+     */
+    private function splitPointsTableFallback(array $pointsTable): array
+    {
+        $table = [];
+        $fallback = null;
+
+        foreach ($pointsTable as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if ($fallback === null && (float) ($entry['min_points'] ?? 0) <= -999) {
+                $fallback = $this->nullableTrimmedString($entry['grade'] ?? null);
+
+                continue;
+            }
+
+            $table[] = $entry;
+        }
+
+        return [
+            'table' => $table,
+            'fallback' => $fallback,
+        ];
+    }
+
+    private function nullableTrimmedString(mixed $value): ?string
+    {
+        $trimmed = trim((string) ($value ?? ''));
+
+        return $trimmed === '' ? null : $trimmed;
     }
 }

@@ -1202,11 +1202,7 @@ export default {
         workSupportsPoints(work) {
             if (!work) return false
 
-            return Boolean(
-                work.points_note_enabled
-                || (Array.isArray(work.points_table) && work.points_table.length > 0)
-                || String(work.points_sonst_grade || '').trim() !== ''
-            )
+            return Boolean(work.points_note_enabled)
         },
         gradeFromPointsForWork(work, points) {
             if (!this.workSupportsPoints(work) || points == null) return ''

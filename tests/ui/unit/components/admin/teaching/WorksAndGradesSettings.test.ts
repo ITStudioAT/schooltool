@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import WorksAndGrades from '@/pages/admin/teaching/settings/components/WorksAndGrades.vue'
 
 describe('Works and grades settings edit flow', () => {
-    it('renders the points-to-grade configuration as its own independent checkbox area', () => {
+    it('renders separate point tables for semester sums and per-work points', () => {
         const componentPath = resolve(
             process.cwd(),
             'resources/js/pages/admin/teaching/settings/components/WorksAndGrades.vue',
@@ -14,6 +14,9 @@ describe('Works and grades settings edit flow', () => {
 
         expect(source).toContain('\n                                Punkte\n')
         expect(source).toContain('Berechnung der Semesternote (optional)')
+        expect(source).toContain('Punkte-Notenschlüssel für die Semestersumme')
+        expect(source).toContain('v-for="(grade, index) in semesterPointsGrades"')
+        expect(source).toContain('@update:model-value="updateSemesterPointsThreshold(grade, index, $event)"')
         expect(source).toContain('Punkte-Note-Tabelle pro Arbeit (optional)')
         expect(source).toContain('<div class="form-group-box mt-4 points-note-box">')
         expect(source).toContain('v-model="data.points_note_enabled"')
@@ -107,6 +110,13 @@ describe('Works and grades settings edit flow', () => {
                     { grade: '2', min_points: 1 },
                 ],
                 points_sonst_grade: '5',
+                semester_points_table: [
+                    { grade: '1', min_points: 5 },
+                    { grade: '2', min_points: 3 },
+                    { grade: '3', min_points: 1 },
+                    { grade: '4', min_points: 0 },
+                ],
+                semester_points_sonst_grade: '5',
                 default_grade: '',
             },
             grade_delete_item: { grade: '2' },
@@ -209,6 +219,8 @@ describe('Works and grades settings edit flow', () => {
                             points_note_enabled: false,
                             points_table: [],
                             points_sonst_grade: '',
+                            semester_points_table: [],
+                            semester_points_sonst_grade: '',
                             default_grade: '',
                         },
                     ],
@@ -220,7 +232,7 @@ describe('Works and grades settings edit flow', () => {
         expect(ctx.is_editing).toBe(false)
     })
 
-    it('does not save points-note thresholds when the optional checkbox is not enabled', async () => {
+    it('keeps semester point thresholds when the per-work points table is not enabled', async () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
@@ -247,6 +259,11 @@ describe('Works and grades settings edit flow', () => {
                     { grade: '2', min_points: 3 },
                 ],
                 points_sonst_grade: '5',
+                semester_points_table: [
+                    { grade: '1', min_points: 5 },
+                    { grade: '2', min_points: 3 },
+                ],
+                semester_points_sonst_grade: '5',
                 default_grade: '',
             },
             edit_index: null,
@@ -267,6 +284,7 @@ describe('Works and grades settings edit flow', () => {
             ensureValidDefaultGrade: methods.ensureValidDefaultGrade,
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
+            normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
         }
 
         await methods.save.call(ctx)
@@ -284,6 +302,11 @@ describe('Works and grades settings edit flow', () => {
                             points_note_enabled: false,
                             points_table: [],
                             points_sonst_grade: '',
+                            semester_points_table: [
+                                { grade: '1', min_points: 5 },
+                                { grade: '2', min_points: 3 },
+                            ],
+                            semester_points_sonst_grade: '5',
                             default_grade: '',
                         },
                     ],
@@ -341,6 +364,7 @@ describe('Works and grades settings edit flow', () => {
             ensureValidDefaultGrade: methods.ensureValidDefaultGrade,
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
+            normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
         }
 
         await methods.save.call(ctx)
@@ -363,6 +387,8 @@ describe('Works and grades settings edit flow', () => {
                                 { grade: '1', min_points: 5 },
                             ],
                             points_sonst_grade: '2',
+                            semester_points_table: [],
+                            semester_points_sonst_grade: '',
                             default_grade: '',
                         },
                     ],
@@ -406,6 +432,13 @@ describe('Works and grades settings edit flow', () => {
                     { grade: '4', min_points: 0 },
                 ],
                 points_sonst_grade: '5',
+                semester_points_table: [
+                    { grade: '1', min_points: 5 },
+                    { grade: '2', min_points: 3 },
+                    { grade: '3', min_points: 1 },
+                    { grade: '4', min_points: 0 },
+                ],
+                semester_points_sonst_grade: '5',
                 default_grade: '',
             },
             edit_index: null,
@@ -426,6 +459,7 @@ describe('Works and grades settings edit flow', () => {
             ensureValidDefaultGrade: methods.ensureValidDefaultGrade,
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
+            normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
         }
 
         await methods.save.call(ctx)
@@ -454,6 +488,13 @@ describe('Works and grades settings edit flow', () => {
                                 { grade: '4', min_points: 0 },
                             ],
                             points_sonst_grade: '5',
+                            semester_points_table: [
+                                { grade: '1', min_points: 5 },
+                                { grade: '2', min_points: 3 },
+                                { grade: '3', min_points: 1 },
+                                { grade: '4', min_points: 0 },
+                            ],
+                            semester_points_sonst_grade: '5',
                             default_grade: '',
                         },
                     ],
@@ -528,6 +569,8 @@ describe('Works and grades settings edit flow', () => {
                             points_note_enabled: false,
                             points_table: [],
                             points_sonst_grade: '',
+                            semester_points_table: [],
+                            semester_points_sonst_grade: '',
                             default_grade: '',
                         },
                     ],

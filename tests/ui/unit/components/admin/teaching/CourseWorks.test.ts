@@ -116,6 +116,16 @@ describe('CourseWorks points mode', () => {
         expect(ctx.work_form.groups[0].grades[11]).toBe('2')
     })
 
+    it('does not enable per-work point entry from semester point thresholds alone', () => {
+        const methods = (CourseWorks as any).methods
+
+        expect(methods.workSupportsPoints.call({}, {
+            points_note_enabled: false,
+            semester_points_table: [{ grade: '1', min_points: 5 }],
+            semester_points_sonst_grade: '5',
+        })).toBe(false)
+    })
+
     it('serializes numeric points with student ids for saving', () => {
         const methods = (CourseWorks as any).methods
         const ctx: Record<string, any> = {
