@@ -130,18 +130,34 @@ describe('CourseStudent points grade fallback', () => {
         const methods = (CourseStudent as any).methods
         const work = {
             calculation: 'points',
-            points_table: [
+            semester_points_table: [
                 { grade: '1', min_points: 5 },
                 { grade: '2', min_points: 3 },
                 { grade: '3', min_points: 1 },
                 { grade: '4', min_points: 0 },
             ],
-            points_sonst_grade: '5',
+            semester_points_sonst_grade: '5',
         }
 
         const result = methods.pointsGradeForWork.call({}, work, -2)
 
         expect(result).toBe('5')
+    })
+
+    it('falls back to legacy points tables when no semester points table exists', () => {
+        const methods = (CourseStudent as any).methods
+        const work = {
+            calculation: 'points',
+            points_table: [
+                { grade: '1', min_points: 5 },
+                { grade: '2', min_points: 3 },
+            ],
+            points_sonst_grade: '5',
+        }
+
+        const result = methods.pointsGradeForWork.call({}, work, 4)
+
+        expect(result).toBe('2')
     })
 })
 

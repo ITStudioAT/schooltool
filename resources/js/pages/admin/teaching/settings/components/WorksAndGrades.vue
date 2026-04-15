@@ -146,6 +146,36 @@
                             <strong>Punkte:</strong> Die Punkte werden über das Semester summiert und ergeben eine Note.
                         </v-alert>
 
+                        <div v-if="data.calculation_enabled && data.calculation === 'points'" class="mt-3 semester-points-box">
+                            <div class="d-flex flex-wrap align-start justify-space-between ga-2 mb-3">
+                                <div>
+                                    <div class="text-caption text-text">Punkte-Notenschlüssel für die Semestersumme</div>
+                                    <div class="text-body-2 text-medium-emphasis">
+                                        Diese Tabelle gilt für die Summe der Bewertungswerte dieses Arbeitstyps im Semester.
+                                    </div>
+                                </div>
+                                <v-btn variant="outlined" size="small" color="primary" :disabled="any_dialog_open" @click="useDefaultSemesterPointsTable">
+                                    <v-icon start>mdi-table-plus</v-icon>
+                                    Standardwerte
+                                </v-btn>
+                            </div>
+
+                            <div class="points-note-list">
+                                <div v-for="(grade, index) in semesterPointsGrades" :key="grade" class="points-note-row">
+                                    <div class="points-note-label">Note {{ grade }}</div>
+                                    <v-text-field
+                                        :model-value="semesterPointsThresholdValue(grade)"
+                                        :label="index === semesterPointsGrades.length - 1 ? 'Ab Punkte (optional)' : 'Ab Punkte'"
+                                        density="compact"
+                                        hide-details
+                                        type="text"
+                                        inputmode="decimal"
+                                        style="max-width: 180px"
+                                        @update:model-value="updateSemesterPointsThreshold(grade, index, $event)" />
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
 
                     <!-- Punkte-Note -->
@@ -236,6 +266,8 @@ export default {
                 points_note_enabled: false,
                 points_table: [],
                 points_sonst_grade: '',
+                semester_points_table: [],
+                semester_points_sonst_grade: '',
                 default_grade: '',
             },
             edit_index: null,
@@ -264,6 +296,9 @@ export default {
         },
         pointsNoteGrades() {
             return this.pointsNoteGradesFor(this.data.grades || [])
+        },
+        semesterPointsGrades() {
+            return ['1', '2', '3', '4', '5']
         },
         shortNameUniqueRule() {
             const existing = this.teaching_works
@@ -429,7 +464,7 @@ export default {
         },
 
         newWork() {
-            this.data = { short_name: '', name: '', grades: [], calculation: 'average', calculation_enabled: false, points_note_enabled: false, points_table: [], points_sonst_grade: '', default_grade: '' }
+            this.data = { short_name: '', name: '', grades: [], calculation: 'average', calculation_enabled: false, points_note_enabled: false, points_table: [], points_sonst_grade: '', semester_points_table: [], semester_points_sonst_grade: '', default_grade: '' }
             this.edit_index = null
             this.action = 'teaching_work_new_or_edit'
         },
@@ -444,9 +479,11 @@ export default {
                 })),
                 calculation: work.calculation || 'average',
                 calculation_enabled: !!(work.calculation),
-                points_note_enabled: work.points_note_enabled ?? !!((work.points_table || []).length || work.points_sonst_grade),
+                points_note_enabled: Boolean(work.points_note_enabled),
                 points_table: (work.points_table || []).map((pt) => ({ ...pt })),
                 points_sonst_grade: work.points_sonst_grade || '',
+                semester_points_table: (work.semester_points_table || []).map((pt) => ({ ...pt })),
+                semester_points_sonst_grade: work.semester_points_sonst_grade || '',
                 default_grade: (work.default_grade || '').toString(),
             })
             this.syncPointsNoteConfiguration(this.data)
@@ -522,6 +559,10 @@ export default {
             const fallbackGrade = pointsNoteGrades[pointsNoteGrades.length - 1] || ''
             const pointsTable = Array.isArray(work.points_table) ? work.points_table.map((entry) => ({ ...entry })) : []
             let pointsSonstGrade = work.points_sonst_grade || ''
+            const semesterPointsTable = Array.isArray(work.semester_points_table) && work.semester_points_table.length
+                ? work.semester_points_table.map((entry) => ({ ...entry }))
+                : pointsTable.map((entry) => ({ ...entry }))
+            let semesterPointsSonstGrade = work.semester_points_sonst_grade || ''
 
             if (!pointsSonstGrade) {
                 const fallbackIndex = pointsTable.findIndex((entry) => {
@@ -534,10 +575,21 @@ export default {
                 }
             }
 
+            if (!semesterPointsSonstGrade) {
+                const fallbackIndex = semesterPointsTable.findIndex((entry) => Number(entry?.min_points) <= -999)
+
+                if (fallbackIndex >= 0) {
+                    semesterPointsSonstGrade = semesterPointsTable[fallbackIndex].grade
+                    semesterPointsTable.splice(fallbackIndex, 1)
+                }
+            }
+
             return {
                 ...work,
                 points_table: pointsTable,
                 points_sonst_grade: pointsSonstGrade,
+                semester_points_table: semesterPointsTable,
+                semester_points_sonst_grade: semesterPointsSonstGrade,
             }
         },
 
@@ -604,6 +656,69 @@ export default {
                 .sort((a, b) => b.min_points - a.min_points)
         },
 
+        semesterPointsThresholdValue(grade) {
+            const pointsEntry = (this.data.semester_points_table || []).find((entry) => this.normalizeGradeKey(entry?.grade) === this.normalizeGradeKey(grade))
+            if (!pointsEntry) return ''
+            return pointsEntry.min_points
+        },
+
+        updateSemesterPointsThreshold(grade, index, value) {
+            const normalizedGrade = String(grade || '').trim()
+            const stringValue = String(value ?? '').trim()
+            const pointsTable = [...(this.data.semester_points_table || [])]
+            const entryIndex = pointsTable.findIndex((entry) => this.normalizeGradeKey(entry?.grade) === this.normalizeGradeKey(normalizedGrade))
+
+            if (stringValue === '') {
+                if (entryIndex >= 0) {
+                    pointsTable.splice(entryIndex, 1)
+                }
+
+                this.data = {
+                    ...this.data,
+                    semester_points_table: pointsTable,
+                    semester_points_sonst_grade: this.isLastSemesterPointsNote(index) ? normalizedGrade : this.data.semester_points_sonst_grade,
+                }
+                return
+            }
+
+            const numericValue = parseFloat(stringValue.replace(',', '.'))
+            const nextEntry = {
+                grade: normalizedGrade,
+                min_points: Number.isNaN(numericValue) ? 0 : numericValue,
+            }
+
+            if (entryIndex >= 0) {
+                pointsTable[entryIndex] = nextEntry
+            } else {
+                pointsTable.push(nextEntry)
+            }
+
+            this.data = {
+                ...this.data,
+                semester_points_table: pointsTable,
+                semester_points_sonst_grade: this.normalizeGradeKey(this.data.semester_points_sonst_grade) === this.normalizeGradeKey(normalizedGrade) ? '' : this.data.semester_points_sonst_grade,
+            }
+        },
+
+        isLastSemesterPointsNote(index) {
+            return index === this.semesterPointsGrades.length - 1
+        },
+
+        normalizedSemesterPointsTableForSave() {
+            const fallbackGrade = this.normalizeGradeKey(this.data.semester_points_sonst_grade)
+
+            return (this.data.semester_points_table || [])
+                .map((entry) => ({
+                    grade: String(entry?.grade || '').trim(),
+                    min_points: typeof entry?.min_points === 'number'
+                        ? entry.min_points
+                        : parseFloat(String(entry?.min_points ?? '').replace(',', '.')),
+                }))
+                .filter((entry) => entry.grade && !Number.isNaN(entry.min_points))
+                .filter((entry) => this.normalizeGradeKey(entry.grade) !== fallbackGrade)
+                .sort((a, b) => b.min_points - a.min_points)
+        },
+
         useDefaultGrades() {
             this.data.grades = [
                 { grade: '1', name: 'Sehr gut', value: '1' },
@@ -626,6 +741,16 @@ export default {
                 min_points: defaultMinPoints[index] ?? (defaultMinPoints[defaultMinPoints.length - 1] - (index - defaultMinPoints.length + 1)),
             }))
             this.data.points_sonst_grade = pointsNoteGrades[pointsNoteGrades.length - 1] || ''
+        },
+
+        useDefaultSemesterPointsTable() {
+            const defaultMinPoints = [5, 3, 1, 0]
+
+            this.data.semester_points_table = this.semesterPointsGrades.slice(0, -1).map((grade, index) => ({
+                grade,
+                min_points: defaultMinPoints[index] ?? (defaultMinPoints[defaultMinPoints.length - 1] - (index - defaultMinPoints.length + 1)),
+            }))
+            this.data.semester_points_sonst_grade = this.semesterPointsGrades[this.semesterPointsGrades.length - 1] || ''
         },
 
         abortNewWork() {
@@ -653,6 +778,7 @@ export default {
             const normalizedGrades = this.normalizedGradesForSave(this.data.grades || [])
             if (normalizedGrades === null) return
             const pointsNoteEnabled = !!this.data.points_note_enabled
+            const semesterPointsEnabled = !!(this.data.calculation_enabled && this.data.calculation === 'points')
 
             const works = [...this.teaching_works]
             const { calculation_enabled, points_note_enabled, ...dataWithoutFlag } = this.data
@@ -663,6 +789,8 @@ export default {
                 points_note_enabled: !!this.data.points_note_enabled,
                 points_table: pointsNoteEnabled ? this.normalizedPointsTableForSave() : [],
                 points_sonst_grade: pointsNoteEnabled ? (this.data.points_sonst_grade || '') : '',
+                semester_points_table: semesterPointsEnabled ? this.normalizedSemesterPointsTableForSave() : [],
+                semester_points_sonst_grade: semesterPointsEnabled ? (this.data.semester_points_sonst_grade || '') : '',
             }
             if (pointsNoteEnabled) {
                 this.syncPointsNoteConfiguration(workData)
