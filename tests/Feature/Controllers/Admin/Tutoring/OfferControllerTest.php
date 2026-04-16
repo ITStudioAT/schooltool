@@ -2,7 +2,9 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\TutoringSubject;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,6 +34,11 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($tutoringLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+    SchoolTool::create([
+        'school_id' => $this->school->id,
+        'tutoring_visible_admin' => true,
+        'tutoring_visible_user' => true,
     ]);
 
     // Create tutoring subject
@@ -85,6 +92,58 @@ describe('index', function () {
                 ],
                 'meta',
             ]);
+    });
+
+    it('includes students who requested an offer', function () {
+        $admin = User::factory()->create(['school_id' => $this->school->id]);
+        $admin->assignRole('admin');
+
+        $provider = User::factory()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Anbieter',
+            'first_name' => 'Alex',
+            'schoolclass' => '7A',
+        ]);
+
+        $requestingStudent = User::factory()->create([
+            'school_id' => $this->school->id,
+            'last_name' => 'Suchend',
+            'first_name' => 'Sina',
+            'email' => 'sina.suchend@example.test',
+            'schoolclass' => '5B',
+        ]);
+
+        $offer = TutoringOffer::create([
+            'school_id' => $this->school->id,
+            'user_id' => $provider->id,
+            'subject_id' => $this->subject->id,
+            'title' => 'Math Tutoring',
+            'is_active' => true,
+            'is_group' => 0,
+            'must_be_accepted' => false,
+            'price_per_hour' => 10.00,
+        ]);
+
+        TutoringOfferRequest::create([
+            'school_id' => $this->school->id,
+            'offer_id' => $offer->id,
+            'from_user_id' => $requestingStudent->id,
+            'to_user_id' => $provider->id,
+            'message' => 'Ich brauche Hilfe.',
+            'is_serious' => true,
+            'sent_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)->getJson('/api/admin/tutoring/offers?select_accepted=all&select_online=all&search_string=Sina');
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.0.id', $offer->id)
+            ->assertJsonPath('data.0.requests_count', 1)
+            ->assertJsonPath('data.0.requests.0.message', 'Ich brauche Hilfe.')
+            ->assertJsonPath('data.0.requests.0.from_user.last_name', 'Suchend')
+            ->assertJsonPath('data.0.requests.0.from_user.first_name', 'Sina')
+            ->assertJsonPath('data.0.requests.0.from_user.email', 'sina.suchend@example.test')
+            ->assertJsonPath('data.0.requests.0.from_user.schoolclass', '5B');
     });
 
     it('returns offers for tutoring_admin role', function () {
@@ -786,6 +845,16 @@ describe('getStats', function () {
             'price_per_hour' => 10.00,
         ]);
 
+        $requestingStudent = User::factory()->create(['school_id' => $this->school->id]);
+
+        TutoringOfferRequest::create([
+            'school_id' => $this->school->id,
+            'offer_id' => $activeAcceptedOffer->id,
+            'from_user_id' => $requestingStudent->id,
+            'to_user_id' => $student1->id,
+            'message' => 'Ich brauche Hilfe.',
+        ]);
+
         $response = $this->actingAs($admin)->getJson('/api/admin/tutoring/get_stats');
 
         $response->assertStatus(200)
@@ -796,6 +865,8 @@ describe('getStats', function () {
                 'online_count' => 2,
                 'accepted_count' => 1,
                 'users_count' => 2,
+                'requests_count' => 1,
+                'requesting_students_count' => 1,
             ]);
     });
 
@@ -813,6 +884,8 @@ describe('getStats', function () {
                 'online_count' => 0,
                 'accepted_count' => 0,
                 'users_count' => 0,
+                'requests_count' => 0,
+                'requesting_students_count' => 0,
             ]);
     });
 

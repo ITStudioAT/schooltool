@@ -32,7 +32,7 @@
 
         <!-- Es wird aktuell etwas geladen-->
         <v-container class="d-flex justify-center align-center" style="height: 100vh;" v-if="is_loading > 0">
-            <v-progress-circular indeterminate size="70" width="7"></v-progress-circular>
+            <LoadingAnimation />
         </v-container>
     </v-app>
 
@@ -42,6 +42,7 @@
 
 <script setup>
 import ItsNotification from "@/pages/components/ItsNotification.vue";
+import LoadingAnimation from "@/pages/components/LoadingAnimation.vue";
 </script>
 
 <script>

@@ -61,6 +61,64 @@
                 <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
                 <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
 
+                <v-card variant="outlined" class="mt-3">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
+                        <v-icon size="18">mdi-calculator</v-icon>
+                        Berechnete Noten
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pt-2">
+                        <div class="d-flex flex-wrap ga-3 mb-2">
+                            <v-checkbox
+                                v-model="infos_show_grade_sem1"
+                                :label="hasTwoSemesters ? '1. Semester' : 'Gesamt'"
+                                density="compact"
+                                hide-details
+                                class="grade-checkbox" />
+                            <v-checkbox
+                                v-if="hasTwoSemesters"
+                                v-model="infos_show_grade_sem2"
+                                label="2. Semester"
+                                density="compact"
+                                hide-details
+                                class="grade-checkbox" />
+                            <v-checkbox
+                                v-if="hasTwoSemesters"
+                                v-model="infos_show_grade_year"
+                                label="Gesamt (1+2)"
+                                density="compact"
+                                hide-details
+                                class="grade-checkbox" />
+                        </div>
+                        <v-alert v-if="gradesLoading" type="info" variant="tonal" density="compact" class="mb-0">
+                            Noten werden geladen…
+                        </v-alert>
+                        <div v-else-if="anyGradeColumnVisible && gradeRows.length" class="grades-table-wrap">
+                            <table class="grades-table">
+                                <thead>
+                                    <tr>
+                                        <th class="grades-student-col">Schüler:in</th>
+                                        <th v-if="infos_show_grade_sem1" class="grades-grade-col">{{ hasTwoSemesters ? 'Sem 1' : 'Gesamt' }}</th>
+                                        <th v-if="hasTwoSemesters && infos_show_grade_sem2" class="grades-grade-col">Sem 2</th>
+                                        <th v-if="hasTwoSemesters && infos_show_grade_year" class="grades-grade-col">1+2</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr v-for="row in gradeRows" :key="row.student_id" :class="{ 'row--canceled': row.is_canceled }">
+                                        <td class="grades-student-cell" :class="{ 'grades-student-cell--canceled': row.is_canceled }">{{ row.label }}</td>
+                                        <td v-if="infos_show_grade_sem1" class="grades-grade-cell" :class="gradeClass(row.grades.sem1)">{{ formatGrade(row.grades.sem1) }}</td>
+                                        <td v-if="hasTwoSemesters && infos_show_grade_sem2" class="grades-grade-cell" :class="gradeClass(row.grades.sem2)">{{ formatGrade(row.grades.sem2) }}</td>
+                                        <td v-if="hasTwoSemesters && infos_show_grade_year" class="grades-grade-cell" :class="gradeClass(row.grades.year)">{{ formatGrade(row.grades.year) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-else-if="anyGradeColumnVisible && gradesDataLoaded && !gradeRows.length" class="text-caption text-medium-emphasis">
+                            Keine Schüler:innen im Kurs.
+                        </div>
+                    </v-card-text>
+                </v-card>
+
             </v-card-text>
             <v-card-text v-if="action == 'edit_description'">
                 <v-form ref="form" @submit.prevent="saveDescription">
@@ -81,10 +139,13 @@
 <script>
 import { useValidationRulesSetup } from '@/helpers/rules'
 import { parseLocalDate } from '@/helpers/date'
+import { computeStudentGrades, formatGrade, gradeClass } from '@/helpers/gradeCalculation'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseBehaviourEntryStore } from '@/stores/admin/teaching/CourseBehaviourEntryStore'
+import { useCourseStudentEntryStore } from '@/stores/admin/teaching/CourseStudentEntryStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
@@ -102,6 +163,8 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
+        this.entryStore = useCourseStudentEntryStore()
+        this.courseWorkStore = useCourseWorkStore()
         this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
         if (!Array.isArray(this.school_hours) || this.school_hours.length === 0) {
@@ -112,7 +175,17 @@ export default {
         }
     },
 
-    mounted() {
+    async mounted() {
+        const routeGrades = this.normalizeGradeQueryValue(this.$route?.query?.grades)
+
+        if (routeGrades !== '') {
+            this.restoreGradeColumnsFromRoute(routeGrades)
+        } else {
+            this.restoreGradeColumns(this.persistedGradeColumns)
+        }
+
+        await this.initializeGradeState()
+
         this.nowTimer = setInterval(() => {
             this.nowTs = Date.now()
         }, 1000)
@@ -126,6 +199,8 @@ export default {
             adminStore: null,
             courseStore: null,
             behaviourEntryStore: null,
+            entryStore: null,
+            courseWorkStore: null,
             schoolHourStore: null,
             teachingStore: null,
             is_valid: false,
@@ -136,12 +211,16 @@ export default {
             delete_level: 0,
             nowTs: Date.now(),
             nowTimer: null,
+            gradesLoading: false,
+            gradeEntries: [],
+            gradesDataLoaded: false,
+            restoringGradeColumns: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos']),
+        ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos', 'infos_show_grade_sem1', 'infos_show_grade_sem2', 'infos_show_grade_year']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
 
         schoolHoursByHour() {
@@ -326,6 +405,83 @@ export default {
             })
             return map
         },
+        teachingSchemas() {
+            return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []
+        },
+        gradingSchema() {
+            const schemaId = this.selected_course?.teaching_schema_id
+            if (!schemaId) return null
+            return this.teachingSchemas.find((s) => String(s.id) === String(schemaId)) || null
+        },
+        grading() {
+            return this.gradingSchema?.grading || {}
+        },
+        teachingWorks() {
+            return this.gradingSchema?.works || []
+        },
+        hasTwoSemesters() {
+            return Number(this.grading?.semester_count) === 2
+        },
+        sem2StartDate() {
+            return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
+        },
+        persistedGradeColumns() {
+            return this.teachingStore?.settings?.teaching_grade_columns || this.config?.user?.teaching_grade_columns || {
+                show_sem1: false,
+                show_sem2: false,
+                show_year: false,
+            }
+        },
+        anyGradeColumnVisible() {
+            return this.infos_show_grade_sem1 || (this.hasTwoSemesters && (this.infos_show_grade_sem2 || this.infos_show_grade_year))
+        },
+        gradeStudents() {
+            const list = Array.isArray(this.selected_course?.students_info) ? [...this.selected_course.students_info] : []
+            return list.filter((s) => !!s?.id).sort((a, b) => {
+                const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                const canceledB = this.isStudentCanceled(b) ? 1 : 0
+                if (canceledA !== canceledB) return canceledA - canceledB
+                const lastCmp = String(a?.last_name || '').localeCompare(String(b?.last_name || ''), 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+                return String(a?.first_name || '').localeCompare(String(b?.first_name || ''), 'de', { sensitivity: 'base' })
+            })
+        },
+        gradeEntriesByStudent() {
+            const map = {}
+            ;(this.gradeEntries || []).forEach((entry) => {
+                const uid = String(entry?.user_id || '')
+                if (!uid) return
+                if (!map[uid]) map[uid] = []
+                map[uid].push(entry)
+            })
+            return map
+        },
+        gradeRows() {
+            if (!this.gradesDataLoaded) return []
+            return this.gradeStudents.map((student) => {
+                const studentId = String(student.id)
+                const studentEntries = this.gradeEntriesByStudent[studentId] || []
+                const grades = computeStudentGrades(
+                    student,
+                    studentEntries,
+                    this.teachingWorks,
+                    this.grading,
+                    this.hasTwoSemesters ? 2 : 1,
+                    this.sem2StartDate,
+                )
+                const last = String(student?.last_name || '').trim()
+                const first = String(student?.first_name || '').trim()
+                const cls = String(student?.schoolclass || student?.class || '').trim()
+                const name = `${last}, ${first}`.replace(/^,\s*/, '').trim() || '–'
+                const label = cls ? `${name} (${cls})` : name
+                return {
+                    student_id: studentId,
+                    label,
+                    is_canceled: this.isStudentCanceled(student),
+                    grades,
+                }
+            })
+        },
     },
 
     watch: {
@@ -333,14 +489,204 @@ export default {
             async handler(course) {
                 if (!course?.id) {
                     if (this.behaviourEntryStore) this.behaviourEntryStore.courseEntries = []
+                    this.gradesDataLoaded = false
+                    this.gradeEntries = []
                     return
                 }
+                this.courseStore?.ensureCourseStudentCollections?.(course)
                 await this.behaviourEntryStore?.indexByCourse(course.id)
+                if (this.anyGradeColumnVisible) {
+                    await this.loadGradeData()
+                } else {
+                    this.gradesDataLoaded = false
+                    this.gradeEntries = []
+                }
             },
+        },
+        anyGradeColumnVisible: {
+            async handler(visible) {
+                if (visible && !this.gradesDataLoaded && this.selected_course?.id) {
+                    await this.loadGradeData()
+                }
+            },
+        },
+        infos_show_grade_sem1() {
+            if (this.restoringGradeColumns) {
+                return
+            }
+            this.syncGradeColumnsToRoute()
+            this.persistGradeColumns()
+        },
+        infos_show_grade_sem2() {
+            if (this.restoringGradeColumns) {
+                return
+            }
+            this.syncGradeColumnsToRoute()
+            this.persistGradeColumns()
+        },
+        infos_show_grade_year() {
+            if (this.restoringGradeColumns) {
+                return
+            }
+            this.syncGradeColumnsToRoute()
+            this.persistGradeColumns()
+        },
+        '$route.query.grades'(value) {
+            const routeGrades = this.normalizeGradeQueryValue(value)
+
+            if (routeGrades !== '') {
+                this.restoreGradeColumnsFromRoute(routeGrades)
+                return
+            }
+
+            this.restoreGradeColumns(this.persistedGradeColumns)
         },
     },
 
     methods: {
+        formatGrade,
+        gradeClass,
+        normalizeGradeQueryValue(value) {
+            if (Array.isArray(value)) {
+                return typeof value[0] === 'string' ? value[0] : ''
+            }
+
+            return typeof value === 'string' ? value : ''
+        },
+        parseGradeColumns(value) {
+            const tokens = this.normalizeGradeQueryValue(value)
+                .split(',')
+                .map((token) => token.trim().toLowerCase())
+                .filter(Boolean)
+
+            return {
+                sem1: tokens.includes('sem1'),
+                sem2: tokens.includes('sem2'),
+                year: tokens.includes('year'),
+            }
+        },
+        gradeColumnsQueryValue() {
+            const tokens = []
+
+            if (this.infos_show_grade_sem1) {
+                tokens.push('sem1')
+            }
+            if (this.infos_show_grade_sem2) {
+                tokens.push('sem2')
+            }
+            if (this.infos_show_grade_year) {
+                tokens.push('year')
+            }
+
+            return tokens.length ? tokens.join(',') : null
+        },
+        restoreGradeColumnsFromRoute(value) {
+            const normalizedValue = this.normalizeGradeQueryValue(value)
+
+            if (normalizedValue === '') {
+                return
+            }
+
+            const columns = this.parseGradeColumns(normalizedValue)
+            this.restoreGradeColumns({
+                show_sem1: columns.sem1,
+                show_sem2: columns.sem2,
+                show_year: columns.year,
+            })
+        },
+        restoreGradeColumns(columns) {
+            const normalizedColumns = {
+                show_sem1: Boolean(columns?.show_sem1),
+                show_sem2: Boolean(columns?.show_sem2),
+                show_year: Boolean(columns?.show_year),
+            }
+
+            this.restoringGradeColumns = true
+            this.infos_show_grade_sem1 = normalizedColumns.show_sem1
+            this.infos_show_grade_sem2 = normalizedColumns.show_sem2
+            this.infos_show_grade_year = normalizedColumns.show_year
+            this.restoringGradeColumns = false
+        },
+        currentGradeColumns() {
+            return {
+                show_sem1: Boolean(this.infos_show_grade_sem1),
+                show_sem2: Boolean(this.infos_show_grade_sem2),
+                show_year: Boolean(this.infos_show_grade_year),
+            }
+        },
+        gradeColumnsMatch(left, right) {
+            return Boolean(left?.show_sem1) === Boolean(right?.show_sem1)
+                && Boolean(left?.show_sem2) === Boolean(right?.show_sem2)
+                && Boolean(left?.show_year) === Boolean(right?.show_year)
+        },
+        async persistGradeColumns() {
+            if (!this.teachingStore) {
+                return
+            }
+
+            const columns = this.currentGradeColumns()
+            if (this.gradeColumnsMatch(columns, this.persistedGradeColumns)) {
+                return
+            }
+
+            await this.teachingStore.saveSettings({
+                teaching_grade_columns: columns,
+            }, {
+                notifySuccess: false,
+            })
+        },
+        syncGradeColumnsToRoute() {
+            if (!this.$router || !this.$route) {
+                return
+            }
+
+            const columns = this.currentGradeColumns()
+            const grades = this.gradeColumnsQueryValue()
+            const currentGrades = this.normalizeGradeQueryValue(this.$route.query?.grades)
+            const nextGrades = grades ?? ''
+
+            if (currentGrades === nextGrades) {
+                return
+            }
+
+            const query = { ...this.$route.query }
+
+            if (grades) {
+                query.grades = grades
+            } else {
+                delete query.grades
+            }
+
+            if (!this.hasTwoSemesters && !columns.show_sem1) {
+                delete query.grades
+            }
+
+            this.$router.replace({
+                path: this.$route.path,
+                query,
+            }).catch(() => {})
+        },
+        isStudentCanceled(student) {
+            return !!student?.canceled_at || !!student?.deleted_at
+        },
+        async initializeGradeState() {
+            this.courseStore?.ensureCourseStudentCollections?.(this.selected_course)
+
+            if (this.anyGradeColumnVisible && this.selected_course?.id && !this.gradesDataLoaded) {
+                await this.loadGradeData()
+            }
+        },
+        async loadGradeData() {
+            if (!this.selected_course?.id || !this.entryStore) return
+            this.gradesLoading = true
+            await Promise.allSettled([
+                this.entryStore.indexByCourse(this.selected_course.id),
+                this.courseWorkStore.index(this.selected_course.id),
+            ])
+            this.gradeEntries = [...(this.entryStore.courseEntries || [])]
+            this.gradesDataLoaded = true
+            this.gradesLoading = false
+        },
         editDescription() {
             this.edit_description = this.selected_course.description || ''
             this.action = 'edit_description'
@@ -471,5 +817,82 @@ export default {
 
 .notification-action {
     margin-left: auto;
+}
+
+.grade-checkbox {
+    flex: none;
+}
+
+.grade-checkbox :deep(.v-label) {
+    font-size: 0.82rem;
+}
+
+.grades-table-wrap {
+    overflow-x: auto;
+}
+
+.grades-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.82rem;
+}
+
+.grades-table th,
+.grades-table td {
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    padding: 5px 8px;
+    vertical-align: middle;
+}
+
+.grades-table th {
+    background: rgba(15, 23, 42, 0.06);
+    font-weight: 600;
+    white-space: nowrap;
+    text-align: center;
+}
+
+.grades-student-col {
+    text-align: left !important;
+    min-width: 160px;
+}
+
+.grades-grade-col {
+    width: 80px;
+    text-align: center;
+}
+
+.grades-student-cell {
+    font-weight: 500;
+}
+
+.grades-student-cell--canceled {
+    text-decoration: line-through;
+    opacity: 0.75;
+}
+
+.grades-grade-cell {
+    text-align: center;
+    font-weight: 700;
+}
+
+.row--canceled td {
+    opacity: 0.6;
+}
+
+.grade--ok {
+    color: #1e40af;
+}
+
+.grade--na {
+    color: #c62828;
+}
+
+.grade--nb {
+    color: #e65100;
+}
+
+.grade--empty {
+    color: rgba(16, 38, 58, 0.35);
 }
 </style>

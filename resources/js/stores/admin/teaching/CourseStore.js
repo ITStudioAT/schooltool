@@ -25,6 +25,10 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             show_dates: false,
             show_attendance: false,
             show_performances: false,
+            show_performances_plus: false,
+            infos_show_grade_sem1: false,
+            infos_show_grade_sem2: false,
+            infos_show_grade_year: false,
             timetable_view_mode: 'table',
             courses_request_promise: null,
         }

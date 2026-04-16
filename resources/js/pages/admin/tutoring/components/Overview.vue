@@ -124,6 +124,11 @@
                                     <v-icon size="14" color="success" icon="mdi-check" />
                                     <span>{{ item.email_mentor }} ({{ item.accepted_at }})</span>
                                 </div>
+                                <div class="tov-offer-requests" :class="{ 'has-requests': requestCount(item) > 0 }">
+                                    <v-icon size="14" :color="requestCount(item) > 0 ? 'info' : 'grey'" icon="mdi-account-question-outline" />
+                                    <span v-if="requestCount(item) > 0">{{ requestCountLabel(item) }}: {{ requestStudentSummary(item) }}</span>
+                                    <span v-else>Keine Anfragen</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -210,6 +215,14 @@
                                 <div class="kpi-label">Mit Angeboten</div>
                                 <div class="kpi-value">{{ stats.students_count }}</div>
                             </div>
+                            <div class="kpi-card ai-glass-panel">
+                                <div class="kpi-label">Anfragen</div>
+                                <div class="kpi-value">{{ stats.requests_count }}</div>
+                            </div>
+                            <div class="kpi-card ai-glass-panel">
+                                <div class="kpi-label">Anfragende</div>
+                                <div class="kpi-value">{{ stats.requesting_students_count }}</div>
+                            </div>
                         </div>
                     </section>
                 </aside>
@@ -246,6 +259,27 @@
                     <div class="d-flex flex-row align-center ga-2">
                         <v-icon icon="mdi-mail" />
                         <div>{{ selectedOffer.user.email }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anfragen -->
+            <div class="bg-primary-lighten-3">
+                <label class="text-subtitle-2 mt-2 d-block">Anfragen:</label>
+                <div v-if="selectedOfferRequests.length === 0" class="text-body-2">Keine Anfragen zu diesem Angebot.</div>
+                <div v-else class="d-grid ga-2">
+                    <div v-for="request in selectedOfferRequests" :key="request.id" class="tov-request-detail">
+                        <div class="d-flex align-center ga-2 flex-wrap">
+                            <v-icon size="18" icon="mdi-account-question-outline" color="info" />
+                            <strong>{{ requestStudentName(request) }}</strong>
+                            <span class="text-body-2 text-medium-emphasis" v-if="requestStudentMeta(request)">{{ requestStudentMeta(request) }}</span>
+                        </div>
+                        <div class="text-caption text-medium-emphasis" v-if="requestStatusLine(request)">
+                            {{ requestStatusLine(request) }}
+                        </div>
+                        <div class="text-body-2 mt-1" v-if="request.message" style="white-space: pre-line">
+                            {{ request.message }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -395,6 +429,9 @@ export default {
             const selectedIds = new Set((this.selected_offers || []).map((id) => Number(id)))
             return (this.offers || []).filter((offer) => selectedIds.has(Number(offer.id)))
         },
+        selectedOfferRequests() {
+            return Array.isArray(this.selectedOffer?.requests) ? this.selectedOffer.requests : []
+        },
         selectedOfferUserIds() {
             return [...new Set(this.selectedOffersList.map((offer) => Number(offer?.user?.id || 0)).filter((id) => id > 0))]
         },
@@ -530,6 +567,52 @@ export default {
                 ? this.selected_offers.filter((selectedId) => selectedId !== id)
                 : [...this.selected_offers, id]
         },
+        requestCount(offer) {
+            return Number(offer?.requests_count ?? offer?.requests?.length ?? 0)
+        },
+        requestCountLabel(offer) {
+            const count = this.requestCount(offer)
+            return count === 1 ? '1 Anfrage' : `${count} Anfragen`
+        },
+        requestStudentName(request) {
+            const user = request?.from_user || {}
+            const name = [user.last_name, user.first_name].filter(Boolean).join(' ')
+            return name || user.email || 'Unbekannte:r Schüler:in'
+        },
+        requestStudentMeta(request) {
+            const user = request?.from_user || {}
+            return [user.schoolclass, user.email].filter(Boolean).join(', ')
+        },
+        requestStudentSummary(offer) {
+            const requests = Array.isArray(offer?.requests) ? offer.requests : []
+            const names = requests.map((request) => this.requestStudentName(request)).filter(Boolean)
+
+            if (names.length === 0) {
+                return 'Details im Angebot'
+            }
+
+            const visibleNames = names.slice(0, 2).join(', ')
+            const remainingCount = this.requestCount(offer) - 2
+
+            return remainingCount > 0 ? `${visibleNames} +${remainingCount}` : visibleNames
+        },
+        formatRequestDate(value) {
+            if (!value) return null
+
+            return String(value).replace('T', ' ').slice(0, 16)
+        },
+        requestStatusLine(request) {
+            const parts = []
+            const sentAt = this.formatRequestDate(request?.sent_at || request?.created_at)
+            const seenAt = this.formatRequestDate(request?.seen_at)
+            const mailAt = this.formatRequestDate(request?.mail_at)
+
+            if (sentAt) parts.push(`gesendet: ${sentAt}`)
+            if (seenAt) parts.push(`gesehen: ${seenAt}`)
+            if (mailAt) parts.push(`E-Mail: ${mailAt}`)
+
+            return parts.join(' | ')
+        },
     },
 }
 </script>
@@ -537,3 +620,25 @@ export default {
 <style scoped src="../../../../../css/admin-index-page.css"></style>
 <style scoped src="../../../../../css/admin-crud-panel.css"></style>
 <style scoped src="../../../../../css/admin-tutoring-overview-cards.css"></style>
+<style scoped>
+.tov-offer-requests {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: rgba(148, 163, 184, 0.95);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.tov-offer-requests.has-requests {
+    color: #bfdbfe;
+    font-weight: 650;
+}
+
+.tov-request-detail {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 8px 10px;
+}
+</style>

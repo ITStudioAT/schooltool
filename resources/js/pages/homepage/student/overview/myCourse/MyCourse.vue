@@ -250,6 +250,43 @@
                                         </div>
                                     </template>
                                 </div>
+
+                                <div v-if="showCalculatedGradesSection" class="calculated-grades-section">
+                                    <h4 class="calculated-grades-title">
+                                        <v-icon size="18">mdi-calculator</v-icon>
+                                        Berechnete Noten
+                                    </h4>
+                                    <v-alert
+                                        type="info"
+                                        variant="tonal"
+                                        density="compact"
+                                        icon="mdi-information-outline"
+                                        class="calculated-grades-note">
+                                        Dient ausschließlich zur Information/als Richtwert. Die Beurteilung erfolgt immer durch den/die Lehrer:in.
+                                    </v-alert>
+                                    <div class="grades-display">
+                                        <template v-if="hasTwoSemesters">
+                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem1">
+                                                <div class="grade-label">1. Semester</div>
+                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem1)">{{ calcFormatGrade(calculatedGradeValues.sem1) }}</div>
+                                            </div>
+                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem2">
+                                                <div class="grade-label">2. Semester</div>
+                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem2)">{{ calcFormatGrade(calculatedGradeValues.sem2) }}</div>
+                                            </div>
+                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeYear">
+                                                <div class="grade-label">Gesamt (1+2)</div>
+                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.year)">{{ calcFormatGrade(calculatedGradeValues.year) }}</div>
+                                            </div>
+                                        </template>
+                                        <template v-else>
+                                            <div class="grade-item grade-calculated" v-if="showCalculatedGradeSem1">
+                                                <div class="grade-label">Berechnung</div>
+                                                <div class="grade-value" :class="calcGradeClass(calculatedGradeValues.sem1)">{{ calcFormatGrade(calculatedGradeValues.sem1) }}</div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
                             </div>
                         </v-tabs-window-item>
 
@@ -514,6 +551,7 @@ import { mapWritableState } from 'pinia'
 import { useStudentStore } from '@/stores/student/StudentStore'
 import { useCourseStore } from '@/stores/student/CourseStore'
 import { parseLocalDate } from '@/helpers/date'
+import { computeStudentGrades, formatGrade as formatGradeValue, gradeClass as gradeClassHelper } from '@/helpers/gradeCalculation'
 import {
     normalizeTeachingCategoryEvaluationValueItems,
     teachingCategoryEvaluationColorForValue,
@@ -538,11 +576,9 @@ export default {
             return
         }
 
-        // Load course details
+        // Load course details and entries
         await this.loadCourse()
-        if (this.entries.length === 0 && !this.loadingEntries) {
-            this.loadEntries()
-        }
+        await this.loadEntries()
     },
     mounted() {
         this.nowTimer = setInterval(() => {
@@ -679,6 +715,50 @@ export default {
             return requiredNaCount === 1
         },
 
+        courseSchema() {
+            return this.course?.teaching_schema || this.currentTeachingSchema || null
+        },
+        calculatedGrades() {
+            if (!this.entries.length || !this.courseSchema) return null
+            const works = this.courseSchema?.works || []
+            const grading = this.courseSchema?.grading || {}
+            const semCount = Number(grading?.semester_count) === 2 ? 2 : 1
+            const studentProxy = {
+                sem_1_grade: this.course?.sem_1_grade || null,
+                sem_2_grade: this.course?.sem_2_grade || null,
+                sem_grade: this.course?.sem_grade || null,
+            }
+            return computeStudentGrades(studentProxy, this.entries, works, grading, semCount, this.semesterBoundary)
+        },
+        calculatedGradeValues() {
+            return {
+                sem1: this.calculatedGrades?.sem1 ?? null,
+                sem2: this.calculatedGrades?.sem2 ?? null,
+                year: this.calculatedGrades?.year ?? null,
+            }
+        },
+        teacherCalculatedGradeColumns() {
+            const columns = this.course?.teacher_teaching_grade_columns
+
+            return {
+                show_sem1: Boolean(columns?.show_sem1),
+                show_sem2: Boolean(columns?.show_sem2),
+                show_year: Boolean(columns?.show_year),
+            }
+        },
+        showCalculatedGradeSem1() {
+            return Boolean(this.teacherCalculatedGradeColumns.show_sem1)
+        },
+        showCalculatedGradeSem2() {
+            return Boolean(this.hasTwoSemesters && this.teacherCalculatedGradeColumns.show_sem2)
+        },
+        showCalculatedGradeYear() {
+            return Boolean(this.hasTwoSemesters && this.teacherCalculatedGradeColumns.show_year)
+        },
+        showCalculatedGradesSection() {
+            return this.showCalculatedGradeSem1 || this.showCalculatedGradeSem2 || this.showCalculatedGradeYear
+        },
+
         weekdayLabel() {
             return new Intl.DateTimeFormat('de-AT', { weekday: 'long' }).format(new Date())
         },
@@ -693,6 +773,10 @@ export default {
         },
 
         currentTeachingSchema() {
+            if (this.course?.teaching_schema) {
+                return this.course.teaching_schema
+            }
+
             const schemas = Array.isArray(this.user?.teaching_schemas) ? this.user.teaching_schemas : []
             if (!schemas.length) return null
 
@@ -960,6 +1044,12 @@ export default {
             this.$router.push('/student')
         },
 
+        calcFormatGrade(value) {
+            return formatGradeValue(value)
+        },
+        calcGradeClass(value) {
+            return gradeClassHelper(value)
+        },
         toggleSortByType() {
             this.sortByType = !this.sortByType
         },
@@ -1874,6 +1964,61 @@ export default {
     font-size: 2rem;
     font-weight: 700;
     color: #c62828;
+}
+
+.calculated-grades-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px dashed rgba(49, 77, 93, 0.2);
+}
+
+.calculated-grades-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #546e7a;
+    margin-bottom: 6px;
+}
+
+.calculated-grades-note {
+    margin-bottom: 10px;
+}
+
+.calculated-grades-note :deep(.v-alert__content) {
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.grade-item.grade-calculated {
+    background: linear-gradient(135deg, #e8eaf6 0%, #e3f2fd 100%);
+    border: 2px solid #7986cb;
+    min-width: 130px;
+    padding: 12px;
+}
+
+.grade-calculated .grade-value {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: #1e40af;
+}
+
+.grade-calculated .grade-label {
+    font-size: 0.82rem;
+    margin-bottom: 6px;
+}
+
+.grade-calculated .grade-value.grade--na {
+    color: #c62828;
+}
+
+.grade-calculated .grade-value.grade--nb {
+    color: #e65100;
+}
+
+.grade-calculated .grade-value.grade--empty {
+    color: rgba(16, 38, 58, 0.35);
 }
 
 .behaviour-value {

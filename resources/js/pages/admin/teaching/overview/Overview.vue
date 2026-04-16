@@ -74,7 +74,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" v-if="(show_attendance || show_performances) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" v-if="(show_attendance || show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
             <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">Sem 1</v-btn>
@@ -94,6 +94,15 @@
         <v-row v-if="show_performances" :class="show_attendance ? 'mt-n6' : ''">
             <v-col>
                 <PerformancesDummy
+                    :selected-course="selected_course"
+                    :active-semester="activeSemester"
+                    :semester-count="semesterCount"
+                    :sem2-start-date="sem2StartDate" />
+            </v-col>
+        </v-row>
+        <v-row v-if="show_performances_plus" :class="show_attendance ? 'mt-n6' : ''">
+            <v-col>
+                <PerformancesPlusDummy
                     :selected-course="selected_course"
                     :active-semester="activeSemester"
                     :semester-count="semesterCount"
@@ -124,9 +133,10 @@ import CoursePrint from './components/CoursePrint.vue'
 import MyTimetable from './components/MyTimetable.vue'
 import AttendanceMatrix from '../more/components/AttendanceMatrix.vue'
 import PerformancesDummy from '../more/components/PerformancesDummy.vue'
+import PerformancesPlusDummy from '../more/components/PerformancesPlusDummy.vue'
 
 export default {
-    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy },
+    components: { MyCourses, CourseStudents, CourseStudent, CourseInfos, CourseDates, CourseWorks, CoursePrint, MyTimetable, AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -169,6 +179,7 @@ export default {
             'show_attendance',
             'show_performances',
             'selected_course_student',
+            'show_performances_plus',
         ]),
         isControlLocked() {
             return this.action != '' || this.isStudentDetailActive
@@ -202,6 +213,7 @@ export default {
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
+                panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })
                 panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })
             }
             return panels
@@ -216,6 +228,7 @@ export default {
                 if (this.show_dates) return 'dates'
                 if (this.show_attendance) return 'attendance'
                 if (this.show_performances) return 'performances'
+                if (this.show_performances_plus) return 'performances_plus'
                 return undefined
             },
             set(value) {
@@ -226,6 +239,7 @@ export default {
                 this.show_dates = value === 'dates'
                 this.show_attendance = value === 'attendance'
                 this.show_performances = value === 'performances'
+                this.show_performances_plus = value === 'performances_plus'
                 if (!value) {
                     this.action_2 = ''
                     this.selected_course_student = null
@@ -247,7 +261,7 @@ export default {
             }
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
-                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']
+                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
@@ -258,6 +272,7 @@ export default {
                     this.show_dates = urlPanel === 'dates'
                     this.show_attendance = urlPanel === 'attendance'
                     this.show_performances = urlPanel === 'performances'
+                    this.show_performances_plus = urlPanel === 'performances_plus'
                     return
                 }
             }
@@ -274,6 +289,7 @@ export default {
             this.show_dates = false
             this.show_attendance = false
             this.show_performances = false
+            this.show_performances_plus = false
             },
         },
         activeSemester(val) {

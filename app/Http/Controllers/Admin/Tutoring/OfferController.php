@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\Tutoring\OfferIndexRequest;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Http\Resources\Admin\Tutoring\OfferResource;
 use App\Models\TutoringOffer;
+use App\Models\TutoringOfferRequest;
 use App\Models\User;
 use App\Services\TutoringOfferService;
 use Illuminate\Http\Request;
@@ -30,7 +31,14 @@ class OfferController extends Controller
         $select_only_me_concerning = filter_var($validated['select_only_me_concerning'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
         $query = TutoringOffer::where('school_id', $auth_user->school_id)
-            ->with(['subject', 'user']);
+            ->with([
+                'subject',
+                'user',
+                'requests' => fn ($query) => $query
+                    ->with('from_user:id,last_name,first_name,email,schoolclass,is_active')
+                    ->latest('created_at'),
+            ])
+            ->withCount('requests');
 
         // Search filter
         if ($search_string) {
@@ -46,6 +54,12 @@ class OfferController extends Controller
                     ->orWhereHas('subject', function ($subQuery) use ($search_string) {
                         $subQuery->where('short_name', 'like', "%{$search_string}%")
                             ->orWhere('long_name', 'like', "%{$search_string}%");
+                    })
+                    ->orWhereHas('requests.from_user', function ($subQuery) use ($search_string) {
+                        $subQuery->where('last_name', 'like', "%{$search_string}%")
+                            ->orWhere('first_name', 'like', "%{$search_string}%")
+                            ->orWhere('email', 'like', "%{$search_string}%")
+                            ->orWhere('schoolclass', 'like', "%{$search_string}%");
                     });
             });
         }
@@ -262,6 +276,8 @@ class OfferController extends Controller
             'students_count' => TutoringOffer::where('school_id', $auth_user->school_id)->distinct()->count('user_id'),
             'online_count' => TutoringOffer::where('school_id', $auth_user->school_id)->where('is_active', true)->count(),
             'accepted_count' => TutoringOffer::where('school_id', $auth_user->school_id)->whereNotNull('accepted_at')->count(),
+            'requests_count' => TutoringOfferRequest::where('school_id', $auth_user->school_id)->count(),
+            'requesting_students_count' => TutoringOfferRequest::where('school_id', $auth_user->school_id)->distinct()->count('from_user_id'),
             'users_count' => User::where('school_id', $auth_user->school_id)->role('tutoring_user')->count(),
         ];
 

@@ -362,6 +362,42 @@ test('show returns schoolyear scoped teacher notification definitions for the ac
         ->assertJsonPath('course.teacher_teaching_notifications.0.name', 'Aktive Notification');
 });
 
+test('show returns schoolyear scoped teacher grade column visibility', function () {
+    $this->teacher->forceFill([
+        'teaching_grade_columns_by_schoolyear' => [
+            (string) $this->activeSchoolyear->id => [
+                'show_sem1' => true,
+                'show_sem2' => false,
+                'show_year' => true,
+            ],
+            (string) $this->oldSchoolyear->id => [
+                'show_sem1' => false,
+                'show_sem2' => true,
+                'show_year' => false,
+            ],
+        ],
+    ])->save();
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            [
+                'id' => $this->studentA->id,
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}");
+
+    $response->assertOk()
+        ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem1', true)
+        ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem2', false)
+        ->assertJsonPath('course.teacher_teaching_grade_columns.show_year', true);
+});
+
 test('show ignores legacy-only teacher behaviour and notification definitions', function () {
     $this->teacher->forceFill([
         'teaching_behaviour' => [['short_name' => 'ALT', 'name' => 'Alt']],

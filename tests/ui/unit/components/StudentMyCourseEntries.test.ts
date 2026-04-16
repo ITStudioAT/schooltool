@@ -179,4 +179,140 @@ describe('Student MyCourse entry grade chip color', () => {
         expect(ctx.entries).toEqual([{ id: 1, type: 'FU' }])
         expect(ctx.loadingEntries).toBe(false)
     })
+
+    it('uses the teacher-selected calculated grade columns for two-semester courses', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            course: {
+                teacher_teaching_grade_columns: {
+                    show_sem1: true,
+                    show_sem2: false,
+                    show_year: true,
+                },
+            },
+            hasTwoSemesters: true,
+            calculatedGrades: {
+                sem1: '2',
+                sem2: '3',
+                year: '2',
+            },
+        }
+
+        ctx.calculatedGradeValues = computed.calculatedGradeValues.call(ctx)
+        ctx.teacherCalculatedGradeColumns = computed.teacherCalculatedGradeColumns.call(ctx)
+        ctx.showCalculatedGradeSem1 = computed.showCalculatedGradeSem1.call(ctx)
+        ctx.showCalculatedGradeSem2 = computed.showCalculatedGradeSem2.call(ctx)
+        ctx.showCalculatedGradeYear = computed.showCalculatedGradeYear.call(ctx)
+
+        expect(ctx.teacherCalculatedGradeColumns).toEqual({
+            show_sem1: true,
+            show_sem2: false,
+            show_year: true,
+        })
+        expect(ctx.calculatedGradeValues).toEqual({
+            sem1: '2',
+            sem2: '3',
+            year: '2',
+        })
+        expect(ctx.showCalculatedGradeSem1).toBe(true)
+        expect(ctx.showCalculatedGradeSem2).toBe(false)
+        expect(ctx.showCalculatedGradeYear).toBe(true)
+        expect(computed.showCalculatedGradesSection.call(ctx)).toBe(true)
+    })
+
+    it('hides the calculated grades section when no teacher column is enabled', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            course: {
+                teacher_teaching_grade_columns: {
+                    show_sem1: false,
+                    show_sem2: false,
+                    show_year: false,
+                },
+            },
+            hasTwoSemesters: true,
+            calculatedGrades: {
+                sem1: '2',
+                sem2: '3',
+                year: '2',
+            },
+        }
+
+        ctx.calculatedGradeValues = computed.calculatedGradeValues.call(ctx)
+        ctx.teacherCalculatedGradeColumns = computed.teacherCalculatedGradeColumns.call(ctx)
+        ctx.showCalculatedGradeSem1 = computed.showCalculatedGradeSem1.call(ctx)
+        ctx.showCalculatedGradeSem2 = computed.showCalculatedGradeSem2.call(ctx)
+        ctx.showCalculatedGradeYear = computed.showCalculatedGradeYear.call(ctx)
+
+        expect(computed.showCalculatedGradesSection.call(ctx)).toBe(false)
+    })
+
+    it('keeps selected calculated grade columns visible even when a value is not yet available', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            course: {
+                teacher_teaching_grade_columns: {
+                    show_sem1: true,
+                    show_sem2: true,
+                    show_year: true,
+                },
+            },
+            hasTwoSemesters: true,
+            calculatedGrades: {
+                sem1: '2',
+                sem2: null,
+                year: null,
+            },
+        }
+
+        ctx.calculatedGradeValues = computed.calculatedGradeValues.call(ctx)
+        ctx.teacherCalculatedGradeColumns = computed.teacherCalculatedGradeColumns.call(ctx)
+        ctx.showCalculatedGradeSem1 = computed.showCalculatedGradeSem1.call(ctx)
+        ctx.showCalculatedGradeSem2 = computed.showCalculatedGradeSem2.call(ctx)
+        ctx.showCalculatedGradeYear = computed.showCalculatedGradeYear.call(ctx)
+
+        expect(ctx.showCalculatedGradeSem1).toBe(true)
+        expect(ctx.showCalculatedGradeSem2).toBe(true)
+        expect(ctx.showCalculatedGradeYear).toBe(true)
+        expect(computed.showCalculatedGradesSection.call(ctx)).toBe(true)
+    })
+
+    it('provides null-safe calculated grade values when no calculation exists yet', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            calculatedGrades: null,
+        }
+
+        expect(computed.calculatedGradeValues.call(ctx)).toEqual({
+            sem1: null,
+            sem2: null,
+            year: null,
+        })
+    })
+
+    it('uses the course schema fallback for two-semester rendering', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            course: {
+                teaching_schema: {
+                    grading: {
+                        semester_count: 2,
+                    },
+                },
+                teaching_schema_id: 'schema-from-course',
+            },
+            user: {
+                teaching_schemas: [],
+            },
+        }
+
+        ctx.currentTeachingSchema = computed.currentTeachingSchema.call(ctx)
+
+        expect(ctx.currentTeachingSchema).toEqual({
+            grading: {
+                semester_count: 2,
+            },
+        })
+        expect(computed.hasTwoSemesters.call(ctx)).toBe(true)
+    })
 })
