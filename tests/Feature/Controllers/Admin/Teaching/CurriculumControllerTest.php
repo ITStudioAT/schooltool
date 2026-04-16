@@ -1,12 +1,20 @@
 <?php
 
 use App\Models\Licence;
+use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
+use App\Models\MaterialCardClassification;
+use App\Models\MaterialSubject;
+use App\Models\MaterialTopic;
+use App\Models\MaterialUnit;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCurriculum;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -518,6 +526,249 @@ test('curriculum topics can be saved without a date assignment', function () {
         ->and($curriculum->fresh()->topics[0]['month_key'])->toBeNull()
         ->and($curriculum->fresh()->topics[0]['month_keys'])->toBe([])
         ->and($curriculum->fresh()->topics[0]['week_keys'])->toBe([]);
+});
+
+test('teacher can save materials on curriculum topics and units', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Biologie',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Biologie',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-zelle',
+                'title' => 'Zelle',
+                'assignment_type' => 'none',
+                'materials' => [
+                    [
+                        'id' => 101,
+                        'title' => 'Zellaufbau Arbeitsblatt',
+                        'subject' => 'Biologie',
+                        'topic' => 'Zelle',
+                        'unit' => '',
+                        'type' => 'Arbeitsblatt',
+                        'status' => 'done',
+                        'attachments_count' => 2,
+                    ],
+                ],
+                'units' => [
+                    [
+                        'id' => 'unit-mikroskop',
+                        'title' => 'Mikroskopieren',
+                        'assignment_type' => 'none',
+                        'materials' => [
+                            [
+                                'id' => 202,
+                                'title' => 'Mikroskop-Protokoll',
+                                'subject' => 'Biologie',
+                                'topic' => 'Zelle',
+                                'unit' => 'Mikroskopieren',
+                                'type' => 'Vorlage',
+                                'status' => 'in_progress',
+                                'attachments_count' => 1,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.topics.0.materials.0.id', 101)
+        ->assertJsonPath('data.topics.0.materials.0.title', 'Zellaufbau Arbeitsblatt')
+        ->assertJsonPath('data.topics.0.units.0.materials.0.id', 202)
+        ->assertJsonPath('data.topics.0.units.0.materials.0.unit', 'Mikroskopieren');
+
+    expect($curriculum->fresh()->topics[0]['materials'][0])->toMatchArray([
+        'id' => 101,
+        'title' => 'Zellaufbau Arbeitsblatt',
+        'subject' => 'Biologie',
+        'topic' => 'Zelle',
+        'unit' => '',
+        'type' => 'Arbeitsblatt',
+        'status' => 'done',
+        'attachments_count' => 2,
+    ])->and($curriculum->fresh()->topics[0]['units'][0]['materials'][0])->toMatchArray([
+        'id' => 202,
+        'title' => 'Mikroskop-Protokoll',
+        'subject' => 'Biologie',
+        'topic' => 'Zelle',
+        'unit' => 'Mikroskopieren',
+        'type' => 'Vorlage',
+        'status' => 'in_progress',
+        'attachments_count' => 1,
+    ]);
+});
+
+test('teacher can browse materials through curriculum endpoints', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Deutsch',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Workspace',
+        'is_default' => true,
+    ]);
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Deutsch',
+    ]);
+
+    $topic = MaterialTopic::query()->create([
+        'subject_id' => $subject->id,
+        'name' => 'Grammatik',
+    ]);
+
+    $unit = MaterialUnit::query()->create([
+        'topic_id' => $topic->id,
+        'name' => 'Nebensätze',
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Nebensätze Arbeitsblatt',
+        'subject' => 'Deutsch',
+        'area' => 'Grammatik',
+        'unit' => 'Nebensätze',
+        'type' => 'Arbeitsblatt',
+        'status' => 'done',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/config")
+        ->assertOk()
+        ->assertJsonPath('workspace.name', 'Workspace')
+        ->assertJsonPath('classification_tree.0.name', 'Deutsch')
+        ->assertJsonPath('classification_tree.0.topics.0.name', 'Grammatik')
+        ->assertJsonPath('classification_tree.0.topics.0.units.0.name', 'Nebensätze');
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards?search=Nebensätze&subject=Deutsch&topic=Grammatik&unit=Nebensätze")
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $card->id)
+        ->assertJsonPath('data.0.title', 'Nebensätze Arbeitsblatt')
+        ->assertJsonPath('data.0.subject', 'Deutsch')
+        ->assertJsonPath('data.0.area', 'Grammatik')
+        ->assertJsonPath('data.0.unit', 'Nebensätze');
+});
+
+test('teacher can preview a material attachment through curriculum route', function () {
+    Storage::fake('local');
+
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Word Handout',
+    ]);
+
+    $filePath = 'materials/previews/word-handout.html';
+    Storage::disk('local')->put($filePath, '<html><body><h1>Word Handout</h1></body></html>');
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Word Handout.html',
+        'file_path' => $filePath,
+        'mime_type' => 'text/html',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertHeader('content-type', 'text/html; charset=UTF-8');
+});
+
+test('teacher can load a curriculum material card with attachments', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->teacher->id,
+        'name' => 'Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Word Handout',
+        'subject' => 'Informatik',
+        'area' => 'Textverarbeitung',
+        'unit' => 'Einführung',
+    ]);
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Word Handout.pdf',
+        'file_path' => 'materials/previews/word-handout.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards/{$card->id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $card->id)
+        ->assertJsonPath('data.title', 'Word Handout')
+        ->assertJsonPath('data.attachments.0.id', $attachment->id)
+        ->assertJsonPath('data.attachments.0.name', 'Word Handout.pdf');
 });
 
 test('teacher cannot update curriculum from another school', function () {

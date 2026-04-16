@@ -364,6 +364,40 @@
                                                 </v-chip>
                                             </template>
                                         </div>
+                                        <div v-if="topic.materials.length" class="curriculum-detail__attached-materials">
+                                            <div
+                                                v-for="material in topic.materials"
+                                                :key="`topic-${topic.id}-material-${material.id}`"
+                                                class="curriculum-detail__attached-material">
+                                                <div class="curriculum-detail__attached-material-copy">
+                                                    <div class="curriculum-detail__attached-material-title">{{ material.title }}</div>
+                                                    <div class="curriculum-detail__attached-material-subtitle">
+                                                        {{ attachedMaterialSubtitle(material) }}
+                                                    </div>
+                                                </div>
+                                                <div class="curriculum-detail__attached-material-actions">
+                                                    <v-btn
+                                                        v-if="materialFileAttachmentCount(material) > 0"
+                                                        variant="tonal"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none curriculum-detail__attached-material-preview-btn"
+                                                        :disabled="topicSaving || isPageActionLocked"
+                                                        @click.stop="openAttachedMaterialDialog(material)">
+                                                        <v-icon size="14" start>mdi-paperclip</v-icon>
+                                                        {{ materialAttachmentCountLabel(material) }}
+                                                    </v-btn>
+                                                    <v-btn
+                                                        icon="mdi-close"
+                                                        variant="text"
+                                                        color="error"
+                                                        size="x-small"
+                                                        :disabled="topicSaving || isPageActionLocked"
+                                                        title="Material entfernen"
+                                                        @click.stop="removeTopicMaterial(topic.id, material.id)" />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="curriculum-detail__topic-actions" @click.stop>
                                         <v-btn
@@ -390,6 +424,17 @@
                                             :disabled="topicSaving || isEditingTopic || isEditingUnit || (activeTopicAssignmentId !== null && !isTopicAssignmentEditorOpen(topic.id))"
                                             :title="isTopicAssignmentEditorOpen(topic.id) ? 'Datumszuordnung schließen' : 'Datumszuordnung bearbeiten'"
                                             @click="toggleTopicAssignmentEditor(topic)" />
+                                        <v-btn
+                                            icon="mdi-book-plus-outline"
+                                            variant="text"
+                                            color="primary"
+                                            size="x-small"
+                                            :disabled="topicSaving || isPageActionLocked"
+                                            title="Materialien hinzufügen"
+                                            @click="openContentMaterialDialog({
+                                                type: 'topic',
+                                                topicId: topic.id,
+                                            })" />
                                         <v-btn
                                             icon="mdi-pencil-outline"
                                             variant="text"
@@ -608,6 +653,40 @@
                                                             </v-chip>
                                                         </template>
                                                     </div>
+                                                    <div v-if="unit.materials.length" class="curriculum-detail__attached-materials curriculum-detail__attached-materials--unit">
+                                                        <div
+                                                            v-for="material in unit.materials"
+                                                            :key="`unit-${unit.id}-material-${material.id}`"
+                                                            class="curriculum-detail__attached-material">
+                                                            <div class="curriculum-detail__attached-material-copy">
+                                                                <div class="curriculum-detail__attached-material-title">{{ material.title }}</div>
+                                                                <div class="curriculum-detail__attached-material-subtitle">
+                                                                    {{ attachedMaterialSubtitle(material) }}
+                                                                </div>
+                                                            </div>
+                                                            <div class="curriculum-detail__attached-material-actions">
+                                                                <v-btn
+                                                                    v-if="materialFileAttachmentCount(material) > 0"
+                                                                    variant="tonal"
+                                                                    color="primary"
+                                                                    size="x-small"
+                                                                    class="text-none curriculum-detail__attached-material-preview-btn"
+                                                                    :disabled="topicSaving || isPageActionLocked"
+                                                                    @click.stop="openAttachedMaterialDialog(material)">
+                                                                    <v-icon size="14" start>mdi-paperclip</v-icon>
+                                                                    {{ materialAttachmentCountLabel(material) }}
+                                                                </v-btn>
+                                                                <v-btn
+                                                                    icon="mdi-close"
+                                                                    variant="text"
+                                                                    color="error"
+                                                                    size="x-small"
+                                                                    :disabled="topicSaving || isPageActionLocked"
+                                                                    title="Material entfernen"
+                                                                    @click.stop="removeUnitMaterial(topic.id, unit.id, material.id)" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                                 <div class="curriculum-detail__topic-actions" @click.stop>
                                                     <v-btn
@@ -634,6 +713,18 @@
                                                         :disabled="topicSaving || isEditingTopic || isEditingUnit || (activeTopicAssignmentId !== null && !isUnitAssignmentEditorOpen(topic.id, unit.id))"
                                                         :title="isUnitAssignmentEditorOpen(topic.id, unit.id) ? 'Datumszuordnung schließen' : 'Datumszuordnung bearbeiten'"
                                                         @click="toggleUnitAssignmentEditor(topic, unit)" />
+                                                    <v-btn
+                                                        icon="mdi-book-plus-outline"
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        :disabled="topicSaving || isPageActionLocked"
+                                                        title="Materialien hinzufügen"
+                                                        @click="openContentMaterialDialog({
+                                                            type: 'unit',
+                                                            topicId: topic.id,
+                                                            unitId: unit.id,
+                                                        })" />
                                                     <v-btn
                                                         icon="mdi-pencil-outline"
                                                         variant="text"
@@ -918,6 +1009,436 @@
                             </div>
                         </div>
                     </v-card-text>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="contentMaterialDialogOpen" max-width="980" persistent>
+                <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="primary" size="20">mdi-book-plus-outline</v-icon>
+                        Materialien zu {{ contentMaterialDialogLabel }} hinzufügen
+                    </v-card-title>
+                    <v-card-text class="px-4 pt-2 pb-2">
+                        <div class="curriculum-detail__material-dialog">
+                            <div class="curriculum-detail__material-dialog-toolbar">
+                                <div>
+                                    <div class="curriculum-detail__material-dialog-title">{{ contentMaterialDialogTitle }}</div>
+                                    <div class="curriculum-detail__material-dialog-subtitle">
+                                        Mehrere Materialien können nacheinander hinzugefügt werden.
+                                    </div>
+                                </div>
+                                <div class="curriculum-detail__material-mode-toggle">
+                                    <v-btn
+                                        :variant="contentMaterialDialogMode === 'search' ? 'flat' : 'tonal'"
+                                        color="primary"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none"
+                                        @click="setContentMaterialDialogMode('search')">
+                                        Suche
+                                    </v-btn>
+                                    <v-btn
+                                        :variant="contentMaterialDialogMode === 'workspace' ? 'flat' : 'tonal'"
+                                        color="primary"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none"
+                                        @click="setContentMaterialDialogMode('workspace')">
+                                        Arbeitsbereich
+                                    </v-btn>
+                                </div>
+                            </div>
+
+                            <div v-if="contentMaterialDialogMode === 'search'">
+                                <v-text-field
+                                    v-model="contentMaterialSearch"
+                                    label="Material suchen"
+                                    variant="outlined"
+                                    density="compact"
+                                    hide-details
+                                    clearable
+                                    prepend-inner-icon="mdi-magnify"
+                                    class="mb-3"
+                                    @update:modelValue="searchContentMaterials" />
+                                <div class="curriculum-detail__material-selection-layout">
+                                    <div class="curriculum-detail__material-browser-results">
+                                        <div class="curriculum-detail__material-browser-heading">Trefferliste</div>
+                                        <div v-if="contentMaterialsLoading" class="text-center py-4">
+                                            <v-progress-circular indeterminate color="primary" size="24" />
+                                        </div>
+                                        <v-list
+                                            v-else-if="contentMaterialResults.length"
+                                            bg-color="transparent"
+                                            density="compact"
+                                            class="py-0 curriculum-detail__material-results">
+                                            <v-list-item
+                                                v-for="card in contentMaterialResults"
+                                                :key="`search-material-${card.id}`"
+                                                class="curriculum-detail__material-result-item mb-1 px-3"
+                                                :class="{ 'curriculum-detail__material-result-item--active': contentMaterialPreviewCard?.id === card.id }"
+                                                rounded="lg"
+                                                @click="selectContentMaterialPreview(card)">
+                                                <template #prepend>
+                                                    <v-icon size="18" color="#a5b4fc" class="mr-2">mdi-package-variant-closed</v-icon>
+                                                </template>
+                                                <v-list-item-title class="text-body-2">{{ card.title }}</v-list-item-title>
+                                                <v-list-item-subtitle class="text-caption">{{ attachedMaterialSubtitle(card) }}</v-list-item-subtitle>
+                                                <template #append>
+                                                    <v-chip
+                                                        v-if="isContentMaterialAttached(card)"
+                                                        size="x-small"
+                                                        color="success"
+                                                        variant="tonal">
+                                                        Hinzugefügt
+                                                    </v-chip>
+                                                    <v-btn
+                                                        v-else
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        :disabled="topicSaving"
+                                                        @click.stop="attachContentMaterial(card)">
+                                                        Hinzufügen
+                                                    </v-btn>
+                                                </template>
+                                            </v-list-item>
+                                        </v-list>
+                                        <div v-else class="text-center py-4 text-caption curriculum-detail__material-dialog-empty">
+                                            Keine Materialien gefunden.
+                                        </div>
+                                    </div>
+
+                                    <div class="curriculum-detail__material-preview-panel">
+                                        <div class="curriculum-detail__material-browser-heading">Anhänge</div>
+                                        <div v-if="contentMaterialPreviewCard" class="curriculum-detail__material-preview-copy">
+                                            <div class="curriculum-detail__material-preview-title">{{ contentMaterialPreviewCard.title }}</div>
+                                            <div class="curriculum-detail__material-preview-subtitle">
+                                                {{ attachedMaterialSubtitle(contentMaterialPreviewCard) }}
+                                            </div>
+                                        </div>
+                                        <div v-if="contentMaterialPreviewAttachments.length" class="curriculum-detail__material-preview-list">
+                                            <div
+                                                v-for="attachment in contentMaterialPreviewAttachments"
+                                                :key="`preview-attachment-${attachment.id}`"
+                                                class="curriculum-detail__material-preview-list-item"
+                                                @click="openContentMaterialPreview(attachment)">
+                                                <div class="curriculum-detail__material-preview-list-copy">
+                                                    <div class="curriculum-detail__material-preview-list-title">{{ attachment.name }}</div>
+                                                    <div class="curriculum-detail__material-preview-list-subtitle">
+                                                        {{ attachment.mime_type || 'Datei' }}
+                                                    </div>
+                                                </div>
+                                                <v-btn
+                                                    variant="text"
+                                                    color="primary"
+                                                    size="x-small"
+                                                    class="text-none"
+                                                    @click.stop="openContentMaterialPreview(attachment)">
+                                                    Vorschau
+                                                </v-btn>
+                                            </div>
+                                        </div>
+                                        <div v-else class="curriculum-detail__material-preview-empty">
+                                            <v-icon size="36" color="#94a3b8" class="mb-2">mdi-paperclip</v-icon>
+                                            <div class="text-caption">Material auswählen, um die verbundenen Dateien zu sehen.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-else class="curriculum-detail__material-browser">
+                                <div class="curriculum-detail__material-browser-panel">
+                                    <div class="curriculum-detail__material-browser-heading">Arbeitsbereich filtern</div>
+                                    <div class="curriculum-detail__material-dialog-subtitle mb-3">
+                                        Zuerst ein Fach wählen, danach bei Bedarf Thema und Einheit eingrenzen.
+                                    </div>
+
+                                    <div class="curriculum-detail__material-filter-grid">
+                                        <v-autocomplete
+                                            :model-value="selectedContentMaterialSubject"
+                                            :items="contentMaterialClassificationTree"
+                                            item-title="name"
+                                            item-value="id"
+                                            label="Fach"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            hide-details
+                                            return-object
+                                            clearable
+                                            :disabled="contentMaterialClassificationLoading"
+                                            @update:modelValue="selectContentMaterialSubject" />
+
+                                        <v-autocomplete
+                                            :model-value="selectedContentMaterialTopic"
+                                            :items="contentMaterialTopicSelectOptions"
+                                            item-title="name"
+                                            item-value="id"
+                                            label="Thema"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            hide-details
+                                            return-object
+                                            clearable
+                                            :disabled="!selectedContentMaterialSubject"
+                                            @update:modelValue="selectContentMaterialTopic" />
+
+                                        <v-autocomplete
+                                            :model-value="selectedContentMaterialUnit"
+                                            :items="contentMaterialUnitSelectOptions"
+                                            item-title="name"
+                                            item-value="id"
+                                            label="Einheit"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            hide-details
+                                            return-object
+                                            clearable
+                                            :disabled="!selectedContentMaterialTopic"
+                                            @update:modelValue="selectContentMaterialUnit" />
+                                    </div>
+
+                                    <div class="curriculum-detail__material-browser-summary">
+                                        <div class="curriculum-detail__material-browser-summary-card">
+                                            <div class="curriculum-detail__material-browser-summary-label">Auswahl</div>
+                                            <div class="curriculum-detail__material-browser-summary-value">
+                                                {{ contentMaterialWorkspaceSelectionLabel }}
+                                            </div>
+                                        </div>
+                                        <div class="curriculum-detail__material-browser-summary-card">
+                                            <div class="curriculum-detail__material-browser-summary-label">Treffer</div>
+                                            <div class="curriculum-detail__material-browser-summary-value">
+                                                {{ contentMaterialWorkspaceResultSummary }}
+                                            </div>
+                                        </div>
+                                        <v-btn
+                                            variant="text"
+                                            color="secondary"
+                                            size="small"
+                                            class="text-none curriculum-detail__material-browser-reset"
+                                            :disabled="!selectedContentMaterialSubject && !selectedContentMaterialTopic && !selectedContentMaterialUnit"
+                                            @click="resetContentMaterialWorkspaceSelection">
+                                            Auswahl zurücksetzen
+                                        </v-btn>
+                                    </div>
+                                </div>
+
+                                <div class="curriculum-detail__material-selection-layout">
+                                    <div class="curriculum-detail__material-browser-results">
+                                        <div class="curriculum-detail__material-browser-heading">Trefferliste</div>
+                                        <div v-if="contentMaterialWorkspaceLoading" class="text-center py-4">
+                                            <v-progress-circular indeterminate color="primary" size="24" />
+                                        </div>
+                                        <div v-else-if="contentMaterialWorkspaceError" class="text-caption py-4 curriculum-detail__material-dialog-error">
+                                            {{ contentMaterialWorkspaceError }}
+                                        </div>
+                                        <div
+                                            v-else-if="!selectedContentMaterialSubject"
+                                            class="text-center py-4 text-caption curriculum-detail__material-dialog-empty">
+                                            Bitte zuerst ein Fach auswählen.
+                                        </div>
+                                        <v-list
+                                            v-else-if="contentMaterialWorkspaceResults.length"
+                                            bg-color="transparent"
+                                            density="compact"
+                                            class="py-0 curriculum-detail__material-results">
+                                            <v-list-item
+                                                v-for="card in contentMaterialWorkspaceResults"
+                                                :key="`workspace-material-${card.id}`"
+                                                class="curriculum-detail__material-result-item mb-1 px-3"
+                                                :class="{ 'curriculum-detail__material-result-item--active': contentMaterialPreviewCard?.id === card.id }"
+                                                rounded="lg"
+                                                @click="selectContentMaterialPreview(card)">
+                                                <template #prepend>
+                                                    <v-icon size="18" color="#a5b4fc" class="mr-2">mdi-package-variant-closed</v-icon>
+                                                </template>
+                                                <v-list-item-title class="text-body-2">{{ card.title }}</v-list-item-title>
+                                                <v-list-item-subtitle class="text-caption">{{ attachedMaterialSubtitle(card) }}</v-list-item-subtitle>
+                                                <template #append>
+                                                    <v-chip
+                                                        v-if="isContentMaterialAttached(card)"
+                                                        size="x-small"
+                                                        color="success"
+                                                        variant="tonal">
+                                                        Hinzugefügt
+                                                    </v-chip>
+                                                    <v-btn
+                                                        v-else
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        :disabled="topicSaving"
+                                                        @click.stop="attachContentMaterial(card)">
+                                                        Hinzufügen
+                                                    </v-btn>
+                                                </template>
+                                            </v-list-item>
+                                        </v-list>
+                                        <div v-else class="text-center py-4 text-caption curriculum-detail__material-dialog-empty">
+                                            Keine Materialien in dieser Auswahl gefunden.
+                                        </div>
+                                    </div>
+
+                                    <div class="curriculum-detail__material-preview-panel">
+                                        <div class="curriculum-detail__material-browser-heading">Anhänge</div>
+                                        <div v-if="contentMaterialPreviewCard" class="curriculum-detail__material-preview-copy">
+                                            <div class="curriculum-detail__material-preview-title">{{ contentMaterialPreviewCard.title }}</div>
+                                            <div class="curriculum-detail__material-preview-subtitle">
+                                                {{ attachedMaterialSubtitle(contentMaterialPreviewCard) }}
+                                            </div>
+                                        </div>
+                                        <div v-if="contentMaterialPreviewAttachments.length" class="curriculum-detail__material-preview-list">
+                                            <div
+                                                v-for="attachment in contentMaterialPreviewAttachments"
+                                                :key="`workspace-preview-attachment-${attachment.id}`"
+                                                class="curriculum-detail__material-preview-list-item"
+                                                @click="openContentMaterialPreview(attachment)">
+                                                <div class="curriculum-detail__material-preview-list-copy">
+                                                    <div class="curriculum-detail__material-preview-list-title">{{ attachment.name }}</div>
+                                                    <div class="curriculum-detail__material-preview-list-subtitle">
+                                                        {{ attachment.mime_type || 'Datei' }}
+                                                    </div>
+                                                </div>
+                                                <v-btn
+                                                    variant="text"
+                                                    color="primary"
+                                                    size="x-small"
+                                                    class="text-none"
+                                                    @click.stop="openContentMaterialPreview(attachment)">
+                                                    Vorschau
+                                                </v-btn>
+                                            </div>
+                                        </div>
+                                        <div v-else class="curriculum-detail__material-preview-empty">
+                                            <v-icon size="36" color="#94a3b8" class="mb-2">mdi-paperclip</v-icon>
+                                            <div class="text-caption">Material auswählen, um die verbundenen Dateien zu sehen.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-spacer />
+                        <v-btn
+                            variant="text"
+                            color="secondary"
+                            :disabled="topicSaving"
+                            @click="closeContentMaterialDialog">
+                            Schließen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="contentMaterialPreviewDialogOpen" fullscreen persistent>
+                <v-card class="curriculum-detail__fullscreen-preview">
+                    <v-card-title class="curriculum-detail__fullscreen-preview-header">
+                        <div>
+                            <div class="curriculum-detail__fullscreen-preview-title">
+                                {{ contentMaterialPreviewAttachment?.name || 'Dateivorschau' }}
+                            </div>
+                            <div class="curriculum-detail__fullscreen-preview-subtitle">
+                                {{ contentMaterialPreviewCard?.title || 'Material' }}
+                            </div>
+                        </div>
+                        <v-btn
+                            prepend-icon="mdi-close"
+                            variant="flat"
+                            color="error"
+                            rounded="lg"
+                            class="text-none curriculum-detail__fullscreen-preview-close-btn"
+                            @click="closeContentMaterialPreview">
+                            Schließen
+                        </v-btn>
+                    </v-card-title>
+                    <v-card-text class="curriculum-detail__fullscreen-preview-body">
+                        <iframe
+                            v-if="contentMaterialPreviewAttachment && contentMaterialPreviewUsesIframe"
+                            :src="contentMaterialPreviewUrl"
+                            class="curriculum-detail__fullscreen-preview-iframe" />
+                        <img
+                            v-else-if="contentMaterialPreviewAttachment && contentMaterialPreviewIsImage"
+                            :src="contentMaterialPreviewUrl"
+                            class="curriculum-detail__fullscreen-preview-image" />
+                        <div v-else class="curriculum-detail__fullscreen-preview-empty">
+                            <v-icon size="42" color="#64748b" class="mb-3">mdi-file-document-outline</v-icon>
+                            <div class="text-body-2 mb-3">Für diesen Dateityp ist keine direkte Vorschau verfügbar.</div>
+                            <v-btn
+                                v-if="contentMaterialPreviewDownloadUrl"
+                                variant="flat"
+                                color="primary"
+                                class="text-none"
+                                :href="contentMaterialPreviewDownloadUrl"
+                                target="_blank">
+                                Datei öffnen
+                            </v-btn>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="attachedMaterialDialogOpen" max-width="720" persistent>
+                <v-card rounded="xl">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="primary" size="22">mdi-paperclip</v-icon>
+                        Anhänge des Materials
+                    </v-card-title>
+                    <v-card-text class="px-4 pb-2">
+                        <div class="curriculum-detail__material-preview-copy">
+                            <div class="curriculum-detail__material-preview-title">
+                                {{ contentMaterialPreviewCard?.title || 'Material' }}
+                            </div>
+                            <div class="curriculum-detail__material-preview-subtitle">
+                                {{ attachedMaterialSubtitle(contentMaterialPreviewCard) }}
+                            </div>
+                        </div>
+                        <div
+                            v-if="!attachedMaterialDialogLoading && contentMaterialPreviewAttachments.length"
+                            class="text-caption mb-3"
+                            style="color: #475569">
+                            Anhang anklicken, um die Vorschau zu öffnen.
+                        </div>
+                        <div v-if="attachedMaterialDialogLoading" class="text-center py-6">
+                            <v-progress-circular indeterminate color="primary" size="24" />
+                        </div>
+                        <div v-else-if="attachedMaterialDialogError" class="text-caption py-4" style="color: #b91c1c">
+                            {{ attachedMaterialDialogError }}
+                        </div>
+                        <v-list
+                            v-else-if="contentMaterialPreviewAttachments.length"
+                            bg-color="transparent"
+                            density="compact"
+                            class="py-0"
+                            style="max-height: 360px; overflow-y: auto">
+                            <v-list-item
+                                v-for="attachment in contentMaterialPreviewAttachments"
+                                :key="`attached-material-attachment-${attachment.id}`"
+                                class="lehrplaene__material-item lehrplaene__attachment-item mb-1 px-3"
+                                rounded="lg"
+                                @click="openContentMaterialPreview(attachment)">
+                                <template #prepend>
+                                    <v-icon size="18" color="#a5b4fc" class="mr-2">
+                                        {{ contentMaterialPreviewAttachmentIcon(attachment) }}
+                                    </v-icon>
+                                </template>
+                                <v-list-item-title class="text-body-2">{{ attachment.name }}</v-list-item-title>
+                                <v-list-item-subtitle class="text-caption">
+                                    {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatBytes(attachment.size_bytes) }}</span>
+                                </v-list-item-subtitle>
+                                <template #append>
+                                    <v-icon size="18" color="primary">mdi-open-in-new</v-icon>
+                                </template>
+                            </v-list-item>
+                        </v-list>
+                        <div v-else class="text-center py-6 text-caption" style="color: #64748b">
+                            Dieses Material hat keine Anhänge.
+                        </div>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-btn variant="tonal" @click="closeAttachedMaterialDialog">Schließen</v-btn>
+                    </v-card-actions>
                 </v-card>
             </v-dialog>
 
@@ -1255,6 +1776,16 @@ export default {
         this.loadDocuments()
     },
 
+    beforeUnmount() {
+        if (this._materialSearchTimer) {
+            clearTimeout(this._materialSearchTimer)
+        }
+
+        if (this._contentMaterialSearchTimer) {
+            clearTimeout(this._contentMaterialSearchTimer)
+        }
+    },
+
     data() {
         const adminStore = useAdminStore()
         const sy = adminStore.config?.selected_schoolyear
@@ -1278,6 +1809,27 @@ export default {
             selectedUnitId: null,
             documents: [],
             docsLoading: false,
+            contentMaterialDialogOpen: false,
+            contentMaterialDialogMode: 'search',
+            contentMaterialTarget: null,
+            contentMaterialSearch: '',
+            contentMaterialResults: [],
+            contentMaterialsLoading: false,
+            _contentMaterialSearchTimer: null,
+            contentMaterialClassificationTree: [],
+            contentMaterialClassificationLoading: false,
+            selectedContentMaterialSubject: null,
+            selectedContentMaterialTopic: null,
+            selectedContentMaterialUnit: null,
+            contentMaterialWorkspaceResults: [],
+            contentMaterialWorkspaceLoading: false,
+            contentMaterialWorkspaceError: null,
+            contentMaterialPreviewCard: null,
+            contentMaterialPreviewAttachmentId: null,
+            contentMaterialPreviewDialogOpen: false,
+            attachedMaterialDialogOpen: false,
+            attachedMaterialDialogLoading: false,
+            attachedMaterialDialogError: null,
             materialDialogOpen: false,
             materialAttachmentDialogOpen: false,
             materialAttachmentDocument: null,
@@ -1483,6 +2035,124 @@ export default {
             return this.activeTopicAssignmentUnit ? 'Einheit' : 'Thema'
         },
 
+        contentMaterialDialogTarget() {
+            if (!this.contentMaterialTarget?.topicId) {
+                return null
+            }
+
+            if (this.contentMaterialTarget.type === 'unit' && this.contentMaterialTarget.unitId) {
+                return this.findUnit(this.contentMaterialTarget.topicId, this.contentMaterialTarget.unitId)
+            }
+
+            return this.findTopic(this.contentMaterialTarget.topicId)
+        },
+
+        contentMaterialDialogLabel() {
+            return this.contentMaterialTarget?.type === 'unit' ? 'der Einheit' : 'dem Thema'
+        },
+
+        contentMaterialDialogTitle() {
+            return this.contentMaterialDialogTarget?.title || 'Inhalt'
+        },
+
+        contentMaterialTopicOptions() {
+            return Array.isArray(this.selectedContentMaterialSubject?.topics)
+                ? this.selectedContentMaterialSubject.topics
+                : []
+        },
+
+        contentMaterialTopicSelectOptions() {
+            if (!this.selectedContentMaterialSubject) {
+                return []
+            }
+
+            return [
+                { id: null, name: 'Alle Themen' },
+                ...this.contentMaterialTopicOptions,
+            ]
+        },
+
+        contentMaterialUnitOptions() {
+            return Array.isArray(this.selectedContentMaterialTopic?.units)
+                ? this.selectedContentMaterialTopic.units
+                : []
+        },
+
+        contentMaterialUnitSelectOptions() {
+            if (!this.selectedContentMaterialTopic) {
+                return []
+            }
+
+            return [
+                { id: null, name: 'Alle Einheiten' },
+                ...this.contentMaterialUnitOptions,
+            ]
+        },
+
+        contentMaterialWorkspaceSelectionLabel() {
+            if (this.selectedContentMaterialUnit?.name) {
+                return `${this.selectedContentMaterialSubject?.name || 'Fach'} · ${this.selectedContentMaterialTopic?.name || 'Thema'} · ${this.selectedContentMaterialUnit.name}`
+            }
+
+            if (this.selectedContentMaterialTopic?.name) {
+                return `${this.selectedContentMaterialSubject?.name || 'Fach'} · ${this.selectedContentMaterialTopic.name}`
+            }
+
+            if (this.selectedContentMaterialSubject?.name) {
+                return this.selectedContentMaterialSubject.name
+            }
+
+            if (this.contentMaterialClassificationLoading) {
+                return 'Arbeitsbereich wird geladen...'
+            }
+
+            return 'Bitte zuerst ein Fach auswählen.'
+        },
+
+        contentMaterialWorkspaceResultSummary() {
+            if (!this.selectedContentMaterialSubject) {
+                return 'Noch keine Auswahl'
+            }
+
+            if (this.contentMaterialWorkspaceLoading) {
+                return 'Wird geladen...'
+            }
+
+            return `${this.contentMaterialWorkspaceResults.length} Material${this.contentMaterialWorkspaceResults.length === 1 ? '' : 'ien'}`
+        },
+
+        contentMaterialPreviewAttachments() {
+            return Array.isArray(this.contentMaterialPreviewCard?.attachments)
+                ? this.contentMaterialPreviewCard.attachments
+                : []
+        },
+
+        contentMaterialPreviewAttachment() {
+            if (!this.contentMaterialPreviewAttachments.length || !this.contentMaterialPreviewAttachmentId) {
+                return null
+            }
+
+            return this.contentMaterialPreviewAttachments.find((attachment) => attachment.id === this.contentMaterialPreviewAttachmentId)
+                || null
+        },
+
+        contentMaterialPreviewUrl() {
+            return this.contentMaterialPreviewAttachment?.preview_url || this.contentMaterialPreviewAttachment?.download_url || null
+        },
+
+        contentMaterialPreviewDownloadUrl() {
+            return this.contentMaterialPreviewAttachment?.download_url || null
+        },
+
+        contentMaterialPreviewIsImage() {
+            const mime = String(this.contentMaterialPreviewAttachment?.mime_type || '').toLowerCase()
+            return mime.startsWith('image/')
+        },
+
+        contentMaterialPreviewUsesIframe() {
+            return Boolean(this.contentMaterialPreviewUrl) && !this.contentMaterialPreviewIsImage
+        },
+
         isWeekSelectionActive() {
             return this.activeTopicAssignmentType === 'weeks' && this.activeAssignmentItem !== null
         },
@@ -1582,10 +2252,76 @@ export default {
             }
         },
 
+        normalizeAttachedMaterial(material = null) {
+            const normalizedMaterial = material && typeof material === 'object' ? material : {}
+            const id = Number(normalizedMaterial.id ?? 0)
+            const title = typeof normalizedMaterial.title === 'string' ? normalizedMaterial.title.trim() : ''
+            const subject = typeof normalizedMaterial.subject === 'string' ? normalizedMaterial.subject.trim() : ''
+            const topic = typeof normalizedMaterial.topic === 'string'
+                ? normalizedMaterial.topic.trim()
+                : (typeof normalizedMaterial.area === 'string' ? normalizedMaterial.area.trim() : '')
+            const unit = typeof normalizedMaterial.unit === 'string' ? normalizedMaterial.unit.trim() : ''
+            const type = typeof normalizedMaterial.type === 'string' ? normalizedMaterial.type.trim() : ''
+            const status = typeof normalizedMaterial.status === 'string' ? normalizedMaterial.status.trim() : ''
+            const attachmentsCount = Number(normalizedMaterial.attachments_count ?? 0)
+
+            return {
+                id: Number.isFinite(id) && id > 0 ? id : null,
+                title,
+                subject,
+                topic,
+                unit,
+                type,
+                status,
+                attachments_count: Number.isFinite(attachmentsCount) && attachmentsCount > 0 ? attachmentsCount : 0,
+                attachments: (Array.isArray(normalizedMaterial.attachments) ? normalizedMaterial.attachments : [])
+                    .map((attachment) => this.normalizeMaterialPreviewAttachment(attachment))
+                    .filter((attachment) => attachment.id),
+            }
+        },
+
+        normalizeMaterialPreviewAttachment(attachment = null) {
+            const normalizedAttachment = attachment && typeof attachment === 'object' ? attachment : {}
+            const id = Number(normalizedAttachment.id ?? 0)
+            const mimeType = typeof normalizedAttachment.mime_type === 'string' ? normalizedAttachment.mime_type.trim() : ''
+            const sizeBytes = Number(normalizedAttachment.size_bytes ?? 0)
+
+            return {
+                id: Number.isFinite(id) && id > 0 ? id : null,
+                name: typeof normalizedAttachment.name === 'string' ? normalizedAttachment.name.trim() : 'Anhang',
+                mime_type: mimeType,
+                size_bytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : null,
+                preview_url: Number.isFinite(id) && id > 0
+                    ? `/api/admin/teaching/curricula/${this.curriculum.id}/materials/attachments/${id}/preview`
+                    : '',
+                download_url: Number.isFinite(id) && id > 0
+                    ? `/api/admin/teaching/curricula/${this.curriculum.id}/materials/attachments/${id}/download`
+                    : '',
+            }
+        },
+
+        normalizeAttachedMaterials(materials = []) {
+            const seen = new Set()
+
+            return (Array.isArray(materials) ? materials : [])
+                .map((material) => this.normalizeAttachedMaterial(material))
+                .filter((material) => {
+                    if (!material.id || material.title === '' || seen.has(material.id)) {
+                        return false
+                    }
+
+                    seen.add(material.id)
+
+                    return true
+                })
+                .map(({ attachments, ...material }) => material)
+        },
+
         normalizeTopic(topic = null, index = 0) {
             const normalizedTopic = topic && typeof topic === 'object' ? topic : {}
             return {
                 ...this.normalizeAssignmentEntry(normalizedTopic, index, 'topic'),
+                materials: this.normalizeAttachedMaterials(normalizedTopic.materials),
                 units: (Array.isArray(normalizedTopic.units) ? normalizedTopic.units : [])
                     .map((unit, unitIndex) => this.normalizeUnit(unit, unitIndex)),
             }
@@ -1604,6 +2340,7 @@ export default {
             return {
                 ...this.normalizeAssignmentEntry(normalizedUnit, index, 'unit'),
                 is_exam: Boolean(normalizedUnit.is_exam),
+                materials: this.normalizeAttachedMaterials(normalizedUnit.materials),
             }
         },
 
@@ -2088,6 +2825,395 @@ export default {
             if (!topic) return null
 
             return topic.units.find((unit) => unit.id === unitId) ?? null
+        },
+
+        attachedMaterialSubtitle(material) {
+            const parts = [
+                typeof material?.subject === 'string' ? material.subject.trim() : '',
+                typeof material?.topic === 'string' ? material.topic.trim() : '',
+                typeof material?.unit === 'string' ? material.unit.trim() : '',
+                typeof material?.type === 'string' ? material.type.trim() : '',
+            ].filter(Boolean)
+
+            if (parts.length) {
+                return parts.join(' · ')
+            }
+
+            return typeof material?.status === 'string' && material.status.trim() !== ''
+                ? material.status.trim()
+                : 'Material'
+        },
+
+        setContentMaterialDialogMode(mode) {
+            this.contentMaterialDialogMode = mode
+
+            if (mode === 'search') {
+                this.searchContentMaterials(this.contentMaterialSearch)
+                return
+            }
+
+            this.ensureContentMaterialClassificationTree()
+        },
+
+        async openContentMaterialDialog(target) {
+            if (this.topicSaving || !target?.topicId) return
+
+            this.contentMaterialTarget = {
+                type: target.type === 'unit' ? 'unit' : 'topic',
+                topicId: target.topicId,
+                unitId: target.type === 'unit' ? target.unitId : null,
+            }
+            this.contentMaterialDialogOpen = true
+            this.contentMaterialDialogMode = 'search'
+            this.contentMaterialSearch = ''
+            this.contentMaterialResults = []
+            this.contentMaterialPreviewCard = null
+            this.contentMaterialPreviewAttachmentId = null
+            this.contentMaterialPreviewDialogOpen = false
+
+            await this.doSearchContentMaterials('')
+        },
+
+        closeContentMaterialDialog() {
+            if (this.topicSaving) return
+
+            this.contentMaterialDialogOpen = false
+            this.contentMaterialDialogMode = 'search'
+            this.contentMaterialTarget = null
+            this.contentMaterialSearch = ''
+            this.contentMaterialResults = []
+            this.selectedContentMaterialSubject = null
+            this.selectedContentMaterialTopic = null
+            this.selectedContentMaterialUnit = null
+            this.contentMaterialWorkspaceResults = []
+            this.contentMaterialWorkspaceError = null
+            this.contentMaterialPreviewCard = null
+            this.contentMaterialPreviewAttachmentId = null
+            this.contentMaterialPreviewDialogOpen = false
+        },
+
+        searchContentMaterials(value) {
+            if (this._contentMaterialSearchTimer) {
+                clearTimeout(this._contentMaterialSearchTimer)
+            }
+
+            this._contentMaterialSearchTimer = setTimeout(() => {
+                this.doSearchContentMaterials(value || '')
+            }, 300)
+        },
+
+        async doSearchContentMaterials(search) {
+            this.contentMaterialsLoading = true
+
+            try {
+                const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
+                    params: { search, per_page: 20 },
+                })
+                this.contentMaterialResults = Array.isArray(res.data?.data)
+                    ? res.data.data.map((card) => this.normalizeAttachedMaterial(card)).filter((card) => card.id)
+                    : []
+                this.syncContentMaterialPreviewSelection(this.contentMaterialResults)
+            } catch {
+                this.contentMaterialResults = []
+                this.syncContentMaterialPreviewSelection([])
+            } finally {
+                this.contentMaterialsLoading = false
+            }
+        },
+
+        async ensureContentMaterialClassificationTree() {
+            if (this.contentMaterialClassificationLoading) return
+
+            if (this.contentMaterialClassificationTree.length) {
+                return
+            }
+
+            this.contentMaterialClassificationLoading = true
+
+            try {
+                const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/config`)
+                this.contentMaterialClassificationTree = Array.isArray(res.data?.classification_tree)
+                    ? res.data.classification_tree
+                    : []
+            } catch {
+                this.contentMaterialClassificationTree = []
+                this.contentMaterialWorkspaceError = 'Der Arbeitsbereich konnte nicht geladen werden.'
+            } finally {
+                this.contentMaterialClassificationLoading = false
+            }
+        },
+
+        async selectContentMaterialSubject(subject) {
+            if (!subject?.name) {
+                this.resetContentMaterialWorkspaceSelection()
+                return
+            }
+
+            this.selectedContentMaterialSubject = subject
+            this.selectedContentMaterialTopic = null
+            this.selectedContentMaterialUnit = null
+
+            await this.loadContentMaterialWorkspaceResults({
+                subject: subject?.name || '',
+            })
+        },
+
+        async selectContentMaterialTopic(topic) {
+            if (!this.selectedContentMaterialSubject) {
+                return
+            }
+
+            this.selectedContentMaterialTopic = topic
+            this.selectedContentMaterialUnit = null
+
+            await this.loadContentMaterialWorkspaceResults({
+                subject: this.selectedContentMaterialSubject?.name || '',
+                topic: topic?.name || '',
+            })
+        },
+
+        async selectContentMaterialUnit(unit) {
+            if (!this.selectedContentMaterialTopic) {
+                return
+            }
+
+            this.selectedContentMaterialUnit = unit
+
+            await this.loadContentMaterialWorkspaceResults({
+                subject: this.selectedContentMaterialSubject?.name || '',
+                topic: this.selectedContentMaterialTopic?.name || '',
+                unit: unit?.name || '',
+            })
+        },
+
+        resetContentMaterialWorkspaceSelection() {
+            this.selectedContentMaterialSubject = null
+            this.selectedContentMaterialTopic = null
+            this.selectedContentMaterialUnit = null
+            this.contentMaterialWorkspaceResults = []
+            this.contentMaterialWorkspaceError = null
+            this.contentMaterialPreviewCard = null
+            this.contentMaterialPreviewAttachmentId = null
+            this.contentMaterialPreviewDialogOpen = false
+        },
+
+        syncContentMaterialPreviewSelection(cards = []) {
+            const list = Array.isArray(cards) ? cards : []
+            if (!list.length) {
+                this.contentMaterialPreviewCard = null
+                this.contentMaterialPreviewAttachmentId = null
+                return
+            }
+
+            const nextCard = list.find((card) => card.id === this.contentMaterialPreviewCard?.id) || list[0]
+            this.selectContentMaterialPreview(nextCard)
+        },
+
+        selectContentMaterialPreview(card) {
+            const normalizedCard = this.normalizeAttachedMaterial(card)
+            if (!normalizedCard?.id) {
+                this.contentMaterialPreviewCard = null
+                this.contentMaterialPreviewAttachmentId = null
+                return
+            }
+
+            this.contentMaterialPreviewCard = normalizedCard
+            this.contentMaterialPreviewAttachmentId = null
+            this.contentMaterialPreviewDialogOpen = false
+        },
+
+        openContentMaterialPreview(attachment) {
+            const attachmentId = Number(attachment?.id || 0)
+            this.contentMaterialPreviewAttachmentId = Number.isFinite(attachmentId) && attachmentId > 0 ? attachmentId : null
+            this.contentMaterialPreviewDialogOpen = this.contentMaterialPreviewAttachmentId !== null
+        },
+
+        closeContentMaterialPreview() {
+            this.contentMaterialPreviewDialogOpen = false
+        },
+
+        async fetchCurriculumMaterialCard(materialId) {
+            const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards/${materialId}`)
+
+            return this.normalizeAttachedMaterial(res.data?.data)
+        },
+
+        async openAttachedMaterialDialog(material) {
+            if (this.isPageActionLocked || this.topicSaving) return
+
+            const normalizedMaterial = this.normalizeAttachedMaterial(material)
+            if (!normalizedMaterial?.id) return
+
+            this.attachedMaterialDialogOpen = true
+            this.attachedMaterialDialogLoading = true
+            this.attachedMaterialDialogError = null
+            this.selectContentMaterialPreview(normalizedMaterial)
+
+            try {
+                const card = await this.fetchCurriculumMaterialCard(normalizedMaterial.id)
+                if (!card?.id) {
+                    throw new Error('missing material card')
+                }
+
+                this.selectContentMaterialPreview(card)
+            } catch {
+                this.attachedMaterialDialogError = 'Die Anhänge des Materials konnten nicht geladen werden.'
+            } finally {
+                this.attachedMaterialDialogLoading = false
+            }
+        },
+
+        closeAttachedMaterialDialog() {
+            this.attachedMaterialDialogOpen = false
+            this.attachedMaterialDialogLoading = false
+            this.attachedMaterialDialogError = null
+            this.contentMaterialPreviewCard = null
+            this.contentMaterialPreviewAttachmentId = null
+            this.contentMaterialPreviewDialogOpen = false
+        },
+
+        async loadContentMaterialWorkspaceResults(filters = {}) {
+            const subject = typeof filters.subject === 'string' ? filters.subject.trim() : ''
+
+            if (subject === '') {
+                this.contentMaterialWorkspaceResults = []
+                this.contentMaterialWorkspaceError = null
+
+                return
+            }
+
+            this.contentMaterialWorkspaceLoading = true
+            this.contentMaterialWorkspaceError = null
+
+            try {
+                const params = {
+                    subject,
+                    topic: typeof filters.topic === 'string' ? filters.topic.trim() : '',
+                    unit: typeof filters.unit === 'string' ? filters.unit.trim() : '',
+                    per_page: 20,
+                }
+                const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
+                    params,
+                })
+
+                this.contentMaterialWorkspaceResults = Array.isArray(res.data?.data)
+                    ? res.data.data.map((card) => this.normalizeAttachedMaterial(card)).filter((card) => card.id)
+                    : []
+                this.syncContentMaterialPreviewSelection(this.contentMaterialWorkspaceResults)
+            } catch {
+                this.contentMaterialWorkspaceResults = []
+                this.contentMaterialWorkspaceError = 'Die Materialien für diese Auswahl konnten nicht geladen werden.'
+                this.syncContentMaterialPreviewSelection([])
+            } finally {
+                this.contentMaterialWorkspaceLoading = false
+            }
+        },
+
+        currentContentMaterialIds() {
+            return (Array.isArray(this.contentMaterialDialogTarget?.materials) ? this.contentMaterialDialogTarget.materials : [])
+                .map((material) => Number(material?.id || 0))
+                .filter((id) => Number.isFinite(id) && id > 0)
+        },
+
+        isContentMaterialAttached(material) {
+            const materialId = Number(material?.id || 0)
+
+            return materialId > 0 && this.currentContentMaterialIds().includes(materialId)
+        },
+
+        async attachContentMaterial(material) {
+            if (!this.contentMaterialTarget?.topicId || this.topicSaving) return
+
+            const normalizedMaterial = this.normalizeAttachedMaterial(material)
+            if (!normalizedMaterial.id || normalizedMaterial.title === '') return
+            if (this.isContentMaterialAttached(normalizedMaterial)) return
+
+            const targetTopic = this.findTopic(this.contentMaterialTarget.topicId)
+            if (!targetTopic) return
+
+            const nextTopics = this.curriculumTopics.map((topic) => {
+                if (topic.id !== targetTopic.id) {
+                    return this.buildTopicPayload(topic)
+                }
+
+                if (this.contentMaterialTarget.type === 'unit' && this.contentMaterialTarget.unitId) {
+                    return this.buildTopicPayload(topic, {
+                        units: topic.units.map((unit) => (
+                            unit.id === this.contentMaterialTarget.unitId
+                                ? this.buildUnitPayload(unit, {
+                                    materials: [...unit.materials, normalizedMaterial],
+                                })
+                                : this.buildUnitPayload(unit)
+                        )),
+                    })
+                }
+
+                return this.buildTopicPayload(topic, {
+                    materials: [...topic.materials, normalizedMaterial],
+                })
+            })
+
+            this.topicSaving = true
+
+            try {
+                await this.persistCurriculum({
+                    topics: nextTopics,
+                }, 'Material konnte nicht hinzugefügt werden.')
+            } finally {
+                this.topicSaving = false
+            }
+        },
+
+        async removeTopicMaterial(topicId, materialId) {
+            if (this.topicSaving || this.isPageActionLocked) return
+
+            const nextTopics = this.curriculumTopics.map((topic) => (
+                topic.id === topicId
+                    ? this.buildTopicPayload(topic, {
+                        materials: topic.materials.filter((material) => material.id !== materialId),
+                    })
+                    : this.buildTopicPayload(topic)
+            ))
+
+            this.topicSaving = true
+
+            try {
+                await this.persistCurriculum({
+                    topics: nextTopics,
+                }, 'Material konnte nicht entfernt werden.')
+            } finally {
+                this.topicSaving = false
+            }
+        },
+
+        async removeUnitMaterial(topicId, unitId, materialId) {
+            if (this.topicSaving || this.isPageActionLocked) return
+
+            const nextTopics = this.curriculumTopics.map((topic) => {
+                if (topic.id !== topicId) {
+                    return this.buildTopicPayload(topic)
+                }
+
+                return this.buildTopicPayload(topic, {
+                    units: topic.units.map((unit) => (
+                        unit.id === unitId
+                            ? this.buildUnitPayload(unit, {
+                                materials: unit.materials.filter((material) => material.id !== materialId),
+                            })
+                            : this.buildUnitPayload(unit)
+                    )),
+                })
+            })
+
+            this.topicSaving = true
+
+            try {
+                await this.persistCurriculum({
+                    topics: nextTopics,
+                }, 'Material konnte nicht entfernt werden.')
+            } finally {
+                this.topicSaving = false
+            }
         },
 
         isTopicAssignmentEditorOpen(topicId) {
@@ -3559,6 +4685,14 @@ export default {
             return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
         },
 
+        contentMaterialPreviewAttachmentIcon(attachment) {
+            const mimeType = String(attachment?.mime_type || '').toLowerCase()
+
+            return mimeType.startsWith('image/')
+                ? 'mdi-file-image-outline'
+                : 'mdi-file-document-outline'
+        },
+
         materialFileAttachmentCount(card) {
             const count = Number(card?.attachments_count ?? 0)
             return Number.isFinite(count) && count > 0 ? count : 0
@@ -4233,6 +5367,284 @@ export default {
     color: #fecaca;
 }
 
+.curriculum-detail__material-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.curriculum-detail__material-dialog-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__material-dialog-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.curriculum-detail__material-dialog-subtitle {
+    font-size: 0.8rem;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+.curriculum-detail__material-dialog-empty {
+    color: #64748b;
+}
+
+.curriculum-detail__material-dialog-error {
+    color: #b91c1c;
+}
+
+.curriculum-detail__material-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__material-results {
+    max-height: 380px;
+    overflow-y: auto;
+}
+
+.curriculum-detail__material-selection-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.85fr);
+    gap: 14px;
+}
+
+.curriculum-detail__material-result-item {
+    border: 1px solid rgba(99, 102, 241, 0.14);
+    background:
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.08), transparent 60%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(238, 242, 255, 0.92));
+    cursor: pointer;
+}
+
+.curriculum-detail__material-result-item--active {
+    border-color: rgba(79, 70, 229, 0.38);
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.18);
+}
+
+.curriculum-detail__material-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.curriculum-detail__material-browser-panel,
+.curriculum-detail__material-browser-results {
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.94));
+}
+
+.curriculum-detail__material-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.curriculum-detail__material-browser-summary {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.curriculum-detail__material-browser-summary-card {
+    min-width: 180px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.76);
+}
+
+.curriculum-detail__material-browser-summary-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.curriculum-detail__material-browser-summary-value {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #1e293b;
+    line-height: 1.4;
+}
+
+.curriculum-detail__material-browser-reset {
+    margin-left: auto;
+    align-self: center;
+}
+
+.curriculum-detail__material-preview-panel {
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 245, 249, 0.94));
+    display: flex;
+    flex-direction: column;
+    min-height: 420px;
+}
+
+.curriculum-detail__material-preview-copy {
+    margin-bottom: 10px;
+}
+
+.curriculum-detail__material-preview-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.curriculum-detail__material-preview-subtitle {
+    margin-top: 4px;
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.45;
+}
+
+.curriculum-detail__material-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.curriculum-detail__material-preview-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.82);
+    cursor: pointer;
+}
+
+.curriculum-detail__material-preview-list-item:hover {
+    border-color: rgba(99, 102, 241, 0.28);
+    background: rgba(238, 242, 255, 0.92);
+}
+
+.curriculum-detail__material-preview-list-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.curriculum-detail__material-preview-list-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.curriculum-detail__material-preview-list-subtitle {
+    margin-top: 2px;
+    font-size: 0.74rem;
+    color: #64748b;
+}
+
+.curriculum-detail__material-preview-empty {
+    flex: 1;
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #64748b;
+    border-radius: 12px;
+    border: 1px dashed rgba(148, 163, 184, 0.26);
+    background: rgba(248, 250, 252, 0.86);
+    padding: 16px;
+}
+
+.curriculum-detail__fullscreen-preview {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(248, 250, 252, 0.98) !important;
+}
+
+.curriculum-detail__fullscreen-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.curriculum-detail__fullscreen-preview-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.curriculum-detail__fullscreen-preview-subtitle {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    color: #64748b;
+}
+
+.curriculum-detail__fullscreen-preview-close-btn {
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    min-width: 130px;
+    box-shadow: 0 10px 24px rgba(185, 28, 28, 0.18);
+}
+
+.curriculum-detail__fullscreen-preview-body {
+    flex: 1;
+    padding: 0 !important;
+    background: rgba(226, 232, 240, 0.55);
+}
+
+.curriculum-detail__fullscreen-preview-iframe,
+.curriculum-detail__fullscreen-preview-image {
+    width: 100%;
+    height: calc(100vh - 82px);
+    border: none;
+    display: block;
+    background: #fff;
+}
+
+.curriculum-detail__fullscreen-preview-image {
+    object-fit: contain;
+}
+
+.curriculum-detail__fullscreen-preview-empty {
+    height: calc(100vh - 82px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #475569;
+    padding: 24px;
+}
+
+.curriculum-detail__material-browser-heading {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+
 .curriculum-detail__editor-dialog-card {
     background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%) !important;
     color: #0f172a;
@@ -4383,6 +5795,58 @@ export default {
     margin-top: 8px;
     font-size: 0.8rem;
     color: #475569;
+}
+
+.curriculum-detail__attached-materials {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.curriculum-detail__attached-materials--unit {
+    margin-top: 8px;
+}
+
+.curriculum-detail__attached-material {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(99, 102, 241, 0.16);
+    background:
+        radial-gradient(circle at top right, rgba(99, 102, 241, 0.08), transparent 60%),
+        linear-gradient(180deg, rgba(238, 242, 255, 0.94), rgba(224, 231, 255, 0.82));
+}
+
+.curriculum-detail__attached-material-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.curriculum-detail__attached-material-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.curriculum-detail__attached-material-preview-btn {
+    white-space: nowrap;
+}
+
+.curriculum-detail__attached-material-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #312e81;
+}
+
+.curriculum-detail__attached-material-subtitle {
+    font-size: 0.72rem;
+    color: #475569;
+    margin-top: 2px;
 }
 
 .curriculum-detail__topic-actions {
@@ -4803,8 +6267,22 @@ export default {
 
     .curriculum-detail__content-toolbar,
     .curriculum-detail__topic-row,
-    .curriculum-detail__topic-assignment-options {
+    .curriculum-detail__topic-assignment-options,
+    .curriculum-detail__material-dialog-toolbar {
         flex-direction: column;
+    }
+
+    .curriculum-detail__material-filter-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .curriculum-detail__material-selection-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .curriculum-detail__material-browser-reset {
+        margin-left: 0;
+        align-self: flex-start;
     }
 }
 </style>

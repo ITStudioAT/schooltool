@@ -60,6 +60,7 @@ function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}
                 'v-chip': { template: '<span class="v-chip"><slot /></span>' },
                 'v-dialog': { template: '<div><slot /></div>' },
                 'v-divider': { template: '<hr />' },
+                'v-autocomplete': { template: '<div><slot /></div>' },
                 'v-icon': { template: '<i><slot /></i>' },
                 'v-list': { template: '<div><slot /></div>' },
                 'v-list-item': { template: '<div><slot /></div>' },
@@ -257,11 +258,11 @@ describe('CurriculumDetail week card view mode', () => {
         const topicActionButtons = wrapper.findAll('.curriculum-detail__topic-actions button')
 
         expect(topicItem.exists()).toBe(true)
-        expect(topicActionButtons).toHaveLength(5)
+        expect(topicActionButtons).toHaveLength(6)
         expect((wrapper.vm as any).selectedTopicId).toBeNull()
         expect((wrapper.vm as any).showTopicForm).toBe(false)
 
-        await topicActionButtons[3].trigger('click')
+        await topicActionButtons[4].trigger('click')
 
         expect((wrapper.vm as any).showTopicForm).toBe(true)
         expect((wrapper.vm as any).topicForm).toMatchObject({
@@ -299,6 +300,293 @@ describe('CurriculumDetail week card view mode', () => {
 
         expect(wrapper.text()).toContain('Thema bearbeiten')
         expect(wrapper.text()).toContain('Thema speichern')
+    })
+
+    it('adds a material to a topic without closing the selector dialog', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    materials: [],
+                    units: [],
+                },
+            ],
+        })
+        const persistCurriculumMock = vi.spyOn(wrapper.vm as any, 'persistCurriculum').mockResolvedValue({
+            id: 15,
+        })
+
+        try {
+            await wrapper.setData({
+                contentMaterialDialogOpen: true,
+                contentMaterialTarget: {
+                    type: 'topic',
+                    topicId: 'topic-1',
+                    unitId: null,
+                },
+            })
+
+            await (wrapper.vm as any).attachContentMaterial({
+                id: 77,
+                title: 'Nebensätze Arbeitsblatt',
+                subject: 'Deutsch',
+                area: 'Grammatik',
+                unit: 'Nebensätze',
+                type: 'Arbeitsblatt',
+                status: 'done',
+                attachments_count: 2,
+            })
+
+            expect(persistCurriculumMock).toHaveBeenCalledTimes(1)
+            expect(persistCurriculumMock).toHaveBeenCalledWith({
+                topics: expect.arrayContaining([
+                    expect.objectContaining({
+                        id: 'topic-1',
+                        materials: [
+                            expect.objectContaining({
+                                id: 77,
+                                title: 'Nebensätze Arbeitsblatt',
+                                subject: 'Deutsch',
+                                topic: 'Grammatik',
+                                unit: 'Nebensätze',
+                            }),
+                        ],
+                    }),
+                ]),
+            }, 'Material konnte nicht hinzugefügt werden.')
+            const persistedMaterial = persistCurriculumMock.mock.calls[0]?.[0]?.topics?.[0]?.materials?.[0]
+            expect(persistedMaterial).not.toHaveProperty('attachments')
+            expect((wrapper.vm as any).contentMaterialDialogOpen).toBe(true)
+            expect((wrapper.vm as any).topicSaving).toBe(false)
+        } finally {
+            persistCurriculumMock.mockRestore()
+        }
+    })
+
+    it('loads the workspace tree through curriculum material endpoints', async () => {
+        const wrapper = mountCurriculumDetail()
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: {
+                classification_tree: [
+                    {
+                        id: 11,
+                        name: 'Deutsch',
+                        topics: [
+                            {
+                                id: 21,
+                                name: 'Grammatik',
+                                units: [
+                                    {
+                                        id: 31,
+                                        name: 'Nebensätze',
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: getMock,
+        }
+
+        try {
+            await (wrapper.vm as any).ensureContentMaterialClassificationTree()
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/materials/config')
+            expect((wrapper.vm as any).contentMaterialClassificationTree).toEqual([
+                expect.objectContaining({
+                    name: 'Deutsch',
+                    topics: [
+                        expect.objectContaining({
+                            name: 'Grammatik',
+                            units: [
+                                expect.objectContaining({
+                                    name: 'Nebensätze',
+                                }),
+                            ],
+                        }),
+                    ],
+                }),
+            ])
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
+    it('rewrites preview attachment urls to curriculum material routes', () => {
+        const wrapper = mountCurriculumDetail()
+
+        const normalizedMaterial = (wrapper.vm as any).normalizeAttachedMaterial({
+            id: 77,
+            title: 'Nebensätze Arbeitsblatt',
+            subject: 'Deutsch',
+            area: 'Grammatik',
+            unit: 'Nebensätze',
+            attachments_count: 1,
+            attachments: [
+                {
+                    id: 501,
+                    name: 'Nebensaetze.pdf',
+                    mime_type: 'application/pdf',
+                    preview_url: '/api/admin/materials/attachments/501/preview',
+                    download_url: '/api/admin/materials/attachments/501/download',
+                },
+            ],
+        })
+
+        expect(normalizedMaterial.attachments).toEqual([
+            expect.objectContaining({
+                id: 501,
+                name: 'Nebensaetze.pdf',
+                preview_url: '/api/admin/teaching/curricula/15/materials/attachments/501/preview',
+                download_url: '/api/admin/teaching/curricula/15/materials/attachments/501/download',
+            }),
+        ])
+    })
+
+    it('opens the selected material attachment only in the fullscreen preview dialog', () => {
+        const wrapper = mountCurriculumDetail()
+        const material = (wrapper.vm as any).normalizeAttachedMaterial({
+            id: 77,
+            title: 'Nebensätze Arbeitsblatt',
+            subject: 'Deutsch',
+            area: 'Grammatik',
+            unit: 'Nebensätze',
+            attachments_count: 2,
+            attachments: [
+                {
+                    id: 501,
+                    name: 'Nebensaetze.pdf',
+                    mime_type: 'application/pdf',
+                },
+                {
+                    id: 502,
+                    name: 'Nebensaetze.png',
+                    mime_type: 'image/png',
+                },
+            ],
+        })
+
+        ;(wrapper.vm as any).selectContentMaterialPreview(material)
+
+        expect((wrapper.vm as any).contentMaterialPreviewAttachment).toBeNull()
+        expect((wrapper.vm as any).contentMaterialPreviewDialogOpen).toBe(false)
+
+        ;(wrapper.vm as any).openContentMaterialPreview(material.attachments[1])
+
+        expect((wrapper.vm as any).contentMaterialPreviewDialogOpen).toBe(true)
+        expect((wrapper.vm as any).contentMaterialPreviewAttachment).toEqual(
+            expect.objectContaining({
+                id: 502,
+                name: 'Nebensaetze.png',
+            }),
+        )
+        expect((wrapper.vm as any).contentMaterialPreviewIsImage).toBe(true)
+    })
+
+    it('shows attachment access for linked topic materials in the overview', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    materials: [
+                        {
+                            id: 77,
+                            title: 'Nebensätze Arbeitsblatt',
+                            subject: 'Deutsch',
+                            topic: 'Grammatik',
+                            unit: 'Nebensätze',
+                            attachments_count: 2,
+                        },
+                    ],
+                    units: [],
+                },
+            ],
+        })
+
+        const materialActions = wrapper.find('.curriculum-detail__attached-material-actions')
+
+        expect(materialActions.exists()).toBe(true)
+        expect(materialActions.text()).toContain('2 Anhänge')
+    })
+
+    it('loads attachments for a linked material from the curriculum overview', async () => {
+        const wrapper = mountCurriculumDetail()
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: {
+                data: {
+                    id: 77,
+                    title: 'Nebensätze Arbeitsblatt',
+                    subject: 'Deutsch',
+                    area: 'Grammatik',
+                    unit: 'Nebensätze',
+                    attachments_count: 2,
+                    attachments: [
+                        {
+                            id: 501,
+                            name: 'Teil A.pdf',
+                            mime_type: 'application/pdf',
+                            size_bytes: 1024,
+                        },
+                        {
+                            id: 502,
+                            name: 'Teil B.png',
+                            mime_type: 'image/png',
+                            size_bytes: 2048,
+                        },
+                    ],
+                },
+            },
+        })
+        ;(globalThis as any).axios = {
+            get: getMock,
+        }
+
+        try {
+            await (wrapper.vm as any).openAttachedMaterialDialog({
+                id: 77,
+                title: 'Nebensätze Arbeitsblatt',
+                subject: 'Deutsch',
+                topic: 'Grammatik',
+                unit: 'Nebensätze',
+                attachments_count: 2,
+            })
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/materials/cards/77')
+            expect((wrapper.vm as any).attachedMaterialDialogOpen).toBe(true)
+            expect((wrapper.vm as any).attachedMaterialDialogLoading).toBe(false)
+            expect((wrapper.vm as any).contentMaterialPreviewAttachments).toEqual([
+                expect.objectContaining({
+                    id: 501,
+                    name: 'Teil A.pdf',
+                    preview_url: '/api/admin/teaching/curricula/15/materials/attachments/501/preview',
+                    download_url: '/api/admin/teaching/curricula/15/materials/attachments/501/download',
+                }),
+                expect.objectContaining({
+                    id: 502,
+                    name: 'Teil B.png',
+                }),
+            ])
+
+            ;(wrapper.vm as any).openContentMaterialPreview((wrapper.vm as any).contentMaterialPreviewAttachments[1])
+
+            expect((wrapper.vm as any).contentMaterialPreviewDialogOpen).toBe(true)
+            expect((wrapper.vm as any).contentMaterialPreviewIsImage).toBe(true)
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
     })
 
     it('scrolls the calendar to the assigned week when selecting a unit', async () => {

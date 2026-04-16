@@ -3,9 +3,18 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Materials\MaterialCardIndexRequest;
+use App\Http\Resources\Admin\Materials\MaterialCardResource;
+use App\Http\Resources\Admin\PaginateResource;
+use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
 use App\Models\TeachingCurriculum;
+use App\Services\Materials\MaterialAttachmentPreviewService;
+use App\Services\Materials\MaterialService;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -74,6 +83,110 @@ class CurriculumController extends Controller
         return response()->json(['data' => $curriculum]);
     }
 
+    public function materialsConfig(TeachingCurriculum $curriculum, MaterialService $service)
+    {
+        $authUser = $this->authorizeCurriculum($curriculum);
+        $config = $service->config($authUser);
+
+        return response()->json([
+            'workspace' => $config['workspace'] ?? null,
+            'has_workspace' => (bool) ($config['has_workspace'] ?? false),
+            'classification_tree' => $config['classification_tree'] ?? [],
+        ]);
+    }
+
+    public function materialsIndex(MaterialCardIndexRequest $request, TeachingCurriculum $curriculum, MaterialService $service)
+    {
+        $authUser = $this->authorizeCurriculum($curriculum);
+        $cards = $service->listForUser($authUser, $request->validated());
+
+        return response()->json([
+            'data' => MaterialCardResource::collection($cards),
+            'meta' => new PaginateResource($cards),
+        ]);
+    }
+
+    public function showMaterialCard(TeachingCurriculum $curriculum, MaterialCard $material_card)
+    {
+        $this->authorizeCurriculumMaterialCard($curriculum, $material_card);
+
+        return response()->json([
+            'data' => new MaterialCardResource($material_card->loadMissing('attachments')),
+        ]);
+    }
+
+    public function previewMaterialAttachment(
+        TeachingCurriculum $curriculum,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialAttachmentPreviewService $previewService,
+        Request $request
+    ) {
+        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment);
+
+        if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $downloadUrl = "/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$material_card_attachment->id}/download";
+        $query = trim((string) $request->getQueryString());
+        if ($query !== '') {
+            $downloadUrl .= '?'.$query;
+        }
+
+        return $previewService->preview(
+            $material_card_attachment,
+            $downloadUrl,
+            $this->attachmentStorageDiskCandidates()
+        );
+    }
+
+    public function downloadMaterialAttachment(TeachingCurriculum $curriculum, MaterialCardAttachment $material_card_attachment)
+    {
+        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment);
+
+        if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $relativePath = (string) $material_card_attachment->file_path;
+        $disk = $this->resolveAttachmentStorageDisk($relativePath);
+        if ($disk === null) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $name = trim((string) ($material_card_attachment->name ?: basename($relativePath)));
+        $name = $name !== '' ? $name : 'Anhang';
+        $stream = $disk->readStream($relativePath);
+        if (! is_resource($stream)) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $contentType = trim((string) ($material_card_attachment->mime_type ?? $disk->mimeType($relativePath) ?? 'application/octet-stream'));
+
+        return response()->streamDownload(
+            static function () use ($stream): void {
+                try {
+                    while (! feof($stream)) {
+                        $chunk = fread($stream, 8192);
+                        if ($chunk === false) {
+                            break;
+                        }
+
+                        echo $chunk;
+                    }
+                } finally {
+                    fclose($stream);
+                }
+            },
+            $name,
+            [
+                'Content-Type' => $contentType !== '' ? $contentType : 'application/octet-stream',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        );
+    }
+
     public function update(Request $request, TeachingCurriculum $curriculum)
     {
         $this->authorizeCurriculum($curriculum);
@@ -107,6 +220,59 @@ class CurriculumController extends Controller
         return $auth_user;
     }
 
+    private function authorizeCurriculumMaterialCard(TeachingCurriculum $curriculum, MaterialCard $materialCard)
+    {
+        $authUser = $this->authorizeCurriculum($curriculum);
+
+        if ((int) $materialCard->school_id !== (int) $authUser->school_id
+            || (int) $materialCard->user_id !== (int) $authUser->id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $authUser;
+    }
+
+    private function authorizeCurriculumMaterialAttachment(TeachingCurriculum $curriculum, MaterialCardAttachment $attachment): void
+    {
+        $attachment->loadMissing('materialCard');
+
+        $card = $attachment->materialCard;
+        if (! $card) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeCurriculumMaterialCard($curriculum, $card);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function attachmentStorageDiskCandidates(): array
+    {
+        return array_values(array_filter(array_unique([
+            (string) config('filesystems.default'),
+            'local',
+            'public',
+        ])));
+    }
+
+    private function resolveAttachmentStorageDisk(string $relativePath): ?Filesystem
+    {
+        $path = trim($relativePath);
+        if ($path === '') {
+            return null;
+        }
+
+        foreach ($this->attachmentStorageDiskCandidates() as $diskName) {
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($path)) {
+                return $disk;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * @return array{
      *     title: string,
@@ -120,6 +286,16 @@ class CurriculumController extends Controller
      *         month_key: ?string,
      *         month_keys: array<int, string>,
      *         week_keys: array<int, string>,
+     *         materials: array<int, array{
+     *             id: int,
+     *             title: string,
+     *             subject: string,
+     *             topic: string,
+     *             unit: string,
+     *             type: string,
+     *             status: string,
+     *             attachments_count: int
+     *         }>,
      *         units: array<int, array{
      *             id: string,
      *             title: string,
@@ -127,7 +303,17 @@ class CurriculumController extends Controller
      *             assignment_type: string,
      *             month_key: ?string,
      *             month_keys: array<int, string>,
-     *             week_keys: array<int, string>
+     *             week_keys: array<int, string>,
+     *             materials: array<int, array{
+     *                 id: int,
+     *                 title: string,
+     *                 subject: string,
+     *                 topic: string,
+     *                 unit: string,
+     *                 type: string,
+     *                 status: string,
+     *                 attachments_count: int
+     *             }>
      *         }>
      *     }>
      * }
@@ -155,7 +341,7 @@ class CurriculumController extends Controller
                 },
             ],
             'topics' => 'nullable|array',
-            'topics.*' => 'array',
+            'topics.*' => 'array:id,title,assignment_type,month_key,month_keys,week_keys,materials,units',
             'topics.*.id' => 'nullable|string|max:100',
             'topics.*.title' => 'required|string|max:255',
             'topics.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
@@ -178,8 +364,18 @@ class CurriculumController extends Controller
                     }
                 },
             ],
+            'topics.*.materials' => 'nullable|array',
+            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count',
+            'topics.*.materials.*.id' => 'required|integer|min:1',
+            'topics.*.materials.*.title' => 'required|string|max:255',
+            'topics.*.materials.*.subject' => 'nullable|string|max:255',
+            'topics.*.materials.*.topic' => 'nullable|string|max:255',
+            'topics.*.materials.*.unit' => 'nullable|string|max:255',
+            'topics.*.materials.*.type' => 'nullable|string|max:255',
+            'topics.*.materials.*.status' => 'nullable|string|max:255',
+            'topics.*.materials.*.attachments_count' => 'nullable|integer|min:0',
             'topics.*.units' => 'nullable|array',
-            'topics.*.units.*' => 'array',
+            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,materials',
             'topics.*.units.*.id' => 'nullable|string|max:100',
             'topics.*.units.*.title' => 'required|string|max:255',
             'topics.*.units.*.is_exam' => 'sometimes|boolean',
@@ -203,6 +399,16 @@ class CurriculumController extends Controller
                     }
                 },
             ],
+            'topics.*.units.*.materials' => 'nullable|array',
+            'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count',
+            'topics.*.units.*.materials.*.id' => 'required|integer|min:1',
+            'topics.*.units.*.materials.*.title' => 'required|string|max:255',
+            'topics.*.units.*.materials.*.subject' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.topic' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.unit' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.type' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.status' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.attachments_count' => 'nullable|integer|min:0',
         ]);
 
         $validated['semester_count'] = (int) ($validated['semester_count'] ?? 2);
@@ -255,6 +461,16 @@ class CurriculumController extends Controller
      *     month_key: ?string,
      *     month_keys: array<int, string>,
      *     week_keys: array<int, string>,
+     *     materials: array<int, array{
+     *         id: int,
+     *         title: string,
+     *         subject: string,
+     *         topic: string,
+     *         unit: string,
+     *         type: string,
+     *         status: string,
+     *         attachments_count: int
+     *     }>,
      *     units: array<int, array{
      *         id: string,
      *         title: string,
@@ -262,7 +478,17 @@ class CurriculumController extends Controller
      *         assignment_type: string,
      *         month_key: ?string,
      *         month_keys: array<int, string>,
-     *         week_keys: array<int, string>
+     *         week_keys: array<int, string>,
+     *         materials: array<int, array{
+     *             id: int,
+     *             title: string,
+     *             subject: string,
+     *             topic: string,
+     *             unit: string,
+     *             type: string,
+     *             status: string,
+     *             attachments_count: int
+     *         }>
      *     }>
      * }>
      */
@@ -290,6 +516,7 @@ class CurriculumController extends Controller
 
             return [
                 ...$topicItem,
+                'materials' => $this->normalizeMaterials(is_array($normalizedTopic['materials'] ?? null) ? $normalizedTopic['materials'] : []),
                 'units' => $units,
             ];
         })->all();
@@ -304,7 +531,17 @@ class CurriculumController extends Controller
      *     assignment_type: string,
      *     month_key: ?string,
      *     month_keys: array<int, string>,
-     *     week_keys: array<int, string>
+     *     week_keys: array<int, string>,
+     *     materials: array<int, array{
+     *         id: int,
+     *         title: string,
+     *         subject: string,
+     *         topic: string,
+     *         unit: string,
+     *         type: string,
+     *         status: string,
+     *         attachments_count: int
+     *     }>
      * }>
      */
     private function normalizeUnits(array $units, int $topicIndex): array
@@ -319,8 +556,46 @@ class CurriculumController extends Controller
                     'Bitte einen gültigen Einheitentitel angeben.'
                 ),
                 'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
+                'materials' => $this->normalizeMaterials(is_array($normalizedUnit['materials'] ?? null) ? $normalizedUnit['materials'] : []),
             ];
         })->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $materials
+     * @return array<int, array{
+     *     id: int,
+     *     title: string,
+     *     subject: string,
+     *     topic: string,
+     *     unit: string,
+     *     type: string,
+     *     status: string,
+     *     attachments_count: int
+     * }>
+     */
+    private function normalizeMaterials(array $materials): array
+    {
+        return collect($materials)
+            ->filter(fn (mixed $material): bool => is_array($material))
+            ->map(function (array $material): array {
+                $id = (int) ($material['id'] ?? 0);
+
+                return [
+                    'id' => $id,
+                    'title' => trim((string) ($material['title'] ?? '')),
+                    'subject' => trim((string) ($material['subject'] ?? '')),
+                    'topic' => trim((string) ($material['topic'] ?? '')),
+                    'unit' => trim((string) ($material['unit'] ?? '')),
+                    'type' => trim((string) ($material['type'] ?? '')),
+                    'status' => trim((string) ($material['status'] ?? '')),
+                    'attachments_count' => max(0, (int) ($material['attachments_count'] ?? 0)),
+                ];
+            })
+            ->filter(fn (array $material): bool => $material['id'] > 0 && $material['title'] !== '')
+            ->unique('id')
+            ->values()
+            ->all();
     }
 
     /**

@@ -367,6 +367,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
+        Route::get('/admin/teaching/curricula/{curriculum}/materials/config', [CurriculumController::class, 'materialsConfig']);
+        Route::get('/admin/teaching/curricula/{curriculum}/materials/cards', [CurriculumController::class, 'materialsIndex']);
+        Route::get('/admin/teaching/curricula/{curriculum}/materials/cards/{material_card}', [CurriculumController::class, 'showMaterialCard']);
+        Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/preview', [CurriculumController::class, 'previewMaterialAttachment']);
+        Route::get('/admin/teaching/curricula/{curriculum}/materials/attachments/{material_card_attachment}/download', [CurriculumController::class, 'downloadMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents', [CurriculumDocumentController::class, 'index']);
         Route::post('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'upload']);
         Route::patch('/admin/teaching/curricula/{curriculum}/documents/upload', [CurriculumDocumentController::class, 'uploadNext']);
