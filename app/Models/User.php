@@ -173,6 +173,7 @@ class User extends Authenticatable
         'teaching_notifications',
         'teaching_notifications_by_schoolyear',
         'teaching_show_behaviour',
+        'teaching_grade_columns_by_schoolyear',
         'materials_pagination_number',
         'restaurant_foods_pagination_number',
     ];
@@ -210,6 +211,7 @@ class User extends Authenticatable
             'teaching_notifications' => 'array',
             'teaching_notifications_by_schoolyear' => 'array',
             'teaching_show_behaviour' => 'boolean',
+            'teaching_grade_columns_by_schoolyear' => 'array',
             'restaurant_booking_defaults' => 'array',
         ];
     }

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import CourseInfos from '@/pages/admin/teaching/overview/components/CourseInfos.vue'
 
 describe('CourseInfos representative countdowns', () => {
@@ -153,5 +153,87 @@ describe('CourseInfos course-specific definitions', () => {
 
         const notificationTypes = computed.notificationTypesByShort.call(ctx)
         expect(notificationTypes.get('INF')).toBe('Info Lehrkraft')
+    })
+
+    it('restores visible grade columns from the route query', () => {
+        const methods = (CourseInfos as any).methods
+        const ctx: Record<string, unknown> = {
+            infos_show_grade_sem1: false,
+            infos_show_grade_sem2: false,
+            infos_show_grade_year: false,
+            restoringGradeColumns: false,
+            normalizeGradeQueryValue: methods.normalizeGradeQueryValue,
+            parseGradeColumns: methods.parseGradeColumns,
+            restoreGradeColumns: methods.restoreGradeColumns,
+        }
+
+        methods.restoreGradeColumnsFromRoute.call(ctx, 'sem1,year')
+
+        expect(ctx.infos_show_grade_sem1).toBe(true)
+        expect(ctx.infos_show_grade_sem2).toBe(false)
+        expect(ctx.infos_show_grade_year).toBe(true)
+    })
+
+    it('persists visible grade columns into the route query', async () => {
+        const methods = (CourseInfos as any).methods
+        const replace = vi.fn().mockResolvedValue(undefined)
+        const ctx: Record<string, unknown> = {
+            infos_show_grade_sem1: true,
+            infos_show_grade_sem2: false,
+            infos_show_grade_year: true,
+            $route: {
+                path: '/admin/teaching',
+                query: {
+                    course: '6',
+                    panel: 'infos',
+                },
+            },
+            $router: { replace },
+            hasTwoSemesters: true,
+            normalizeGradeQueryValue: methods.normalizeGradeQueryValue,
+            currentGradeColumns: methods.currentGradeColumns,
+            gradeColumnsQueryValue: methods.gradeColumnsQueryValue,
+        }
+
+        methods.syncGradeColumnsToRoute.call(ctx)
+
+        expect(replace).toHaveBeenCalledWith({
+            path: '/admin/teaching',
+            query: {
+                course: '6',
+                panel: 'infos',
+                grades: 'sem1,year',
+            },
+        })
+    })
+
+    it('treats semester two and year columns as hidden for one-semester schemas', () => {
+        const computed = (CourseInfos as any).computed
+        const ctx = {
+            infos_show_grade_sem1: false,
+            infos_show_grade_sem2: true,
+            infos_show_grade_year: true,
+            hasTwoSemesters: false,
+        }
+
+        expect(computed.anyGradeColumnVisible.call(ctx)).toBe(false)
+    })
+
+    it('initializes grade data on mount when the course and visible columns already exist', async () => {
+        const methods = (CourseInfos as any).methods
+        const ensureCourseStudentCollections = vi.fn()
+        const loadGradeData = vi.fn().mockResolvedValue(undefined)
+        const ctx: Record<string, unknown> = {
+            selected_course: { id: 6 },
+            anyGradeColumnVisible: true,
+            gradesDataLoaded: false,
+            courseStore: { ensureCourseStudentCollections },
+            loadGradeData,
+        }
+
+        await methods.initializeGradeState.call(ctx)
+
+        expect(ensureCourseStudentCollections).toHaveBeenCalledWith(ctx.selected_course)
+        expect(loadGradeData).toHaveBeenCalledTimes(1)
     })
 })

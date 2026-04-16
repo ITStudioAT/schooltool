@@ -166,18 +166,24 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             }
         },
 
-        async saveSettings(settings) {
+        async saveSettings(settings, options = {}) {
             const notification = useNotificationStore()
             const homepageStore = useAdminStore()
+            const notifySuccess = options.notifySuccess !== false
             homepageStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/teaching/save_settings`, settings)
                 this.settings = response.data.settings
-                notification.notify({
-                    message: 'Einstellungen gespeichert.',
-                    type: 'success',
-                    timeout: 2000,
-                })
+                if (homepageStore.config?.user && response?.data?.settings?.teaching_grade_columns) {
+                    homepageStore.config.user.teaching_grade_columns = response.data.settings.teaching_grade_columns
+                }
+                if (notifySuccess) {
+                    notification.notify({
+                        message: 'Einstellungen gespeichert.',
+                        type: 'success',
+                        timeout: 2000,
+                    })
+                }
                 return true
             } catch (error) {
                 const status = error?.response?.status
