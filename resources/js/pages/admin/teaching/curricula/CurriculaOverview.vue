@@ -51,21 +51,23 @@
                         <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
                     </v-list-item-subtitle>
                     <template #append>
-                        <v-btn
-                            icon="mdi-pencil-outline"
-                            variant="tonal"
-                            color="primary"
-                            size="x-small"
-                            class="mr-1"
-                            title="Bearbeiten"
-                            @click.stop="openEditDialog(curriculum)" />
-                        <v-btn
-                            icon="mdi-delete-outline"
-                            variant="tonal"
-                            color="warning"
-                            size="x-small"
-                            title="Löschen"
-                            @click.stop="askDelete(curriculum)" />
+                        <div class="curricula-overview__item-actions" @click.stop>
+                            <v-btn
+                                icon="mdi-pencil-outline"
+                                variant="tonal"
+                                color="primary"
+                                size="x-small"
+                                class="mr-1"
+                                title="Bearbeiten"
+                                @click.stop="openEditDialog(curriculum)" />
+                            <v-btn
+                                icon="mdi-delete-outline"
+                                variant="tonal"
+                                color="warning"
+                                size="x-small"
+                                title="Löschen"
+                                @click.stop="askDelete(curriculum)" />
+                        </div>
                     </template>
                 </v-list-item>
             </v-list>
@@ -316,6 +318,11 @@ export default {
 .curricula-overview__item {
     background: rgba(255, 255, 255, 0.84);
     border: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.curricula-overview__item-actions {
+    display: inline-flex;
+    align-items: center;
 }
 
 .curricula-overview__empty {

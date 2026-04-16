@@ -70,6 +70,26 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
             }
         },
 
+        async show(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get(`/api/admin/teaching/curricula/${id}`)
+                return response.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
         async update(id, data) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()

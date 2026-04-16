@@ -29,8 +29,13 @@
             </div>
         </v-sheet>
 
+        <div v-if="isResolvingCurriculum" class="curricula-loading text-center py-6">
+            <v-progress-circular indeterminate color="primary" size="28" class="mb-2" />
+            <div>Curriculum wird geladen...</div>
+        </div>
+
         <CurriculaOverview
-            v-if="!selectedCurriculum"
+            v-else-if="!selectedCurriculum"
             @select="openCurriculum" />
 
         <CurriculumDetail
@@ -44,33 +49,97 @@
 <script>
 import CurriculaOverview from './CurriculaOverview.vue'
 import CurriculumDetail from './CurriculumDetail.vue'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 export default {
     name: 'TeachingCurricula',
     components: { CurriculaOverview, CurriculumDetail },
     data() {
         return {
+            curriculumStore: useCurriculumStore(),
             sub_action: 'overview',
             selectedCurriculum: null,
+            isResolvingCurriculum: false,
+            routeSyncToken: 0,
             submenuItems: [
                 { key: 'overview', label: 'Übersicht', icon: 'mdi-view-list-outline' },
             ],
         }
     },
+    watch: {
+        '$route.query.curriculum': {
+            immediate: true,
+            async handler(curriculumId) {
+                await this.syncSelectedCurriculumFromRoute(curriculumId)
+            },
+        },
+    },
     methods: {
         handleSubmenu(key) {
             this.sub_action = key
-            this.selectedCurriculum = null
+            this.closeCurriculum()
         },
         openCurriculum(curriculum) {
             this.selectedCurriculum = curriculum
+            this.setCurriculumQuery(curriculum?.id ?? null)
         },
         updateCurriculum(curriculum) {
             if (!this.selectedCurriculum || this.selectedCurriculum.id !== curriculum.id) return
             this.selectedCurriculum = curriculum
+            this.setCurriculumQuery(curriculum?.id ?? null)
         },
         closeCurriculum() {
             this.selectedCurriculum = null
+            this.setCurriculumQuery(null)
+        },
+        setCurriculumQuery(curriculumId) {
+            const nextQuery = { ...this.$route.query }
+
+            if (curriculumId) {
+                nextQuery.curriculum = String(curriculumId)
+            } else {
+                delete nextQuery.curriculum
+            }
+
+            this.$router.replace({ query: nextQuery }).catch(() => {})
+        },
+        async syncSelectedCurriculumFromRoute(curriculumId) {
+            const normalizedId = Number(curriculumId)
+            const token = this.routeSyncToken + 1
+            this.routeSyncToken = token
+
+            if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
+                this.selectedCurriculum = null
+                this.isResolvingCurriculum = false
+                return
+            }
+
+            if (Number(this.selectedCurriculum?.id || 0) === normalizedId) {
+                this.isResolvingCurriculum = false
+                return
+            }
+
+            this.isResolvingCurriculum = true
+
+            try {
+                const curriculum = await this.curriculumStore.show(normalizedId)
+
+                if (this.routeSyncToken !== token) {
+                    return
+                }
+
+                if (curriculum && Number(curriculum.id || 0) === normalizedId) {
+                    this.selectedCurriculum = curriculum
+                    return
+                }
+
+                this.selectedCurriculum = null
+                this.setCurriculumQuery(null)
+            } finally {
+                if (this.routeSyncToken === token) {
+                    this.isResolvingCurriculum = false
+                }
+            }
         },
     },
 }
@@ -93,5 +162,9 @@ export default {
     text-transform: none;
     letter-spacing: 0;
     font-weight: 600;
+}
+
+.curricula-loading {
+    color: #cbd5f5;
 }
 </style>

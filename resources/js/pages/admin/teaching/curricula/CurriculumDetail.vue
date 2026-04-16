@@ -365,7 +365,7 @@
                                             </template>
                                         </div>
                                     </div>
-                                    <div class="curriculum-detail__topic-actions">
+                                    <div class="curriculum-detail__topic-actions" @click.stop>
                                         <v-btn
                                             icon="mdi-arrow-up"
                                             variant="text"
@@ -411,7 +411,8 @@
 
                                 <div
                                     v-if="isTopicAssignmentEditorOpen(topic.id)"
-                                    class="curriculum-detail__topic-assignment-panel">
+                                    class="curriculum-detail__topic-assignment-panel"
+                                    @click.stop>
                                     <div class="curriculum-detail__topic-assignment-options">
                                         <v-btn
                                             :variant="activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'"
@@ -792,6 +793,134 @@
                 </div>
             </v-sheet>
 
+            <v-dialog v-model="contentDeleteDialogOpen" max-width="420" persistent>
+                <v-card rounded="xl">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="error" size="20">mdi-delete-outline</v-icon>
+                        {{ contentToDelete?.type === 'unit' ? 'Einheit löschen' : 'Thema löschen' }}
+                    </v-card-title>
+                    <v-card-text class="px-4 pb-2">
+                        <div class="text-body-2" style="color: #475569">
+                            Soll {{ contentToDelete?.type === 'unit' ? 'die Einheit' : 'das Thema' }}
+                            <strong>{{ contentToDelete?.title }}</strong>
+                            wirklich gelöscht werden?
+                        </div>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-spacer />
+                        <v-btn
+                            variant="text"
+                            color="secondary"
+                            :disabled="topicSaving"
+                            @click="closeTopicDeleteDialog">
+                            Abbrechen
+                        </v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            :loading="topicSaving"
+                            @click="confirmTopicDelete">
+                            Löschen
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="showTopicForm" max-width="520" persistent>
+                <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
+                        {{ topicForm.id ? 'Thema bearbeiten' : 'Thema anlegen' }}
+                    </v-card-title>
+                    <v-card-text class="px-4 pt-2 pb-2">
+                        <div class="curriculum-detail__topic-form curriculum-detail__editor-dialog-form">
+                            <v-text-field
+                                v-model="topicForm.title"
+                                label="Thema"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details="auto"
+                                class="mb-3" />
+                            <div v-if="topicFormError" class="curriculum-detail__topic-form-error mb-3">
+                                {{ topicFormError }}
+                            </div>
+                            <div class="curriculum-detail__topic-form-actions">
+                                <v-btn
+                                    variant="flat"
+                                    color="primary"
+                                    size="small"
+                                    rounded="lg"
+                                    class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
+                                    :loading="topicSaving"
+                                    @click="saveTopic">
+                                    {{ topicForm.id ? 'Thema speichern' : 'Thema anlegen' }}
+                                </v-btn>
+                                <v-btn
+                                    variant="text"
+                                    color="secondary"
+                                    size="small"
+                                    class="text-none curriculum-detail__editor-dialog-cancel-btn"
+                                    :disabled="topicSaving"
+                                    @click="cancelTopicForm">
+                                    Abbrechen
+                                </v-btn>
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+
+            <v-dialog v-model="showUnitForm" max-width="520" persistent>
+                <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
+                        {{ unitForm.id ? 'Einheit bearbeiten' : 'Einheit anlegen' }}
+                    </v-card-title>
+                    <v-card-text class="px-4 pt-2 pb-2">
+                        <div class="curriculum-detail__topic-form curriculum-detail__unit-form curriculum-detail__editor-dialog-form">
+                            <v-text-field
+                                v-model="unitForm.title"
+                                label="Einheit"
+                                variant="outlined"
+                                density="comfortable"
+                                hide-details="auto"
+                                class="mb-3" />
+                            <v-checkbox
+                                v-model="unitForm.is_exam"
+                                label="Prüfung"
+                                color="warning"
+                                density="comfortable"
+                                hide-details
+                                class="curriculum-detail__unit-exam-checkbox mb-3" />
+                            <div v-if="unitFormError" class="curriculum-detail__topic-form-error mb-3">
+                                {{ unitFormError }}
+                            </div>
+                            <div class="curriculum-detail__topic-form-actions">
+                                <v-btn
+                                    variant="flat"
+                                    color="primary"
+                                    size="small"
+                                    rounded="lg"
+                                    class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
+                                    :loading="topicSaving"
+                                    @click="saveUnit">
+                                    {{ unitForm.id ? 'Einheit speichern' : 'Einheit anlegen' }}
+                                </v-btn>
+                                <v-btn
+                                    variant="text"
+                                    color="secondary"
+                                    size="small"
+                                    class="text-none curriculum-detail__editor-dialog-cancel-btn"
+                                    :disabled="topicSaving"
+                                    @click="cancelUnitForm">
+                                    Abbrechen
+                                </v-btn>
+                            </div>
+                        </div>
+                    </v-card-text>
+                </v-card>
+            </v-dialog>
+
             <v-sheet v-if="showLehrplaeneCard" rounded="xl" class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable">
                 <div class="curriculum-detail__side-card-inner">
                     <div class="curriculum-detail__side-card-header">
@@ -950,134 +1079,6 @@
                         </div>
                     </div>
                 </div>
-
-                <v-dialog v-model="contentDeleteDialogOpen" max-width="420" persistent>
-                    <v-card rounded="xl">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
-                            <v-icon color="error" size="20">mdi-delete-outline</v-icon>
-                            {{ contentToDelete?.type === 'unit' ? 'Einheit löschen' : 'Thema löschen' }}
-                        </v-card-title>
-                        <v-card-text class="px-4 pb-2">
-                            <div class="text-body-2" style="color: #475569">
-                                Soll {{ contentToDelete?.type === 'unit' ? 'die Einheit' : 'das Thema' }}
-                                <strong>{{ contentToDelete?.title }}</strong>
-                                wirklich gelöscht werden?
-                            </div>
-                        </v-card-text>
-                        <v-card-actions class="px-4 pb-4">
-                            <v-spacer />
-                            <v-btn
-                                variant="text"
-                                color="secondary"
-                                :disabled="topicSaving"
-                                @click="closeTopicDeleteDialog">
-                                Abbrechen
-                            </v-btn>
-                            <v-btn
-                                color="error"
-                                variant="flat"
-                                :loading="topicSaving"
-                                @click="confirmTopicDelete">
-                                Löschen
-                            </v-btn>
-                        </v-card-actions>
-                    </v-card>
-                </v-dialog>
-
-                <v-dialog v-model="showTopicForm" max-width="520" persistent>
-                    <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
-                            <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
-                            {{ topicForm.id ? 'Thema bearbeiten' : 'Thema anlegen' }}
-                        </v-card-title>
-                        <v-card-text class="px-4 pt-2 pb-2">
-                            <div class="curriculum-detail__topic-form curriculum-detail__editor-dialog-form">
-                                <v-text-field
-                                    v-model="topicForm.title"
-                                    label="Thema"
-                                    variant="outlined"
-                                    density="comfortable"
-                                    hide-details="auto"
-                                    class="mb-3" />
-                                <div v-if="topicFormError" class="curriculum-detail__topic-form-error mb-3">
-                                    {{ topicFormError }}
-                                </div>
-                                <div class="curriculum-detail__topic-form-actions">
-                                    <v-btn
-                                        variant="flat"
-                                        color="primary"
-                                        size="small"
-                                        rounded="lg"
-                                        class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
-                                        :loading="topicSaving"
-                                        @click="saveTopic">
-                                        {{ topicForm.id ? 'Thema speichern' : 'Thema anlegen' }}
-                                    </v-btn>
-                                    <v-btn
-                                        variant="text"
-                                        color="secondary"
-                                        size="small"
-                                        class="text-none curriculum-detail__editor-dialog-cancel-btn"
-                                        :disabled="topicSaving"
-                                        @click="cancelTopicForm">
-                                        Abbrechen
-                                    </v-btn>
-                                </div>
-                            </div>
-                        </v-card-text>
-                    </v-card>
-                </v-dialog>
-
-                <v-dialog v-model="showUnitForm" max-width="520" persistent>
-                    <v-card rounded="xl" class="curriculum-detail__editor-dialog-card">
-                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
-                            <v-icon color="primary" size="20">mdi-text-box-edit-outline</v-icon>
-                            {{ unitForm.id ? 'Einheit bearbeiten' : 'Einheit anlegen' }}
-                        </v-card-title>
-                        <v-card-text class="px-4 pt-2 pb-2">
-                            <div class="curriculum-detail__topic-form curriculum-detail__unit-form curriculum-detail__editor-dialog-form">
-                                <v-text-field
-                                    v-model="unitForm.title"
-                                    label="Einheit"
-                                    variant="outlined"
-                                    density="comfortable"
-                                    hide-details="auto"
-                                    class="mb-3" />
-                                <v-checkbox
-                                    v-model="unitForm.is_exam"
-                                    label="Prüfung"
-                                    color="warning"
-                                    density="comfortable"
-                                    hide-details
-                                    class="curriculum-detail__unit-exam-checkbox mb-3" />
-                                <div v-if="unitFormError" class="curriculum-detail__topic-form-error mb-3">
-                                    {{ unitFormError }}
-                                </div>
-                                <div class="curriculum-detail__topic-form-actions">
-                                    <v-btn
-                                        variant="flat"
-                                        color="primary"
-                                        size="small"
-                                        rounded="lg"
-                                        class="text-none curriculum-detail__topic-save-btn curriculum-detail__editor-dialog-save-btn"
-                                        :loading="topicSaving"
-                                        @click="saveUnit">
-                                        {{ unitForm.id ? 'Einheit speichern' : 'Einheit anlegen' }}
-                                    </v-btn>
-                                    <v-btn
-                                        variant="text"
-                                        color="secondary"
-                                        size="small"
-                                        class="text-none curriculum-detail__editor-dialog-cancel-btn"
-                                        :disabled="topicSaving"
-                                        @click="cancelUnitForm">
-                                        Abbrechen
-                                    </v-btn>
-                                </div>
-                            </div>
-                        </v-card-text>
-                    </v-card>
-                </v-dialog>
 
                 <v-dialog v-model="materialDialogOpen" max-width="560" persistent>
                     <v-card rounded="xl">

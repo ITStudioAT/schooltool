@@ -239,6 +239,68 @@ describe('CurriculumDetail week card view mode', () => {
         expect(unitItem.classes()).not.toContain('curriculum-detail__unit-item--selected')
     })
 
+    it('opens the topic editor without toggling topic selection', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [],
+                },
+            ],
+        })
+
+        const topicItem = wrapper.find('.curriculum-detail__topic-item')
+        const topicActionButtons = wrapper.findAll('.curriculum-detail__topic-actions button')
+
+        expect(topicItem.exists()).toBe(true)
+        expect(topicActionButtons).toHaveLength(5)
+        expect((wrapper.vm as any).selectedTopicId).toBeNull()
+        expect((wrapper.vm as any).showTopicForm).toBe(false)
+
+        await topicActionButtons[3].trigger('click')
+
+        expect((wrapper.vm as any).showTopicForm).toBe(true)
+        expect((wrapper.vm as any).topicForm).toMatchObject({
+            id: 'topic-1',
+            title: 'Grammatik',
+        })
+        expect((wrapper.vm as any).selectedTopicId).toBeNull()
+        expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
+    })
+
+    it('renders the topic editor dialog even when the Lehrpläne card is hidden', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [],
+                },
+            ],
+        })
+
+        expect((wrapper.vm as any).showLehrplaeneCard).toBe(false)
+        expect(wrapper.text()).not.toContain('Thema bearbeiten')
+
+        await wrapper.setData({
+            showTopicForm: true,
+            topicForm: {
+                id: 'topic-1',
+                title: 'Grammatik',
+            },
+        })
+
+        expect(wrapper.text()).toContain('Thema bearbeiten')
+        expect(wrapper.text()).toContain('Thema speichern')
+    })
+
     it('scrolls the calendar to the assigned week when selecting a unit', async () => {
         const scrollTo = vi.fn()
         const originalScrollTo = HTMLElement.prototype.scrollTo
