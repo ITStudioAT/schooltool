@@ -27,7 +27,7 @@
                     <thead>
                         <tr>
                             <th class="student-col">Schüler:in</th>
-                            <th v-for="col in gradeColumns" :key="col.key" class="grade-col">
+                            <th v-for="col in gradeColumns" :key="col.key" :class="col.key === 'year' ? 'grade-col grade-col--narrow' : 'grade-col'">
                                 {{ col.label }}
                             </th>
                         </tr>
@@ -53,11 +53,26 @@
                                     <div
                                         v-for="cat in row.grades[col.key].categories"
                                         :key="`${row.student_id}-${col.key}-${cat.name}`"
-                                        class="grade-category-row">
-                                        <span class="grade-category-name">{{ cat.name }} ({{ cat.weight }}%)</span>
-                                        <span class="grade-category-value" :class="gradeClass(cat.value)">
-                                            {{ formatGrade(cat.value) }}
-                                        </span>
+                                        class="grade-category-block">
+                                        <div class="grade-category-row">
+                                            <span class="grade-category-name">{{ cat.name }} ({{ cat.weight }}%)</span>
+                                            <span class="grade-category-value" :class="gradeClass(cat.value)">
+                                                {{ formatGrade(cat.value) }}
+                                            </span>
+                                        </div>
+                                        <div v-if="cat.entries?.length" class="grade-category-entries">
+                                            <div
+                                                v-for="(entry, idx) in cat.entries"
+                                                :key="`${row.student_id}-${col.key}-${cat.name}-${idx}`"
+                                                class="grade-entry-row">
+                                                <span class="grade-entry-type">{{ entry.type }}</span>
+                                                <span v-if="entry.shortDate" class="grade-entry-date">{{ entry.shortDate }}</span>
+                                                <span class="grade-entry-label" :title="entry.description">{{ entry.label }}</span>
+                                                <span class="grade-entry-value" :class="gradeClass(entry.displayValue)">
+                                                    {{ entry.displayGrade }}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </td>
@@ -409,6 +424,7 @@ export default {
                 let hasAny = false
                 let hasUngraded = false
                 let hasNa = false
+                const catEntries = []
 
                 works.forEach((workItem) => {
                     const type = workItem.short_name
@@ -421,6 +437,22 @@ export default {
 
                     const factorPercent = parseFloat(workItem.factor)
                     const weight = (Number.isNaN(factorPercent) ? 0 : factorPercent) / 100
+
+                    workEntries.forEach((e) => {
+                        const gradeKey = this.effectiveGradeKeyForEntry(e, work)
+                        const numValue = this.gradeValueForWork(work, gradeKey)
+                        catEntries.push({
+                            type: type,
+                            date: e.date || '',
+                            shortDate: this.formatShortDate(e.date),
+                            description: e.description || '',
+                            label: e.description || type,
+                            gradeKey: gradeKey,
+                            numericValue: numValue,
+                            displayGrade: gradeKey ? (this.isNaGradeKey(gradeKey) ? 'NA' : this.isNbGradeKey(gradeKey) ? 'NB' : gradeKey) : '–',
+                            displayValue: gradeKey ? (this.isNaGradeKey(gradeKey) ? 'NA' : this.isNbGradeKey(gradeKey) ? 'NB' : numValue) : null,
+                        })
+                    })
 
                     if (work.calculation === 'points') {
                         const values = workEntries
@@ -447,6 +479,8 @@ export default {
                     }
                 })
 
+                catEntries.sort((a, b) => (a.type || '').localeCompare(b.type || '', 'de') || (a.date || '').localeCompare(b.date || ''))
+
                 const isNb = categoryRequireAll && hasAny && hasUngraded
                 const isNa = categoryRequireAll && hasNa
                 let value = null
@@ -465,6 +499,7 @@ export default {
                     value,
                     isNb,
                     isNa,
+                    entries: catEntries,
                 }
             })
         },
@@ -519,7 +554,17 @@ export default {
                     name: g.name,
                     weight: g.weight,
                     value: g.value,
+                    entries: g.entries || [],
                 }))
+        },
+
+        formatShortDate(date) {
+            if (!date) return ''
+            const normalized = this.normalizeDateKey(date)
+            if (!normalized) return ''
+            const parts = normalized.split('-')
+            if (parts.length !== 3) return ''
+            return `${parseInt(parts[2], 10)}.${parseInt(parts[1], 10)}.`
         },
 
         parseStoredGrade(raw) {
@@ -565,6 +610,7 @@ export default {
     border-collapse: separate;
     border-spacing: 0;
     min-width: 600px;
+    table-layout: fixed;
 }
 
 .performances-plus-table th,
@@ -587,8 +633,11 @@ export default {
 }
 
 .grade-col {
-    min-width: 140px;
     text-align: center !important;
+}
+
+.grade-col--narrow {
+    width: 140px;
 }
 
 .student-cell {
@@ -658,6 +707,14 @@ export default {
     border-top: 1px solid rgba(16, 38, 58, 0.08);
 }
 
+.grade-category-block {
+    margin-bottom: 4px;
+}
+
+.grade-category-block:last-child {
+    margin-bottom: 0;
+}
+
 .grade-category-row {
     display: flex;
     justify-content: space-between;
@@ -674,5 +731,43 @@ export default {
 .grade-category-value {
     font-weight: 600;
     white-space: nowrap;
+}
+
+.grade-category-entries {
+    margin-left: 8px;
+    padding-left: 6px;
+    border-left: 2px solid rgba(16, 38, 58, 0.08);
+}
+
+.grade-entry-row {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    font-size: 0.68rem;
+    line-height: 1.6;
+    color: rgba(16, 38, 58, 0.55);
+}
+
+.grade-entry-type {
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.grade-entry-date {
+    flex-shrink: 0;
+    color: rgba(16, 38, 58, 0.4);
+}
+
+.grade-entry-label {
+    flex: 1;
+    text-align: left;
+    word-break: break-word;
+}
+
+.grade-entry-value {
+    font-weight: 400;
+    flex-shrink: 0;
+    white-space: nowrap;
+    margin-left: auto;
 }
 </style>
