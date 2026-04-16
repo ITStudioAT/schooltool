@@ -446,7 +446,7 @@ export default {
                             date: e.date || '',
                             shortDate: this.formatShortDate(e.date),
                             description: e.description || '',
-                            label: e.description || type,
+                            label: this.entryWorkTitle(e) || e.description || type,
                             gradeKey: gradeKey,
                             numericValue: numValue,
                             displayGrade: gradeKey ? (this.isNaGradeKey(gradeKey) ? 'NA' : this.isNbGradeKey(gradeKey) ? 'NB' : gradeKey) : '–',
@@ -556,6 +556,16 @@ export default {
                     value: g.value,
                     entries: g.entries || [],
                 }))
+        },
+
+        entryWorkTitle(entry) {
+            const workId = entry?.teaching_course_work_id
+            if (!workId) return ''
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            if (!work) return ''
+            const title = (work.title || '').toString().trim()
+            const desc = (work.description || '').toString().trim()
+            return title || desc || ''
         },
 
         formatShortDate(date) {
