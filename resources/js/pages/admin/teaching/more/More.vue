@@ -55,6 +55,12 @@
                     :active-semester="activeSemester"
                     :semester-count="semesterCount"
                     :sem2-start-date="sem2StartDate" />
+                <PerformancesPlusDummy
+                    v-else-if="active_menu === 'dummy_3'"
+                    :selected-course="selected_course"
+                    :active-semester="activeSemester"
+                    :semester-count="semesterCount"
+                    :sem2-start-date="sem2StartDate" />
 
                 <v-alert v-else type="info" variant="tonal" data-testid="teaching-more-content">
                     {{ activeMenuContent }}
@@ -71,9 +77,10 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import AttendanceMatrix from './components/AttendanceMatrix.vue'
 import PerformancesDummy from './components/PerformancesDummy.vue'
+import PerformancesPlusDummy from './components/PerformancesPlusDummy.vue'
 
 export default {
-    components: { AttendanceMatrix, PerformancesDummy },
+    components: { AttendanceMatrix, PerformancesDummy, PerformancesPlusDummy },
 
     async beforeMount() {
         this.teachingStore = useTeachingStore()
@@ -90,6 +97,7 @@ export default {
             menu_items: [
                 { id: 'dummy_1', label: 'Anwesenheiten' },
                 { id: 'dummy_2', label: 'Leistungen' },
+                { id: 'dummy_3', label: 'Leistungen Plus' },
             ],
         }
     },
@@ -115,7 +123,7 @@ export default {
             return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
         },
         isWideLayoutSelected() {
-            return this.active_menu === 'dummy_1' || this.active_menu === 'dummy_2'
+            return this.active_menu === 'dummy_1' || this.active_menu === 'dummy_2' || this.active_menu === 'dummy_3'
         },
         activeMenuContent() {
             return 'Bitte einen Bereich auswählen.'
