@@ -68,11 +68,7 @@
             <router-view></router-view>
             <its-notification />
             <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
-                <div class="loading-squares">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
+                <LoadingAnimation />
             </v-overlay>
         </v-main>
 
@@ -87,12 +83,14 @@
 <script>
 import axios from 'axios'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
+import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { mapWritableState } from 'pinia'
 
 export default {
     components: {
         ItsNotification,
+        LoadingAnimation,
     },
 
     data() {
@@ -100,6 +98,7 @@ export default {
             adminStore: null,
             admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'],
             is_route_navigation_pending: false,
+            removeRouteBeforeEachHook: null,
             removeRouteAfterEachHook: null,
             removeRouteErrorHook: null,
         }
@@ -177,6 +176,7 @@ export default {
         this.adminStore.is_loading--
     },
     unmounted() {
+        if (typeof this.removeRouteBeforeEachHook === 'function') this.removeRouteBeforeEachHook()
         if (typeof this.removeRouteAfterEachHook === 'function') this.removeRouteAfterEachHook()
         if (typeof this.removeRouteErrorHook === 'function') this.removeRouteErrorHook()
     },
@@ -184,11 +184,23 @@ export default {
     methods: {
         registerRouteNavigationHooks() {
             if (!this.$router) return
+            this.removeRouteBeforeEachHook = this.$router.beforeEach((to, from, next) => {
+                if (to.fullPath !== from.fullPath) {
+                    this.adminStore.is_loading++
+                }
+                next()
+            })
             this.removeRouteAfterEachHook = this.$router.afterEach(() => {
                 this.is_route_navigation_pending = false
+                this.$nextTick(() => {
+                    this.adminStore.is_loading--
+                })
             })
             this.removeRouteErrorHook = this.$router.onError(() => {
                 this.is_route_navigation_pending = false
+                this.$nextTick(() => {
+                    this.adminStore.is_loading--
+                })
             })
         },
         startNavigationLock(target) {
@@ -247,39 +259,3 @@ export default {
 }
 </script>
 
-<style>
-.loading-squares {
-    display: flex;
-    gap: 8px;
-}
-.loading-squares span {
-    width: 12px;
-    height: 12px;
-    animation: pulse 1.4s infinite ease-in-out both;
-}
-.loading-squares span:nth-child(1) {
-    background: #f39200;
-    animation-delay: -0.32s;
-}
-.loading-squares span:nth-child(2) {
-    background: #3aaa35;
-    animation-delay: -0.16s;
-}
-.loading-squares span:nth-child(3) {
-    background: #37474f;
-    animation-delay: 0s;
-}
-
-@keyframes pulse {
-    0%,
-    80%,
-    100% {
-        transform: scale(0);
-        opacity: 0.5;
-    }
-    40% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-</style>
