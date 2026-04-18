@@ -66,18 +66,6 @@
                                         {{ deletePlanButtonLabel }}
                                     </v-btn>
                                     <v-btn
-                                        v-if="printHref"
-                                        color="white"
-                                        rounded="xl"
-                                        variant="tonal"
-                                        icon="mdi-printer-outline"
-                                        :loading="isPrinting"
-                                        :disabled="isPrinting || isNavigatingBack"
-                                        aria-label="Menüplan als PDF drucken"
-                                        title="Menüplan als PDF drucken"
-                                        data-testid="print-menu-plan-button"
-                                        @click="downloadPlanPdf" />
-                                    <v-btn
                                         color="white"
                                         rounded="xl"
                                         variant="tonal"
@@ -172,7 +160,7 @@
                                 <strong class="mpe-stat__value">{{ freeDayCount }}</strong>
                             </div>
                             <div
-                                v-if="canToggleAvailability"
+                                v-if="planDays.length > 0"
                                 class="mpe-stat mpe-stat--availability"
                                 data-testid="availability-card">
                                 <div class="mpe-stat__availability-header">
@@ -184,7 +172,8 @@
                                     class="mpe-availability-toggle"
                                     :class="{ 'is-active': isPlanAvailable }"
                                     :aria-pressed="isPlanAvailable ? 'true' : 'false'"
-                                    :disabled="isSaving"
+                                    :disabled="isSaving || !canToggleAvailability"
+                                    :title="!canToggleAvailability ? 'Alle Tage müssen Menüeinträge haben' : ''"
                                     data-testid="availability-toggle"
                                     @click="togglePlanAvailability">
                                     Verfügbar
@@ -243,7 +232,10 @@
                                         :class="{ 'mpe-entry-card--locked': isEntryLocked(entry) }">
                                         <div class="mpe-entry-card__header">
                                             <div class="mpe-entry-card__title-row">
-                                                <div class="mpe-entry-card__title">{{ entry.menuTitle || entry.menu.title }}</div>
+                                                <div class="mpe-entry-card__title-block">
+                                                    <div class="mpe-entry-card__title">{{ entry.menuTitle || entry.menu.title }}</div>
+                                                    <div v-if="entryFoodSummary(entry)" class="mpe-entry-card__food-summary">{{ entryFoodSummary(entry) }}</div>
+                                                </div>
                                                 <span
                                                     v-if="isEntryLocked(entry)"
                                                     class="mpe-entry-card__lock"
@@ -285,20 +277,30 @@
                                                 :data-testid="`edit-entry-${day.iso}-${entry._key}`"
                                                 @click="openEditEntryDialog(day.iso, entry._key)" />
                                             <v-btn
+                                                v-if="isEntryLocked(entry)"
+                                                icon="mdi-account-group-outline"
+                                                size="x-small"
+                                                variant="text"
+                                                color="deep-orange"
+                                                title="Buchungen anzeigen"
+                                                :data-testid="`show-bookings-${day.iso}-${entry._key}`"
+                                                @click="openBookingsDialog(entry)" />
+                                            <v-btn
+                                                v-if="entryCanManageBookings(entry)"
+                                                icon="mdi-plus-circle-outline"
+                                                size="x-small"
+                                                variant="text"
+                                                color="success"
+                                                title="Buchung hinzufügen"
+                                                :data-testid="`add-booking-${day.iso}-${entry._key}`"
+                                                @click="openCreateBookingDialog(entry)" />
+                                            <v-btn
                                                 icon="mdi-eye-outline"
                                                 size="x-small"
                                                 variant="text"
                                                 color="primary"
                                                 :data-testid="`preview-menu-${day.iso}-${entry._key}`"
                                                 @click="openEntryPreviewDialog(day.iso, entry._key)" />
-                                        </div>
-                                        <div v-if="entry.menu.foods && entry.menu.foods.length" class="mpe-entry-card__foods">
-                                            <span
-                                                v-for="food in sortedFoods(entry.menu.foods)"
-                                                :key="food.id"
-                                                class="mpe-entry-card__food">
-                                                {{ food.title }}
-                                            </span>
                                         </div>
                                         <div v-if="entryEffectivePrice(entry) != null" class="mpe-entry-card__base-price">
                                             Preis: {{ formatPrice(entryEffectivePrice(entry)) }}
@@ -307,7 +309,7 @@
                                             Basispreis: {{ formatPrice(entry.menu.price) }}
                                         </div>
                                         <div v-if="isEntryLocked(entry)" class="mpe-entry-card__lock-note">
-                                            Dieser Eintrag ist wegen vorhandener Buchungen gesperrt und kann nicht bearbeitet, verschoben oder geloescht werden.
+                                            Dieser Eintrag ist wegen vorhandener Buchungen gesperrt und kann nicht bearbeitet, verschoben oder gelöscht werden.
                                         </div>
 
                                         <div v-if="entryActiveEatingTimeLabels(entry).length" class="mpe-eating-times mpe-eating-times--active mt-2">
@@ -866,6 +868,188 @@
                 </v-card-actions>
             </v-card>
         </v-dialog>
+
+        <v-dialog v-model="bookingsDialog" max-width="680" persistent data-testid="bookings-dialog">
+            <v-card rounded="xl">
+                <v-card-title class="d-flex align-center justify-space-between">
+                    <span>Buchungen: {{ bookingsDialogEntryTitle }}</span>
+                    <v-btn icon="mdi-close" variant="text" @click="bookingsDialog = false" />
+                </v-card-title>
+
+                <v-card-text>
+                    <div v-if="bookingsDialogLoading" class="text-center py-6">
+                        <v-progress-circular indeterminate color="primary" />
+                    </div>
+
+                    <v-alert
+                        v-else-if="!bookingsDialogData.length"
+                        type="info"
+                        variant="tonal"
+                        density="comfortable">
+                        Keine Buchungen vorhanden.
+                    </v-alert>
+
+                    <v-table v-else density="compact" class="mpe-bookings-table">
+                        <thead>
+                            <tr>
+                                <th>Bestellung</th>
+                                <th>Essenszeit</th>
+                                <th class="text-right">Anz.</th>
+                                <th>Gebucht am</th>
+                                <th v-if="bookingsDialogCanDelete" class="text-right"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="booking in bookingsDialogData" :key="booking.id">
+                                <td>
+                                    <div>{{ booking.ordered_for }}</div>
+                                    <div
+                                        v-if="booking.user_name && booking.user_name !== booking.ordered_for"
+                                        class="text-caption text-grey">
+                                        {{ booking.user_name }}
+                                    </div>
+                                </td>
+                                <td>{{ formatBookingEatingTime(booking.eating_time) || '–' }}</td>
+                                <td class="text-right">{{ booking.quantity }}</td>
+                                <td>{{ booking.booked_at || '–' }}</td>
+                                <td v-if="bookingsDialogCanDelete" class="text-right">
+                                    <v-btn
+                                        icon="mdi-close"
+                                        size="x-small"
+                                        variant="text"
+                                        color="error"
+                                        title="Buchung löschen"
+                                        :data-testid="`delete-booking-${booking.id}`"
+                                        @click="requestDeleteBooking(booking)" />
+                                </td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2" class="font-weight-bold">Gesamt</td>
+                                <td class="text-right font-weight-bold">{{ bookingsDialogTotalQuantity }}</td>
+                                <td :colspan="bookingsDialogCanDelete ? 2 : 1"></td>
+                            </tr>
+                        </tfoot>
+                    </v-table>
+                </v-card-text>
+
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" @click="bookingsDialog = false">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="deleteBookingDialog" max-width="480" persistent data-testid="delete-booking-dialog">
+            <v-card rounded="xl">
+                <v-card-title>Buchung löschen</v-card-title>
+                <v-card-text>
+                    Soll diese Buchung wirklich gelöscht werden?
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="isDeletingBooking" @click="cancelDeleteBooking">Abbrechen</v-btn>
+                    <v-btn color="error" variant="flat" :loading="isDeletingBooking" @click="confirmDeleteBooking">Löschen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="createBookingDialog" max-width="760" persistent data-testid="create-booking-dialog">
+            <v-card rounded="xl">
+                <v-card-title>Buchung hinzufügen: {{ createBookingDialogEntryTitle }}</v-card-title>
+                <v-card-text class="create-booking-dialog">
+                    <div class="create-booking-dialog__section">
+                        <label class="create-booking-dialog__label" for="create-booking-user-search">Benutzer suchen</label>
+                        <input
+                            id="create-booking-user-search"
+                            v-model="createBookingUserSearch"
+                            type="text"
+                            class="create-booking-dialog__search"
+                            placeholder="Name, E-Mail oder Klasse"
+                            data-testid="create-booking-user-search"
+                            @input="handleCreateBookingSearchInput">
+
+                        <div v-if="createBookingSearchLoading" class="create-booking-dialog__status">
+                            Suche läuft ...
+                        </div>
+
+                        <div
+                            v-else-if="createBookingSearchResults.length"
+                            class="create-booking-dialog__results"
+                            data-testid="create-booking-user-results">
+                            <button
+                                v-for="user in createBookingSearchResults"
+                                :key="user.id"
+                                type="button"
+                                class="create-booking-user-result"
+                                :data-testid="`create-booking-user-${user.id}`"
+                                @click="selectCreateBookingUser(user)">
+                                <strong>{{ user.name }}</strong>
+                                <span>{{ user.email }}</span>
+                                <span v-if="user.schoolclass">{{ user.schoolclass }}</span>
+                            </button>
+                        </div>
+
+                        <div
+                            v-else-if="createBookingUserSearch.trim().length >= 2"
+                            class="create-booking-dialog__status"
+                            data-testid="create-booking-user-empty">
+                            Keine passenden Benutzer gefunden.
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="createBookingSelectedUser"
+                        class="create-booking-selected-user"
+                        data-testid="create-booking-selected-user">
+                        <strong>{{ createBookingSelectedUser.name }}</strong>
+                        <span>{{ createBookingSelectedUser.email }}</span>
+                        <span v-if="createBookingSelectedUser.schoolclass">{{ createBookingSelectedUser.schoolclass }}</span>
+                    </div>
+
+                    <div v-if="createBookingDialogEatingTimes.length" class="create-booking-dialog__section">
+                        <div class="create-booking-dialog__label">Essenszeit</div>
+                        <div class="create-booking-dialog__choices">
+                            <button
+                                v-for="time in createBookingDialogEatingTimes"
+                                :key="time.id"
+                                type="button"
+                                class="create-booking-choice"
+                                :class="{ 'is-active': createBookingForm.restaurantEatingTimeId === time.id }"
+                                :data-testid="`create-booking-time-${time.id}`"
+                                @click="selectCreateBookingTime(time.id)">
+                                {{ formatBookingEatingTime(time.eating_time) }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="create-booking-dialog__section">
+                        <div class="create-booking-dialog__label">Anzahl</div>
+                        <div class="create-booking-dialog__choices">
+                            <button
+                                v-for="quantity in [1, 2, 3]"
+                                :key="quantity"
+                                type="button"
+                                class="create-booking-choice"
+                                :class="{ 'is-active': createBookingForm.quantity === quantity }"
+                                :disabled="quantity > createBookingMaxQuantity"
+                                :data-testid="`create-booking-quantity-${quantity}`"
+                                @click="selectCreateBookingQuantity(quantity)">
+                                {{ quantity }}
+                            </button>
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-6 pb-5">
+                    <v-spacer />
+                    <v-btn variant="text" :disabled="createBookingSaving" @click="closeCreateBookingDialog">Abbruch</v-btn>
+                    <v-btn color="success" variant="flat" :disabled="!canSubmitCreateBooking" :loading="createBookingSaving" @click="confirmCreateBooking">
+                        Hinzufügen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </div>
 </template>
 
@@ -930,6 +1114,14 @@ function emptyPlanScheduleForm() {
         orderEndDayOfWeek: 5,
         orderEndTime: '17:00',
         visibilityEndMode: 'plan_end',
+    }
+}
+
+function emptyCreateBookingForm() {
+    return {
+        userId: null,
+        restaurantEatingTimeId: null,
+        quantity: 1,
     }
 }
 
@@ -1148,6 +1340,26 @@ export default {
             deleteBoundaryDayDialog: false,
             deletePlanDialog: false,
             saveReleaseDialog: false,
+            bookingsDialog: false,
+            bookingsDialogLoading: false,
+            bookingsDialogEntryTitle: '',
+            bookingsDialogData: [],
+            bookingsDialogCanDelete: false,
+            bookingsDialogEntryId: null,
+            createBookingDialog: false,
+            createBookingDialogEntryId: null,
+            createBookingDialogEntryTitle: '',
+            createBookingDialogEatingTimes: [],
+            createBookingForm: emptyCreateBookingForm(),
+            createBookingUserSearch: '',
+            createBookingSearchResults: [],
+            createBookingSearchLoading: false,
+            createBookingSelectedUser: null,
+            createBookingSearchTimer: null,
+            createBookingSaving: false,
+            deleteBookingDialog: false,
+            deleteBookingTargetId: null,
+            isDeletingBooking: false,
             isDeletingPlan: false,
             hasPlanBookings: false,
             entryPreviewTarget: {
@@ -1479,6 +1691,25 @@ export default {
         deletePlanConfirmLabel() {
             return 'L\u00f6schen'
         },
+        bookingsDialogTotalQuantity() {
+            return this.bookingsDialogData.reduce((sum, b) => sum + Number(b.quantity || 0), 0)
+        },
+        createBookingMaxQuantity() {
+            const availableRecipientCount = Number(this.createBookingSelectedUser?.available_recipient_count || 1)
+
+            return Math.max(1, Math.min(3, availableRecipientCount))
+        },
+        canSubmitCreateBooking() {
+            if (! this.createBookingSelectedUser || ! this.createBookingForm.userId || this.createBookingSaving) {
+                return false
+            }
+
+            if (this.createBookingDialogEatingTimes.length > 0 && ! this.createBookingForm.restaurantEatingTimeId) {
+                return false
+            }
+
+            return this.createBookingForm.quantity >= 1 && this.createBookingForm.quantity <= this.createBookingMaxQuantity
+        },
         deleteBoundaryDayLabel() {
             return isValidIsoDate(this.deleteBoundaryDayTargetIso) ? this.formatDate(this.deleteBoundaryDayTargetIso) : ''
         },
@@ -1572,6 +1803,7 @@ export default {
                     price: entry.price != null ? String(entry.price) : (menu.price != null ? String(menu.price) : ''),
                     comments: entry.comments || '',
                     bookedMenuCount: Number(entry.booked_menu_count || 0),
+                    canManageBookings: entry.can_manage_bookings === true,
                     eatingTimeIds: entry.eating_time_ids || [],
                     eatingTimes: entry.eating_times || [],
                 })
@@ -1625,6 +1857,10 @@ export default {
             return this.entryBookedMenuCount(entry) > 0
         },
 
+        entryCanManageBookings(entry) {
+            return this.planId !== null && entry?.id !== null && entry?.canManageBookings === true
+        },
+
         dayHasLockedEntries(iso) {
             return this.dayEntries(iso).some((entry) => this.isEntryLocked(entry))
         },
@@ -1668,6 +1904,7 @@ export default {
                     price: menu?.price != null ? String(menu.price) : '',
                     comments: '',
                     bookedMenuCount: 0,
+                    canManageBookings: false,
                     eatingTimeIds: this.eatingTimes.map((et) => et.id),
                     eatingTimes: this.eatingTimes.map((et) => ({
                         id: et.id,
@@ -1727,6 +1964,16 @@ export default {
             const shortValue = normalizedValue.match(/^\d{2}:\d{2}/)?.[0] || normalizedValue
 
             return `${shortValue} Uhr`
+        },
+
+        formatBookingEatingTime(value) {
+            const normalizedValue = String(value || '').trim()
+
+            if (normalizedValue === '') {
+                return ''
+            }
+
+            return normalizedValue.match(/^\d{2}:\d{2}/)?.[0] || normalizedValue
         },
 
         entryActiveEatingTimeLabels(entry) {
@@ -1926,6 +2173,238 @@ export default {
             }
         },
 
+        async openBookingsDialog(entry) {
+            if (! entry?.id || ! this.planId) {
+                return
+            }
+
+            this.bookingsDialogEntryId = entry.id
+            this.bookingsDialogEntryTitle = entry.menuTitle || entry.menu?.title || ''
+            this.bookingsDialogData = []
+            this.bookingsDialogCanDelete = false
+            this.bookingsDialogLoading = true
+            this.bookingsDialog = true
+
+            try {
+                const response = await axios.get(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${entry.id}/bookings`)
+                this.bookingsDialogData = response?.data?.data || []
+                this.bookingsDialogCanDelete = response?.data?.meta?.can_delete_bookings === true
+            } catch (error) {
+                const notification = useNotificationStore()
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Buchungen konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                this.bookingsDialog = false
+            } finally {
+                this.bookingsDialogLoading = false
+            }
+        },
+
+        resetCreateBookingState() {
+            if (this.createBookingSearchTimer) {
+                clearTimeout(this.createBookingSearchTimer)
+                this.createBookingSearchTimer = null
+            }
+
+            this.createBookingDialogEntryId = null
+            this.createBookingDialogEntryTitle = ''
+            this.createBookingDialogEatingTimes = []
+            this.createBookingForm = emptyCreateBookingForm()
+            this.createBookingUserSearch = ''
+            this.createBookingSearchResults = []
+            this.createBookingSearchLoading = false
+            this.createBookingSelectedUser = null
+            this.createBookingSaving = false
+        },
+
+        openCreateBookingDialog(entry) {
+            if (! this.entryCanManageBookings(entry)) {
+                return
+            }
+
+            this.resetCreateBookingState()
+            this.createBookingDialogEntryId = entry.id
+            this.createBookingDialogEntryTitle = entry.menuTitle || entry.menu?.title || ''
+            this.createBookingDialogEatingTimes = Array.isArray(entry.eatingTimes) ? entry.eatingTimes : []
+            this.createBookingForm.restaurantEatingTimeId = this.createBookingDialogEatingTimes[0]?.id || null
+            this.createBookingDialog = true
+        },
+
+        closeCreateBookingDialog() {
+            this.createBookingDialog = false
+            this.resetCreateBookingState()
+        },
+
+        handleCreateBookingSearchInput() {
+            this.createBookingSelectedUser = null
+            this.createBookingForm.userId = null
+
+            if (this.createBookingSearchTimer) {
+                clearTimeout(this.createBookingSearchTimer)
+                this.createBookingSearchTimer = null
+            }
+
+            const query = String(this.createBookingUserSearch || '').trim()
+
+            if (query.length < 2) {
+                this.createBookingSearchResults = []
+                this.createBookingSearchLoading = false
+
+                return
+            }
+
+            this.createBookingSearchTimer = setTimeout(() => {
+                this.searchCreateBookingUsers(query)
+            }, 250)
+        },
+
+        async searchCreateBookingUsers(query) {
+            if (! this.planId || ! this.createBookingDialogEntryId) {
+                return
+            }
+
+            this.createBookingSearchLoading = true
+
+            try {
+                const response = await axios.get(
+                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/booking-users`,
+                    { params: { search_string: query } },
+                )
+
+                if (String(this.createBookingUserSearch || '').trim() === query) {
+                    this.createBookingSearchResults = response?.data?.data || []
+                }
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Benutzer konnten nicht geladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                if (String(this.createBookingUserSearch || '').trim() === query) {
+                    this.createBookingSearchLoading = false
+                }
+            }
+        },
+
+        selectCreateBookingUser(user) {
+            this.createBookingSelectedUser = user
+            this.createBookingForm.userId = user.id
+            this.createBookingUserSearch = `${user.name} <${user.email}>`
+            this.createBookingSearchResults = []
+
+            if (this.createBookingForm.quantity > this.createBookingMaxQuantity) {
+                this.createBookingForm.quantity = this.createBookingMaxQuantity
+            }
+        },
+
+        selectCreateBookingTime(timeId) {
+            this.createBookingForm.restaurantEatingTimeId = timeId
+        },
+
+        selectCreateBookingQuantity(quantity) {
+            if (quantity > this.createBookingMaxQuantity) {
+                return
+            }
+
+            this.createBookingForm.quantity = quantity
+        },
+
+        async confirmCreateBooking() {
+            if (! this.planId || ! this.createBookingDialogEntryId || ! this.canSubmitCreateBooking) {
+                return
+            }
+
+            this.createBookingSaving = true
+
+            try {
+                await axios.post(
+                    `/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.createBookingDialogEntryId}/bookings`,
+                    {
+                        data: {
+                            user_id: this.createBookingForm.userId,
+                            restaurant_eating_time_id: this.createBookingDialogEatingTimes.length > 0
+                                ? this.createBookingForm.restaurantEatingTimeId
+                                : null,
+                            quantity: this.createBookingForm.quantity,
+                        },
+                    },
+                )
+
+                await this.loadExistingPlan(this.planId)
+                this.closeCreateBookingDialog()
+
+                useNotificationStore().notify({
+                    message: 'Buchung wurde hinzugefügt.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Buchung konnte nicht hinzugefügt werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.createBookingSaving = false
+            }
+        },
+
+        requestDeleteBooking(booking) {
+            if (! this.bookingsDialogCanDelete || ! booking?.id) {
+                return
+            }
+
+            this.deleteBookingTargetId = booking.id
+            this.deleteBookingDialog = true
+        },
+
+        cancelDeleteBooking() {
+            if (this.isDeletingBooking) {
+                return
+            }
+
+            this.deleteBookingDialog = false
+            this.deleteBookingTargetId = null
+        },
+
+        async confirmDeleteBooking() {
+            if (! this.planId || ! this.bookingsDialogEntryId || ! this.deleteBookingTargetId) {
+                return
+            }
+
+            this.isDeletingBooking = true
+
+            try {
+                await axios.delete(`/api/admin/restaurant/menu-plans/${this.planId}/entries/${this.bookingsDialogEntryId}/bookings/${this.deleteBookingTargetId}`)
+
+                this.bookingsDialogData = this.bookingsDialogData.filter((booking) => booking.id !== this.deleteBookingTargetId)
+                await this.loadExistingPlan(this.planId)
+                this.isDeletingBooking = false
+                this.cancelDeleteBooking()
+
+                useNotificationStore().notify({
+                    message: 'Buchung wurde gelöscht.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Buchung konnte nicht gelöscht werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.isDeletingBooking = false
+            }
+        },
+
         cancelDeleteEntry() {
             this.deleteEntryDialog = false
             this.deleteEntryTarget = {
@@ -1934,9 +2413,23 @@ export default {
             }
         },
 
-        confirmDeleteEntry() {
-            this.removeEntry(this.deleteEntryTarget.iso, this.deleteEntryTarget.key)
+        async confirmDeleteEntry() {
+            const targetIso = this.deleteEntryTarget.iso
+            const targetKey = this.deleteEntryTarget.key
+            const entry = this.findEntry(targetIso, targetKey)
+
+            this.removeEntry(targetIso, targetKey)
             this.cancelDeleteEntry()
+
+            if (! this.planId || ! entry?.id) {
+                return
+            }
+
+            const persisted = await this.persistPlan()
+
+            if (! persisted) {
+                await this.loadExistingPlan(this.planId)
+            }
         },
 
         cancelDeleteBoundaryDay() {
@@ -2160,9 +2653,22 @@ export default {
                         return entry
                     }
 
+                    const previousMenuTitle = String(entry?.menu?.title || '')
+                    const previousMenuPrice = entry?.menu?.price ?? null
+                    const usesMenuBaseTitle = entry?.menuTitle === ''
+                        || String(entry?.menuTitle ?? '') === previousMenuTitle
+                    const usesMenuBasePrice = entry?.price === ''
+                        || String(entry?.price ?? '') === String(previousMenuPrice ?? '')
+
                     return {
                         ...entry,
                         menu: updatedMenu,
+                        menuTitle: usesMenuBaseTitle
+                            ? ''
+                            : entry?.menuTitle ?? '',
+                        price: usesMenuBasePrice
+                            ? (updatedMenu?.price != null ? String(updatedMenu.price) : '')
+                            : entry?.price ?? '',
                     }
                 })
             })
@@ -2170,7 +2676,7 @@ export default {
             this.entriesByDate = nextEntriesByDate
         },
 
-        saveEntryEdit() {
+        async saveEntryEdit() {
             const entries = this.entriesByDate[this.entryEditTarget.iso]
             const entry = this.findEntry(this.entryEditTarget.iso, this.entryEditTarget.key)
 
@@ -2178,16 +2684,36 @@ export default {
                 return
             }
 
+            const nextMenuTitle = String(this.entryEditForm.menuTitle || '').trim()
             const nextPrice = this.normalizeNewMenuPricePayload(this.entryEditForm.price)
+            const menuId = Number(entry?.menu?.id || 0)
 
-            this.entriesByDate[this.entryEditTarget.iso] = entries.map((entry) => {
+            if (menuId > 0) {
+                const menuFoods = this.sortedFoods(entry?.menu?.foods || []).map((food) => food.id)
+                const nextMenuPayload = {
+                    title: nextMenuTitle !== '' ? nextMenuTitle : String(entry?.menu?.title || ''),
+                    price: nextPrice !== '' ? nextPrice : (entry?.menu?.price ?? ''),
+                    food_ids: menuFoods,
+                }
+                const savedMenu = await useMenuStore().update(menuId, nextMenuPayload)
+
+                if (! savedMenu) {
+                    return
+                }
+
+                this.applyEditedMenuToEntries(savedMenu)
+            }
+
+            const currentEntries = this.entriesByDate[this.entryEditTarget.iso] || entries
+
+            this.entriesByDate[this.entryEditTarget.iso] = currentEntries.map((entry) => {
                 if (entry?._key !== this.entryEditTarget.key) {
                     return entry
                 }
 
                 return {
                     ...entry,
-                    menuTitle: String(this.entryEditForm.menuTitle || '').trim(),
+                    menuTitle: nextMenuTitle,
                     price: nextPrice,
                     comments: String(this.entryEditForm.comments || '').trim(),
                 }
@@ -2208,15 +2734,26 @@ export default {
 
             try {
                 const menuStore = useMenuStore()
-                const saved = await menuStore.store({
+                const createMenuForDate = this.createMenuForDate
+                const editingMenuId = this.editingMenuId
+                const payload = {
                     title: this.newMenuForm.title,
                     price: this.normalizeNewMenuPricePayload(this.newMenuForm.price),
                     food_ids: this.newMenuForm.foodIds,
-                })
+                }
+                const saved = editingMenuId
+                    ? await menuStore.update(editingMenuId, payload)
+                    : await menuStore.store(payload)
 
-                if (saved && this.createMenuForDate) {
-                    this.addEntryForDay(this.createMenuForDate, saved)
-                    this.closeSearch(this.createMenuForDate)
+                if (! saved) {
+                    return
+                }
+
+                if (editingMenuId) {
+                    this.applyEditedMenuToEntries(saved)
+                } else if (createMenuForDate) {
+                    this.addEntryForDay(createMenuForDate, saved)
+                    this.closeSearch(createMenuForDate)
                 }
 
                 this.closeCreateMenuDialog()
@@ -2561,6 +3098,14 @@ export default {
 
         sortedFoods(foods) {
             return [...(foods || [])].sort((a, b) => (a.course_number ?? 99) - (b.course_number ?? 99))
+        },
+
+        entryFoodSummary(entry) {
+            const foods = this.sortedFoods(entry.menu?.foods || [])
+            if (foods.length === 0) {
+                return ''
+            }
+            return foods.map((f) => f.title).join(', ')
         },
     },
 }
@@ -3122,9 +3667,8 @@ export default {
 
 .mpe-entry-card__title-row {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
+    flex-direction: column;
+    gap: 6px;
 }
 
 .mpe-entry-card__actions {
@@ -3136,11 +3680,25 @@ export default {
     margin-bottom: 6px;
 }
 
+.mpe-entry-card__title-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
 .mpe-entry-card__title {
     font-size: 0.88rem;
     font-weight: 700;
     color: #1f2937;
     line-height: 1.4;
+    word-break: break-word;
+}
+
+.mpe-entry-card__food-summary {
+    font-size: 0.76rem;
+    color: #6b7280;
+    line-height: 1.3;
     word-break: break-word;
 }
 
@@ -3609,5 +4167,116 @@ export default {
     .mpe-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .mpe-board { grid-template-columns: 1fr; }
     .mpe-preview-food { grid-template-columns: 1fr; }
+}
+
+.mpe-bookings-table {
+    font-size: 0.85rem;
+}
+
+.mpe-bookings-table th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #6b7280;
+}
+
+.mpe-bookings-table tfoot td {
+    border-top: 2px solid #e5e7eb;
+}
+
+.create-booking-dialog {
+    display: grid;
+    gap: 16px;
+}
+
+.create-booking-dialog__section {
+    display: grid;
+    gap: 8px;
+}
+
+.create-booking-dialog__label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+}
+
+.create-booking-dialog__search {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.98);
+    font: inherit;
+    color: #0f172a;
+}
+
+.create-booking-dialog__results {
+    display: grid;
+    gap: 8px;
+}
+
+.create-booking-user-result {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #ffffff;
+    text-align: left;
+    cursor: pointer;
+}
+
+.create-booking-user-result:hover {
+    border-color: rgba(34, 197, 94, 0.35);
+    background: #f0fdf4;
+}
+
+.create-booking-selected-user {
+    display: grid;
+    gap: 2px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #f0fdf4, #dcfce7);
+    border: 1px solid rgba(34, 197, 94, 0.18);
+    color: #166534;
+}
+
+.create-booking-dialog__choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.create-booking-choice {
+    min-width: 56px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 999px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.create-booking-choice.is-active {
+    border-color: rgba(22, 163, 74, 0.4);
+    background: #dcfce7;
+    color: #166534;
+}
+
+.create-booking-choice:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.create-booking-dialog__status {
+    font-size: 0.88rem;
+    color: #64748b;
 }
 </style>

@@ -42,6 +42,7 @@ const vuetifyStubs = {
     'v-text-field': { template: '<input />' },
     'v-textarea': { template: '<textarea></textarea>' },
     'v-select': { template: '<select></select>' },
+    'v-checkbox': { template: '<input type="checkbox" />' },
     'v-otp-input': { template: '<input />' },
     'v-overlay': { template: '<div><slot /></div>' },
     'v-spacer': { template: '<span />' },
@@ -106,6 +107,99 @@ describe('homepage restaurant booking dialog', () => {
         vi.mocked(axios.post).mockResolvedValue({ data: { message: 'ok' } })
         vi.mocked(axios.delete).mockResolvedValue({ data: { message: 'Buchung erfolgreich storniert.' } })
         globalThis.axios = axios as never
+    })
+
+    it('renders food descriptions in the homepage menu plan', async () => {
+        vi.mocked(axios.get).mockImplementation((url: string) => {
+            if (url === '/api/homepage/restaurant/menu-plans') {
+                return Promise.resolve({
+                    data: {
+                        plans: [
+                            {
+                                id: 10,
+                                title: 'Plan',
+                                is_orderable: true,
+                                entries: [
+                                    {
+                                        id: 77,
+                                        plan_date: '2026-04-10',
+                                        menu_title: 'Ofenkartoffel',
+                                        price: '9.40',
+                                        eating_times: [],
+                                        menu: {
+                                            foods: [
+                                                {
+                                                    id: 1,
+                                                    title: 'Backerbsensuppe',
+                                                    description: 'Kräftige Rindsuppe mit Backerbsen',
+                                                    allergens: ['A', 'C', 'G', 'L'],
+                                                    ingredient_icons: [],
+                                                },
+                                                {
+                                                    id: 2,
+                                                    title: 'Ofenkartoffel',
+                                                    description: 'Mit Schnittlauchsauce und Salat',
+                                                    allergens: ['A', 'G', 'H', 'L', 'M', 'N'],
+                                                    ingredient_icons: [],
+                                                },
+                                            ],
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                })
+            }
+
+            if (url === '/api/homepage/restaurant/bookings') {
+                return Promise.resolve({ data: { bookings: [] } })
+            }
+
+            return Promise.resolve({ data: { options: [] } })
+        })
+
+        const wrapper = mount(Restaurant, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            HomepageStore: {
+                                config: {
+                                    auth_check: false,
+                                    auth_user: null,
+                                    school: {
+                                        id: 3,
+                                        short_name: 'CDGym',
+                                        long_name: 'CDGym',
+                                    },
+                                    restaurant: {
+                                        user_information_intro_html: '',
+                                        orderable_menu_plans_count: 1,
+                                        visible_menu_plans_count: 1,
+                                    },
+                                },
+                                schools: [{ short_name: 'CDGym', long_name: 'CDGym' }],
+                            },
+                        },
+                    }),
+                ],
+                stubs: vuetifyStubs,
+                mocks: {
+                    $route: { query: { school: 'CDGym' } },
+                    $router: { replace: vi.fn() },
+                },
+            },
+        })
+
+        await flushPromises()
+
+        const descriptions = wrapper.findAll('.rp-menu__food-description')
+
+        expect(descriptions).toHaveLength(2)
+        expect(wrapper.text()).toContain('Kräftige Rindsuppe mit Backerbsen')
+        expect(wrapper.text()).toContain('Mit Schnittlauchsauce und Salat')
     })
 
     it('opens the booking dialog when the buchen button is clicked', async () => {
@@ -257,7 +351,7 @@ describe('homepage restaurant booking dialog', () => {
 
         await flushPromises()
 
-        const printButton = wrapper.findAll('button').find((button) => button.text() === 'PDF drucken')
+        const printButton = wrapper.findAll('button').find((button) => button.text() === 'Meine Menüs drucken')
 
         expect(printButton).toBeTruthy()
 
@@ -380,18 +474,15 @@ describe('homepage restaurant booking dialog', () => {
 
         const authBookings = wrapper.find('.restaurant-auth-bookings')
         const authBookingCards = authBookings.findAll('.restaurant-auth-bookings__item')
-        const authBookingMenuTitles = authBookings.findAll('.restaurant-auth-bookings__entry-title')
+        const authBookingMetaRows = authBookings.findAll('.restaurant-auth-bookings__item-meta--inline')
         const authBookingRows = authBookings.findAll('.restaurant-auth-bookings__entry')
-        const todaysBookingCard = authBookings.find('.restaurant-auth-bookings__item--today')
 
         expect(authBookings.exists()).toBe(true)
         expect(authBookingCards).toHaveLength(1)
-        expect(authBookingMenuTitles).toHaveLength(1)
+        expect(authBookingMetaRows).toHaveLength(2)
         expect(authBookingRows).toHaveLength(2)
-        expect(todaysBookingCard.exists()).toBe(true)
         expect(authBookings.text()).toContain('Bereits gebucht')
-        expect(authBookings.text()).toContain('Fr, 03.04.')
-        expect(authBookings.text()).toContain('Heute')
+        expect(authBookings.text()).toContain('Freitag, 03.04.')
         expect(authBookings.text()).toContain('Aloo Gobi')
         expect(authBookings.text()).toContain('3x um 12:30 Uhr · Elmina Salihović, Allen Salihović, Sepp')
         expect(authBookings.text()).toContain('2x um 13:20 Uhr · Elmina Salihović, Allen Salihović')

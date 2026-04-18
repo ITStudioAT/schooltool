@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ConfiguresLegacyRestaurantConnection;
 use App\Models\RestaurantEatingTime;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantMenu;
@@ -18,11 +19,15 @@ use InvalidArgumentException;
 
 class RestaurantImportWeekCommand extends Command
 {
+    use ConfiguresLegacyRestaurantConnection;
+
     protected $signature = 'restaurant:import-week
         {week_range : Calendar week number or range (for example 12 or 12-14)}
         {--school-id=1 : Target school id}
         {--year= : ISO year (defaults to the current ISO year)}
-        {--live : Create or replace the local week plans when the data is ready}';
+        {--live : Create or replace the local week plans when the data is ready}
+        {--remote : Use the remote legacy database instead of the local one}
+        {--fresh : Clear all menu plans, entries, and bookings before importing}';
 
     protected $description = 'Check whether the legacy restaurant data for one or more calendar weeks is ready for import.';
 
@@ -333,19 +338,33 @@ class RestaurantImportWeekCommand extends Command
             }
         }
 
-        $isReady = $missingMenus->isEmpty()
-            && $missingFoods->isEmpty()
-            && $missingUsers->isEmpty()
+        $readyWeeks = $legacyWeekPlanStatuses->where('is_ready', true);
+        $hasHardBlockers = $missingMenus->isNotEmpty()
+            || $missingFoods->isNotEmpty()
+            || $missingUsers->isNotEmpty()
+            || $localEatingTimes->isEmpty();
+        $isFullyReady = ! $hasHardBlockers
             && $missingLegacyWeeks->isEmpty()
-            && $legacyBookingCount > 0
-            && $localEatingTimes->isNotEmpty();
+            && $legacyBookingCount > 0;
 
         $this->newLine();
-        $this->info('Ready for overtaking: '.($isReady ? 'yes' : 'no'));
+        $this->info('Ready for overtaking: '.($isFullyReady ? 'yes' : ($readyWeeks->isNotEmpty() && ! $hasHardBlockers ? 'partial' : 'no')));
+
+        if ($readyWeeks->isNotEmpty() && $missingLegacyWeeks->isNotEmpty() && ! $hasHardBlockers) {
+            $readyList = $readyWeeks->pluck('week')->map(fn (int $w): string => "KW {$w}")->implode(', ');
+            $skippedList = $missingLegacyWeeks->pluck('week')->map(fn (int $w): string => "KW {$w}")->implode(', ');
+            $this->warn("Will import: {$readyList} — skipping (no legacy data): {$skippedList}");
+        }
 
         if ($this->option('live')) {
-            if (! $isReady) {
-                $this->error('Live import aborted because the data is not ready.');
+            if ($hasHardBlockers) {
+                $this->error('Live import aborted because of missing menus, foods, users, or eating times.');
+
+                return self::FAILURE;
+            }
+
+            if ($readyWeeks->isEmpty()) {
+                $this->error('Live import aborted because no weeks have legacy data.');
 
                 return self::FAILURE;
             }
@@ -363,6 +382,10 @@ class RestaurantImportWeekCommand extends Command
                     $localMenus,
                     $localEatingTimes
                 ): array {
+                    if ((bool) $this->option('fresh')) {
+                        $this->clearMenuPlanTables($school->id);
+                    }
+
                     return $this->performLiveImport(
                         $school,
                         $year,
@@ -420,6 +443,10 @@ class RestaurantImportWeekCommand extends Command
         $legacyFoodIdToLocalFoodId = $localFoods
             ->filter(fn ($food): bool => is_numeric($food->legacy_food_id) && (int) $food->legacy_food_id > 0)
             ->mapWithKeys(fn (RestaurantFood $food): array => [(int) $food->legacy_food_id => (int) $food->id])
+            ->all();
+
+        $localFoodTitleById = $localFoods
+            ->mapWithKeys(fn (RestaurantFood $food): array => [(int) $food->id => trim((string) $food->title)])
             ->all();
 
         $legacyMenuBySignature = $legacyMenus
@@ -518,8 +545,12 @@ class RestaurantImportWeekCommand extends Command
                 ->whereDate('end_date', $weekEnd->toDateString())
                 ->first();
 
-            if ($plan && $this->countBookingsForPlan($plan) > 0) {
-                throw new \RuntimeException("Menüplan KW {$week} kann nicht importiert werden, da bereits Buchungen vorhanden sind.");
+            if ($plan) {
+                $existingBookings = $this->countBookingsForPlan($plan);
+                if ($existingBookings > 0) {
+                    $this->warn("KW {$week}: Lösche {$existingBookings} bestehende Buchungen.");
+                    $this->deleteBookingsForPlan($plan);
+                }
             }
 
             if (! $plan) {
@@ -528,7 +559,7 @@ class RestaurantImportWeekCommand extends Command
                     'title' => "Menüplan KW {$week}",
                     'start_date' => $weekStart->toDateString(),
                     'end_date' => $weekEnd->toDateString(),
-                    'is_available' => false,
+                    'is_available' => true,
                     'visible_start_at' => null,
                     'visible_end_at' => null,
                     'order_start_at' => null,
@@ -554,7 +585,7 @@ class RestaurantImportWeekCommand extends Command
                     'title' => "Menüplan KW {$week}",
                     'start_date' => $weekStart->toDateString(),
                     'end_date' => $weekEnd->toDateString(),
-                    'is_available' => false,
+                    'is_available' => true,
                     'visible_start_at' => null,
                     'visible_end_at' => null,
                     'order_start_at' => null,
@@ -586,6 +617,9 @@ class RestaurantImportWeekCommand extends Command
             $createdEntriesByLegacyMenuPlanId = [];
             $createdEntryEatingTimeIdsByLegacyMenuPlanId = [];
 
+            $resolvedPlans = [];
+            $resolvedLegacyMenuPlanEatingTimes = [];
+
             foreach ($weekLegacyMenuPlans as $legacyMenuPlan) {
                 $legacyFoodIds = [
                     $legacyMenuPlan->starter_food_id,
@@ -607,8 +641,15 @@ class RestaurantImportWeekCommand extends Command
                     ->values()
                     ->all();
 
-                $signature = $this->menuSignature($localFoodIds);
-                $legacyMenu = $legacyMenuBySignature->get($signature);
+                $legacySignature = $this->menuSignature(
+                    collect($legacyFoodIds)
+                        ->filter(fn (mixed $foodId): bool => is_numeric($foodId) && (int) $foodId > 0)
+                        ->map(fn (mixed $foodId): int => (int) $foodId)
+                        ->values()
+                        ->all()
+                );
+                $localSignature = $this->menuSignature($localFoodIds);
+                $legacyMenu = $legacyMenuBySignature->get($legacySignature);
                 $legacyMenuId = is_object($legacyMenu) ? (int) $legacyMenu->id : null;
 
                 $menu = $legacyMenuId !== null
@@ -616,34 +657,45 @@ class RestaurantImportWeekCommand extends Command
                     : null;
 
                 $menu = $menu
-                    ?? $localMenuBySignature->get($signature);
+                    ?? $localMenuBySignature->get($localSignature);
+
+                $mainFoodId = is_numeric($legacyMenuPlan->main_food_id) && (int) $legacyMenuPlan->main_food_id > 0
+                    ? ($legacyFoodIdToLocalFoodId[(int) $legacyMenuPlan->main_food_id] ?? null)
+                    : null;
+                $menuTitle = $mainFoodId !== null
+                    ? ($localFoodTitleById[$mainFoodId] ?? '')
+                    : '';
+
+                if ($menuTitle === '') {
+                    $menuTitle = collect($localFoodIds)
+                        ->map(fn (int $foodId): string => $localFoodTitleById[$foodId] ?? '')
+                        ->filter(fn (string $title): bool => $title !== '')
+                        ->first() ?? 'Menü '.(string) $legacyMenuPlan->date;
+                }
+
+                if (is_object($legacyMenu) && filled($legacyMenu->title)) {
+                    $menuTitle = (string) $legacyMenu->title;
+                }
 
                 if (! $menu instanceof RestaurantMenu) {
                     $menu = RestaurantMenu::query()->create([
                         'school_id' => $school->id,
-                        'legacy_menu_id' => is_object($legacyMenu) ? (int) $legacyMenu->id : null,
-                        'title' => is_object($legacyMenu) && filled($legacyMenu->title)
-                            ? (string) $legacyMenu->title
-                            : 'Menüplan '.(string) $legacyMenuPlan->date,
-                        'price' => is_object($legacyMenu) ? $legacyMenu->price : $legacyMenuPlan->price,
+                        'legacy_menu_id' => $legacyMenuId,
+                        'title' => $menuTitle,
+                        'price' => $legacyMenuPlan->price,
                     ]);
 
                     if ($legacyMenuId !== null) {
                         $localMenuByLegacyId->put($legacyMenuId, $menu);
                     }
+
+                    $localMenuBySignature->put($localSignature, $menu);
                 }
 
-                if (is_object($legacyMenu)) {
-                    $menu->update([
-                        'title' => (string) $legacyMenu->title,
-                        'price' => $legacyMenu->price,
-                    ]);
-                } else {
-                    $menu->update([
-                        'title' => $menu->title ?: 'Menüplan '.(string) $legacyMenuPlan->date,
-                        'price' => $legacyMenuPlan->price,
-                    ]);
-                }
+                $menu->update([
+                    'title' => $menuTitle,
+                    'price' => $legacyMenuPlan->price,
+                ]);
 
                 $menu->foods()->sync(
                     collect($localFoodIds)
@@ -660,25 +712,48 @@ class RestaurantImportWeekCommand extends Command
 
                 $legacyTimeKey = $this->normalizeTimeKey((string) ($legacyMenuPlan->time ?? ''));
                 $eatingTimeId = $localEatingTimeIdsByTime[$legacyTimeKey] ?? null;
-                $eatingTimeIds = $eatingTimeId !== null
-                    ? [$eatingTimeId]
-                    : array_values($localEatingTimeIdsByTime);
+
+                $groupKey = (string) $legacyMenuPlan->date.'|'.$menu->id;
+
+                if (! isset($resolvedPlans[$groupKey])) {
+                    $resolvedPlans[$groupKey] = [
+                        'date' => (string) $legacyMenuPlan->date,
+                        'menu' => $menu,
+                        'price' => $legacyMenuPlan->price,
+                        'eating_time_ids' => [],
+                        'legacy_menu_plan_ids' => [],
+                    ];
+                }
+
+                if ($eatingTimeId !== null && ! in_array($eatingTimeId, $resolvedPlans[$groupKey]['eating_time_ids'], true)) {
+                    $resolvedPlans[$groupKey]['eating_time_ids'][] = $eatingTimeId;
+                }
+
+                $resolvedPlans[$groupKey]['legacy_menu_plan_ids'][] = (int) $legacyMenuPlan->id;
+                $resolvedLegacyMenuPlanEatingTimes[(int) $legacyMenuPlan->id] = $eatingTimeId;
+            }
+
+            foreach ($resolvedPlans as $group) {
+                $eatingTimeIds = $group['eating_time_ids'] ?: array_values($localEatingTimeIdsByTime);
 
                 if ($eatingTimeIds === []) {
                     throw new \RuntimeException('Keine Essenszeiten für den lokalen Menüplan verfügbar.');
                 }
 
                 $entry = $plan->entries()->create([
-                    'plan_date' => (string) $legacyMenuPlan->date,
-                    'restaurant_menu_id' => $menu->id,
-                    'menu_title' => (string) $menu->title,
-                    'price' => $legacyMenuPlan->price,
+                    'plan_date' => $group['date'],
+                    'restaurant_menu_id' => $group['menu']->id,
+                    'menu_title' => (string) $group['menu']->title,
+                    'price' => $group['price'],
                     'comments' => null,
                 ]);
 
                 $entry->eatingTimes()->sync($eatingTimeIds);
-                $createdEntriesByLegacyMenuPlanId[(int) $legacyMenuPlan->id] = $entry;
-                $createdEntryEatingTimeIdsByLegacyMenuPlanId[(int) $legacyMenuPlan->id] = $eatingTimeIds[0] ?? null;
+
+                foreach ($group['legacy_menu_plan_ids'] as $legacyMenuPlanId) {
+                    $createdEntriesByLegacyMenuPlanId[$legacyMenuPlanId] = $entry;
+                    $createdEntryEatingTimeIdsByLegacyMenuPlanId[$legacyMenuPlanId] = $resolvedLegacyMenuPlanEatingTimes[$legacyMenuPlanId] ?? null;
+                }
 
                 $summary['entries_created']++;
             }
@@ -714,16 +789,20 @@ class RestaurantImportWeekCommand extends Command
                     throw new \RuntimeException("Kein lokaler Benutzer für Legacy-Buchung #{$legacyBooking->booking_id} gefunden.");
                 }
 
-                $bookedAt = $legacyBooking->billed_at
-                    ?? $legacyBooking->created_at
+                $bookedAt = $legacyBooking->created_at
+                    ?? $legacyBooking->billed_at
                     ?? $legacyBooking->updated_at
                     ?? now();
+                $legacyBookingTimeKey = $this->normalizeTimeKey((string) ($legacyBooking->plan_time ?? ''));
+                $bookingEatingTimeId = $localEatingTimeIdsByTime[$legacyBookingTimeKey]
+                    ?? $createdEntryEatingTimeIdsByLegacyMenuPlanId[$legacyMenuPlanId]
+                    ?? null;
 
                 RestaurantMenuPlanBooking::query()->create([
                     'school_id' => $school->id,
                     'user_id' => (int) $user->id,
                     'restaurant_menu_plan_entry_id' => $entry->id,
-                    'restaurant_eating_time_id' => $createdEntryEatingTimeIdsByLegacyMenuPlanId[$legacyMenuPlanId] ?? null,
+                    'restaurant_eating_time_id' => $bookingEatingTimeId,
                     'price' => $entry->price,
                     'quantity' => 1,
                     'booked_at' => Carbon::parse((string) $bookedAt),
@@ -775,29 +854,39 @@ class RestaurantImportWeekCommand extends Command
             ->count();
     }
 
-    private function configureLegacyConnection(string $connectionName): bool
+    private function deleteBookingsForPlan(RestaurantMenuPlan $plan): void
     {
-        $legacyConnection = config('schooltool.legacy_restaurant');
+        $entryIds = $plan->entries()->pluck('id');
 
-        if (! is_array($legacyConnection) || $legacyConnection === []) {
-            $this->error('Legacy restaurant database connection is not configured.');
+        RestaurantMenuPlanBooking::query()
+            ->whereIn('restaurant_menu_plan_entry_id', $entryIds)
+            ->delete();
+    }
 
-            return false;
+    private function clearMenuPlanTables(int $schoolId): void
+    {
+        $this->warn('Clearing all menu plans, entries, and bookings for school #'.$schoolId.'...');
+
+        DB::table('restaurant_menu_plan_bookings')->where('school_id', $schoolId)->delete();
+
+        $entryIds = DB::table('restaurant_menu_plan_entries')
+            ->join('restaurant_menu_plans', 'restaurant_menu_plans.id', '=', 'restaurant_menu_plan_entries.restaurant_menu_plan_id')
+            ->where('restaurant_menu_plans.school_id', $schoolId)
+            ->pluck('restaurant_menu_plan_entries.id');
+
+        if ($entryIds->isNotEmpty()) {
+            DB::table('restaurant_menu_plan_entry_eating_times')
+                ->whereIn('restaurant_menu_plan_entry_id', $entryIds)
+                ->delete();
+
+            DB::table('restaurant_menu_plan_entries')
+                ->whereIn('id', $entryIds)
+                ->delete();
         }
 
-        config([
-            "database.connections.$connectionName" => array_merge([
-                'driver' => 'mysql',
-                'charset' => 'utf8mb4',
-                'collation' => 'utf8mb4_unicode_ci',
-                'prefix' => '',
-                'prefix_indexes' => true,
-                'strict' => true,
-                'engine' => null,
-            ], $legacyConnection),
-        ]);
+        DB::table('restaurant_menu_plans')->where('school_id', $schoolId)->delete();
 
-        return true;
+        $this->info('Menu plan tables cleared.');
     }
 
     private function resolveSchool(?int $schoolId = null): ?School

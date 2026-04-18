@@ -44,11 +44,13 @@ class RestaurantBookingService
 
         $booking = RestaurantMenuPlanBooking::create($bookingData);
 
-        $this->rememberBookingDefaults(
-            $user,
-            $recipients,
-            (bool) ($data['single_recipient_customized'] ?? false),
-        );
+        if (($data['remember_defaults'] ?? true) !== false) {
+            $this->rememberBookingDefaults(
+                $user,
+                $recipients,
+                (bool) ($data['single_recipient_customized'] ?? false),
+            );
+        }
 
         return $booking;
     }

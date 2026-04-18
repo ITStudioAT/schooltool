@@ -264,6 +264,7 @@
                                                 {{ food.title }}
                                                 <span v-if="food.allergens?.length" class="rp-menu__allergens">({{ food.allergens.join(', ') }})</span>
                                             </span>
+                                            <div v-if="food.description" class="rp-menu__food-description">{{ food.description }}</div>
                                             <div v-if="food.ingredient_icons?.length" class="rp-menu__icons-row">
                                                 <img
                                                     v-for="icon in food.ingredient_icons"
@@ -288,7 +289,7 @@
 
                                     <div v-if="restaurantAuthUser && entryHasBookings(entry.id)" class="rp-menu__booking-state">
                                         <div class="rp-menu__booking-summary">
-                                            <v-icon icon="mdi-check-circle" size="14" class="rp-menu__booking-summary-icon" />
+                                            <v-icon icon="mdi-check-circle" size="18" class="rp-menu__booking-summary-icon" />
                                             <span>Gebucht: {{ bookedQuantityForEntry(entry.id) }}x</span>
                                         </div>
 
@@ -2278,7 +2279,7 @@ export default {
                 return ''
             }
 
-            const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+            const days = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
             return days[parsedDate.getDay()]
         },
 
@@ -3924,7 +3925,7 @@ export default {
 }
 
 .rp-day__weekday {
-    font-size: 0.88rem;
+    font-size: 1.05rem;
     font-weight: 800;
     color: #9a3412;
 }
@@ -3981,8 +3982,16 @@ export default {
 
 .rp-menu__food {
     font-size: 0.82rem;
-    color: #4b5563;
+    font-weight: 700;
+    color: #1f2937;
     line-height: 1.5;
+}
+
+.rp-menu__food-description {
+    margin-top: 1px;
+    font-size: 0.78rem;
+    color: #6b7280;
+    line-height: 1.45;
 }
 
 .rp-menu__icons-row {
@@ -3994,8 +4003,8 @@ export default {
 }
 
 .rp-menu__ingredient-icon {
-    width: 32px;
-    height: 32px;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
     transition: transform 0.2s ease;
     cursor: pointer;
@@ -4036,19 +4045,19 @@ export default {
 
 .rp-menu__booking-state {
     margin-top: 10px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     border-radius: 12px;
-    background: rgba(34, 197, 94, 0.08);
-    border: 1px solid rgba(34, 197, 94, 0.18);
+    background: rgba(34, 197, 94, 0.14);
+    border: 1px solid rgba(34, 197, 94, 0.35);
 }
 
 .rp-menu__booking-summary {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.82rem;
+    gap: 8px;
+    font-size: 0.95rem;
     font-weight: 800;
-    color: #166534;
+    color: #15803d;
 }
 
 .rp-menu__booking-summary-icon {

@@ -406,6 +406,9 @@ describe('Restaurant menu plans component', () => {
 
         ;(wrapper.vm as any).selectDay('2026-03-25')
         ;(wrapper.vm as any).showPrintDialog = true
+
+        expect(wrapper.text()).toContain('Kundenbestellungen drucken')
+
         ;(wrapper.vm as any).openPrint('bookings')
 
         expect(openSpy).toHaveBeenCalledWith(

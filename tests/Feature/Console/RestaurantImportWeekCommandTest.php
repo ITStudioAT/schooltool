@@ -513,6 +513,314 @@ it('creates the requested week plans when run in live mode', function (): void {
     expect($plans->first()?->entries->first()?->bookings)->toHaveCount(1);
 });
 
+it('assigns imported bookings to the correct eating time when the same menu appears in multiple slots', function (): void {
+    Carbon::setTestNow('2026-04-06 12:00:00');
+
+    $school = School::factory()->create();
+    $superAdmin = User::factory()->create([
+        'school_id' => $school->id,
+    ]);
+    $superAdmin->assignRole(Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]));
+
+    User::factory()->create([
+        'school_id' => $school->id,
+        'email' => 'anna@example.test',
+        'first_name' => 'Anna',
+        'last_name' => 'A',
+    ]);
+    User::factory()->create([
+        'school_id' => $school->id,
+        'email' => 'ben@example.test',
+        'first_name' => 'Ben',
+        'last_name' => 'B',
+    ]);
+
+    $foodOne = RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 1,
+        'title' => 'Food 1',
+        'description' => null,
+        'allergens' => [],
+        'price' => 1.00,
+        'food_image_path' => null,
+    ]);
+    $foodTwo = RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 2,
+        'title' => 'Food 2',
+        'description' => null,
+        'allergens' => [],
+        'price' => 2.00,
+        'food_image_path' => null,
+    ]);
+    $foodThree = RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 3,
+        'title' => 'Food 3',
+        'description' => null,
+        'allergens' => [],
+        'price' => 3.00,
+        'food_image_path' => null,
+    ]);
+
+    $firstEatingTime = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '11:30:00',
+    ]);
+    $secondEatingTime = RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '12:30:00',
+    ]);
+
+    $localMenu = RestaurantMenu::query()->create([
+        'school_id' => $school->id,
+        'legacy_menu_id' => 10,
+        'title' => 'Menu 10',
+        'price' => 8.50,
+    ]);
+    $localMenu->foods()->sync([
+        $foodOne->id => ['course_number' => 1],
+        $foodTwo->id => ['course_number' => 2],
+        $foodThree->id => ['course_number' => 3],
+    ]);
+
+    $legacyConnectionName = 'legacy_restaurant_week_check';
+    $legacyPath = database_path('testing-legacy-restaurant-week-eating-times.sqlite');
+    createRestaurantImportWeekLegacyDatabase($legacyConnectionName, $legacyPath);
+
+    $legacyUsers = [
+        ['id' => 20, 'email' => 'anna@example.test', 'first_name' => 'Anna', 'last_name' => 'A', 'created_at' => now(), 'updated_at' => now()],
+        ['id' => 21, 'email' => 'ben@example.test', 'first_name' => 'Ben', 'last_name' => 'B', 'created_at' => now(), 'updated_at' => now()],
+    ];
+    $foodRows = [
+        ['id' => 1, 'title' => 'Food 1', 'price' => 1.00, 'created_at' => now(), 'updated_at' => now()],
+        ['id' => 2, 'title' => 'Food 2', 'price' => 2.00, 'created_at' => now(), 'updated_at' => now()],
+        ['id' => 3, 'title' => 'Food 3', 'price' => 3.00, 'created_at' => now(), 'updated_at' => now()],
+    ];
+    $menuRows = [
+        ['id' => 10, 'title' => 'Menu 10', 'starter_food_id' => 1, 'main_food_id' => 2, 'dessert_food_id' => 3, 'price' => 8.50, 'created_at' => now(), 'updated_at' => now()],
+    ];
+
+    $week = 15;
+    $monday = Carbon::now()->setISODate(2026, $week, 1)->startOfDay();
+    $menuPlanRows = [];
+    $bookingRows = [];
+
+    for ($dayOffset = 0; $dayOffset <= 3; $dayOffset++) {
+        $planDate = $monday->copy()->addDays($dayOffset)->toDateString();
+        $firstPlanId = $week * 100 + $dayOffset * 2 + 1;
+        $secondPlanId = $week * 100 + $dayOffset * 2 + 2;
+
+        $menuPlanRows[] = [
+            'id' => $firstPlanId,
+            'date' => $planDate,
+            'time' => '11:30:00',
+            'order' => 1,
+            'starter_food_id' => 1,
+            'main_food_id' => 2,
+            'dessert_food_id' => 3,
+            'price' => 8.50,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        $menuPlanRows[] = [
+            'id' => $secondPlanId,
+            'date' => $planDate,
+            'time' => '12:30:00',
+            'order' => 2,
+            'starter_food_id' => 1,
+            'main_food_id' => 2,
+            'dessert_food_id' => 3,
+            'price' => 8.50,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        $bookingRows[] = [
+            'id' => $week * 1000 + $dayOffset * 2 + 1,
+            'user_id' => 20,
+            'menu_plan_id' => $firstPlanId,
+            'billed' => 1,
+            'billed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        $bookingRows[] = [
+            'id' => $week * 1000 + $dayOffset * 2 + 2,
+            'user_id' => 21,
+            'menu_plan_id' => $secondPlanId,
+            'billed' => 1,
+            'billed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    seedLegacyRestaurantWeekData($legacyConnectionName, $foodRows, $menuRows, $legacyUsers, $menuPlanRows, $bookingRows);
+
+    $this->artisan('restaurant:import-week', [
+        'week_range' => '15',
+        '--school-id' => $school->id,
+        '--year' => 2026,
+        '--live' => true,
+    ])
+        ->expectsOutputToContain('Ready for overtaking: yes')
+        ->expectsOutputToContain('Live import executed')
+        ->expectsOutputToContain('Plans created: 1')
+        ->expectsOutputToContain('Entries created: 4')
+        ->expectsOutputToContain('Bookings created: 8')
+        ->assertExitCode(0);
+
+    $plan = RestaurantMenuPlan::query()
+        ->where('school_id', $school->id)
+        ->with('entries.eatingTimes', 'entries.bookings.user', 'entries.bookings.eatingTime')
+        ->sole();
+
+    $firstDayEntry = $plan->entries
+        ->filter(fn (RestaurantMenuPlanEntry $entry): bool => $entry->plan_date?->toDateString() === $monday->toDateString())
+        ->sole();
+
+    expect($firstDayEntry->eatingTimes->pluck('eating_time')->sort()->values()->all())
+        ->toBe([$firstEatingTime->eating_time, $secondEatingTime->eating_time]);
+
+    $bookingsByEmail = $firstDayEntry->bookings
+        ->keyBy(fn (RestaurantMenuPlanBooking $booking): string => (string) $booking->user?->email);
+
+    expect($bookingsByEmail->get('anna@example.test')?->eatingTime?->eating_time)->toBe('11:30:00')
+        ->and($bookingsByEmail->get('ben@example.test')?->eatingTime?->eating_time)->toBe('12:30:00');
+});
+
+it('uses the legacy booking created_at as booked_at during import', function (): void {
+    Carbon::setTestNow('2026-04-06 12:00:00');
+
+    $school = School::factory()->create();
+    $superAdmin = User::factory()->create([
+        'school_id' => $school->id,
+    ]);
+    $superAdmin->assignRole(Role::firstOrCreate([
+        'name' => 'super_admin',
+        'guard_name' => 'web',
+    ]));
+
+    User::factory()->create([
+        'school_id' => $school->id,
+        'email' => 'anna@example.test',
+        'first_name' => 'Anna',
+        'last_name' => 'A',
+    ]);
+
+    RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 1,
+        'title' => 'Food 1',
+        'description' => null,
+        'allergens' => [],
+        'price' => 1.00,
+        'food_image_path' => null,
+    ]);
+    RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 2,
+        'title' => 'Food 2',
+        'description' => null,
+        'allergens' => [],
+        'price' => 2.00,
+        'food_image_path' => null,
+    ]);
+    RestaurantFood::query()->create([
+        'school_id' => $school->id,
+        'legacy_food_id' => 3,
+        'title' => 'Food 3',
+        'description' => null,
+        'allergens' => [],
+        'price' => 3.00,
+        'food_image_path' => null,
+    ]);
+
+    RestaurantEatingTime::factory()->create([
+        'school_id' => $school->id,
+        'eating_time' => '11:30:00',
+    ]);
+
+    $localMenu = RestaurantMenu::query()->create([
+        'school_id' => $school->id,
+        'legacy_menu_id' => 10,
+        'title' => 'Menu 10',
+        'price' => 8.50,
+    ]);
+    $localMenu->foods()->sync(
+        RestaurantFood::query()
+            ->where('school_id', $school->id)
+            ->pluck('id')
+            ->values()
+            ->mapWithKeys(fn (int $id, int $index): array => [$id => ['course_number' => $index + 1]])
+            ->all()
+    );
+
+    $legacyConnectionName = 'legacy_restaurant_week_check';
+    $legacyPath = database_path('testing-legacy-restaurant-week-booked-at.sqlite');
+    createRestaurantImportWeekLegacyDatabase($legacyConnectionName, $legacyPath);
+
+    $legacyUsers = [
+        ['id' => 20, 'email' => 'anna@example.test', 'first_name' => 'Anna', 'last_name' => 'A', 'created_at' => now(), 'updated_at' => now()],
+    ];
+    $foodRows = [
+        ['id' => 1, 'title' => 'Food 1', 'price' => 1.00, 'created_at' => now(), 'updated_at' => now()],
+        ['id' => 2, 'title' => 'Food 2', 'price' => 2.00, 'created_at' => now(), 'updated_at' => now()],
+        ['id' => 3, 'title' => 'Food 3', 'price' => 3.00, 'created_at' => now(), 'updated_at' => now()],
+    ];
+    $menuRows = [
+        ['id' => 10, 'title' => 'Menu 10', 'starter_food_id' => 1, 'main_food_id' => 2, 'dessert_food_id' => 3, 'price' => 8.50, 'created_at' => now(), 'updated_at' => now()],
+    ];
+
+    $monday = Carbon::now()->setISODate(2026, 15, 1)->startOfDay();
+    $legacyCreatedAt = '2026-04-10 07:14:33';
+    $legacyBilledAt = '2026-04-16 19:39:20';
+
+    $menuPlanRows = [[
+        'id' => 1501,
+        'date' => $monday->toDateString(),
+        'time' => '11:30:00',
+        'order' => 1,
+        'starter_food_id' => 1,
+        'main_food_id' => 2,
+        'dessert_food_id' => 3,
+        'price' => 8.50,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]];
+    $bookingRows = [[
+        'id' => 15001,
+        'user_id' => 20,
+        'menu_plan_id' => 1501,
+        'billed' => 1,
+        'billed_at' => $legacyBilledAt,
+        'created_at' => $legacyCreatedAt,
+        'updated_at' => '2026-04-17 09:00:00',
+    ]];
+
+    seedLegacyRestaurantWeekData($legacyConnectionName, $foodRows, $menuRows, $legacyUsers, $menuPlanRows, $bookingRows);
+
+    $this->artisan('restaurant:import-week', [
+        'week_range' => '15',
+        '--school-id' => $school->id,
+        '--year' => 2026,
+        '--live' => true,
+    ])
+        ->expectsOutputToContain('Ready for overtaking: yes')
+        ->expectsOutputToContain('Live import executed')
+        ->assertExitCode(0);
+
+    $booking = RestaurantMenuPlanBooking::query()
+        ->where('school_id', $school->id)
+        ->sole();
+
+    expect($booking->booked_at?->format('Y-m-d H:i:s'))->toBe($legacyCreatedAt);
+});
+
 it('reports missing legacy data when the selected weeks are incomplete', function (): void {
     Carbon::setTestNow('2026-04-06 12:00:00');
 

@@ -44,6 +44,7 @@ class RestaurantMenuPlanResource extends JsonResource
                 'menu_title' => $entry->menu_title,
                 'price' => $entry->price !== null ? (string) $entry->price : null,
                 'booked_menu_count' => (int) ($entry->getAttribute('booked_menu_count') ?? 0),
+                'can_manage_bookings' => (bool) ($entry->getAttribute('can_manage_bookings') ?? false),
                 'comments' => $entry->comments,
                 'menu' => $entry->relationLoaded('menu') && $entry->menu
                     ? (new RestaurantMenuResource($entry->menu))->resolve($request)

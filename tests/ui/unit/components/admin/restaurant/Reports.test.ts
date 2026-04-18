@@ -74,8 +74,9 @@ describe('Restaurant reports component', () => {
 
         expect(wrapper.text()).toContain('Menüsummen drucken')
         expect(wrapper.text()).toContain('5 Bestellungen')
+        expect(wrapper.text()).toContain('Bestellliste drucken')
 
-        const printButton = wrapper.findAll('button').find((button) => button.text().includes('Drucken'))
+        const printButton = wrapper.findAll('button').find((button) => button.text().includes('Bestellliste drucken'))
         await printButton?.trigger('click')
 
         expect(openSpy).toHaveBeenCalledWith(

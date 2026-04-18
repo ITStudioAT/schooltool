@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Import116;
+use App\Models\RestaurantBilling;
 use App\Models\RestaurantEatingTime;
 use App\Models\RestaurantFood;
 use App\Models\RestaurantIngredientIcon;
@@ -17,7 +19,7 @@ use Spatie\Permission\Models\Role;
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    collect(['super_admin', 'admin', 'lunch_admin', 'teacher'])->each(function (string $role): void {
+    collect(['super_admin', 'admin', 'lunch_admin', 'lunch_user', 'teacher'])->each(function (string $role): void {
         Role::firstOrCreate(['name' => $role, 'guard_name' => 'web']);
     });
 
@@ -230,12 +232,40 @@ test('show returns plan with entries and eating time details', function () {
         ->assertJsonPath('data.entries.0.eating_times.0.eating_time', '11:30:00')
         ->assertJsonPath('data.entries.0.menu_title', 'Gemuesesuppe Spezial')
         ->assertJsonPath('data.entries.0.price', '7.80')
+        ->assertJsonPath('data.entries.0.can_manage_bookings', true)
         ->assertJsonPath('data.entries.0.comments', 'Mit extra Brot.')
         ->assertJsonPath('data.entries.0.menu.foods.0.title', 'Gemuesesuppe')
         ->assertJsonPath('data.entries.0.menu.foods.0.description', 'Mit Kraeutern')
         ->assertJsonPath('data.entries.0.menu.foods.0.allergens.0', 'A')
         ->assertJsonPath('data.entries.0.menu.foods.0.ingredient_icons.0.title', 'Fisch')
         ->assertJsonPath('data.entries.0.menu.foods.0.food_image_url', rtrim((string) config('app.url'), '/').'/storage/restaurant/foods/suppe.jpg');
+});
+
+test('show marks entries as not manageable when their week is already billed', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    RestaurantBilling::factory()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-26',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.can_manage_bookings', false);
 });
 
 test('update replaces entries', function () {
@@ -554,6 +584,523 @@ test('destroy returns conflict when menu plan has bookings', function () {
         ->assertJsonPath('message', 'Menüplan kann nicht gelöscht werden, da bereits Buchungen vorhanden sind.');
 
     expect(RestaurantMenuPlan::query()->find($plan->id))->not->toBeNull();
+});
+
+test('entry bookings use a fallback display name and omit prices', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-07',
+        'end_date' => '2026-04-11',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-08',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => null,
+        'last_name' => null,
+        'email' => 'guenther.kron@cdgym.at',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $bookingUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertHeader('cache-control', 'max-age=0, no-store, private')
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.user_name', 'guenther.kron@cdgym.at')
+        ->assertJsonPath('data.0.user_email', 'guenther.kron@cdgym.at')
+        ->assertJsonPath('data.0.ordered_for', 'guenther.kron@cdgym.at')
+        ->assertJsonPath('data.0.eating_time', '11:30')
+        ->assertJsonPath('data.0.quantity', 1)
+        ->assertJsonPath('data.0.booked_at', '16.04.2026 19:39')
+        ->assertJsonPath('meta.can_delete_bookings', true)
+        ->assertJsonMissingPath('data.0.price')
+        ->assertJsonMissingPath('data.0.total_price');
+});
+
+test('entry bookings report deletion as disabled for billed weeks', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    RestaurantBilling::factory()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-26',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertJsonPath('meta.can_delete_bookings', false);
+});
+
+test('entry bookings show the ordering email and append the child class from import116 when available', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-20',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Franziska',
+        'last_name' => 'Müller',
+        'email' => 'petra.mueller.74@outlook.com',
+    ]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '1T',
+        'first_name' => 'Franziska',
+        'last_name' => 'Müller',
+        'email' => 'franziska.mueller@cdgym.at',
+        'mother_name' => 'Dr. Petra Myrta Müller',
+        'mother_email' => 'petra.mueller.74@hotmail.com',
+        'father_name' => 'Steffen Jörg Müller',
+        'father_email' => 'steffen.j.mueller@outlook.com',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $bookingUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertJsonPath('data.0.user_name', 'petra.mueller.74@outlook.com')
+        ->assertJsonPath('data.0.user_email', 'petra.mueller.74@outlook.com')
+        ->assertJsonPath('data.0.ordered_for', 'Franziska Müller, 1T')
+        ->assertJsonPath('data.0.eating_time', '11:30')
+        ->assertJsonMissingPath('data.0.price')
+        ->assertJsonMissingPath('data.0.total_price');
+});
+
+test('entry bookings can resolve the child class from a unique parent mailbox match even when the stored child name differs', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-20',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Paul',
+        'last_name' => 'Ahlgrimm Siess',
+        'email' => 'ahlgrimm@gmx.at',
+    ]);
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '2B',
+        'first_name' => 'Paul',
+        'last_name' => 'Ahlgrimm-Sieß',
+        'email' => 'paul.ahlgrimm@cdgym.at',
+        'mother_name' => 'Dr.med. Verena Ahlgrimm-Sieß',
+        'mother_email' => 'ahlgrimm@gmx.at',
+        'father_name' => 'Dr.med. Martin Laimer',
+        'father_email' => 'm.laimer@salk.at',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $bookingUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertJsonPath('data.0.user_name', 'ahlgrimm@gmx.at')
+        ->assertJsonPath('data.0.ordered_for', 'Paul Ahlgrimm-Sieß, 2B');
+});
+
+test('entry bookings prefer legacy plan time over the linked eating time', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-20',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $legacyEatingTime = RestaurantEatingTime::factory()->create([
+        'school_id' => $this->school->id,
+        'eating_time' => '12:30:00',
+    ]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => null,
+        'last_name' => null,
+        'email' => 'legacy@example.com',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $bookingUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $legacyEatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+        'metadata' => [
+            'legacy_booking_id' => 1234,
+            'legacy_plan_time' => '13:25:00',
+        ],
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertJsonPath('data.0.user_name', 'legacy@example.com')
+        ->assertJsonPath('data.0.eating_time', '13:25')
+        ->assertJsonPath('data.0.booked_at', '16.04.2026 19:39');
+});
+
+test('entry bookings use legacy booked at when it exists', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-20',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => null,
+        'last_name' => null,
+        'email' => 'legacy-dated@example.com',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $bookingUser->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+        'metadata' => [
+            'legacy_booking_id' => 5678,
+            'legacy_booked_at' => '2026-04-10 07:14:33',
+        ],
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings")
+        ->assertOk()
+        ->assertJsonPath('data.0.booked_at', '10.04.2026 07:14');
+});
+
+test('search entry booking users returns only lunch users with sepa for the current school', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $eligibleUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Anna',
+        'last_name' => 'Beispiel',
+        'email' => 'anna@example.test',
+        'sepa_at' => now()->subDay(),
+    ]);
+    $eligibleUser->assignRole('lunch_user');
+
+    $withoutSepa = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Anna',
+        'last_name' => 'OhneSepa',
+        'email' => 'anna-ohne-sepa@example.test',
+        'sepa_at' => null,
+    ]);
+    $withoutSepa->assignRole('lunch_user');
+
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '2B',
+        'first_name' => 'Clara',
+        'last_name' => 'Beispiel',
+        'mother_email' => 'anna@example.test',
+    ]);
+    Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '2C',
+        'first_name' => 'David',
+        'last_name' => 'Beispiel',
+        'mother_email' => 'anna@example.test',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/booking-users?search_string=Anna")
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $eligibleUser->id)
+        ->assertJsonPath('data.0.email', 'anna@example.test')
+        ->assertJsonPath('data.0.available_recipient_count', 2);
+});
+
+test('store entry booking creates a restaurant booking for a sepa lunch user', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+    $entry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Petra',
+        'last_name' => 'Muster',
+        'email' => 'petra@example.test',
+        'sepa_at' => now()->subDay(),
+    ]);
+    $bookingUser->assignRole('lunch_user');
+
+    $firstChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '1A',
+        'first_name' => 'Clara',
+        'last_name' => 'Muster',
+        'mother_email' => 'petra@example.test',
+    ]);
+    $secondChild = Import116::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'class' => '1B',
+        'first_name' => 'David',
+        'last_name' => 'Muster',
+        'mother_email' => 'petra@example.test',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings", [
+            'data' => [
+                'user_id' => $bookingUser->id,
+                'restaurant_eating_time_id' => $this->eatingTime->id,
+                'quantity' => 2,
+            ],
+        ])
+        ->assertCreated()
+        ->assertJsonPath('message', 'Buchung wurde hinzugefügt.')
+        ->assertJsonPath('data.quantity', 2)
+        ->assertJsonPath('data.eating_time', '11:30');
+
+    $booking = RestaurantMenuPlanBooking::query()->latest('id')->firstOrFail();
+
+    expect($booking->user_id)->toBe($bookingUser->id)
+        ->and($booking->quantity)->toBe(2)
+        ->and($booking->restaurant_eating_time_id)->toBe($this->eatingTime->id)
+        ->and($booking->child_name)->toBe('Clara Muster')
+        ->and($booking->metadata['recipients'][0]['import116_id'] ?? null)->toBe($firstChild->id)
+        ->and($booking->metadata['recipients'][1]['import116_id'] ?? null)->toBe($secondChild->id)
+        ->and($bookingUser->fresh()->restaurant_booking_defaults)->toBeNull();
+});
+
+test('store entry booking rejects billed weeks', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+    $entry->eatingTimes()->sync([$this->eatingTime->id]);
+
+    $bookingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => null,
+        'first_name' => 'Petra',
+        'last_name' => 'Muster',
+        'email' => 'petra@example.test',
+        'sepa_at' => now()->subDay(),
+    ]);
+    $bookingUser->assignRole('lunch_user');
+
+    RestaurantBilling::factory()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-26',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings", [
+            'data' => [
+                'user_id' => $bookingUser->id,
+                'restaurant_eating_time_id' => $this->eatingTime->id,
+                'quantity' => 1,
+            ],
+        ])
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Buchungen aus bereits abgerechneten Wochen können nicht hinzugefügt werden.');
+
+    expect(RestaurantMenuPlanBooking::query()->count())->toBe(0);
+});
+
+test('destroy entry booking deletes a booking when the week is not billed', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $booking = RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings/{$booking->id}")
+        ->assertOk()
+        ->assertJsonPath('message', 'Buchung wurde gelöscht.');
+
+    expect(RestaurantMenuPlanBooking::query()->find($booking->id))->toBeNull();
+});
+
+test('destroy entry booking rejects deleting bookings from billed weeks', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    $booking = RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 9.40,
+        'quantity' => 1,
+        'booked_at' => '2026-04-16 19:39:00',
+    ]);
+
+    RestaurantBilling::factory()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-26',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->deleteJson("/api/admin/restaurant/menu-plans/{$plan->id}/entries/{$entry->id}/bookings/{$booking->id}")
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Buchungen aus bereits abgerechneten Wochen können nicht gelöscht werden.');
+
+    expect(RestaurantMenuPlanBooking::query()->find($booking->id))->not->toBeNull();
 });
 
 test('print downloads menu plan pdf for current school', function () {

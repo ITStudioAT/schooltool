@@ -309,7 +309,7 @@
                             prepend-icon="mdi-format-list-bulleted"
                             data-testid="menu-plan-print-bookings-button"
                             @click="openPrint('bookings')">
-                            Bestellungen drucken
+                            Kundenbestellungen drucken
                         </v-btn>
                         <div class="mp-print-dialog__hint">
                             Alle Tage des Men&uuml;plans. Jede Speisezeit wird auf einer eigenen Seite mit den Kunden und ihrem Men&uuml; ausgegeben.

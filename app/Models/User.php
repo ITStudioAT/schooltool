@@ -57,6 +57,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property Carbon|null $restaurant_confirmed_at
  * @property string|null $uuid
  * @property string|null $uuid_at
+ * @property-read string $full_name
  * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
  * @property-read int|null $notifications_count
  * @property-read Collection<int, Permission> $permissions
@@ -257,6 +258,19 @@ class User extends Authenticatable
     public function registerDateBookings(): HasMany
     {
         return $this->hasMany(RegisterDateBooking::class);
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        $firstName = trim((string) $this->first_name);
+        $lastName = trim((string) $this->last_name);
+        $fullName = trim(implode(' ', array_filter([$firstName, $lastName])));
+
+        if ($fullName !== '') {
+            return $fullName;
+        }
+
+        return trim((string) $this->email);
     }
 
     public function import116(): BelongsTo

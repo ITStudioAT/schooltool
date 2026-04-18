@@ -35,6 +35,78 @@ class RestaurantBillingService
 
     public function createForUser(User $authUser, array $validated): RestaurantBilling
     {
+        $billing = $this->previewForUser($authUser, $validated);
+
+        $billing->save();
+
+        return $billing->load('school');
+    }
+
+    public function previewForUser(User $authUser, array $validated): RestaurantBilling
+    {
+        $selectedWeeks = $this->resolveSelectedWeeks($authUser, $validated);
+
+        /** @var array<string, mixed> $firstWeek */
+        $firstWeek = $selectedWeeks->first();
+        /** @var array<string, mixed> $lastWeek */
+        $lastWeek = $selectedWeeks->last();
+        $startDate = Carbon::createFromFormat('Y-m-d', (string) $firstWeek['week_start'])->startOfDay();
+        $endDate = Carbon::createFromFormat('Y-m-d', (string) $lastWeek['week_end'])->endOfDay();
+
+        $overlapExists = RestaurantBilling::query()
+            ->where('school_id', $authUser->school_id)
+            ->whereDate('start_date', '<=', $endDate->format('Y-m-d'))
+            ->whereDate('end_date', '>=', $startDate->format('Y-m-d'))
+            ->exists();
+
+        if ($overlapExists) {
+            throw new ConflictHttpException('Für diesen Zeitraum existiert bereits eine Abrechnung.');
+        }
+
+        $snapshot = $this->buildSnapshot($authUser, $startDate, $endDate);
+
+        $billing = new RestaurantBilling([
+            'school_id' => $authUser->school_id,
+            'created_by_user_id' => $authUser->id,
+            'start_date' => $startDate->format('Y-m-d'),
+            'end_date' => $endDate->format('Y-m-d'),
+            'weeks_count' => $selectedWeeks->count(),
+            'bookings_count' => (int) $snapshot['overall_total_quantity'],
+            'total_amount' => $snapshot['overall_total_amount'],
+            'snapshot' => $snapshot,
+        ]);
+
+        $billing->setRelation('school', $authUser->school);
+
+        return $billing;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $selectedWeeks
+     */
+    private function ensureWeeksAreContiguous(Collection $selectedWeeks): void
+    {
+        $previousWeekStart = null;
+
+        foreach ($selectedWeeks as $week) {
+            $currentWeekStart = Carbon::createFromFormat('Y-m-d', (string) $week['week_start'])->startOfDay();
+
+            if ($previousWeekStart && $previousWeekStart->copy()->addWeek()->ne($currentWeekStart)) {
+                throw ValidationException::withMessages([
+                    'weeks' => 'Bitte wählen Sie nur zusammenhängende Kalenderwochen aus.',
+                ]);
+            }
+
+            $previousWeekStart = $currentWeekStart;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function resolveSelectedWeeks(User $authUser, array $validated): Collection
+    {
         $requestedWeekStarts = collect($validated['weeks'] ?? [])
             ->map(fn (mixed $weekStart): string => trim((string) $weekStart))
             ->filter()
@@ -66,55 +138,7 @@ class RestaurantBillingService
 
         $this->ensureWeeksAreContiguous($selectedWeeks);
 
-        /** @var array<string, mixed> $firstWeek */
-        $firstWeek = $selectedWeeks->first();
-        /** @var array<string, mixed> $lastWeek */
-        $lastWeek = $selectedWeeks->last();
-        $startDate = Carbon::createFromFormat('Y-m-d', (string) $firstWeek['week_start'])->startOfDay();
-        $endDate = Carbon::createFromFormat('Y-m-d', (string) $lastWeek['week_end'])->endOfDay();
-
-        $overlapExists = RestaurantBilling::query()
-            ->where('school_id', $authUser->school_id)
-            ->whereDate('start_date', '<=', $endDate->format('Y-m-d'))
-            ->whereDate('end_date', '>=', $startDate->format('Y-m-d'))
-            ->exists();
-
-        if ($overlapExists) {
-            throw new ConflictHttpException('Für diesen Zeitraum existiert bereits eine Abrechnung.');
-        }
-
-        $snapshot = $this->buildSnapshot($authUser, $startDate, $endDate);
-
-        return RestaurantBilling::query()->create([
-            'school_id' => $authUser->school_id,
-            'created_by_user_id' => $authUser->id,
-            'start_date' => $startDate->format('Y-m-d'),
-            'end_date' => $endDate->format('Y-m-d'),
-            'weeks_count' => $selectedWeeks->count(),
-            'bookings_count' => (int) $snapshot['overall_total_quantity'],
-            'total_amount' => $snapshot['overall_total_amount'],
-            'snapshot' => $snapshot,
-        ])->load('school');
-    }
-
-    /**
-     * @param  Collection<int, array<string, mixed>>  $selectedWeeks
-     */
-    private function ensureWeeksAreContiguous(Collection $selectedWeeks): void
-    {
-        $previousWeekStart = null;
-
-        foreach ($selectedWeeks as $week) {
-            $currentWeekStart = Carbon::createFromFormat('Y-m-d', (string) $week['week_start'])->startOfDay();
-
-            if ($previousWeekStart && $previousWeekStart->copy()->addWeek()->ne($currentWeekStart)) {
-                throw ValidationException::withMessages([
-                    'weeks' => 'Bitte wählen Sie nur zusammenhängende Kalenderwochen aus.',
-                ]);
-            }
-
-            $previousWeekStart = $currentWeekStart;
-        }
+        return $selectedWeeks;
     }
 
     /**

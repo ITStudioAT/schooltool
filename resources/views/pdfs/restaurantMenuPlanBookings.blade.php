@@ -138,7 +138,6 @@
             <div class="eyebrow">Restaurant Bestellungen</div>
             <h1 class="title">{{ $plan['title'] }}</h1>
             <div class="day-label"><span class="day-label__prefix">Tag:</span> {{ $page['weekday_label'] }}, {{ $page['date_label'] }}</div>
-            <div class="meta"><strong>Zeitraum:</strong> {{ $plan['range_label'] }}</div>
             @if($plan['school_name'] !== '')
             <div class="meta"><strong>Schule:</strong> {{ $plan['school_name'] }}</div>
             @endif

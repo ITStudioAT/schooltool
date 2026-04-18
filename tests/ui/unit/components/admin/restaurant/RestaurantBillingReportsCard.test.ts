@@ -131,4 +131,23 @@ describe('Restaurant billing reports card', () => {
         expect(dialog.attributes('data-persistent')).toBe('true')
         expect(wrapper.text()).toContain('Soll der Zeitraum')
     })
+
+    it('opens a preview pdf for the selected weeks without opening the confirm dialog', async () => {
+        const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const wrapper = mountBillingReportsCard()
+
+        await wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').trigger('click')
+
+        const previewButton = wrapper.findAll('button').find((button) => button.text().includes('Abrechnung ansehen'))
+        await previewButton?.trigger('click')
+
+        expect(openSpy).toHaveBeenCalledWith(
+            '/api/admin/restaurant/billings/preview?weeks%5B%5D=2026-02-16&weeks%5B%5D=2026-02-23&weeks%5B%5D=2026-03-02&weeks%5B%5D=2026-03-09&weeks%5B%5D=2026-03-16&weeks%5B%5D=2026-03-23&weeks%5B%5D=2026-03-30',
+            '_blank',
+            'noopener',
+        )
+        expect(wrapper.find('.dialog-stub').exists()).toBe(false)
+
+        openSpy.mockRestore()
+    })
 })

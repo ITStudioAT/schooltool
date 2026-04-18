@@ -3,6 +3,16 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { NEW_MENU_LABEL } from '@/pages/admin/restaurant/menuLabels'
 import MenuPlansEntry from '@/pages/admin/restaurant/components/MenuPlansEntry.vue'
+import { useMenuStore } from '@/stores/admin/restaurant/MenuStore'
+
+const axiosMock = {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+}
+
+vi.stubGlobal('axios', axiosMock)
 
 function mountMenuPlansEntry(
     query: Record<string, string> = {},
@@ -123,7 +133,7 @@ describe('MenuPlans entry page', () => {
         expect(fileName).toBe('menu-plan-test.pdf')
     })
 
-    it('renders the print button for saved plans', () => {
+    it('does not render the print button for saved plans in the editor header', () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'edit',
             plan_id: '17',
@@ -131,10 +141,10 @@ describe('MenuPlans entry page', () => {
             end: '2026-03-27',
         })
 
-        expect(wrapper.find('[data-testid="print-menu-plan-button"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="print-menu-plan-button"]').exists()).toBe(false)
     })
 
-    it('keeps save print and back together in the header action row', () => {
+    it('keeps save delete and back together in the header action row', () => {
         const wrapper = mountMenuPlansEntry({
             mode: 'edit',
             plan_id: '17',
@@ -144,10 +154,10 @@ describe('MenuPlans entry page', () => {
 
         const buttons = wrapper.findAll('.mpe-header__actions button')
 
-        expect(buttons).toHaveLength(4)
+        expect(buttons).toHaveLength(3)
         expect(buttons[0].text()).toContain('Speichern')
         expect(buttons[1].text()).toContain('L')
-        expect(buttons[3].text()).toContain('Zur\u00fcck')
+        expect(buttons[2].text()).toContain('Zur\u00fcck')
     })
 
     it('allows deleting a saved menu plan only when no bookings exist', () => {
@@ -365,11 +375,11 @@ describe('MenuPlans entry page', () => {
         const ctx = {
             entriesByDate: {
                 '2026-03-24': [
-                    { _key: 'entry-1', menu: { id: 7, title: 'Alt A' } },
+                    { _key: 'entry-1', menu: { id: 7, title: 'Alt A', price: '9.40' }, price: '9.40' },
                     { _key: 'entry-2', menu: { id: 8, title: 'Alt B' } },
                 ],
                 '2026-03-25': [
-                    { _key: 'entry-3', menu: { id: 7, title: 'Alt A' } },
+                    { _key: 'entry-3', menu: { id: 7, title: 'Alt A', price: '9.40' }, price: '11.00' },
                 ],
             },
         }
@@ -377,12 +387,82 @@ describe('MenuPlans entry page', () => {
         ;(MenuPlansEntry as any).methods.applyEditedMenuToEntries.call(ctx, {
             id: 7,
             title: 'Neu A',
+            price: '10.20',
             foods: [],
         })
 
         expect(ctx.entriesByDate['2026-03-24'][0].menu.title).toBe('Neu A')
+        expect(ctx.entriesByDate['2026-03-24'][0].price).toBe('10.20')
         expect(ctx.entriesByDate['2026-03-24'][1].menu.title).toBe('Alt B')
         expect(ctx.entriesByDate['2026-03-25'][0].menu.title).toBe('Neu A')
+        expect(ctx.entriesByDate['2026-03-25'][0].price).toBe('11.00')
+    })
+
+    it('updates an existing menu instead of creating a new one and refreshes matching entry prices', async () => {
+        mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '11',
+            start: '2026-04-20',
+            end: '2026-04-23',
+        })
+
+        const menuStore = useMenuStore()
+        menuStore.update.mockResolvedValue({
+            id: 7,
+            title: 'Neu A',
+            price: '10.20',
+            foods: [],
+        })
+
+        const ctx = {
+            editingMenuId: 7,
+            createMenuForDate: null,
+            createMenuDialog: true,
+            isCreateMenuFormValid: false,
+            isCreatingMenu: false,
+            newMenuForm: {
+                title: 'Neu A',
+                price: '10,2',
+                foodIds: [1, 4],
+                courseDraft: {
+                    categoryId: null,
+                    foodId: null,
+                },
+            },
+            entriesByDate: {
+                '2026-04-21': [
+                    { _key: 'entry-1', menu: { id: 7, title: 'Alt A', price: '9.40' }, price: '9.40' },
+                ],
+            },
+            $refs: {
+                createMenuForm: {
+                    validate: vi.fn(async () => {
+                        ctx.isCreateMenuFormValid = true
+                    }),
+                },
+            },
+        }
+
+        ctx.normalizeNewMenuPriceInput = (value: string) => (MenuPlansEntry as any).methods.normalizeNewMenuPriceInput.call(ctx, value)
+        ctx.normalizeNewMenuPricePayload = (value: string) => (MenuPlansEntry as any).methods.normalizeNewMenuPricePayload.call(ctx, value)
+        ctx.applyEditedMenuToEntries = (updatedMenu: Record<string, unknown>) => (MenuPlansEntry as any).methods.applyEditedMenuToEntries.call(ctx, updatedMenu)
+        ctx.addEntryForDay = vi.fn()
+        ctx.closeSearch = vi.fn()
+        ctx.closeCreateMenuDialog = () => {
+            ctx.createMenuDialog = false
+        }
+
+        await (MenuPlansEntry as any).methods.saveNewMenu.call(ctx)
+
+        expect(menuStore.update).toHaveBeenCalledWith(7, {
+            title: 'Neu A',
+            price: '10.2',
+            food_ids: [1, 4],
+        })
+        expect(menuStore.store).not.toHaveBeenCalled()
+        expect(ctx.entriesByDate['2026-04-21'][0].menu.price).toBe('10.20')
+        expect(ctx.entriesByDate['2026-04-21'][0].price).toBe('10.20')
+        expect(ctx.createMenuDialog).toBe(false)
     })
 
     it('formats allergen labels from restaurant settings and falls back for unknown values', () => {
@@ -442,6 +522,96 @@ describe('MenuPlans entry page', () => {
         expect(wrapper.find('[data-testid="delete-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
         expect(wrapper.find('[data-testid="edit-entry-2026-03-24-locked-entry"]').attributes('disabled')).toBeDefined()
         expect(dayTile(wrapper, '2026-03-24').text()).toContain('gesperrt')
+        expect(dayTile(wrapper, '2026-03-24').text()).toContain('gelöscht')
+    })
+
+    it('shows the add-booking action only for entries whose week is not billed', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).entriesByDate = {
+            '2026-03-24': [
+                {
+                    id: 17,
+                    _key: 'entry-open',
+                    menu: { id: 5, title: 'Pasta', foods: [] },
+                    menuTitle: 'Pasta',
+                    price: '8.50',
+                    comments: '',
+                    bookedMenuCount: 0,
+                    canManageBookings: true,
+                    eatingTimeIds: [],
+                    eatingTimes: [],
+                },
+                {
+                    id: 18,
+                    _key: 'entry-billed',
+                    menu: { id: 6, title: 'Suppe', foods: [] },
+                    menuTitle: 'Suppe',
+                    price: '5.50',
+                    comments: '',
+                    bookedMenuCount: 0,
+                    canManageBookings: false,
+                    eatingTimeIds: [],
+                    eatingTimes: [],
+                },
+            ],
+        }
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="add-booking-2026-03-24-entry-open"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="add-booking-2026-03-24-entry-billed"]').exists()).toBe(false)
+    })
+
+    it('prefills the manual booking dialog with the selected entry title first time and quantity', () => {
+        const ctx = {
+            planId: 17,
+            createBookingDialog: false,
+            createBookingDialogEntryId: null,
+            createBookingDialogEntryTitle: '',
+            createBookingDialogEatingTimes: [],
+            createBookingForm: {
+                userId: null,
+                restaurantEatingTimeId: null,
+                quantity: 3,
+            },
+            createBookingUserSearch: 'alt',
+            createBookingSearchResults: [{ id: 9 }],
+            createBookingSearchLoading: true,
+            createBookingSelectedUser: { id: 9 },
+            createBookingSearchTimer: null,
+            createBookingSaving: false,
+            resetCreateBookingState: () => (MenuPlansEntry as any).methods.resetCreateBookingState.call(ctx),
+            entryCanManageBookings: (entry: Record<string, unknown>) => (MenuPlansEntry as any).methods.entryCanManageBookings.call(ctx, entry),
+        }
+
+        ;(MenuPlansEntry as any).methods.openCreateBookingDialog.call(ctx, {
+            id: 23,
+            canManageBookings: true,
+            menuTitle: 'Ofenkartoffel',
+            menu: { title: 'Ofenkartoffel' },
+            eatingTimes: [
+                { id: 4, eating_time: '12:30:00' },
+                { id: 5, eating_time: '13:25:00' },
+            ],
+        })
+
+        expect(ctx.createBookingDialog).toBe(true)
+        expect(ctx.createBookingDialogEntryId).toBe(23)
+        expect(ctx.createBookingDialogEntryTitle).toBe('Ofenkartoffel')
+        expect(ctx.createBookingDialogEatingTimes).toHaveLength(2)
+        expect(ctx.createBookingForm).toEqual({
+            userId: null,
+            restaurantEatingTimeId: 4,
+            quantity: 1,
+        })
+        expect(ctx.createBookingUserSearch).toBe('')
+        expect(ctx.createBookingSearchResults).toEqual([])
+        expect(ctx.createBookingSelectedUser).toBe(null)
     })
 
     it('disables the editor immediately while the back navigation is pending', async () => {
@@ -462,8 +632,137 @@ describe('MenuPlans entry page', () => {
         expect((wrapper.vm as any).isNavigatingBack).toBe(true)
         expect(wrapper.find('[data-testid="menu-plan-back-overlay"]').exists()).toBe(true)
         expect(wrapper.find('[data-testid="menu-plan-back-button"]').attributes('disabled')).toBeDefined()
-        expect(wrapper.find('[data-testid="print-menu-plan-button"]').attributes('disabled')).toBeDefined()
+        expect(wrapper.find('[data-testid="print-menu-plan-button"]').exists()).toBe(false)
         expect(wrapper.find('[data-testid="delete-menu-plan-button"]').attributes('disabled')).toBeDefined()
+    })
+
+    it('renders the bookings dialog with child and ordering email in one column', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).bookingsDialog = true
+        ;(wrapper.vm as any).bookingsDialogLoading = false
+        ;(wrapper.vm as any).bookingsDialogEntryTitle = 'Ofenkartoffel'
+        ;(wrapper.vm as any).bookingsDialogCanDelete = false
+        ;(wrapper.vm as any).bookingsDialogData = [
+            {
+                id: 1,
+                user_name: 'petra.mueller.74@outlook.com',
+                user_email: 'petra.mueller.74@outlook.com',
+                ordered_for: 'Franziska Müller, 1T',
+                eating_time: '13:25',
+                quantity: 1,
+                booked_at: '16.04.2026 19:39',
+            },
+            {
+                id: 2,
+                user_name: 'guenther.kron@cdgym.at',
+                user_email: 'guenther.kron@cdgym.at',
+                ordered_for: 'guenther.kron@cdgym.at',
+                eating_time: '12:30:00',
+                quantity: 1,
+                booked_at: '16.04.2026 19:39',
+            },
+        ]
+        await wrapper.vm.$nextTick()
+
+        const table = wrapper.get('.mpe-bookings-table')
+        const headers = table.findAll('th').map((cell) => cell.text().trim())
+
+        expect(headers).toEqual(['Bestellung', 'Essenszeit', 'Anz.', 'Gebucht am'])
+        expect(table.text()).toContain('petra.mueller.74@outlook.com')
+        expect(table.text()).toContain('Franziska Müller, 1T')
+        expect(table.text()).toContain('guenther.kron@cdgym.at')
+        expect(table.text()).toContain('13:25')
+        expect(table.text()).toContain('12:30')
+        expect(table.text()).not.toContain('12:30:00')
+        expect(table.text()).toContain('16.04.2026 19:39')
+        expect(table.text()).toContain('Gesamt')
+        expect(table.text()).not.toContain('Preis')
+        expect(table.findAll('.text-caption.text-grey')).toHaveLength(1)
+        expect(wrapper.find('[data-testid="delete-booking-1"]').exists()).toBe(false)
+    })
+
+    it('shows booking delete controls only when the week is not billed', async () => {
+        const wrapper = mountMenuPlansEntry({
+            mode: 'edit',
+            plan_id: '17',
+            start: '2026-03-23',
+            end: '2026-03-27',
+        })
+
+        ;(wrapper.vm as any).bookingsDialog = true
+        ;(wrapper.vm as any).bookingsDialogLoading = false
+        ;(wrapper.vm as any).bookingsDialogCanDelete = true
+        ;(wrapper.vm as any).bookingsDialogData = [
+            {
+                id: 7,
+                user_name: 'besteller@example.com',
+                user_email: 'besteller@example.com',
+                ordered_for: 'Kind Beispiel, 2B',
+                eating_time: '12:30',
+                quantity: 1,
+                booked_at: '16.04.2026 19:39',
+            },
+        ]
+        await wrapper.vm.$nextTick()
+
+        const headers = wrapper.get('.mpe-bookings-table').findAll('th').map((cell) => cell.text().trim())
+
+        expect(headers).toEqual(['Bestellung', 'Essenszeit', 'Anz.', 'Gebucht am', ''])
+        expect(wrapper.find('[data-testid="delete-booking-7"]').exists()).toBe(true)
+    })
+
+    it('opens the booking delete confirmation only when deletion is allowed', () => {
+        const deletableContext = {
+            bookingsDialogCanDelete: true,
+            deleteBookingDialog: false,
+            deleteBookingTargetId: null,
+        }
+
+        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(deletableContext, { id: 11 })
+
+        expect(deletableContext.deleteBookingDialog).toBe(true)
+        expect(deletableContext.deleteBookingTargetId).toBe(11)
+
+        const blockedContext = {
+            bookingsDialogCanDelete: false,
+            deleteBookingDialog: false,
+            deleteBookingTargetId: null,
+        }
+
+        ;(MenuPlansEntry as any).methods.requestDeleteBooking.call(blockedContext, { id: 12 })
+
+        expect(blockedContext.deleteBookingDialog).toBe(false)
+        expect(blockedContext.deleteBookingTargetId).toBe(null)
+    })
+
+    it('closes the booking delete confirmation after a successful deletion', async () => {
+        axiosMock.delete.mockResolvedValueOnce({})
+
+        const ctx = {
+            planId: 17,
+            bookingsDialogEntryId: 29,
+            deleteBookingTargetId: 7,
+            deleteBookingDialog: true,
+            isDeletingBooking: false,
+            bookingsDialogData: [{ id: 7 }, { id: 8 }],
+            loadExistingPlan: vi.fn(() => Promise.resolve()),
+            cancelDeleteBooking: () => (MenuPlansEntry as any).methods.cancelDeleteBooking.call(ctx),
+        }
+
+        await (MenuPlansEntry as any).methods.confirmDeleteBooking.call(ctx)
+
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/restaurant/menu-plans/17/entries/29/bookings/7')
+        expect(ctx.loadExistingPlan).toHaveBeenCalledWith(17)
+        expect(ctx.deleteBookingDialog).toBe(false)
+        expect(ctx.deleteBookingTargetId).toBe(null)
+        expect(ctx.isDeletingBooking).toBe(false)
+        expect(ctx.bookingsDialogData).toEqual([{ id: 8 }])
     })
 
     it('renders each day in the requested range and keeps open days ready for menu assignment', () => {

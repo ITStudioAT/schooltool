@@ -241,3 +241,48 @@ test('restaurant billing print downloads a pdf for the current school', function
         ->assertDownload('restaurant-billing-test.pdf')
         ->assertHeader('content-type', 'application/pdf');
 });
+
+test('restaurant billing preview renders a pdf without creating a billing', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-03-23',
+        'end_date' => '2026-03-27',
+    ]);
+
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-03-24',
+        'restaurant_menu_id' => $this->menu->id,
+        'price' => '5.20',
+    ]);
+
+    RestaurantMenuPlanBooking::query()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'restaurant_menu_plan_entry_id' => $entry->id,
+        'restaurant_eating_time_id' => $this->eatingTime->id,
+        'price' => 5.20,
+        'quantity' => 2,
+        'booked_at' => now(),
+    ]);
+
+    $tempPath = storage_path('framework/testing/restaurant-billing-preview-test.pdf');
+
+    File::ensureDirectoryExists(dirname($tempPath));
+    File::put($tempPath, 'pdf-test');
+
+    $mock = Mockery::mock(RestaurantBillingPdfService::class);
+    $mock->shouldReceive('createPdf')
+        ->once()
+        ->andReturn($tempPath);
+
+    $this->app->instance(RestaurantBillingPdfService::class, $mock);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->get('/api/admin/restaurant/billings/preview?weeks%5B0%5D=2026-03-23')
+        ->assertSuccessful()
+        ->assertHeader('content-type', 'application/pdf')
+        ->assertHeader('content-disposition', 'inline; filename="restaurant-billing-preview-test.pdf"');
+
+    expect(RestaurantBilling::query()->count())->toBe(0);
+});

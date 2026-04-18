@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\RestaurantBilling;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanEntry;
@@ -466,7 +467,33 @@ class RestaurantMenuPlanService
         $plan->setAttribute('has_bookings', $hasBookings);
         $plan->setAttribute('can_delete', ! $hasBookings);
 
+        if ($plan->relationLoaded('entries')) {
+            $plan->entries->each(function (RestaurantMenuPlanEntry $entry) use ($plan): void {
+                $entry->setAttribute(
+                    'can_manage_bookings',
+                    ! $this->weekIsBilled((int) $plan->school_id, $entry->plan_date)
+                );
+            });
+        }
+
         return $plan;
+    }
+
+    private function weekIsBilled(int $schoolId, mixed $planDate): bool
+    {
+        if (! $planDate) {
+            return false;
+        }
+
+        $date = $planDate instanceof Carbon
+            ? $planDate->copy()->startOfDay()
+            : Carbon::parse((string) $planDate)->startOfDay();
+
+        return RestaurantBilling::query()
+            ->where('school_id', $schoolId)
+            ->whereDate('start_date', '<=', $date->format('Y-m-d'))
+            ->whereDate('end_date', '>=', $date->format('Y-m-d'))
+            ->exists();
     }
 
     private function hasBookings(RestaurantMenuPlan $plan): bool

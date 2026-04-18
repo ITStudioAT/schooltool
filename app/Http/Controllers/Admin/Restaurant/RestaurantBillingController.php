@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Restaurant;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\Restaurant\PreviewRestaurantBillingRequest;
 use App\Http\Requests\Admin\Restaurant\StoreRestaurantBillingRequest;
 use App\Http\Resources\Admin\Restaurant\RestaurantBillingResource;
 use App\Services\RestaurantBillingPdfService;
@@ -36,6 +37,25 @@ class RestaurantBillingController extends Controller
             'message' => 'Abrechnung wurde erstellt.',
             'data' => RestaurantBillingResource::make($billing),
         ], 201);
+    }
+
+    public function preview(PreviewRestaurantBillingRequest $request, RestaurantBillingService $service, RestaurantBillingPdfService $pdfService): BinaryFileResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'lunch_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $billing = $service->previewForUser($authUser, $request->validated());
+        $path = $pdfService->createPdf($billing);
+
+        return response()
+            ->file($path, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'inline; filename="'.basename($path).'"',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ])
+            ->deleteFileAfterSend(true);
     }
 
     public function print(int $id, RestaurantBillingService $service, RestaurantBillingPdfService $pdfService): BinaryFileResponse

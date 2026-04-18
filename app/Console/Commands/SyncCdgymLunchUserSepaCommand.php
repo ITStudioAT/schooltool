@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ConfiguresLegacyRestaurantConnection;
 use App\Models\School;
 use App\Services\RestaurantCdgymLunchUserSepaSyncService;
 use Illuminate\Console\Command;
@@ -9,10 +10,13 @@ use Illuminate\Support\Facades\DB;
 
 class SyncCdgymLunchUserSepaCommand extends Command
 {
+    use ConfiguresLegacyRestaurantConnection;
+
     protected $signature = 'restaurant:sync-cdgym-lunch-user-sepa
         {--school-id=1 : Target local school id}
         {--dry-run : Read and summarize without writing}
-        {--live : Persist changes}';
+        {--live : Persist changes}
+        {--remote : Use the remote legacy database instead of the local one}';
 
     protected $description = 'Sync SEPA information from the configured legacy restaurant database into local lunch users.';
 
@@ -78,30 +82,5 @@ class SyncCdgymLunchUserSepaCommand extends Command
         $this->line('Users cleared SEPA: '.$summary['users_cleared_sepa']);
 
         return self::SUCCESS;
-    }
-
-    private function configureLegacyConnection(string $connectionName): bool
-    {
-        $legacyConnection = config('schooltool.legacy_restaurant');
-
-        if (! is_array($legacyConnection) || $legacyConnection === []) {
-            $this->error('Legacy restaurant database connection is not configured.');
-
-            return false;
-        }
-
-        config([
-            "database.connections.$connectionName" => array_merge([
-                'driver' => 'mysql',
-                'charset' => 'utf8mb4',
-                'collation' => 'utf8mb4_unicode_ci',
-                'prefix' => '',
-                'prefix_indexes' => true,
-                'strict' => true,
-                'engine' => null,
-            ], $legacyConnection),
-        ]);
-
-        return true;
     }
 }

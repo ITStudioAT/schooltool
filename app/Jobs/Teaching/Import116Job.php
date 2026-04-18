@@ -190,6 +190,7 @@ class Import116Job implements ShouldQueue
                     }
 
                     $this->syncImport116ReferencesToCurrentRecord($schoolId, $record);
+                    $this->syncLinkedUsersToCurrentRecord($schoolId, $record);
 
                     // Keep TeachingCourseStudents in sync: update user_id where still null.
                     if ($record->user_id) {
@@ -450,6 +451,33 @@ class Import116Job implements ShouldQueue
             $member->member_ref = $targetRef;
             $member->source_schoolyear_id = $record->schoolyear_id ? (int) $record->schoolyear_id : null;
             $member->save();
+        }
+    }
+
+    private function syncLinkedUsersToCurrentRecord(int $schoolId, Import116 $record): void
+    {
+        if (! Schema::hasTable('users')) {
+            return;
+        }
+
+        $linkedUsers = User::query()
+            ->where('school_id', $schoolId)
+            ->where(function ($query) use ($record): void {
+                $query->where('import116_id', (int) $record->id);
+
+                if ((int) ($record->user_id ?? 0) > 0) {
+                    $query->orWhere('id', (int) $record->user_id);
+                }
+            })
+            ->get();
+
+        foreach ($linkedUsers as $linkedUser) {
+            $linkedUser->first_name = $record->first_name;
+            $linkedUser->last_name = $record->last_name;
+            $linkedUser->schoolclass = $record->class;
+            $linkedUser->sex = $record->sex;
+            $linkedUser->import116_id = (int) $record->id;
+            $linkedUser->save();
         }
     }
 

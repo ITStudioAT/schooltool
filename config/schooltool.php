@@ -21,7 +21,15 @@ return [
         'database' => env('LEGACY_RESTAURANT_DB_DATABASE', 'cdgym_info'),
         'username' => env('LEGACY_RESTAURANT_DB_USERNAME', 'root'),
         'password' => env('LEGACY_RESTAURANT_DB_PASSWORD', ''),
-        // ...
+    ],
+
+    'legacy_restaurant_remote' => [
+        'driver' => 'mysql',
+        'host' => env('LEGACY_RESTAURANT_REMOTE_DB_HOST', ''),
+        'port' => env('LEGACY_RESTAURANT_REMOTE_DB_PORT', '3306'),
+        'database' => env('LEGACY_RESTAURANT_REMOTE_DB_DATABASE', ''),
+        'username' => env('LEGACY_RESTAURANT_REMOTE_DB_USERNAME', ''),
+        'password' => env('LEGACY_RESTAURANT_REMOTE_DB_PASSWORD', ''),
     ],
 
     'materials_default_types' => [

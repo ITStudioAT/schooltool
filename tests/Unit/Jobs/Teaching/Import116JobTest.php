@@ -398,6 +398,49 @@ describe('date casting', function () {
     });
 });
 
+describe('linked user profile sync', function () {
+    test('updates linked user names and class from the current import116 record', function () {
+        $record = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'PAUL001',
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm-Sieß',
+            'class' => '2B',
+            'sex' => 'm',
+            'email' => 'ahlgrimm@gmx.at',
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $user = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'first_name' => 'Paul',
+            'last_name' => 'Ahlgrimm Siess',
+            'schoolclass' => '1A',
+            'sex' => 'w',
+            'email' => 'ahlgrimm@gmx.at',
+            'import116_id' => $record->id,
+        ]);
+
+        $record->user_id = $user->id;
+        $record->save();
+
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $method = new ReflectionMethod($job, 'syncLinkedUsersToCurrentRecord');
+        $method->setAccessible(true);
+        $method->invoke($job, (int) $this->school->id, $record);
+
+        $user->refresh();
+
+        expect($user->first_name)->toBe('Paul')
+            ->and($user->last_name)->toBe('Ahlgrimm-Sieß')
+            ->and($user->schoolclass)->toBe('2B')
+            ->and($user->sex)->toBe('m')
+            ->and($user->import116_id)->toBe($record->id);
+    });
+});
+
 // ============================================================================
 // Upsert Behavior Tests
 // ============================================================================

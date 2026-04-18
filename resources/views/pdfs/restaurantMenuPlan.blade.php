@@ -9,7 +9,7 @@
         }
 
         @page {
-            margin: 6mm 6mm;
+            margin: 4mm 4mm;
             size: A4 landscape;
         }
 
@@ -18,8 +18,8 @@
             font-family: DejaVu Sans, sans-serif;
             color: #1f2937;
             background: #ffffff;
-            font-size: 11px;
-            line-height: 1.25;
+            font-size: 10px;
+            line-height: 1.15;
         }
 
         .page {
@@ -27,16 +27,16 @@
         }
 
         .header {
-            margin-bottom: 5px;
-            padding: 6px 8px;
+            margin-bottom: 3px;
+            padding: 4px 6px;
             border: 1px solid #d6dce3;
-            border-radius: 8px;
+            border-radius: 6px;
             background: #fff8e8;
         }
 
         .eyebrow {
-            margin-bottom: 3px;
-            font-size: 9px;
+            margin-bottom: 2px;
+            font-size: 8px;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -44,15 +44,15 @@
         }
 
         .title {
-            margin: 0 0 3px;
-            font-size: 16px;
+            margin: 0 0 2px;
+            font-size: 14px;
             font-weight: 700;
             color: #111827;
         }
 
         .meta-row {
-            margin-top: 2px;
-            font-size: 12px;
+            margin-top: 1px;
+            font-size: 10px;
             color: #4b5563;
         }
 
@@ -63,9 +63,9 @@
         .week-table {
             width: 100%;
             border-collapse: separate;
-            border-spacing: 2px;
+            border-spacing: 1px;
             table-layout: fixed;
-            page-break-inside: avoid;
+            page-break-inside: auto;
         }
 
         .week-day {
@@ -77,30 +77,30 @@
         }
 
         .week-day__header {
-            padding: 4px 5px;
+            padding: 3px 4px;
             border-bottom: 1px solid #e5e7eb;
             background: #f8fafc;
         }
 
         .week-day__title {
             margin: 0;
-            font-size: 11.5px;
+            font-size: 10px;
             font-weight: 700;
             color: #111827;
         }
 
         .week-day__date {
             margin-top: 1px;
-            font-size: 9.5px;
+            font-size: 8px;
             color: #6b7280;
         }
 
         .week-day__body {
-            padding: 4px 5px 5px;
+            padding: 3px 4px 4px;
         }
 
         .week-day__note {
-            font-size: 10px;
+            font-size: 8.5px;
             font-weight: 600;
             color: #475569;
         }
@@ -110,31 +110,31 @@
         }
 
         .entry + .entry {
-            margin-top: 4px;
-            padding-top: 4px;
+            margin-top: 3px;
+            padding-top: 3px;
             border-top: 1px dashed #d1d5db;
         }
 
         .entry-head {
-            margin-bottom: 2px;
+            margin-bottom: 1px;
         }
 
         .entry-title {
-            font-size: 11px;
+            font-size: 9.5px;
             font-weight: 700;
             color: #111827;
         }
 
         .entry-price {
             margin-top: 1px;
-            font-size: 10px;
+            font-size: 8.5px;
             font-weight: 700;
             color: #92400e;
         }
 
         .entry-subline {
             margin-top: 1px;
-            font-size: 9.5px;
+            font-size: 8px;
             color: #4b5563;
         }
 
@@ -143,23 +143,23 @@
         }
 
         .foods {
-            margin-top: 3px;
-        }
-
-        .food + .food {
             margin-top: 2px;
         }
 
+        .food + .food {
+            margin-top: 1px;
+        }
+
         .food {
-            padding: 3px 4px;
-            border-radius: 6px;
+            padding: 2px 3px;
+            border-radius: 4px;
             background: #fffbeb;
             border: 1px solid #fde68a;
         }
 
         .food-course {
             margin-bottom: 1px;
-            font-size: 8.5px;
+            font-size: 7.5px;
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
@@ -167,14 +167,14 @@
         }
 
         .food-title {
-            font-size: 10px;
+            font-size: 8.5px;
             font-weight: 700;
             color: #111827;
         }
 
         .food-meta {
             margin-top: 1px;
-            font-size: 9px;
+            font-size: 7.5px;
             color: #4b5563;
         }
     </style>

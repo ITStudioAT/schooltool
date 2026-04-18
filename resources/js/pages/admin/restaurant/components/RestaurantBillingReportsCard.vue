@@ -86,15 +86,27 @@
                     </span>
                 </div>
 
-                <v-btn
-                    color="primary"
-                    variant="tonal"
-                    rounded="xl"
-                    prepend-icon="mdi-receipt-text-plus-outline"
-                    :disabled="!selectedWeeks.length"
-                    @click="confirmDialog = true">
-                    Abrechnung drucken
-                </v-btn>
+                <div class="billing-reports-footer__actions">
+                    <v-btn
+                        color="secondary"
+                        variant="outlined"
+                        rounded="xl"
+                        prepend-icon="mdi-eye-outline"
+                        :disabled="!selectedWeeks.length"
+                        @click="previewBilling">
+                        Abrechnung ansehen
+                    </v-btn>
+
+                    <v-btn
+                        color="primary"
+                        variant="tonal"
+                        rounded="xl"
+                        prepend-icon="mdi-receipt-text-plus-outline"
+                        :disabled="!selectedWeeks.length"
+                        @click="confirmDialog = true">
+                        Abrechnung drucken
+                    </v-btn>
+                </div>
             </div>
 
             <div class="billing-reports-section">
@@ -501,6 +513,19 @@ export default {
 
             window.open(`/api/admin/restaurant/billings/${billingId}/print`, '_blank', 'noopener')
         },
+        previewBilling() {
+            if (!this.selectedWeeks.length) {
+                return
+            }
+
+            const params = new URLSearchParams()
+
+            this.selectedWeeks.forEach((week) => {
+                params.append('weeks[]', week.week_start)
+            })
+
+            window.open(`/api/admin/restaurant/billings/preview?${params.toString()}`, '_blank', 'noopener')
+        },
         async createBilling() {
             if (!this.selectedWeeks.length) {
                 return
@@ -710,6 +735,13 @@ export default {
     margin-top: 18px;
 }
 
+.billing-reports-footer__actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
 .billing-reports-footer__selection {
     display: flex;
     flex-direction: column;
@@ -755,6 +787,10 @@ export default {
 
     .billing-reports-toolbar__actions {
         justify-content: flex-end;
+    }
+
+    .billing-reports-footer__actions {
+        justify-content: stretch;
     }
 }
 </style>

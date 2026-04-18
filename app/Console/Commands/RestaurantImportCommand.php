@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ConfiguresLegacyRestaurantConnection;
 use App\Models\School;
 use App\Services\LegacyRestaurantImportService;
 use App\Services\RestaurantCdgymLunchUserSepaSyncService;
@@ -12,9 +13,13 @@ use Illuminate\Support\Facades\DB;
 
 class RestaurantImportCommand extends Command
 {
+    use ConfiguresLegacyRestaurantConnection;
+
     protected $signature = 'restaurant:import-legacy
         {--school-id=1 : Target local school id}
-        {--dry-run : Read and summarize without writing}';
+        {--dry-run : Read and summarize without writing}
+        {--remote : Use the remote legacy database instead of the local one}
+        {--fresh : Clear all restaurant tables before importing}';
 
     protected $description = 'Import restaurant foods, menus, lunch users, and SEPA information from the configured legacy restaurant database.';
 
@@ -81,17 +86,32 @@ class RestaurantImportCommand extends Command
                     $restaurantCdgymUserSyncService,
                     $restaurantCdgymLunchUserSepaSyncService,
                 )
-                : DB::transaction(fn (): array => $this->runImport(
+                : DB::transaction(function () use (
                     $schoolId,
                     $legacyFoods,
                     $legacyMenus,
                     $legacyRestaurantUsers,
                     $legacySepaRows,
-                    false,
                     $legacyRestaurantImportService,
                     $restaurantCdgymUserSyncService,
                     $restaurantCdgymLunchUserSepaSyncService,
-                ));
+                ): array {
+                    if ((bool) $this->option('fresh')) {
+                        $this->clearRestaurantTables($schoolId);
+                    }
+
+                    return $this->runImport(
+                        $schoolId,
+                        $legacyFoods,
+                        $legacyMenus,
+                        $legacyRestaurantUsers,
+                        $legacySepaRows,
+                        false,
+                        $legacyRestaurantImportService,
+                        $restaurantCdgymUserSyncService,
+                        $restaurantCdgymLunchUserSepaSyncService,
+                    );
+                });
         } catch (\Throwable $throwable) {
             $this->error('Restaurant import failed: '.$throwable->getMessage());
             DB::disconnect($connectionName);
@@ -145,31 +165,6 @@ class RestaurantImportCommand extends Command
         return self::SUCCESS;
     }
 
-    private function configureLegacyConnection(string $connectionName): bool
-    {
-        $legacyConnection = config('schooltool.legacy_restaurant');
-
-        if (! is_array($legacyConnection) || $legacyConnection === []) {
-            $this->error('Legacy restaurant database connection is not configured.');
-
-            return false;
-        }
-
-        config([
-            "database.connections.$connectionName" => array_merge([
-                'driver' => 'mysql',
-                'charset' => 'utf8mb4',
-                'collation' => 'utf8mb4_unicode_ci',
-                'prefix' => '',
-                'prefix_indexes' => true,
-                'strict' => true,
-                'engine' => null,
-            ], $legacyConnection),
-        ]);
-
-        return true;
-    }
-
     /**
      * @return array{
      *     legacy: array<string, int>,
@@ -177,6 +172,51 @@ class RestaurantImportCommand extends Command
      *     sepa: array<string, int>
      * }
      */
+    private function clearRestaurantTables(int $schoolId): void
+    {
+        $this->warn('Clearing all restaurant data for school #'.$schoolId.'...');
+
+        DB::table('restaurant_menu_plan_bookings')->where('school_id', $schoolId)->delete();
+
+        $entryIds = DB::table('restaurant_menu_plan_entries')
+            ->join('restaurant_menu_plans', 'restaurant_menu_plans.id', '=', 'restaurant_menu_plan_entries.restaurant_menu_plan_id')
+            ->where('restaurant_menu_plans.school_id', $schoolId)
+            ->pluck('restaurant_menu_plan_entries.id');
+
+        if ($entryIds->isNotEmpty()) {
+            DB::table('restaurant_menu_plan_entry_eating_times')
+                ->whereIn('restaurant_menu_plan_entry_id', $entryIds)
+                ->delete();
+
+            DB::table('restaurant_menu_plan_entries')
+                ->whereIn('id', $entryIds)
+                ->delete();
+        }
+
+        DB::table('restaurant_menu_plans')->where('school_id', $schoolId)->delete();
+
+        $menuIds = DB::table('restaurant_menus')->where('school_id', $schoolId)->pluck('id');
+        if ($menuIds->isNotEmpty()) {
+            DB::table('restaurant_food_restaurant_menu')
+                ->whereIn('restaurant_menu_id', $menuIds)
+                ->delete();
+        }
+
+        DB::table('restaurant_menus')->where('school_id', $schoolId)->delete();
+
+        $foodIds = DB::table('restaurant_foods')->where('school_id', $schoolId)->pluck('id');
+        if ($foodIds->isNotEmpty()) {
+            DB::table('restaurant_food_restaurant_ingredient_icon')
+                ->whereIn('restaurant_food_id', $foodIds)
+                ->delete();
+        }
+
+        DB::table('restaurant_foods')->where('school_id', $schoolId)->delete();
+        DB::table('restaurant_categories')->where('school_id', $schoolId)->delete();
+
+        $this->info('Restaurant tables cleared.');
+    }
+
     private function runImport(
         int $schoolId,
         Collection $legacyFoods,

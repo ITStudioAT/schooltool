@@ -281,9 +281,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/restaurant/ingredient_icons/sync-private', [RestaurantIngredientIconController::class, 'syncFromPrivateDirectory']);
         Route::apiResource('/admin/restaurant/ingredient_icons', RestaurantIngredientIconController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('/admin/restaurant/eating-times', RestaurantEatingTimeController::class)->only(['index', 'store', 'update', 'destroy']);
+        Route::get('/admin/restaurant/billings/preview', [RestaurantBillingController::class, 'preview']);
         Route::get('/admin/restaurant/billings/{id}/print', [RestaurantBillingController::class, 'print']);
         Route::apiResource('/admin/restaurant/billings', RestaurantBillingController::class)->only(['index', 'store']);
         Route::get('/admin/restaurant/menu-plans/{id}/print', [RestaurantMenuPlanController::class, 'print']);
+        Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/booking-users', [RestaurantMenuPlanController::class, 'searchEntryBookingUsers']);
+        Route::get('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'entryBookings']);
+        Route::post('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings', [RestaurantMenuPlanController::class, 'storeEntryBooking']);
+        Route::delete('/admin/restaurant/menu-plans/{planId}/entries/{entryId}/bookings/{bookingId}', [RestaurantMenuPlanController::class, 'destroyEntryBooking']);
         Route::post('/admin/restaurant/menu-plans/{id}/toggle-lock', [RestaurantMenuPlanController::class, 'toggleLock']);
         Route::apiResource('/admin/restaurant/menu-plans', RestaurantMenuPlanController::class);
     });

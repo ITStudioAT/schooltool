@@ -106,7 +106,7 @@
                     prepend-icon="mdi-format-list-bulleted"
                     :disabled="!selectedPlan"
                     @click="openSummaryPrint">
-                    Drucken
+                    Bestellliste drucken
                 </v-btn>
             </div>
         </ItsGridBox>

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\RestaurantMenuPlanPdfService;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Barryvdh\DomPDF\PDF;
+use Dompdf\Dompdf as BaseDompdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -347,14 +348,56 @@ it('renders the compact weekly layout for the menu plan pdf', function () {
         })->all(),
     ])->render();
 
-    expect($html)->toContain('margin: 6mm 6mm;')
+    expect($html)->toContain('margin: 4mm 4mm;')
         ->and($html)->toContain('size: A4 landscape;')
-        ->and($html)->toContain('page-break-inside: avoid;')
-        ->and($html)->toContain('border-spacing: 2px;')
+        ->and($html)->toContain('page-break-inside: auto;')
+        ->and($html)->toContain('border-spacing: 1px;')
         ->and($html)->toContain('class="week-table"')
         ->and(substr_count($html, 'class="week-day"'))->toBe(7)
         ->and($html)->toContain('entry-subline--comment')
         ->and($html)->toContain('Backerbsensuppe');
+});
+
+it('fits a typical weekly menu plan onto a single pdf page', function () {
+    $html = view('pdfs.restaurantMenuPlan', [
+        'plan' => [
+            'title' => "Men\u{fc}plan",
+            'range_label' => '20.04.2026 - 24.04.2026',
+            'school_name' => 'Testschule',
+            'generated_at' => '19.04.2026 10:30',
+        ],
+        'days' => collect(range(0, 6))->map(function (int $offset): array {
+            return [
+                'weekday_label' => 'Tag '.$offset,
+                'date_label' => sprintf('%02d.04.2026', 20 + $offset),
+                'is_free_day' => false,
+                'entries' => [
+                    [
+                        'menu_title' => 'Cevapcici',
+                        'price' => "9,50 \u{20AC}",
+                        'base_price' => null,
+                        'comments' => null,
+                        'eating_times' => ['12:30 Uhr'],
+                        'foods' => [
+                            [
+                                'course_label' => 'Gang 1',
+                                'title' => 'Cevapcici',
+                                'category' => 'Hauptspeise',
+                                'description' => 'Mit Reis und Ajvar.',
+                            ],
+                        ],
+                    ],
+                ],
+            ];
+        })->all(),
+    ])->render();
+
+    $dompdf = new BaseDompdf;
+    $dompdf->loadHtml($html);
+    $dompdf->setPaper('a4', 'landscape');
+    $dompdf->render();
+
+    expect($dompdf->getCanvas()->get_page_count())->toBe(1);
 });
 
 it('renders the bookings print layout with separate print pages', function () {
@@ -384,9 +427,9 @@ it('renders the bookings print layout with separate print pages', function () {
         ->and($html)->toContain('Restaurant Bestellungen')
         ->and($html)->toContain('font-size: 32px;')
         ->and($html)->toContain('Tag:</span> Montag, 23.03.2026')
-        ->and($html)->toContain('width: 10mm;')
-        ->and($html)->toContain('booking-table__spacer-head')
-        ->and($html)->toContain('booking-table__spacer-cell')
+        ->and($html)->toContain('width: 1cm;')
+        ->and($html)->toContain('class="col-spacer"')
+        ->and($html)->not->toContain('Zeitraum:')
         ->and($html)->toContain('Beispiel - Anna')
         ->and($html)->toContain('Montagsmen')
         ->and($html)->not->toContain('Keine Bestellungen');
