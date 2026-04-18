@@ -60,6 +60,10 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
             return Process::result('frontend build complete');
         }
 
+        if (str_contains($command, 'Get-CimInstance Win32_Process')) {
+            return Process::result('Stopped project-local Node/esbuild processes');
+        }
+
         return Process::result('', 'Unexpected process: '.$command, 1);
     });
 }
@@ -251,8 +255,10 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     expect($result['exit_code'])->toBe(0);
     expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 1 of 3');
     expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 2 of 3');
+    expect($result['output'])->toContain('Detected a Windows node_modules lock; stopping project-local Node and esbuild processes before retry.');
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
 
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 3);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'Get-CimInstance Win32_Process'), 2);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
 });

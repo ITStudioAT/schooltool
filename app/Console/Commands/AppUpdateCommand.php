@@ -187,6 +187,7 @@ class AppUpdateCommand extends Command
                 break;
             }
 
+            $this->remediateWindowsNpmCiLock();
             $this->warn(sprintf(
                 'npm ci hit a Windows file lock on attempt %d of %d; retrying in %d seconds...',
                 $attempt,
@@ -320,5 +321,43 @@ class AppUpdateCommand extends Command
         }
 
         sleep(self::WINDOWS_NPM_CI_RETRY_DELAY_SECONDS);
+    }
+
+    private function remediateWindowsNpmCiLock(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        $this->line('Detected a Windows node_modules lock; stopping project-local Node and esbuild processes before retry.');
+
+        $projectPath = str_replace("'", "''", base_path());
+        $esbuildPath = str_replace("'", "''", base_path('node_modules/@esbuild/win32-x64/esbuild.exe'));
+        $esbuildDirectory = str_replace("'", "''", base_path('node_modules/@esbuild'));
+
+        $script = <<<POWERSHELL
+            \$projectPath = '{$projectPath}'
+            \$esbuildPath = '{$esbuildPath}'
+            \$esbuildDirectory = '{$esbuildDirectory}'
+
+            Get-CimInstance Win32_Process |
+                Where-Object {
+                    (\$_.Name -in @('node.exe', 'esbuild.exe')) -and (
+                        (\$_.CommandLine -like "*\$projectPath*") -or
+                        (\$_.ExecutablePath -like "*\$esbuildPath*")
+                    )
+                } |
+                ForEach-Object {
+                    Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue
+                }
+
+            Start-Sleep -Milliseconds 750
+
+            if (Test-Path -LiteralPath \$esbuildDirectory) {
+                Remove-Item -LiteralPath \$esbuildDirectory -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            POWERSHELL;
+
+        $this->executeProcess(['powershell', '-NoProfile', '-Command', $script], 60);
     }
 }
