@@ -36,6 +36,7 @@ class CourseStudentEntryController extends Controller
         // Check if student is enrolled in this course
         $isEnrolled = $course->teachingCourseStudents()
             ->where('user_id', $auth_user->id)
+            ->whereNull('canceled_at')
             ->exists();
 
         if (! $isEnrolled) {

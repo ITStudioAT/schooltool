@@ -35,7 +35,8 @@ class CourseController extends Controller
         $courses = TeachingCourse::where('school_id', $auth_user->school_id)
             ->where('schoolyear_id', $active_schoolyear_id)
             ->whereHas('teachingCourseStudents', function ($query) use ($auth_user) {
-                $query->where('user_id', $auth_user->id);
+                $query->where('user_id', $auth_user->id)
+                    ->whereNull('canceled_at');
             })
             ->with('user:id,first_name,last_name,short,email')
             ->withCount([
@@ -221,6 +222,7 @@ class CourseController extends Controller
 
         $studentData = $course->teachingCourseStudents()
             ->where('user_id', $auth_user->id)
+            ->whereNull('canceled_at')
             ->first();
 
         if (! $studentData) {
