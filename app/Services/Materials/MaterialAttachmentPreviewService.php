@@ -240,7 +240,34 @@ class MaterialAttachmentPreviewService
             }
         }
 
+        foreach ($this->fallbackDisks() as $disk) {
+            if ($disk->exists($path)) {
+                return ['disk' => $disk, 'disk_name' => 'fallback-local'];
+            }
+        }
+
         return ['disk' => null, 'disk_name' => ''];
+    }
+
+    /**
+     * @return array<int, Filesystem>
+     */
+    private function fallbackDisks(): array
+    {
+        $roots = [
+            storage_path('app/private'),
+            storage_path('app'),
+            storage_path('app/public'),
+        ];
+
+        return array_map(
+            static fn (string $root): Filesystem => Storage::build([
+                'driver' => 'local',
+                'root' => $root,
+                'throw' => false,
+            ]),
+            array_values(array_unique($roots))
+        );
     }
 
     private function renderSpreadsheetHtml(string $absolutePath, string $extension): string

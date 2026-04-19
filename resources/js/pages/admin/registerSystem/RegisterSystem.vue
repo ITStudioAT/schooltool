@@ -115,7 +115,7 @@ export default {
 
 <style scoped>
 .register-system-page {
-    background: #0f172a;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
     min-height: 100vh;
 }
 

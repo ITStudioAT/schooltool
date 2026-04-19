@@ -1,6 +1,5 @@
 <template>
     <v-sheet rounded="xl" class="schoolyears-nav mb-3" :class="{ 'is-locked': action !== '' }">
-        <div class="schoolyears-nav__label">Schuljahr</div>
         <div class="schoolyears-nav__buttons">
             <v-btn
                 v-for="schoolyear in schoolyears"

@@ -68,6 +68,10 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
             return Process::result('frontend build complete');
         }
 
+        if (str_contains($command, 'Get-CimInstance Win32_Process')) {
+            return Process::result('Stopped project-local Node/esbuild processes');
+        }
+
         return Process::result('', 'Unexpected process: '.$command, 1);
     });
 }
@@ -264,6 +268,7 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
 
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 3);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'Get-CimInstance Win32_Process'), 3);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'powershell -NoProfile -ExecutionPolicy Bypass -Command'), 3);
 });

@@ -22,6 +22,7 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -2606,6 +2607,47 @@ test('adding file attachment on s3 keeps canonical relative materials path struc
         ->and(preg_match('#^materials/schools/\d+/users/\d+/cards/\d+/\d{4}/\d{2}/#', $path))->toBe(1);
 
     Storage::disk('s3')->assertExists($path);
+});
+
+test('download and preview still work when attachment only exists in private storage fallback root', function () {
+    config()->set('filesystems.default', 'local');
+    config()->set('filesystems.disks.local.root', storage_path('app'));
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Private Storage Fallback',
+        'keywords' => [],
+    ]);
+
+    $path = 'materials/private-fallbacks/material-preview.pdf';
+
+    Storage::build([
+        'driver' => 'local',
+        'root' => storage_path('app/private'),
+        'throw' => false,
+    ])->put($path, 'private-pdf-content');
+
+    expect(Storage::disk('local')->exists($path))->toBeFalse();
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'material-preview.pdf',
+        'file_path' => $path,
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 19,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    $this->get('/api/admin/materials/attachments/'.$attachment->id.'/download')
+        ->assertSuccessful();
+
+    $previewResponse = $this->get('/api/admin/materials/attachments/'.$attachment->id.'/preview')
+        ->assertSuccessful();
+
+    expect(strtolower((string) $previewResponse->headers->get('content-type')))->toContain('application/pdf');
 });
 
 test('owner attachment download and preview do not use s3 when default disk is local', function () {

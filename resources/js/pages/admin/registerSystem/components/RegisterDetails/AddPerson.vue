@@ -204,10 +204,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-card__header { display: flex; align-items: center; gap: 10px; }
@@ -220,19 +220,19 @@ export default {
 
 .rd-card__icon-wrap--success { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
 
-.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; line-height: 1.2; }
-.rd-card__header-sub { font-size: 0.74rem; color: #64748b; }
+.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #10263a; line-height: 1.2; }
+.rd-card__header-sub { font-size: 0.74rem; color: rgba(16, 38, 58, 0.62); }
 
 .rd-date-info {
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
     border-radius: 8px;
     padding: 10px 12px;
 }
 
 .rd-date-info__row {
     display: flex; align-items: center;
-    font-size: 0.82rem; color: #94a3b8; padding: 2px 0;
+    font-size: 0.82rem; color: rgba(16, 38, 58, 0.68); padding: 2px 0;
 }
 
 .rd-email-badge {
@@ -243,11 +243,11 @@ export default {
 }
 
 .rd-person-summary {
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
     border-radius: 8px; padding: 10px 12px;
 }
 
-.rd-person-summary__name { font-size: 0.92rem; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
-.rd-person-summary__detail { display: flex; align-items: center; font-size: 0.8rem; color: #64748b; }
+.rd-person-summary__name { font-size: 0.92rem; font-weight: 700; color: #10263a; margin-bottom: 4px; }
+.rd-person-summary__detail { display: flex; align-items: center; font-size: 0.8rem; color: rgba(16, 38, 58, 0.62); }
 </style>

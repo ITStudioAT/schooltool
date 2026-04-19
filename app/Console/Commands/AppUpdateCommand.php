@@ -366,18 +366,26 @@ class AppUpdateCommand extends Command
             'Bypass',
             '-Command',
             '$projectPath = [string]$env:APP_UPDATE_PROJECT_PATH; '.
+            '$esbuildPath = [string]$env:APP_UPDATE_ESBUILD_PATH; '.
+            '$esbuildDirectory = [string]$env:APP_UPDATE_ESBUILD_DIRECTORY; '.
             'if ([string]::IsNullOrWhiteSpace($projectPath)) { exit 0 } '.
             '$projectPath = $projectPath.ToLowerInvariant(); '.
+            '$esbuildPath = $esbuildPath.ToLowerInvariant(); '.
             '$processes = Get-CimInstance Win32_Process | Where-Object { '.
             '$name = if ($null -ne $_.Name) { ([string]$_.Name).ToLowerInvariant() } else { "" }; '.
             'if ($name -notin @("node.exe", "esbuild.exe")) { return $false } '.
             '$commandLine = if ($null -ne $_.CommandLine) { ([string]$_.CommandLine).ToLowerInvariant() } else { "" }; '.
             '$executablePath = if ($null -ne $_.ExecutablePath) { ([string]$_.ExecutablePath).ToLowerInvariant() } else { "" }; '.
-            'return $commandLine.Contains($projectPath) -or $executablePath.Contains($projectPath) '.
+            'return $commandLine.Contains($projectPath) -or ($esbuildPath -ne "" -and $executablePath.Contains($esbuildPath)) '.
             '}; '.
-            '$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }',
+            '$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; '.
+            'Start-Sleep -Milliseconds 750; '.
+            'if (-not [string]::IsNullOrWhiteSpace($esbuildDirectory) -and (Test-Path -LiteralPath $esbuildDirectory)) { '.
+            'Remove-Item -LiteralPath $esbuildDirectory -Recurse -Force -ErrorAction SilentlyContinue }',
         ], self::WINDOWS_UNLOCK_TIMEOUT_SECONDS, [
             'APP_UPDATE_PROJECT_PATH' => base_path(),
+            'APP_UPDATE_ESBUILD_PATH' => base_path('node_modules/@esbuild/win32-x64/esbuild.exe'),
+            'APP_UPDATE_ESBUILD_DIRECTORY' => base_path('node_modules/@esbuild'),
         ]);
     }
 }

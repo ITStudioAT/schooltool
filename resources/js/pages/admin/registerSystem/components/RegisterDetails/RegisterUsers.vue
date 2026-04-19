@@ -191,10 +191,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-card__header { display: flex; align-items: center; gap: 10px; }
@@ -205,29 +205,29 @@ export default {
     background: rgba(99, 102, 241, 0.18); color: #818cf8; flex-shrink: 0;
 }
 
-.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; }
+.rd-card__header-title { font-size: 0.95rem; font-weight: 700; color: #10263a; }
 
-.rd-cleanup-info { font-size: 0.76rem; color: #64748b; }
+.rd-cleanup-info { font-size: 0.76rem; color: rgba(16, 38, 58, 0.62); }
 
 .rd-locked { opacity: 0.6; pointer-events: none; }
 
 .rd-user-item { border-radius: 8px !important; }
-.rd-user-item__name { font-size: 0.88rem; font-weight: 600; color: #e2e8f0; }
-.rd-user-item__email { font-size: 0.76rem; color: #64748b; }
+.rd-user-item__name { font-size: 0.88rem; font-weight: 600; color: #10263a; }
+.rd-user-item__email { font-size: 0.76rem; color: rgba(16, 38, 58, 0.62); }
 
 .rd-user-item__booking {
     display: flex; align-items: center; flex-wrap: wrap;
-    font-size: 0.78rem; color: #94a3b8; margin-top: 2px;
+    font-size: 0.78rem; color: rgba(16, 38, 58, 0.68); margin-top: 2px;
 }
 
 .rd-user-item__sibling {
     display: inline-flex; align-items: center;
-    margin-left: 12px; font-size: 0.75rem; color: #64748b;
+    margin-left: 12px; font-size: 0.75rem; color: rgba(16, 38, 58, 0.62);
 }
 
 :deep(.v-list-item) {
-    background: rgba(15, 23, 42, 0.4) !important;
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
 }
 
 :deep(.v-list-item--active) {
@@ -237,14 +237,14 @@ export default {
 
 :deep(.v-list-item__content),
 :deep(.v-list-item-title) {
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-stat-row {
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 12px;
-    background: rgba(15, 23, 42, 0.4);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
     border-radius: 8px;
     margin-bottom: 6px;
 }
@@ -256,11 +256,11 @@ export default {
 
 .rd-stat-row__label {
     display: flex; align-items: center;
-    font-size: 0.82rem; color: #94a3b8;
+    font-size: 0.82rem; color: rgba(16, 38, 58, 0.68);
 }
 
 .rd-stat-row__value {
-    font-size: 1rem; font-weight: 700; color: #f1f5f9;
+    font-size: 1rem; font-weight: 700; color: #10263a;
 }
 
 .rd-stat-row__value--success { color: #4ade80; }

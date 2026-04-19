@@ -456,10 +456,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-card__header {
@@ -483,14 +483,14 @@ export default {
 .rd-card__header-title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
 }
 
 .rd-empty {
     display: flex;
     align-items: center;
     font-size: 0.84rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.62);
 }
 
 .rd-day-pills {
@@ -529,20 +529,18 @@ export default {
 }
 
 .rd-day-pill--active {
-    background: linear-gradient(135deg, #15803d, #16a34a) !important;
+    background: linear-gradient(135deg, #4338ca, #6366f1) !important;
     color: #fff !important;
-    box-shadow: 0 0 10px rgba(34, 197, 94, 0.35) !important;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.4) !important;
 }
 
 .rd-day-pill--idle {
-    background: rgba(34, 197, 94, 0.12) !important;
-    color: #4ade80 !important;
-    border: 1px solid rgba(34, 197, 94, 0.2) !important;
+    background: rgba(99, 102, 241, 0.12) !important;
+    color: #818cf8 !important;
+    border: 1px solid rgba(99, 102, 241, 0.25) !important;
 }
 
 .rd-date-list {
-    max-height: 340px;
-    overflow-y: auto;
 }
 
 .rd-locked {
@@ -558,22 +556,22 @@ export default {
 .rd-date-item__time {
     font-size: 0.86rem;
     font-weight: 600;
-    color: #e2e8f0;
+    color: #10263a;
 }
 
 .rd-date-item__supervisor {
     font-size: 0.78rem;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.62);
 }
 
 .rd-date-item__datestr {
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.62);
     font-size: 0.72rem;
 }
 
 .rd-date-list :deep(.v-list-item) {
-    background: rgba(15, 23, 42, 0.4) !important;
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    background: rgba(255, 255, 255, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
 }
 
 .rd-date-list :deep(.v-list-item--active) {
@@ -583,7 +581,7 @@ export default {
 
 .rd-date-list :deep(.v-list-item__content),
 .rd-date-list :deep(.v-list-item-title) {
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .gap-2 {
@@ -591,14 +589,14 @@ export default {
 }
 
 .rd-dialog-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: #1e293b !important;
-    color: #e2e8f0 !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(241, 245, 249, 0.96)) !important;
+    color: #10263a !important;
 }
 
 .rd-dialog-text {
     font-size: 0.92rem;
-    color: #cbd5e1;
+    color: rgba(16, 38, 58, 0.72);
     line-height: 1.5;
 }
 </style>

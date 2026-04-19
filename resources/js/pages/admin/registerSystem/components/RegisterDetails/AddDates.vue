@@ -117,10 +117,10 @@ export default {
 
 <style scoped>
 .rd-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92)) !important;
     backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    color: #10263a !important;
 }
 
 .rd-card__header {
@@ -149,16 +149,16 @@ export default {
 .rd-card__header-title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
 }
 
 .rd-info-block {
     display: flex;
     align-items: center;
     font-size: 0.8rem;
-    color: #64748b;
-    background: rgba(15, 23, 42, 0.4);
-    border: 1px solid rgba(148, 163, 184, 0.1);
+    color: rgba(16, 38, 58, 0.68);
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(16, 38, 58, 0.08);
     border-radius: 8px;
     padding: 8px 12px;
 }
