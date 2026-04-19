@@ -1,7 +1,8 @@
 import { createTestingPinia } from '@pinia/testing'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import RestaurantBillingReportsCard from '@/pages/admin/restaurant/components/RestaurantBillingReportsCard.vue'
+import { useRestaurantBillingStore } from '@/stores/admin/restaurant/RestaurantBillingStore'
 
 function mountBillingReportsCard() {
     return mount(RestaurantBillingReportsCard, {
@@ -64,8 +65,8 @@ function mountBillingReportsCard() {
             stubs: {
                 'v-col': { template: '<div><slot /></div>' },
                 'v-btn': {
-                    props: ['disabled'],
-                    template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+                    props: ['color', 'disabled', 'prependIcon', 'rounded', 'variant'],
+                    template: '<button :disabled="disabled" :data-color="color" :data-variant="variant" :data-prepend-icon="prependIcon" :data-rounded="rounded" @click="$emit(\'click\')"><slot /></button>',
                 },
                 'v-progress-linear': { template: '<div />' },
                 'v-alert': { template: '<div><slot /></div>' },
@@ -147,6 +148,47 @@ describe('Restaurant billing reports card', () => {
             'noopener',
         )
         expect(wrapper.find('.dialog-stub').exists()).toBe(false)
+
+        openSpy.mockRestore()
+    })
+
+    it('renders the preview button with an info tonal style', async () => {
+        const wrapper = mountBillingReportsCard()
+
+        await wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').trigger('click')
+
+        const previewButton = wrapper.findAll('button').find((button) => button.text().includes('Abrechnung ansehen'))
+
+        expect(previewButton?.attributes('data-color')).toBe('info')
+        expect(previewButton?.attributes('data-variant')).toBe('tonal')
+        expect(previewButton?.attributes('data-prepend-icon')).toBe('mdi-eye-outline')
+    })
+
+    it('hides the preview button after a billing was created until another week is selected', async () => {
+        const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const wrapper = mountBillingReportsCard()
+        const billingStore = useRestaurantBillingStore()
+
+        billingStore.create = vi.fn().mockResolvedValue({ id: 99 })
+
+        await wrapper.find('[data-testid="restaurant-billing-week-2026-03-30"]').trigger('click')
+
+        const createButton = wrapper.findAll('button').find((button) => button.text().includes('Abrechnung drucken'))
+        await createButton?.trigger('click')
+
+        const confirmButton = wrapper.findAll('button').find((button) => button.text().includes('Jetzt abrechnen'))
+        await confirmButton?.trigger('click')
+        await flushPromises()
+
+        expect(billingStore.create).toHaveBeenCalledWith({
+            weeks: ['2026-02-16', '2026-02-23', '2026-03-02', '2026-03-09', '2026-03-16', '2026-03-23', '2026-03-30'],
+        })
+        expect(openSpy).toHaveBeenCalledWith('/api/admin/restaurant/billings/99/print', '_blank', 'noopener')
+        expect(wrapper.findAll('button').some((button) => button.text().includes('Abrechnung ansehen'))).toBe(false)
+
+        await wrapper.find('[data-testid="restaurant-billing-week-2026-02-16"]').trigger('click')
+
+        expect(wrapper.findAll('button').some((button) => button.text().includes('Abrechnung ansehen'))).toBe(true)
 
         openSpy.mockRestore()
     })

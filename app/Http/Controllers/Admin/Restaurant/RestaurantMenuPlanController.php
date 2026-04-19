@@ -203,7 +203,6 @@ class RestaurantMenuPlanController extends Controller
         $bookings = RestaurantMenuPlanBooking::query()
             ->where('restaurant_menu_plan_entry_id', $entryId)
             ->with(['user:id,first_name,last_name,email', 'eatingTime', 'import116:id,class'])
-            ->orderBy('booked_at')
             ->get();
 
         $resolvedOrderedForLabels = $this->resolveOrderedForLabels($bookings, (int) $plan->school_id);
@@ -219,7 +218,9 @@ class RestaurantMenuPlanController extends Controller
                 'quantity' => $booking->quantity,
                 'booked_at' => $this->resolvedBookedAt($booking),
                 'notes' => $booking->notes,
-            ]);
+            ])
+            ->sortBy('ordered_for', SORT_NATURAL | SORT_FLAG_CASE)
+            ->values();
 
         return response()->json([
             'data' => $bookings,
@@ -554,8 +555,8 @@ class RestaurantMenuPlanController extends Controller
     private function orderedForLabelFromImport(Import116 $import): ?string
     {
         $studentName = trim(implode(' ', array_filter([
-            $this->trimNullableString($import->first_name),
             $this->trimNullableString($import->last_name),
+            $this->trimNullableString($import->first_name),
         ])));
         $class = $this->trimNullableString($import->class);
 
@@ -568,14 +569,21 @@ class RestaurantMenuPlanController extends Controller
 
     private function orderedForFallback(RestaurantMenuPlanBooking $booking): string
     {
-        $orderedFor = $booking->ordered_for_display;
         $importClass = $this->trimNullableString($booking->import116?->class);
 
-        if ($booking->child_name && $importClass !== null) {
-            return "{$booking->child_name}, {$importClass}";
+        if ($booking->child_name) {
+            return $importClass !== null ? "{$booking->child_name}, {$importClass}" : $booking->child_name;
         }
 
-        return $orderedFor;
+        $lastName = trim((string) $booking->user?->last_name);
+        $firstName = trim((string) $booking->user?->first_name);
+        $name = trim(implode(' ', array_filter([$lastName, $firstName])));
+
+        if ($name === '') {
+            $name = 'Unbekannt';
+        }
+
+        return $importClass !== null ? "{$name}, {$importClass}" : $name;
     }
 
     private function resolvedEatingTime(RestaurantMenuPlanBooking $booking): ?string

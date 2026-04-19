@@ -124,6 +124,7 @@ it('renders the restaurant billing print layout with grouped user totals', funct
     expect($html)->toContain('Restaurant Abrechnung')
         ->and($html)->toContain('KW 13-14/2026')
         ->and($html)->toContain('3 x 5,20 € = 15,60 €')
+        ->and(substr_count($html, 'nicht endgültig'))->toBe(3)
         ->and($html)->toContain('Gesamtsumme aller Kunden')
         ->and($html)->toContain('32,10 €');
 });

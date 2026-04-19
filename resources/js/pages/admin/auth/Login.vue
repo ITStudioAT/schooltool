@@ -125,6 +125,24 @@
                         <v-btn block variant="text" color="warning" data-testid="admin-login-back-from-password" @click="restartLogin">Zurück</v-btn>
                     </div>
 
+                    <!-- Step: Login Processing -->
+                    <div class="card-body" v-if="step == 'LOGIN_PROCESSING'" data-testid="login-processing">
+                        <div class="login-processing">
+                            <v-progress-circular indeterminate color="success" size="48" width="4" class="mb-5" />
+                            <h2 class="step-title text-center">Login wird durchgeführt</h2>
+                            <p class="step-hint text-center mb-0">Bitte einen Moment Geduld …</p>
+                        </div>
+                    </div>
+
+                    <!-- Step: Logout Processing -->
+                    <div class="card-body" v-if="step == 'LOGOUT_PROCESSING'" data-testid="logout-processing">
+                        <div class="login-processing">
+                            <v-progress-circular indeterminate color="warning" size="48" width="4" class="mb-5" />
+                            <h2 class="step-title text-center">Abmeldung wird durchgeführt</h2>
+                            <p class="step-hint text-center mb-0">Bitte einen Moment Geduld …</p>
+                        </div>
+                    </div>
+
                     <!-- Step: Enter 2FA Token -->
                     <div class="card-body" v-if="step == 'LOGIN_ENTER_TOKEN'">
                         <h2 class="step-title">Zwei-Faktor-Code</h2>
@@ -206,8 +224,16 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+
+        if (this.$route.query.logout === '1') {
+            this.step = 'LOGOUT_PROCESSING'
+            await this.adminStore.executeLogout()
+            this.$router.replace({ path: '/admin/login', query: {} })
+            this.restartLogin()
+            return
+        }
+
         if (!this.config?.is_auth) await this.adminStore.executeLogout()
-        // await this.adminStore.loadConfig()
         this.restartLogin()
     },
 
@@ -317,8 +343,12 @@ export default {
             if (!this.is_valid) return
             this.data.step = 'LOGIN_ENTER_PASSWORD'
             this.data.remember = !!this.data.remember
+            this.step = 'LOGIN_PROCESSING'
 
-            if (!(await this.adminStore.loginStep2(this.data))) return
+            if (!(await this.adminStore.loginStep2(this.data))) {
+                this.step = 'LOGIN_ENTER_PASSWORD'
+                return
+            }
 
             if (this.data.step == 'LOGIN_SUCCESS') {
                 await this.adminStore.loadConfig()
@@ -332,11 +362,17 @@ export default {
             if (this.data.token_2fa.length != 6) return
             this.data.step = 'LOGIN_ENTER_TOKEN'
             this.data.remember = !!this.data.remember
-            if (!(await this.adminStore.loginStep3(this.data))) return
+            this.step = 'LOGIN_PROCESSING'
+            if (!(await this.adminStore.loginStep3(this.data))) {
+                this.step = 'LOGIN_ENTER_TOKEN'
+                return
+            }
 
             if (this.data.step == 'LOGIN_SUCCESS') {
                 await this.adminStore.loadConfig()
                 this.$router.push('/admin')
+            } else {
+                this.step = 'LOGIN_ENTER_TOKEN'
             }
         },
     },
@@ -631,6 +667,13 @@ export default {
 
 .queue-down-hint-alert {
     margin: 10px 0 0;
+}
+
+.login-processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 0 16px;
 }
 
 /* Version */

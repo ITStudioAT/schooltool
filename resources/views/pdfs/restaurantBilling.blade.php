@@ -110,6 +110,14 @@
             color: #111827;
         }
 
+        .billing-table__total-note {
+            display: block;
+            margin-top: 2px;
+            font-size: 8px;
+            font-weight: 400;
+            color: #64748b;
+        }
+
         .billing-table__summary-line {
             margin-bottom: 2px;
         }
@@ -162,7 +170,10 @@
                             @endforeach
                         </td>
                         <td class="billing-table__count">{{ $row['total_quantity'] }}</td>
-                        <td class="billing-table__total">{{ $row['total_amount_label'] }}</td>
+                        <td class="billing-table__total">
+                            {{ $row['total_amount_label'] }}
+                            <span class="billing-table__total-note">nicht endgültig</span>
+                        </td>
                     </tr>
                 @endforeach
             </tbody>
@@ -170,7 +181,10 @@
                 <tr>
                     <td colspan="2" class="billing-table__overall-label">Gesamtsumme aller Kunden</td>
                     <td class="billing-table__count">{{ $overallQuantity }}</td>
-                    <td class="billing-table__total">{{ $overallTotalLabel }}</td>
+                    <td class="billing-table__total">
+                        {{ $overallTotalLabel }}
+                        <span class="billing-table__total-note">nicht endgültig</span>
+                    </td>
                 </tr>
             </tfoot>
         </table>

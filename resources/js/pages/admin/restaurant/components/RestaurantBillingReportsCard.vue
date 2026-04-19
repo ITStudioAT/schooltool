@@ -88,11 +88,11 @@
 
                 <div class="billing-reports-footer__actions">
                     <v-btn
-                        color="secondary"
-                        variant="outlined"
+                        v-if="canPreviewSelectedWeeks"
+                        color="info"
+                        variant="tonal"
                         rounded="xl"
                         prepend-icon="mdi-eye-outline"
-                        :disabled="!selectedWeeks.length"
                         @click="previewBilling">
                         Abrechnung ansehen
                     </v-btn>
@@ -240,6 +240,7 @@ export default {
             isLoading: false,
             isCreating: false,
             confirmDialog: false,
+            previewActionHidden: false,
             billingsWindowStart: 0,
             weeksWindowStart: 0,
             selectionAnchor: null,
@@ -340,6 +341,9 @@ export default {
 
             return `${this.formatDate(firstWeek.week_start)} - ${this.formatDate(lastWeek.week_end)}`
         },
+        canPreviewSelectedWeeks() {
+            return this.selectedWeeks.length > 0 && !this.previewActionHidden
+        },
     },
 
     async created() {
@@ -407,6 +411,8 @@ export default {
             if (!week) {
                 return
             }
+
+            this.previewActionHidden = false
 
             if (!this.selectionAnchor || this.isWeekSelected(week.week_start)) {
                 this.setSelection(week.week_start, week.week_start, week.week_start)
@@ -544,6 +550,7 @@ export default {
                     return
                 }
 
+                this.previewActionHidden = true
                 this.confirmDialog = false
                 this.initializeWindows()
                 this.openBillingPrint(createdBilling.id)

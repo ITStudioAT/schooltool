@@ -238,9 +238,9 @@ export default {
             return path.replace(/\/+$/, '')
         },
         async logout() {
-            await this.adminStore.executeLogout()
+            this.$router.replace({ path: '/admin/login', query: { logout: '1' } })
             await this.$nextTick()
-            this.$router.replace('/admin/login')
+            await this.adminStore.executeLogout()
         },
         async stopImpersonationAndReturn() {
             if (!(await this.adminStore.stopImpersonation())) return
