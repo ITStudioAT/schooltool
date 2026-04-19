@@ -10,17 +10,7 @@
             <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
-                        <div class="logo-wrapper logo-wrapper-nav" aria-hidden="true">
-                            <span class="logo-icon">
-                                <v-icon size="20" color="white">mdi-school</v-icon>
-                            </span>
-                        </div>
-                        <div class="cloud-brand">
-                            <h1 class="cloud-brand-title">
-                                <span class="brand-school">School</span>
-                                <span class="brand-tool">Tool</span>
-                            </h1>
-                        </div>
+                        <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
                         <nav class="cloud-header-nav" aria-label="Dummy Navigation">
                             <router-link to="/homepage/products" class="cloud-nav-item">Produkte</router-link>
                         </nav>
@@ -685,25 +675,9 @@ export default {
     flex-wrap: wrap;
 }
 
-.logo-wrapper-nav {
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    margin-bottom: 0;
-    box-shadow: 0 3px 8px rgba(243, 146, 0, 0.12);
-    animation: none;
-}
-
-.cloud-brand-title {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-    font-size: 1.28rem;
-    font-weight: 800;
-    letter-spacing: -0.35px;
-    margin: 0;
-    line-height: 1;
-    white-space: nowrap;
+.st-header-logo {
+    height: 28px;
+    width: auto;
 }
 
 .cloud-header-nav {
@@ -1897,14 +1871,8 @@ export default {
         font-size: 0.9rem;
     }
 
-    .cloud-brand-title {
-        font-size: 1.12rem;
-    }
-
-    .logo-wrapper-nav {
-        width: 20px;
-        height: 20px;
-        border-radius: 5px;
+    .st-header-logo {
+        height: 22px;
     }
 
     .cloud-hero-copy {

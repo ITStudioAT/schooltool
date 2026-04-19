@@ -11,14 +11,7 @@
                 <header class="cloud-header">
                     <div class="cloud-header-left">
                         <div class="login-brand-link">
-                            <div class="logo-wrapper logo-wrapper-nav" aria-hidden="true">
-                                <v-icon size="20" color="white">mdi-school</v-icon>
-                            </div>
-                            <div class="cloud-brand">
-                                <h1 class="cloud-brand-title">
-                                    <span class="brand-school">School</span><span class="brand-tool">Tool</span>
-                                </h1>
-                            </div>
+                            <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
                         </div>
 
                     </div>
@@ -35,9 +28,9 @@
 
                     <div class="login-card-wrap">
                         <div class="login-card">
-                    <!-- School Logo -->
-                    <div class="school-logo-area" v-if="config.logo">
-                        <img :src="'/storage/images/' + config.logo" class="school-logo hover" @click="homepage" />
+                    <!-- Logo -->
+                    <div class="school-logo-area">
+                        <img src="/storage/images/schooltool/schooltool-mark.svg" alt="SchoolTool" class="st-card-mark hover" @click="homepage" />
                     </div>
 
                     <!-- Step: Enter Email -->
@@ -464,58 +457,9 @@ export default {
     cursor: default;
 }
 
-.logo-wrapper {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(135deg, #3aaa35 0%, #f39200 100%);
-    border: 1px solid #efc382;
-    border-radius: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
-    animation: pulse-glow 3s ease-in-out infinite;
-    flex-shrink: 0;
-}
-
-.logo-wrapper-nav {
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    margin-bottom: 0;
-    box-shadow: 0 3px 8px rgba(243, 146, 0, 0.12);
-    animation: none;
-}
-
-/* Match homepage header rendering (current cascade result) */
-.cloud-header .logo-wrapper {
-    width: 60px;
-    height: 60px;
-    border-radius: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 10px 40px rgba(58, 170, 53, 0.3);
-    animation: pulse-glow 3s ease-in-out infinite;
-}
-
-.cloud-brand-title {
-    display: flex;
-    align-items: baseline;
-    gap: 2px;
-    font-size: 1.28rem;
-    font-weight: 800;
-    letter-spacing: -0.35px;
-    margin: 0;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.brand-school {
-    color: #3aaa35;
-}
-
-.brand-tool {
-    color: #37474f;
+.st-header-logo {
+    height: 28px;
+    width: auto;
 }
 
 .cloud-header-nav {
@@ -622,6 +566,11 @@ export default {
     max-height: 56px;
     max-width: 180px;
     object-fit: contain;
+}
+
+.st-card-mark {
+    width: 48px;
+    height: 48px;
 }
 
 /* Card Body */
