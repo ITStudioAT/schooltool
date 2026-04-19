@@ -11,9 +11,47 @@
             <v-progress-linear v-if="is_loading > 0" indeterminate color="light-blue-lighten-3" />
             <v-list>
                 <template v-for="(item, i) in config.menu" :key="i">
-                    <!-- route item -->
+                    <v-menu
+                        v-if="Array.isArray(item.children) && item.children.length > 0"
+                        location="end top"
+                        offset="8"
+                        :close-on-content-click="true">
+                        <template #activator="{ props: hopperMenuActivatorProps }">
+                            <v-list-item
+                                v-bind="hopperMenuActivatorProps"
+                                :title="item.title"
+                                :prepend-icon="item.icon"
+                                :disabled="isMenuInteractionDisabled || !item.is_active" />
+                        </template>
+                        <v-list density="comfortable" style="min-width: 280px;">
+                            <template v-for="(child, childIndex) in item.children" :key="`${i}-${childIndex}`">
+                                <v-list-item
+                                    v-if="child.to"
+                                    :exact="false"
+                                    :title="child.title"
+                                    :subtitle="child.subtitle"
+                                    :prepend-icon="child.icon"
+                                    :to="child.to"
+                                    v-bind="routeItemBindings(child)"
+                                    :disabled="isMenuInteractionDisabled || !child.is_active"
+                                    @click="startNavigationLock(child.to)">
+                                    <template v-if="child.status_icon" #append>
+                                        <v-icon :icon="child.status_icon" :color="child.status_color || 'warning'" :title="child.status_title || ''" size="small" />
+                                    </template>
+                                </v-list-item>
+                                <v-list-item
+                                    v-else-if="child.click"
+                                    :exact="false"
+                                    :title="child.title"
+                                    :subtitle="child.subtitle"
+                                    :prepend-icon="child.icon"
+                                    :disabled="isMenuInteractionDisabled || !child.is_active"
+                                    @click="callItemClick(child)" />
+                            </template>
+                        </v-list>
+                    </v-menu>
                     <v-list-item
-                        v-if="item.to"
+                        v-else-if="item.to"
                         :exact="false"
                         :title="item.title"
                         :prepend-icon="item.icon"
@@ -25,7 +63,6 @@
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
                     </v-list-item>
-                    <!-- click item -->
                     <v-list-item
                         v-else-if="item.click"
                         :exact="false"
@@ -85,6 +122,8 @@ import axios from 'axios'
 import ItsNotification from '@/pages/components/ItsNotification.vue'
 import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolStore } from '@/stores/admin/SchoolStore'
+import { resolveAdminRouteAccess } from '../../../routes/admin.js'
 import { mapWritableState } from 'pinia'
 
 export default {
@@ -96,6 +135,7 @@ export default {
     data() {
         return {
             adminStore: null,
+            schoolStore: null,
             admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'],
             is_route_navigation_pending: false,
             removeRouteBeforeEachHook: null,
@@ -170,6 +210,7 @@ export default {
     async beforeMount() {
         this.registerRouteNavigationHooks()
         this.adminStore = useAdminStore()
+        this.schoolStore = useSchoolStore()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
         await this.adminStore.loadConfig()
@@ -247,10 +288,48 @@ export default {
             await this.$nextTick()
             this.$router.replace('/admin')
         },
+        async switchHopperAccount(item) {
+            const targetUserId = Number(item?.target_user_id)
+            const currentRouteTarget = this.$route?.fullPath || '/admin'
+
+            if (!Number.isInteger(targetUserId) || targetUserId <= 0 || this.isMenuInteractionDisabled) {
+                return
+            }
+
+            if (!(await this.schoolStore.switchHopperAccount(targetUserId))) {
+                return
+            }
+
+            await this.adminStore.loadConfig()
+            await this.$nextTick()
+            this.redirectToPostHopTarget(currentRouteTarget)
+        },
+        resolvePostHopTarget(target) {
+            if (typeof target !== 'string' || target.trim() === '') {
+                return '/admin'
+            }
+
+            const resolvedRoute = this.$router?.resolve(target)
+            const normalizedPath = resolvedRoute?.path || target
+            const routeAccess = resolveAdminRouteAccess(normalizedPath)
+
+            if (!routeAccess) {
+                return '/admin'
+            }
+
+            if (routeAccess.public || !routeAccess.capability) {
+                return target
+            }
+
+            return this.adminStore?.config?.capabilities?.[routeAccess.capability] === true ? target : '/admin'
+        },
+        redirectToPostHopTarget(target) {
+            window.location.assign(this.resolvePostHopTarget(target))
+        },
         callItemClick(item) {
             const fnName = item.click
             if (fnName && typeof this[fnName] === 'function') {
-                this[fnName]()
+                this[fnName](item)
             } else {
                 console.warn('menu item click not found:', fnName)
             }
@@ -258,4 +337,3 @@ export default {
     },
 }
 </script>
-

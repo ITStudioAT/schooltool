@@ -14,6 +14,9 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         answer: null,
         switchable_schools: [],
         switch_user_matches: [],
+        hopper_accounts: [],
+        hopper_switchable_schools: [],
+        hopper_user_matches: [],
         school_licences: [],
         school_licence_users: [],
         school_licence_users_meta: [],
@@ -86,6 +89,155 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 return this.switch_user_matches
             } catch (error) {
                 this.switch_user_matches = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadHopperAccounts() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get('/api/admin/hopper_accounts')
+                this.hopper_accounts = response.data?.data || []
+                return this.hopper_accounts
+            } catch (error) {
+                this.hopper_accounts = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadHopperSwitchableSchools(email = null) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const payload = {}
+                if (typeof email === 'string' && email.trim() !== '') payload.email = email.trim()
+                const response = await axios.post('/api/admin/hopper_accounts/load_switchable_schools', payload)
+                this.hopper_switchable_schools = Array.isArray(response.data) ? response.data : []
+                return this.hopper_switchable_schools
+            } catch (error) {
+                this.hopper_switchable_schools = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async searchHopperUsers(last_name = null) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const payload = {}
+                if (typeof last_name === 'string' && last_name.trim() !== '') payload.last_name = last_name.trim()
+                const response = await axios.post('/api/admin/hopper_accounts/search_users', payload)
+                this.hopper_user_matches = Array.isArray(response.data) ? response.data : []
+                return this.hopper_user_matches
+            } catch (error) {
+                this.hopper_user_matches = []
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async storeHopperAccount(data) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post('/api/admin/hopper_accounts', data)
+                this.hopper_accounts = response.data?.data || []
+                notification.notify({
+                    message: 'Hopper-Konto gespeichert.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async deleteHopperAccount(target_user_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.delete('/api/admin/hopper_accounts', {
+                    data: { target_user_id },
+                })
+                this.hopper_accounts = response.data?.data || []
+                notification.notify({
+                    message: 'Hopper-Konto entfernt.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async switchHopperAccount(target_user_id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.post('/api/admin/hopper_accounts/switch', { target_user_id })
+                notification.notify({
+                    message: 'Konto gewechselt.',
+                    type: 'success',
+                    timeout: 3000,
+                })
+                return true
+            } catch (error) {
                 notification.notify({
                     status: error.response?.status || 500,
                     message: error.response?.data?.message || 'Fehler passiert.',

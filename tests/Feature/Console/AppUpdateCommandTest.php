@@ -19,6 +19,10 @@ function fakeAppUpdateFiles(array $missingPaths = []): void
         ->andReturnUsing(function (string $path) use ($missingPaths): bool {
             return ! in_array($path, $missingPaths, true);
         });
+
+    File::shouldReceive('delete')
+        ->zeroOrMoreTimes()
+        ->andReturnTrue();
 }
 
 function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
@@ -54,6 +58,10 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
             }
 
             return Process::result('npm ci complete');
+        }
+
+        if (str_contains($command, 'powershell -NoProfile -ExecutionPolicy Bypass -Command')) {
+            return Process::result('');
         }
 
         if (str_contains($command, 'npm run build')) {
@@ -251,8 +259,11 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     expect($result['exit_code'])->toBe(0);
     expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 1 of 3');
     expect($result['output'])->toContain('npm ci hit a Windows file lock on attempt 2 of 3');
+    expect($result['output'])->toContain('Detected active Vite hot mode; removed public/hot before npm ci.');
+    expect($result['output'])->toContain('Attempting to stop project-local node/esbuild processes before retrying npm ci...');
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
 
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 3);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'powershell -NoProfile -ExecutionPolicy Bypass -Command'), 3);
 });

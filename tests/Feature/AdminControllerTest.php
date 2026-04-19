@@ -525,6 +525,51 @@ test('authenticated user config includes navigation menu', function () {
     expect($data)->toHaveKey('menu');
 });
 
+test('authenticated user config includes hopper menu below logout when hopper accounts exist', function () {
+    $otherSchool = School::factory()->create([
+        'long_name' => 'Second School',
+        'short_name' => 'SS',
+    ]);
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $otherSchool->id,
+    ]);
+
+    $targetUser = User::factory()->create([
+        'email' => 'hopper@example.com',
+        'first_name' => 'Anna',
+        'last_name' => 'Hopper',
+        'school_id' => $otherSchool->id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'confirmed_at' => now(),
+        'email_verified_at' => now(),
+        'is_active' => true,
+    ]);
+    $targetUser->assignRole('admin');
+
+    $this->user->forceFill([
+        'hopper_account_ids' => [$targetUser->id],
+    ])->save();
+
+    $this->actingAs($this->user);
+
+    $response = $this->getJson('/api/admin/config');
+
+    $response->assertSuccessful();
+
+    $menu = $response->json('menu');
+    $logoutIndex = collect($menu)->search(fn (array $item) => ($item['title'] ?? null) === 'Abmelden');
+    $hopperIndex = collect($menu)->search(fn (array $item) => ($item['title'] ?? null) === 'Hopp');
+    $hopperItem = collect($menu)->firstWhere('title', 'Hopp');
+
+    expect($logoutIndex)->not->toBeFalse()
+        ->and($hopperIndex)->toBe($logoutIndex + 1)
+        ->and($hopperItem)->not->toBeNull()
+        ->and($hopperItem['children'][0]['title'])->toBe('Second School')
+        ->and($hopperItem['children'][0]['subtitle'])->toBe('Anna Hopper • hopper@example.com')
+        ->and($hopperItem['children'][0]['click'])->toBe('switchHopperAccount')
+        ->and($hopperItem['children'][0]['target_user_id'])->toBe($targetUser->id);
+});
+
 test('authenticated admin config includes backend route capabilities', function () {
     $this->actingAs($this->user);
 

@@ -59,6 +59,7 @@ use App\Http\Controllers\Admin\Teaching\SchoolHourController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
 use App\Http\Controllers\Admin\Teaching\TeachingCourseController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\UserHopperAccountController;
 use App\Http\Controllers\Admin\UserWithRoleController;
 use App\Http\Controllers\Homepage\HomepageController;
 use App\Http\Controllers\Homepage\NoteController;
@@ -224,6 +225,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users/save_password_with_code', [UserController::class, 'savePasswordWithCode']);
         Route::post('/admin/users/save_2fa', [UserController::class, 'save2Fa']);
         Route::post('/admin/users/save_2fa_with_code', [UserController::class, 'save2FaWithCode']);
+        Route::get('/admin/hopper_accounts', [UserHopperAccountController::class, 'index']);
+        Route::post('/admin/hopper_accounts', [UserHopperAccountController::class, 'store']);
+        Route::delete('/admin/hopper_accounts', [UserHopperAccountController::class, 'destroy']);
+        Route::post('/admin/hopper_accounts/switch', [UserHopperAccountController::class, 'switch']);
+        Route::post('/admin/hopper_accounts/load_switchable_schools', [UserHopperAccountController::class, 'loadSwitchableSchools']);
+        Route::post('/admin/hopper_accounts/search_users', [UserHopperAccountController::class, 'searchUsers']);
     });
 
     /* SANCTUM - user */

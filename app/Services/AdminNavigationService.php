@@ -141,6 +141,10 @@ class AdminNavigationService
 
         // ABMELDEN
         $menu[] = ['title' => 'Abmelden', 'icon' => 'mdi-power-cycle', 'click' => 'logout', 'is_active' => true];
+        $hopperDashboardMenu = $this->hopperDashboardMenu($user);
+        if ($hopperDashboardMenu !== null) {
+            $menu[] = $hopperDashboardMenu;
+        }
 
         return $menu;
     }
@@ -255,6 +259,44 @@ class AdminNavigationService
         }
 
         return [];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function hopperDashboardMenu(User $user): ?array
+    {
+        $hopperAccounts = app(UserHopperService::class)->loadHopperAccounts($user);
+
+        if ($hopperAccounts === []) {
+            return null;
+        }
+
+        return [
+            'title' => 'Hopp',
+            'icon' => 'mdi-swap-horizontal',
+            'is_active' => true,
+            'children' => collect($hopperAccounts)
+                ->map(function (array $account): array {
+                    $name = trim((string) ($account['full_name'] ?? ''));
+                    $email = trim((string) ($account['email'] ?? ''));
+                    $detail = collect([$name, $email])
+                        ->filter(fn (string $value) => $value !== '')
+                        ->implode(' • ');
+
+                    return [
+                        'title' => (string) ($account['school_label'] ?? 'Schule'),
+                        'subtitle' => $detail,
+                        'icon' => 'mdi-school-outline',
+                        'click' => 'switchHopperAccount',
+                        'target_user_id' => (int) ($account['id'] ?? 0),
+                        'is_active' => true,
+                    ];
+                })
+                ->filter(fn (array $account) => $account['target_user_id'] > 0)
+                ->values()
+                ->all(),
+        ];
     }
 
     /**

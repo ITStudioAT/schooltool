@@ -21,7 +21,7 @@
                     rounded="xl"
                     :color="step === '' ? 'primary' : 'secondary'"
                     :variant="step === '' ? 'flat' : 'tonal'"
-                    class="profile-nav__button"
+                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === '', 'profile-nav__button--idle': step !== '' }]"
                     @click="abort">
                     <v-icon size="18" icon="mdi-account-outline" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -34,7 +34,7 @@
                     rounded="xl"
                     :color="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'primary' : 'secondary'"
                     :variant="step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN' ? 'flat' : 'tonal'"
-                    class="profile-nav__button"
+                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN', 'profile-nav__button--idle': !(step === 'CHANGE_PASSWORD' || step === 'PASSWORD_ENTER_TOKEN') }]"
                     @click="wantToChangePassword">
                     <v-icon size="18" icon="mdi-form-textbox-password" class="mr-2" />
                     <span class="profile-nav__button-copy">
@@ -47,12 +47,25 @@
                     rounded="xl"
                     :color="is2FaStep ? 'primary' : 'secondary'"
                     :variant="is2FaStep ? 'flat' : 'tonal'"
-                    class="profile-nav__button"
+                    :class="['profile-nav__button', { 'profile-nav__button--selected': is2FaStep, 'profile-nav__button--idle': !is2FaStep }]"
                     @click="wantToChange2Fa">
                     <v-icon size="18" icon="mdi-two-factor-authentication" class="mr-2" />
                     <span class="profile-nav__button-copy">
                         <span class="profile-nav__button-title">2-Faktor-Auth</span>
                         <span class="profile-nav__button-meta">{{ data.is_2fa ? 'Aktiviert' : 'Deaktiviert' }}</span>
+                    </span>
+                </v-btn>
+
+                <v-btn
+                    rounded="xl"
+                    :color="step === 'HOPPER_SCHOOLS' ? 'primary' : 'secondary'"
+                    :variant="step === 'HOPPER_SCHOOLS' ? 'flat' : 'tonal'"
+                    :class="['profile-nav__button', { 'profile-nav__button--selected': step === 'HOPPER_SCHOOLS', 'profile-nav__button--idle': step !== 'HOPPER_SCHOOLS' }]"
+                    @click="openHopperSchools">
+                    <v-icon size="18" icon="mdi-account-switch-outline" class="mr-2" />
+                    <span class="profile-nav__button-copy">
+                        <span class="profile-nav__button-title">Hopper Schulen</span>
+                        <span class="profile-nav__button-meta">Schnellwechsel</span>
                     </span>
                 </v-btn>
             </div>
@@ -136,7 +149,7 @@
                                 <v-icon size="16" class="mr-1">mdi-check</v-icon>
                                 Speichern
                             </v-btn>
-                            <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">
+                            <v-btn color="warning" variant="text" rounded="lg" @click="abort" class="flex-1-1">
                                 Abbruch
                             </v-btn>
                         </template>
@@ -182,7 +195,7 @@
                             <v-icon size="16" class="mr-1">mdi-check</v-icon>
                             Bestätigen
                         </v-btn>
-                        <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">
+                        <v-btn color="warning" variant="text" rounded="lg" @click="abort" class="flex-1-1">
                             Abbruch
                         </v-btn>
                     </v-card-actions>
@@ -233,7 +246,7 @@
                             <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>
                             Weiter
                         </v-btn>
-                        <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">
+                        <v-btn color="warning" variant="text" rounded="lg" @click="abort" class="flex-1-1">
                             Abbruch
                         </v-btn>
                     </v-card-actions>
@@ -267,7 +280,7 @@
                             <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>
                             Weiter
                         </v-btn>
-                        <v-btn color="error" variant="tonal" rounded="lg" @click="abort" class="flex-1-1">
+                        <v-btn color="warning" variant="text" rounded="lg" @click="abort" class="flex-1-1">
                             Abbruch
                         </v-btn>
                     </v-card-actions>
@@ -312,7 +325,7 @@
                             <v-icon size="16" class="mr-1">mdi-check</v-icon>
                             Speichern
                         </v-btn>
-                        <v-btn color="error" variant="tonal" rounded="lg" @click="abort2Fa" class="flex-1-1">
+                        <v-btn color="warning" variant="text" rounded="lg" @click="abort2Fa" class="flex-1-1">
                             Abbruch
                         </v-btn>
                     </v-card-actions>
@@ -367,7 +380,7 @@
                             <v-icon size="16" class="mr-1">mdi-arrow-right</v-icon>
                             Weiter
                         </v-btn>
-                        <v-btn color="error" variant="tonal" rounded="lg" @click="abort2Fa" class="flex-1-1">
+                        <v-btn color="warning" variant="text" rounded="lg" @click="abort2Fa" class="flex-1-1">
                             Abbruch
                         </v-btn>
                     </v-card-actions>
@@ -394,6 +407,8 @@
                     </v-card-actions>
                 </v-card>
 
+                <HopperSchools v-if="step === 'HOPPER_SCHOOLS'" />
+
             </v-col>
         </v-row>
     </v-container>
@@ -406,13 +421,14 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useUserStore } from '@/stores/admin/UserStore'
 import { useNavigationStore } from '@/stores/admin/NavigationStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
+import HopperSchools from '@/pages/admin/profile/components/HopperSchools.vue'
 
 export default {
     setup() {
         return useValidationRulesSetup()
     },
 
-    components: { AdminSectionHero },
+    components: { AdminSectionHero, HopperSchools },
 
     props: {
         embedded: { type: Boolean, default: false },
@@ -476,6 +492,7 @@ export default {
                 INPUT_CODE: { icon: 'mdi-email-check-outline', label: 'E-Mail bestätigen', note: 'Änderung per Code verifizieren.' },
                 CHANGE_PASSWORD: { icon: 'mdi-lock-outline', label: 'Kennwort ändern', note: 'Neues Kennwort festlegen.' },
                 PASSWORD_ENTER_TOKEN: { icon: 'mdi-lock-check-outline', label: 'Kennwort bestätigen', note: 'Änderung per Code verifizieren.' },
+                HOPPER_SCHOOLS: { icon: 'mdi-account-switch-outline', label: 'Hopper Schulen', note: 'Gespeicherte Konten für den Schnellwechsel verwalten.' },
                 CHANGE_2FA: { icon: 'mdi-shield-key-outline', label: '2-Faktor-Auth', note: 'Zwei-Faktor-Authentifizierung konfigurieren.' },
                 TWO_FA_DELETE: { icon: 'mdi-shield-off-outline', label: '2-FA deaktiviert', note: 'Zwei-Faktor-Authentifizierung ausgeschaltet.' },
                 TWO_FA_EMAIL_IS_NEW: { icon: 'mdi-shield-check-outline', label: '2-FA E-Mail bestätigen', note: 'Code aus der E-Mail eingeben.' },
@@ -508,6 +525,11 @@ export default {
         wantToChange2Fa() {
             this.abort()
             this.step = 'CHANGE_2FA'
+        },
+
+        openHopperSchools() {
+            this.abort()
+            this.step = 'HOPPER_SCHOOLS'
         },
 
         async save(data) {
@@ -594,8 +616,10 @@ export default {
 }
 
 .profile-nav {
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68));
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
     padding: 10px;
 }
 
@@ -613,6 +637,14 @@ export default {
     justify-content: flex-start;
 }
 
+.profile-nav__button--selected {
+    color: #fff;
+}
+
+.profile-nav__button--idle {
+    color: #10263a;
+}
+
 .profile-nav__button-copy {
     display: inline-flex;
     flex-direction: column;
@@ -627,14 +659,30 @@ export default {
 
 .profile-nav__button-meta {
     font-size: 0.72rem;
-    opacity: 0.85;
+}
+
+.profile-nav__button--selected .profile-nav__button-title {
+    color: #fff;
+}
+
+.profile-nav__button--selected .profile-nav__button-meta {
+    color: rgba(255, 255, 255, 0.82);
+}
+
+.profile-nav__button--idle .profile-nav__button-title {
+    color: #10263a;
+}
+
+.profile-nav__button--idle .profile-nav__button-meta {
+    color: rgba(16, 38, 58, 0.86);
 }
 
 .profile-card {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(30, 41, 59, 0.82) !important;
-    backdrop-filter: blur(4px);
-    color: #e2e8f0 !important;
+    border: 1px solid rgba(16, 38, 58, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.68)) !important;
+    box-shadow: 0 18px 48px rgba(16, 38, 58, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+    color: #112536 !important;
 }
 
 .profile-card__header {
@@ -650,39 +698,42 @@ export default {
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    background: rgba(99, 102, 241, 0.18);
-    color: #818cf8;
+    background: linear-gradient(180deg, #4f88b8, #2f628c);
+    color: #fff;
+    box-shadow: 0 8px 18px rgba(36, 76, 109, 0.22);
     flex-shrink: 0;
 }
 
 .profile-card__header-icon-wrap--success {
-    background: rgba(34, 197, 94, 0.16);
-    color: #4ade80;
+    background: rgba(46, 164, 79, 0.12);
+    color: #1a7f37;
+    box-shadow: none;
 }
 
 .profile-card__header-icon-wrap--warning {
-    background: rgba(251, 146, 60, 0.16);
-    color: #fb923c;
+    background: rgba(245, 129, 32, 0.11);
+    color: #9c5317;
+    box-shadow: none;
 }
 
 .profile-card__header-title {
     font-size: 1rem;
     font-weight: 700;
-    color: #f1f5f9;
+    color: #10263a;
     line-height: 1.2;
 }
 
 .profile-card__header-sub {
     font-size: 0.78rem;
-    color: #94a3b8;
+    color: rgba(16, 38, 58, 0.86);
     margin-top: 2px;
 }
 
 .profile-card__info-block {
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 10px;
+    border: 1px solid rgba(16, 38, 58, 0.1);
+    border-radius: 14px;
     padding: 12px 14px;
-    background: rgba(15, 23, 42, 0.5);
+    background: rgba(255, 255, 255, 0.78);
 }
 
 .profile-card__info-row {
@@ -690,7 +741,7 @@ export default {
     align-items: center;
     gap: 10px;
     font-size: 0.88rem;
-    color: #cbd5e1;
+    color: rgba(16, 38, 58, 0.92);
     padding: 3px 0;
 }
 
@@ -698,18 +749,37 @@ export default {
     font-size: 0.76rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #64748b;
+    color: rgba(16, 38, 58, 0.72);
     min-width: 44px;
 }
 
 .profile-card__info-value--new {
-    color: #818cf8;
+    color: #3049b5;
     font-weight: 600;
 }
 
 .profile-card__otp-label {
     font-size: 0.78rem;
-    color: #94a3b8;
+    color: rgba(16, 38, 58, 0.86);
     letter-spacing: 0.04em;
+}
+
+.profile-card :deep(.v-card-actions) {
+    border-top: 1px solid rgba(16, 38, 58, 0.08);
+}
+
+.profile-card :deep(.v-field) {
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.profile-card :deep(.v-field__input),
+.profile-card :deep(.v-label),
+.profile-card :deep(.v-selection-control .v-label) {
+    color: #112536 !important;
+}
+
+.profile-card :deep(.v-otp-input .v-field) {
+    background: rgba(255, 255, 255, 0.82);
 }
 </style>

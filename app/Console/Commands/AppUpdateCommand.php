@@ -16,6 +16,8 @@ class AppUpdateCommand extends Command
 
     private const int WINDOWS_NPM_CI_RETRY_DELAY_SECONDS = 2;
 
+    private const int WINDOWS_UNLOCK_TIMEOUT_SECONDS = 30;
+
     protected $signature = 'app:update';
 
     protected $description = 'Update application: frontend build, migrations, records, roles, folders, and caches';
@@ -154,6 +156,8 @@ class AppUpdateCommand extends Command
 
     private function runFrontendUpdate(): bool
     {
+        $this->prepareWindowsFrontendInstall();
+
         $this->info('▶ INSTALLING FRONTEND DEPENDENCIES');
         if (! $this->runNpmCi()) {
             return false;
@@ -187,6 +191,7 @@ class AppUpdateCommand extends Command
                 break;
             }
 
+            $this->remediateWindowsNpmCiLock();
             $this->warn(sprintf(
                 'npm ci hit a Windows file lock on attempt %d of %d; retrying in %d seconds...',
                 $attempt,
@@ -201,6 +206,22 @@ class AppUpdateCommand extends Command
         $this->maybeShowWindowsNodeModulesHint($combinedOutput);
 
         return false;
+    }
+
+    private function prepareWindowsFrontendInstall(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        $hotPath = base_path('public/hot');
+        if (! File::exists($hotPath)) {
+            return;
+        }
+
+        File::delete($hotPath);
+        $this->warn('Detected active Vite hot mode; removed public/hot before npm ci.');
+        $this->stopProjectLocalWindowsFrontendProcesses();
     }
 
     /**
@@ -280,6 +301,16 @@ class AppUpdateCommand extends Command
         $this->warn('Hint: close editors/watchers and unlock node_modules/esbuild files, then rerun app:update.');
     }
 
+    private function remediateWindowsNpmCiLock(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        $this->warn('Attempting to stop project-local node/esbuild processes before retrying npm ci...');
+        $this->stopProjectLocalWindowsFrontendProcesses();
+    }
+
     private function looksLikeWindowsLockIssue(string $output): bool
     {
         foreach (['ebusy', 'eperm', 'enotempty', 'locked', 'esbuild', 'node_modules'] as $needle) {
@@ -320,5 +351,33 @@ class AppUpdateCommand extends Command
         }
 
         sleep(self::WINDOWS_NPM_CI_RETRY_DELAY_SECONDS);
+    }
+
+    private function stopProjectLocalWindowsFrontendProcesses(): void
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return;
+        }
+
+        $this->executeProcess([
+            'powershell',
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            '$projectPath = [string]$env:APP_UPDATE_PROJECT_PATH; '.
+            'if ([string]::IsNullOrWhiteSpace($projectPath)) { exit 0 } '.
+            '$projectPath = $projectPath.ToLowerInvariant(); '.
+            '$processes = Get-CimInstance Win32_Process | Where-Object { '.
+            '$name = if ($null -ne $_.Name) { ([string]$_.Name).ToLowerInvariant() } else { "" }; '.
+            'if ($name -notin @("node.exe", "esbuild.exe")) { return $false } '.
+            '$commandLine = if ($null -ne $_.CommandLine) { ([string]$_.CommandLine).ToLowerInvariant() } else { "" }; '.
+            '$executablePath = if ($null -ne $_.ExecutablePath) { ([string]$_.ExecutablePath).ToLowerInvariant() } else { "" }; '.
+            'return $commandLine.Contains($projectPath) -or $executablePath.Contains($projectPath) '.
+            '}; '.
+            '$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }',
+        ], self::WINDOWS_UNLOCK_TIMEOUT_SECONDS, [
+            'APP_UPDATE_PROJECT_PATH' => base_path(),
+        ]);
     }
 }

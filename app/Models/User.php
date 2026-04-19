@@ -127,6 +127,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string|null $short
  * @property array<array-key, mixed>|null $tutoring_filter
  * @property array<array-key, mixed>|null $restaurant_booking_defaults
+ * @property array<array-key, int>|null $hopper_account_ids
  *
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User teachers($school_id = null)
  * @method static \Illuminate\Database\Eloquent\Builder<static>|User whereShort($value)
@@ -214,6 +215,7 @@ class User extends Authenticatable
             'teaching_show_behaviour' => 'boolean',
             'teaching_grade_columns_by_schoolyear' => 'array',
             'restaurant_booking_defaults' => 'array',
+            'hopper_account_ids' => 'array',
         ];
     }
 
