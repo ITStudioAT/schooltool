@@ -231,8 +231,8 @@
                                         }">
                                         <span class="curriculum-detail__day-name">{{ day.dayName }}</span>
                                         <span class="curriculum-detail__day-num">{{ day.dayNum }}</span>
+                                        </div>
                                     </div>
-                                </div>
                                 <div class="curriculum-detail__week-range">
                                     {{ week.rangeLabel }}
                                 </div>
@@ -250,8 +250,12 @@
                                         </v-icon>
                                         <span class="curriculum-detail__week-topic-label">
                                             <template v-if="entry.unitTitle">
-                                                <span class="curriculum-detail__week-topic-label-topic">{{ `${entry.topicTitle}:` }}</span>
-                                                <span class="curriculum-detail__week-topic-label-unit">{{ entry.unitTitle }}</span>
+                                                <span v-if="entry.showTopicPrefix" class="curriculum-detail__week-topic-label-topic">{{ `${entry.topicTitle}:` }}</span>
+                                                <span
+                                                    class="curriculum-detail__week-topic-label-unit"
+                                                    :class="{ 'curriculum-detail__week-topic-label-unit--no-prefix': !entry.showTopicPrefix }">
+                                                    {{ entry.unitTitle }}
+                                                </span>
                                             </template>
                                             <template v-else>
                                                 {{ entry.title }}
@@ -414,7 +418,8 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="curriculum-detail__topic-actions" @click.stop>
+                                    <div class="curriculum-detail__topic-header-actions">
+                                        <div class="curriculum-detail__topic-actions" @click.stop>
                                         <v-btn
                                             icon="mdi-arrow-up"
                                             variant="text"
@@ -466,6 +471,22 @@
                                             :disabled="topicSaving || isPageActionLocked"
                                             title="Thema löschen"
                                             @click="promptDeleteTopic(topic)" />
+                                        </div>
+                                        <div v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop>
+                                            <div
+                                                v-if="isTopicCollapsed(topic.id)"
+                                                class="curriculum-detail__topic-collapsed-count">
+                                                {{ topic.units.length }} Einheiten
+                                            </div>
+                                            <v-btn
+                                                :class="['curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }]"
+                                                :icon="isTopicCollapsed(topic.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'"
+                                                variant="flat"
+                                                color="primary"
+                                                size="x-small"
+                                                :title="isTopicCollapsed(topic.id) ? 'Thema aufklappen' : 'Thema einklappen'"
+                                                @click="toggleTopicCollapse(topic.id)" />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -632,7 +653,7 @@
                                                     </div>
                                                     <div class="curriculum-detail__topic-meta-chips">
                                                         <v-chip
-                                                            v-if="shouldShowAssignmentSummaryChip(unit)"
+                                                            v-if="shouldShowAssignmentSummaryChip(unit) && unitInheritedWeekKeys(topic, unit).length === 0"
                                                             size="x-small"
                                                             color="primary"
                                                             :variant="assignmentSummaryVariant(unit)"
@@ -663,6 +684,14 @@
                                                                 class="curriculum-detail__topic-meta-chip--interactive"
                                                                 @click.stop="openUnitAssignmentEditor(topic, unit, 'weeks')">
                                                                 {{ weeksSummaryLabel(unit.week_keys) }}
+                                                            </v-chip>
+                                                        </template>
+                                                        <template v-else-if="unitInheritedWeekKeys(topic, unit).length">
+                                                            <v-chip
+                                                                size="x-small"
+                                                                color="secondary"
+                                                                variant="tonal">
+                                                                {{ `Über Thema · ${weeksSummaryLabel(unitInheritedWeekKeys(topic, unit))}` }}
                                                             </v-chip>
                                                         </template>
                                                     </div>
@@ -891,21 +920,6 @@
                                             Noch keine Einheiten angelegt.
                                         </div>
                                         </div>
-                                </div>
-                                <div v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop>
-                                    <div
-                                        v-if="isTopicCollapsed(topic.id)"
-                                        class="curriculum-detail__topic-collapsed-count">
-                                        {{ topic.units.length }} Einheiten
-                                    </div>
-                                    <v-btn
-                                        :class="['curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }]"
-                                        :icon="isTopicCollapsed(topic.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'"
-                                        variant="flat"
-                                        color="primary"
-                                        size="x-small"
-                                        :title="isTopicCollapsed(topic.id) ? 'Thema aufklappen' : 'Thema einklappen'"
-                                        @click="toggleTopicCollapse(topic.id)" />
                                 </div>
                             </div>
                         </div>
@@ -2393,10 +2407,16 @@ export default {
 
         normalizeUnit(unit = null, index = 0) {
             const normalizedUnit = unit && typeof unit === 'object' ? unit : {}
+            const checkedWeekKeys = [...new Set(
+                (Array.isArray(normalizedUnit.checked_week_keys) ? normalizedUnit.checked_week_keys : [])
+                    .filter(Boolean)
+                    .map((weekKey) => String(weekKey).trim())
+            )].sort()
 
             return {
                 ...this.normalizeAssignmentEntry(normalizedUnit, index, 'unit'),
                 is_exam: Boolean(normalizedUnit.is_exam),
+                checked_week_keys: checkedWeekKeys,
                 materials: this.normalizeAttachedMaterials(normalizedUnit.materials),
             }
         },
@@ -3590,6 +3610,26 @@ export default {
             return chips
         },
 
+        unitInheritedWeekKeys(topic, unit) {
+            if (!topic || !unit || unit.assignment_type !== 'none' || topic.assignment_type !== 'weeks') {
+                return []
+            }
+
+            return [...topic.week_keys]
+        },
+
+        effectiveUnitWeekKeys(topic, unit) {
+            if (!topic || !unit) {
+                return []
+            }
+
+            if (unit.assignment_type === 'weeks') {
+                return [...unit.week_keys]
+            }
+
+            return this.unitInheritedWeekKeys(topic, unit)
+        },
+
         shouldShowAssignmentSummaryChip(item) {
             if (!item) {
                 return false
@@ -3680,32 +3720,55 @@ export default {
             }
 
             return this.curriculumTopics.flatMap((topic) => {
-                const entries = []
-
-                if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)) {
-                    entries.push({
-                        id: topic.id,
-                        topicId: topic.id,
-                        topicTitle: topic.title,
-                        title: topic.title,
-                        isExam: false,
-                    })
-                }
+                const hasTopicWeekEntry = Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)
+                const unitEntries = []
 
                 topic.units.forEach((unit) => {
-                    if (Boolean(unit.title) && unit.assignment_type === 'weeks' && unit.week_keys.includes(weekKey)) {
-                        entries.push({
+                    const effectiveWeekKeys = this.effectiveUnitWeekKeys(topic, unit)
+
+                    if (Boolean(unit.title) && effectiveWeekKeys.includes(weekKey)) {
+                        unitEntries.push({
                             id: `${topic.id}-${unit.id}`,
                             topicId: topic.id,
+                            unitId: unit.id,
                             topicTitle: topic.title,
                             unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
+                            showTopicPrefix: !hasTopicWeekEntry,
                         })
                     }
                 })
 
-                return entries
+                if (hasTopicWeekEntry) {
+                    if (unitEntries.length === 0) {
+                        return [
+                            {
+                                id: topic.id,
+                                topicId: topic.id,
+                                topicTitle: topic.title,
+                                title: topic.title,
+                                isExam: false,
+                            },
+                        ]
+                    }
+
+                    const mergedUnitTitle = unitEntries.map((entry) => entry.unitTitle).join(', ')
+
+                    return [
+                        {
+                            id: topic.id,
+                            topicId: topic.id,
+                            topicTitle: topic.title,
+                            unitTitle: mergedUnitTitle,
+                            showTopicPrefix: true,
+                            title: `${topic.title}: ${mergedUnitTitle}`,
+                            isExam: unitEntries.some((entry) => entry.isExam),
+                        },
+                    ]
+                }
+
+                return unitEntries
             })
         },
 
@@ -3764,8 +3827,7 @@ export default {
 
                     return topic.units.some((unit) => (
                         Boolean(unit.title)
-                        && unit.assignment_type === 'weeks'
-                        && unit.week_keys.includes(week.weekKey)
+                        && this.effectiveUnitWeekKeys(topic, unit).includes(week.weekKey)
                     ))
                 })
             })
@@ -5419,6 +5481,10 @@ export default {
     font-weight: 400;
 }
 
+.curriculum-detail__week-topic-label-unit--no-prefix {
+    margin-left: 0;
+}
+
 .curriculum-detail__week--with-exams {
     border-color: rgba(220, 38, 38, 0.45) !important;
     box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.1), 0 8px 18px rgba(127, 29, 29, 0.14);
@@ -6096,6 +6162,14 @@ export default {
     display: flex;
     align-items: center;
     gap: 2px;
+    flex-shrink: 0;
+}
+
+.curriculum-detail__topic-header-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
     flex-shrink: 0;
 }
 

@@ -528,6 +528,47 @@ test('curriculum topics can be saved without a date assignment', function () {
         ->and($curriculum->fresh()->topics[0]['week_keys'])->toBe([]);
 });
 
+test('unit checked weeks are limited to inherited topic weeks', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-office',
+                'title' => 'Office',
+                'assignment_type' => 'weeks',
+                'week_keys' => ['2025-09-08', '2025-09-15'],
+                'units' => [
+                    [
+                        'id' => 'unit-word',
+                        'title' => 'Word',
+                        'assignment_type' => 'none',
+                        'checked_week_keys' => ['2025-09-08', '2025-09-22'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.topics.0.week_keys.0', '2025-09-08')
+        ->assertJsonPath('data.topics.0.units.0.checked_week_keys.0', '2025-09-08');
+
+    expect($curriculum->fresh()->topics[0]['units'][0]['checked_week_keys'])->toBe(['2025-09-08']);
+});
+
 test('teacher can save materials on curriculum topics and units', function () {
     $curriculum = TeachingCurriculum::query()->create([
         'school_id' => $this->school->id,

@@ -304,6 +304,7 @@ class CurriculumController extends Controller
      *             month_key: ?string,
      *             month_keys: array<int, string>,
      *             week_keys: array<int, string>,
+     *             checked_week_keys: array<int, string>,
      *             materials: array<int, array{
      *                 id: int,
      *                 title: string,
@@ -375,7 +376,7 @@ class CurriculumController extends Controller
             'topics.*.materials.*.status' => 'nullable|string|max:255',
             'topics.*.materials.*.attachments_count' => 'nullable|integer|min:0',
             'topics.*.units' => 'nullable|array',
-            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,materials',
+            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,checked_week_keys,materials',
             'topics.*.units.*.id' => 'nullable|string|max:100',
             'topics.*.units.*.title' => 'required|string|max:255',
             'topics.*.units.*.is_exam' => 'sometimes|boolean',
@@ -396,6 +397,22 @@ class CurriculumController extends Controller
 
                     if (! $weekStart->isMonday()) {
                         $fail('Einheiten-Wochen müssen mit einem Montag gespeichert werden.');
+                    }
+                },
+            ],
+            'topics.*.units.*.checked_week_keys' => 'nullable|array',
+            'topics.*.units.*.checked_week_keys.*' => [
+                'string',
+                'date_format:Y-m-d',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                    } catch (\Throwable) {
+                        return;
+                    }
+
+                    if (! $weekStart->isMonday()) {
+                        $fail('Abgehakte Einheiten-Wochen müssen mit einem Montag gespeichert werden.');
                     }
                 },
             ],
@@ -461,6 +478,7 @@ class CurriculumController extends Controller
      *     month_key: ?string,
      *     month_keys: array<int, string>,
      *     week_keys: array<int, string>,
+     *     checked_week_keys: array<int, string>,
      *     materials: array<int, array{
      *         id: int,
      *         title: string,
@@ -513,6 +531,7 @@ class CurriculumController extends Controller
             $winner = $this->resolveTopicAssignmentWinner($topicItem, $units, is_array($existingTopic) ? $existingTopic : null);
 
             [$topicItem, $units] = $this->reconcileTopicUnitAssignments($topicItem, $units, $winner);
+            $units = $this->syncUnitCheckedWeekKeys($topicItem, $units);
 
             return [
                 ...$topicItem,
@@ -556,6 +575,7 @@ class CurriculumController extends Controller
                     'Bitte einen gültigen Einheitentitel angeben.'
                 ),
                 'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
+                'checked_week_keys' => $this->normalizeWeekKeys(is_array($normalizedUnit['checked_week_keys'] ?? null) ? $normalizedUnit['checked_week_keys'] : []),
                 'materials' => $this->normalizeMaterials(is_array($normalizedUnit['materials'] ?? null) ? $normalizedUnit['materials'] : []),
             ];
         })->all();
@@ -674,10 +694,10 @@ class CurriculumController extends Controller
 
     /**
      * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $topic
-     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>  $units
+     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>,checked_week_keys:array<int,string>}>  $units
      * @return array{
      *     0: array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>},
-     *     1: array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}>
+     *     1: array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>,checked_week_keys:array<int,string>}>
      * }
      */
     private function reconcileTopicUnitAssignments(array $topic, array $units, ?string $winner): array
@@ -702,6 +722,23 @@ class CurriculumController extends Controller
         }
 
         return [$topic, $units];
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $topic
+     * @param  array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>,checked_week_keys:array<int,string>}>  $units
+     * @return array<int, array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>,checked_week_keys:array<int,string>}>
+     */
+    private function syncUnitCheckedWeekKeys(array $topic, array $units): array
+    {
+        return collect($units)->map(function (array $unit) use ($topic): array {
+            $effectiveWeekKeys = $this->effectiveUnitWeekKeys($topic, $unit);
+
+            return [
+                ...$unit,
+                'checked_week_keys' => array_values(array_intersect($unit['checked_week_keys'] ?? [], $effectiveWeekKeys)),
+            ];
+        })->all();
     }
 
     /**
@@ -772,6 +809,28 @@ class CurriculumController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * @param  array{id:string,title:string,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>}  $topic
+     * @param  array{id:string,title:string,is_exam:bool,assignment_type:string,month_key:?string,month_keys:array<int,string>,week_keys:array<int,string>,checked_week_keys?:array<int,string>}  $unit
+     * @return array<int, string>
+     */
+    private function effectiveUnitWeekKeys(array $topic, array $unit): array
+    {
+        $unitState = $this->assignmentState($unit);
+
+        if ($unitState['assignment_type'] === 'weeks') {
+            return $unitState['week_keys'];
+        }
+
+        $topicState = $this->assignmentState($topic);
+
+        if ($unitState['assignment_type'] === 'none' && $topicState['assignment_type'] === 'weeks') {
+            return $topicState['week_keys'];
+        }
+
+        return [];
     }
 
     /**

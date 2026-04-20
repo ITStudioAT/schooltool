@@ -144,7 +144,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('mdi-check-circle')
         expect(source).toContain('class="curriculum-detail__topic-entry"')
         expect(source).toContain('v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop')
-        expect(source).toContain('class="curriculum-detail__topic-collapse-btn"')
+        expect(source).toContain("'curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }")
         expect(source).toContain('class="curriculum-detail__topic-collapsed-count"')
         expect(source).toContain('v-if="!isTopicCollapsed(topic.id)"')
         expect(source).toContain('@click="toggleTopicCollapse(topic.id)"')
@@ -189,7 +189,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('justify-content: space-between;')
         expect(source).toContain('align-self: center;')
         expect(source).toContain('flex-shrink: 0;')
-        expect(source).toContain('width: 136px;')
+        expect(source).toContain('width: 100%;')
         expect(source).toContain('.curriculum-detail__topic-collapse-btn {')
         expect(source).toContain('box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);')
         expect(source).toContain('.curriculum-detail__topic-collapsed-count {')
@@ -1113,6 +1113,61 @@ describe('CurriculumDetail week card view mode', () => {
         expect(firstAssignedWeek.text()).toContain('mdi-check-circle')
         expect(secondAssignedWeek.find('.curriculum-detail__week-status').exists()).toBe(true)
         expect(unassignedWeek.find('.curriculum-detail__week-status').exists()).toBe(false)
+    })
+
+    it('renders inherited units as one merged week entry when a topic is assigned to a week', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Einleitung',
+                    assignment_type: 'weeks',
+                    month_keys: [],
+                    week_keys: ['2025-09-08'],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Begrüßung, Complience',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                            checked_week_keys: [],
+                        },
+                        {
+                            id: 'unit-2',
+                            title: 'Stoffübersicht, Beurteilung',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                            checked_week_keys: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        expect((wrapper.vm as any).topicsForWeek('2025-09-08')).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                topicId: 'topic-1',
+            }),
+        ]))
+        expect(wrapper.find('.curriculum-detail__unit-item').text()).toContain('Über Thema')
+        expect(wrapper.find('.curriculum-detail__unit-item').text()).not.toContain('Keine Zuordnung')
+
+        const assignedWeek = wrapper.find('[data-week-key="2025-09-08"]')
+        expect(assignedWeek.findAll('.curriculum-detail__overview-entry')).toHaveLength(1)
+        expect(assignedWeek.text()).toContain('Einleitung:')
+        expect(assignedWeek.text()).toContain('Complience, Stoff')
+        expect(assignedWeek.text()).not.toContain('EinleitungEinleitung:')
+
+        const topicPart = assignedWeek.find('.curriculum-detail__week-topic-label-topic')
+        const unitPart = assignedWeek.find('.curriculum-detail__week-topic-label-unit')
+        expect(topicPart.exists()).toBe(true)
+        expect(topicPart.text()).toBe('Einleitung:')
+        expect(unitPart.exists()).toBe(true)
+        expect(unitPart.text()).toContain('Complience, Stoff')
     })
 
     it('wraps assigned week topic text in a marker-style label', () => {
