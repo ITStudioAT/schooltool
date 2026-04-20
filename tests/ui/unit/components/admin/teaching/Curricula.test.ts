@@ -125,4 +125,42 @@ describe('Teaching curricula route sync', () => {
         expect(setCurriculumQueryMock).toHaveBeenCalledWith(null)
         expect(ctx.isResolvingCurriculum).toBe(false)
     })
+
+    it('returns from print to the selected curriculum without clearing it', () => {
+        const routerReplace = vi.fn().mockResolvedValue(undefined)
+        const ctx = {
+            sub_action: 'print',
+            selectedCurriculum: {
+                id: 15,
+                title: 'Deutsch',
+            },
+            $route: {
+                query: {
+                    curriculum: '15',
+                    view: 'print',
+                    page: '2',
+                },
+            },
+            $router: {
+                replace: routerReplace,
+            },
+            setViewQuery(view: string | null) {
+                return (Curricula as any).methods.setViewQuery.call(this, view)
+            },
+        }
+
+        ;(Curricula as any).methods.returnFromPrint.call(ctx)
+
+        expect(ctx.sub_action).toBe('overview')
+        expect(ctx.selectedCurriculum).toEqual({
+            id: 15,
+            title: 'Deutsch',
+        })
+        expect(routerReplace).toHaveBeenCalledWith({
+            query: {
+                curriculum: '15',
+                page: '2',
+            },
+        })
+    })
 })

@@ -234,7 +234,11 @@
                                         </div>
                                     </div>
                                 <div class="curriculum-detail__week-range">
-                                    {{ week.rangeLabel }}
+                                    <span
+                                        class="curriculum-detail__week-range-label"
+                                        :class="{ 'curriculum-detail__week-range-label--selected': isWeekAssignedToHighlightedItem(week.weekKey) }">
+                                        {{ week.rangeLabel }}
+                                    </span>
                                 </div>
                                 <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-topics">
                                     <span
@@ -1191,14 +1195,25 @@
                                                         {{ attachment.mime_type || 'Datei' }}
                                                     </div>
                                                 </div>
-                                                <v-btn
-                                                    variant="text"
-                                                    color="primary"
-                                                    size="x-small"
-                                                    class="text-none"
-                                                    @click.stop="openContentMaterialPreview(attachment)">
-                                                    Vorschau
-                                                </v-btn>
+                                                <div class="curriculum-detail__material-preview-list-actions">
+                                                    <v-btn
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        @click.stop="openContentMaterialPreview(attachment)">
+                                                        Vorschau
+                                                    </v-btn>
+                                                    <v-btn
+                                                        v-if="attachment.download_url"
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        @click.stop="downloadContentMaterialAttachment(attachment)">
+                                                        Herunterladen
+                                                    </v-btn>
+                                                </div>
                                             </div>
                                         </div>
                                         <div v-else class="curriculum-detail__material-preview-empty">
@@ -1362,14 +1377,25 @@
                                                         {{ attachment.mime_type || 'Datei' }}
                                                     </div>
                                                 </div>
-                                                <v-btn
-                                                    variant="text"
-                                                    color="primary"
-                                                    size="x-small"
-                                                    class="text-none"
-                                                    @click.stop="openContentMaterialPreview(attachment)">
-                                                    Vorschau
-                                                </v-btn>
+                                                <div class="curriculum-detail__material-preview-list-actions">
+                                                    <v-btn
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        @click.stop="openContentMaterialPreview(attachment)">
+                                                        Vorschau
+                                                    </v-btn>
+                                                    <v-btn
+                                                        v-if="attachment.download_url"
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        class="text-none"
+                                                        @click.stop="downloadContentMaterialAttachment(attachment)">
+                                                        Herunterladen
+                                                    </v-btn>
+                                                </div>
                                             </div>
                                         </div>
                                         <div v-else class="curriculum-detail__material-preview-empty">
@@ -1394,8 +1420,15 @@
                 </v-card>
             </v-dialog>
 
-            <v-dialog v-model="contentMaterialPreviewDialogOpen" fullscreen persistent>
-                <v-card class="curriculum-detail__fullscreen-preview">
+            <v-dialog
+                v-model="contentMaterialPreviewDialogOpen"
+                :fullscreen="contentMaterialPreviewFullscreen"
+                :max-width="contentMaterialPreviewFullscreen ? undefined : 1180"
+                persistent>
+                <v-card
+                    :class="contentMaterialPreviewFullscreen
+                        ? 'curriculum-detail__fullscreen-preview'
+                        : 'curriculum-detail__modal-preview'">
                     <v-card-title class="curriculum-detail__fullscreen-preview-header">
                         <div>
                             <div class="curriculum-detail__fullscreen-preview-title">
@@ -1405,25 +1438,41 @@
                                 {{ contentMaterialPreviewCard?.title || 'Material' }}
                             </div>
                         </div>
-                        <v-btn
-                            prepend-icon="mdi-close"
-                            variant="flat"
-                            color="error"
-                            rounded="lg"
-                            class="text-none curriculum-detail__fullscreen-preview-close-btn"
-                            @click="closeContentMaterialPreview">
-                            Schließen
-                        </v-btn>
+                        <div class="curriculum-detail__fullscreen-preview-actions">
+                            <v-btn
+                                v-if="contentMaterialPreviewDownloadUrl"
+                                prepend-icon="mdi-download"
+                                variant="flat"
+                                color="primary"
+                                rounded="lg"
+                                class="text-none"
+                                @click="downloadContentMaterialAttachment(contentMaterialPreviewAttachment)">
+                                Herunterladen
+                            </v-btn>
+                            <v-btn
+                                prepend-icon="mdi-close"
+                                variant="flat"
+                                color="error"
+                                rounded="lg"
+                                class="text-none curriculum-detail__fullscreen-preview-close-btn"
+                                @click="closeContentMaterialPreview">
+                                Schließen
+                            </v-btn>
+                        </div>
                     </v-card-title>
                     <v-card-text class="curriculum-detail__fullscreen-preview-body">
                         <iframe
                             v-if="contentMaterialPreviewAttachment && contentMaterialPreviewUsesIframe"
                             :src="contentMaterialPreviewUrl"
-                            class="curriculum-detail__fullscreen-preview-iframe" />
+                            :class="contentMaterialPreviewFullscreen
+                                ? 'curriculum-detail__fullscreen-preview-iframe'
+                                : 'curriculum-detail__modal-preview-iframe'" />
                         <img
                             v-else-if="contentMaterialPreviewAttachment && contentMaterialPreviewIsImage"
                             :src="contentMaterialPreviewUrl"
-                            class="curriculum-detail__fullscreen-preview-image" />
+                            :class="contentMaterialPreviewFullscreen
+                                ? 'curriculum-detail__fullscreen-preview-image'
+                                : 'curriculum-detail__modal-preview-image'" />
                         <div v-else class="curriculum-detail__fullscreen-preview-empty">
                             <v-icon size="42" color="#64748b" class="mb-3">mdi-file-document-outline</v-icon>
                             <div class="text-body-2 mb-3">Für diesen Dateityp ist keine direkte Vorschau verfügbar.</div>
@@ -1432,9 +1481,8 @@
                                 variant="flat"
                                 color="primary"
                                 class="text-none"
-                                :href="contentMaterialPreviewDownloadUrl"
-                                target="_blank">
-                                Datei öffnen
+                                @click="downloadContentMaterialAttachment(contentMaterialPreviewAttachment)">
+                                Herunterladen
                             </v-btn>
                         </div>
                     </v-card-text>
@@ -1460,7 +1508,7 @@
                             v-if="!attachedMaterialDialogLoading && contentMaterialPreviewAttachments.length"
                             class="text-caption mb-3"
                             style="color: #475569">
-                            Anhang anklicken, um die Vorschau zu öffnen.
+                            Für jeden Anhang stehen Vorschau und Download zur Verfügung.
                         </div>
                         <div v-if="attachedMaterialDialogLoading" class="text-center py-6">
                             <v-progress-circular indeterminate color="primary" size="24" />
@@ -1479,7 +1527,7 @@
                                 :key="`attached-material-attachment-${attachment.id}`"
                                 class="lehrplaene__material-item lehrplaene__attachment-item mb-1 px-3"
                                 rounded="lg"
-                                @click="openContentMaterialPreview(attachment)">
+                                @click="openContentMaterialPreview(attachment, { fullscreen: false })">
                                 <template #prepend>
                                     <v-icon size="18" color="#a5b4fc" class="mr-2">
                                         {{ contentMaterialPreviewAttachmentIcon(attachment) }}
@@ -1490,7 +1538,25 @@
                                     {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatBytes(attachment.size_bytes) }}</span>
                                 </v-list-item-subtitle>
                                 <template #append>
-                                    <v-icon size="18" color="primary">mdi-open-in-new</v-icon>
+                                    <div class="curriculum-detail__material-preview-list-actions">
+                                        <v-btn
+                                            variant="text"
+                                            color="primary"
+                                            size="x-small"
+                                            class="text-none"
+                                            @click.stop="openContentMaterialPreview(attachment, { fullscreen: false })">
+                                            Vorschau
+                                        </v-btn>
+                                        <v-btn
+                                            v-if="attachment.download_url"
+                                            variant="text"
+                                            color="primary"
+                                            size="x-small"
+                                            class="text-none"
+                                            @click.stop="downloadContentMaterialAttachment(attachment)">
+                                            Herunterladen
+                                        </v-btn>
+                                    </div>
                                 </template>
                             </v-list-item>
                         </v-list>
@@ -1891,6 +1957,7 @@ export default {
             contentMaterialPreviewCard: null,
             contentMaterialPreviewAttachmentId: null,
             contentMaterialPreviewDialogOpen: false,
+            contentMaterialPreviewFullscreen: true,
             attachedMaterialDialogOpen: false,
             attachedMaterialDialogLoading: false,
             attachedMaterialDialogError: null,
@@ -2947,6 +3014,7 @@ export default {
             this.contentMaterialPreviewCard = null
             this.contentMaterialPreviewAttachmentId = null
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
 
             await this.doSearchContentMaterials('')
         },
@@ -2967,6 +3035,7 @@ export default {
             this.contentMaterialPreviewCard = null
             this.contentMaterialPreviewAttachmentId = null
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
         },
 
         searchContentMaterials(value) {
@@ -3072,6 +3141,7 @@ export default {
             this.contentMaterialPreviewCard = null
             this.contentMaterialPreviewAttachmentId = null
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
         },
 
         syncContentMaterialPreviewSelection(cards = []) {
@@ -3097,16 +3167,19 @@ export default {
             this.contentMaterialPreviewCard = normalizedCard
             this.contentMaterialPreviewAttachmentId = null
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
         },
 
-        openContentMaterialPreview(attachment) {
+        openContentMaterialPreview(attachment, options = {}) {
             const attachmentId = Number(attachment?.id || 0)
+            this.contentMaterialPreviewFullscreen = options.fullscreen !== false
             this.contentMaterialPreviewAttachmentId = Number.isFinite(attachmentId) && attachmentId > 0 ? attachmentId : null
             this.contentMaterialPreviewDialogOpen = this.contentMaterialPreviewAttachmentId !== null
         },
 
         closeContentMaterialPreview() {
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
         },
 
         async fetchCurriculumMaterialCard(materialId) {
@@ -3147,6 +3220,7 @@ export default {
             this.contentMaterialPreviewCard = null
             this.contentMaterialPreviewAttachmentId = null
             this.contentMaterialPreviewDialogOpen = false
+            this.contentMaterialPreviewFullscreen = true
         },
 
         async loadContentMaterialWorkspaceResults(filters = {}) {
@@ -4158,9 +4232,10 @@ export default {
 
             const containerRect = calendarScrollElement.getBoundingClientRect()
             const targetRect = targetElement.getBoundingClientRect()
+            const topOffset = Math.min(Math.round(containerRect.height * 0.22), 180)
             const top = Math.max(
                 0,
-                calendarScrollElement.scrollTop + (targetRect.top - containerRect.top) - 12,
+                calendarScrollElement.scrollTop + (targetRect.top - containerRect.top) - topOffset,
             )
 
             if (typeof calendarScrollElement.scrollTo === 'function') {
@@ -4929,6 +5004,70 @@ export default {
                 : 'mdi-file-document-outline'
         },
 
+        normalizeDownloadFileName(value) {
+            const normalized = String(value || '')
+                .trim()
+                .replace(/[\\/:*?"<>|]/g, '_')
+
+            return normalized.slice(0, 255) || 'Datei'
+        },
+
+        filenameFromContentDisposition(headerValue) {
+            const header = String(headerValue || '').trim()
+            if (!header) return ''
+
+            const utf8Match = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+            if (utf8Match?.[1]) {
+                try {
+                    return decodeURIComponent(utf8Match[1]).trim()
+                } catch {
+                    return String(utf8Match[1]).trim()
+                }
+            }
+
+            const plainMatch = header.match(/filename\s*=\s*\"?([^\";]+)\"?/i)
+            return String(plainMatch?.[1] || '').trim()
+        },
+
+        async downloadContentMaterialAttachment(attachment) {
+            const downloadUrl = String(attachment?.download_url || '').trim()
+            if (downloadUrl === '') {
+                useNotificationStore().notify({
+                    message: 'Datei ist derzeit nicht verfügbar.',
+                    type: 'warning',
+                    timeout: 3000,
+                })
+                return
+            }
+
+            try {
+                const response = await axios.get(downloadUrl, {
+                    responseType: 'blob',
+                })
+
+                const disposition = response?.headers?.['content-disposition']
+                const serverFileName = this.filenameFromContentDisposition(disposition)
+                const fallbackName = String(attachment?.name || '').trim()
+                const fileName = this.normalizeDownloadFileName(serverFileName || fallbackName)
+                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data])
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = fileName
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Datei konnte nicht heruntergeladen werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            }
+        },
+
         materialFileAttachmentCount(card) {
             const count = Number(card?.attachments_count ?? 0)
             return Number.isFinite(count) && count > 0 ? count : 0
@@ -5137,8 +5276,8 @@ export default {
 }
 
 .curriculum-detail__month--topic-selected {
-    border-color: rgba(99, 102, 241, 0.46);
-    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.18), 0 14px 30px rgba(79, 70, 229, 0.14);
+    border-color: rgba(79, 70, 229, 0.62);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.28), 0 16px 34px rgba(79, 70, 229, 0.2);
 }
 
 .curriculum-detail__month--collapsed .curriculum-detail__month-topics {
@@ -5292,9 +5431,9 @@ export default {
 }
 
 .curriculum-detail__week--topic-selected {
-    background: rgba(99, 102, 241, 0.18) !important;
-    border-color: rgba(129, 140, 248, 0.52) !important;
-    box-shadow: 0 0 0 1px rgba(165, 180, 252, 0.16), 0 0 18px rgba(99, 102, 241, 0.16);
+    background: rgba(79, 70, 229, 0.28) !important;
+    border-color: rgba(99, 102, 241, 0.72) !important;
+    box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.24), 0 0 22px rgba(79, 70, 229, 0.24);
 }
 
 .curriculum-detail__week--current {
@@ -5430,6 +5569,24 @@ export default {
 
 .curriculum-detail__week--with-topics .curriculum-detail__week-range {
     color: #bfdbfe;
+}
+
+.curriculum-detail__week-range-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0;
+    border-radius: 999px;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, padding 0.18s ease, transform 0.18s ease;
+}
+
+.curriculum-detail__week-range-label--selected {
+    padding: 0.2rem 0.62rem;
+    background: rgba(79, 70, 229, 0.3);
+    color: #1e1b4b !important;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    box-shadow: 0 8px 16px rgba(79, 70, 229, 0.22);
 }
 
 .curriculum-detail__week-actions {
@@ -5829,6 +5986,13 @@ export default {
     color: #64748b;
 }
 
+.curriculum-detail__material-preview-list-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
 .curriculum-detail__material-preview-empty {
     flex: 1;
     min-height: 220px;
@@ -5851,6 +6015,13 @@ export default {
     background: rgba(248, 250, 252, 0.98) !important;
 }
 
+.curriculum-detail__modal-preview {
+    display: flex;
+    flex-direction: column;
+    min-height: min(78vh, 820px);
+    background: rgba(248, 250, 252, 0.98) !important;
+}
+
 .curriculum-detail__fullscreen-preview-header {
     display: flex;
     align-items: center;
@@ -5858,6 +6029,14 @@ export default {
     gap: 16px;
     padding: 16px 20px;
     border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.curriculum-detail__fullscreen-preview-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 .curriculum-detail__fullscreen-preview-title {
@@ -5895,6 +6074,19 @@ export default {
 }
 
 .curriculum-detail__fullscreen-preview-image {
+    object-fit: contain;
+}
+
+.curriculum-detail__modal-preview-iframe,
+.curriculum-detail__modal-preview-image {
+    width: 100%;
+    height: min(68vh, 720px);
+    border: none;
+    display: block;
+    background: #fff;
+}
+
+.curriculum-detail__modal-preview-image {
     object-fit: contain;
 }
 

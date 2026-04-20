@@ -53,6 +53,7 @@ use App\Http\Controllers\Admin\Teaching\CourseStudentCategoryEvaluationControlle
 use App\Http\Controllers\Admin\Teaching\CourseWorkController;
 use App\Http\Controllers\Admin\Teaching\CurriculumController;
 use App\Http\Controllers\Admin\Teaching\CurriculumDocumentController;
+use App\Http\Controllers\Admin\Teaching\CurriculumExportController;
 use App\Http\Controllers\Admin\Teaching\FileUploadController;
 use App\Http\Controllers\Admin\Teaching\HolidayController;
 use App\Http\Controllers\Admin\Teaching\Import116Controller;
@@ -393,6 +394,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachment', [CurriculumDocumentController::class, 'updateMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/download', [CurriculumDocumentController::class, 'download']);
         Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
+        Route::get('/admin/teaching/curricula/{curriculum}/export/word', [CurriculumExportController::class, 'word']);
+        Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);

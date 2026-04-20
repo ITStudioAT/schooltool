@@ -3,7 +3,7 @@
         <v-sheet rounded="xl" class="curricula-submenu mb-3 pa-2">
             <div class="curricula-submenu__inner">
                 <v-btn
-                    v-for="item in submenuItems"
+                    v-for="item in visibleSubmenuItems"
                     :key="item.key"
                     size="small"
                     rounded="xl"
@@ -15,17 +15,6 @@
                     {{ item.label }}
                 </v-btn>
 
-                <v-chip
-                    v-if="selectedCurriculum"
-                    size="small"
-                    color="primary"
-                    variant="tonal"
-                    closable
-                    class="ml-2 font-weight-bold"
-                    @click:close="closeCurriculum">
-                    <v-icon size="14" class="mr-1">mdi-book-education-outline</v-icon>
-                    {{ selectedCurriculum.title }}
-                </v-chip>
             </div>
         </v-sheet>
 
@@ -35,25 +24,31 @@
         </div>
 
         <CurriculaOverview
-            v-else-if="!selectedCurriculum"
+            v-else-if="sub_action === 'overview' && !selectedCurriculum"
             @select="openCurriculum" />
 
         <CurriculumDetail
-            v-else
+            v-else-if="sub_action === 'overview' && selectedCurriculum"
             :curriculum="selectedCurriculum"
             @back="closeCurriculum"
             @updated="updateCurriculum" />
+
+        <CurriculaPrint
+            v-else-if="sub_action === 'print'"
+            :curriculum="selectedCurriculum"
+            @back="returnFromPrint" />
     </v-col>
 </template>
 
 <script>
 import CurriculaOverview from './CurriculaOverview.vue'
 import CurriculumDetail from './CurriculumDetail.vue'
+import CurriculaPrint from './CurriculaPrint.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 export default {
     name: 'TeachingCurricula',
-    components: { CurriculaOverview, CurriculumDetail },
+    components: { CurriculaOverview, CurriculumDetail, CurriculaPrint },
     data() {
         return {
             curriculumStore: useCurriculumStore(),
@@ -63,8 +58,14 @@ export default {
             routeSyncToken: 0,
             submenuItems: [
                 { key: 'overview', label: 'Übersicht', icon: 'mdi-view-list-outline' },
+                { key: 'print', label: 'Ausdruck', icon: 'mdi-printer-outline', requiresCurriculum: true },
             ],
         }
+    },
+    computed: {
+        visibleSubmenuItems() {
+            return this.submenuItems.filter((item) => !item.requiresCurriculum || this.selectedCurriculum)
+        },
     },
     watch: {
         '$route.query.curriculum': {
@@ -73,11 +74,25 @@ export default {
                 await this.syncSelectedCurriculumFromRoute(curriculumId)
             },
         },
+        '$route.query.view': {
+            immediate: true,
+            handler(view) {
+                const validKeys = this.submenuItems.map((i) => i.key)
+                this.sub_action = validKeys.includes(view) ? view : 'overview'
+            },
+        },
     },
     methods: {
         handleSubmenu(key) {
             this.sub_action = key
-            this.closeCurriculum()
+            this.setViewQuery(key)
+            if (key === 'overview') {
+                this.closeCurriculum()
+            }
+        },
+        returnFromPrint() {
+            this.sub_action = 'overview'
+            this.setViewQuery('overview')
         },
         openCurriculum(curriculum) {
             this.selectedCurriculum = curriculum
@@ -91,6 +106,17 @@ export default {
         closeCurriculum() {
             this.selectedCurriculum = null
             this.setCurriculumQuery(null)
+        },
+        setViewQuery(view) {
+            const nextQuery = { ...this.$route.query }
+
+            if (view && view !== 'overview') {
+                nextQuery.view = view
+            } else {
+                delete nextQuery.view
+            }
+
+            this.$router.replace({ query: nextQuery }).catch(() => {})
         },
         setCurriculumQuery(curriculumId) {
             const nextQuery = { ...this.$route.query }

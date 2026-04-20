@@ -331,33 +331,26 @@ test('active school audit does not mark linked source files from another school 
         ->assertJsonPath('data.reports.0.differences.local_missing.total_bytes', 500);
 });
 
-test('super_admin can delete bucket relicts for the active school and for all schools', function (): void {
+test('storage audit does not allow remote purge actions', function (): void {
     $activeResponse = $this->actingAs($this->superAdmin, 'sanctum')
         ->postJson('/api/admin/materials/storage-audit/purge', [
             'scope_key' => 'active_school',
             'school_id' => $this->activeSchool->id,
         ]);
 
-    $activeResponse->assertOk()
-        ->assertJsonPath('data.scope_key', 'active_school')
-        ->assertJsonPath('data.deleted_count', 1)
-        ->assertJsonPath('data.deleted_bytes', 300);
-
-    Storage::disk('s3')->assertMissing($this->activeOrphanPath);
-    Storage::disk('s3')->assertExists($this->otherOrphanPath);
-    Storage::disk('s3')->assertExists($this->activeLivePath);
+    $activeResponse->assertStatus(422)
+        ->assertJsonPath('message', 'Remote-Löschungen sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.');
 
     $allResponse = $this->actingAs($this->superAdmin, 'sanctum')
         ->postJson('/api/admin/materials/storage-audit/purge', [
             'scope_key' => 'all_schools',
         ]);
 
-    $allResponse->assertOk()
-        ->assertJsonPath('data.scope_key', 'all_schools')
-        ->assertJsonPath('data.deleted_count', 1)
-        ->assertJsonPath('data.deleted_bytes', 500);
+    $allResponse->assertStatus(422)
+        ->assertJsonPath('message', 'Remote-Löschungen sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.');
 
-    Storage::disk('s3')->assertMissing($this->otherOrphanPath);
+    Storage::disk('s3')->assertExists($this->activeOrphanPath);
+    Storage::disk('s3')->assertExists($this->otherOrphanPath);
     Storage::disk('s3')->assertExists($this->activeLivePath);
 });
 
@@ -419,19 +412,18 @@ test('sync local rejects all schools scope', function (): void {
         ->assertStatus(422);
 });
 
-test('super_admin can delete a broken database only attachment from storage audit', function (): void {
+test('storage audit does not allow deleting broken database only attachments', function (): void {
     $response = $this->actingAs($this->superAdmin, 'sanctum')
         ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeMissingOnlineAttachment->id}", [
             'scope_key' => 'active_school',
             'school_id' => $this->activeSchool->id,
         ]);
 
-    $response->assertOk()
-        ->assertJsonPath('data.attachment_id', $this->activeMissingOnlineAttachment->id)
-        ->assertJsonPath('data.scope_key', 'active_school')
-        ->assertJsonPath('data.school_id', $this->activeSchool->id);
+    $response->assertStatus(422)
+        ->assertJsonPath('message', 'Löschungen aus dem Storage-Audit sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.');
 
-    expect(MaterialCardAttachment::withTrashed()->find($this->activeMissingOnlineAttachment->id))->toBeNull();
+    expect(MaterialCardAttachment::withTrashed()->find($this->activeMissingOnlineAttachment->id))
+        ->not->toBeNull();
 });
 
 test('admin users cannot access the storage reconciliation endpoint', function (): void {

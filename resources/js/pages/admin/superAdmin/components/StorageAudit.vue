@@ -80,7 +80,7 @@
                         <div>
                             <div class="text-subtitle-2 font-weight-bold">Was ist hier zu tun?</div>
                             <div class="text-caption text-medium-emphasis">
-                                Drei einfache Fälle: lokal nachladen, manuell prüfen oder online aufräumen
+                                Zwei sichere Fälle: remote nach lokal laden oder remote manuell gegenprüfen
                             </div>
                         </div>
                     </div>
@@ -142,24 +142,17 @@
                         <div>
                             <div class="text-subtitle-2 font-weight-bold">Nur online, ohne Materialeintrag</div>
                             <div class="text-caption text-medium-emphasis">
-                                Diese Dateien liegen noch in Cloudflare, haben aber keinen Materialeintrag mehr
+                                Diese Dateien liegen noch in Cloudflare, haben aber lokal keinen passenden Materialeintrag
                             </div>
                         </div>
-                        <div class="d-flex flex-column align-end ga-2">
-                            <div class="text-caption text-medium-emphasis">
-                                {{ report.differences.bucket_only.count }} Dateien
-                            </div>
-                            <v-btn
-                                color="error"
-                                variant="tonal"
-                                size="small"
-                                prepend-icon="mdi-delete-sweep"
-                                :disabled="report.differences.bucket_only.count === 0 || isPurging"
-                                @click="openPurgeDialog(report)">
-                                Nur-online-Dateien löschen
-                            </v-btn>
+                        <div class="text-caption text-medium-emphasis">
+                            {{ report.differences.bucket_only.count }} Dateien
                         </div>
                     </div>
+
+                    <v-alert v-if="report.differences.bucket_only.count > 0" type="warning" variant="tonal" class="mb-4">
+                        Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.
+                    </v-alert>
 
                     <v-list v-if="report.bucket_only_objects.length" class="bg-transparent pa-0 mb-4" density="compact">
                         <v-list-item
@@ -198,6 +191,10 @@
                         </div>
                     </div>
 
+                    <v-alert v-if="report.differences.database_only.count > 0" type="warning" variant="tonal" class="mb-4">
+                        Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.
+                    </v-alert>
+
                     <v-list v-if="report.database_only_attachments.length" class="bg-transparent pa-0" density="compact">
                         <v-list-item
                             v-for="item in report.database_only_attachments"
@@ -212,17 +209,6 @@
                                 <span v-if="item.deleted_at"> • gelöscht {{ formatReadableDateTime(item.deleted_at) }}</span>
                                 <span> • {{ formatBytes(item.size_bytes) }}</span>
                             </template>
-                            <div class="mt-2 d-flex justify-end">
-                                <v-btn
-                                    color="error"
-                                    variant="text"
-                                    size="small"
-                                    prepend-icon="mdi-delete"
-                                    :disabled="isDeletingBrokenAttachment"
-                                    @click="openBrokenAttachmentDeleteDialog(report, item)">
-                                    Defekten Anhang löschen
-                                </v-btn>
-                            </div>
                         </v-list-item>
 
                         <v-list-item v-if="report.has_more_database_only_attachments" class="px-0">
@@ -825,7 +811,7 @@ export default {
             }
 
             if (bucketOnlyCount > 0) {
-                return `${bucketOnlyCount} Dateien liegen nur noch online und können hier aufgeräumt werden.`
+                return `${bucketOnlyCount} Dateien liegen nur noch online und müssen direkt gegen die Remote-Daten geprüft werden.`
             }
 
             return 'Für diesen Bereich ist aktuell nichts zu tun.'

@@ -448,28 +448,10 @@ describe('StorageAudit', () => {
         expect(screen.queryByText('materials/schools/1/users/7/cards/101/missing.docx')).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('2 Verweise'))).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('1 im Papierkorb'))).not.toBeInTheDocument()
-        expect(screen.getAllByRole('button', { name: 'Defekten Anhang löschen' })).toHaveLength(2)
-
-        const deleteButtons = screen.getAllByRole('button', { name: 'Nur-online-Dateien löschen' })
-        expect(deleteButtons).toHaveLength(2)
-
-        await fireEvent.click(deleteButtons[0])
-
-        expect(screen.getByText('Aktive Schule: Christian-Doppler-Gymnasium Salzburg')).toBeInTheDocument()
-        expect(screen.getByText('1 Datei ohne Materialeintrag mit insgesamt 256 B werden dauerhaft aus dem Bucket entfernt.')).toBeInTheDocument()
-
-        await fireEvent.click(screen.getByRole('button', { name: 'Jetzt löschen' }))
-
-        await waitFor(() => {
-            expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/storage-audit/purge', {
-                scope_key: 'active_school',
-                school_id: 1,
-            })
-        })
-
-        await waitFor(() => {
-            expect(screen.getByText(/Verwaiste Dateien wurden gelöscht/)).toBeInTheDocument()
-        })
+        expect(screen.queryAllByRole('button', { name: 'Defekten Anhang löschen' })).toHaveLength(0)
+        expect(screen.queryAllByRole('button', { name: 'Nur-online-Dateien löschen' })).toHaveLength(0)
+        expect(screen.getAllByText('Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.')).toHaveLength(2)
+        expect(screen.getAllByText('Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.')).toHaveLength(2)
 
         let syncStatusPollCount = 0
         axiosMock.get.mockImplementation((url: string) => {
@@ -562,28 +544,10 @@ describe('StorageAudit', () => {
             expect(screen.queryByText('Der Download der Materialdateien wurde im Hintergrund gestartet.')).not.toBeInTheDocument()
         })
 
-        const brokenAttachmentDeleteButtons = screen.getAllByRole('button', { name: 'Defekten Anhang löschen' })
-
-        await fireEvent.click(brokenAttachmentDeleteButtons[0])
-
-        expect(screen.getByText('Der Eintrag "Informatik - Netzwerke - Sicherheit - Irgendwas • Schule 1" wird aus der Materialkarte entfernt.')).toBeInTheDocument()
-
-        await fireEvent.click(screen.getByRole('button', { name: 'Anhang löschen' }))
-
-        await waitFor(() => {
-            expect(axiosMock.delete).toHaveBeenCalledWith(
-                '/api/admin/materials/storage-audit/database-only-attachments/301',
-                {
-                    data: {
-                        scope_key: 'active_school',
-                        school_id: 1,
-                    },
-                },
-            )
-        })
-
-        await waitFor(() => {
-            expect(screen.getByText('Der defekte Anhang wurde entfernt.')).toBeInTheDocument()
-        })
+        expect(axiosMock.post).not.toHaveBeenCalledWith('/api/admin/materials/storage-audit/purge', expect.anything())
+        expect(axiosMock.delete).not.toHaveBeenCalledWith(
+            '/api/admin/materials/storage-audit/database-only-attachments/301',
+            expect.anything(),
+        )
     })
 })

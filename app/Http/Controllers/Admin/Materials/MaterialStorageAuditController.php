@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Admin\Materials;
 use App\Http\Controllers\Controller;
 use App\Jobs\BuildMaterialStorageAuditJob;
 use App\Jobs\SyncActiveSchoolMaterialFilesToLocalJob;
-use App\Models\MaterialCardAttachment;
-use App\Services\Materials\MaterialService;
 use App\Services\Materials\MaterialStorageAuditService;
 use App\Services\Materials\MaterialStorageAuditStatusStore;
 use App\Services\Materials\MaterialStorageSyncStatusStore;
@@ -77,7 +75,7 @@ class MaterialStorageAuditController extends Controller
         ], 200);
     }
 
-    public function purge(Request $request, MaterialStorageAuditService $service): JsonResponse
+    public function purge(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -88,16 +86,9 @@ class MaterialStorageAuditController extends Controller
             'school_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $result = $service->purgeBucketOnlyObjectsForUser(
-            $authUser,
-            (string) $validated['scope_key'],
-            isset($validated['school_id']) ? (int) $validated['school_id'] : null,
-        );
-
         return response()->json([
-            'message' => 'Verwaiste Dateien wurden gelöscht.',
-            'data' => $result,
-        ], 200);
+            'message' => 'Remote-Löschungen sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.',
+        ], 422);
     }
 
     public function syncLocal(Request $request, MaterialStorageSyncStatusStore $statusStore): JsonResponse
@@ -159,8 +150,6 @@ class MaterialStorageAuditController extends Controller
     public function destroyDatabaseOnlyAttachment(
         Request $request,
         int $attachmentId,
-        MaterialStorageAuditService $auditService,
-        MaterialService $materialService,
     ): JsonResponse {
         if (! $authUser = $this->userHasRole(['super_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -171,51 +160,8 @@ class MaterialStorageAuditController extends Controller
             'school_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $attachment = MaterialCardAttachment::withTrashed()
-            ->with([
-                'materialCard' => fn ($query) => $query
-                    ->withTrashed()
-                    ->with('user'),
-            ])
-            ->find($attachmentId);
-
-        if (! $attachment instanceof MaterialCardAttachment || ! $attachment->materialCard) {
-            abort(404, 'Der defekte Anhang wurde nicht gefunden.');
-        }
-
-        $scopeKey = (string) $validated['scope_key'];
-        $selectedSchoolId = $scopeKey === 'active_school'
-            ? (isset($validated['school_id'])
-                ? (int) $validated['school_id']
-                : (int) ($authUser->selectedSchool?->id ?? $authUser->school_id ?? 0))
-            : null;
-
-        if ($scopeKey === 'active_school' && $selectedSchoolId > 0 && (int) $attachment->materialCard->school_id !== $selectedSchoolId) {
-            abort(404, 'Der defekte Anhang gehört nicht zur aktiven Schule.');
-        }
-
-        if (! $auditService->isDatabaseOnlyAttachment($attachment)) {
-            return response()->json([
-                'message' => 'Der Eintrag ist nicht mehr als "Fehlt auch online" markiert.',
-            ], 422);
-        }
-
-        $card = $attachment->materialCard;
-        $owner = $card->user;
-
-        $materialService->deleteAttachment($attachment);
-
-        if ($owner) {
-            $materialService->propagateLinkedWritableCardFromTarget($owner, $card);
-        }
-
         return response()->json([
-            'message' => 'Der defekte Anhang wurde entfernt.',
-            'data' => [
-                'attachment_id' => $attachmentId,
-                'scope_key' => $scopeKey,
-                'school_id' => $selectedSchoolId,
-            ],
-        ], 200);
+            'message' => 'Löschungen aus dem Storage-Audit sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.',
+        ], 422);
     }
 }

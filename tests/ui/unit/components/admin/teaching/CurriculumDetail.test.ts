@@ -181,7 +181,10 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('.curriculum-detail__unit-item--selected {')
         expect(source).toContain('border-color: rgba(129, 140, 248, 0.52);')
         expect(source).toContain('linear-gradient(180deg, rgba(224, 231, 255, 0.98), rgba(199, 210, 254, 0.94));')
-        expect(source).toContain('0 0 18px rgba(99, 102, 241, 0.16);')
+        expect(source).toContain('0 0 22px rgba(79, 70, 229, 0.24);')
+        expect(source).toContain('border-color: rgba(79, 70, 229, 0.62);')
+        expect(source).toContain('background: rgba(79, 70, 229, 0.3);')
+        expect(source).toContain('color: #1e1b4b !important;')
         expect(source).toContain('@click="toggleSelectedUnit(topic.id, unit.id)"')
         expect(source).toContain('class="curriculum-detail__topic-actions" @click.stop')
         expect(source).toContain('.curriculum-detail__topic-entry {')
@@ -210,6 +213,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('0 8px 18px rgba(79, 70, 229, 0.28);')
         expect(source).toContain('.curriculum-detail__assignment-week-controls :deep(.v-btn) {')
         expect(source).toContain('scrollHighlightedCalendarIntoView() {')
+        expect(source).toContain('const topOffset = Math.min(Math.round(containerRect.height * 0.22), 180)')
         expect(source).toContain('this.$nextTick(() => this.scrollHighlightedCalendarIntoView())')
         expect(source).toContain('this.activeTopicAssignmentType = assignmentType ?? topic.assignment_type')
         expect(source).toContain('this.activeTopicAssignmentType = assignmentType ?? unit.assignment_type')
@@ -576,7 +580,7 @@ describe('CurriculumDetail week card view mode', () => {
         ])
     })
 
-    it('opens the selected material attachment only in the fullscreen preview dialog', () => {
+    it('opens content material previews in fullscreen by default', () => {
         const wrapper = mountCurriculumDetail()
         const material = (wrapper.vm as any).normalizeAttachedMaterial({
             id: 77,
@@ -607,6 +611,7 @@ describe('CurriculumDetail week card view mode', () => {
         ;(wrapper.vm as any).openContentMaterialPreview(material.attachments[1])
 
         expect((wrapper.vm as any).contentMaterialPreviewDialogOpen).toBe(true)
+        expect((wrapper.vm as any).contentMaterialPreviewFullscreen).toBe(true)
         expect((wrapper.vm as any).contentMaterialPreviewAttachment).toEqual(
             expect.objectContaining({
                 id: 502,
@@ -614,6 +619,120 @@ describe('CurriculumDetail week card view mode', () => {
             }),
         )
         expect((wrapper.vm as any).contentMaterialPreviewIsImage).toBe(true)
+    })
+
+    it('shows download actions for content material attachments', async () => {
+        const wrapper = mountCurriculumDetail()
+        const material = (wrapper.vm as any).normalizeAttachedMaterial({
+            id: 77,
+            title: 'Nebensätze Arbeitsblatt',
+            subject: 'Deutsch',
+            area: 'Grammatik',
+            unit: 'Nebensätze',
+            attachments_count: 1,
+            attachments: [
+                {
+                    id: 501,
+                    name: 'Nebensaetze.pdf',
+                    mime_type: 'application/pdf',
+                    preview_url: '/api/admin/materials/attachments/501/preview',
+                    download_url: '/api/admin/materials/attachments/501/download',
+                },
+            ],
+        })
+
+        await wrapper.setData({
+            contentMaterialDialogOpen: true,
+            contentMaterialPreviewCard: material,
+        })
+
+        const attachmentButtons = wrapper.findAll('button').map((button) => button.text().trim())
+
+        expect(attachmentButtons).toContain('Vorschau')
+        expect(attachmentButtons).toContain('Herunterladen')
+    })
+
+    it('keeps the selected content material attachment downloadable in fullscreen preview', async () => {
+        const wrapper = mountCurriculumDetail()
+        const material = (wrapper.vm as any).normalizeAttachedMaterial({
+            id: 77,
+            title: 'Nebensätze Arbeitsblatt',
+            subject: 'Deutsch',
+            area: 'Grammatik',
+            unit: 'Nebensätze',
+            attachments_count: 1,
+            attachments: [
+                {
+                    id: 501,
+                    name: 'Nebensaetze.pdf',
+                    mime_type: 'application/pdf',
+                    preview_url: '/api/admin/materials/attachments/501/preview',
+                    download_url: '/api/admin/materials/attachments/501/download',
+                },
+            ],
+        })
+
+        await wrapper.setData({
+            contentMaterialPreviewCard: material,
+            contentMaterialPreviewAttachmentId: 501,
+            contentMaterialPreviewDialogOpen: true,
+        })
+
+        expect((wrapper.vm as any).contentMaterialPreviewDownloadUrl).toBe('/api/admin/teaching/curricula/15/materials/attachments/501/download')
+        expect(wrapper.findAll('button').map((button) => button.text().trim())).toContain('Herunterladen')
+    })
+
+    it('downloads content material attachments via axios instead of navigating to the route', async () => {
+        const wrapper = mountCurriculumDetail()
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: new Blob(['pdf-content'], { type: 'application/pdf' }),
+            headers: {
+                'content-disposition': 'attachment; filename="Lehrplan.pdf"',
+            },
+        })
+        const originalCreateObjectURL = URL.createObjectURL
+        const originalRevokeObjectURL = URL.revokeObjectURL
+        const originalCreateElement = document.createElement.bind(document)
+        const createObjectURLMock = vi.fn(() => 'blob:preview')
+        const revokeObjectURLMock = vi.fn()
+        const linkClick = vi.fn()
+        let createdLink: HTMLAnchorElement | null = null
+
+        const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+            const element = originalCreateElement(tagName)
+            if (tagName.toLowerCase() === 'a') {
+                createdLink = element as HTMLAnchorElement
+                ;(createdLink as any).click = linkClick
+            }
+
+            return element
+        }) as typeof document.createElement)
+
+        ;(globalThis as any).axios = { get: getMock }
+        URL.createObjectURL = createObjectURLMock
+        URL.revokeObjectURL = revokeObjectURLMock
+
+        try {
+            await (wrapper.vm as any).downloadContentMaterialAttachment({
+                id: 501,
+                name: 'Fallback.pdf',
+                download_url: '/api/admin/teaching/curricula/15/materials/attachments/501/download',
+            })
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/materials/attachments/501/download', {
+                responseType: 'blob',
+            })
+            expect(createObjectURLMock).toHaveBeenCalledTimes(1)
+            expect(createdLink?.download).toBe('Lehrplan.pdf')
+            expect(linkClick).toHaveBeenCalledTimes(1)
+            expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:preview')
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+            URL.createObjectURL = originalCreateObjectURL
+            URL.revokeObjectURL = originalRevokeObjectURL
+            createElementSpy.mockRestore()
+        }
     })
 
     it('shows attachment access for linked topic materials in the overview', () => {
@@ -704,10 +823,15 @@ describe('CurriculumDetail week card view mode', () => {
                     name: 'Teil B.png',
                 }),
             ])
+            expect(wrapper.text()).toContain('Für jeden Anhang stehen Vorschau und Download zur Verfügung.')
+            expect(wrapper.findAll('button').map((button) => button.text().trim())).toEqual(
+                expect.arrayContaining(['Vorschau', 'Herunterladen']),
+            )
 
-            ;(wrapper.vm as any).openContentMaterialPreview((wrapper.vm as any).contentMaterialPreviewAttachments[1])
+            ;(wrapper.vm as any).openContentMaterialPreview((wrapper.vm as any).contentMaterialPreviewAttachments[1], { fullscreen: false })
 
             expect((wrapper.vm as any).contentMaterialPreviewDialogOpen).toBe(true)
+            expect((wrapper.vm as any).contentMaterialPreviewFullscreen).toBe(false)
             expect((wrapper.vm as any).contentMaterialPreviewIsImage).toBe(true)
         } finally {
             ;(globalThis as any).axios = originalAxios
@@ -1030,6 +1154,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(septemberMonth.classes()).toContain('curriculum-detail__month--topic-selected')
         expect(septemberWeeks[0].classes()).toContain('curriculum-detail__week--topic-selected')
         expect(septemberWeeks[4].classes()).toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[0].find('.curriculum-detail__week-range-label').classes()).toContain('curriculum-detail__week-range-label--selected')
 
         await unitRow.trigger('click')
 
@@ -1037,6 +1162,8 @@ describe('CurriculumDetail week card view mode', () => {
         expect(septemberWeeks[0].classes()).not.toContain('curriculum-detail__week--topic-selected')
         expect(septemberWeeks[2].classes()).toContain('curriculum-detail__week--topic-selected')
         expect(septemberWeeks[4].classes()).not.toContain('curriculum-detail__week--topic-selected')
+        expect(septemberWeeks[0].find('.curriculum-detail__week-range-label').classes()).not.toContain('curriculum-detail__week-range-label--selected')
+        expect(septemberWeeks[2].find('.curriculum-detail__week-range-label').classes()).toContain('curriculum-detail__week-range-label--selected')
     })
 
     it('includes unit assignments when highlighting a selected topic', async () => {
