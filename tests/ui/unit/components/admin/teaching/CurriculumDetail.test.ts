@@ -142,6 +142,12 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('class="curriculum-detail__week-status"')
         expect(source).toContain('class="curriculum-detail__week-status-icon"')
         expect(source).toContain('mdi-check-circle')
+        expect(source).toContain('class="curriculum-detail__topic-entry"')
+        expect(source).toContain('v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop')
+        expect(source).toContain('class="curriculum-detail__topic-collapse-btn"')
+        expect(source).toContain('class="curriculum-detail__topic-collapsed-count"')
+        expect(source).toContain('v-if="!isTopicCollapsed(topic.id)"')
+        expect(source).toContain('@click="toggleTopicCollapse(topic.id)"')
         expect(source).toContain("'curriculum-detail__month--collapsed': shouldCollapseMonth(month)")
         expect(source).toContain('@click="toggleMonthCollapse(month)"')
         expect(source).toContain('v-if="!shouldCollapseMonth(month)" class="curriculum-detail__weeks"')
@@ -151,6 +157,15 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain("'--calendar-highlight-accent': this.highlightedTopicAccentColor")
         expect(source).toContain('.curriculum-detail__week-status-icon {')
         expect(source).toContain('color: #16a34a !important;')
+        expect(source).toContain('class="curriculum-detail__week-topic-label"')
+        expect(source).toContain('class="curriculum-detail__week-topic-label-topic"')
+        expect(source).toContain('class="curriculum-detail__week-topic-label-unit"')
+        expect(source).toContain('.curriculum-detail__week-topic-label {')
+        expect(source).toContain('display: inline-block;')
+        expect(source).toContain('background: rgba(250, 204, 21, 0.82);')
+        expect(source).toContain('line-height: 1;')
+        expect(source).toContain('.curriculum-detail__week-topic-label-topic {')
+        expect(source).toContain('.curriculum-detail__week-topic-label-unit {')
         expect(source).toContain('.curriculum-detail__overview-entry--exam {')
         expect(source).toContain('color: #4f46e5;')
         expect(source).toContain('v-for="group in monthOverviewGroups(month)"')
@@ -169,6 +184,15 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('0 0 18px rgba(99, 102, 241, 0.16);')
         expect(source).toContain('@click="toggleSelectedUnit(topic.id, unit.id)"')
         expect(source).toContain('class="curriculum-detail__topic-actions" @click.stop')
+        expect(source).toContain('.curriculum-detail__topic-entry {')
+        expect(source).toContain('.curriculum-detail__topic-collapse-toggle {')
+        expect(source).toContain('justify-content: space-between;')
+        expect(source).toContain('align-self: center;')
+        expect(source).toContain('flex-shrink: 0;')
+        expect(source).toContain('width: 136px;')
+        expect(source).toContain('.curriculum-detail__topic-collapse-btn {')
+        expect(source).toContain('box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);')
+        expect(source).toContain('.curriculum-detail__topic-collapsed-count {')
         expect(source).toContain('class="curriculum-detail__topic-assignment-panel"')
         expect(source).toContain('@click.stop>')
         expect(source).toContain(":variant=\"activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'\"")
@@ -178,6 +202,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('.curriculum-detail__week--with-exams {')
         expect(source).toContain('.curriculum-detail__week--with-exams .curriculum-detail__week-topics {')
         expect(source).toContain('.curriculum-detail__month--collapsed .curriculum-detail__month-topics {')
+        expect(source).toContain('.curriculum-detail__month--collapsed .curriculum-detail__month-topic-unit {')
         expect(source).toContain('.curriculum-detail__topic-assignment-options :deep(.v-btn) {')
         expect(source).toContain('color: #cbd5e1 !important;')
         expect(source).toContain('.curriculum-detail__topic-assignment-options :deep(.v-btn--variant-flat) {')
@@ -271,6 +296,106 @@ describe('CurriculumDetail week card view mode', () => {
         })
         expect((wrapper.vm as any).selectedTopicId).toBeNull()
         expect(topicItem.classes()).not.toContain('curriculum-detail__topic-item--selected')
+    })
+
+    it('collapses a topic from the external toggle without selecting it', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const topicItem = wrapper.find('.curriculum-detail__topic-item')
+        const collapseButton = wrapper.find('.curriculum-detail__topic-collapse-toggle button')
+
+        expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(true)
+        expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(false)
+
+        await collapseButton.trigger('click')
+
+        expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(true)
+        expect((wrapper.vm as any).selectedTopicId).toBeNull()
+        expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(false)
+
+        await collapseButton.trigger('click')
+
+        expect((wrapper.vm as any).isTopicCollapsed('topic-1')).toBe(false)
+        expect(topicItem.find('.curriculum-detail__unit-section').exists()).toBe(true)
+    })
+
+    it('hides the external collapse toggle for topics without units', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [],
+                },
+            ],
+        })
+
+        expect(wrapper.find('.curriculum-detail__topic-collapse-toggle').exists()).toBe(false)
+    })
+
+    it('shows the unit count next to the collapse button when the topic is collapsed', async () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                        {
+                            id: 'unit-2',
+                            title: 'Nomen',
+                            is_exam: false,
+                            assignment_type: 'none',
+                            month_keys: [],
+                            week_keys: [],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        expect(wrapper.find('.curriculum-detail__topic-collapsed-count').exists()).toBe(false)
+
+        await wrapper.find('.curriculum-detail__topic-collapse-toggle button').trigger('click')
+
+        const collapseToggle = wrapper.find('.curriculum-detail__topic-collapse-toggle')
+        const collapsedCount = collapseToggle.find('.curriculum-detail__topic-collapsed-count')
+
+        expect(collapsedCount.exists()).toBe(true)
+        expect(collapsedCount.text()).toContain('2 Einheiten')
     })
 
     it('renders the topic editor dialog even when the Lehrpläne card is hidden', async () => {
@@ -988,6 +1113,60 @@ describe('CurriculumDetail week card view mode', () => {
         expect(firstAssignedWeek.text()).toContain('mdi-check-circle')
         expect(secondAssignedWeek.find('.curriculum-detail__week-status').exists()).toBe(true)
         expect(unassignedWeek.find('.curriculum-detail__week-status').exists()).toBe(false)
+    })
+
+    it('wraps assigned week topic text in a marker-style label', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'weeks',
+                    month_keys: [],
+                    week_keys: ['2025-09-08'],
+                    units: [],
+                },
+            ],
+        })
+
+        const assignedWeek = wrapper.find('[data-week-key="2025-09-08"]')
+        const topicLabel = assignedWeek.find('.curriculum-detail__week-topic-label')
+
+        expect(topicLabel.exists()).toBe(true)
+        expect(topicLabel.text()).toBe('Grammatik')
+    })
+
+    it('renders week topic text bold and unit text normal inside the marker label', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grundlagen',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Office 365',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-08'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const assignedWeek = wrapper.find('[data-week-key="2025-09-08"]')
+        const topicPart = assignedWeek.find('.curriculum-detail__week-topic-label-topic')
+        const unitPart = assignedWeek.find('.curriculum-detail__week-topic-label-unit')
+
+        expect(topicPart.exists()).toBe(true)
+        expect(topicPart.text()).toBe('Grundlagen:')
+        expect(unitPart.exists()).toBe(true)
+        expect(unitPart.text()).toBe('Office 365')
     })
 
     it('groups month overview entries by topic and renders units inline', () => {

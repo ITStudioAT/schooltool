@@ -248,7 +248,15 @@
                                             class="curriculum-detail__overview-entry-icon">
                                             mdi-clipboard-check-outline
                                         </v-icon>
-                                        <span>{{ entry.title }}</span>
+                                        <span class="curriculum-detail__week-topic-label">
+                                            <template v-if="entry.unitTitle">
+                                                <span class="curriculum-detail__week-topic-label-topic">{{ `${entry.topicTitle}:` }}</span>
+                                                <span class="curriculum-detail__week-topic-label-unit">{{ entry.unitTitle }}</span>
+                                            </template>
+                                            <template v-else>
+                                                {{ entry.title }}
+                                            </template>
+                                        </span>
                                     </span>
                                 </div>
                                 <div class="curriculum-detail__week-actions">
@@ -315,10 +323,12 @@
                             <div
                                 v-for="(topic, topicIndex) in curriculumTopics"
                                 :key="topic.id"
-                                class="curriculum-detail__topic-item"
-                                :class="{ 'curriculum-detail__topic-item--selected': isTopicSelected(topic.id) }"
-                                :style="{ '--topic-hue': topicHue(topicIndex) }">
-                                <div class="curriculum-detail__topic-row" @click="toggleSelectedTopic(topic.id)">
+                                class="curriculum-detail__topic-entry">
+                                <div
+                                    class="curriculum-detail__topic-item"
+                                    :class="{ 'curriculum-detail__topic-item--selected': isTopicSelected(topic.id) }"
+                                    :style="{ '--topic-hue': topicHue(topicIndex) }">
+                                    <div class="curriculum-detail__topic-row" @click="toggleSelectedTopic(topic.id)">
                                     <div class="curriculum-detail__topic-main">
                                         <div class="curriculum-detail__topic-title-row">
                                             <div class="curriculum-detail__topic-title">{{ topic.title }}</div>
@@ -352,7 +362,7 @@
                                                     :key="monthKey"
                                                     size="x-small"
                                                     color="primary"
-                                                    variant="flat"
+                                                    variant="tonal"
                                                     class="curriculum-detail__topic-meta-chip--interactive"
                                                     @click.stop="openTopicAssignmentEditor(topic, 'month')">
                                                     {{ monthChipLabel(monthKey) }}
@@ -360,14 +370,12 @@
                                             </template>
                                             <template v-else-if="topic.assignment_type === 'weeks' && topic.week_keys.length">
                                                 <v-chip
-                                                    v-for="weekKey in topic.week_keys"
-                                                    :key="weekKey"
                                                     size="x-small"
-                                                    :color="weekAssignmentChipColor(weekKey)"
-                                                    variant="flat"
+                                                    color="primary"
+                                                    variant="tonal"
                                                     class="curriculum-detail__topic-meta-chip--interactive"
                                                     @click.stop="openTopicAssignmentEditor(topic, 'weeks')">
-                                                    {{ weekChipLabel(weekKey) }}
+                                                    {{ weeksSummaryLabel(topic.week_keys) }}
                                                 </v-chip>
                                             </template>
                                         </div>
@@ -461,146 +469,146 @@
                                     </div>
                                 </div>
 
-                                <div
-                                    v-if="isTopicAssignmentEditorOpen(topic.id)"
-                                    class="curriculum-detail__topic-assignment-panel"
-                                    @click.stop>
-                                    <div class="curriculum-detail__topic-assignment-options">
-                                        <v-btn
-                                            :variant="activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'"
-                                            size="x-small"
-                                            rounded="lg"
-                                            class="text-none"
-                                            :color="activeTopicAssignmentType === 'none' ? 'primary' : 'secondary'"
-                                            :disabled="topicSaving || isEditingTopic"
-                                            @click="activateTopicAssignmentMode(topic, 'none')">
-                                            Keine Zuordnung
-                                        </v-btn>
-                                        <v-btn
-                                            :variant="activeTopicAssignmentType === 'all_weeks' ? 'flat' : 'tonal'"
-                                            size="x-small"
-                                            rounded="lg"
-                                            class="text-none"
-                                            :color="activeTopicAssignmentType === 'all_weeks' ? 'primary' : 'secondary'"
-                                            :disabled="topicSaving || isEditingTopic"
-                                            @click="activateTopicAssignmentMode(topic, 'all_weeks')">
-                                            {{ curriculumScopeLabel }}
-                                        </v-btn>
-                                        <v-btn
-                                            :variant="activeTopicAssignmentType === 'month' ? 'flat' : 'tonal'"
-                                            size="x-small"
-                                            rounded="lg"
-                                            class="text-none"
-                                            :color="activeTopicAssignmentType === 'month' ? 'primary' : 'secondary'"
-                                            :disabled="topicSaving || isEditingTopic"
-                                            @click="activateTopicAssignmentMode(topic, 'month')">
-                                            Monate
-                                        </v-btn>
-                                        <v-btn
-                                            :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
-                                            size="x-small"
-                                            rounded="lg"
-                                            class="text-none"
-                                            :color="activeTopicAssignmentType === 'weeks' ? 'primary' : 'secondary'"
-                                            :disabled="topicSaving || isEditingTopic"
-                                            @click="activateTopicAssignmentMode(topic, 'weeks')">
-                                            Wochen
-                                        </v-btn>
-                                        <v-btn
-                                            variant="text"
-                                            size="x-small"
-                                            color="secondary"
-                                            class="text-none ml-auto"
-                                            :disabled="topicSaving || isEditingTopic"
-                                            @click="closeTopicAssignmentEditor">
-                                            Schließen
-                                        </v-btn>
-                                    </div>
-
                                     <div
-                                        v-if="activeTopicAssignmentType === 'month'"
-                                        class="curriculum-detail__topic-assignment-months">
-                                        <v-chip
-                                            v-for="month in assignableMonths"
-                                            :key="month.assignmentKey"
-                                            size="small"
-                                            :color="topic.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
-                                            :variant="topic.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
-                                            class="curriculum-detail__assignment-chip"
-                                            @click="toggleTopicMonthAssignment(topic, month.assignmentKey)">
-                                            {{ month.name }}
-                                        </v-chip>
-                                    </div>
-
-                                    <div
-                                        v-else-if="activeTopicAssignmentType === 'weeks'"
-                                        class="curriculum-detail__topic-assignment-weeks">
-                                        <div class="curriculum-detail__topic-assignment-hint">
-                                            Wochen links im Kalender anklicken, um sie diesem Thema zuzuordnen.
-                                        </div>
-                                        <div
-                                            v-if="topic.week_keys.length"
-                                            class="curriculum-detail__assignment-week-list">
-                                            <div
-                                                v-for="weekKey in topic.week_keys"
-                                                :key="weekKey"
-                                                class="curriculum-detail__assignment-week-row">
-                                                <v-chip
+                                        v-if="!isTopicCollapsed(topic.id) && isTopicAssignmentEditorOpen(topic.id)"
+                                        class="curriculum-detail__topic-assignment-panel"
+                                        @click.stop>
+                                            <div class="curriculum-detail__topic-assignment-options">
+                                                <v-btn
+                                                    :variant="activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'"
                                                     size="x-small"
-                                                    color="primary"
-                                                    variant="flat">
-                                                    {{ weekChipLabel(weekKey) }}
+                                                    rounded="lg"
+                                                    class="text-none"
+                                                    :color="activeTopicAssignmentType === 'none' ? 'primary' : 'secondary'"
+                                                    :disabled="topicSaving || isEditingTopic"
+                                                    @click="activateTopicAssignmentMode(topic, 'none')">
+                                                    Keine Zuordnung
+                                                </v-btn>
+                                                <v-btn
+                                                    :variant="activeTopicAssignmentType === 'all_weeks' ? 'flat' : 'tonal'"
+                                                    size="x-small"
+                                                    rounded="lg"
+                                                    class="text-none"
+                                                    :color="activeTopicAssignmentType === 'all_weeks' ? 'primary' : 'secondary'"
+                                                    :disabled="topicSaving || isEditingTopic"
+                                                    @click="activateTopicAssignmentMode(topic, 'all_weeks')">
+                                                    {{ curriculumScopeLabel }}
+                                                </v-btn>
+                                                <v-btn
+                                                    :variant="activeTopicAssignmentType === 'month' ? 'flat' : 'tonal'"
+                                                    size="x-small"
+                                                    rounded="lg"
+                                                    class="text-none"
+                                                    :color="activeTopicAssignmentType === 'month' ? 'primary' : 'secondary'"
+                                                    :disabled="topicSaving || isEditingTopic"
+                                                    @click="activateTopicAssignmentMode(topic, 'month')">
+                                                    Monate
+                                                </v-btn>
+                                                <v-btn
+                                                    :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
+                                                    size="x-small"
+                                                    rounded="lg"
+                                                    class="text-none"
+                                                    :color="activeTopicAssignmentType === 'weeks' ? 'primary' : 'secondary'"
+                                                    :disabled="topicSaving || isEditingTopic"
+                                                    @click="activateTopicAssignmentMode(topic, 'weeks')">
+                                                    Wochen
+                                                </v-btn>
+                                                <v-btn
+                                                    variant="text"
+                                                    size="x-small"
+                                                    color="secondary"
+                                                    class="text-none ml-auto"
+                                                    :disabled="topicSaving || isEditingTopic"
+                                                    @click="closeTopicAssignmentEditor">
+                                                    Schließen
+                                                </v-btn>
+                                            </div>
+
+                                            <div
+                                                v-if="activeTopicAssignmentType === 'month'"
+                                                class="curriculum-detail__topic-assignment-months">
+                                                <v-chip
+                                                    v-for="month in assignableMonths"
+                                                    :key="month.assignmentKey"
+                                                    size="small"
+                                                    :color="topic.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
+                                                    :variant="topic.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
+                                                    class="curriculum-detail__assignment-chip"
+                                                    @click="toggleTopicMonthAssignment(topic, month.assignmentKey)">
+                                                    {{ month.name }}
                                                 </v-chip>
-                                                <div class="curriculum-detail__assignment-week-controls">
-                                                    <v-btn
-                                                        icon="mdi-arrow-up"
-                                                        variant="text"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
-                                                        title="Eine Woche früher verschieben"
-                                                        @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
-                                                    <v-btn
-                                                        icon="mdi-arrow-down"
-                                                        variant="text"
-                                                        color="primary"
-                                                        size="x-small"
-                                                        :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
-                                                        title="Eine Woche später verschieben"
-                                                        @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
+                                            </div>
+
+                                            <div
+                                                v-else-if="activeTopicAssignmentType === 'weeks'"
+                                                class="curriculum-detail__topic-assignment-weeks">
+                                                <div class="curriculum-detail__topic-assignment-hint">
+                                                    Wochen links im Kalender anklicken, um sie diesem Thema zuzuordnen.
+                                                </div>
+                                                <div
+                                                    v-if="topic.week_keys.length"
+                                                    class="curriculum-detail__assignment-week-list">
+                                                    <div
+                                                        v-for="weekKey in topic.week_keys"
+                                                        :key="weekKey"
+                                                        class="curriculum-detail__assignment-week-row">
+                                                        <v-chip
+                                                            size="x-small"
+                                                            color="primary"
+                                                            variant="flat">
+                                                            {{ weekChipLabel(weekKey) }}
+                                                        </v-chip>
+                                                        <div class="curriculum-detail__assignment-week-controls">
+                                                            <v-btn
+                                                                icon="mdi-arrow-up"
+                                                                variant="text"
+                                                                color="primary"
+                                                                size="x-small"
+                                                                :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
+                                                                title="Eine Woche früher verschieben"
+                                                                @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
+                                                            <v-btn
+                                                                icon="mdi-arrow-down"
+                                                                variant="text"
+                                                                color="primary"
+                                                                size="x-small"
+                                                                :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
+                                                                title="Eine Woche später verschieben"
+                                                                @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
                                     </div>
-                                </div>
 
-                                <div class="curriculum-detail__unit-section">
-                                    <div class="curriculum-detail__unit-toolbar">
-                                        <div class="curriculum-detail__unit-summary">
-                                            <div class="curriculum-detail__unit-count">{{ topic.units.length }} Einheiten</div>
-                                            <v-btn
-                                                variant="text"
-                                                color="primary"
-                                                size="x-small"
-                                                rounded="lg"
-                                                class="text-none"
-                                                :disabled="isPageActionLocked || topicSaving || !canDistributeTopicUnits(topic)"
-                                                @click="distributeTopicUnits(topic)">
-                                                Verteilen
-                                            </v-btn>
-                                        </div>
-                                        <v-btn
-                                            variant="text"
-                                            color="primary"
-                                            size="x-small"
-                                            rounded="lg"
-                                            prepend-icon="mdi-plus"
-                                            class="text-none"
-                                            :disabled="isPageActionLocked"
-                                            @click="openUnitForm(topic.id)">
-                                            Einheit
-                                        </v-btn>
-                                    </div>
+                                    <div v-if="!isTopicCollapsed(topic.id)" class="curriculum-detail__unit-section">
+                                            <div class="curriculum-detail__unit-toolbar">
+                                                <div class="curriculum-detail__unit-summary">
+                                                    <div class="curriculum-detail__unit-count">{{ topic.units.length }} Einheiten</div>
+                                                    <v-btn
+                                                        variant="text"
+                                                        color="primary"
+                                                        size="x-small"
+                                                        rounded="lg"
+                                                        class="text-none"
+                                                        :disabled="isPageActionLocked || topicSaving || !canDistributeTopicUnits(topic)"
+                                                        @click="distributeTopicUnits(topic)">
+                                                        Verteilen
+                                                    </v-btn>
+                                                </div>
+                                                <v-btn
+                                                    variant="text"
+                                                    color="primary"
+                                                    size="x-small"
+                                                    rounded="lg"
+                                                    prepend-icon="mdi-plus"
+                                                    class="text-none"
+                                                    :disabled="isPageActionLocked"
+                                                    @click="openUnitForm(topic.id)">
+                                                    Einheit
+                                                </v-btn>
+                                            </div>
 
                                     <div v-if="topic.units.length" class="curriculum-detail__unit-list mt-3">
                                         <div
@@ -641,7 +649,7 @@
                                                                 :key="monthKey"
                                                                 size="x-small"
                                                                 color="primary"
-                                                                variant="flat"
+                                                                variant="tonal"
                                                                 class="curriculum-detail__topic-meta-chip--interactive"
                                                                 @click.stop="openUnitAssignmentEditor(topic, unit, 'month')">
                                                                 {{ monthChipLabel(monthKey) }}
@@ -649,14 +657,12 @@
                                                         </template>
                                                         <template v-else-if="unit.assignment_type === 'weeks' && unit.week_keys.length">
                                                             <v-chip
-                                                                v-for="weekKey in unit.week_keys"
-                                                                :key="weekKey"
                                                                 size="x-small"
-                                                                :color="weekAssignmentChipColor(weekKey)"
-                                                                variant="flat"
+                                                                color="primary"
+                                                                variant="tonal"
                                                                 class="curriculum-detail__topic-meta-chip--interactive"
                                                                 @click.stop="openUnitAssignmentEditor(topic, unit, 'weeks')">
-                                                                {{ weekChipLabel(weekKey) }}
+                                                                {{ weeksSummaryLabel(unit.week_keys) }}
                                                             </v-chip>
                                                         </template>
                                                     </div>
@@ -864,10 +870,45 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
 
+                                        <div
+                                            v-if="showUnitFormForTopicId === topic.id"
+                                            class="curriculum-detail__unit-form mt-3">
+                                            <v-btn
+                                                v-if="!isEditingUnit"
+                                                variant="tonal"
+                                                color="secondary"
+                                                size="x-small"
+                                                rounded="lg"
+                                                class="text-none"
+                                                :disabled="topicSaving"
+                                                @click="cancelUnitForm">
+                                                Formular schließen
+                                            </v-btn>
+                                        </div>
+
+                                        <div v-else-if="!topic.units.length" class="curriculum-detail__unit-empty mt-3">
+                                            Noch keine Einheiten angelegt.
+                                        </div>
+                                        </div>
+                                </div>
+                                <div v-if="topic.units.length" class="curriculum-detail__topic-collapse-toggle" @click.stop>
+                                    <div
+                                        v-if="isTopicCollapsed(topic.id)"
+                                        class="curriculum-detail__topic-collapsed-count">
+                                        {{ topic.units.length }} Einheiten
+                                    </div>
+                                    <v-btn
+                                        :class="['curriculum-detail__topic-collapse-btn', { 'ml-auto': !isTopicCollapsed(topic.id) }]"
+                                        :icon="isTopicCollapsed(topic.id) ? 'mdi-chevron-down' : 'mdi-chevron-up'"
+                                        variant="flat"
+                                        color="primary"
+                                        size="x-small"
+                                        :title="isTopicCollapsed(topic.id) ? 'Thema aufklappen' : 'Thema einklappen'"
+                                        @click="toggleTopicCollapse(topic.id)" />
                                 </div>
                             </div>
+                        </div>
                         </div>
 
                         <div v-else class="curriculum-detail__topic-empty mt-4">
@@ -1811,6 +1852,7 @@ export default {
             weekDisplayMode: 'days',
             showLehrplaeneCard: false,
             collapseFullMonths: true,
+            topicCollapseStates: {},
             manualMonthCollapseStates: {},
             selectedTopicId: null,
             selectedUnitTopicId: null,
@@ -1880,6 +1922,7 @@ export default {
 
     watch: {
         'curriculum.id'() {
+            this.topicCollapseStates = {}
             this.manualMonthCollapseStates = {}
         },
     },
@@ -3400,6 +3443,44 @@ export default {
             return `KW ${this.getISOWeek(weekStart)} · ${weekStart.getDate()}.${weekStart.getMonth() + 1}.–${friday.getDate()}.${friday.getMonth() + 1}.`
         },
 
+        weeksSummaryLabel(weekKeys) {
+            if (!weekKeys || !weekKeys.length) return ''
+
+            const weeks = weekKeys.map((key) => {
+                const d = new Date(`${key}T00:00:00`)
+                return { date: d, kw: this.getISOWeek(d), month: d.getMonth() }
+            }).sort((a, b) => a.date - b.date)
+
+            const groups = []
+            let current = { months: new Set([weeks[0].month]), kwStart: weeks[0].kw, kwEnd: weeks[0].kw, lastDate: weeks[0].date }
+
+            for (let i = 1; i < weeks.length; i++) {
+                const daysDiff = Math.round((weeks[i].date - current.lastDate) / 86400000)
+                if (daysDiff <= 8) {
+                    current.kwEnd = weeks[i].kw
+                    current.months.add(weeks[i].month)
+                    current.lastDate = weeks[i].date
+                } else {
+                    groups.push(current)
+                    current = { months: new Set([weeks[i].month]), kwStart: weeks[i].kw, kwEnd: weeks[i].kw, lastDate: weeks[i].date }
+                }
+            }
+            groups.push(current)
+
+            const schoolYearMonth = (m) => m >= 8 ? m - 8 : m + 4
+
+            return groups.map((g) => {
+                const monthNames = [...g.months].sort((a, b) => schoolYearMonth(a) - schoolYearMonth(b)).map((m) => MONTH_NAMES[m])
+                const monthPart = monthNames.length > 1
+                    ? `${monthNames[0]} – ${monthNames[monthNames.length - 1]}`
+                    : monthNames[0]
+                const kwPart = g.kwStart === g.kwEnd
+                    ? `KW ${g.kwStart}`
+                    : `KW ${g.kwStart}–${g.kwEnd}`
+                return `${monthPart} (${kwPart})`
+            }).join(', ')
+        },
+
         topicAssignmentSummary(topic) {
             if (topic.assignment_type === 'none') {
                 return 'Keine Zuordnung'
@@ -3414,18 +3495,14 @@ export default {
             }
 
             if (topic.assignment_type === 'weeks') {
-                if (topic.week_keys.length === 1) {
-                    return this.weekChipLabel(topic.week_keys[0])
-                }
-
-                return `${topic.week_keys.length} Wochen`
+                return this.weeksSummaryLabel(topic.week_keys)
             }
 
             return this.curriculumScopeLabel
         },
 
-        assignmentSummaryVariant(item) {
-            return item?.assignment_type === 'all_weeks' ? 'flat' : 'tonal'
+        assignmentSummaryVariant() {
+            return 'tonal'
         },
 
         overlappingWeekAssignmentKeys() {
@@ -3503,13 +3580,12 @@ export default {
                 })
             })
 
-            ;[...weekKeys].sort().forEach((weekKey) => {
+            if (weekKeys.size) {
                 chips.push({
-                    key: `week-${weekKey}`,
-                    label: this.weekChipLabel(weekKey),
-                    color: this.weekAssignmentChipColor(weekKey),
+                    key: 'weeks-summary',
+                    label: this.weeksSummaryLabel([...weekKeys].sort()),
                 })
-            })
+            }
 
             return chips
         },
@@ -4038,6 +4114,36 @@ export default {
 
         isTopicSelected(topicId) {
             return this.selectedTopicId === topicId && this.selectedUnitId === null
+        },
+
+        isTopicCollapsed(topicId) {
+            return Boolean(this.topicCollapseStates?.[topicId])
+        },
+
+        toggleTopicCollapse(topicId) {
+            if (!topicId) {
+                return
+            }
+
+            const isCollapsed = this.isTopicCollapsed(topicId)
+            const nextTopicCollapseStates = { ...this.topicCollapseStates }
+
+            if (isCollapsed) {
+                delete nextTopicCollapseStates[topicId]
+                this.topicCollapseStates = nextTopicCollapseStates
+                return
+            }
+
+            if (this.activeTopicAssignmentId === topicId) {
+                this.closeTopicAssignmentEditor()
+            }
+
+            if (this.showUnitFormForTopicId === topicId) {
+                this.cancelUnitForm()
+            }
+
+            nextTopicCollapseStates[topicId] = true
+            this.topicCollapseStates = nextTopicCollapseStates
         },
 
         toggleSelectedTopic(topicId) {
@@ -4978,6 +5084,11 @@ export default {
     border-bottom: none;
 }
 
+.curriculum-detail__month--collapsed .curriculum-detail__month-topic-units,
+.curriculum-detail__month--collapsed .curriculum-detail__month-topic-unit {
+    font-weight: 400;
+}
+
 .curriculum-detail__month-topics {
     display: flex;
     flex-direction: column;
@@ -5286,6 +5397,26 @@ export default {
 .curriculum-detail__week--with-topics .curriculum-detail__week-topics {
     color: #eff6ff;
     text-shadow: 0 1px 10px rgba(37, 99, 235, 0.22);
+}
+
+.curriculum-detail__week-topic-label {
+    display: inline-block;
+    padding: 0.24rem 0.38rem;
+    border-radius: 0.36rem;
+    background: rgba(250, 204, 21, 0.82);
+    color: #1f2937;
+    line-height: 1;
+    vertical-align: middle;
+    text-shadow: none;
+}
+
+.curriculum-detail__week-topic-label-topic {
+    font-weight: 700;
+}
+
+.curriculum-detail__week-topic-label-unit {
+    margin-left: 0.22rem;
+    font-weight: 400;
 }
 
 .curriculum-detail__week--with-exams {
@@ -5780,18 +5911,47 @@ export default {
     gap: 10px;
 }
 
+.curriculum-detail__topic-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
 .curriculum-detail__topic-item {
     --topic-accent: hsl(var(--topic-hue, 220), 70%, 48%);
     --topic-tint: hsla(var(--topic-hue, 220), 80%, 55%, 0.12);
     display: flex;
     flex-direction: column;
+    flex: 1;
     gap: 0;
+    min-width: 0;
     padding: 0;
     border-radius: 12px;
     border: 1px solid hsla(var(--topic-hue, 220), 55%, 45%, 0.3);
     background: rgba(255, 255, 255, 0.84);
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
     overflow: hidden;
+}
+
+.curriculum-detail__topic-collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 4px 12px;
+}
+
+.curriculum-detail__topic-collapse-btn {
+    border: 1px solid rgba(129, 140, 248, 0.38) !important;
+    background: linear-gradient(180deg, rgba(224, 231, 255, 0.98), rgba(199, 210, 254, 0.92)) !important;
+    color: #4338ca !important;
+    box-shadow: 0 8px 18px rgba(99, 102, 241, 0.18);
+}
+
+.curriculum-detail__topic-collapse-btn:hover {
+    background: linear-gradient(180deg, rgba(199, 210, 254, 1), rgba(165, 180, 252, 0.94)) !important;
+    color: #312e81 !important;
 }
 
 .curriculum-detail__topic-item > .curriculum-detail__topic-row {
@@ -5850,6 +6010,13 @@ export default {
     font-weight: 700;
     color: #0f172a;
     line-height: 1.35;
+}
+
+.curriculum-detail__topic-collapsed-count {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #475569;
+    white-space: nowrap;
 }
 
 .curriculum-detail__topic-summary-chip {
