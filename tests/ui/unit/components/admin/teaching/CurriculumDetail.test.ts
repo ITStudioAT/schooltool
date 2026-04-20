@@ -139,16 +139,18 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain(".curriculum-detail__calendar--compact {")
         expect(source).toContain('width: clamp(250px, 18vw, 300px);')
         expect(source).toContain('.curriculum-detail__calendar--compact .curriculum-detail__month {')
-        expect(source).toContain(':style="weekAssignmentStyle(week.weekKey)"')
+        expect(source).toContain('class="curriculum-detail__week-status"')
+        expect(source).toContain('class="curriculum-detail__week-status-icon"')
+        expect(source).toContain('mdi-check-circle')
         expect(source).toContain("'curriculum-detail__month--collapsed': shouldCollapseMonth(month)")
+        expect(source).toContain('@click="toggleMonthCollapse(month)"')
         expect(source).toContain('v-if="!shouldCollapseMonth(month)" class="curriculum-detail__weeks"')
         expect(source).toContain('v-if="!shouldCollapseMonth(month)" class="curriculum-detail__month-topics-label"')
         expect(source).toContain('.curriculum-detail__week--with-topics {')
-        expect(source).toContain('border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;')
         expect(source).toContain(':style="calendarHighlightStyle"')
         expect(source).toContain("'--calendar-highlight-accent': this.highlightedTopicAccentColor")
-        expect(source).toContain("'--week-assignment-accent': accentColor")
-        expect(source).toContain('border-right: 4px solid var(--week-assignment-accent, var(--calendar-highlight-accent, rgba(79, 70, 229, 0.9))) !important;')
+        expect(source).toContain('.curriculum-detail__week-status-icon {')
+        expect(source).toContain('color: #16a34a !important;')
         expect(source).toContain('.curriculum-detail__overview-entry--exam {')
         expect(source).toContain('color: #4f46e5;')
         expect(source).toContain('v-for="group in monthOverviewGroups(month)"')
@@ -174,8 +176,6 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain(":variant=\"activeTopicAssignmentType === 'none' ? 'flat' : 'tonal'\"")
         expect(source).toContain('.curriculum-detail__week--with-topics:hover {')
         expect(source).toContain('.curriculum-detail__week--with-exams {')
-        expect(source).toContain('border-right: 4px solid #4f46e5 !important;')
-        expect(source).toContain('.curriculum-detail__week--with-exams:hover {')
         expect(source).toContain('.curriculum-detail__week--with-exams .curriculum-detail__week-topics {')
         expect(source).toContain('.curriculum-detail__month--collapsed .curriculum-detail__month-topics {')
         expect(source).toContain('.curriculum-detail__topic-assignment-options :deep(.v-btn) {')
@@ -949,7 +949,7 @@ describe('CurriculumDetail week card view mode', () => {
         expect(septemberWeeks[4].classes()).not.toContain('curriculum-detail__week--topic-selected')
     })
 
-    it('uses the parent topic color for assigned week borders', () => {
+    it('shows a green check icon for assigned weeks', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -980,11 +980,14 @@ describe('CurriculumDetail week card view mode', () => {
             ],
         })
 
-        expect((wrapper.vm as any).weekAssignmentAccentColor('2025-09-08')).toBe('hsl(200, 70%, 48%)')
-        expect((wrapper.vm as any).weekAssignmentAccentColor('2025-09-15')).toBe('hsl(232, 70%, 48%)')
-        expect((wrapper.vm as any).weekAssignmentStyle('2025-09-15')).toEqual({
-            '--week-assignment-accent': 'hsl(232, 70%, 48%)',
-        })
+        const firstAssignedWeek = wrapper.find('[data-week-key="2025-09-08"]')
+        const secondAssignedWeek = wrapper.find('[data-week-key="2025-09-15"]')
+        const unassignedWeek = wrapper.find('[data-week-key="2025-09-22"]')
+
+        expect(firstAssignedWeek.find('.curriculum-detail__week-status').exists()).toBe(true)
+        expect(firstAssignedWeek.text()).toContain('mdi-check-circle')
+        expect(secondAssignedWeek.find('.curriculum-detail__week-status').exists()).toBe(true)
+        expect(unassignedWeek.find('.curriculum-detail__week-status').exists()).toBe(false)
     })
 
     it('groups month overview entries by topic and renders units inline', () => {
@@ -1128,6 +1131,120 @@ describe('CurriculumDetail week card view mode', () => {
         expect(septemberMonthAfterSelection.classes()).toContain('curriculum-detail__month--topic-selected')
         expect(septemberMonthAfterSelection.find('.curriculum-detail__weeks').exists()).toBe(true)
         expect(septemberMonthAfterSelection.findAll('.curriculum-detail__week')[0].classes()).toContain('curriculum-detail__week--topic-selected')
+    })
+
+    it('toggles a month collapsed state from its header', async () => {
+        const wrapper = mountCurriculumDetail({
+            free_weeks: ['2025-09-29'],
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-01', '2025-09-08', '2025-09-15', '2025-09-22'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        const septemberMonth = wrapper.findAll('.curriculum-detail__month')[0]
+        const septemberHeader = septemberMonth.find('.curriculum-detail__month-header')
+
+        expect(septemberMonth.classes()).toContain('curriculum-detail__month--collapsed')
+        expect(septemberMonth.find('.curriculum-detail__weeks').exists()).toBe(false)
+
+        await septemberHeader.trigger('click')
+
+        expect(septemberMonth.classes()).not.toContain('curriculum-detail__month--collapsed')
+        expect(septemberMonth.find('.curriculum-detail__weeks').exists()).toBe(true)
+
+        await septemberHeader.trigger('click')
+
+        expect(septemberMonth.classes()).toContain('curriculum-detail__month--collapsed')
+        expect(septemberMonth.find('.curriculum-detail__weeks').exists()).toBe(false)
+    })
+
+    it('collapses a fully assigned month immediately after the last week is assigned', async () => {
+        const initialTopics = [
+            {
+                id: 'topic-1',
+                title: 'Grammatik',
+                assignment_type: 'none',
+                month_keys: [],
+                week_keys: [],
+                units: [
+                    {
+                        id: 'unit-1',
+                        title: 'Satzbau',
+                        is_exam: false,
+                        assignment_type: 'weeks',
+                        month_keys: [],
+                        week_keys: ['2025-09-01', '2025-09-08', '2025-09-15', '2025-09-22'],
+                    },
+                ],
+            },
+        ]
+        const updatedTopics = [
+            {
+                ...initialTopics[0],
+                units: [
+                    {
+                        ...initialTopics[0].units[0],
+                        week_keys: ['2025-09-01', '2025-09-08', '2025-09-15', '2025-09-22', '2025-09-29'],
+                    },
+                ],
+            },
+        ]
+        const wrapper = mountCurriculumDetail({
+            topics: initialTopics,
+        })
+        const persistUnitAssignmentMock = vi.spyOn(wrapper.vm as any, 'persistUnitAssignment').mockImplementation(async () => {
+            await wrapper.setProps({
+                curriculum: buildCurriculum({
+                    topics: updatedTopics,
+                }),
+            })
+
+            return buildCurriculum({
+                topics: updatedTopics,
+            })
+        })
+
+        try {
+            const septemberMonthBeforeClick = wrapper.findAll('.curriculum-detail__month')[0]
+
+            expect(septemberMonthBeforeClick.classes()).not.toContain('curriculum-detail__month--collapsed')
+
+            await wrapper.setData({
+                activeTopicAssignmentId: 'topic-1',
+                activeTopicAssignmentUnitId: 'unit-1',
+                activeTopicAssignmentType: 'weeks',
+            })
+
+            await (wrapper.vm as any).handleWeekClick('2025-09-29')
+            await wrapper.vm.$nextTick()
+
+            const septemberMonthAfterClick = wrapper.findAll('.curriculum-detail__month')[0]
+
+            expect(persistUnitAssignmentMock).toHaveBeenCalledTimes(1)
+            expect((wrapper.vm as any).activeTopicAssignmentId).toBeNull()
+            expect((wrapper.vm as any).activeTopicAssignmentUnitId).toBeNull()
+            expect((wrapper.vm as any).activeTopicAssignmentType).toBeNull()
+            expect(septemberMonthAfterClick.classes()).toContain('curriculum-detail__month--collapsed')
+            expect(septemberMonthAfterClick.find('.curriculum-detail__weeks').exists()).toBe(false)
+        } finally {
+            persistUnitAssignmentMock.mockRestore()
+        }
     })
 
     it('opens selected material attachments directly in the preview frame', async () => {

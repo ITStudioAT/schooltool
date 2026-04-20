@@ -157,10 +157,13 @@
                         }"
                         :data-month-key="month.assignmentKey"
                         :style="{ '--month-hue': monthHue(idx) }">
-                        <div class="curriculum-detail__month-header">
+                        <button
+                            type="button"
+                            class="curriculum-detail__month-header"
+                            @click="toggleMonthCollapse(month)">
                             <div class="curriculum-detail__month-name">{{ month.name }}</div>
                             <div class="curriculum-detail__month-year">{{ month.year }}</div>
-                        </div>
+                        </button>
                         <div v-if="monthOverviewEntries(month).length" class="curriculum-detail__month-topics">
                             <div v-if="!shouldCollapseMonth(month)" class="curriculum-detail__month-topics-label">Themen</div>
                             <div class="curriculum-detail__month-topics-text">
@@ -207,8 +210,12 @@
                                     'curriculum-detail__week--topic-selected': isWeekAssignedToHighlightedItem(week.weekKey),
                                 }"
                                 :data-week-key="week.weekKey"
-                                :style="weekAssignmentStyle(week.weekKey)"
                                 @click="handleWeekClick(week.weekKey)">
+                                <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-status">
+                                    <v-icon size="18" color="success" class="curriculum-detail__week-status-icon">
+                                        mdi-check-circle
+                                    </v-icon>
+                                </div>
                                 <div class="curriculum-detail__week-number">
                                     <span class="curriculum-detail__week-kw">KW</span>
                                     <span class="curriculum-detail__week-num">{{ week.kw }}</span>
@@ -1804,6 +1811,7 @@ export default {
             weekDisplayMode: 'days',
             showLehrplaeneCard: false,
             collapseFullMonths: true,
+            manualMonthCollapseStates: {},
             selectedTopicId: null,
             selectedUnitTopicId: null,
             selectedUnitId: null,
@@ -1868,6 +1876,12 @@ export default {
                 title: '',
             },
         }
+    },
+
+    watch: {
+        'curriculum.id'() {
+            this.manualMonthCollapseStates = {}
+        },
     },
 
     computed: {
@@ -3645,12 +3659,94 @@ export default {
             return month.weeks.every((week) => this.isFreeWeek(week.weekKey) || this.topicsForWeek(week.weekKey).length > 0)
         },
 
-        shouldCollapseMonth(month) {
+        monthCollapseState(monthKey) {
+            if (!monthKey || !Object.prototype.hasOwnProperty.call(this.manualMonthCollapseStates, monthKey)) {
+                return null
+            }
+
+            return Boolean(this.manualMonthCollapseStates[monthKey])
+        },
+
+        isMonthFullyAssignedForCurriculum(month, curriculum = this.curriculum) {
+            if (!Array.isArray(month?.weeks) || month.weeks.length === 0) {
+                return false
+            }
+
+            const freeWeekKeys = new Set(Array.isArray(curriculum?.free_weeks) ? curriculum.free_weeks : [])
+            const topics = (Array.isArray(curriculum?.topics) ? curriculum.topics : [])
+                .map((topic, index) => this.normalizeTopic(topic, index))
+
+            return month.weeks.every((week) => {
+                if (freeWeekKeys.has(week.weekKey)) {
+                    return true
+                }
+
+                return topics.some((topic) => {
+                    if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(week.weekKey)) {
+                        return true
+                    }
+
+                    return topic.units.some((unit) => (
+                        Boolean(unit.title)
+                        && unit.assignment_type === 'weeks'
+                        && unit.week_keys.includes(week.weekKey)
+                    ))
+                })
+            })
+        },
+
+        closeAssignmentEditorForCompletedMonth(weekKey, curriculum = this.curriculum) {
+            if (!this.collapseFullMonths || !weekKey) {
+                return
+            }
+
+            const month = this.visibleMonths.find((entry) => entry.assignmentKey === this.monthKeyFromWeekKey(weekKey))
+
+            if (!month || !this.isMonthFullyAssignedForCurriculum(month, curriculum)) {
+                return
+            }
+
+            this.closeTopicAssignmentEditor()
+        },
+
+        shouldAutoCollapseMonth(month) {
             if (!this.collapseFullMonths || !this.isMonthFullyAssigned(month)) {
                 return false
             }
 
             return !this.isMonthAssignedToHighlightedItem(month)
+        },
+
+        shouldCollapseMonth(month) {
+            const monthKey = month?.assignmentKey
+            const manualState = this.monthCollapseState(monthKey)
+
+            if (manualState !== null) {
+                return manualState
+            }
+
+            return this.shouldAutoCollapseMonth(month)
+        },
+
+        toggleMonthCollapse(month) {
+            const monthKey = month?.assignmentKey
+
+            if (!monthKey) {
+                return
+            }
+
+            const currentState = this.shouldCollapseMonth(month)
+            const nextState = !currentState
+            const defaultState = this.shouldAutoCollapseMonth(month)
+            const nextCollapseStates = { ...this.manualMonthCollapseStates }
+
+            if (nextState === defaultState) {
+                delete nextCollapseStates[monthKey]
+            } else {
+                nextCollapseStates[monthKey] = nextState
+            }
+
+            this.manualMonthCollapseStates = nextCollapseStates
         },
 
         monthOverviewEntries(month) {
@@ -3697,24 +3793,6 @@ export default {
             })
 
             return [...groups.values()]
-        },
-
-        weekAssignmentAccentColor(weekKey) {
-            const firstAssignedEntry = this.topicsForWeek(weekKey)[0]
-
-            if (!firstAssignedEntry?.topicId) {
-                return null
-            }
-
-            return this.topicAccentColor(firstAssignedEntry.topicId)
-        },
-
-        weekAssignmentStyle(weekKey) {
-            const accentColor = this.weekAssignmentAccentColor(weekKey)
-
-            return accentColor
-                ? { '--week-assignment-accent': accentColor }
-                : {}
         },
 
         weekHasExamEntries(weekKey) {
@@ -3882,20 +3960,6 @@ export default {
         topicHue(idx) {
             const base = 200
             return (base + idx * 32) % 360
-        },
-
-        topicAccentColor(topicId) {
-            if (!topicId) {
-                return null
-            }
-
-            const topicIndex = this.curriculumTopics.findIndex((topic) => topic.id === topicId)
-
-            if (topicIndex === -1) {
-                return null
-            }
-
-            return `hsl(${this.topicHue(topicIndex)}, 70%, 48%)`
         },
 
         calendarScrollElement() {
@@ -4227,20 +4291,24 @@ export default {
                 : [...weekKeys, weekKey].sort()
 
             if (this.activeTopicAssignmentUnitId) {
-                await this.persistUnitAssignment(this.activeTopicAssignmentTopic.id, this.activeTopicAssignmentUnitId, {
+                const updatedCurriculum = await this.persistUnitAssignment(this.activeTopicAssignmentTopic.id, this.activeTopicAssignmentUnitId, {
                     assignment_type: 'weeks',
                     month_keys: [],
                     week_keys: nextWeekKeys,
                 }, 'Wochenauswahl der Einheit konnte nicht gespeichert werden.')
 
+                this.closeAssignmentEditorForCompletedMonth(weekKey, updatedCurriculum)
+
                 return
             }
 
-            await this.persistTopicAssignment(this.activeTopicAssignmentTopic.id, {
+            const updatedCurriculum = await this.persistTopicAssignment(this.activeTopicAssignmentTopic.id, {
                 assignment_type: 'weeks',
                 month_keys: [],
                 week_keys: nextWeekKeys,
             }, 'Wochenauswahl konnte nicht gespeichert werden.')
+
+            this.closeAssignmentEditorForCompletedMonth(weekKey, updatedCurriculum)
         },
 
         async saveTopic() {
@@ -4868,11 +4936,15 @@ export default {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    width: 100%;
     padding: 14px 20px 8px;
     background:
         linear-gradient(135deg, var(--month-tint), transparent 70%),
         rgba(255, 255, 255, 0.6);
+    border: none;
     border-bottom: 1px solid hsla(var(--month-hue), 55%, 45%, 0.28);
+    cursor: pointer;
+    text-align: left;
 }
 
 .curriculum-detail__month-name {
@@ -5066,15 +5138,24 @@ export default {
 
 .curriculum-detail__week--with-topics {
     border-color: rgba(96, 165, 250, 0.48);
-    border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;
     background: linear-gradient(135deg, rgba(37, 99, 235, 0.2), rgba(30, 41, 59, 0.9) 42%, rgba(15, 23, 42, 0.82));
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
 }
 
 .curriculum-detail__week--with-topics:hover {
     border-color: rgba(96, 165, 250, 0.48);
-    border-right: 4px solid var(--week-assignment-accent, rgba(79, 70, 229, 0.9)) !important;
     box-shadow: 0 0 0 1px rgba(147, 197, 253, 0.14), 0 0 18px rgba(59, 130, 246, 0.16);
+}
+
+.curriculum-detail__week-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.curriculum-detail__week-status-icon {
+    color: #16a34a !important;
 }
 
 /* ---------- Week number ---------- */
@@ -5209,12 +5290,7 @@ export default {
 
 .curriculum-detail__week--with-exams {
     border-color: rgba(220, 38, 38, 0.45) !important;
-    border-right: 4px solid #4f46e5 !important;
     box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.1), 0 8px 18px rgba(127, 29, 29, 0.14);
-}
-
-.curriculum-detail__week--with-exams:hover {
-    border-right: 4px solid #4f46e5 !important;
 }
 
 .curriculum-detail__week--with-exams .curriculum-detail__week-topics {
@@ -5224,7 +5300,7 @@ export default {
 
 .curriculum-detail__week--topic-selected,
 .curriculum-detail__week--topic-selected:hover {
-    border-right: 4px solid var(--week-assignment-accent, var(--calendar-highlight-accent, rgba(79, 70, 229, 0.9))) !important;
+    border-color: rgba(129, 140, 248, 0.52) !important;
 }
 
 .curriculum-detail__week-chip {
