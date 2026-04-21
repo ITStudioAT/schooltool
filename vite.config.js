@@ -4,6 +4,8 @@ import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import path from 'path';
 
+const shouldGenerateSourceMaps = process.env.VITE_SOURCEMAP === 'true';
+
 export default defineConfig({
     server: {
         host: 'localhost',
@@ -47,7 +49,7 @@ export default defineConfig({
     ],
 
     build: {
-        sourcemap: true,
+        sourcemap: shouldGenerateSourceMaps,
         rollupOptions: {
             output: {
                 manualChunks(id) {
