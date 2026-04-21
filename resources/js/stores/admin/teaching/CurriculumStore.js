@@ -150,6 +150,14 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/teaching/imported-curricula/${id}/adopt`)
+                this.imported_curricula = this.imported_curricula.map((curriculum) => (
+                    Number(curriculum?.id) === Number(id)
+                        ? {
+                            ...curriculum,
+                            adopted_curriculum_id: response.data?.data?.id || curriculum.adopted_curriculum_id || null,
+                        }
+                        : curriculum
+                ))
                 notification.notify({
                     message: 'Importiertes Curriculum wurde als eigenes Curriculum übernommen.',
                     type: 'success',

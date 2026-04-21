@@ -17,6 +17,7 @@ class TeachingImportedCurriculum extends Model
     protected $fillable = [
         'school_id',
         'user_id',
+        'adopted_curriculum_id',
         'curriculum_key',
         'title',
         'description',
@@ -46,5 +47,10 @@ class TeachingImportedCurriculum extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function adoptedCurriculum(): BelongsTo
+    {
+        return $this->belongsTo(TeachingCurriculum::class, 'adopted_curriculum_id');
     }
 }

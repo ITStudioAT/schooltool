@@ -245,6 +245,7 @@ describe('Teaching curricula route sync', () => {
         expect(source).toContain('Curriculum importieren')
         expect(source).toContain('Übernehmen')
         expect(source).toContain('Importiertes Curriculum löschen')
+        expect(source).toContain(':disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"')
         expect(source).toContain('askDeleteImportedCurriculum(curriculum)')
         expect(source).toContain('confirmDeleteImportedCurriculum')
         expect(source).toContain('importedDeleteDialogOpen')

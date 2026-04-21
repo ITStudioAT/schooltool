@@ -219,6 +219,11 @@ describe('Admin Teaching CurriculumStore', () => {
     })
 
     it('adopts an imported curriculum as a personal curriculum', async () => {
+        const existingImportedCurriculum = {
+            id: 31,
+            title: 'Importiertes Curriculum',
+            adopted_curriculum_id: null,
+        }
         axiosMock.post.mockResolvedValue({
             data: {
                 data: {
@@ -229,6 +234,7 @@ describe('Admin Teaching CurriculumStore', () => {
         })
 
         const store = useCurriculumStore()
+        store.imported_curricula = [existingImportedCurriculum as never]
         const curriculum = await store.adoptImportedCurriculum(31)
 
         expect(curriculum).toEqual({
@@ -236,6 +242,13 @@ describe('Admin Teaching CurriculumStore', () => {
             title: 'Eigenes Curriculum',
         })
         expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/imported-curricula/31/adopt')
+        expect(store.imported_curricula).toEqual([
+            {
+                id: 31,
+                title: 'Importiertes Curriculum',
+                adopted_curriculum_id: 31,
+            },
+        ])
         expect(notifyMock).toHaveBeenCalledWith({
             message: 'Importiertes Curriculum wurde als eigenes Curriculum übernommen.',
             type: 'success',

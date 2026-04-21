@@ -153,6 +153,7 @@
                                         rounded="lg"
                                         prepend-icon="mdi-account-arrow-right-outline"
                                         :loading="takeoverLoadingId === curriculum.id"
+                                        :disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"
                                         @click.stop="takeOverImportedCurriculum(curriculum)">
                                         Übernehmen
                                     </v-btn>

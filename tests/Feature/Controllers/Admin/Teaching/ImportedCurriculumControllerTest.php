@@ -180,7 +180,15 @@ test('teacher can adopt an imported curriculum as a personal curriculum', functi
 
     expect(TeachingCurriculum::query()->count())->toBe(1)
         ->and(TeachingCurriculum::query()->firstOrFail()->user_id)->toBe($this->teacher->id)
-        ->and(TeachingCurriculum::query()->firstOrFail()->export_key)->not->toBeNull();
+        ->and(TeachingCurriculum::query()->firstOrFail()->export_key)->not->toBeNull()
+        ->and($importedCurriculum->fresh()->adopted_curriculum_id)->toBe(TeachingCurriculum::query()->firstOrFail()->id);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/imported-curricula/{$importedCurriculum->id}/adopt")
+        ->assertStatus(422)
+        ->assertInvalid(['curriculum']);
+
+    expect(TeachingCurriculum::query()->count())->toBe(1);
 });
 
 test('teacher only sees own imported curricula and cannot adopt foreign imported curricula', function () {

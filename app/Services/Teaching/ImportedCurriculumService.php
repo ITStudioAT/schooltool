@@ -53,9 +53,15 @@ class ImportedCurriculumService
 
     public function adoptForUser(TeachingImportedCurriculum $importedCurriculum, User $user): TeachingCurriculum
     {
+        if ($this->hasAlreadyBeenAdopted($importedCurriculum, $user)) {
+            throw ValidationException::withMessages([
+                'curriculum' => 'Dieses importierte Curriculum wurde bereits übernommen.',
+            ]);
+        }
+
         $schoolyear = $user->selectedSchoolyear;
 
-        return TeachingCurriculum::query()->create([
+        $curriculum = TeachingCurriculum::query()->create([
             'school_id' => $user->school_id,
             'schoolyear_id' => $user->schoolyear_id,
             'user_id' => $user->id,
@@ -71,6 +77,25 @@ class ImportedCurriculumService
                 $schoolyear
             ),
         ]);
+
+        $importedCurriculum->forceFill([
+            'adopted_curriculum_id' => $curriculum->id,
+        ])->save();
+
+        return $curriculum;
+    }
+
+    private function hasAlreadyBeenAdopted(TeachingImportedCurriculum $importedCurriculum, User $user): bool
+    {
+        if (! filled($importedCurriculum->adopted_curriculum_id)) {
+            return false;
+        }
+
+        return TeachingCurriculum::query()
+            ->whereKey($importedCurriculum->adopted_curriculum_id)
+            ->where('school_id', $user->school_id)
+            ->where('user_id', $user->id)
+            ->exists();
     }
 
     /**
