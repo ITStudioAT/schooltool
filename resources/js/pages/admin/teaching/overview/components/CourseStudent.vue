@@ -813,7 +813,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'selected_course_id', 'selected_course_student', 'show_works', 'show_infos', 'show_dates', 'students_sort_mode']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
@@ -1256,7 +1256,18 @@ export default {
             return result
         },
         courseStudentsList() {
-            return this.selected_course?.students_info || []
+            const list = this.selected_course?.students_info || []
+
+            return [...list].sort((a, b) => {
+                const canceledA = this.isStudentCanceled(a) ? 1 : 0
+                const canceledB = this.isStudentCanceled(b) ? 1 : 0
+
+                if (canceledA !== canceledB) {
+                    return canceledA - canceledB
+                }
+
+                return this.compareStudentsBySelectedSort(a, b)
+            })
         },
         currentStudentIndex() {
             if (!this.selected_course_student) return -1
@@ -1403,6 +1414,38 @@ export default {
             this.delete_star_id = null
             this.delete_behaviour_id = null
             this.delete_notification_id = null
+        },
+        isStudentCanceled(student) {
+            return !!student?.canceled_at || !!student?.deleted_at
+        },
+        studentClassValue(student) {
+            return (student?.schoolclass || student?.class || '').toString()
+        },
+        compareStudentsBySelectedSort(a, b) {
+            const lastA = (a?.last_name || '').toString()
+            const lastB = (b?.last_name || '').toString()
+            const firstA = (a?.first_name || '').toString()
+            const firstB = (b?.first_name || '').toString()
+            const classA = this.studentClassValue(a)
+            const classB = this.studentClassValue(b)
+
+            if (this.students_sort_mode === 'last_name_first_name') {
+                const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+                if (lastCmp !== 0) return lastCmp
+
+                const firstCmp = firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
+                if (firstCmp !== 0) return firstCmp
+
+                return classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            }
+
+            const classCmp = classA.localeCompare(classB, 'de', { numeric: true, sensitivity: 'base' })
+            if (classCmp !== 0) return classCmp
+
+            const lastCmp = lastA.localeCompare(lastB, 'de', { sensitivity: 'base' })
+            if (lastCmp !== 0) return lastCmp
+
+            return firstA.localeCompare(firstB, 'de', { sensitivity: 'base' })
         },
         goToPreviousStudent() {
             if (!this.hasPreviousStudent) return

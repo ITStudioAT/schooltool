@@ -313,6 +313,7 @@ export default {
         this.adminStore = useAdminStore()
         this.import116Store = useImport116Store()
         this.courseStore = useCourseStore()
+        this.students_sort_mode = this.courseStore?.students_sort_mode || this.students_sort_mode
         this.courseDateStore = useCourseDateStore()
         this.entryStore = useCourseStudentEntryStore()
         this.behaviourEntryStore = useCourseBehaviourEntryStore()
@@ -739,6 +740,13 @@ export default {
             if (val && val instanceof Date) {
                 this.bulk_entry_form.date = this.toDateString(val)
             }
+        },
+        students_sort_mode(val) {
+            if (!this.courseStore) {
+                return
+            }
+
+            this.courseStore.students_sort_mode = val || 'last_name_first_name'
         },
     },
 

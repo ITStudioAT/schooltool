@@ -108,6 +108,56 @@ describe('CourseStudent date handling', () => {
     })
 })
 
+describe('CourseStudent next and previous navigation order', () => {
+    it('matches the overview order for class and name sorting', () => {
+        const computed = (CourseStudent as any).computed
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, any> = {
+            selected_course: {
+                students_info: [
+                    { id: 1, schoolclass: '2B', last_name: 'Bauer', first_name: 'Anna', canceled_at: null },
+                    { id: 2, schoolclass: '1A', last_name: 'Zeis', first_name: 'Berta', canceled_at: null },
+                    { id: 3, schoolclass: '1A', last_name: 'Auer', first_name: 'Clara', canceled_at: null },
+                    { id: 4, schoolclass: '1A', last_name: 'Zimmer', first_name: 'Dora', canceled_at: '2026-02-16 10:00:00' },
+                ],
+            },
+            selected_course_student: { id: 2, schoolclass: '1A', last_name: 'Zeis', first_name: 'Berta', canceled_at: null },
+            students_sort_mode: 'class_last_name',
+            isStudentCanceled: methods.isStudentCanceled,
+            compareStudentsBySelectedSort: methods.compareStudentsBySelectedSort,
+            studentClassValue: methods.studentClassValue,
+        }
+
+        const sorted = computed.courseStudentsList.call(ctx)
+
+        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 2, 1, 4])
+        expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(1)
+    })
+
+    it('uses last name plus first name for name sorting', () => {
+        const computed = (CourseStudent as any).computed
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, any> = {
+            selected_course: {
+                students_info: [
+                    { id: 1, schoolclass: '2B', last_name: 'Mayer', first_name: 'Zoe', canceled_at: null },
+                    { id: 2, schoolclass: '1A', last_name: 'Mayer', first_name: 'Anna', canceled_at: null },
+                    { id: 3, schoolclass: '3C', last_name: 'Auer', first_name: 'Clara', canceled_at: null },
+                ],
+            },
+            selected_course_student: { id: 2, schoolclass: '1A', last_name: 'Mayer', first_name: 'Anna', canceled_at: null },
+            students_sort_mode: 'last_name_first_name',
+            isStudentCanceled: methods.isStudentCanceled,
+            compareStudentsBySelectedSort: methods.compareStudentsBySelectedSort,
+            studentClassValue: methods.studentClassValue,
+        }
+
+        const sorted = computed.courseStudentsList.call(ctx)
+
+        expect(sorted.map((student: { id: number }) => student.id)).toEqual([3, 2, 1])
+    })
+})
+
 describe('CourseStudent auswertung labels', () => {
     it('shows the required marker only at category level with localized wording', () => {
         const componentPath = resolve(
