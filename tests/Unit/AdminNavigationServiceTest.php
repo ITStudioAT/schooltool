@@ -505,7 +505,8 @@ describe('dashboardMenu', function () {
 
         expect($teachingItem)
             ->not->toBeNull()
-            ->and($teachingItem['is_active'])->toBeTrue();
+            ->and($teachingItem['is_active'])->toBeTrue()
+            ->and($teachingItem['active_paths'])->toBe(['/admin/teaching']);
     });
 
     it('hides materials menu item when admin visibility is disabled', function () {

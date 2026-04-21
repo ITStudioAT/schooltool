@@ -379,6 +379,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
+        Route::get('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'freeWeeksTemplate']);
+        Route::put('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'updateFreeWeeksTemplate']);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/config', [CurriculumController::class, 'materialsConfig']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/cards', [CurriculumController::class, 'materialsIndex']);

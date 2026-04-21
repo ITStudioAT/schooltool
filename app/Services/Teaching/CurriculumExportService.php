@@ -3,6 +3,7 @@
 namespace App\Services\Teaching;
 
 use App\Models\TeachingCurriculum;
+use App\Models\User;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Style\Language;
@@ -13,6 +14,9 @@ class CurriculumExportService
 {
     public function toWord(TeachingCurriculum $curriculum, $user = null): string
     {
+        $teacherName = $this->teacherName($curriculum, $user);
+        $schoolName = $this->schoolName($curriculum, $user);
+
         $phpWord = new PhpWord;
         $phpWord->setDefaultFontName('Arial');
         $phpWord->setDefaultFontSize(10);
@@ -58,11 +62,11 @@ class CurriculumExportService
         );
 
         $infoParts = [];
-        if ($user) {
-            $infoParts[] = 'Lehrperson: '.$user->name;
-            if ($user->school) {
-                $infoParts[] = 'Schule: '.$user->school->long_name;
-            }
+        if ($teacherName !== null) {
+            $infoParts[] = 'Lehrperson: '.$teacherName;
+        }
+        if ($schoolName !== null) {
+            $infoParts[] = 'Schule: '.$schoolName;
         }
         $infoParts[] = 'Erstellt am: '.now()->format('d.m.Y, H:i').' Uhr';
 
@@ -133,20 +137,64 @@ class CurriculumExportService
         $topics = is_array($curriculum->topics) ? $curriculum->topics : [];
         $freeWeeks = is_array($curriculum->free_weeks) ? count($curriculum->free_weeks) : 0;
         $path = storage_path('app/private/curriculum_export_'.$curriculum->id.'.pdf');
+        $teacherName = $this->teacherName($curriculum, $user);
+        $schoolName = $this->schoolName($curriculum, $user);
+        $embeddedFontCss = $this->embeddedPdfFontCss();
+        $pdfFontFamily = $embeddedFontCss !== ''
+            ? "'CurriculumPdfArial', Arial, Helvetica, sans-serif"
+            : 'Arial, Helvetica, sans-serif';
 
         Pdf::view('pdfs.curriculum-export', [
             'curriculum' => $curriculum,
             'topics' => $topics,
             'freeWeeks' => $freeWeeks,
             'assignmentLabels' => $this->buildAssignmentLabels($topics),
-            'userName' => $user?->name,
-            'schoolName' => $user?->school?->long_name,
+            'userName' => $teacherName,
+            'schoolName' => $schoolName,
             'printDate' => now()->format('d.m.Y, H:i'),
+            'embeddedFontCss' => $embeddedFontCss,
+            'pdfFontFamily' => $pdfFontFamily,
         ])
             ->format(Format::A4)
             ->save($path);
 
         return $path;
+    }
+
+    private function teacherName(TeachingCurriculum $curriculum, mixed $fallbackUser = null): ?string
+    {
+        $curriculum->loadMissing('user');
+
+        $teacherName = trim((string) $curriculum->user?->full_name);
+        if ($teacherName !== '') {
+            return $teacherName;
+        }
+
+        if (! $fallbackUser instanceof User) {
+            return null;
+        }
+
+        $fallbackTeacherName = trim((string) $fallbackUser->full_name);
+
+        return $fallbackTeacherName !== '' ? $fallbackTeacherName : null;
+    }
+
+    private function schoolName(TeachingCurriculum $curriculum, mixed $fallbackUser = null): ?string
+    {
+        $curriculum->loadMissing('school');
+
+        $schoolName = trim((string) ($curriculum->school?->long_name ?: $curriculum->school?->short_name));
+        if ($schoolName !== '') {
+            return $schoolName;
+        }
+
+        if (! $fallbackUser instanceof User) {
+            return null;
+        }
+
+        $fallbackSchoolName = trim((string) ($fallbackUser->selectedSchool?->long_name ?: $fallbackUser->selectedSchool?->short_name));
+
+        return $fallbackSchoolName !== '' ? $fallbackSchoolName : null;
     }
 
     private function buildAssignmentLabels(array $topics): array
@@ -165,6 +213,114 @@ class CurriculumExportService
         }
 
         return $labels;
+    }
+
+    private function embeddedPdfFontCss(): string
+    {
+        $fontFaces = array_filter([
+            $this->embeddedPdfFontFace(
+                'CurriculumPdfArial',
+                $this->arialFontCandidatePaths('regular'),
+                400,
+                'normal'
+            ),
+            $this->embeddedPdfFontFace(
+                'CurriculumPdfArial',
+                $this->arialFontCandidatePaths('bold'),
+                700,
+                'normal'
+            ),
+            $this->embeddedPdfFontFace(
+                'CurriculumPdfArial',
+                $this->arialFontCandidatePaths('italic'),
+                400,
+                'italic'
+            ),
+            $this->embeddedPdfFontFace(
+                'CurriculumPdfArial',
+                $this->arialFontCandidatePaths('boldItalic'),
+                700,
+                'italic'
+            ),
+        ]);
+
+        return implode("\n", $fontFaces);
+    }
+
+    private function embeddedPdfFontFace(string $family, array $paths, int $weight, string $style): ?string
+    {
+        $dataUri = $this->fontDataUri($paths);
+
+        if ($dataUri === null) {
+            return null;
+        }
+
+        return <<<CSS
+@font-face {
+    font-family: '{$family}';
+    src: url("{$dataUri}") format('truetype');
+    font-weight: {$weight};
+    font-style: {$style};
+}
+CSS;
+    }
+
+    private function fontDataUri(array $paths): ?string
+    {
+        foreach ($paths as $path) {
+            if (! is_string($path) || $path === '' || ! is_file($path) || ! is_readable($path)) {
+                continue;
+            }
+
+            $contents = file_get_contents($path);
+
+            if ($contents === false || $contents === '') {
+                continue;
+            }
+
+            return 'data:font/truetype;base64,'.base64_encode($contents);
+        }
+
+        return null;
+    }
+
+    private function arialFontCandidatePaths(string $variant): array
+    {
+        return match ($variant) {
+            'regular' => [
+                storage_path('app/pdf-fonts/arial.ttf'),
+                resource_path('fonts/arial.ttf'),
+                'C:\Windows\Fonts\arial.ttf',
+                '/Library/Fonts/Arial.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/arial.ttf',
+            ],
+            'bold' => [
+                storage_path('app/pdf-fonts/arialbd.ttf'),
+                resource_path('fonts/arialbd.ttf'),
+                'C:\Windows\Fonts\arialbd.ttf',
+                '/Library/Fonts/Arial Bold.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/Arial_Bold.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/arialbd.ttf',
+            ],
+            'italic' => [
+                storage_path('app/pdf-fonts/ariali.ttf'),
+                resource_path('fonts/ariali.ttf'),
+                'C:\Windows\Fonts\ariali.ttf',
+                '/Library/Fonts/Arial Italic.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/Arial_Italic.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/ariali.ttf',
+            ],
+            'boldItalic' => [
+                storage_path('app/pdf-fonts/arialbi.ttf'),
+                resource_path('fonts/arialbi.ttf'),
+                'C:\Windows\Fonts\arialbi.ttf',
+                '/Library/Fonts/Arial Bold Italic.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/Arial_Bold_Italic.ttf',
+                '/usr/share/fonts/truetype/msttcorefonts/arialbi.ttf',
+            ],
+            default => [],
+        };
     }
 
     private function assignmentLabel(array $item): ?string

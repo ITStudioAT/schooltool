@@ -97,6 +97,7 @@ class AdminNavigationService
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
                     'to' => '/admin/teaching',
+                    'active_paths' => ['/admin/teaching'],
                     'is_active' => ($teachingLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht');
             }

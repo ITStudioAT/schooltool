@@ -43,16 +43,6 @@
 
             <div v-if="selectedOption" class="curricula-print__preview">
                 <div class="curricula-print__preview-toolbar d-flex align-center ga-3 mb-4">
-                    <v-btn
-                        variant="flat"
-                        color="orange"
-                        size="small"
-                        rounded="xl"
-                        prepend-icon="mdi-arrow-left"
-                        class="text-none"
-                        @click="selectedOption = null">
-                        Berichtsauswahl
-                    </v-btn>
                     <v-spacer />
                     <v-btn
                         color="primary"
@@ -78,6 +68,12 @@
                         @click="handlePdf">
                         PDF
                     </v-btn>
+                    <v-btn
+                        icon="mdi-close"
+                        variant="text"
+                        rounded="lg"
+                        density="comfortable"
+                        @click="selectedOption = null" />
                 </div>
 
                 <div v-if="selectedOption === 'overview'" class="curricula-print__overview">
@@ -158,18 +154,6 @@ export default {
                     label: 'Jahresübersicht',
                     description: 'Kompakte Übersicht aller Wochen und Themen des gesamten Schuljahres.',
                     icon: 'mdi-calendar-text-outline',
-                },
-                {
-                    key: 'semester',
-                    label: 'Semesterplan',
-                    description: 'Detaillierter Plan für ein einzelnes Semester mit Wochenstunden.',
-                    icon: 'mdi-book-open-page-variant-outline',
-                },
-                {
-                    key: 'weekly',
-                    label: 'Wochenplan',
-                    description: 'Einzelne Woche mit Tagesdetails und zugeordneten Lehrplaninhalten.',
-                    icon: 'mdi-calendar-week-outline',
                 },
             ],
         }
@@ -384,6 +368,11 @@ export default {
 </script>
 
 <style scoped>
+.curricula-print,
+.curricula-print * {
+    font-family: Arial, Helvetica, sans-serif !important;
+}
+
 .curricula-print {
     border: 1px solid rgba(99, 102, 241, 0.12);
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 250, 255, 0.92));

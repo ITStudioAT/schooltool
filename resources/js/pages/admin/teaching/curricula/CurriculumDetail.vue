@@ -24,6 +24,18 @@
                     <v-chip size="small" color="success" variant="tonal" class="font-weight-bold">
                         {{ freeWeeksCount }} freie Wochen
                     </v-chip>
+                    <v-btn
+                        v-if="hasFreeWeeksTemplate"
+                        size="small"
+                        variant="tonal"
+                        color="success"
+                        rounded="xl"
+                        class="text-none"
+                        :loading="isApplyingFreeWeeksTemplate"
+                        :disabled="!canApplyFreeWeeksTemplate"
+                        @click="applyFreeWeeksTemplate">
+                        Freie Tage übernehmen
+                    </v-btn>
                     <div class="curriculum-detail__year-picker d-flex align-center ga-1">
                         <v-btn
                             icon="mdi-chevron-left"
@@ -1931,6 +1943,7 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             showLehrplaeneCard: false,
+            isApplyingFreeWeeksTemplate: false,
             collapseFullMonths: true,
             topicCollapseStates: {},
             manualMonthCollapseStates: {},
@@ -2041,11 +2054,39 @@ export default {
         },
 
         freeWeekKeys() {
-            return Array.isArray(this.curriculum.free_weeks) ? this.curriculum.free_weeks : []
+            return [...new Set(
+                (Array.isArray(this.curriculum.free_weeks) ? this.curriculum.free_weeks : [])
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
+            )].sort()
         },
 
         freeWeeksCount() {
             return this.freeWeekKeys.length
+        },
+
+        freeWeeksTemplateWeekKeys() {
+            const template = this.config?.user?.teaching_curriculum_free_weeks_template
+            const rawWeekKeys = Array.isArray(template?.week_keys) ? template.week_keys : []
+
+            return [...new Set(
+                rawWeekKeys
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
+            )].sort()
+        },
+
+        hasFreeWeeksTemplate() {
+            return this.freeWeeksTemplateWeekKeys.length > 0
+        },
+
+        canApplyFreeWeeksTemplate() {
+            return this.hasFreeWeeksTemplate
+                && this.freeWeeksCount === 0
+                && !this.isApplyingFreeWeeksTemplate
+                && !this.isPageActionLocked
         },
 
         curriculumTopics() {
@@ -2372,12 +2413,14 @@ export default {
                         : [normalizedEntry.month_key]
                 )
                     .filter(Boolean)
-                    .map((monthKey) => String(monthKey).trim())
+                    .map((monthKey) => this.normalizeMonthAssignmentKey(monthKey))
+                    .filter(Boolean)
             )].sort()
             const weekKeys = [...new Set(
                 (Array.isArray(normalizedEntry.week_keys) ? normalizedEntry.week_keys : [])
                     .filter(Boolean)
-                    .map((weekKey) => String(weekKey).trim())
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
             )].sort()
 
             return {
@@ -2477,7 +2520,8 @@ export default {
             const checkedWeekKeys = [...new Set(
                 (Array.isArray(normalizedUnit.checked_week_keys) ? normalizedUnit.checked_week_keys : [])
                     .filter(Boolean)
-                    .map((weekKey) => String(weekKey).trim())
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
             )].sort()
 
             return {
@@ -2619,15 +2663,19 @@ export default {
         },
 
         shiftWeekKeyByWeeks(weekKey, delta) {
-            const baseDate = new Date(`${weekKey}T00:00:00`)
-            if (Number.isNaN(baseDate.getTime())) {
+            const visibleWeekKeys = this.visibleWeekKeys()
+            const currentIndex = visibleWeekKeys.indexOf(weekKey)
+
+            if (currentIndex === -1) {
                 return null
             }
 
-            const shiftedDate = new Date(baseDate)
-            shiftedDate.setDate(shiftedDate.getDate() + (delta * 7))
+            const shiftedIndex = currentIndex + delta
+            if (shiftedIndex < 0 || shiftedIndex >= visibleWeekKeys.length) {
+                return null
+            }
 
-            return this.formatDateKey(shiftedDate)
+            return visibleWeekKeys[shiftedIndex] ?? null
         },
 
         resolveShiftedWeekKey(weekKey, delta, validWeekKeys, freeWeekKeys) {
@@ -2680,11 +2728,19 @@ export default {
                 }
             }
 
-            const sourceDate = new Date(`${sourceWeekKey}T00:00:00`)
-            const targetDate = new Date(`${weekKey}T00:00:00`)
+            const visibleWeekKeys = this.visibleWeekKeys()
+            const sourceIndex = visibleWeekKeys.indexOf(sourceWeekKey)
+            const targetIndex = visibleWeekKeys.indexOf(weekKey)
+
+            if (sourceIndex === -1 || targetIndex === -1) {
+                return {
+                    effectiveDelta: null,
+                    errorMessage: 'Die Wochensequenz kann nicht außerhalb des sichtbaren Zeitraums verschoben werden.',
+                }
+            }
 
             return {
-                effectiveDelta: Math.round((targetDate.getTime() - sourceDate.getTime()) / (7 * 24 * 60 * 60 * 1000)),
+                effectiveDelta: targetIndex - sourceIndex,
                 errorMessage: null,
             }
         },
@@ -4149,6 +4205,58 @@ export default {
             return `${year}-${String(monthIndex + 1).padStart(2, '0')}`
         },
 
+        monthKeyForSelectedYear(monthNumber) {
+            const normalizedMonth = Number.parseInt(String(monthNumber), 10)
+
+            if (!Number.isInteger(normalizedMonth) || normalizedMonth < 1 || normalizedMonth > 12) {
+                return null
+            }
+
+            const year = normalizedMonth >= 9 ? this.selectedYear : this.selectedYear + 1
+
+            return `${year}-${String(normalizedMonth).padStart(2, '0')}`
+        },
+
+        normalizeMonthAssignmentKey(monthKey) {
+            const rawMonthKey = String(monthKey).trim()
+            const match = rawMonthKey.match(/^(?:\d{4}-)?(\d{2})$/)
+
+            if (!match) {
+                return rawMonthKey
+            }
+
+            return this.monthKeyForSelectedYear(match[1]) ?? rawMonthKey
+        },
+
+        weekKeyForSelectedYear(isoWeek) {
+            const normalizedWeek = Number.parseInt(String(isoWeek), 10)
+
+            if (!Number.isInteger(normalizedWeek) || normalizedWeek < 1 || normalizedWeek > 53) {
+                return null
+            }
+
+            for (const month of this.allMonths) {
+                const matchingWeek = month.weeks.find((week) => week.kw === normalizedWeek)
+
+                if (matchingWeek?.weekKey) {
+                    return matchingWeek.weekKey
+                }
+            }
+
+            return null
+        },
+
+        normalizeWeekAssignmentKey(weekKey) {
+            const rawWeekKey = String(weekKey).trim()
+            const weekStart = new Date(`${rawWeekKey}T00:00:00`)
+
+            if (Number.isNaN(weekStart.getTime())) {
+                return rawWeekKey
+            }
+
+            return this.weekKeyForSelectedYear(this.getISOWeek(weekStart)) ?? rawWeekKey
+        },
+
         getISOWeek(date) {
             const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
             d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7))
@@ -4405,6 +4513,22 @@ export default {
                 }, 'Freie Woche konnte nicht gespeichert werden.')
             } finally {
                 this.savingWeekKeys = this.savingWeekKeys.filter((value) => value !== weekKey)
+            }
+        },
+
+        async applyFreeWeeksTemplate() {
+            if (!this.canApplyFreeWeeksTemplate) {
+                return
+            }
+
+            this.isApplyingFreeWeeksTemplate = true
+
+            try {
+                await this.persistCurriculum({
+                    free_weeks: this.freeWeeksTemplateWeekKeys,
+                }, 'Freie Tage konnten nicht übernommen werden.')
+            } finally {
+                this.isApplyingFreeWeeksTemplate = false
             }
         },
 

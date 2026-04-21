@@ -37,6 +37,12 @@
             v-else-if="sub_action === 'print'"
             :curriculum="selectedCurriculum"
             @back="returnFromPrint" />
+
+        <CurriculaSettings
+            v-else-if="sub_action === 'settings'"
+            :curriculum="selectedCurriculum"
+            @back="returnFromSettings"
+            @updated="updateCurriculum" />
     </v-col>
 </template>
 
@@ -44,11 +50,12 @@
 import CurriculaOverview from './CurriculaOverview.vue'
 import CurriculumDetail from './CurriculumDetail.vue'
 import CurriculaPrint from './CurriculaPrint.vue'
+import CurriculaSettings from './CurriculaSettings.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
 export default {
     name: 'TeachingCurricula',
-    components: { CurriculaOverview, CurriculumDetail, CurriculaPrint },
+    components: { CurriculaOverview, CurriculumDetail, CurriculaPrint, CurriculaSettings },
     data() {
         return {
             curriculumStore: useCurriculumStore(),
@@ -58,6 +65,7 @@ export default {
             routeSyncToken: 0,
             submenuItems: [
                 { key: 'overview', label: 'Übersicht', icon: 'mdi-view-list-outline' },
+                { key: 'settings', label: 'Einstellungen', icon: 'mdi-cog-outline' },
                 { key: 'print', label: 'Ausdruck', icon: 'mdi-printer-outline', requiresCurriculum: true },
             ],
         }
@@ -91,6 +99,10 @@ export default {
             }
         },
         returnFromPrint() {
+            this.sub_action = 'overview'
+            this.setViewQuery('overview')
+        },
+        returnFromSettings() {
             this.sub_action = 'overview'
             this.setViewQuery('overview')
         },

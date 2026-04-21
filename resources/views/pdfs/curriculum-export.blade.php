@@ -4,14 +4,16 @@
     <meta charset="utf-8">
     <title>{{ $curriculum->title }}</title>
     <style>
+        {!! $embeddedFontCss !!}
+
         * {
-            font-family: Arial, Helvetica, sans-serif !important;
+            font-family: {!! $pdfFontFamily !!} !important;
         }
 
         body {
-            font-family: Arial, Helvetica, sans-serif;
+            font-family: {!! $pdfFontFamily !!};
             color: #1e293b;
-            font-size: 11px;
+            font-size: 10pt;
             line-height: 1.5;
             margin: 28px;
         }
@@ -23,7 +25,7 @@
         }
 
         .header-label {
-            font-size: 9px;
+            font-size: 10pt;
             font-weight: 700;
             color: #6366f1;
             text-transform: uppercase;
@@ -32,27 +34,27 @@
         }
 
         h1 {
-            font-size: 20px;
+            font-size: 20pt;
             font-weight: 700;
             margin: 0 0 4px;
             color: #0f172a;
         }
 
         .header-description {
-            font-size: 10px;
+            font-size: 10pt;
             color: #475569;
             font-style: italic;
             margin: 0 0 8px;
         }
 
         .meta {
-            font-size: 9px;
+            font-size: 10pt;
             color: #64748b;
             margin: 0 0 4px;
         }
 
         .meta-info {
-            font-size: 8px;
+            font-size: 10pt;
             color: #94a3b8;
             margin: 0;
         }
@@ -71,13 +73,14 @@
 
         .topic-title {
             font-weight: 700;
-            font-size: 11px;
+            font-size: 11pt;
         }
 
         .topic-assignment {
+            font-family: {!! $pdfFontFamily !!} !important;
             color: #6366f1;
-            font-size: 9px;
-            font-weight: 600;
+            font-size: 10pt;
+            font-weight: 400;
             margin-top: 2px;
         }
 
@@ -88,7 +91,7 @@
         .unit {
             padding: 4px 0;
             border-bottom: 1px solid #f1f5f9;
-            font-size: 10px;
+            font-size: 10pt;
         }
 
         .unit:last-child {
@@ -101,16 +104,18 @@
         }
 
         .unit-assignment {
+            font-family: {!! $pdfFontFamily !!} !important;
             color: #6366f1;
-            font-size: 8px;
-            font-weight: 500;
+            font-size: 10pt;
+            font-weight: 400;
             margin-top: 1px;
         }
 
         .exam-badge {
+            font-family: {!! $pdfFontFamily !!} !important;
             background: #fef2f2;
             color: #dc2626;
-            font-size: 8px;
+            font-size: 10pt;
             padding: 1px 5px;
             border-radius: 3px;
             font-weight: 600;

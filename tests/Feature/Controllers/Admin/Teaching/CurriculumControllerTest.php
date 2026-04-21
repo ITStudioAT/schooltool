@@ -46,6 +46,8 @@ beforeEach(function () {
 
     $this->schoolyear = Schoolyear::factory()->create([
         'school_id' => $this->school->id,
+        'from' => '2026-09-01',
+        'until' => '2027-07-31',
     ]);
 
     SchoolTool::factory()->create([
@@ -64,6 +66,8 @@ beforeEach(function () {
     $this->otherSchool = School::factory()->create();
     $this->otherSchoolyear = Schoolyear::factory()->create([
         'school_id' => $this->otherSchool->id,
+        'from' => '2026-09-01',
+        'until' => '2027-07-31',
     ]);
 
     SchoolTool::factory()->create([
@@ -145,6 +149,84 @@ test('teacher can create a curriculum with free weeks and topics', function () {
         ->and(TeachingCurriculum::query()->firstOrFail()->topics[1]['month_keys'])->toBe(['2025-11'])
         ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'])->toHaveCount(1)
         ->and(TeachingCurriculum::query()->firstOrFail()->topics[0]['units'][0]['is_exam'])->toBeTrue();
+});
+
+test('teacher can save and load a curriculum free weeks template across schoolyears', function () {
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson('/api/admin/teaching/curricula/free-weeks-template', [
+        'free_weeks_template' => [
+            'week_keys' => ['2025-01-13', '2024-09-09'],
+            'named_ranges' => [
+                [
+                    'title' => 'Weihnachtsferien',
+                    'start_week_key' => '2025-01-13',
+                    'end_week_key' => '2025-01-13',
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('data.week_keys.0', '2026-09-07')
+        ->assertJsonPath('data.week_keys.1', '2027-01-18')
+        ->assertJsonPath('data.named_ranges.0.title', 'Weihnachtsferien')
+        ->assertJsonPath('data.named_ranges.0.start_week_key', '2027-01-18')
+        ->assertJsonPath('data.named_ranges.0.end_week_key', '2027-01-18');
+
+    expect($this->teacher->fresh()->teaching_curriculum_free_weeks_template)->toEqual([
+        'week_keys' => ['2024-09-09', '2025-01-13'],
+        'named_ranges' => [
+            [
+                'title' => 'Weihnachtsferien',
+                'start_week_key' => '2025-01-13',
+                'end_week_key' => '2025-01-13',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson('/api/admin/teaching/curricula/free-weeks-template')
+        ->assertOk()
+        ->assertJson([
+            'data' => [
+                'week_keys' => ['2026-09-07', '2027-01-18'],
+                'named_ranges' => [
+                    [
+                        'title' => 'Weihnachtsferien',
+                        'start_week_key' => '2027-01-18',
+                        'end_week_key' => '2027-01-18',
+                    ],
+                ],
+            ],
+        ]);
+});
+
+test('teacher creates new curriculum with inherited free weeks template when none are provided', function () {
+    $this->teacher->update([
+        'teaching_curriculum_free_weeks_template' => [
+            'week_keys' => ['2024-09-09', '2025-01-13'],
+            'named_ranges' => [
+                [
+                    'title' => 'Weihnachtsferien',
+                    'start_week_key' => '2025-01-13',
+                    'end_week_key' => '2025-01-13',
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->postJson('/api/admin/teaching/curricula', [
+        'title' => 'Englisch 1A',
+        'description' => 'Neue Planung',
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('data.free_weeks.0', '2026-09-07')
+        ->assertJsonPath('data.free_weeks.1', '2027-01-18');
+
+    expect(TeachingCurriculum::query()->firstOrFail()->free_weeks)->toBe(['2026-09-07', '2027-01-18']);
 });
 
 test('teacher can update curriculum free weeks and duplicates are normalized', function () {

@@ -26,7 +26,11 @@ function buildCurriculum(overrides: Record<string, unknown> = {}) {
     }
 }
 
-function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}) {
+function mountCurriculumDetail(
+    curriculumOverrides: Record<string, unknown> = {},
+    adminConfigOverrides: Record<string, unknown> = {},
+) {
+    const { selected_schoolyear: selectedSchoolyearOverride, ...configOverrides } = adminConfigOverrides
     const pinia = createTestingPinia({
         stubActions: false,
         createSpy: vi.fn,
@@ -36,7 +40,9 @@ function mountCurriculumDetail(curriculumOverrides: Record<string, unknown> = {}
                     roles: ['teacher'],
                     selected_schoolyear: {
                         from: '2025-09-01',
+                        ...((selectedSchoolyearOverride as Record<string, unknown> | undefined) || {}),
                     },
+                    ...configOverrides,
                 },
             },
         },
@@ -126,6 +132,10 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain("'curriculum-detail__calendar--compact': isCompactWeekView")
         expect(source).toContain('v-model="collapseFullMonths"')
         expect(source).toContain('Volle Monate')
+        expect(source).toContain('Freie Tage übernehmen')
+        expect(source).toContain('v-if="hasFreeWeeksTemplate"')
+        expect(source).toContain(':disabled="!canApplyFreeWeeksTemplate"')
+        expect(source).toContain('@click="applyFreeWeeksTemplate"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
         expect(source).toContain('class="curriculum-detail__content-footer"')
@@ -1725,5 +1735,117 @@ describe('CurriculumDetail week card view mode', () => {
             attachments_count: 3,
         })).toBe('Biologie · 3 Anhänge')
         expect(source).toContain('Dieses Material hat mehrere Anhänge. Bitte den Anhang auswählen, der angezeigt werden soll.')
+    })
+
+    it('remaps topic and unit assignments to the selected year by month and kw', async () => {
+        const wrapper = mountCurriculumDetail({
+            free_weeks: ['2025-09-15'],
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'month',
+                    month_keys: ['2025-09'],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-08'],
+                            checked_week_keys: ['2025-09-08'],
+                        },
+                    ],
+                },
+            ],
+        })
+
+        await wrapper.setData({ selectedYear: 2026 })
+
+        const remappedTopic = (wrapper.vm as any).curriculumTopics[0]
+        const remappedUnit = remappedTopic.units[0]
+        const expectedWeekKey = (wrapper.vm as any).allMonths
+            .flatMap((month: { weeks: Array<{ kw: number, weekKey: string }> }) => month.weeks)
+            .find((week: { kw: number, weekKey: string }) => week.kw === (wrapper.vm as any).getISOWeek(new Date('2025-09-08T00:00:00')))
+            ?.weekKey
+        const expectedFreeWeekKey = (wrapper.vm as any).allMonths
+            .flatMap((month: { weeks: Array<{ kw: number, weekKey: string }> }) => month.weeks)
+            .find((week: { kw: number, weekKey: string }) => week.kw === (wrapper.vm as any).getISOWeek(new Date('2025-09-15T00:00:00')))
+            ?.weekKey
+
+        expect(remappedTopic.month_keys).toEqual(['2026-09'])
+        expect(remappedTopic.month_key).toBe('2026-09')
+        expect(remappedUnit.week_keys).toEqual([expectedWeekKey])
+        expect(remappedUnit.checked_week_keys).toEqual([expectedWeekKey])
+        expect((wrapper.vm as any).freeWeekKeys).toEqual([expectedFreeWeekKey])
+        expect((wrapper.vm as any).isFreeWeek(expectedFreeWeekKey)).toBe(true)
+        expect(expectedWeekKey).toBeTruthy()
+        expect(expectedFreeWeekKey).toBeTruthy()
+        expect(remappedUnit.week_keys[0]).not.toBe('2025-09-08')
+        expect((wrapper.vm as any).freeWeekKeys[0]).not.toBe('2025-09-15')
+    })
+
+    it('shows the free-days template action only when a user template exists and disables it for curricula with free weeks', async () => {
+        const wrapper = mountCurriculumDetail(
+            {},
+            {
+                user: {
+                    teaching_curriculum_free_weeks_template: {
+                        week_keys: ['2025-09-15'],
+                        named_ranges: [],
+                    },
+                },
+            },
+        )
+
+        expect(wrapper.text()).toContain('Freie Tage übernehmen')
+        expect((wrapper.vm as any).hasFreeWeeksTemplate).toBe(true)
+        expect((wrapper.vm as any).canApplyFreeWeeksTemplate).toBe(true)
+
+        await wrapper.setProps({
+            curriculum: buildCurriculum({
+                free_weeks: ['2025-09-15'],
+            }),
+        })
+
+        expect((wrapper.vm as any).freeWeeksCount).toBe(1)
+        expect((wrapper.vm as any).canApplyFreeWeeksTemplate).toBe(false)
+    })
+
+    it('applies the user free-days template to the selected year', async () => {
+        const wrapper = mountCurriculumDetail(
+            {},
+            {
+                user: {
+                    teaching_curriculum_free_weeks_template: {
+                        week_keys: ['2025-09-15'],
+                        named_ranges: [],
+                    },
+                },
+            },
+        )
+
+        await wrapper.setData({ selectedYear: 2026 })
+
+        const expectedWeekKey = (wrapper.vm as any).allMonths
+            .flatMap((month: { weeks: Array<{ kw: number, weekKey: string }> }) => month.weeks)
+            .find((week: { kw: number, weekKey: string }) => week.kw === (wrapper.vm as any).getISOWeek(new Date('2025-09-15T00:00:00')))
+            ?.weekKey
+
+        const persistCurriculumMock = vi.spyOn((wrapper.vm as any), 'persistCurriculum')
+            .mockResolvedValue({ ...buildCurriculum(), free_weeks: [expectedWeekKey] })
+
+        try {
+            await (wrapper.vm as any).applyFreeWeeksTemplate()
+
+            expect(persistCurriculumMock).toHaveBeenCalledWith({
+                free_weeks: [expectedWeekKey],
+            }, 'Freie Tage konnten nicht übernommen werden.')
+            expect((wrapper.vm as any).isApplyingFreeWeeksTemplate).toBe(false)
+        } finally {
+            persistCurriculumMock.mockRestore()
+        }
     })
 })

@@ -53,6 +53,42 @@ describe('Admin app navigation', () => {
         ).toBe(false)
     })
 
+    it('keeps the teaching dashboard item active on curricula subpages', () => {
+        const item = {
+            title: 'Unterricht',
+            to: '/admin/teaching',
+            active_paths: ['/admin/teaching'],
+        }
+
+        expect(
+            (AdminApp as any).methods.isMenuItemActive.call(
+                {
+                    $route: {
+                        path: '/admin/teaching/curricula',
+                    },
+                    normalizeAdminPath(path: string) {
+                        return path.replace(/\/+$/, '')
+                    },
+                },
+                item,
+            ),
+        ).toBe(true)
+
+        expect(
+            (AdminApp as any).methods.isMenuItemActive.call(
+                {
+                    $route: {
+                        path: '/admin/teaching',
+                    },
+                    normalizeAdminPath(path: string) {
+                        return path.replace(/\/+$/, '')
+                    },
+                },
+                item,
+            ),
+        ).toBe(true)
+    })
+
     it('passes the clicked menu item to the configured handler', () => {
         const logout = vi.fn()
         const item = { click: 'logout', title: 'Abmelden' }

@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\Materials\MaterialCardResource;
 use App\Http\Resources\Admin\PaginateResource;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\Schoolyear;
 use App\Models\TeachingCurriculum;
 use App\Services\Materials\MaterialAttachmentPreviewService;
 use App\Services\Materials\MaterialService;
@@ -61,6 +62,11 @@ class CurriculumController extends Controller
         }
 
         $validated = $this->validatedPayload($request);
+        $freeWeeks = $validated['free_weeks'];
+
+        if ($freeWeeks === []) {
+            $freeWeeks = $this->freeWeeksTemplateWeekKeysForSelectedSchoolyear($auth_user);
+        }
 
         $curriculum = TeachingCurriculum::create([
             'school_id' => $auth_user->school_id,
@@ -69,11 +75,92 @@ class CurriculumController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
             'semester_count' => $validated['semester_count'] ?? 2,
-            'free_weeks' => $validated['free_weeks'],
+            'free_weeks' => $freeWeeks,
             'topics' => $validated['topics'],
         ]);
 
         return response()->json(['data' => $curriculum], 201);
+    }
+
+    public function freeWeeksTemplate(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return response()->json([
+            'data' => $this->freeWeeksTemplatePayloadForSelectedSchoolyear($auth_user),
+        ]);
+    }
+
+    public function updateFreeWeeksTemplate(Request $request)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'free_weeks_template' => 'nullable|array',
+            'free_weeks_template.week_keys' => 'nullable|array',
+            'free_weeks_template.week_keys.*' => [
+                'string',
+                'date_format:Y-m-d',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                    } catch (\Throwable) {
+                        return;
+                    }
+
+                    if (! $weekStart->isMonday()) {
+                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
+                    }
+                },
+            ],
+            'free_weeks_template.named_ranges' => 'nullable|array',
+            'free_weeks_template.named_ranges.*.title' => 'nullable|string|max:255',
+            'free_weeks_template.named_ranges.*.start_week_key' => [
+                'required_with:free_weeks_template.named_ranges.*.title',
+                'string',
+                'date_format:Y-m-d',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                    } catch (\Throwable) {
+                        return;
+                    }
+
+                    if (! $weekStart->isMonday()) {
+                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
+                    }
+                },
+            ],
+            'free_weeks_template.named_ranges.*.end_week_key' => [
+                'required_with:free_weeks_template.named_ranges.*.title',
+                'string',
+                'date_format:Y-m-d',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                    } catch (\Throwable) {
+                        return;
+                    }
+
+                    if (! $weekStart->isMonday()) {
+                        $fail('Freie Wochen müssen mit einem Montag gespeichert werden.');
+                    }
+                },
+            ],
+        ]);
+
+        $auth_user->teaching_curriculum_free_weeks_template = $this->normalizeFreeWeeksTemplatePayload(
+            is_array($validated['free_weeks_template'] ?? null) ? $validated['free_weeks_template'] : []
+        );
+        $auth_user->save();
+
+        return response()->json([
+            'data' => $this->freeWeeksTemplatePayloadForSelectedSchoolyear($auth_user),
+        ]);
     }
 
     public function show(TeachingCurriculum $curriculum)
@@ -937,5 +1024,257 @@ class CurriculumController extends Controller
     private function monthKeyFromWeekKey(string $weekKey): string
     {
         return CarbonImmutable::createFromFormat('Y-m-d', $weekKey)->format('Y-m');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function freeWeeksTemplateWeekKeysForSelectedSchoolyear($user): array
+    {
+        return $this->freeWeeksTemplatePayloadForSelectedSchoolyear($user)['week_keys'];
+    }
+
+    /**
+     * @return array{
+     *     week_keys: array<int, string>,
+     *     named_ranges: array<int, array{
+     *         title: string,
+     *         start_week_key: string,
+     *         end_week_key: string
+     *     }>
+     * }
+     */
+    private function freeWeeksTemplatePayloadForSelectedSchoolyear($user): array
+    {
+        $storedTemplate = $this->storedFreeWeeksTemplatePayload($user);
+        $weekKeys = $this->normalizeTemplateWeekKeysForSchoolyear($storedTemplate['week_keys'], $user->selectedSchoolyear);
+        $weekLookup = collect($weekKeys)->flip();
+
+        $namedRanges = $this->normalizeTemplateNamedRangesForSchoolyear(
+            $storedTemplate['named_ranges'],
+            $user->selectedSchoolyear
+        );
+        $namedRanges = collect($namedRanges)
+            ->filter(fn (array $range): bool => $weekLookup->has($range['start_week_key']) && $weekLookup->has($range['end_week_key']))
+            ->values()
+            ->all();
+
+        return [
+            'week_keys' => $weekKeys,
+            'named_ranges' => $namedRanges,
+        ];
+    }
+
+    /**
+     * @return array{
+     *     week_keys: array<int, string>,
+     *     named_ranges: array<int, array{
+     *         title: string,
+     *         start_week_key: string,
+     *         end_week_key: string
+     *     }>
+     * }
+     */
+    private function storedFreeWeeksTemplatePayload($user): array
+    {
+        $rawTemplate = $user->teaching_curriculum_free_weeks_template;
+
+        if (! is_array($rawTemplate)) {
+            return [
+                'week_keys' => [],
+                'named_ranges' => [],
+            ];
+        }
+
+        if (array_is_list($rawTemplate)) {
+            return [
+                'week_keys' => $this->normalizeWeekKeys($rawTemplate),
+                'named_ranges' => [],
+            ];
+        }
+
+        return $this->normalizeFreeWeeksTemplatePayload($rawTemplate);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{
+     *     week_keys: array<int, string>,
+     *     named_ranges: array<int, array{
+     *         title: string,
+     *         start_week_key: string,
+     *         end_week_key: string
+     *     }>
+     * }
+     */
+    private function normalizeFreeWeeksTemplatePayload(array $payload): array
+    {
+        $weekKeys = $this->normalizeWeekKeys(is_array($payload['week_keys'] ?? null) ? $payload['week_keys'] : []);
+        $weekLookup = collect($weekKeys)->flip();
+
+        $namedRanges = collect(is_array($payload['named_ranges'] ?? null) ? $payload['named_ranges'] : [])
+            ->filter(fn (mixed $range): bool => is_array($range))
+            ->map(function (array $range) use ($weekLookup): ?array {
+                $title = trim((string) ($range['title'] ?? ''));
+                $startWeekKey = trim((string) ($range['start_week_key'] ?? ''));
+                $endWeekKey = trim((string) ($range['end_week_key'] ?? ''));
+
+                if ($title === '' || $startWeekKey === '' || $endWeekKey === '') {
+                    return null;
+                }
+
+                if (! $weekLookup->has($startWeekKey) || ! $weekLookup->has($endWeekKey)) {
+                    return null;
+                }
+
+                if ($startWeekKey > $endWeekKey) {
+                    [$startWeekKey, $endWeekKey] = [$endWeekKey, $startWeekKey];
+                }
+
+                return [
+                    'title' => $title,
+                    'start_week_key' => $startWeekKey,
+                    'end_week_key' => $endWeekKey,
+                ];
+            })
+            ->filter()
+            ->unique(fn (array $range): string => "{$range['start_week_key']}:{$range['end_week_key']}")
+            ->sortBy(fn (array $range): string => "{$range['start_week_key']}:{$range['end_week_key']}")
+            ->values()
+            ->all();
+
+        return [
+            'week_keys' => $weekKeys,
+            'named_ranges' => $namedRanges,
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $weekKeys
+     * @return array<int, string>
+     */
+    private function normalizeTemplateWeekKeysForSchoolyear(array $weekKeys, ?Schoolyear $schoolyear): array
+    {
+        $weekMap = $this->schoolyearWeekMap($schoolyear);
+        if ($weekMap === []) {
+            return $this->normalizeWeekKeys($weekKeys);
+        }
+
+        return $this->normalizeWeekKeys(
+            collect($weekKeys)
+                ->map(function (mixed $weekKey) use ($weekMap): string {
+                    $rawWeekKey = (string) $weekKey;
+
+                    try {
+                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', $rawWeekKey)->startOfDay();
+                    } catch (\Throwable) {
+                        return $rawWeekKey;
+                    }
+
+                    return $weekMap[$weekStart->isoWeek()] ?? $rawWeekKey;
+                })
+                ->all()
+        );
+    }
+
+    /**
+     * @param  array<int, array{title:string,start_week_key:string,end_week_key:string}>  $namedRanges
+     * @return array<int, array{title:string,start_week_key:string,end_week_key:string}>
+     */
+    private function normalizeTemplateNamedRangesForSchoolyear(array $namedRanges, ?Schoolyear $schoolyear): array
+    {
+        $weekMap = $this->schoolyearWeekMap($schoolyear);
+        if ($weekMap === []) {
+            return $namedRanges;
+        }
+
+        return collect($namedRanges)
+            ->map(function (array $range) use ($weekMap): array {
+                return [
+                    'title' => $range['title'],
+                    'start_week_key' => $this->mapTemplateWeekKeyToSchoolyear($range['start_week_key'], $weekMap),
+                    'end_week_key' => $this->mapTemplateWeekKeyToSchoolyear($range['end_week_key'], $weekMap),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function schoolyearWeekMap(?Schoolyear $schoolyear): array
+    {
+        $startYear = $this->schoolyearStartYear($schoolyear);
+        if ($startYear === null) {
+            return [];
+        }
+
+        $weekMap = [];
+        $monthSequence = [
+            ['year' => $startYear, 'month' => 9],
+            ['year' => $startYear, 'month' => 10],
+            ['year' => $startYear, 'month' => 11],
+            ['year' => $startYear, 'month' => 12],
+            ['year' => $startYear + 1, 'month' => 1],
+            ['year' => $startYear + 1, 'month' => 2],
+            ['year' => $startYear + 1, 'month' => 3],
+            ['year' => $startYear + 1, 'month' => 4],
+            ['year' => $startYear + 1, 'month' => 5],
+            ['year' => $startYear + 1, 'month' => 6],
+            ['year' => $startYear + 1, 'month' => 7],
+        ];
+
+        foreach ($monthSequence as $entry) {
+            $firstDayOfMonth = CarbonImmutable::create($entry['year'], $entry['month'], 1, 0, 0, 0)->startOfDay();
+            $weekStart = $firstDayOfMonth->subDays($firstDayOfMonth->dayOfWeekIso - 1);
+
+            while (true) {
+                $weekHasMonthDay = false;
+
+                for ($dayOffset = 0; $dayOffset < 7; $dayOffset++) {
+                    if ($weekStart->addDays($dayOffset)->month === $entry['month']) {
+                        $weekHasMonthDay = true;
+                        break;
+                    }
+                }
+
+                if (! $weekHasMonthDay) {
+                    break;
+                }
+
+                $weekMap[$weekStart->isoWeek()] ??= $weekStart->format('Y-m-d');
+                $weekStart = $weekStart->addWeek();
+            }
+        }
+
+        return $weekMap;
+    }
+
+    /**
+     * @param  array<int, string>  $weekMap
+     */
+    private function mapTemplateWeekKeyToSchoolyear(string $weekKey, array $weekMap): string
+    {
+        try {
+            $weekStart = CarbonImmutable::createFromFormat('Y-m-d', $weekKey)->startOfDay();
+        } catch (\Throwable) {
+            return $weekKey;
+        }
+
+        return $weekMap[$weekStart->isoWeek()] ?? $weekKey;
+    }
+
+    private function schoolyearStartYear(?Schoolyear $schoolyear): ?int
+    {
+        if (! $schoolyear || blank($schoolyear->from)) {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse((string) $schoolyear->from)->year;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }
