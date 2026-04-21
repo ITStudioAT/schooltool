@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class TeachingCurriculum extends Model
 {
@@ -16,10 +17,20 @@ class TeachingCurriculum extends Model
         'user_id',
         'title',
         'description',
+        'export_key',
         'semester_count',
         'free_weeks',
         'topics',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (TeachingCurriculum $curriculum): void {
+            if (blank($curriculum->export_key)) {
+                $curriculum->export_key = (string) Str::uuid();
+            }
+        });
+    }
 
     protected function casts(): array
     {
@@ -47,5 +58,18 @@ class TeachingCurriculum extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(TeachingCurriculumDocument::class);
+    }
+
+    public function ensureExportKey(): string
+    {
+        if (filled($this->export_key)) {
+            return (string) $this->export_key;
+        }
+
+        $this->forceFill([
+            'export_key' => (string) Str::uuid(),
+        ])->saveQuietly();
+
+        return (string) $this->export_key;
     }
 }

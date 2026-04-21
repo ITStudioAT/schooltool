@@ -12,6 +12,62 @@ use Spatie\LaravelPdf\Facades\Pdf;
 
 class CurriculumExportService
 {
+    /**
+     * @return array{
+     *     export_type: string,
+     *     schema_version: int,
+     *     curriculum_key: string,
+     *     exported_at: string,
+     *     curriculum: array{
+     *         title: string,
+     *         description: ?string,
+     *         semester_count: int,
+     *         free_weeks: array<int, string>,
+     *         topics: array<int, array{
+     *             id: string,
+     *             title: string,
+     *             assignment_type: string,
+     *             month_key: ?string,
+     *             month_keys: array<int, string>,
+     *             week_keys: array<int, string>,
+     *             units: array<int, array{
+     *                 id: string,
+     *                 title: string,
+     *                 is_exam: bool,
+     *                 assignment_type: string,
+     *                 month_key: ?string,
+     *                 month_keys: array<int, string>,
+     *                 week_keys: array<int, string>,
+     *                 checked_week_keys: array<int, string>
+     *             }>
+     *         }>
+     *     }
+     * }
+     */
+    public function transferPayload(TeachingCurriculum $curriculum): array
+    {
+        return [
+            'export_type' => 'teaching_curriculum',
+            'schema_version' => 1,
+            'curriculum_key' => $curriculum->ensureExportKey(),
+            'exported_at' => now()->toIso8601String(),
+            'curriculum' => [
+                'title' => (string) $curriculum->title,
+                'description' => $curriculum->description !== null ? (string) $curriculum->description : null,
+                'semester_count' => (int) ($curriculum->semester_count ?? 2),
+                'free_weeks' => array_values(array_filter(
+                    is_array($curriculum->free_weeks) ? $curriculum->free_weeks : [],
+                    fn (mixed $weekKey): bool => is_string($weekKey) && $weekKey !== ''
+                )),
+                'topics' => collect(is_array($curriculum->topics) ? $curriculum->topics : [])
+                    ->filter(fn (mixed $topic): bool => is_array($topic))
+                    ->map(fn (array $topic): array => $this->transferTopic($topic))
+                    ->values()
+                    ->all(),
+            ],
+        ];
+    }
+
     public function toWord(TeachingCurriculum $curriculum, $user = null): string
     {
         $teacherName = $this->teacherName($curriculum, $user);
@@ -485,5 +541,81 @@ CSS;
         ];
 
         return $map[(int) $date->format('n')] ?? '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $topic
+     * @return array{
+     *     id: string,
+     *     title: string,
+     *     assignment_type: string,
+     *     month_key: ?string,
+     *     month_keys: array<int, string>,
+     *     week_keys: array<int, string>,
+     *     units: array<int, array{
+     *         id: string,
+     *         title: string,
+     *         is_exam: bool,
+     *         assignment_type: string,
+     *         month_key: ?string,
+     *         month_keys: array<int, string>,
+     *         week_keys: array<int, string>,
+     *         checked_week_keys: array<int, string>
+     *     }>
+     * }
+     */
+    private function transferTopic(array $topic): array
+    {
+        return [
+            'id' => (string) ($topic['id'] ?? ''),
+            'title' => (string) ($topic['title'] ?? ''),
+            'assignment_type' => (string) ($topic['assignment_type'] ?? 'none'),
+            'month_key' => isset($topic['month_key']) ? (string) $topic['month_key'] : null,
+            'month_keys' => $this->stringList($topic['month_keys'] ?? []),
+            'week_keys' => $this->stringList($topic['week_keys'] ?? []),
+            'units' => collect(is_array($topic['units'] ?? null) ? $topic['units'] : [])
+                ->filter(fn (mixed $unit): bool => is_array($unit))
+                ->map(fn (array $unit): array => $this->transferUnit($unit))
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $unit
+     * @return array{
+     *     id: string,
+     *     title: string,
+     *     is_exam: bool,
+     *     assignment_type: string,
+     *     month_key: ?string,
+     *     month_keys: array<int, string>,
+     *     week_keys: array<int, string>,
+     *     checked_week_keys: array<int, string>
+     * }
+     */
+    private function transferUnit(array $unit): array
+    {
+        return [
+            'id' => (string) ($unit['id'] ?? ''),
+            'title' => (string) ($unit['title'] ?? ''),
+            'is_exam' => (bool) ($unit['is_exam'] ?? false),
+            'assignment_type' => (string) ($unit['assignment_type'] ?? 'none'),
+            'month_key' => isset($unit['month_key']) ? (string) $unit['month_key'] : null,
+            'month_keys' => $this->stringList($unit['month_keys'] ?? []),
+            'week_keys' => $this->stringList($unit['week_keys'] ?? []),
+            'checked_week_keys' => $this->stringList($unit['checked_week_keys'] ?? []),
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function stringList(mixed $values): array
+    {
+        return array_values(array_filter(
+            is_array($values) ? $values : [],
+            fn (mixed $value): bool => is_string($value) && $value !== ''
+        ));
     }
 }

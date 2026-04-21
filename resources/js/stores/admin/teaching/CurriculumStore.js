@@ -5,6 +5,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 export const useCurriculumStore = defineStore('AdminCurriculumStore', {
     state: () => ({
         curricula: [],
+        imported_curricula: [],
         free_weeks_template: {
             week_keys: [],
             named_ranges: [],
@@ -89,6 +90,106 @@ export const useCurriculumStore = defineStore('AdminCurriculumStore', {
                     timeout: 3000,
                 })
                 return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async loadImportedCurricula() {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.get('/api/admin/teaching/imported-curricula')
+                this.imported_curricula = response.data?.data || []
+                return this.imported_curricula
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return []
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async importCurriculum(file) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const formData = new FormData()
+                formData.append('file', file)
+                const response = await axios.post('/api/admin/teaching/imported-curricula/import', formData)
+                await this.loadImportedCurricula()
+                notification.notify({
+                    message: 'Curriculum wurde importiert.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return response.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async adoptImportedCurriculum(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const response = await axios.post(`/api/admin/teaching/imported-curricula/${id}/adopt`)
+                notification.notify({
+                    message: 'Importiertes Curriculum wurde als eigenes Curriculum übernommen.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return response.data?.data || null
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return null
+            } finally {
+                adminStore.is_loading--
+            }
+        },
+
+        async destroyImportedCurriculum(id) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                await axios.delete(`/api/admin/teaching/imported-curricula/${id}`)
+                this.imported_curricula = this.imported_curricula.filter((curriculum) => Number(curriculum?.id) !== Number(id))
+                notification.notify({
+                    message: 'Importiertes Curriculum wurde gelöscht.',
+                    type: 'success',
+                    timeout: 2200,
+                })
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
             } finally {
                 adminStore.is_loading--
             }

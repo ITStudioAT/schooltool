@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Curricula from '@/pages/admin/teaching/curricula/Curricula.vue'
+import CurriculaOverview from '@/pages/admin/teaching/curricula/CurriculaOverview.vue'
 import CurriculaSettings from '@/pages/admin/teaching/curricula/CurriculaSettings.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 
@@ -232,6 +233,144 @@ describe('Teaching curricula route sync', () => {
                 curriculum: '15',
                 page: '2',
             },
+        })
+    })
+
+    it('includes an imported curricula card with import and takeover actions', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculaOverview.vue', 'utf8')
+        )
+
+        expect(source).toContain('Importierte Curricula')
+        expect(source).toContain('Curriculum importieren')
+        expect(source).toContain('Übernehmen')
+        expect(source).toContain('Importiertes Curriculum löschen')
+        expect(source).toContain('askDeleteImportedCurriculum(curriculum)')
+        expect(source).toContain('confirmDeleteImportedCurriculum')
+        expect(source).toContain('importedDeleteDialogOpen')
+        expect(source).toContain('importedDeleteTarget')
+        expect(source).toContain('this.curriculumStore.destroyImportedCurriculum(this.importedDeleteTarget.id)')
+        expect(source).toContain("import vueFilePond from 'vue-filepond/dist/vue-filepond.js'")
+        expect(source).toContain("import 'filepond/dist/filepond.min.css'")
+        expect(source).toContain("import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'")
+        expect(source).toContain('const FilePond = vueFilePond(FilePondPluginFileValidateType)')
+        expect(source).toContain('components: { FilePond }')
+        expect(source).toContain('<file-pond')
+        expect(source).toContain(':instant-upload="true"')
+        expect(source).toContain(':accepted-file-types="[\'application/json\', \'text/json\', \'.json\']"')
+        expect(source).toContain(':server="{ process: importPondProcess }"')
+        expect(source).toContain('loadImportedCurricula()')
+        expect(source).toContain('importPondProcess(fieldName, file, metadata, load, error, progress, abort)')
+        expect(source).toContain('this.curriculumStore.importCurriculum(file)')
+        expect(source).toContain('this.curriculumStore.adoptImportedCurriculum(curriculum.id)')
+        expect(source).toContain("this.$emit('select', result)")
+    })
+
+    it('imports a curriculum through the filepond process callback', async () => {
+        const importCurriculum = vi.fn().mockResolvedValue({
+            id: 55,
+            title: 'Importiert',
+        })
+        const removeFiles = vi.fn()
+        const load = vi.fn()
+        const error = vi.fn()
+        const progress = vi.fn()
+        const abortSpy = vi.fn()
+        const ctx = {
+            importLoading: false,
+            curriculumStore: {
+                importCurriculum,
+            },
+            $refs: {
+                importPond: {
+                    removeFiles,
+                },
+            },
+            closeImportDialog(force = false) {
+                return (CurriculaOverview as any).methods.closeImportDialog.call(this, force)
+            },
+        }
+
+        const result = (CurriculaOverview as any).methods.importPondProcess.call(
+            ctx,
+            'file',
+            { name: 'curriculum.json' },
+            {},
+            load,
+            error,
+            progress,
+            abortSpy
+        )
+
+        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(importCurriculum).toHaveBeenCalledWith({ name: 'curriculum.json' })
+        expect(progress).toHaveBeenCalledWith(true, 1, 1)
+        expect(load).toHaveBeenCalledWith('55')
+        expect(removeFiles).toHaveBeenCalled()
+        expect(error).not.toHaveBeenCalled()
+        expect(ctx.importLoading).toBe(false)
+        expect(result).toEqual({
+            abort: expect.any(Function),
+        })
+    })
+
+    it('deletes an imported curriculum after confirmation', async () => {
+        const destroyImportedCurriculum = vi.fn().mockResolvedValue(true)
+        const ctx = {
+            importedDeleteDialogOpen: true,
+            importedDeleteTarget: {
+                id: 71,
+                title: 'Importiertes Curriculum',
+            },
+            importedDeleteLoadingId: null,
+            curriculumStore: {
+                destroyImportedCurriculum,
+            },
+        }
+
+        await (CurriculaOverview as any).methods.confirmDeleteImportedCurriculum.call(ctx)
+
+        expect(destroyImportedCurriculum).toHaveBeenCalledWith(71)
+        expect(ctx.importedDeleteDialogOpen).toBe(false)
+        expect(ctx.importedDeleteTarget).toBeNull()
+        expect(ctx.importedDeleteLoadingId).toBeNull()
+    })
+
+    it('adopts an imported curriculum and opens the created personal curriculum', async () => {
+        const adoptImportedCurriculum = vi.fn().mockResolvedValue({
+            id: 41,
+            title: 'Deutsch importiert',
+        })
+        const index = vi.fn().mockResolvedValue(true)
+        const emit = vi.fn()
+        const ctx = {
+            takeoverLoadingId: null,
+            currentPage: 3,
+            curriculumStore: {
+                adoptImportedCurriculum,
+                index,
+                search: 'Deutsch',
+            },
+            $emit: emit,
+        }
+
+        await (CurriculaOverview as any).methods.takeOverImportedCurriculum.call(ctx, {
+            id: 41,
+            title: 'Deutsch importiert',
+        })
+
+        expect(adoptImportedCurriculum).toHaveBeenCalledWith(41)
+        expect(index).toHaveBeenCalledWith({
+            page: 1,
+            search: 'Deutsch',
+        })
+        expect(ctx.currentPage).toBe(1)
+        expect(ctx.takeoverLoadingId).toBeNull()
+        expect(emit).toHaveBeenCalledWith('select', {
+            id: 41,
+            title: 'Deutsch importiert',
         })
     })
 

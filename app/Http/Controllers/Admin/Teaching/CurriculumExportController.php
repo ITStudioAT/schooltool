@@ -8,6 +8,22 @@ use App\Services\Teaching\CurriculumExportService;
 
 class CurriculumExportController extends Controller
 {
+    public function json(TeachingCurriculum $curriculum, CurriculumExportService $service)
+    {
+        $this->authorizeCurriculum($curriculum);
+
+        $payload = $service->transferPayload($curriculum);
+
+        return response()->streamDownload(function () use ($payload): void {
+            echo json_encode(
+                $payload,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+        }, $this->filename($curriculum, 'json'), [
+            'Content-Type' => 'application/json; charset=UTF-8',
+        ]);
+    }
+
     public function word(TeachingCurriculum $curriculum, CurriculumExportService $service)
     {
         $this->authorizeCurriculum($curriculum);

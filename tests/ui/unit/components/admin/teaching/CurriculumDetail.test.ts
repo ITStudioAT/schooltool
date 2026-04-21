@@ -136,6 +136,9 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('v-if="hasFreeWeeksTemplate"')
         expect(source).toContain(':disabled="!canApplyFreeWeeksTemplate"')
         expect(source).toContain('@click="applyFreeWeeksTemplate"')
+        expect(source).toContain('Curriculum exportieren')
+        expect(source).toContain('@click="exportCurriculum"')
+        expect(source).toContain("/export/json")
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--documents curriculum-detail__side-card--scrollable"')
         expect(source).toContain('class="curriculum-detail__side-card curriculum-detail__side-card--content"')
         expect(source).toContain('class="curriculum-detail__content-footer"')
@@ -737,6 +740,58 @@ describe('CurriculumDetail week card view mode', () => {
             expect(createdLink?.download).toBe('Lehrplan.pdf')
             expect(linkClick).toHaveBeenCalledTimes(1)
             expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:preview')
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+            URL.createObjectURL = originalCreateObjectURL
+            URL.revokeObjectURL = originalRevokeObjectURL
+            createElementSpy.mockRestore()
+        }
+    })
+
+    it('downloads the curriculum export json via axios instead of navigating to the route', async () => {
+        const wrapper = mountCurriculumDetail({
+            title: 'Deutsch 5A',
+        })
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: new Blob(['{"curriculum_key":"abc"}'], { type: 'application/json' }),
+            headers: {
+                'content-disposition': 'attachment; filename="Curriculum_Deutsch_5A.json"',
+            },
+        })
+        const originalCreateObjectURL = URL.createObjectURL
+        const originalRevokeObjectURL = URL.revokeObjectURL
+        const originalCreateElement = document.createElement.bind(document)
+        const createObjectURLMock = vi.fn(() => 'blob:curriculum-export')
+        const revokeObjectURLMock = vi.fn()
+        const linkClick = vi.fn()
+        let createdLink: HTMLAnchorElement | null = null
+
+        const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string) => {
+            const element = originalCreateElement(tagName)
+            if (tagName.toLowerCase() === 'a') {
+                createdLink = element as HTMLAnchorElement
+                ;(createdLink as any).click = linkClick
+            }
+
+            return element
+        }) as typeof document.createElement)
+
+        ;(globalThis as any).axios = { get: getMock }
+        URL.createObjectURL = createObjectURLMock
+        URL.revokeObjectURL = revokeObjectURLMock
+
+        try {
+            await (wrapper.vm as any).exportCurriculum()
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/export/json', {
+                responseType: 'blob',
+            })
+            expect(createObjectURLMock).toHaveBeenCalledTimes(1)
+            expect(createdLink?.download).toBe('Curriculum_Deutsch_5A.json')
+            expect(linkClick).toHaveBeenCalledTimes(1)
+            expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:curriculum-export')
+            expect((wrapper.vm as any).isExportingCurriculum).toBe(false)
         } finally {
             ;(globalThis as any).axios = originalAxios
             URL.createObjectURL = originalCreateObjectURL

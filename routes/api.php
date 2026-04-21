@@ -57,6 +57,7 @@ use App\Http\Controllers\Admin\Teaching\CurriculumExportController;
 use App\Http\Controllers\Admin\Teaching\FileUploadController;
 use App\Http\Controllers\Admin\Teaching\HolidayController;
 use App\Http\Controllers\Admin\Teaching\Import116Controller;
+use App\Http\Controllers\Admin\Teaching\ImportedCurriculumController;
 use App\Http\Controllers\Admin\Teaching\MyHolidayController;
 use App\Http\Controllers\Admin\Teaching\SchoolHourController;
 use App\Http\Controllers\Admin\Teaching\TeachingController;
@@ -382,6 +383,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'freeWeeksTemplate']);
         Route::put('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'updateFreeWeeksTemplate']);
         Route::apiResource('/admin/teaching/curricula', CurriculumController::class)->parameters(['curricula' => 'curriculum']);
+        Route::get('/admin/teaching/imported-curricula', [ImportedCurriculumController::class, 'index']);
+        Route::post('/admin/teaching/imported-curricula/import', [ImportedCurriculumController::class, 'import']);
+        Route::post('/admin/teaching/imported-curricula/{imported_curriculum}/adopt', [ImportedCurriculumController::class, 'adopt']);
+        Route::delete('/admin/teaching/imported-curricula/{imported_curriculum}', [ImportedCurriculumController::class, 'destroy']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/config', [CurriculumController::class, 'materialsConfig']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/cards', [CurriculumController::class, 'materialsIndex']);
         Route::get('/admin/teaching/curricula/{curriculum}/materials/cards/{material_card}', [CurriculumController::class, 'showMaterialCard']);
@@ -396,6 +401,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::patch('/admin/teaching/curricula/{curriculum}/documents/{document}/material-attachment', [CurriculumDocumentController::class, 'updateMaterialAttachment']);
         Route::get('/admin/teaching/curricula/{curriculum}/documents/{document}/download', [CurriculumDocumentController::class, 'download']);
         Route::delete('/admin/teaching/curricula/{curriculum}/documents/{document}', [CurriculumDocumentController::class, 'destroy']);
+        Route::get('/admin/teaching/curricula/{curriculum}/export/json', [CurriculumExportController::class, 'json']);
         Route::get('/admin/teaching/curricula/{curriculum}/export/word', [CurriculumExportController::class, 'word']);
         Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);

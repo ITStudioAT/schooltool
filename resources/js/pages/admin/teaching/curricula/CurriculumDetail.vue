@@ -25,6 +25,17 @@
                         {{ freeWeeksCount }} freie Wochen
                     </v-chip>
                     <v-btn
+                        size="small"
+                        variant="tonal"
+                        color="primary"
+                        rounded="xl"
+                        class="text-none"
+                        :loading="isExportingCurriculum"
+                        :disabled="isExportingCurriculum"
+                        @click="exportCurriculum">
+                        Curriculum exportieren
+                    </v-btn>
+                    <v-btn
                         v-if="hasFreeWeeksTemplate"
                         size="small"
                         variant="tonal"
@@ -1943,6 +1954,7 @@ export default {
             selectedYear: initYear,
             weekDisplayMode: 'days',
             showLehrplaeneCard: false,
+            isExportingCurriculum: false,
             isApplyingFreeWeeksTemplate: false,
             collapseFullMonths: true,
             topicCollapseStates: {},
@@ -5151,6 +5163,45 @@ export default {
 
             const plainMatch = header.match(/filename\s*=\s*\"?([^\";]+)\"?/i)
             return String(plainMatch?.[1] || '').trim()
+        },
+
+        async exportCurriculum() {
+            if (this.isExportingCurriculum) {
+                return
+            }
+
+            this.isExportingCurriculum = true
+
+            try {
+                const response = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/export/json`, {
+                    responseType: 'blob',
+                })
+
+                const disposition = response?.headers?.['content-disposition']
+                const serverFileName = this.filenameFromContentDisposition(disposition)
+                const fallbackFileName = `Curriculum_${this.curriculum.title}.json`
+                const fileName = this.normalizeDownloadFileName(serverFileName || fallbackFileName)
+                const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data], {
+                    type: 'application/json',
+                })
+                const objectUrl = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = objectUrl
+                link.download = fileName
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+                URL.revokeObjectURL(objectUrl)
+            } catch (error) {
+                useNotificationStore().notify({
+                    status: error?.response?.status,
+                    message: error?.response?.data?.message || 'Curriculum konnte nicht exportiert werden.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+            } finally {
+                this.isExportingCurriculum = false
+            }
         },
 
         async downloadContentMaterialAttachment(attachment) {

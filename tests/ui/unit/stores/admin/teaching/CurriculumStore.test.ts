@@ -128,6 +128,146 @@ describe('Admin Teaching CurriculumStore', () => {
         expect(adminStoreMock.is_loading).toBe(0)
     })
 
+    it('loads imported curricula', async () => {
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        id: 21,
+                        title: 'Importiertes Curriculum',
+                    },
+                ],
+            },
+        })
+
+        const store = useCurriculumStore()
+        const importedCurricula = await store.loadImportedCurricula()
+
+        expect(importedCurricula).toEqual([
+            {
+                id: 21,
+                title: 'Importiertes Curriculum',
+            },
+        ])
+        expect(store.imported_curricula).toEqual([
+            {
+                id: 21,
+                title: 'Importiertes Curriculum',
+            },
+        ])
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/teaching/imported-curricula')
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('imports a curriculum file and refreshes imported curricula', async () => {
+        const formDataAppend = vi.fn()
+        const originalFormData = globalThis.FormData
+        class FormDataMock {
+            append = formDataAppend
+        }
+
+        globalThis.FormData = FormDataMock as never
+
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 22,
+                    title: 'Importiert',
+                },
+            },
+        })
+        axiosMock.get.mockResolvedValue({
+            data: {
+                data: [
+                    {
+                        id: 22,
+                        title: 'Importiert',
+                    },
+                ],
+            },
+        })
+
+        const store = useCurriculumStore()
+        const file = { name: 'curriculum.json' }
+        const importedCurriculum = await store.importCurriculum(file)
+
+        expect(importedCurriculum).toEqual({
+            id: 22,
+            title: 'Importiert',
+        })
+        expect(formDataAppend).toHaveBeenCalledWith('file', file)
+        expect(axiosMock.post).toHaveBeenCalledWith(
+            '/api/admin/teaching/imported-curricula/import',
+            expect.objectContaining({
+                append: expect.any(Function),
+            })
+        )
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/admin/teaching/imported-curricula')
+        expect(store.imported_curricula).toEqual([
+            {
+                id: 22,
+                title: 'Importiert',
+            },
+        ])
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Curriculum wurde importiert.',
+            type: 'success',
+            timeout: 2200,
+        })
+
+        globalThis.FormData = originalFormData
+    })
+
+    it('adopts an imported curriculum as a personal curriculum', async () => {
+        axiosMock.post.mockResolvedValue({
+            data: {
+                data: {
+                    id: 31,
+                    title: 'Eigenes Curriculum',
+                },
+            },
+        })
+
+        const store = useCurriculumStore()
+        const curriculum = await store.adoptImportedCurriculum(31)
+
+        expect(curriculum).toEqual({
+            id: 31,
+            title: 'Eigenes Curriculum',
+        })
+        expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/teaching/imported-curricula/31/adopt')
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Importiertes Curriculum wurde als eigenes Curriculum übernommen.',
+            type: 'success',
+            timeout: 2200,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
+    it('deletes an imported curriculum and removes it from the local list', async () => {
+        axiosMock.delete.mockResolvedValue({})
+
+        const store = useCurriculumStore()
+        store.imported_curricula = [
+            { id: 31, title: 'Import A' } as never,
+            { id: 32, title: 'Import B' } as never,
+        ]
+
+        const ok = await store.destroyImportedCurriculum(31)
+
+        expect(ok).toBe(true)
+        expect(axiosMock.delete).toHaveBeenCalledWith('/api/admin/teaching/imported-curricula/31')
+        expect(store.imported_curricula).toEqual([
+            { id: 32, title: 'Import B' },
+        ])
+        expect(notifyMock).toHaveBeenCalledWith({
+            message: 'Importiertes Curriculum wurde gelöscht.',
+            type: 'success',
+            timeout: 2200,
+        })
+        expect(adminStoreMock.is_loading).toBe(0)
+    })
+
     it('saves the free weeks template and updates admin config', async () => {
         adminStoreMock.config = { user: {} }
         axiosMock.put.mockResolvedValue({
