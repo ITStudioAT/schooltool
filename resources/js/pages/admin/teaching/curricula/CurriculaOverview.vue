@@ -119,47 +119,99 @@
                         <div class="text-caption">Importiere ein Curriculum als getrennte Vorlage.</div>
                     </div>
                     <v-list v-else bg-color="transparent" density="compact" class="py-0">
-                        <v-list-item
-                            v-for="curriculum in filteredImportedCurricula"
-                            :key="curriculum.id"
-                            class="curricula-overview__item mb-2 px-3"
-                            min-height="52"
-                            rounded="lg">
-                            <template #prepend>
-                                <v-icon color="#2563eb" size="18" class="mr-2">mdi-tray-arrow-down</v-icon>
-                            </template>
-                            <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
-                            <v-list-item-subtitle class="text-caption">
-                                <span v-if="curriculum.description">{{ curriculum.description }} · </span>
-                                <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
-                                <span v-if="curriculum.imported_at"> · importiert am {{ formatDateTime(curriculum.imported_at) }}</span>
-                            </v-list-item-subtitle>
-                            <template #append>
-                                <div class="curricula-overview__import-actions">
-                                    <v-btn
-                                        icon="mdi-delete-outline"
-                                        variant="tonal"
-                                        color="warning"
-                                        size="small"
-                                        rounded="lg"
-                                        class="mr-2"
-                                        title="Importiertes Curriculum löschen"
-                                        :disabled="importedDeleteLoadingId === curriculum.id"
-                                        @click.stop="askDeleteImportedCurriculum(curriculum)" />
-                                    <v-btn
-                                        variant="tonal"
-                                        color="primary"
-                                        size="small"
-                                        rounded="lg"
-                                        prepend-icon="mdi-account-arrow-right-outline"
-                                        :loading="takeoverLoadingId === curriculum.id"
-                                        :disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"
-                                        @click.stop="takeOverImportedCurriculum(curriculum)">
-                                        Übernehmen
-                                    </v-btn>
+                        <template v-for="curriculum in filteredImportedCurricula" :key="curriculum.id">
+                            <v-list-item
+                                class="curricula-overview__item mb-2 px-3"
+                                min-height="52"
+                                rounded="lg">
+                                <template #prepend>
+                                    <v-icon color="#2563eb" size="18" class="mr-2">mdi-tray-arrow-down</v-icon>
+                                </template>
+                                <v-list-item-title class="text-body-2 font-weight-bold">{{ curriculum.title }}</v-list-item-title>
+                                <v-list-item-subtitle class="text-caption">
+                                    <span v-if="curriculum.description">{{ curriculum.description }} · </span>
+                                    <span class="curricula-overview__semester-badge">{{ curriculum.semester_count ?? 2 }} Semester</span>
+                                    <span v-if="curriculum.imported_at"> · importiert am {{ formatDateTime(curriculum.imported_at) }}</span>
+                                </v-list-item-subtitle>
+                                <template #append>
+                                    <div class="curricula-overview__import-actions">
+                                        <v-btn
+                                            variant="text"
+                                            color="primary"
+                                            size="small"
+                                            rounded="lg"
+                                            :prepend-icon="expandedImportedId === curriculum.id ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
+                                            @click.stop="toggleImportedPreview(curriculum.id)">
+                                            {{ expandedImportedId === curriculum.id ? 'Ausblenden' : 'Vorschau' }}
+                                        </v-btn>
+                                        <v-btn
+                                            icon="mdi-delete-outline"
+                                            variant="tonal"
+                                            color="warning"
+                                            size="small"
+                                            rounded="lg"
+                                            title="Importiertes Curriculum löschen"
+                                            :disabled="importedDeleteLoadingId === curriculum.id"
+                                            @click.stop="askDeleteImportedCurriculum(curriculum)" />
+                                        <v-btn
+                                            variant="tonal"
+                                            color="primary"
+                                            size="small"
+                                            rounded="lg"
+                                            prepend-icon="mdi-account-arrow-right-outline"
+                                            :loading="takeoverLoadingId === curriculum.id"
+                                            :disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"
+                                            @click.stop="takeOverImportedCurriculum(curriculum)">
+                                            Übernehmen
+                                        </v-btn>
+                                    </div>
+                                </template>
+                            </v-list-item>
+                            <v-expand-transition>
+                                <div
+                                    v-if="expandedImportedId === curriculum.id"
+                                    class="curricula-overview__import-preview-wrap mb-2">
+                                    <div class="curricula-overview__import-preview">
+                                        <div class="text-caption font-weight-medium mb-2">
+                                            {{ importedTopics(curriculum).length }} Themen · {{ importedUnitCount(curriculum) }} Einheiten · {{ importedFreeWeekCount(curriculum) }} freie Wochen
+                                        </div>
+                                        <div v-if="!importedTopics(curriculum).length" class="text-caption">
+                                            Keine Themen im importierten Curriculum.
+                                        </div>
+                                        <div v-else class="curricula-overview__import-preview-topics">
+                                            <div
+                                                v-for="(topic, topicIndex) in importedTopics(curriculum)"
+                                                :key="topic.id || `topic-${curriculum.id}-${topicIndex}`"
+                                                class="curricula-overview__import-preview-topic pa-2 mb-2">
+                                                <div class="d-flex align-center justify-space-between ga-2">
+                                                <div class="text-body-2 font-weight-medium">
+                                                    {{ topicIndex + 1 }}. {{ topic.title || 'Ohne Titel' }}
+                                                </div>
+                                                <v-chip
+                                                    v-if="shouldShowTopicAssignmentChip(topic)"
+                                                    size="x-small"
+                                                    color="primary"
+                                                    variant="tonal">
+                                                    {{ formatImportAssignment(topic) }}
+                                                </v-chip>
+                                            </div>
+                                                <div
+                                                    v-if="importedTopicUnits(topic).length"
+                                                    class="curricula-overview__import-preview-units mt-2">
+                                                    <div
+                                                        v-for="(unit, unitIndex) in importedTopicUnits(topic)"
+                                                        :key="unit.id || `topic-${topicIndex}-unit-${unitIndex}`"
+                                                        class="curricula-overview__import-preview-unit text-caption">
+                                                        <span class="font-weight-medium">{{ topicIndex + 1 }}.{{ unitIndex + 1 }} {{ unit.title || 'Ohne Titel' }}</span>
+                                                        <span class="curricula-overview__import-preview-unit-meta">{{ formatImportAssignment(unit) }}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </template>
-                        </v-list-item>
+                            </v-expand-transition>
+                        </template>
                     </v-list>
                 </v-sheet>
             </v-col>
@@ -323,6 +375,7 @@ export default {
             importedDeleteTarget: null,
             importedDeleteLoadingId: null,
             takeoverLoadingId: null,
+            expandedImportedId: null,
         }
     },
 
@@ -428,6 +481,193 @@ export default {
                 },
             }
         },
+        toggleImportedPreview(curriculumId) {
+            this.expandedImportedId = this.expandedImportedId === curriculumId ? null : curriculumId
+        },
+        importedTopics(curriculum) {
+            if (!Array.isArray(curriculum?.topics)) {
+                return []
+            }
+
+            return curriculum.topics.filter((topic) => topic && typeof topic === 'object')
+        },
+        importedTopicUnits(topic) {
+            if (!Array.isArray(topic?.units)) {
+                return []
+            }
+
+            return topic.units.filter((unit) => unit && typeof unit === 'object')
+        },
+        topicHasUnitDateAssignments(topic) {
+            return this.importedTopicUnits(topic)
+                .some((unit) => {
+                    const assignmentType = String(unit?.assignment_type || 'none')
+
+                    return assignmentType === 'month' || assignmentType === 'weeks'
+                })
+        },
+        shouldShowTopicAssignmentChip(topic) {
+            const assignmentType = String(topic?.assignment_type || 'none')
+            if (assignmentType !== 'none') {
+                return true
+            }
+
+            return !this.topicHasUnitDateAssignments(topic)
+        },
+        importedUnitCount(curriculum) {
+            return this.importedTopics(curriculum)
+                .reduce((count, topic) => count + this.importedTopicUnits(topic).length, 0)
+        },
+        importedFreeWeekCount(curriculum) {
+            return Array.isArray(curriculum?.free_weeks) ? curriculum.free_weeks.length : 0
+        },
+        compactImportKeys(values, maxVisible = 3) {
+            const normalized = values
+                .filter(Boolean)
+                .map((value) => String(value).trim())
+                .filter((value) => value !== '')
+
+            if (!normalized.length) {
+                return ''
+            }
+
+            if (normalized.length <= maxVisible) {
+                return normalized.join(', ')
+            }
+
+            return `${normalized.slice(0, maxVisible).join(', ')} +${normalized.length - maxVisible}`
+        },
+        isoWeekFromDateKey(dateKey) {
+            const normalized = String(dateKey || '').trim()
+            const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+            if (!match) {
+                return null
+            }
+
+            const year = Number(match[1])
+            const monthIndex = Number(match[2]) - 1
+            const day = Number(match[3])
+            const date = new Date(Date.UTC(year, monthIndex, day))
+
+            if (Number.isNaN(date.getTime())) {
+                return null
+            }
+
+            const dayOfWeek = (date.getUTCDay() + 6) % 7
+            date.setUTCDate(date.getUTCDate() - dayOfWeek + 3)
+
+            const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4))
+            const firstThursdayDay = (firstThursday.getUTCDay() + 6) % 7
+            firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDay + 3)
+
+            return 1 + Math.round((date.getTime() - firstThursday.getTime()) / 604800000)
+        },
+        monthLabelFromDateKey(dateKey) {
+            const normalized = String(dateKey || '').trim()
+            const match = normalized.match(/^(\d{4})-(\d{2})-\d{2}$/)
+            if (!match) {
+                return null
+            }
+
+            const month = Number(match[2])
+            const monthLabels = {
+                1: 'Jan',
+                2: 'Feb',
+                3: 'März',
+                4: 'Apr',
+                5: 'Mai',
+                6: 'Juni',
+                7: 'Juli',
+                8: 'Aug',
+                9: 'Sept',
+                10: 'Okt',
+                11: 'Nov',
+                12: 'Dez',
+            }
+
+            return monthLabels[month] || null
+        },
+        formatIsoWeekRanges(weeks) {
+            if (!weeks.length) {
+                return ''
+            }
+
+            const ranges = []
+            let start = weeks[0]
+            let previous = weeks[0]
+
+            for (let index = 1; index < weeks.length; index++) {
+                const current = weeks[index]
+                if (current === previous + 1) {
+                    previous = current
+                    continue
+                }
+
+                ranges.push(start === previous ? `KW ${start}` : `KW ${start}-${previous}`)
+                start = current
+                previous = current
+            }
+
+            ranges.push(start === previous ? `KW ${start}` : `KW ${start}-${previous}`)
+
+            return ranges.join(', ')
+        },
+        formatImportAssignment(item) {
+            const assignmentType = String(item?.assignment_type || 'none')
+
+            if (assignmentType === 'all_weeks') {
+                return 'Alle Wochen'
+            }
+
+            if (assignmentType === 'month') {
+                const monthKeys = Array.isArray(item?.month_keys)
+                    ? item.month_keys
+                    : [item?.month_key]
+                const summary = this.compactImportKeys(monthKeys)
+
+                return summary ? `Monate: ${summary}` : 'Monat'
+            }
+
+            if (assignmentType === 'weeks') {
+                const weekKeys = Array.isArray(item?.week_keys) ? item.week_keys : []
+                const monthLabels = [...new Set(
+                    weekKeys
+                        .map((weekKey) => this.monthLabelFromDateKey(weekKey))
+                        .filter((monthLabel) => Boolean(monthLabel))
+                )]
+                const isoWeeks = [...new Set(
+                    weekKeys
+                        .map((weekKey) => this.isoWeekFromDateKey(weekKey))
+                        .filter((week) => Number.isInteger(week))
+                )]
+                    .sort((a, b) => a - b)
+
+                const firstMonth = monthLabels[0] || null
+                const lastMonth = monthLabels[monthLabels.length - 1] || null
+                const monthSummary = firstMonth && lastMonth
+                    ? (firstMonth === lastMonth ? firstMonth : `${firstMonth}-${lastMonth}`)
+                    : null
+                const kwSummary = this.formatIsoWeekRanges(isoWeeks)
+
+                if (!monthSummary && !kwSummary) {
+                    return 'Wochen'
+                }
+
+                if (!monthSummary) {
+                    return kwSummary
+                }
+
+                if (!kwSummary) {
+                    return monthSummary
+                }
+
+                return firstMonth === lastMonth
+                    ? `${monthSummary} - ${kwSummary}`
+                    : `${monthSummary}: ${kwSummary}`
+            }
+
+            return 'Keine feste Zuweisung'
+        },
         async takeOverImportedCurriculum(curriculum) {
             this.takeoverLoadingId = curriculum.id
             try {
@@ -447,10 +687,14 @@ export default {
         },
         async confirmDeleteImportedCurriculum() {
             if (!this.importedDeleteTarget) return
-            this.importedDeleteLoadingId = this.importedDeleteTarget.id
+            const importedDeleteId = this.importedDeleteTarget.id
+            this.importedDeleteLoadingId = importedDeleteId
             try {
-                const ok = await this.curriculumStore.destroyImportedCurriculum(this.importedDeleteTarget.id)
+                const ok = await this.curriculumStore.destroyImportedCurriculum(importedDeleteId)
                 if (ok) {
+                    if (this.expandedImportedId === importedDeleteId) {
+                        this.expandedImportedId = null
+                    }
                     this.importedDeleteDialogOpen = false
                     this.importedDeleteTarget = null
                 }
@@ -578,6 +822,42 @@ export default {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.curricula-overview__import-preview {
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    background: rgba(219, 234, 254, 0.45);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.curricula-overview__import-preview-wrap {
+    width: 100%;
+}
+
+.curricula-overview__import-preview-topics {
+    display: flex;
+    flex-direction: column;
+}
+
+.curricula-overview__import-preview-topic {
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.75);
+    border-radius: 8px;
+}
+
+.curricula-overview__import-preview-unit {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 0;
+}
+
+.curricula-overview__import-preview-unit-meta {
+    color: #475569;
 }
 
 .curricula-overview__empty {

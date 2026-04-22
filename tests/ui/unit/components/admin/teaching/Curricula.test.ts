@@ -236,13 +236,19 @@ describe('Teaching curricula route sync', () => {
         })
     })
 
-    it('includes an imported curricula card with import and takeover actions', async () => {
+    it('includes an imported curricula card with import, preview, and takeover actions', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculaOverview.vue', 'utf8')
         )
 
         expect(source).toContain('Importierte Curricula')
         expect(source).toContain('Curriculum importieren')
+        expect(source).toContain('Vorschau')
+        expect(source).toContain('toggleImportedPreview(curriculum.id)')
+        expect(source).toContain('expandedImportedId === curriculum.id')
+        expect(source).toContain('curricula-overview__import-preview')
+        expect(source).toContain('formatImportAssignment(topic)')
+        expect(source).toContain('importedUnitCount(curriculum)')
         expect(source).toContain('Übernehmen')
         expect(source).toContain('Importiertes Curriculum löschen')
         expect(source).toContain(':disabled="Boolean(curriculum.adopted_curriculum_id) || importedDeleteLoadingId === curriculum.id"')
@@ -250,7 +256,8 @@ describe('Teaching curricula route sync', () => {
         expect(source).toContain('confirmDeleteImportedCurriculum')
         expect(source).toContain('importedDeleteDialogOpen')
         expect(source).toContain('importedDeleteTarget')
-        expect(source).toContain('this.curriculumStore.destroyImportedCurriculum(this.importedDeleteTarget.id)')
+        expect(source).toContain('const importedDeleteId = this.importedDeleteTarget.id')
+        expect(source).toContain('this.curriculumStore.destroyImportedCurriculum(importedDeleteId)')
         expect(source).toContain("import vueFilePond from 'vue-filepond/dist/vue-filepond.js'")
         expect(source).toContain("import 'filepond/dist/filepond.min.css'")
         expect(source).toContain("import FilePondPluginFileValidateType from 'filepond-plugin-file-validate-type'")
@@ -265,6 +272,112 @@ describe('Teaching curricula route sync', () => {
         expect(source).toContain('this.curriculumStore.importCurriculum(file)')
         expect(source).toContain('this.curriculumStore.adoptImportedCurriculum(curriculum.id)')
         expect(source).toContain("this.$emit('select', result)")
+    })
+
+    it('toggles imported curriculum preview and summarizes assignment structure', () => {
+        const ctx: Record<string, any> = {
+            expandedImportedId: null,
+            toggleImportedPreview(curriculumId: number) {
+                return (CurriculaOverview as any).methods.toggleImportedPreview.call(this, curriculumId)
+            },
+            importedTopics(curriculum: Record<string, any>) {
+                return (CurriculaOverview as any).methods.importedTopics.call(this, curriculum)
+            },
+            importedTopicUnits(topic: Record<string, any>) {
+                return (CurriculaOverview as any).methods.importedTopicUnits.call(this, topic)
+            },
+            topicHasUnitDateAssignments(topic: Record<string, any>) {
+                return (CurriculaOverview as any).methods.topicHasUnitDateAssignments.call(this, topic)
+            },
+            shouldShowTopicAssignmentChip(topic: Record<string, any>) {
+                return (CurriculaOverview as any).methods.shouldShowTopicAssignmentChip.call(this, topic)
+            },
+            importedUnitCount(curriculum: Record<string, any>) {
+                return (CurriculaOverview as any).methods.importedUnitCount.call(this, curriculum)
+            },
+            importedFreeWeekCount(curriculum: Record<string, any>) {
+                return (CurriculaOverview as any).methods.importedFreeWeekCount.call(this, curriculum)
+            },
+            compactImportKeys(values: string[], maxVisible?: number) {
+                return (CurriculaOverview as any).methods.compactImportKeys.call(this, values, maxVisible)
+            },
+            isoWeekFromDateKey(dateKey: string) {
+                return (CurriculaOverview as any).methods.isoWeekFromDateKey.call(this, dateKey)
+            },
+            monthLabelFromDateKey(dateKey: string) {
+                return (CurriculaOverview as any).methods.monthLabelFromDateKey.call(this, dateKey)
+            },
+            formatIsoWeekRanges(weeks: number[]) {
+                return (CurriculaOverview as any).methods.formatIsoWeekRanges.call(this, weeks)
+            },
+            formatImportAssignment(item: Record<string, any>) {
+                return (CurriculaOverview as any).methods.formatImportAssignment.call(this, item)
+            },
+        }
+
+        const importedCurriculum = {
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Thema 1',
+                    assignment_type: 'month',
+                    month_keys: ['2026-09', '2026-10'],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Einheit 1',
+                            assignment_type: 'weeks',
+                            week_keys: ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'],
+                        },
+                    ],
+                },
+                {
+                    id: 'topic-2',
+                    title: 'Thema 2',
+                    assignment_type: 'all_weeks',
+                    units: [
+                        {
+                            id: 'unit-2',
+                            title: 'Einheit 2',
+                            assignment_type: 'none',
+                        },
+                    ],
+                },
+            ],
+            free_weeks: ['2026-10-12', '2027-01-04'],
+        }
+
+        ctx.toggleImportedPreview(31)
+        expect(ctx.expandedImportedId).toBe(31)
+        ctx.toggleImportedPreview(31)
+        expect(ctx.expandedImportedId).toBeNull()
+
+        expect(ctx.importedTopics(importedCurriculum)).toHaveLength(2)
+        expect(ctx.importedTopicUnits(importedCurriculum.topics[0])).toHaveLength(1)
+        expect(ctx.importedUnitCount(importedCurriculum)).toBe(2)
+        expect(ctx.importedFreeWeekCount(importedCurriculum)).toBe(2)
+        expect(ctx.shouldShowTopicAssignmentChip(importedCurriculum.topics[0])).toBe(true)
+        expect(ctx.shouldShowTopicAssignmentChip({
+            assignment_type: 'none',
+            units: [
+                {
+                    assignment_type: 'weeks',
+                    week_keys: ['2026-09-07'],
+                },
+            ],
+        })).toBe(false)
+        expect(ctx.shouldShowTopicAssignmentChip({
+            assignment_type: 'none',
+            units: [
+                {
+                    assignment_type: 'none',
+                },
+            ],
+        })).toBe(true)
+        expect(ctx.formatImportAssignment(importedCurriculum.topics[0])).toBe('Monate: 2026-09, 2026-10')
+        expect(ctx.formatImportAssignment(importedCurriculum.topics[0].units[0])).toBe('Sept - KW 37-40')
+        expect(ctx.formatImportAssignment(importedCurriculum.topics[1])).toBe('Alle Wochen')
+        expect(ctx.formatImportAssignment(importedCurriculum.topics[1].units[0])).toBe('Keine feste Zuweisung')
     })
 
     it('imports a curriculum through the filepond process callback', async () => {

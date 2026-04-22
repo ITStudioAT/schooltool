@@ -22,16 +22,21 @@ describe('Teaching overview controls', () => {
             show_infos: true,
             show_works: true,
             show_dates: true,
+            show_curriculum: true,
             show_attendance: true,
             show_performances: true,
+            show_performances_plus: true,
+            _urlPanelRestored: true,
+            _lastCourseId: 11,
         }
 
-        ;(Overview as any).watch.selected_course.call(ctx, { id: 22, title: 'Physik' })
+        ;(Overview as any).watch.selected_course.handler.call(ctx, { id: 22, title: 'Physik' })
 
         expect(ctx.show_students).toBe(true)
         expect(ctx.show_infos).toBe(false)
         expect(ctx.show_works).toBe(false)
         expect(ctx.show_dates).toBe(false)
+        expect(ctx.show_curriculum).toBe(false)
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
     })
@@ -58,8 +63,10 @@ describe('Teaching overview controls', () => {
             show_infos: false,
             show_works: false,
             show_dates: false,
+            show_curriculum: false,
             show_attendance: false,
             show_performances: false,
+            show_performances_plus: false,
             action_2: 'course_student_view',
             selected_course_student: { id: 99 },
         }
@@ -69,10 +76,37 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_students).toBe(false)
         expect(ctx.show_performances).toBe(true)
         expect(ctx.show_infos).toBe(false)
+        expect(ctx.show_curriculum).toBe(false)
         ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, null)
         expect(ctx.show_performances).toBe(false)
         expect(ctx.action_2).toBe('')
         expect(ctx.selected_course_student).toBeNull()
+    })
+
+    it('activates the curriculum panel through functionalPanelSelection setter', () => {
+        const ctx = {
+            show_students: true,
+            show_infos: false,
+            show_works: false,
+            show_dates: false,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+            action_2: '',
+            selected_course_student: null,
+        }
+
+        ;(Overview as any).computed.functionalPanelSelection.set.call(ctx, 'curriculum')
+
+        expect(ctx.show_students).toBe(false)
+        expect(ctx.show_infos).toBe(false)
+        expect(ctx.show_works).toBe(false)
+        expect(ctx.show_dates).toBe(false)
+        expect(ctx.show_curriculum).toBe(true)
+        expect(ctx.show_attendance).toBe(false)
+        expect(ctx.show_performances).toBe(false)
+        expect(ctx.show_performances_plus).toBe(false)
     })
 
     it('persists active semester updates when diverging from config value', () => {

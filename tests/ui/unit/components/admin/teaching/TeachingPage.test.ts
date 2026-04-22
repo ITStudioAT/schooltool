@@ -101,7 +101,7 @@ describe('Teaching page navigation', () => {
 
         const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
 
-        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'settings', 'search', 'schoolyear'])
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula', 'settings'])
     })
 
     it('builds hero chips from selected school context', () => {
@@ -224,14 +224,21 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })")
         expect(source).toContain("panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })")
         expect(source).toContain("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })")
+        expect(source).toContain("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })")
         expect(source).toContain("panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })")
         expect(source).toContain("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })")
         expect(source).toContain("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })")
+        expect(source.indexOf("panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })"))
+        expect(source.indexOf("panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })"))
+            .toBeLessThan(source.indexOf("panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })"))
         expect(source.indexOf("panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })"))
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
-        expect(source).toContain("const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances']")
-        expect(source).toContain('v-if="(show_infos || show_dates || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
+        expect(source).toContain("const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'curriculum', 'attendance', 'performances', 'performances_plus']")
+        expect(source).toContain('v-if="(show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
+        expect(source).toContain('v-if="show_curriculum" class="mt-n6"')
+        expect(source).toContain('data-testid="teaching-curriculum-card"')
     })
 
     it('keeps the overview panel menu at full width', async () => {

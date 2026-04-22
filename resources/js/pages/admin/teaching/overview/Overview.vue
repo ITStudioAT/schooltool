@@ -42,7 +42,7 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_students || show_infos || show_dates || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_students">
             <v-col>
                 <CourseDates compact-student-view />
@@ -64,6 +64,27 @@
         <v-row v-if="show_dates" class="mt-n6">
             <v-col>
                 <CourseDates />
+            </v-col>
+        </v-row>
+
+        <v-row v-if="show_curriculum" class="mt-n6">
+            <v-col>
+                <v-card variant="outlined" data-testid="teaching-curriculum-card">
+                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
+                        <v-icon size="18">mdi-book-open-variant</v-icon>
+                        Curriculum
+                    </v-card-title>
+                    <v-divider />
+                    <v-card-text class="pa-0">
+                        <v-list density="compact">
+                            <v-list-item>
+                                <v-list-item-title class="text-caption text-medium-emphasis">
+                                    Dummy-Card
+                                </v-list-item-title>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+                </v-card>
             </v-col>
         </v-row>
 
@@ -115,6 +136,7 @@
     <div style="display:none">
         <MyCourses />
     </div>
+
 </template>
 
 <script>
@@ -175,6 +197,7 @@ export default {
             'show_infos',
             'show_works',
             'show_dates',
+            'show_curriculum',
             'show_print',
             'show_attendance',
             'show_performances',
@@ -211,6 +234,7 @@ export default {
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
                 panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
+                panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
                 panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
                 panels.push({ id: 'performances_plus', label: 'Leistungen Plus', icon: 'mdi-chart-bar' })
@@ -226,6 +250,7 @@ export default {
                 if (this.show_works) return 'works'
                 if (this.show_print) return 'print'
                 if (this.show_dates) return 'dates'
+                if (this.show_curriculum) return 'curriculum'
                 if (this.show_attendance) return 'attendance'
                 if (this.show_performances) return 'performances'
                 if (this.show_performances_plus) return 'performances_plus'
@@ -237,6 +262,7 @@ export default {
                 this.show_works = value === 'works'
                 this.show_print = value === 'print'
                 this.show_dates = value === 'dates'
+                this.show_curriculum = value === 'curriculum'
                 this.show_attendance = value === 'attendance'
                 this.show_performances = value === 'performances'
                 this.show_performances_plus = value === 'performances_plus'
@@ -261,7 +287,7 @@ export default {
             }
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
-                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'attendance', 'performances', 'performances_plus']
+                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'curriculum', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
@@ -270,6 +296,7 @@ export default {
                     this.show_works = urlPanel === 'works'
                     this.show_print = urlPanel === 'print'
                     this.show_dates = urlPanel === 'dates'
+                    this.show_curriculum = urlPanel === 'curriculum'
                     this.show_attendance = urlPanel === 'attendance'
                     this.show_performances = urlPanel === 'performances'
                     this.show_performances_plus = urlPanel === 'performances_plus'
@@ -287,6 +314,7 @@ export default {
             this.show_works = false
             this.show_print = false
             this.show_dates = false
+            this.show_curriculum = false
             this.show_attendance = false
             this.show_performances = false
             this.show_performances_plus = false
