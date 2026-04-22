@@ -8,12 +8,14 @@ use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
+use App\Models\TeachingCurriculum;
 use App\Models\User;
 use App\Services\TeachingCourseService;
 use App\Services\TeachingCourseWorkEntrySyncService;
 use App\Services\TeachingService;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Contracts\Support\Responsable;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
@@ -32,6 +34,7 @@ class TeachingCourseController extends Controller
 
         $coursesQuery = TeachingCourse::with([
             'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour',
+            'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
             'teachingCourseStudents',
             'teachingCourseStudentsWithTrashed',
@@ -179,6 +182,11 @@ class TeachingCourseController extends Controller
             ->orderBy('class')
             ->pluck('class');
         $schemaIds = (new TeachingService)->schemaIdsForUser($auth_user, $auth_user->schoolyear_id);
+        $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
+            ->where(fn (Builder $query) => $query
+                ->where('school_id', $auth_user->school_id)
+                ->where('schoolyear_id', $auth_user->schoolyear_id)
+                ->where('user_id', $auth_user->id));
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -197,6 +205,7 @@ class TeachingCourseController extends Controller
             'students_deleted_info' => 'nullable|array',
             'students_deleted_info.*.canceled_at' => 'nullable|date',
             'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -224,6 +233,7 @@ class TeachingCourseController extends Controller
             'title' => $validated['title'],
             'classes' => $sortedClasses,
             'teaching_schema_id' => $validated['teaching_schema_id'] ?? null,
+            'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
         ]);
 
         $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);
@@ -256,7 +266,13 @@ class TeachingCourseController extends Controller
             ->distinct()
             ->orderBy('class')
             ->pluck('class');
-        $schemaIds = (new TeachingService)->schemaIdsForUser($this->teachingCourseActor($auth_user, $course), $course->schoolyear_id);
+        $courseActor = $this->teachingCourseActor($auth_user, $course);
+        $schemaIds = (new TeachingService)->schemaIdsForUser($courseActor, $course->schoolyear_id);
+        $curriculumRule = Rule::exists(TeachingCurriculum::query()->getModel()->getTable(), 'id')
+            ->where(fn (Builder $query) => $query
+                ->where('school_id', $course->school_id)
+                ->where('schoolyear_id', $course->schoolyear_id)
+                ->where('user_id', $courseActor->id));
 
         $validated = $request->validate([
             'title' => 'required|string|max:255',
@@ -276,6 +292,7 @@ class TeachingCourseController extends Controller
             'students_deleted_info' => 'nullable|array',
             'students_deleted_info.*.canceled_at' => 'nullable|date',
             'teaching_schema_id' => ['required', 'string', 'max:36', Rule::in($schemaIds)],
+            'teaching_curriculum_id' => ['nullable', 'integer', $curriculumRule],
         ]);
 
         $sortedClasses = $validated['classes'];
@@ -301,6 +318,7 @@ class TeachingCourseController extends Controller
             'description' => $validated['description'] ?? null,
             'classes' => $sortedClasses,
             'teaching_schema_id' => $validated['teaching_schema_id'],
+            'teaching_curriculum_id' => $validated['teaching_curriculum_id'] ?? null,
         ]);
 
         $service->syncCourseStudents($course, $studentsPayload, $studentsDeletedPayload);

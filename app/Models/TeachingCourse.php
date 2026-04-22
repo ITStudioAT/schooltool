@@ -32,6 +32,7 @@ class TeachingCourse extends Model
         'students_deleted',
         'reminder',
         'teaching_schema_id',
+        'teaching_curriculum_id',
     ];
 
     protected $casts = [
@@ -146,6 +147,11 @@ class TeachingCourse extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function teachingCurriculum(): BelongsTo
+    {
+        return $this->belongsTo(TeachingCurriculum::class);
     }
 
     public function teachingCourseDates(): HasMany

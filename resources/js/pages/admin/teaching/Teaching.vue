@@ -584,13 +584,14 @@ export default {
 
 <style scoped>
 .teaching-page {
-    background: #0f172a;
+    background: linear-gradient(180deg, #f1f6fd 0%, #e8f1fb 100%);
     min-height: 100vh;
 }
 
 .teaching-nav {
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
     padding: 10px;
     display: flex;
     align-items: center;
@@ -644,8 +645,9 @@ export default {
 }
 
 .teaching-subnav {
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    background: rgba(255, 255, 255, 0.84);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
     padding: 8px 12px;
 }
 
@@ -678,14 +680,14 @@ export default {
 }
 
 .teaching-subnav__course-btn--idle {
-    background: rgba(99, 102, 241, 0.15) !important;
-    color: #a5b4fc !important;
-    border: 1px solid rgba(99, 102, 241, 0.25) !important;
+    background: rgba(219, 234, 254, 0.72) !important;
+    color: #1e40af !important;
+    border: 1px solid rgba(59, 130, 246, 0.28) !important;
 }
 
 .teaching-subnav__course-btn--idle:hover {
-    background: rgba(99, 102, 241, 0.28) !important;
-    color: #c7d2fe !important;
+    background: rgba(191, 219, 254, 0.78) !important;
+    color: #1e3a8a !important;
 }
 
 .teaching-subnav__course-btn--active {
@@ -695,7 +697,7 @@ export default {
 }
 
 .teaching-subnav__add-btn {
-    color: #a5b4fc !important;
+    color: #1e40af !important;
 }
 
 .teaching-content {

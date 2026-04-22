@@ -20,6 +20,7 @@ use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCurriculum;
 use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingStudentPerformancePdfService;
@@ -289,6 +290,40 @@ describe('index', function () {
             ->assertJsonPath('data.0.title', 'Biologie')
             ->assertJsonPath('data.1.title', 'Mathematik')
             ->assertJsonPath('data.2.title', 'Physik');
+    });
+
+    test('includes assigned curriculum metadata for each course', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $curriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch Curriculum',
+            'description' => 'Jahresplanung',
+            'semester_count' => 2,
+            'free_weeks' => [],
+            'topics' => [],
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+            'teaching_curriculum_id' => $curriculum->id,
+        ]);
+
+        $response = $this->getJson('/api/admin/teaching/courses');
+        $response->assertOk();
+
+        $courseData = collect($response->json('data'))->firstWhere('id', $course->id);
+
+        expect($courseData)->not->toBeNull()
+            ->and(data_get($courseData, 'teaching_curriculum.id'))->toBe($curriculum->id)
+            ->and(data_get($courseData, 'teaching_curriculum.title'))->toBe('Deutsch Curriculum');
     });
 
     test('includes removability and cancellation metadata for course students', function () {
@@ -1088,6 +1123,93 @@ describe('update', function () {
 
         $course->refresh();
         expect($course->classes)->toBe(['1A', '1B', '2A', '3A']);
+    });
+
+    test('can assign and remove a curriculum on update', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $curriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik Curriculum',
+            'description' => 'Planung',
+            'semester_count' => 2,
+            'free_weeks' => [],
+            'topics' => [],
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => $course->title,
+            'classes' => $course->classes,
+            'teaching_schema_id' => $course->teaching_schema_id,
+            'teaching_curriculum_id' => $curriculum->id,
+        ])->assertOk()
+            ->assertJsonPath('teaching_curriculum_id', $curriculum->id);
+
+        $course->refresh();
+        expect($course->teaching_curriculum_id)->toBe($curriculum->id);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => $course->title,
+            'classes' => $course->classes,
+            'teaching_schema_id' => $course->teaching_schema_id,
+            'teaching_curriculum_id' => null,
+        ])->assertOk()
+            ->assertJsonPath('teaching_curriculum_id', null);
+
+        $course->refresh();
+        expect($course->teaching_curriculum_id)->toBeNull();
+    });
+
+    test('rejects assigning a curriculum owned by another teacher', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Mathematik',
+            'classes' => ['1A'],
+            'teaching_schema_id' => $this->schemaId,
+        ]);
+
+        $otherTeacher = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $otherTeacher->assignRole('teacher');
+
+        $foreignCurriculum = TeachingCurriculum::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $otherTeacher->id,
+            'title' => 'Fremdes Curriculum',
+            'description' => null,
+            'semester_count' => 2,
+            'free_weeks' => [],
+            'topics' => [],
+        ]);
+
+        $this->putJson("/api/admin/teaching/courses/{$course->id}", [
+            'title' => $course->title,
+            'classes' => $course->classes,
+            'teaching_schema_id' => $course->teaching_schema_id,
+            'teaching_curriculum_id' => $foreignCurriculum->id,
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors('teaching_curriculum_id');
+
+        $course->refresh();
+        expect($course->teaching_curriculum_id)->toBeNull();
     });
 
     test('removes fresh students on update', function () {

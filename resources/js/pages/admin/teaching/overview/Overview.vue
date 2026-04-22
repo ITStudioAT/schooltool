@@ -73,16 +73,67 @@
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-book-open-variant</v-icon>
                         Curriculum
+                        <v-spacer />
+                        <v-btn
+                            size="small"
+                            variant="tonal"
+                            prepend-icon="mdi-pencil"
+                            :disabled="curriculumEditMode || curriculumSaveLoading"
+                            @click="startCurriculumEdit">
+                            Bearbeiten
+                        </v-btn>
                     </v-card-title>
                     <v-divider />
-                    <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <v-list-item>
-                                <v-list-item-title class="text-caption text-medium-emphasis">
-                                    Dummy-Card
-                                </v-list-item-title>
-                            </v-list-item>
-                        </v-list>
+                    <v-card-text class="d-flex flex-column ga-3">
+                        <div class="text-caption text-medium-emphasis">
+                            Wähle ein Curriculum für dieses Fach aus oder entferne die aktuelle Zuweisung.
+                        </div>
+
+                        <v-select
+                            v-model="curriculumSelectionId"
+                            :items="curriculumOptions"
+                            :loading="curriculumLoading"
+                            :disabled="!curriculumEditMode || curriculumSaveLoading"
+                            item-title="title"
+                            item-value="value"
+                            label="Curriculum auswählen"
+                            variant="outlined"
+                            density="comfortable"
+                            :clearable="curriculumEditMode"
+                            hide-details="auto"
+                            no-data-text="Keine Curricula verfügbar" />
+
+                        <div v-if="selectedCourseCurriculum" class="text-caption text-medium-emphasis">
+                            Aktuell zugewiesen: <strong>{{ selectedCourseCurriculum.title }}</strong>
+                            <span v-if="selectedCourseCurriculum.description"> · {{ selectedCourseCurriculum.description }}</span>
+                        </div>
+                        <div v-else class="text-caption text-medium-emphasis">
+                            Aktuell ist kein Curriculum zugewiesen.
+                        </div>
+
+                        <div v-if="curriculumEditMode" class="d-flex flex-wrap ga-2">
+                            <v-btn
+                                color="primary"
+                                variant="tonal"
+                                :loading="curriculumSaveLoading"
+                                :disabled="!hasCurriculumSelectionChanges || curriculumSaveLoading"
+                                @click="saveCurriculumAssignment">
+                                Zuweisung speichern
+                            </v-btn>
+                            <v-btn
+                                color="warning"
+                                variant="tonal"
+                                :disabled="!selectedCourseCurriculum || curriculumSaveLoading"
+                                @click="removeCurriculumAssignment">
+                                Zuweisung entfernen
+                            </v-btn>
+                            <v-btn
+                                variant="text"
+                                :disabled="curriculumSaveLoading"
+                                @click="cancelCurriculumEdit">
+                                Abbrechen
+                            </v-btn>
+                        </div>
                     </v-card-text>
                 </v-card>
             </v-col>
@@ -143,6 +194,7 @@
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import MyCourses from './components/MyCourses.vue'
@@ -163,6 +215,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
+        this.curriculumStore = useCurriculumStore()
         this.schoolHourStore = useSchoolHourStore()
         this.teachingStore = useTeachingStore()
         this.selected_course_student = null
@@ -180,10 +233,15 @@ export default {
         return {
             adminStore: null,
             courseStore: null,
+            curriculumStore: null,
             schoolHourStore: null,
             teachingStore: null,
             activeSemester: 1,
             _urlPanelRestored: false,
+            curriculumSelectionId: null,
+            curriculumLoading: false,
+            curriculumSaveLoading: false,
+            curriculumEditMode: false,
         }
     },
 
@@ -226,6 +284,42 @@ export default {
         },
         sem2StartDate() {
             return this.config?.selected_schoolyear?.sem_2_start || this.config?.user?.teaching_count_for_semester_2_date || null
+        },
+        selectedCourseCurriculum() {
+            return this.selected_course?.teaching_curriculum || null
+        },
+        selectedCourseCurriculumId() {
+            const value = this.selected_course?.teaching_curriculum_id ?? this.selectedCourseCurriculum?.id ?? null
+            const normalized = Number(value)
+            return Number.isFinite(normalized) && normalized > 0 ? normalized : null
+        },
+        normalizedCurriculumSelectionId() {
+            const normalized = Number(this.curriculumSelectionId)
+            return Number.isFinite(normalized) && normalized > 0 ? normalized : null
+        },
+        hasCurriculumSelectionChanges() {
+            return this.selectedCourseCurriculumId !== this.normalizedCurriculumSelectionId
+        },
+        curriculumOptions() {
+            const curricula = Array.isArray(this.curriculumStore?.curricula) ? this.curriculumStore.curricula : []
+            const options = curricula
+                .filter((curriculum) => curriculum && curriculum.id)
+                .map((curriculum) => ({
+                    value: Number(curriculum.id),
+                    title: curriculum.title || `Curriculum #${curriculum.id}`,
+                }))
+
+            if (
+                this.selectedCourseCurriculum
+                && !options.some((option) => option.value === Number(this.selectedCourseCurriculum.id))
+            ) {
+                options.unshift({
+                    value: Number(this.selectedCourseCurriculum.id),
+                    title: this.selectedCourseCurriculum.title || `Curriculum #${this.selectedCourseCurriculum.id}`,
+                })
+            }
+
+            return options
         },
         functionalPanels() {
             const panels = []
@@ -283,8 +377,12 @@ export default {
             handler(newCourse, oldCourse) {
             if (!newCourse) {
                 this._lastCourseId = null
+                this.curriculumSelectionId = null
+                this.curriculumEditMode = false
                 return
             }
+            this.curriculumSelectionId = this.selectedCourseCurriculumId
+            this.curriculumEditMode = false
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
                 const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'curriculum', 'attendance', 'performances', 'performances_plus']
@@ -320,6 +418,16 @@ export default {
             this.show_performances_plus = false
             },
         },
+        show_curriculum: {
+            immediate: true,
+            async handler(value) {
+                if (!value || !this.selected_course?.id) {
+                    return
+                }
+
+                await this.loadCurricula()
+            },
+        },
         activeSemester(val) {
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore?.saveActiveSemester(val)
@@ -335,6 +443,59 @@ export default {
             await this.courseStore.index()
             await this.schoolHourStore.index()
         },
+        async loadCurricula() {
+            if (this.curriculumLoading || !this.curriculumStore) {
+                return
+            }
+
+            this.curriculumLoading = true
+            try {
+                await this.curriculumStore.index({
+                    page: 1,
+                    perPage: 250,
+                    search: '',
+                })
+            } finally {
+                this.curriculumLoading = false
+            }
+        },
+        async saveCurriculumAssignment() {
+            if (!this.selected_course?.id) {
+                return
+            }
+
+            this.curriculumSaveLoading = true
+            try {
+                const payload = {
+                    ...this.selected_course,
+                    teaching_curriculum_id: this.normalizedCurriculumSelectionId,
+                }
+
+                const updated = await this.courseStore.update(payload)
+                if (!updated) {
+                    return
+                }
+
+                await this.courseStore.refreshCourseById(this.selected_course.id)
+                this.curriculumSelectionId = this.selectedCourseCurriculumId
+                this.curriculumEditMode = false
+            } finally {
+                this.curriculumSaveLoading = false
+            }
+        },
+        async removeCurriculumAssignment() {
+            this.curriculumSelectionId = null
+            await this.saveCurriculumAssignment()
+        },
+        async startCurriculumEdit() {
+            await this.loadCurricula()
+            this.curriculumEditMode = true
+            this.curriculumSelectionId = this.selectedCourseCurriculumId
+        },
+        cancelCurriculumEdit() {
+            this.curriculumEditMode = false
+            this.curriculumSelectionId = this.selectedCourseCurriculumId
+        },
     },
 }
 </script>
@@ -346,8 +507,9 @@ export default {
     justify-content: flex-start;
     gap: 8px;
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.07);
     padding: 10px;
 }
 
