@@ -524,6 +524,24 @@ export default {
     letter-spacing: 0;
     font-weight: 650;
     height: 40px !important;
+    border: 1px solid rgba(37, 99, 235, 0.16) !important;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(219, 234, 254, 0.92) 100%) !important;
+    color: #1e3a8a !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 0 6px 14px rgba(148, 163, 184, 0.12) !important;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease !important;
+}
+
+.teaching-overview-toolbar-btn:hover {
+    background: linear-gradient(180deg, rgba(239, 246, 255, 1) 0%, rgba(191, 219, 254, 0.98) 100%) !important;
+    color: #1d4ed8 !important;
+    border-color: rgba(37, 99, 235, 0.28) !important;
+}
+
+.teaching-overview-toolbar-btn.v-btn--selected {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+    color: #ffffff !important;
+    border-color: rgba(30, 64, 175, 0.5) !important;
+    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.24) !important;
 }
 
 .teaching-overview-toolbar.is-locked {

@@ -280,4 +280,24 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('color="success"')
         expect(source).toContain('title="Neues Fach anlegen"')
     })
+
+    it('uses higher-contrast classes for teaching navigation buttons', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
+        )
+
+        expect(source).toContain(":class=\"main_action === item.key ? 'teaching-nav__button--active' : 'teaching-nav__button--idle'\"")
+        expect(source).toContain('.teaching-nav__button--idle {')
+        expect(source).toContain('.teaching-nav__button--active {')
+    })
+
+    it('uses higher-contrast classes for the overview panel switcher', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
+        )
+
+        expect(source).toContain('.teaching-overview-toolbar-btn {')
+        expect(source).toContain('.teaching-overview-toolbar-btn.v-btn--selected {')
+        expect(source).toContain('.teaching-overview-toolbar-btn:hover {')
+    })
 })
