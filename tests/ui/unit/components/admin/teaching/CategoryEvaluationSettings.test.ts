@@ -31,10 +31,11 @@ describe('Teaching category evaluation settings', () => {
         expect(source).toContain('{{ deleteUsageCount }} Einträge')
         expect(source).toContain('Beim Löschen werden auch alle betroffenen Einträge der Kategoriebewertung entfernt.')
         expect(source).toContain('@click="confirmDelete"')
-        expect(source).toContain('color="error" variant="flat" @click="confirmDelete"')
+        expect(source).toContain('color="error" variant="flat" :loading="category_evaluation_save_action === \'delete-item\'" :disabled="isSavingCategoryEvaluation" @click="confirmDelete"')
         expect(source).not.toContain('label="Standardwert"')
         expect(source).not.toContain('startEdit() {')
         expect(source).not.toContain('cancelEdit() {')
+        expect(source).toContain('runCategoryEvaluationMutation(action, callback) {')
     })
 
     it('opens create and edit dialogs with the expected form state', () => {
@@ -86,8 +87,13 @@ describe('Teaching category evaluation settings', () => {
             valueItems: [],
             defaultValue: '',
             isDialogValid: true,
+            category_evaluation_save_action: null,
+            $nextTick: async () => {},
             persistCategoryEvaluation,
             closeItemDialog,
+            runCategoryEvaluationMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runCategoryEvaluationMutation.call(this, action, callback)
+            },
         }
 
         await methods.saveItem.call(ctx)
@@ -114,8 +120,13 @@ describe('Teaching category evaluation settings', () => {
             ],
             defaultValue: 'Bestanden',
             isDialogValid: true,
+            category_evaluation_save_action: null,
+            $nextTick: async () => {},
             persistCategoryEvaluation,
             closeItemDialog,
+            runCategoryEvaluationMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runCategoryEvaluationMutation.call(this, action, callback)
+            },
         }
 
         await methods.saveItem.call(ctx)
@@ -136,7 +147,12 @@ describe('Teaching category evaluation settings', () => {
                 { value: 'Bestanden', color: '#43a047' },
             ],
             defaultValue: 'Offen',
+            category_evaluation_save_action: null,
+            $nextTick: async () => {},
             persistCategoryEvaluation,
+            runCategoryEvaluationMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runCategoryEvaluationMutation.call(this, action, callback)
+            },
         }
 
         await methods.setDefaultValue.call(ctx, 'Bestanden')
@@ -159,8 +175,13 @@ describe('Teaching category evaluation settings', () => {
             ],
             defaultValue: 'Offen',
             deleteEntryDefinition: { value: 'Offen', color: '#fb8c00' },
+            category_evaluation_save_action: null,
+            $nextTick: async () => {},
             persistCategoryEvaluation,
             closeDeleteDialog,
+            runCategoryEvaluationMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runCategoryEvaluationMutation.call(this, action, callback)
+            },
         }
 
         await methods.confirmDelete.call(ctx)

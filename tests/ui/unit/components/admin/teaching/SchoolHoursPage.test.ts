@@ -80,12 +80,17 @@ describe('Teaching school hours page', () => {
                 { hour: 2, from: '08:55', until: '09:45' },
             ],
             isCreateFormValid: true,
+            school_hours_save_action: null,
+            $nextTick: async () => {},
             schoolHourStore: {
                 store,
                 index,
             },
             show_create_form: true,
             resetCreateForm,
+            runSchoolHourMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runSchoolHourMutation.call(this, action, callback)
+            },
         }
 
         await methods.createSchoolHour.call(ctx)
@@ -105,19 +110,21 @@ describe('Teaching school hours page', () => {
         const methods = (SchoolHours as any).methods
         const destroy = vi.fn().mockResolvedValue(true)
         const index = vi.fn().mockResolvedValue(true)
-        const cancelEdit = vi.fn()
-        const cancelDeleteSchoolHour = methods.cancelDeleteSchoolHour
 
         const ctx: Record<string, unknown> = {
             delete_dialog_open: false,
             delete_id: null,
             editing_id: 4,
+            edit_data: { hour: 4, from: '10:00', until: '10:50' },
+            school_hours_save_action: null,
+            $nextTick: async () => {},
             schoolHourStore: {
                 destroy,
                 index,
             },
-            cancelEdit,
-            cancelDeleteSchoolHour,
+            runSchoolHourMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runSchoolHourMutation.call(this, action, callback)
+            },
         }
 
         methods.promptDeleteSchoolHour.call(ctx, 4)
@@ -129,7 +136,8 @@ describe('Teaching school hours page', () => {
 
         expect(destroy).toHaveBeenCalledWith(4)
         expect(index).toHaveBeenCalledTimes(1)
-        expect(cancelEdit).toHaveBeenCalledTimes(1)
+        expect(ctx.editing_id).toBeNull()
+        expect(ctx.edit_data).toEqual({ hour: null, from: '', until: '' })
         expect(ctx.delete_dialog_open).toBe(false)
         expect(ctx.delete_id).toBeNull()
     })

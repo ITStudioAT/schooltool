@@ -1,15 +1,16 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != '' || isSavingCourse">
         <template #header-actions>
-            <v-btn v-if="action !== 'teaching_course_new_or_edit'" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" @click="newCourse" />
+            <v-btn v-if="action !== 'teaching_course_new_or_edit'" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" />
             <v-btn
                 v-if="action !== 'teaching_course_new_or_edit'"
                 :icon="courses_view_variant === 'v1' ? 'mdi-view-grid-outline' : 'mdi-format-list-bulleted'"
                 size="small"
                 variant="tonal"
+                :disabled="isSavingCourse"
                 :title="courses_view_variant === 'v1' ? 'Neue Kartenansicht aktivieren' : 'Klassische Chip-Ansicht aktivieren'"
                 @click="toggleCoursesViewVariant" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_my_courses = false" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" :disabled="isSavingCourse" @click="show_my_courses = false" />
         </template>
         <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100">
@@ -64,11 +65,11 @@
 
                 <div class="w-100 d-flex flex-row justify-end" v-if="selected_course">
                     <div class="d-flex flex-row align-center ga-2">
-                        <v-btn flat tile size="small" color="warning" icon="mdi-delete" @click="delete_level++" v-if="delete_level == 0" />
-                        <v-btn flat tile size="small" color="success" icon="mdi-delete-off" @click="delete_level = 0" v-if="delete_level == 1" />
-                        <v-btn flat tile size="small" color="error" icon="mdi-delete" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
-                        <v-btn flat tile size="small" color="primary" icon="mdi-pencil" @click="editCourse(selected_course)" v-if="delete_level == 0" />
-                        <v-btn size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" @click="clearSelectedCourse" />
+                        <v-btn flat tile size="small" color="warning" icon="mdi-delete" :disabled="isSavingCourse" @click="delete_level++" v-if="delete_level == 0" />
+                        <v-btn flat tile size="small" color="success" icon="mdi-delete-off" :disabled="isSavingCourse" @click="delete_level = 0" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="error" icon="mdi-delete" :loading="isDeletingCourse" :disabled="isSavingCourse" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
+                        <v-btn flat tile size="small" color="primary" icon="mdi-pencil" :disabled="isSavingCourse" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                        <v-btn size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" :disabled="isSavingCourse" @click="clearSelectedCourse" />
                     </div>
                 </div>
             </v-card-text>
@@ -82,10 +83,10 @@
                 <v-icon size="18">mdi-invoice-list</v-icon>
                 {{ data.id ? 'Fach ändern' : 'Neues Fach' }}
                 <v-spacer />
-                <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortNewCourse" />
+                <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingCourse" @click="abortNewCourse" />
             </v-card-title>
             <v-divider />
-            <v-card-text style="max-height: 75vh; overflow-y: auto;">
+            <v-card-text style="max-height: 75vh; overflow-y: auto;" :style="isSavingCourse ? 'pointer-events:none; opacity:0.6' : ''">
                 <v-form ref="form" v-model="is_valid" class="mb-4">
                     <div class="text-caption text-medium-emphasis mb-2">Bitte geben Sie die Felder ein (* = Pflichtfeld)</div>
                     <v-text-field autofocus v-model="data.title" label="Bezeichnung *" :rules="[required(), maxLength(255)]" />
@@ -286,11 +287,13 @@
             </v-card-text>
             <v-divider />
             <v-card-actions>
-                <v-btn color="warning" variant="tonal" @click="abortNewCourse">Abbruch</v-btn>
+                <v-btn color="warning" variant="tonal" :disabled="isSavingCourse" @click="abortNewCourse">Abbruch</v-btn>
                 <v-spacer />
                 <v-btn
                     color="success"
                     variant="tonal"
+                    :loading="isSavingCourseDetails"
+                    :disabled="isSavingCourse"
                     v-if="data.title && data?.classes?.length > 0 && data.teaching_schema_id"
                     @click="$refs.form.validate().then((v) => { if (v.valid) save(data) })">
                     {{ data.id ? 'Aktualisieren' : 'Speichern' }}
@@ -346,6 +349,7 @@ export default {
             student_search_results: [],
             student_search_loading: false,
             student_search_done: false,
+            saving_course_action: null,
         }
     },
 
@@ -393,6 +397,15 @@ export default {
         isStudentDetailActive() {
             return !!this.selected_course_student
         },
+        isSavingCourse() {
+            return this.saving_course_action !== null
+        },
+        isSavingCourseDetails() {
+            return this.saving_course_action === 'save'
+        },
+        isDeletingCourse() {
+            return this.saving_course_action === 'delete'
+        },
     },
 
     watch: {
@@ -423,6 +436,20 @@ export default {
     },
 
     methods: {
+        async runCourseMutation(action, callback) {
+            if (this.isSavingCourse) {
+                return false
+            }
+
+            this.saving_course_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.saving_course_action = null
+            }
+        },
         clearSelectedCourse() {
             this.selectCourse(null)
             const courseDateStore = useCourseDateStore()
@@ -710,31 +737,33 @@ export default {
         async save(data) {
             if (!data?.teaching_schema_id) return
 
-            const source = data
-            this.courseStore.ensureCourseStudentCollections(source)
-            if ((!source.students || source.students.length === 0) && Array.isArray(source.students_info) && source.students_info.length > 0) {
-                source.students = source.students_info.map((s) => s.id).filter((id) => id != null)
-            }
+            await this.runCourseMutation('save', async () => {
+                const source = data
+                this.courseStore.ensureCourseStudentCollections(source)
+                if ((!source.students || source.students.length === 0) && Array.isArray(source.students_info) && source.students_info.length > 0) {
+                    source.students = source.students_info.map((s) => s.id).filter((id) => id != null)
+                }
 
-            const payload = {
-                ...data,
-                students: source.students || [],
-                students_deleted: source.students_deleted || [],
-            }
+                const payload = {
+                    ...data,
+                    students: source.students || [],
+                    students_deleted: source.students_deleted || [],
+                }
 
-            let result = null
-            if (data.id) {
-                result = await this.courseStore.update(payload)
-            } else {
-                result = await this.courseStore.store(payload)
-            }
-            await this.courseStore.index()
-            const savedId = result?.data?.id || result?.id || data.id || null
-            this.selected_course = savedId ? this.courses.find((c) => c.id === savedId) || null : null
-            this.selected_course_id = this.selected_course?.id || null
-            this.selected_course_student = null
-            this.action_2 = ''
-            this.action = ''
+                let result = null
+                if (data.id) {
+                    result = await this.courseStore.update(payload)
+                } else {
+                    result = await this.courseStore.store(payload)
+                }
+                await this.courseStore.index()
+                const savedId = result?.data?.id || result?.id || data.id || null
+                this.selected_course = savedId ? this.courses.find((c) => c.id === savedId) || null : null
+                this.selected_course_id = this.selected_course?.id || null
+                this.selected_course_student = null
+                this.action_2 = ''
+                this.action = ''
+            })
         },
 
         selectCourse(course) {
@@ -886,16 +915,18 @@ export default {
             this.action = ''
         },
         async deleteCourse(course) {
-            if (!(await this.courseStore.destroy(course.id))) {
+            await this.runCourseMutation('delete', async () => {
+                if (!(await this.courseStore.destroy(course.id))) {
+                    this.delete_level = 0
+                    return
+                }
+                await this.courseStore.index()
+                this.selected_course = null
+                this.selected_course_id = null
+                this.selected_course_student = null
+                this.action_2 = ''
                 this.delete_level = 0
-                return
-            }
-            await this.courseStore.index()
-            this.selected_course = null
-            this.selected_course_id = null
-            this.selected_course_student = null
-            this.action_2 = ''
-            this.delete_level = 0
+            })
         },
     },
 }

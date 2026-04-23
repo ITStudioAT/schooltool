@@ -1,7 +1,7 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Kategoriebewertung" icon="mdi-format-list-bulleted-square" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Kategoriebewertung" icon="mdi-format-list-bulleted-square" class="w-100" :disabled="action != '' || isSavingCategoryEvaluation">
         <template #header-actions>
-            <v-btn size="small" color="primary" variant="text" prepend-icon="mdi-plus" @click="openCreateDialog">
+            <v-btn size="small" color="primary" variant="text" prepend-icon="mdi-plus" :disabled="isSavingCategoryEvaluation" @click="openCreateDialog">
                 Wert
             </v-btn>
         </template>
@@ -34,18 +34,22 @@
                                     size="x-small"
                                     :color="item.value === defaultValue ? 'warning' : 'secondary'"
                                     variant="text"
+                                    :disabled="isSavingCategoryEvaluation"
+                                    :loading="category_evaluation_save_action === 'set-default'"
                                     @click="setDefaultValue(item.value)" />
                                 <v-btn
                                     icon="mdi-pencil"
                                     size="x-small"
                                     color="primary"
                                     variant="text"
+                                    :disabled="isSavingCategoryEvaluation"
                                     @click="openEditDialog(index)" />
                                 <v-btn
                                     icon="mdi-delete"
                                     size="x-small"
                                     color="warning"
                                     variant="text"
+                                    :disabled="isSavingCategoryEvaluation"
                                     @click="openDeleteDialog(index)" />
                             </div>
                         </div>
@@ -99,8 +103,8 @@
                 </div>
             </v-card-text>
             <v-card-actions class="justify-end">
-                <v-btn color="primary" variant="flat" :disabled="!isDialogValid" @click="saveItem">Speichern</v-btn>
-                <v-btn color="primary" variant="text" @click="closeItemDialog">Abbrechen</v-btn>
+                <v-btn color="primary" variant="flat" :loading="category_evaluation_save_action === 'save-item'" :disabled="!isDialogValid || isSavingCategoryEvaluation" @click="saveItem">Speichern</v-btn>
+                <v-btn color="primary" variant="text" :disabled="isSavingCategoryEvaluation" @click="closeItemDialog">Abbrechen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -137,8 +141,8 @@
                 </div>
             </v-card-text>
             <v-card-actions class="justify-end">
-                <v-btn color="error" variant="flat" @click="confirmDelete">Löschen</v-btn>
-                <v-btn color="primary" variant="text" @click="closeDeleteDialog">Abbrechen</v-btn>
+                <v-btn color="error" variant="flat" :loading="category_evaluation_save_action === 'delete-item'" :disabled="isSavingCategoryEvaluation" @click="confirmDelete">Löschen</v-btn>
+                <v-btn color="primary" variant="text" :disabled="isSavingCategoryEvaluation" @click="closeDeleteDialog">Abbrechen</v-btn>
             </v-card-actions>
         </v-card>
     </v-dialog>
@@ -192,12 +196,16 @@ export default {
                 color: '',
             },
             color_picker_target: 'dialog',
+            category_evaluation_save_action: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        isSavingCategoryEvaluation() {
+            return this.category_evaluation_save_action !== null
+        },
         valueItems() {
             return this.teachingStore?.categoryEvaluationValueItemsForSchema(this.schemaId) || []
         },
@@ -256,6 +264,20 @@ export default {
     },
 
     methods: {
+        async runCategoryEvaluationMutation(action, callback) {
+            if (this.category_evaluation_save_action) {
+                return false
+            }
+
+            this.category_evaluation_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.category_evaluation_save_action = null
+            }
+        },
         normalizeValueItems(values) {
             return normalizeTeachingCategoryEvaluationValueItems(values, { fallbackToDefaults: false })
         },
@@ -381,37 +403,39 @@ export default {
                 return
             }
 
-            const trimmedValue = this.dialog_form.value.trim()
-            const updatedItem = {
-                value: trimmedValue,
-                color: normalizeTeachingCategoryEvaluationColor(this.dialog_form.color, '#4f6fb3'),
-            }
-            const items = this.valueItems.map((item) => ({ ...item }))
-
-            let nextDefaultValue = this.defaultValue
-
-            if (this.edit_index !== null) {
-                const previousValue = items[this.edit_index]?.value || ''
-                items[this.edit_index] = updatedItem
-
-                if (this.defaultValue === previousValue) {
-                    nextDefaultValue = trimmedValue
+            await this.runCategoryEvaluationMutation('save-item', async () => {
+                const trimmedValue = this.dialog_form.value.trim()
+                const updatedItem = {
+                    value: trimmedValue,
+                    color: normalizeTeachingCategoryEvaluationColor(this.dialog_form.color, '#4f6fb3'),
                 }
-            } else {
-                items.push(updatedItem)
+                const items = this.valueItems.map((item) => ({ ...item }))
 
-                if (!nextDefaultValue) {
-                    nextDefaultValue = trimmedValue
+                let nextDefaultValue = this.defaultValue
+
+                if (this.edit_index !== null) {
+                    const previousValue = items[this.edit_index]?.value || ''
+                    items[this.edit_index] = updatedItem
+
+                    if (this.defaultValue === previousValue) {
+                        nextDefaultValue = trimmedValue
+                    }
+                } else {
+                    items.push(updatedItem)
+
+                    if (!nextDefaultValue) {
+                        nextDefaultValue = trimmedValue
+                    }
                 }
-            }
 
-            const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
+                const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
 
-            if (!wasSaved) {
-                return
-            }
+                if (!wasSaved) {
+                    return
+                }
 
-            this.closeItemDialog()
+                this.closeItemDialog()
+            })
         },
 
         async setDefaultValue(value) {
@@ -419,7 +443,9 @@ export default {
                 return
             }
 
-            await this.persistCategoryEvaluation(this.valueItems, value)
+            await this.runCategoryEvaluationMutation('set-default', async () => {
+                await this.persistCategoryEvaluation(this.valueItems, value)
+            })
         },
 
         async confirmDelete() {
@@ -427,17 +453,19 @@ export default {
                 return
             }
 
-            const deletedValue = this.deleteEntryDefinition?.value || ''
-            const items = this.valueItems.filter((_, index) => index !== this.delete_index)
-            const nextDefaultValue = this.defaultValue === deletedValue ? (items[0]?.value || '') : this.defaultValue
+            await this.runCategoryEvaluationMutation('delete-item', async () => {
+                const deletedValue = this.deleteEntryDefinition?.value || ''
+                const items = this.valueItems.filter((_, index) => index !== this.delete_index)
+                const nextDefaultValue = this.defaultValue === deletedValue ? (items[0]?.value || '') : this.defaultValue
 
-            const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
+                const wasSaved = await this.persistCategoryEvaluation(items, nextDefaultValue)
 
-            if (!wasSaved) {
-                return
-            }
+                if (!wasSaved) {
+                    return
+                }
 
-            this.closeDeleteDialog()
+                this.closeDeleteDialog()
+            })
         },
     },
 }

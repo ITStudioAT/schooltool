@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import CourseDates from '@/pages/admin/teaching/overview/components/CourseDates.vue'
 
 describe('CourseDates course-specific schema', () => {
@@ -21,5 +21,59 @@ describe('CourseDates course-specific schema', () => {
 
         expect((ctx.selectedCourseSchema as any).id).toBe('schema-teacher')
         expect(computed.semesterCount.call(ctx)).toBe(2)
+    })
+
+    it('enters saving mode before waiting for the date content update request', async () => {
+        const methods = (CourseDates as any).methods
+        let continueNextTick: (() => void) | null = null
+        let resolveUpdate: ((value: unknown) => void) | null = null
+
+        const update = vi.fn(() => new Promise((resolve) => {
+            resolveUpdate = resolve
+        }))
+        const index = vi.fn().mockResolvedValue(true)
+
+        const ctx: Record<string, any> = {
+            action: 'edit_course_date_content',
+            editing_content_id: 7,
+            saving_content_id: null,
+            content_drafts: { 7: '<p>Neuer Inhalt</p>' },
+            courseDateStore: { update },
+            courseStore: { index },
+            show_contents: true,
+            collapsed_content_ids: [7],
+            expanded_content_ids: [],
+            isSavingContent: false,
+            $nextTick: vi.fn(() => new Promise<void>((resolve) => {
+                continueNextTick = resolve
+            })),
+        }
+
+        const savePromise = methods.saveContent.call(ctx, {
+            id: 7,
+            date: '2026-04-23',
+        })
+
+        expect(ctx.saving_content_id).toBe(7)
+        expect(ctx.$nextTick).toHaveBeenCalledTimes(1)
+        expect(update).not.toHaveBeenCalled()
+
+        continueNextTick?.()
+        await Promise.resolve()
+
+        expect(update).toHaveBeenCalledWith({
+            id: 7,
+            date: '2026-04-23',
+            content: '<p>Neuer Inhalt</p>',
+        })
+
+        resolveUpdate?.(true)
+        await savePromise
+
+        expect(index).toHaveBeenCalledTimes(1)
+        expect(ctx.editing_content_id).toBeNull()
+        expect(ctx.action).toBe('')
+        expect(ctx.saving_content_id).toBeNull()
+        expect(ctx.collapsed_content_ids).toEqual([])
     })
 })

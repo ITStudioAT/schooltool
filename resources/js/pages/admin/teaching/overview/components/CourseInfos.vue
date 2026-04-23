@@ -6,12 +6,12 @@
         icon="mdi-information-box"
         class="w-100"
         v-if="selected_course"
-        :disabled="action != '' && action != 'edit_description'">
+        :disabled="isInfoLocked">
         <template #header-actions>
-            <v-btn v-if="action !== 'edit_description'" icon="mdi-pencil" size="small" variant="tonal" @click="editDescription" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_infos = false" />
+            <v-btn v-if="action !== 'edit_description'" icon="mdi-pencil" size="small" variant="tonal" :disabled="isSavingInfo" @click="editDescription" />
+            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" :disabled="isSavingInfo" @click="show_infos = false" />
         </template>
-        <v-card tile flat color="transparent" class="w-100">
+        <v-card tile flat color="transparent" class="w-100" :disabled="isSavingInfo">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
                 <v-card variant="outlined" class="mt-2" v-if="openNotifications.length">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
@@ -33,6 +33,8 @@
                                         size="x-small"
                                         color="success"
                                         variant="tonal"
+                                        :disabled="isSavingInfo"
+                                        :loading="saving_notification_id === entry.id"
                                         class="notification-action"
                                         @click.stop="completeNotification(entry)" />
                                     <div v-if="entry.description" class="notification-description text-caption w-100">{{ entry.description }}</div>
@@ -74,6 +76,7 @@
                                 :label="hasTwoSemesters ? '1. Semester' : 'Gesamt'"
                                 density="compact"
                                 hide-details
+                                :disabled="isSavingInfo"
                                 class="grade-checkbox" />
                             <v-checkbox
                                 v-if="hasTwoSemesters"
@@ -81,6 +84,7 @@
                                 label="2. Semester"
                                 density="compact"
                                 hide-details
+                                :disabled="isSavingInfo"
                                 class="grade-checkbox" />
                             <v-checkbox
                                 v-if="hasTwoSemesters"
@@ -88,7 +92,38 @@
                                 label="Gesamt (1+2)"
                                 density="compact"
                                 hide-details
+                                :disabled="isSavingInfo"
                                 class="grade-checkbox" />
+                        </div>
+                        <v-divider class="my-3" />
+                        <div class="text-caption text-medium-emphasis mb-2">Für Schüler:innen sichtbar</div>
+                        <div class="d-flex flex-wrap ga-3 mb-2">
+                            <v-checkbox
+                                v-model="student_grade_visibility_show_sem1"
+                                :label="hasTwoSemesters ? '1. Semester' : 'Gesamt'"
+                                density="compact"
+                                hide-details
+                                :disabled="isSavingInfo"
+                                class="grade-checkbox" />
+                            <v-checkbox
+                                v-if="hasTwoSemesters"
+                                v-model="student_grade_visibility_show_sem2"
+                                label="2. Semester"
+                                density="compact"
+                                hide-details
+                                :disabled="isSavingInfo"
+                                class="grade-checkbox" />
+                            <v-checkbox
+                                v-if="hasTwoSemesters"
+                                v-model="student_grade_visibility_show_year"
+                                label="Gesamt (1+2)"
+                                density="compact"
+                                hide-details
+                                :disabled="isSavingInfo"
+                                class="grade-checkbox" />
+                        </div>
+                        <div class="text-caption text-medium-emphasis mb-2">
+                            Diese Auswahl steuert ausschließlich die Berechnungen im Schüler:innen-Bereich.
                         </div>
                         <v-alert v-if="gradesLoading" type="info" variant="tonal" density="compact" class="mb-0">
                             Noten werden geladen…
@@ -124,12 +159,12 @@
                 <v-form ref="form" @submit.prevent="saveDescription">
                     <div class="mb-4">
                         <label class="text-caption text-medium-emphasis">Fachinfos</label>
-                        <its-rich-text-editor v-model="edit_description" />
+                        <its-rich-text-editor v-model="edit_description" :disabled="isSavingDescription" />
                     </div>
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" flat tile @click="abortEditDescription">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit">Speichern</v-btn>
+                        <v-btn color="warning" flat tile :disabled="isSavingDescription" @click="abortEditDescription">Abbruch</v-btn>
+                        <v-btn color="success" flat tile type="submit" :loading="isSavingDescription" :disabled="isSavingDescription">Speichern</v-btn>
                     </div>
                 </v-form>
             </v-card-text>
@@ -184,6 +219,8 @@ export default {
             this.restoreGradeColumns(this.persistedGradeColumns)
         }
 
+        this.restoreStudentGradeColumns(this.persistedStudentGradeColumns)
+
         await this.initializeGradeState()
 
         this.nowTimer = setInterval(() => {
@@ -215,6 +252,12 @@ export default {
             gradeEntries: [],
             gradesDataLoaded: false,
             restoringGradeColumns: false,
+            restoringStudentGradeColumns: false,
+            saving_info_action: null,
+            saving_notification_id: null,
+            student_grade_visibility_show_sem1: false,
+            student_grade_visibility_show_sem2: false,
+            student_grade_visibility_show_year: false,
         }
     },
 
@@ -222,6 +265,15 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
         ...mapWritableState(useCourseStore, ['courses', 'classes', 'selected_course', 'show_infos', 'infos_show_grade_sem1', 'infos_show_grade_sem2', 'infos_show_grade_year']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
+        isSavingInfo() {
+            return this.saving_info_action !== null
+        },
+        isSavingDescription() {
+            return this.saving_info_action === 'save-description'
+        },
+        isInfoLocked() {
+            return this.isSavingInfo || (this.action != '' && this.action != 'edit_description')
+        },
 
         schoolHoursByHour() {
             const entries = Array.isArray(this.school_hours) ? this.school_hours : []
@@ -432,6 +484,13 @@ export default {
                 show_year: false,
             }
         },
+        persistedStudentGradeColumns() {
+            return this.teachingStore?.settings?.teaching_student_grade_columns || this.config?.user?.teaching_student_grade_columns || {
+                show_sem1: false,
+                show_sem2: false,
+                show_year: false,
+            }
+        },
         anyGradeColumnVisible() {
             return this.infos_show_grade_sem1 || (this.hasTwoSemesters && (this.infos_show_grade_sem2 || this.infos_show_grade_year))
         },
@@ -531,6 +590,24 @@ export default {
             this.syncGradeColumnsToRoute()
             this.persistGradeColumns()
         },
+        student_grade_visibility_show_sem1() {
+            if (this.restoringStudentGradeColumns) {
+                return
+            }
+            this.persistStudentGradeColumns()
+        },
+        student_grade_visibility_show_sem2() {
+            if (this.restoringStudentGradeColumns) {
+                return
+            }
+            this.persistStudentGradeColumns()
+        },
+        student_grade_visibility_show_year() {
+            if (this.restoringStudentGradeColumns) {
+                return
+            }
+            this.persistStudentGradeColumns()
+        },
         '$route.query.grades'(value) {
             const routeGrades = this.normalizeGradeQueryValue(value)
 
@@ -546,6 +623,23 @@ export default {
     methods: {
         formatGrade,
         gradeClass,
+        async runInfoMutation(action, callback, options = {}) {
+            if (this.isSavingInfo) {
+                return false
+            }
+
+            this.saving_info_action = action
+
+            if (!options.skipTick) {
+                await this.$nextTick()
+            }
+
+            try {
+                return await callback()
+            } finally {
+                this.saving_info_action = null
+            }
+        },
         normalizeGradeQueryValue(value) {
             if (Array.isArray(value)) {
                 return typeof value[0] === 'string' ? value[0] : ''
@@ -614,6 +708,26 @@ export default {
                 show_year: Boolean(this.infos_show_grade_year),
             }
         },
+        restoreStudentGradeColumns(columns) {
+            const normalizedColumns = {
+                show_sem1: Boolean(columns?.show_sem1),
+                show_sem2: Boolean(columns?.show_sem2),
+                show_year: Boolean(columns?.show_year),
+            }
+
+            this.restoringStudentGradeColumns = true
+            this.student_grade_visibility_show_sem1 = normalizedColumns.show_sem1
+            this.student_grade_visibility_show_sem2 = normalizedColumns.show_sem2
+            this.student_grade_visibility_show_year = normalizedColumns.show_year
+            this.restoringStudentGradeColumns = false
+        },
+        currentStudentGradeColumns() {
+            return {
+                show_sem1: Boolean(this.student_grade_visibility_show_sem1),
+                show_sem2: Boolean(this.student_grade_visibility_show_sem2),
+                show_year: Boolean(this.student_grade_visibility_show_year),
+            }
+        },
         gradeColumnsMatch(left, right) {
             return Boolean(left?.show_sem1) === Boolean(right?.show_sem1)
                 && Boolean(left?.show_sem2) === Boolean(right?.show_sem2)
@@ -631,6 +745,22 @@ export default {
 
             await this.teachingStore.saveSettings({
                 teaching_grade_columns: columns,
+            }, {
+                notifySuccess: false,
+            })
+        },
+        async persistStudentGradeColumns() {
+            if (!this.teachingStore) {
+                return
+            }
+
+            const columns = this.currentStudentGradeColumns()
+            if (this.gradeColumnsMatch(columns, this.persistedStudentGradeColumns)) {
+                return
+            }
+
+            await this.teachingStore.saveSettings({
+                teaching_student_grade_columns: columns,
             }, {
                 notifySuccess: false,
             })
@@ -688,23 +818,31 @@ export default {
             this.gradesLoading = false
         },
         editDescription() {
+            if (this.isSavingInfo) {
+                return
+            }
             this.edit_description = this.selected_course.description || ''
             this.action = 'edit_description'
         },
         abortEditDescription() {
+            if (this.isSavingDescription) {
+                return
+            }
             this.action = ''
             this.edit_description = ''
         },
         async saveDescription() {
-            const data = {
-                ...this.selected_course,
-                description: this.edit_description,
-            }
-            if (await this.courseStore.update(data)) {
-                this.selected_course.description = this.edit_description
-                this.action = ''
-                this.edit_description = ''
-            }
+            await this.runInfoMutation('save-description', async () => {
+                const data = {
+                    ...this.selected_course,
+                    description: this.edit_description,
+                }
+                if (await this.courseStore.update(data)) {
+                    this.selected_course.description = this.edit_description
+                    this.action = ''
+                    this.edit_description = ''
+                }
+            })
         },
         notificationTypeLabel(type) {
             if (!type) return ''
@@ -774,18 +912,26 @@ export default {
         },
         async completeNotification(entry) {
             if (!entry?.id || !entry?.type) return
-            const payload = {
-                id: entry.id,
-                kind: 'notification',
-                type: entry.type,
-                date: entry.date || null,
-                description: entry.description || null,
-                is_due: !!entry.due_date,
-                due_date: entry.due_date || null,
-                is_done: true,
-                done_date: this.toDateString(new Date()),
+            this.saving_notification_id = entry.id
+
+            try {
+                await this.runInfoMutation('complete-notification', async () => {
+                    const payload = {
+                        id: entry.id,
+                        kind: 'notification',
+                        type: entry.type,
+                        date: entry.date || null,
+                        description: entry.description || null,
+                        is_due: !!entry.due_date,
+                        due_date: entry.due_date || null,
+                        is_done: true,
+                        done_date: this.toDateString(new Date()),
+                    }
+                    await this.behaviourEntryStore.update(payload)
+                })
+            } finally {
+                this.saving_notification_id = null
             }
-            await this.behaviourEntryStore.update(payload)
         },
     },
 }

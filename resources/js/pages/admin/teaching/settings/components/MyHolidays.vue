@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Eigene freie Tage" icon="mdi-account-clock" class="w-100">
+    <ItsGridBox variant="overview" color="primary" title="Eigene freie Tage" icon="mdi-account-clock" class="w-100" :disabled="isSavingMyHolidays">
         <v-form ref="form" v-model="is_valid" @submit.prevent="createHolidays">
             <v-date-input v-model="data.date_from" label="Datum von" class="flex-grow-1" />
             <v-date-input v-model="data.date_until" label="Datum bis (optional)" class="mt-3 flex-grow-1" />
@@ -7,8 +7,8 @@
             <v-text-field v-model="data.reason" label="Grund" class="mt-3" :rules="[maxLength(255)]" hide-details="auto" />
 
             <div class="d-flex flex-row align-center justify-space-between mt-3">
-                <v-btn color="warning" flat tile @click="resetForm">Zurücksetzen</v-btn>
-                <v-btn color="success" flat tile type="submit" :disabled="!data.date_from">Freie Tage erstellen</v-btn>
+                <v-btn color="warning" flat tile :disabled="isSavingMyHolidays" @click="resetForm">Zurücksetzen</v-btn>
+                <v-btn color="success" flat tile type="submit" :loading="my_holidays_save_action === 'create'" :disabled="!data.date_from || isSavingMyHolidays">Freie Tage erstellen</v-btn>
             </div>
         </v-form>
 
@@ -35,6 +35,8 @@
                         size="x-small"
                         color="error"
                         variant="flat"
+                        :loading="my_holidays_save_action === `delete:${holiday.id}`"
+                        :disabled="isSavingMyHolidays"
                         @click="deleteHoliday(holiday)" />
                 </div>
             </v-list-item>
@@ -76,11 +78,15 @@ export default {
                 date_until: '',
                 reason: '',
             },
+            my_holidays_save_action: null,
         }
     },
 
     computed: {
         ...mapWritableState(useHolidayStore, ['my_holidays']),
+        isSavingMyHolidays() {
+            return this.my_holidays_save_action !== null
+        },
     },
 
     watch: {
@@ -97,6 +103,20 @@ export default {
     },
 
     methods: {
+        async runMyHolidayMutation(action, callback) {
+            if (this.my_holidays_save_action) {
+                return false
+            }
+
+            this.my_holidays_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.my_holidays_save_action = null
+            }
+        },
         toDateString(date) {
             const parsed = parseLocalDate(date)
             const year = parsed.getFullYear()
@@ -125,25 +145,29 @@ export default {
         },
         async createHolidays() {
             if (!this.data.date_from) return
-            const payload = {
-                date_from: this.data.date_from,
-                date_until: this.data.date_until || null,
-                reason: this.data.reason?.trim() || null,
-            }
+            await this.runMyHolidayMutation('create', async () => {
+                const payload = {
+                    date_from: this.data.date_from,
+                    date_until: this.data.date_until || null,
+                    reason: this.data.reason?.trim() || null,
+                }
 
-            const ok = await this.holidayStore.storeMine(payload)
-            if (!ok) return
+                const ok = await this.holidayStore.storeMine(payload)
+                if (!ok) return
 
-            await this.holidayStore.indexMine()
-            await this.courseStore.index()
-            this.resetForm()
+                await this.holidayStore.indexMine()
+                await this.courseStore.index()
+                this.resetForm()
+            })
         },
         async deleteHoliday(holiday) {
-            const ok = await this.holidayStore.destroyMine(holiday.id)
-            if (!ok) return
+            await this.runMyHolidayMutation(`delete:${holiday.id}`, async () => {
+                const ok = await this.holidayStore.destroyMine(holiday.id)
+                if (!ok) return
 
-            await this.holidayStore.indexMine()
-            await this.courseStore.index()
+                await this.holidayStore.indexMine()
+                await this.courseStore.index()
+            })
         },
     },
 }

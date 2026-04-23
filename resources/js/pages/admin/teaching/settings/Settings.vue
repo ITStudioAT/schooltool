@@ -89,7 +89,7 @@
                                         @click="selectSchema(schema.id)">
                                         {{ schema.name }}
                                     </v-chip>
-                                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" :disabled="isLocked" @click="newSchema" />
+                                    <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" :loading="schema_settings_saving_action === 'new-schema'" :disabled="isLocked" @click="newSchema" />
                                 </div>
 
                                 <div v-if="selected_schema_id" class="d-flex flex-row align-center mt-3 ga-2 flex-wrap">
@@ -106,9 +106,9 @@
                                         Löschen
                                     </v-btn>
                                     <v-btn v-if="is_deleting" flat tile size="small" color="success" prepend-icon="mdi-delete-off" :disabled="isLocked" @click="is_deleting = false">Abbruch</v-btn>
-                                    <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" :disabled="isLocked" @click="deleteSchema">Endgültig löschen</v-btn>
+                                    <v-btn v-if="is_deleting" flat tile size="small" color="error" prepend-icon="mdi-delete" :loading="schema_settings_saving_action === 'delete-schema'" :disabled="isLocked" @click="deleteSchema">Endgültig löschen</v-btn>
                                     <v-spacer />
-                                    <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="isLocked" @click="saveRename" />
+                                    <v-btn v-if="is_renaming" icon="mdi-check" size="x-small" color="success" variant="flat" :loading="schema_settings_saving_action === 'rename-schema'" :disabled="isLocked" @click="saveRename" />
                                     <v-btn v-if="is_renaming" icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isLocked" @click="is_renaming = false" />
                                 </div>
 
@@ -317,13 +317,14 @@ export default {
             schema_import_loading: false,
             schema_reset_loading: false,
             schema_panel_revision: 0,
+            schema_settings_saving_action: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action']),
         isLocked() {
-            return this.action === 'teaching_work_new_or_edit'
+            return this.action === 'teaching_work_new_or_edit' || this.schema_settings_saving_action !== null
         },
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useCourseStore, ['courses']),
@@ -448,6 +449,20 @@ export default {
     },
 
     methods: {
+        async runSchemaSettingsMutation(action, callback) {
+            if (this.schema_settings_saving_action) {
+                return false
+            }
+
+            this.schema_settings_saving_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.schema_settings_saving_action = null
+            }
+        },
         isPanelActive(panel) {
             return this.active_panel === panel
         },
@@ -540,17 +555,19 @@ export default {
         },
 
         async newSchema() {
-            const standard = this.schemas.find((s) => s.name === 'Standard')
-            const schemas = [...this.schemas]
-            const newId = crypto.randomUUID()
-            schemas.push({
-                id: newId,
-                name: 'Neues Schema',
-                works: JSON.parse(JSON.stringify(standard?.works || [])),
-                grading: JSON.parse(JSON.stringify(standard?.grading || {})),
+            await this.runSchemaSettingsMutation('new-schema', async () => {
+                const standard = this.schemas.find((s) => s.name === 'Standard')
+                const schemas = [...this.schemas]
+                const newId = crypto.randomUUID()
+                schemas.push({
+                    id: newId,
+                    name: 'Neues Schema',
+                    works: JSON.parse(JSON.stringify(standard?.works || [])),
+                    grading: JSON.parse(JSON.stringify(standard?.grading || {})),
+                })
+                await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+                this.selected_schema_id = newId
             })
-            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
-            this.selected_schema_id = newId
         },
 
         startRename() {
@@ -563,16 +580,20 @@ export default {
 
         async saveRename() {
             if (!this.rename_value.trim()) return
-            const schemas = this.schemas.map((s) => (s.id === this.selected_schema_id ? { ...s, name: this.rename_value.trim() } : s))
-            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
-            this.is_renaming = false
+            await this.runSchemaSettingsMutation('rename-schema', async () => {
+                const schemas = this.schemas.map((s) => (s.id === this.selected_schema_id ? { ...s, name: this.rename_value.trim() } : s))
+                await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+                this.is_renaming = false
+            })
         },
 
         async deleteSchema() {
-            const schemas = this.schemas.filter((s) => s.id !== this.selected_schema_id)
-            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
-            this.selected_schema_id = schemas.length ? schemas[0].id : null
-            this.is_deleting = false
+            await this.runSchemaSettingsMutation('delete-schema', async () => {
+                const schemas = this.schemas.filter((s) => s.id !== this.selected_schema_id)
+                await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+                this.selected_schema_id = schemas.length ? schemas[0].id : null
+                this.is_deleting = false
+            })
         },
     },
 }

@@ -184,7 +184,7 @@ describe('Student MyCourse entry grade chip color', () => {
         const computed = (MyCourse as any).computed
         const ctx = {
             course: {
-                teacher_teaching_grade_columns: {
+                teacher_teaching_student_grade_columns: {
                     show_sem1: true,
                     show_sem2: false,
                     show_year: true,
@@ -224,7 +224,7 @@ describe('Student MyCourse entry grade chip color', () => {
         const computed = (MyCourse as any).computed
         const ctx = {
             course: {
-                teacher_teaching_grade_columns: {
+                teacher_teaching_student_grade_columns: {
                     show_sem1: false,
                     show_sem2: false,
                     show_year: false,
@@ -251,7 +251,7 @@ describe('Student MyCourse entry grade chip color', () => {
         const computed = (MyCourse as any).computed
         const ctx = {
             course: {
-                teacher_teaching_grade_columns: {
+                teacher_teaching_student_grade_columns: {
                     show_sem1: true,
                     show_sem2: true,
                     show_year: true,
@@ -275,6 +275,26 @@ describe('Student MyCourse entry grade chip color', () => {
         expect(ctx.showCalculatedGradeSem2).toBe(true)
         expect(ctx.showCalculatedGradeYear).toBe(true)
         expect(computed.showCalculatedGradesSection.call(ctx)).toBe(true)
+    })
+
+    it('falls back to the legacy teacher calculated grade columns when the student-specific setting is missing', () => {
+        const computed = (MyCourse as any).computed
+        const ctx = {
+            course: {
+                teacher_teaching_grade_columns: {
+                    show_sem1: true,
+                    show_sem2: false,
+                    show_year: false,
+                },
+            },
+            hasTwoSemesters: true,
+        }
+
+        expect(computed.teacherCalculatedGradeColumns.call(ctx)).toEqual({
+            show_sem1: true,
+            show_sem2: false,
+            show_year: false,
+        })
     })
 
     it('provides null-safe calculated grade values when no calculation exists yet', () => {

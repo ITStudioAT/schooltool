@@ -1,9 +1,9 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Benotung" icon="mdi-numeric" class="w-100" :disabled="action != '' || isSavingGrading">
         <template #header-actions>
             <div class="d-flex flex-row align-center ga-2">
-                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!isCurrentEditValid" @click="save" />
-                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-close" size="x-small" color="warning" variant="flat" @click="exitEditMode" />
+                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-check" size="x-small" color="success" variant="flat" :loading="isSavingGrading" :disabled="!isCurrentEditValid || isSavingGrading" @click="save" />
+                <v-btn v-if="is_editing && !isLocalSemesterCountEditing && !isLocalSemesterWeightEditing && !isLocalSemesterInclusionEditing" icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingGrading" @click="exitEditMode" />
             </div>
         </template>
 
@@ -20,7 +20,8 @@
                                 size="x-small"
                                 color="success"
                                 variant="flat"
-                                :disabled="!isCurrentEditValid"
+                                :loading="isSavingGrading"
+                                :disabled="!isCurrentEditValid || isSavingGrading"
                                 @click="save" />
                             <v-btn
                                 v-if="isLocalSemesterCountEditing"
@@ -28,6 +29,7 @@
                                 size="x-small"
                                 color="warning"
                                 variant="flat"
+                                :disabled="isSavingGrading"
                                 @click="exitEditMode" />
                             <v-btn
                                 v-if="!is_editing"
@@ -56,7 +58,8 @@
                                 size="x-small"
                                 color="success"
                                 variant="flat"
-                                :disabled="!isCurrentEditValid"
+                                :loading="isSavingGrading"
+                                :disabled="!isCurrentEditValid || isSavingGrading"
                                 @click="save" />
                             <v-btn
                                 v-if="isLocalSemesterWeightEditing"
@@ -64,6 +67,7 @@
                                 size="x-small"
                                 color="warning"
                                 variant="flat"
+                                :disabled="isSavingGrading"
                                 @click="exitEditMode" />
                             <v-btn
                                 v-if="!is_editing"
@@ -143,7 +147,8 @@
                                 size="x-small"
                                 color="success"
                                 variant="flat"
-                                :disabled="!isCurrentEditValid"
+                                :loading="isSavingGrading"
+                                :disabled="!isCurrentEditValid || isSavingGrading"
                                 @click="save" />
                             <v-btn
                                 v-if="isLocalSemesterInclusionEditing"
@@ -151,6 +156,7 @@
                                 size="x-small"
                                 color="warning"
                                 variant="flat"
+                                :disabled="isSavingGrading"
                                 @click="exitEditMode" />
                             <v-btn
                                 v-if="!is_editing"
@@ -420,12 +426,16 @@ export default {
             category_dialog_open: false,
             category_dialog_mode: 'create',
             category_form: { name: '', weight: 0, require_all_entries: false, category_evaluation_enabled: false, works: [] },
+            is_saving_grading: false,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        isSavingGrading() {
+            return this.is_saving_grading
+        },
         totalSemesterWeight() {
             return this.data.semester_1_weight + this.data.semester_2_weight
         },
@@ -712,27 +722,38 @@ export default {
         },
 
         async save() {
-            const cleanedCategories = this.data.categories.map((cat) => ({
-                ...cat,
-                works: this.getValidWorks(cat.works),
-                require_all_entries: Boolean(cat.require_all_entries),
-            }))
-
-            const grading = {
-                semester_count: this.data.semester_count,
-                semester_1_weight: this.data.semester_count === 1 ? 100 : this.data.semester_1_weight,
-                semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
-                use_semester_grade_only: this.data.semester_count === 2 ? Boolean(this.data.use_semester_grade_only) : false,
-                categories: cleanedCategories,
+            if (this.isSavingGrading) {
+                return
             }
 
-            const schemas = [...(this.settings?.teaching_schemas || [])]
-            const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
-            if (schemaIndex === -1) return
+            this.is_saving_grading = true
+            await this.$nextTick()
 
-            schemas[schemaIndex] = { ...schemas[schemaIndex], grading }
-            await this.teachingStore.saveSettings({ teaching_schemas: schemas })
-            this.exitEditMode()
+            try {
+                const cleanedCategories = this.data.categories.map((cat) => ({
+                    ...cat,
+                    works: this.getValidWorks(cat.works),
+                    require_all_entries: Boolean(cat.require_all_entries),
+                }))
+
+                const grading = {
+                    semester_count: this.data.semester_count,
+                    semester_1_weight: this.data.semester_count === 1 ? 100 : this.data.semester_1_weight,
+                    semester_2_weight: this.data.semester_count === 1 ? 0 : this.data.semester_2_weight,
+                    use_semester_grade_only: this.data.semester_count === 2 ? Boolean(this.data.use_semester_grade_only) : false,
+                    categories: cleanedCategories,
+                }
+
+                const schemas = [...(this.settings?.teaching_schemas || [])]
+                const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
+                if (schemaIndex === -1) return
+
+                schemas[schemaIndex] = { ...schemas[schemaIndex], grading }
+                await this.teachingStore.saveSettings({ teaching_schemas: schemas })
+                this.exitEditMode()
+            } finally {
+                this.is_saving_grading = false
+            }
         },
     },
 }

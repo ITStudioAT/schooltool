@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12" class="teaching-admin-school-hours-col">
-        <ItsGridBox variant="overview" color="primary" title="Schulstunden" subtitle="Stundenzeiten pro Schuljahr verwalten" icon="mdi-clock-time-four-outline" class="w-100">
+        <ItsGridBox variant="overview" color="primary" title="Schulstunden" subtitle="Stundenzeiten pro Schuljahr verwalten" icon="mdi-clock-time-four-outline" class="w-100" :disabled="isSavingSchoolHours">
             <div class="d-flex flex-wrap align-center ga-2 mb-3">
                 <span class="text-body-2 text-medium-emphasis">Aktives Schuljahr</span>
                 <v-chip size="small" color="primary" variant="tonal">
@@ -14,6 +14,7 @@
                     size="small"
                     color="primary"
                     variant="tonal"
+                    :disabled="isSavingSchoolHours"
                     @click="toggleCreateForm" />
             </div>
 
@@ -27,7 +28,7 @@
                                 size="x-small"
                                 color="primary"
                                 variant="tonal"
-                                :disabled="create_entries.length >= 10"
+                                :disabled="create_entries.length >= 10 || isSavingSchoolHours"
                                 @click="addCreateEntry" />
                         </div>
 
@@ -62,14 +63,14 @@
                                         size="x-small"
                                         color="error"
                                         variant="tonal"
-                                        :disabled="create_entries.length <= 1"
+                                        :disabled="create_entries.length <= 1 || isSavingSchoolHours"
                                         @click="removeCreateEntry(index)" />
                                 </v-col>
                             </v-row>
                         </div>
 
                         <div class="d-flex flex-row align-center justify-end mt-3">
-                            <v-btn color="success" flat tile type="submit" :disabled="!isCreateFormValid">Schulstunde erstellen</v-btn>
+                            <v-btn color="success" flat tile type="submit" :loading="school_hours_save_action === 'create'" :disabled="!isCreateFormValid || isSavingSchoolHours">Schulstunde erstellen</v-btn>
                         </div>
                     </v-form>
                 </div>
@@ -106,8 +107,8 @@
                                     hide-details="auto" />
                             </v-col>
                             <v-col cols="12" md="3" class="d-flex align-center justify-end ga-2">
-                                <v-btn color="success" size="small" variant="flat" icon="mdi-content-save-outline" @click="saveEditSchoolHour" />
-                                <v-btn color="warning" size="small" variant="tonal" icon="mdi-close" @click="cancelEdit" />
+                                <v-btn color="success" size="small" variant="flat" icon="mdi-content-save-outline" :loading="school_hours_save_action === 'edit'" :disabled="isSavingSchoolHours" @click="saveEditSchoolHour" />
+                                <v-btn color="warning" size="small" variant="tonal" icon="mdi-close" :disabled="isSavingSchoolHours" @click="cancelEdit" />
                             </v-col>
                         </v-row>
                     </div>
@@ -123,12 +124,14 @@
                                 size="x-small"
                                 color="primary"
                                 variant="tonal"
+                                :disabled="isSavingSchoolHours"
                                 @click="startEdit(schoolHour)" />
                             <v-btn
                                 icon="mdi-delete"
                                 size="x-small"
                                 color="warning"
                                 variant="tonal"
+                                :disabled="isSavingSchoolHours"
                                 @click="promptDeleteSchoolHour(schoolHour.id)" />
                         </div>
                     </div>
@@ -149,9 +152,9 @@
                         Soll diese Schulstunde wirklich gelöscht werden?
                     </v-card-text>
                     <v-card-actions class="px-4 pb-4">
-                        <v-btn variant="tonal" @click="cancelDeleteSchoolHour">Abbrechen</v-btn>
+                        <v-btn variant="tonal" :disabled="isSavingSchoolHours" @click="cancelDeleteSchoolHour">Abbrechen</v-btn>
                         <v-spacer />
-                        <v-btn color="error" variant="flat" @click="confirmDeleteSchoolHour">Löschen</v-btn>
+                        <v-btn color="error" variant="flat" :loading="school_hours_save_action === 'delete'" :disabled="isSavingSchoolHours" @click="confirmDeleteSchoolHour">Löschen</v-btn>
                     </v-card-actions>
                 </v-card>
             </v-dialog>
@@ -188,12 +191,16 @@ export default {
                 from: '',
                 until: '',
             },
+            school_hours_save_action: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
+        isSavingSchoolHours() {
+            return this.school_hours_save_action !== null
+        },
         activeSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || this.config?.selected_schoolyear?.concerns || 'Kein Schuljahr gewählt'
         },
@@ -203,6 +210,20 @@ export default {
     },
 
     methods: {
+        async runSchoolHourMutation(action, callback) {
+            if (this.school_hours_save_action) {
+                return false
+            }
+
+            this.school_hours_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.school_hours_save_action = null
+            }
+        },
         emptyCreateEntry(hour = null) {
             return {
                 hour,
@@ -261,6 +282,9 @@ export default {
             this.create_entries.splice(index, 1)
         },
         toggleCreateForm() {
+            if (this.isSavingSchoolHours) {
+                return
+            }
             this.show_create_form = !this.show_create_form
             if (!this.show_create_form) {
                 this.resetCreateForm()
@@ -271,21 +295,23 @@ export default {
                 return
             }
 
-            const payload = {
-                entries: this.create_entries.map((entry) => ({
-                    hour: Number(entry.hour),
-                    from: entry.from || null,
-                    until: entry.until || null,
-                })),
-            }
-            const created = await this.schoolHourStore.store(payload)
-            if (!created) {
-                return
-            }
+            await this.runSchoolHourMutation('create', async () => {
+                const payload = {
+                    entries: this.create_entries.map((entry) => ({
+                        hour: Number(entry.hour),
+                        from: entry.from || null,
+                        until: entry.until || null,
+                    })),
+                }
+                const created = await this.schoolHourStore.store(payload)
+                if (!created) {
+                    return
+                }
 
-            await this.schoolHourStore.index()
-            this.show_create_form = false
-            this.resetCreateForm()
+                await this.schoolHourStore.index()
+                this.show_create_form = false
+                this.resetCreateForm()
+            })
         },
         startEdit(schoolHour) {
             this.editing_id = schoolHour.id
@@ -300,10 +326,16 @@ export default {
             this.delete_dialog_open = true
         },
         cancelDeleteSchoolHour() {
+            if (this.isSavingSchoolHours) {
+                return
+            }
             this.delete_dialog_open = false
             this.delete_id = null
         },
         cancelEdit() {
+            if (this.isSavingSchoolHours) {
+                return
+            }
             this.editing_id = null
             this.edit_data = {
                 hour: null,
@@ -316,18 +348,25 @@ export default {
                 return
             }
 
-            const payload = {
-                hour: Number(this.edit_data.hour),
-                from: this.edit_data.from || null,
-                until: this.edit_data.until || null,
-            }
-            const updated = await this.schoolHourStore.update(this.editing_id, payload)
-            if (!updated) {
-                return
-            }
+            await this.runSchoolHourMutation('edit', async () => {
+                const payload = {
+                    hour: Number(this.edit_data.hour),
+                    from: this.edit_data.from || null,
+                    until: this.edit_data.until || null,
+                }
+                const updated = await this.schoolHourStore.update(this.editing_id, payload)
+                if (!updated) {
+                    return
+                }
 
-            await this.schoolHourStore.index()
-            this.cancelEdit()
+                await this.schoolHourStore.index()
+                this.editing_id = null
+                this.edit_data = {
+                    hour: null,
+                    from: '',
+                    until: '',
+                }
+            })
         },
         async confirmDeleteSchoolHour() {
             const id = this.delete_id
@@ -335,16 +374,24 @@ export default {
                 return
             }
 
-            const deleted = await this.schoolHourStore.destroy(id)
-            if (!deleted) {
-                return
-            }
+            await this.runSchoolHourMutation('delete', async () => {
+                const deleted = await this.schoolHourStore.destroy(id)
+                if (!deleted) {
+                    return
+                }
 
-            await this.schoolHourStore.index()
-            if (this.editing_id === id) {
-                this.cancelEdit()
-            }
-            this.cancelDeleteSchoolHour()
+                await this.schoolHourStore.index()
+                if (this.editing_id === id) {
+                    this.editing_id = null
+                    this.edit_data = {
+                        hour: null,
+                        from: '',
+                        until: '',
+                    }
+                }
+                this.delete_dialog_open = false
+                this.delete_id = null
+            })
         },
     },
 }

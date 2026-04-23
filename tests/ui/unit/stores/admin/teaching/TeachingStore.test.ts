@@ -17,7 +17,7 @@ describe('TeachingStore', () => {
     const adminStoreMock = {
         is_loading: 0,
         config: {
-            user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null, teaching_grade_columns: null },
+            user: { teaching_active_semester: 1, teaching_count_for_semester_2_date: null, teaching_grade_columns: null, teaching_student_grade_columns: null },
             selected_schoolyear: { sem_2_start: '2026-02-10' },
         },
     }
@@ -35,6 +35,7 @@ describe('TeachingStore', () => {
         adminStoreMock.config.user.teaching_active_semester = 1
         adminStoreMock.config.user.teaching_count_for_semester_2_date = null
         adminStoreMock.config.user.teaching_grade_columns = null
+        adminStoreMock.config.user.teaching_student_grade_columns = null
         adminStoreMock.config.selected_schoolyear.sem_2_start = '2026-02-10'
         axiosMock.get.mockReset()
         axiosMock.post.mockReset()
@@ -299,6 +300,11 @@ describe('TeachingStore', () => {
                 show_sem2: false,
                 show_year: true,
             },
+            teaching_student_grade_columns: {
+                show_sem1: false,
+                show_sem2: true,
+                show_year: true,
+            },
         }
 
         axiosMock.post
@@ -319,6 +325,11 @@ describe('TeachingStore', () => {
         expect(adminStoreMock.config.user.teaching_grade_columns).toEqual({
             show_sem1: true,
             show_sem2: false,
+            show_year: true,
+        })
+        expect(adminStoreMock.config.user.teaching_student_grade_columns).toEqual({
+            show_sem1: false,
+            show_sem2: true,
             show_year: true,
         })
         expect(notifyMock).toHaveBeenCalledWith({
@@ -350,6 +361,11 @@ describe('TeachingStore', () => {
                 show_sem2: true,
                 show_year: false,
             },
+            teaching_student_grade_columns: {
+                show_sem1: true,
+                show_sem2: false,
+                show_year: true,
+            },
         }
 
         axiosMock.post.mockResolvedValueOnce({ data: { settings: savedSettings } })
@@ -364,6 +380,7 @@ describe('TeachingStore', () => {
         expect(success).toBe(true)
         expect(store.settings).toEqual(savedSettings)
         expect(adminStoreMock.config.user.teaching_grade_columns).toEqual(savedSettings.teaching_grade_columns)
+        expect(adminStoreMock.config.user.teaching_student_grade_columns).toEqual(savedSettings.teaching_student_grade_columns)
         expect(notifyMock).not.toHaveBeenCalledWith(expect.objectContaining({
             message: 'Einstellungen gespeichert.',
             type: 'success',

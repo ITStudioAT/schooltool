@@ -49,11 +49,16 @@ describe('Notifications settings edit flow', () => {
             data: { short_name: 'NEU', name: 'Neu' },
             edit_index: 0,
             action: 'teaching_notifications_new_or_edit',
+            notification_save_action: null,
+            $nextTick: async () => {},
             teachingStore: {
                 saveSettings: async (input: Record<string, unknown>) => {
                     payload = input
                     return true
                 },
+            },
+            runNotificationSettingsMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runNotificationSettingsMutation.call(this, action, callback)
             },
         }
 
@@ -77,11 +82,16 @@ describe('Notifications settings edit flow', () => {
             ],
             delete_index: null,
             notifications_delete_dialog_open: false,
+            notification_save_action: null,
+            $nextTick: async () => {},
             teachingStore: {
                 saveSettings: async (input: Record<string, unknown>) => {
                     payload = input
                     return true
                 },
+            },
+            runNotificationSettingsMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runNotificationSettingsMutation.call(this, action, callback)
             },
             closeDeleteDialog: () => {
                 ctx.notifications_delete_dialog_open = false
@@ -202,8 +212,8 @@ describe('Notifications settings edit flow', () => {
         expect(source).toContain('Beim Löschen werden auch alle betroffenen Verständigungen der Schüler:innen entfernt.')
         expect(source).toContain('@click="openDeleteDialog(index)"')
         expect(source).toContain('{{ notificationsUsageCountForEntry(entry) }} Einträge')
-        expect(source).toContain('color="warning" icon="mdi-delete" @click="openDeleteDialog(index)"')
-        expect(source).toContain('color="primary" icon="mdi-pencil" @click="editEntry(index)"')
+        expect(source).toContain('color="warning" icon="mdi-delete"')
+        expect(source).toContain('color="primary" icon="mdi-pencil"')
         expect(source).not.toContain('v-if="is_editing"')
         expect(source).not.toContain('ItsMenuButton')
         expect(source).toContain('Diese Verständigungen werden bereits verwendet:')
@@ -237,5 +247,8 @@ describe('Notifications settings edit flow', () => {
         expect(source).toContain('notifications_reset_dialog_open: false')
         expect(source).toContain('notifications_import_loading: false')
         expect(source).toContain('notifications_reset_loading: false')
+        expect(source).toContain('runNotificationSettingsMutation(action, callback) {')
+        expect(source).toContain("await this.runNotificationSettingsMutation('save', async () => {")
+        expect(source).toContain("await this.runNotificationSettingsMutation('delete', async () => {")
     })
 })

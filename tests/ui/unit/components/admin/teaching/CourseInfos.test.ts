@@ -207,6 +207,56 @@ describe('CourseInfos course-specific definitions', () => {
         })
     })
 
+    it('restores student-visible grade columns from the saved settings', () => {
+        const methods = (CourseInfos as any).methods
+        const ctx: Record<string, unknown> = {
+            student_grade_visibility_show_sem1: false,
+            student_grade_visibility_show_sem2: false,
+            student_grade_visibility_show_year: false,
+            restoringStudentGradeColumns: false,
+        }
+
+        methods.restoreStudentGradeColumns.call(ctx, {
+            show_sem1: false,
+            show_sem2: true,
+            show_year: true,
+        })
+
+        expect(ctx.student_grade_visibility_show_sem1).toBe(false)
+        expect(ctx.student_grade_visibility_show_sem2).toBe(true)
+        expect(ctx.student_grade_visibility_show_year).toBe(true)
+    })
+
+    it('persists student-visible grade columns separately from the teacher infos view', async () => {
+        const methods = (CourseInfos as any).methods
+        const saveSettings = vi.fn().mockResolvedValue(true)
+        const ctx: Record<string, unknown> = {
+            teachingStore: { saveSettings },
+            student_grade_visibility_show_sem1: true,
+            student_grade_visibility_show_sem2: false,
+            student_grade_visibility_show_year: true,
+            currentStudentGradeColumns: methods.currentStudentGradeColumns,
+            gradeColumnsMatch: methods.gradeColumnsMatch,
+            persistedStudentGradeColumns: {
+                show_sem1: false,
+                show_sem2: false,
+                show_year: false,
+            },
+        }
+
+        await methods.persistStudentGradeColumns.call(ctx)
+
+        expect(saveSettings).toHaveBeenCalledWith({
+            teaching_student_grade_columns: {
+                show_sem1: true,
+                show_sem2: false,
+                show_year: true,
+            },
+        }, {
+            notifySuccess: false,
+        })
+    })
+
     it('treats semester two and year columns as hidden for one-semester schemas', () => {
         const computed = (CourseInfos as any).computed
         const ctx = {
@@ -235,5 +285,20 @@ describe('CourseInfos course-specific definitions', () => {
 
         expect(ensureCourseStudentCollections).toHaveBeenCalledWith(ctx.selected_course)
         expect(loadGradeData).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders a dedicated student visibility section for calculated grades', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('Für Schüler:innen sichtbar')
+        expect(source).toContain('Diese Auswahl steuert ausschließlich die Berechnungen im Schüler:innen-Bereich.')
+        expect(source).toContain('student_grade_visibility_show_sem1')
+        expect(source).toContain('student_grade_visibility_show_sem2')
+        expect(source).toContain('student_grade_visibility_show_year')
+        expect(source).toContain('teaching_student_grade_columns')
     })
 })

@@ -3,6 +3,14 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import WorksAndGrades from '@/pages/admin/teaching/settings/components/WorksAndGrades.vue'
 
+function buildSaveContext(ctx: Record<string, any>): Record<string, any> {
+    return {
+        is_saving_settings: false,
+        $nextTick: async () => {},
+        ...ctx,
+    }
+}
+
 describe('Works and grades settings edit flow', () => {
     it('renders separate point tables for semester sums and per-work points', () => {
         const componentPath = resolve(
@@ -144,7 +152,7 @@ describe('Works and grades settings edit flow', () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
-        const ctx: Record<string, any> = {
+        const ctx = buildSaveContext({
             schemaId: 'schema-1',
             settings: {
                 teaching_schemas: [
@@ -202,7 +210,7 @@ describe('Works and grades settings edit flow', () => {
             sortedGrades: methods.sortedGrades,
             ensureValidDefaultGrade: methods.ensureValidDefaultGrade,
             normalizeGradeKey: methods.normalizeGradeKey,
-        }
+        })
 
         await methods.save.call(ctx)
 
@@ -236,7 +244,7 @@ describe('Works and grades settings edit flow', () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
-        const ctx: Record<string, any> = {
+        const ctx = buildSaveContext({
             schemaId: 'schema-1',
             settings: {
                 teaching_schemas: [
@@ -285,7 +293,7 @@ describe('Works and grades settings edit flow', () => {
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
             normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
-        }
+        })
 
         await methods.save.call(ctx)
 
@@ -319,7 +327,7 @@ describe('Works and grades settings edit flow', () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
-        const ctx: Record<string, any> = {
+        const ctx = buildSaveContext({
             schemaId: 'schema-1',
             settings: {
                 teaching_schemas: [
@@ -365,7 +373,7 @@ describe('Works and grades settings edit flow', () => {
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
             normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
-        }
+        })
 
         await methods.save.call(ctx)
 
@@ -401,7 +409,7 @@ describe('Works and grades settings edit flow', () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
-        const ctx: Record<string, any> = {
+        const ctx = buildSaveContext({
             schemaId: 'schema-1',
             settings: {
                 teaching_schemas: [
@@ -460,7 +468,7 @@ describe('Works and grades settings edit flow', () => {
             normalizeGradeKey: methods.normalizeGradeKey,
             normalizedPointsTableForSave: methods.normalizedPointsTableForSave,
             normalizedSemesterPointsTableForSave: methods.normalizedSemesterPointsTableForSave,
-        }
+        })
 
         await methods.save.call(ctx)
 
@@ -507,7 +515,7 @@ describe('Works and grades settings edit flow', () => {
         const methods = (WorksAndGrades as any).methods
         let payload: Record<string, unknown> | null = null
 
-        const ctx: Record<string, any> = {
+        const ctx = buildSaveContext({
             schemaId: 'schema-1',
             settings: {
                 teaching_schemas: [
@@ -549,7 +557,7 @@ describe('Works and grades settings edit flow', () => {
             sortedGrades: methods.sortedGrades,
             ensureValidDefaultGrade: methods.ensureValidDefaultGrade,
             normalizeGradeKey: methods.normalizeGradeKey,
-        }
+        })
 
         await methods.save.call(ctx)
 

@@ -1,12 +1,13 @@
 <template>
     <!-- NOTIFICATIONS OVERVIEW -->
-    <ItsGridBox variant="overview" v-if="action !== 'teaching_notifications_new_or_edit'" color="primary" title="Verständigungen" icon="mdi-bell" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" v-if="action !== 'teaching_notifications_new_or_edit'" color="primary" title="Verständigungen" icon="mdi-bell" class="w-100" :disabled="action != '' || isSavingNotificationSettings">
         <template #header-actions>
             <v-btn
                 size="small"
                 color="primary"
                 variant="tonal"
                 prepend-icon="mdi-plus"
+                :disabled="isSavingNotificationSettings"
                 @click="newEntry">
                 Hinzufügen
             </v-btn>
@@ -15,6 +16,7 @@
                 color="warning"
                 variant="text"
                 prepend-icon="mdi-restore"
+                :disabled="isSavingNotificationSettings"
                 @click="openNotificationsResetDialog">
                 Reset
             </v-btn>
@@ -23,6 +25,7 @@
                 color="primary"
                 variant="text"
                 prepend-icon="mdi-import"
+                :disabled="isSavingNotificationSettings"
                 @click="openNotificationsImportDialog">
                 Import
             </v-btn>
@@ -46,8 +49,8 @@
                         </v-chip>
                     </div>
                     <div class="d-flex flex-row align-center ga-1">
-                        <v-btn flat tile size="x-small" color="warning" icon="mdi-delete" @click="openDeleteDialog(index)" />
-                        <v-btn flat tile size="x-small" color="primary" icon="mdi-pencil" @click="editEntry(index)" />
+                        <v-btn flat tile size="x-small" color="warning" icon="mdi-delete" :disabled="isSavingNotificationSettings" @click="openDeleteDialog(index)" />
+                        <v-btn flat tile size="x-small" color="primary" icon="mdi-pencil" :disabled="isSavingNotificationSettings" @click="editEntry(index)" />
                     </div>
                 </div>
                 <v-divider class="mt-2" />
@@ -176,18 +179,18 @@
                     </div>
                 </v-card-text>
                 <v-card-actions class="justify-end">
-                    <v-btn color="warning" variant="flat" @click="confirmDelete">Löschen</v-btn>
-                    <v-btn color="primary" variant="text" @click="closeDeleteDialog">Abbrechen</v-btn>
+                    <v-btn color="warning" variant="flat" :loading="notification_save_action === 'delete'" :disabled="isSavingNotificationSettings" @click="confirmDelete">Löschen</v-btn>
+                    <v-btn color="primary" variant="text" :disabled="isSavingNotificationSettings" @click="closeDeleteDialog">Abbrechen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
     </ItsGridBox>
 
     <!-- EDIT/NEW ENTRY FORM -->
-    <ItsGridBox variant="overview" color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-bell" class="w-100 mt-4" v-if="action == 'teaching_notifications_new_or_edit'">
+    <ItsGridBox variant="overview" color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-bell" class="w-100 mt-4" v-if="action == 'teaching_notifications_new_or_edit'" :disabled="isSavingNotificationSettings">
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!is_valid" @click="save" />
-            <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abort" />
+            <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="notification_save_action === 'save'" :disabled="!is_valid || isSavingNotificationSettings" @click="save" />
+            <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingNotificationSettings" @click="abort" />
         </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>
@@ -240,6 +243,7 @@ export default {
             notifications_delete_dialog_open: false,
             notifications_import_loading: false,
             notifications_reset_loading: false,
+            notification_save_action: null,
         }
     },
 
@@ -247,6 +251,9 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
+        isSavingNotificationSettings() {
+            return this.notification_save_action !== null
+        },
         activeSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || this.config?.selected_schoolyear?.concerns || 'Kein Schuljahr gewählt'
         },
@@ -315,6 +322,20 @@ export default {
     },
 
     methods: {
+        async runNotificationSettingsMutation(action, callback) {
+            if (this.notification_save_action) {
+                return false
+            }
+
+            this.notification_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.notification_save_action = null
+            }
+        },
         normalizeSchoolyearConcern(value) {
             if (typeof value !== 'string') {
                 return ''
@@ -415,28 +436,32 @@ export default {
             return Number(this.notificationsUsageCounts?.[shortName] || 0)
         },
         async save() {
-            const entries = [...this.notification_entries]
+            await this.runNotificationSettingsMutation('save', async () => {
+                const entries = [...this.notification_entries]
 
-            if (this.edit_index !== null) {
-                entries[this.edit_index] = { ...this.data }
-            } else {
-                entries.push({ ...this.data })
-            }
+                if (this.edit_index !== null) {
+                    entries[this.edit_index] = { ...this.data }
+                } else {
+                    entries.push({ ...this.data })
+                }
 
-            await this.teachingStore.saveSettings({ teaching_notifications: entries })
-            this.action = ''
-            this.edit_index = null
+                await this.teachingStore.saveSettings({ teaching_notifications: entries })
+                this.action = ''
+                this.edit_index = null
+            })
         },
         async confirmDelete() {
             if (this.delete_index === null) {
                 return
             }
 
-            const entries = [...this.notification_entries]
-            entries.splice(this.delete_index, 1)
+            await this.runNotificationSettingsMutation('delete', async () => {
+                const entries = [...this.notification_entries]
+                entries.splice(this.delete_index, 1)
 
-            await this.teachingStore.saveSettings({ teaching_notifications: entries })
-            this.closeDeleteDialog()
+                await this.teachingStore.saveSettings({ teaching_notifications: entries })
+                this.closeDeleteDialog()
+            })
         },
     },
 }

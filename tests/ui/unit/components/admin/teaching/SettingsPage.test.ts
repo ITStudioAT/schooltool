@@ -161,6 +161,11 @@ describe('Teaching settings page', () => {
                 saveSettings: saveSettingsMock,
             },
             selected_schema_id: 'schema-standard',
+            schema_settings_saving_action: null,
+            $nextTick: async () => {},
+            runSchemaSettingsMutation(action: string, callback: () => Promise<unknown>) {
+                return (Settings as any).methods.runSchemaSettingsMutation.call(this, action, callback)
+            },
         }
 
         await (Settings as any).methods.newSchema.call(ctx)

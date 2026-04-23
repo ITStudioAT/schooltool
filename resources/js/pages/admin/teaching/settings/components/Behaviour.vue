@@ -1,12 +1,13 @@
 <template>
     <!-- BEHAVIOUR OVERVIEW -->
-    <ItsGridBox variant="overview" v-if="action !== 'teaching_behaviour_new_or_edit'" color="primary" title="Verhalten" icon="mdi-account-alert" class="w-100" :disabled="action != ''">
+    <ItsGridBox variant="overview" v-if="action !== 'teaching_behaviour_new_or_edit'" color="primary" title="Verhalten" icon="mdi-account-alert" class="w-100" :disabled="action != '' || isSavingBehaviourSettings">
         <template #header-actions>
             <v-btn
                 size="small"
                 color="warning"
                 variant="text"
                 prepend-icon="mdi-restore"
+                :disabled="isSavingBehaviourSettings"
                 @click="openBehaviourResetDialog">
                 Reset
             </v-btn>
@@ -15,6 +16,7 @@
                 color="primary"
                 variant="text"
                 prepend-icon="mdi-import"
+                :disabled="isSavingBehaviourSettings"
                 @click="openBehaviourImportDialog">
                 Import
             </v-btn>
@@ -34,6 +36,7 @@
                 color="primary"
                 variant="tonal"
                 prepend-icon="mdi-plus"
+                :disabled="isSavingBehaviourSettings"
                 @click="newEntry">
                 Hinzufügen
             </v-btn>
@@ -50,8 +53,8 @@
                         </v-chip>
                     </div>
                     <div class="d-flex flex-row align-center ga-1">
-                        <v-btn flat tile size="x-small" color="warning" icon="mdi-delete" @click="openDeleteDialog(index)" />
-                        <v-btn flat tile size="x-small" color="primary" icon="mdi-pencil" @click="editEntry(index)" />
+                        <v-btn flat tile size="x-small" color="warning" icon="mdi-delete" :disabled="isSavingBehaviourSettings" @click="openDeleteDialog(index)" />
+                        <v-btn flat tile size="x-small" color="primary" icon="mdi-pencil" :disabled="isSavingBehaviourSettings" @click="editEntry(index)" />
                     </div>
                 </div>
                 <v-divider class="mt-2" />
@@ -180,18 +183,18 @@
                     </div>
                 </v-card-text>
                 <v-card-actions class="justify-end">
-                    <v-btn color="warning" variant="flat" @click="confirmDelete">Löschen</v-btn>
-                    <v-btn color="primary" variant="text" @click="closeDeleteDialog">Abbrechen</v-btn>
+                    <v-btn color="warning" variant="flat" :loading="behaviour_save_action === 'delete'" :disabled="isSavingBehaviourSettings" @click="confirmDelete">Löschen</v-btn>
+                    <v-btn color="primary" variant="text" :disabled="isSavingBehaviourSettings" @click="closeDeleteDialog">Abbrechen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
     </ItsGridBox>
 
     <!-- EDIT/NEW ENTRY FORM -->
-    <ItsGridBox variant="overview" color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-account-alert" class="w-100 mt-4" v-if="action == 'teaching_behaviour_new_or_edit'">
+    <ItsGridBox variant="overview" color="primary" :title="edit_index !== null ? 'Eintrag ändern' : 'Neuer Eintrag'" icon="mdi-account-alert" class="w-100 mt-4" v-if="action == 'teaching_behaviour_new_or_edit'" :disabled="isSavingBehaviourSettings">
         <div class="d-flex flex-row align-center justify-end mt-2 ga-2">
-            <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :disabled="!is_valid" @click="save" />
-            <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="abort" />
+            <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="behaviour_save_action === 'save'" :disabled="!is_valid || isSavingBehaviourSettings" @click="save" />
+            <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingBehaviourSettings" @click="abort" />
         </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text>
@@ -244,6 +247,7 @@ export default {
             behaviour_delete_dialog_open: false,
             behaviour_import_loading: false,
             behaviour_reset_loading: false,
+            behaviour_save_action: null,
         }
     },
 
@@ -251,6 +255,9 @@ export default {
         ...mapWritableState(useAdminStore, ['action', 'config']),
         ...mapWritableState(useTeachingStore, ['settings']),
         ...mapWritableState(useSchoolyearStore, ['schoolyears']),
+        isSavingBehaviourSettings() {
+            return this.behaviour_save_action !== null
+        },
         activeSchoolyearLabel() {
             return this.config?.selected_schoolyear?.name || this.config?.selected_schoolyear?.concerns || 'Kein Schuljahr gewählt'
         },
@@ -319,6 +326,20 @@ export default {
     },
 
     methods: {
+        async runBehaviourSettingsMutation(action, callback) {
+            if (this.behaviour_save_action) {
+                return false
+            }
+
+            this.behaviour_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.behaviour_save_action = null
+            }
+        },
         normalizeSchoolyearConcern(value) {
             if (typeof value !== 'string') {
                 return ''
@@ -421,17 +442,19 @@ export default {
         },
 
         async save() {
-            const entries = [...this.behaviour_entries]
+            await this.runBehaviourSettingsMutation('save', async () => {
+                const entries = [...this.behaviour_entries]
 
-            if (this.edit_index !== null) {
-                entries[this.edit_index] = { ...this.data }
-            } else {
-                entries.push({ ...this.data })
-            }
+                if (this.edit_index !== null) {
+                    entries[this.edit_index] = { ...this.data }
+                } else {
+                    entries.push({ ...this.data })
+                }
 
-            await this.teachingStore.saveSettings({ teaching_behaviour: entries })
-            this.action = ''
-            this.edit_index = null
+                await this.teachingStore.saveSettings({ teaching_behaviour: entries })
+                this.action = ''
+                this.edit_index = null
+            })
         },
 
         async confirmDelete() {
@@ -439,11 +462,13 @@ export default {
                 return
             }
 
-            const entries = [...this.behaviour_entries]
-            entries.splice(this.delete_index, 1)
+            await this.runBehaviourSettingsMutation('delete', async () => {
+                const entries = [...this.behaviour_entries]
+                entries.splice(this.delete_index, 1)
 
-            await this.teachingStore.saveSettings({ teaching_behaviour: entries })
-            this.closeDeleteDialog()
+                await this.teachingStore.saveSettings({ teaching_behaviour: entries })
+                this.closeDeleteDialog()
+            })
         },
     },
 }

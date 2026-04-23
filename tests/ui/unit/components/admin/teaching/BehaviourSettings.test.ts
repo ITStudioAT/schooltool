@@ -62,11 +62,16 @@ describe('Behaviour settings edit flow', () => {
             data: { short_name: 'NEU', name: 'Neu' },
             edit_index: 0,
             action: 'teaching_behaviour_new_or_edit',
+            behaviour_save_action: null,
+            $nextTick: async () => {},
             teachingStore: {
                 saveSettings: async (input: Record<string, unknown>) => {
                     payload = input
                     return true
                 },
+            },
+            runBehaviourSettingsMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runBehaviourSettingsMutation.call(this, action, callback)
             },
         }
 
@@ -90,11 +95,16 @@ describe('Behaviour settings edit flow', () => {
             ],
             delete_index: null,
             behaviour_delete_dialog_open: false,
+            behaviour_save_action: null,
+            $nextTick: async () => {},
             teachingStore: {
                 saveSettings: async (input: Record<string, unknown>) => {
                     payload = input
                     return true
                 },
+            },
+            runBehaviourSettingsMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runBehaviourSettingsMutation.call(this, action, callback)
             },
             closeDeleteDialog: () => {
                 ctx.behaviour_delete_dialog_open = false

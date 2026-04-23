@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import CourseStudent from '@/pages/admin/teaching/overview/components/CourseStudent.vue'
 
 describe('CourseStudent date handling', () => {
@@ -78,6 +78,7 @@ describe('CourseStudent date handling', () => {
     it('saves created entry with stable YYYY-MM-DD date', async () => {
         const methods = (CourseStudent as any).methods
         let savedPayload: any = null
+        let continueNextTick: (() => void) | null = null
         const ctx: Record<string, unknown> = {
             selected_course: { id: 77 },
             selected_course_student: { id: 88 },
@@ -95,16 +96,29 @@ describe('CourseStudent date handling', () => {
                 },
                 update: async () => true,
             },
+            saving_action_key: null,
+            $nextTick: vi.fn(() => new Promise<void>((resolve) => {
+                continueNextTick = resolve
+            })),
             normalizeDateString: methods.normalizeDateString,
             toDateString: methods.toDateString,
+            runStudentMutation(action: string, callback: () => Promise<unknown>) {
+                return methods.runStudentMutation.call(this, action, callback)
+            },
             loadEntries: async () => true,
             abortEntry: () => true,
         }
 
-        await methods.saveEntry.call(ctx)
+        const savePromise = methods.saveEntry.call(ctx)
+
+        expect(ctx.saving_action_key).toBe('save-entry')
+
+        continueNextTick?.()
+        await savePromise
 
         expect(savedPayload).toBeTruthy()
         expect(savedPayload.date).toBe('2026-02-15')
+        expect(ctx.saving_action_key).toBeNull()
     })
 })
 

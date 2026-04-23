@@ -738,7 +738,7 @@ export default {
             }
         },
         teacherCalculatedGradeColumns() {
-            const columns = this.course?.teacher_teaching_grade_columns
+            const columns = this.course?.teacher_teaching_student_grade_columns ?? this.course?.teacher_teaching_grade_columns
 
             return {
                 show_sem1: Boolean(columns?.show_sem1),

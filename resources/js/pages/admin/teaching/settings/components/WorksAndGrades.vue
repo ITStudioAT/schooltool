@@ -280,6 +280,7 @@ export default {
             grade_dialog_original_grade: null,
             grade_delete_dialog: false,
             grade_delete_item: null,
+            is_saving_settings: false,
         }
     },
 
@@ -292,7 +293,7 @@ export default {
             return [...works].sort((a, b) => (a.short_name || '').localeCompare(b.short_name || '', 'de'))
         },
         any_dialog_open() {
-            return this.delete_dialog || this.grade_dialog || this.grade_delete_dialog
+            return this.delete_dialog || this.grade_dialog || this.grade_delete_dialog || this.is_saving_settings
         },
         pointsNoteGrades() {
             return this.pointsNoteGradesFor(this.data.grades || [])
@@ -772,6 +773,11 @@ export default {
         },
 
         async save() {
+            if (this.is_saving_settings) return
+            this.is_saving_settings = true
+            await this.$nextTick()
+
+            try {
             const schemas = [...(this.settings?.teaching_schemas || [])]
             const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
             if (schemaIndex === -1) return
@@ -809,9 +815,17 @@ export default {
             await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.action = ''
             this.edit_index = null
+            } finally {
+                this.is_saving_settings = false
+            }
         },
 
         async deleteWork(index) {
+            if (this.is_saving_settings) return
+            this.is_saving_settings = true
+            await this.$nextTick()
+
+            try {
             const schemas = [...(this.settings?.teaching_schemas || [])]
             const schemaIndex = schemas.findIndex((s) => s.id === this.schemaId)
             if (schemaIndex === -1) return
@@ -822,6 +836,9 @@ export default {
             schemas[schemaIndex] = { ...schemas[schemaIndex], works }
             await this.teachingStore.saveSettings({ teaching_schemas: schemas })
             this.delete_index = null
+            } finally {
+                this.is_saving_settings = false
+            }
         },
         normalizeGradeKey(gradeKey) {
             return String(gradeKey || '').trim().toUpperCase()

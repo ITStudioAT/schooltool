@@ -5,15 +5,15 @@
         icon="mdi-calendar"
         class="w-100"
         v-if="selected_course"
-        :disabled="action != '' && action != 'new_course_dates' && action != 'edit_course_date_content'">
+        :disabled="isGridDisabled">
         <template #title>
             <div>Termine – {{ selected_course.title }} ({{ selectedCourseClasses }})</div>
         </template>
         <template #header-actions>
-            <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || action === 'new_course_dates'" />
+            <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'" />
             <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_dates = false" />
         </template>
-        <v-card tile flat color="transparent" class="w-100" :disabled="action != ''">
+        <v-card tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <div class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
                     <v-btn-toggle v-if="!compactStudentView && semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
@@ -52,7 +52,7 @@
                     <v-list-item
                         v-for="courseDate in displayedCourseDates"
                         :key="courseDate.id"
-                        :disabled="isEditingContent && editing_content_id !== courseDate.id"
+                        :disabled="(isEditingContent && editing_content_id !== courseDate.id) || isSavingContent"
                         :class="courseDateRowClass(courseDate)"
                         :style="courseDateHighlightStyle(courseDate)">
                         <div class="d-flex flex-column ga-2 w-100 cursor-pointer" @click="selectCourseDate(courseDate)">
@@ -108,7 +108,8 @@
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'entfaellt') ? 'success' : 'default'"
                                         :variant="hasStatus(courseDate, 'entfaellt') ? 'flat' : 'outlined'"
-                                        :disabled="isEditingContent"
+                                        :disabled="isBusyDateUi"
+                                        :loading="isDateMutationPending('toggle-status', courseDate.id)"
                                         title="Entfällt (kursspezifisch)"
                                         @click="toggleStatus(courseDate, 'entfaellt')">
                                         E
@@ -117,7 +118,8 @@
                                         size="x-small"
                                         :color="hasStatus(courseDate, 'pruefung') ? 'warning' : 'default'"
                                         :variant="hasStatus(courseDate, 'pruefung') ? 'flat' : 'outlined'"
-                                        :disabled="isEditingContent"
+                                        :disabled="isBusyDateUi"
+                                        :loading="isDateMutationPending('toggle-status', courseDate.id)"
                                         @click="toggleStatus(courseDate, 'pruefung')">
                                         P
                                     </v-btn>
@@ -126,7 +128,7 @@
                                         size="x-small"
                                         color="primary"
                                         variant="tonal"
-                                        :disabled="isEditingContent"
+                                        :disabled="isEditingContent || isSavingContent"
                                         @click="startEditContent(courseDate)" />
                                     <v-btn
                                         v-if="delete_date_id !== courseDate.id"
@@ -134,7 +136,7 @@
                                         size="x-small"
                                         color="warning"
                                         variant="tonal"
-                                        :disabled="isEditingContent"
+                                        :disabled="isEditingContent || isSavingContent"
                                         @click="delete_date_id = courseDate.id" />
                                     <v-btn
                                         v-if="delete_date_id === courseDate.id"
@@ -142,7 +144,7 @@
                                         size="x-small"
                                         color="success"
                                         variant="tonal"
-                                        :disabled="isEditingContent"
+                                        :disabled="isEditingContent || isSavingContent"
                                         @click="delete_date_id = null" />
                                     <v-btn
                                         v-if="delete_date_id === courseDate.id"
@@ -150,7 +152,8 @@
                                         size="x-small"
                                         color="error"
                                         variant="tonal"
-                                        :disabled="isEditingContent"
+                                        :disabled="isBusyDateUi"
+                                        :loading="isDateMutationPending('delete-date', courseDate.id)"
                                         @click="deleteDate(courseDate)" />
                                 </div>
                             </div>
@@ -161,10 +164,18 @@
                                 <div v-else class="d-flex flex-column ga-2">
                                     <ItsRichTextEditor
                                         v-model="content_drafts[courseDate.id]"
+                                        :disabled="isSavingContent"
                                         :ref="`contentField-${courseDate.id}`" />
                                     <div class="d-flex align-center ga-2">
-                                        <v-btn size="x-small" color="warning" variant="flat" @click="cancelEditContent(courseDate)" icon="mdi-close" />
-                                        <v-btn size="x-small" color="success" variant="flat" @click="saveContent(courseDate)" icon="mdi-content-save" />
+                                        <v-btn size="x-small" color="warning" variant="flat" @click="cancelEditContent(courseDate)" icon="mdi-close" :disabled="isSavingContent" />
+                                        <v-btn
+                                            size="x-small"
+                                            color="success"
+                                            variant="flat"
+                                            @click="saveContent(courseDate)"
+                                            icon="mdi-content-save"
+                                            :disabled="isSavingContent"
+                                            :loading="saving_content_id === courseDate.id" />
                                     </div>
                                 </div>
                             </div>
@@ -250,8 +261,8 @@
                     </div>
 
                     <div class="d-flex flex-row align-center justify-space-between mt-4">
-                        <v-btn color="warning" flat tile @click="abortNewCourseDates">Abbruch</v-btn>
-                        <v-btn color="success" flat tile type="submit" v-if="data.hours.length >= 1">Erstellen</v-btn>
+                        <v-btn color="warning" flat tile :disabled="isBusyDateUi" @click="abortNewCourseDates">Abbruch</v-btn>
+                        <v-btn color="success" flat tile type="submit" :loading="isDateMutationPending('create-dates')" :disabled="isBusyDateUi" v-if="data.hours.length >= 1">Erstellen</v-btn>
                     </div>
                 </v-card-text>
             </v-form>
@@ -312,6 +323,9 @@ export default {
             collapsed_content_ids: [],
             expanded_content_ids: [],
             editing_content_id: null,
+            saving_content_id: null,
+            pending_date_mutation_action: null,
+            pending_date_mutation_id: null,
             content_drafts: {},
             dateRangeSelection: ['today'],
             data: {
@@ -460,6 +474,18 @@ export default {
         isEditingContent() {
             return this.action === 'edit_course_date_content'
         },
+        isSavingContent() {
+            return this.saving_content_id !== null
+        },
+        isSavingDateMutation() {
+            return this.pending_date_mutation_action !== null
+        },
+        isBusyDateUi() {
+            return this.isSavingContent || this.isSavingDateMutation
+        },
+        isGridDisabled() {
+            return this.isBusyDateUi || (this.action != '' && this.action != 'new_course_dates' && this.action != 'edit_course_date_content')
+        },
     },
 
     watch: {
@@ -499,6 +525,33 @@ export default {
     },
 
     methods: {
+        async runDateMutation(action, callback, courseDateId = null) {
+            if (this.isBusyDateUi) {
+                return false
+            }
+
+            this.pending_date_mutation_action = action
+            this.pending_date_mutation_id = courseDateId
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.pending_date_mutation_action = null
+                this.pending_date_mutation_id = null
+            }
+        },
+        isDateMutationPending(action, courseDateId = null) {
+            if (this.pending_date_mutation_action !== action) {
+                return false
+            }
+
+            if (courseDateId === null) {
+                return true
+            }
+
+            return String(this.pending_date_mutation_id) === String(courseDateId)
+        },
         getWeekday(date) {
             if (!date) return ''
             const d = parseLocalDate(date)
@@ -544,25 +597,30 @@ export default {
             this.action = 'new_course_dates'
         },
         abortNewCourseDates() {
+            if (this.isBusyDateUi) return
             this.action = ''
         },
         async createDates(data) {
             if (!this.$refs.form.validate()) return
 
-            data.course_id = this.selected_course.id
-            await this.courseDateStore.store(data)
-            await this.courseStore.index()
+            await this.runDateMutation('create-dates', async () => {
+                data.course_id = this.selected_course.id
+                await this.courseDateStore.store(data)
+                await this.courseStore.index()
 
-            this.data = { from: '', until: '', interval: 1, hours: [] }
-            this.action = ''
+                this.data = { from: '', until: '', interval: 1, hours: [] }
+                this.action = ''
+            })
         },
         async deleteDate(courseDate) {
-            await this.courseDateStore.destroy(courseDate.id)
-            await this.courseStore.index()
-            if (this.selected_courseDate?.id === courseDate.id) {
-                this.selected_courseDate = null
-            }
-            this.delete_date_id = null
+            await this.runDateMutation('delete-date', async () => {
+                await this.courseDateStore.destroy(courseDate.id)
+                await this.courseStore.index()
+                if (this.selected_courseDate?.id === courseDate.id) {
+                    this.selected_courseDate = null
+                }
+                this.delete_date_id = null
+            }, courseDate.id)
         },
         hasStatus(courseDate, status) {
             return Array.isArray(courseDate.status) && courseDate.status.includes(status)
@@ -595,6 +653,7 @@ export default {
             return { backgroundColor: '#e3f2fd', borderLeft: '3px solid #1976d2' }
         },
         selectCourseDate(courseDate) {
+            if (this.isBusyDateUi) return
             if (!courseDate) return
             if (this.selected_courseDate?.id === courseDate.id) {
                 this.selected_courseDate = null
@@ -618,8 +677,10 @@ export default {
             } else {
                 newStatus.splice(index, 1)
             }
-            await this.courseDateStore.updateStatus(courseDate.id, newStatus)
-            await this.courseStore.index()
+            await this.runDateMutation('toggle-status', async () => {
+                await this.courseDateStore.updateStatus(courseDate.id, newStatus)
+                await this.courseStore.index()
+            }, courseDate.id)
         },
         toggleContents() {
             this.show_contents = !this.show_contents
@@ -655,6 +716,7 @@ export default {
             return this.expanded_content_ids.includes(courseDateId)
         },
         startEditContent(courseDate) {
+            if (this.isSavingContent) return
             if (this.action && this.action !== 'edit_course_date_content') return
             this.action = 'edit_course_date_content'
             this.editing_content_id = courseDate.id
@@ -667,6 +729,7 @@ export default {
             })
         },
         cancelEditContent(courseDate) {
+            if (this.isSavingContent) return
             this.editing_content_id = null
             this.content_drafts = {
                 ...this.content_drafts,
@@ -675,22 +738,31 @@ export default {
             this.action = ''
         },
         async saveContent(courseDate) {
+            if (this.isBusyDateUi) return
+            this.saving_content_id = courseDate.id
+            await this.$nextTick()
+
             const content = this.content_drafts[courseDate.id] ?? ''
             const payload = {
                 id: courseDate.id,
                 date: courseDate.date,
                 content,
             }
-            const result = await this.courseDateStore.update(payload)
-            if (result) {
-                await this.courseStore.index()
-                this.editing_content_id = null
-                if (this.show_contents) {
-                    this.collapsed_content_ids = this.collapsed_content_ids.filter((id) => id !== courseDate.id)
-                } else if (!this.expanded_content_ids.includes(courseDate.id)) {
-                    this.expanded_content_ids = [...this.expanded_content_ids, courseDate.id]
+
+            try {
+                const result = await this.courseDateStore.update(payload)
+                if (result) {
+                    await this.courseStore.index()
+                    this.editing_content_id = null
+                    if (this.show_contents) {
+                        this.collapsed_content_ids = this.collapsed_content_ids.filter((id) => id !== courseDate.id)
+                    } else if (!this.expanded_content_ids.includes(courseDate.id)) {
+                        this.expanded_content_ids = [...this.expanded_content_ids, courseDate.id]
+                    }
+                    this.action = ''
                 }
-                this.action = ''
+            } finally {
+                this.saving_content_id = null
             }
         },
         focusContentField(courseDateId) {

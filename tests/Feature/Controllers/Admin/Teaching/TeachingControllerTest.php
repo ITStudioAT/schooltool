@@ -665,6 +665,7 @@ describe('settings and semester endpoints', function () {
                     'teaching_notifications',
                     'teaching_show_behaviour',
                     'teaching_grade_columns',
+                    'teaching_student_grade_columns',
                 ],
             ]);
 
@@ -683,7 +684,10 @@ describe('settings and semester endpoints', function () {
             ->and($response->json('settings.teaching_show_behaviour'))->toBeTrue()
             ->and($response->json('settings.teaching_grade_columns.show_sem1'))->toBeFalse()
             ->and($response->json('settings.teaching_grade_columns.show_sem2'))->toBeFalse()
-            ->and($response->json('settings.teaching_grade_columns.show_year'))->toBeFalse();
+            ->and($response->json('settings.teaching_grade_columns.show_year'))->toBeFalse()
+            ->and($response->json('settings.teaching_student_grade_columns.show_sem1'))->toBeFalse()
+            ->and($response->json('settings.teaching_student_grade_columns.show_sem2'))->toBeFalse()
+            ->and($response->json('settings.teaching_student_grade_columns.show_year'))->toBeFalse();
 
         $this->assertDatabaseCount('teaching_schemas', 1);
         $this->assertDatabaseHas('teaching_schemas', [
@@ -1552,6 +1556,31 @@ describe('settings and semester endpoints', function () {
             ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeTrue()
             ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem2"))->toBeFalse()
             ->and(data_get($this->admin->teaching_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
+    });
+
+    test('save_settings persists teaching student grade column visibility by schoolyear', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $payload = validTeachingSettingsPayload('schema-student-grade-columns');
+        $payload['teaching_student_grade_columns'] = [
+            'show_sem1' => false,
+            'show_sem2' => true,
+            'show_year' => true,
+        ];
+
+        $response = $this->postJson('/api/admin/teaching/save_settings', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('settings.teaching_student_grade_columns.show_sem1', false)
+            ->assertJsonPath('settings.teaching_student_grade_columns.show_sem2', true)
+            ->assertJsonPath('settings.teaching_student_grade_columns.show_year', true);
+
+        $this->admin->refresh();
+
+        expect($this->admin->teaching_student_grade_columns_by_schoolyear)->toBeArray()
+            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem1"))->toBeFalse()
+            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_sem2"))->toBeTrue()
+            ->and(data_get($this->admin->teaching_student_grade_columns_by_schoolyear, "{$this->schoolyear->id}.show_year"))->toBeTrue();
     });
 
     test('save_settings persists category evaluation values inside schema grading', function () {

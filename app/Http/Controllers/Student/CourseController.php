@@ -205,7 +205,7 @@ class CourseController extends Controller
             ->keyBy(fn (TeachingSchoolHour $schoolHour): int => (int) $schoolHour->hour);
 
         // Get the course
-        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date,teaching_grade_columns_by_schoolyear')
+        $course = TeachingCourse::with('user:id,first_name,last_name,short,email,teaching_notifications_by_schoolyear,teaching_behaviour_by_schoolyear,teaching_show_behaviour,teaching_count_for_semester_2_date,teaching_grade_columns_by_schoolyear,teaching_student_grade_columns_by_schoolyear')
             ->withCount([
                 'teachingCourseStudents as active_students_count' => function ($query) {
                     $query->whereNull('canceled_at');
@@ -320,6 +320,7 @@ class CourseController extends Controller
             'teacher_teaching_notifications' => $this->teachingNotificationsForSchoolyear($course->user, $course->schoolyear_id),
             'teacher_teaching_behaviour' => $showBehaviour ? $this->teachingBehaviourForSchoolyear($course->user, $course->schoolyear_id) : [],
             'teacher_teaching_grade_columns' => $this->teachingGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
+            'teacher_teaching_student_grade_columns' => $this->teachingStudentGradeColumnsForSchoolyear($course->user, $course->schoolyear_id),
             'classes' => $course->classes,
             'students_count' => (int) ($course->active_students_count ?? 0),
             'stars' => $studentData->stars ?? [],
@@ -400,6 +401,36 @@ class CourseController extends Controller
         }
 
         $columns = $user->teaching_grade_columns_by_schoolyear[(string) $schoolyearId] ?? null;
+
+        if (! is_array($columns)) {
+            return [
+                'show_sem1' => false,
+                'show_sem2' => false,
+                'show_year' => false,
+            ];
+        }
+
+        return [
+            'show_sem1' => (bool) ($columns['show_sem1'] ?? false),
+            'show_sem2' => (bool) ($columns['show_sem2'] ?? false),
+            'show_year' => (bool) ($columns['show_year'] ?? false),
+        ];
+    }
+
+    /**
+     * @return array{show_sem1: bool, show_sem2: bool, show_year: bool}
+     */
+    private function teachingStudentGradeColumnsForSchoolyear(?User $user, ?int $schoolyearId): array
+    {
+        if (! $user || $schoolyearId === null || ! is_array($user->teaching_student_grade_columns_by_schoolyear)) {
+            return [
+                'show_sem1' => false,
+                'show_sem2' => false,
+                'show_year' => false,
+            ];
+        }
+
+        $columns = $user->teaching_student_grade_columns_by_schoolyear[(string) $schoolyearId] ?? null;
 
         if (! is_array($columns)) {
             return [

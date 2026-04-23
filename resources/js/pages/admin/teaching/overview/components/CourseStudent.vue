@@ -1,5 +1,5 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Schüler:in" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" title="Schüler:in" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != '' || isSavingMutation">
         <template #header-actions>
             <v-btn-toggle v-if="semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">1. Sem</v-btn>
@@ -62,8 +62,8 @@
                                     <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
                                 </template>
                                 <v-text-field v-else v-model="behaviour_grade_form.behaviour_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
-                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveBehaviourGrades" />
-                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_behaviour_grades = false" />
+                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="isSavingAction('save-behaviour-grades')" :disabled="isSavingMutation" @click="saveBehaviourGrades" />
+                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingMutation" @click="is_editing_behaviour_grades = false" />
                             </template>
                         </div>
                     </fieldset>
@@ -91,8 +91,8 @@
                                     <v-text-field v-model="grade_form.sem_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
                                 </template>
                                 <v-text-field v-else v-model="grade_form.sem_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
-                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" @click="saveGrades" />
-                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" @click="is_editing_grades = false" />
+                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="isSavingAction('save-grades')" :disabled="isSavingMutation" @click="saveGrades" />
+                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingMutation" @click="is_editing_grades = false" />
                             </template>
                         </div>
                     </fieldset>
@@ -331,12 +331,12 @@
                         <v-form ref="form" @submit.prevent="saveComment">
                             <div class="mb-4">
                                 <label class="text-caption text-medium-emphasis">Kommentar</label>
-                                <ItsRichTextEditor v-model="edit_comment" />
+                                <ItsRichTextEditor v-model="edit_comment" :disabled="isSavingAction('save-comment')" />
                             </div>
 
                             <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile @click="abortEdit">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit">Speichern</v-btn>
+                                <v-btn color="warning" flat tile :disabled="isSavingMutation" @click="abortEdit">Abbruch</v-btn>
+                                <v-btn color="success" flat tile type="submit" :loading="isSavingAction('save-comment')" :disabled="isSavingMutation">Speichern</v-btn>
                             </div>
                         </v-form>
                     </v-card-text>
@@ -575,6 +575,8 @@
                                             size="x-small"
                                             color="success"
                                             variant="tonal"
+                                            :loading="isSavingAction('complete-notification')"
+                                            :disabled="isSavingMutation"
                                             @click="completeNotificationToday(item.entry)" />
                                         <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
                                         <v-btn
@@ -608,7 +610,7 @@
                             <v-icon size="18">mdi-account-alert</v-icon>
                             {{ behaviour_form.id ? entryFormTitleEdit : entryFormTitleNew }}
                             <v-spacer />
-                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortBehaviourEntry" />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="abortBehaviourEntry" />
                         </v-card-title>
                         <v-divider />
                         <v-card-text>
@@ -656,9 +658,9 @@
                         </v-card-text>
                         <v-divider />
                         <v-card-actions>
-                            <v-btn color="warning" variant="tonal" @click="abortBehaviourEntry">Abbruch</v-btn>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="abortBehaviourEntry">Abbruch</v-btn>
                             <v-spacer />
-                            <v-btn color="success" variant="tonal" :disabled="!canSaveBehaviourForm" @click="saveBehaviourEntry">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-behaviour-entry')" :disabled="!canSaveBehaviourForm || isSavingMutation" @click="saveBehaviourEntry">{{ behaviour_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
@@ -669,7 +671,7 @@
                             <v-icon size="18">mdi-clipboard-text</v-icon>
                             {{ entry_form.id ? 'Eintrag bearbeiten' : 'Neuer Eintrag' }}
                             <v-spacer />
-                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortEntry" />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="abortEntry" />
                         </v-card-title>
                         <v-divider />
                         <v-card-text>
@@ -711,9 +713,9 @@
                         </v-card-text>
                         <v-divider />
                         <v-card-actions>
-                            <v-btn color="warning" variant="tonal" @click="abortEntry">Abbruch</v-btn>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="abortEntry">Abbruch</v-btn>
                             <v-spacer />
-                            <v-btn color="success" variant="tonal" @click="saveEntry">{{ entry_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-entry')" :disabled="isSavingMutation" @click="saveEntry">{{ entry_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
@@ -724,7 +726,7 @@
                             <v-icon size="18">mdi-star</v-icon>
                             {{ star_form.id ? 'Stern bearbeiten' : 'Stern vergeben' }}
                             <v-spacer />
-                            <v-btn icon="mdi-close" size="x-small" variant="text" @click="abortStarEntry" />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="abortStarEntry" />
                         </v-card-title>
                         <v-divider />
                         <v-card-text>
@@ -736,9 +738,9 @@
                         </v-card-text>
                         <v-divider />
                         <v-card-actions>
-                            <v-btn color="warning" variant="tonal" @click="abortStarEntry">Abbruch</v-btn>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="abortStarEntry">Abbruch</v-btn>
                             <v-spacer />
-                            <v-btn color="success" variant="tonal" :disabled="!!starFormFrontendError" @click="saveStarEntry">{{ star_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-star-entry')" :disabled="!!starFormFrontendError || isSavingMutation" @click="saveStarEntry">{{ star_form.id ? 'Aktualisieren' : 'Speichern' }}</v-btn>
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
@@ -808,6 +810,7 @@ export default {
             delete_notification_id: null,
             is_editing_behaviour_grades: false,
             behaviour_grade_form: { behaviour_1_grade: '', behaviour_2_grade: '', behaviour_grade: '' },
+            saving_action_key: null,
         }
     },
 
@@ -817,6 +820,9 @@ export default {
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useCourseStudentEntryStore, ['entries']),
         ...mapWritableState(useTeachingStore, ['settings']),
+        isSavingMutation() {
+            return this.saving_action_key !== null
+        },
         behaviourEntries() {
             return (this.behaviourEntryStore?.entries || []).filter((entry) => (entry.kind || 'behaviour') === 'behaviour')
         },
@@ -1363,6 +1369,23 @@ export default {
     },
 
     methods: {
+        async runStudentMutation(action, callback) {
+            if (this.isSavingMutation) {
+                return false
+            }
+
+            this.saving_action_key = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.saving_action_key = null
+            }
+        },
+        isSavingAction(action) {
+            return this.saving_action_key === action
+        },
         normalizeDateKey(date) {
             if (!date) return ''
             // Keep pure date strings as-is; parse date-time strings in local time.
@@ -1471,34 +1494,36 @@ export default {
         },
         async saveGrades() {
             if (!this.selected_course) return
-            this.courseStore.ensureCourseStudentCollections(this.selected_course)
-            const gradeFields =
-                this.semesterCount === 2
-                    ? { sem_1_grade: this.grade_form.sem_1_grade || null, sem_2_grade: this.grade_form.sem_2_grade || null }
-                    : { sem_grade: this.grade_form.sem_grade || null }
+            await this.runStudentMutation('save-grades', async () => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
+                const gradeFields =
+                    this.semesterCount === 2
+                        ? { sem_1_grade: this.grade_form.sem_1_grade || null, sem_2_grade: this.grade_form.sem_2_grade || null }
+                        : { sem_grade: this.grade_form.sem_grade || null }
 
-            const studentsInfo = (this.selected_course.students_info || []).map((student) => {
-                if (student.id === this.selected_course_student.id) {
-                    return { ...student, ...gradeFields }
+                const studentsInfo = (this.selected_course.students_info || []).map((student) => {
+                    if (student.id === this.selected_course_student.id) {
+                        return { ...student, ...gradeFields }
+                    }
+                    return student
+                })
+                const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+                const payload = {
+                    ...this.selected_course,
+                    students: studentsPayload,
+                    students_deleted: this.selected_course.students_deleted || [],
                 }
-                return student
+
+                const ok = await this.courseStore.update(payload)
+                if (ok) {
+                    if (studentsInfo.length) {
+                        this.selected_course.students_info = studentsInfo
+                        this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                    }
+                    this.is_editing_grades = false
+                }
             })
-            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
-
-            const payload = {
-                ...this.selected_course,
-                students: studentsPayload,
-                students_deleted: this.selected_course.students_deleted || [],
-            }
-
-            const ok = await this.courseStore.update(payload)
-            if (ok) {
-                if (studentsInfo.length) {
-                    this.selected_course.students_info = studentsInfo
-                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
-                }
-                this.is_editing_grades = false
-            }
         },
         editComment() {
             this.edit_comment = this.selected_comment || ''
@@ -1510,29 +1535,31 @@ export default {
         },
         async saveComment() {
             if (!this.selected_course) return
-            this.courseStore.ensureCourseStudentCollections(this.selected_course)
-            const studentsInfo = (this.selected_course.students_info || []).map((student) => {
-                if (student.id === this.selected_course_student.id) {
-                    return { ...student, comment: this.edit_comment }
+            await this.runStudentMutation('save-comment', async () => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
+                const studentsInfo = (this.selected_course.students_info || []).map((student) => {
+                    if (student.id === this.selected_course_student.id) {
+                        return { ...student, comment: this.edit_comment }
+                    }
+                    return student
+                })
+                const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+                const payload = {
+                    ...this.selected_course,
+                    students: studentsPayload,
+                    students_deleted: this.selected_course.students_deleted || [],
                 }
-                return student
+
+                const ok = await this.courseStore.update(payload)
+                if (ok) {
+                    if (studentsInfo.length) {
+                        this.selected_course.students_info = studentsInfo
+                        this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                    }
+                    this.abortEdit()
+                }
             })
-            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
-
-            const payload = {
-                ...this.selected_course,
-                students: studentsPayload,
-                students_deleted: this.selected_course.students_deleted || [],
-            }
-
-            const ok = await this.courseStore.update(payload)
-            if (ok) {
-                if (studentsInfo.length) {
-                    this.selected_course.students_info = studentsInfo
-                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
-                }
-                this.abortEdit()
-            }
         },
         newEntry() {
             this.entry_form = this.emptyEntryForm()
@@ -1564,42 +1591,43 @@ export default {
         },
         async saveEntry() {
             if (!this.selected_course || !this.selected_course_student) return
-
-            let ok = false
-            if (this.entry_form.id) {
-                // Update: only send fields that can be updated
-                const payload = {
-                    id: this.entry_form.id,
-                    type: this.entry_form.type,
-                    grade: this.entry_form.grade,
-                    date: this.normalizeDateString(this.entry_form.date) || null,
-                    description: this.entry_form.description,
+            await this.runStudentMutation('save-entry', async () => {
+                let ok = false
+                if (this.entry_form.id) {
+                    const payload = {
+                        id: this.entry_form.id,
+                        type: this.entry_form.type,
+                        grade: this.entry_form.grade,
+                        date: this.normalizeDateString(this.entry_form.date) || null,
+                        description: this.entry_form.description,
+                    }
+                    ok = await this.entryStore.update(payload)
+                } else {
+                    const payload = {
+                        teaching_course_id: this.selected_course.id,
+                        user_id: this.selected_course_student.user_id,
+                        type: this.entry_form.type,
+                        grade: this.entry_form.grade,
+                        date: this.normalizeDateString(this.entry_form.date) || null,
+                        description: this.entry_form.description,
+                    }
+                    ok = await this.entryStore.store(payload)
                 }
-                ok = await this.entryStore.update(payload)
-            } else {
-                // Create: send all required fields
-                const payload = {
-                    teaching_course_id: this.selected_course.id,
-                    user_id: this.selected_course_student.user_id,
-                    type: this.entry_form.type,
-                    grade: this.entry_form.grade,
-                    date: this.normalizeDateString(this.entry_form.date) || null,
-                    description: this.entry_form.description,
-                }
-                ok = await this.entryStore.store(payload)
-            }
 
-            if (ok) {
-                await this.loadEntries()
-                this.abortEntry()
-            }
+                if (ok) {
+                    await this.loadEntries()
+                    this.abortEntry()
+                }
+            })
         },
         async deleteEntry(entry) {
-            const ok = await this.entryStore.destroy(entry.id)
-            if (ok) {
-                await this.loadEntries()
-            }
-            this.delete_entry_id = null
+            await this.runStudentMutation('delete-entry', async () => {
+                const ok = await this.entryStore.destroy(entry.id)
+                if (ok) {
+                    await this.loadEntries()
+                }
+                this.delete_entry_id = null
+            })
         },
         emptyStarForm() {
             const defaultDate = this.selected_courseDate?.date
@@ -1633,89 +1661,92 @@ export default {
         async saveStarEntry() {
             if (!this.selected_course || !this.selected_course_student) return
             if (this.starFormFrontendError) return
-            this.courseStore.ensureCourseStudentCollections(this.selected_course)
+            await this.runStudentMutation('save-star-entry', async () => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
 
-            const newStar = {
-                id: this.star_form.id || (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
-                value: 1,
-                date: this.star_form.date instanceof Date ? this.toDateString(this.star_form.date) : this.star_form.date || this.toDateString(new Date()),
-                comment: this.star_form.comment.trim(),
-            }
-
-            let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
-            if (!studentsInfoBase.length) {
-                // Recovery path: keep payload non-empty even if local students_info got desynced.
-                const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
-                if (courseFromStore) {
-                    this.courseStore.ensureCourseStudentCollections(courseFromStore)
-                    studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                const newStar = {
+                    id: this.star_form.id || (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+                    value: 1,
+                    date: this.star_form.date instanceof Date ? this.toDateString(this.star_form.date) : this.star_form.date || this.toDateString(new Date()),
+                    comment: this.star_form.comment.trim(),
                 }
-            }
 
-            const studentsInfo = studentsInfoBase.map((student) => {
-                if (student.id !== this.selected_course_student.id) return student
-                const stars = Array.isArray(student.stars) ? [...student.stars] : []
-                const existingIndex = stars.findIndex((star) => star.id === newStar.id)
-                if (existingIndex >= 0) {
-                    stars.splice(existingIndex, 1, newStar)
-                } else {
-                    stars.push(newStar)
+                let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
+                if (!studentsInfoBase.length) {
+                    const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
+                    if (courseFromStore) {
+                        this.courseStore.ensureCourseStudentCollections(courseFromStore)
+                        studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                    }
                 }
-                return { ...student, stars }
+
+                const studentsInfo = studentsInfoBase.map((student) => {
+                    if (student.id !== this.selected_course_student.id) return student
+                    const stars = Array.isArray(student.stars) ? [...student.stars] : []
+                    const existingIndex = stars.findIndex((star) => star.id === newStar.id)
+                    if (existingIndex >= 0) {
+                        stars.splice(existingIndex, 1, newStar)
+                    } else {
+                        stars.push(newStar)
+                    }
+                    return { ...student, stars }
+                })
+
+                const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+                const payload = {
+                    ...this.selected_course,
+                    students: studentsPayload,
+                    students_deleted: this.selected_course.students_deleted || [],
+                }
+
+                const ok = await this.courseStore.update(payload)
+                if (ok) {
+                    if (studentsInfo.length) {
+                        this.selected_course.students_info = studentsInfo
+                        this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                    }
+                    this.abortStarEntry()
+                }
             })
-
-            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
-
-            const payload = {
-                ...this.selected_course,
-                students: studentsPayload,
-                students_deleted: this.selected_course.students_deleted || [],
-            }
-
-            const ok = await this.courseStore.update(payload)
-            if (ok) {
-                if (studentsInfo.length) {
-                    this.selected_course.students_info = studentsInfo
-                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
-                }
-                this.abortStarEntry()
-            }
         },
         async deleteStarEntry(starId) {
             if (!this.selected_course || !this.selected_course_student || !starId) return
-            this.courseStore.ensureCourseStudentCollections(this.selected_course)
+            await this.runStudentMutation('delete-star-entry', async () => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
 
-            let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
-            if (!studentsInfoBase.length) {
-                const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
-                if (courseFromStore) {
-                    this.courseStore.ensureCourseStudentCollections(courseFromStore)
-                    studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                let studentsInfoBase = Array.isArray(this.selected_course.students_info) ? this.selected_course.students_info : []
+                if (!studentsInfoBase.length) {
+                    const courseFromStore = (this.courseStore?.courses || []).find((course) => course.id === this.selected_course.id)
+                    if (courseFromStore) {
+                        this.courseStore.ensureCourseStudentCollections(courseFromStore)
+                        studentsInfoBase = Array.isArray(courseFromStore.students_info) ? courseFromStore.students_info : []
+                    }
                 }
-            }
 
-            const studentsInfo = studentsInfoBase.map((student) => {
-                if (student.id !== this.selected_course_student.id) return student
-                const stars = (student.stars || []).filter((star) => star.id !== starId)
-                return { ...student, stars }
+                const studentsInfo = studentsInfoBase.map((student) => {
+                    if (student.id !== this.selected_course_student.id) return student
+                    const stars = (student.stars || []).filter((star) => star.id !== starId)
+                    return { ...student, stars }
+                })
+
+                const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+                const payload = {
+                    ...this.selected_course,
+                    students: studentsPayload,
+                    students_deleted: this.selected_course.students_deleted || [],
+                }
+
+                const ok = await this.courseStore.update(payload)
+                if (ok) {
+                    if (studentsInfo.length) {
+                        this.selected_course.students_info = studentsInfo
+                        this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                    }
+                }
+                this.delete_star_id = null
             })
-
-            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
-
-            const payload = {
-                ...this.selected_course,
-                students: studentsPayload,
-                students_deleted: this.selected_course.students_deleted || [],
-            }
-
-            const ok = await this.courseStore.update(payload)
-            if (ok) {
-                if (studentsInfo.length) {
-                    this.selected_course.students_info = studentsInfo
-                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
-                }
-            }
-            this.delete_star_id = null
         },
         emptyBehaviourForm() {
             const defaultDate = this.selected_courseDate?.date
@@ -1800,35 +1831,37 @@ export default {
         async saveBehaviourEntry() {
             if (!this.selected_course || !this.selected_course_student) return
             if (this.behaviourFormFrontendError) return
-            const allowsDue = this.behaviour_form.kind === 'notification'
-            const payload = {
-                id: this.behaviour_form.id,
-                teaching_course_id: this.selected_course.id,
-                user_id: this.selected_course_student.user_id,
-                kind: this.behaviour_form.kind || 'behaviour',
-                type: this.behaviour_form.type,
-                date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,
-                is_due: allowsDue && !!this.behaviour_form.is_due,
-                due_date:
-                    allowsDue && this.behaviour_form.is_due
-                        ? this.behaviour_form.due_date instanceof Date
-                            ? this.toDateString(this.behaviour_form.due_date)
-                            : this.behaviour_form.due_date || null
-                        : null,
-                is_done: allowsDue && !!this.behaviour_form.is_due && !!this.behaviour_form.is_done,
-                done_date:
-                    allowsDue && this.behaviour_form.is_due && this.behaviour_form.is_done
-                        ? this.behaviour_form.done_date instanceof Date
-                            ? this.toDateString(this.behaviour_form.done_date)
-                            : this.behaviour_form.done_date || null
-                        : null,
-                description: this.behaviour_form.description,
-            }
-            const ok = this.behaviour_form.id ? await this.behaviourEntryStore.update(payload) : await this.behaviourEntryStore.store(payload)
-            if (ok) {
-                await this.loadBehaviourEntries()
-                this.abortBehaviourEntry()
-            }
+            await this.runStudentMutation('save-behaviour-entry', async () => {
+                const allowsDue = this.behaviour_form.kind === 'notification'
+                const payload = {
+                    id: this.behaviour_form.id,
+                    teaching_course_id: this.selected_course.id,
+                    user_id: this.selected_course_student.user_id,
+                    kind: this.behaviour_form.kind || 'behaviour',
+                    type: this.behaviour_form.type,
+                    date: this.behaviour_form.date instanceof Date ? this.toDateString(this.behaviour_form.date) : this.behaviour_form.date,
+                    is_due: allowsDue && !!this.behaviour_form.is_due,
+                    due_date:
+                        allowsDue && this.behaviour_form.is_due
+                            ? this.behaviour_form.due_date instanceof Date
+                                ? this.toDateString(this.behaviour_form.due_date)
+                                : this.behaviour_form.due_date || null
+                            : null,
+                    is_done: allowsDue && !!this.behaviour_form.is_due && !!this.behaviour_form.is_done,
+                    done_date:
+                        allowsDue && this.behaviour_form.is_due && this.behaviour_form.is_done
+                            ? this.behaviour_form.done_date instanceof Date
+                                ? this.toDateString(this.behaviour_form.done_date)
+                                : this.behaviour_form.done_date || null
+                            : null,
+                    description: this.behaviour_form.description,
+                }
+                const ok = this.behaviour_form.id ? await this.behaviourEntryStore.update(payload) : await this.behaviourEntryStore.store(payload)
+                if (ok) {
+                    await this.loadBehaviourEntries()
+                    this.abortBehaviourEntry()
+                }
+            })
         },
         editBehaviourGrades() {
             this.behaviour_grade_form = {
@@ -1840,66 +1873,74 @@ export default {
         },
         async saveBehaviourGrades() {
             if (!this.selected_course) return
-            this.courseStore.ensureCourseStudentCollections(this.selected_course)
-            const gradeFields =
-                this.semesterCount === 2
-                    ? { behaviour_1_grade: this.behaviour_grade_form.behaviour_1_grade || null, behaviour_2_grade: this.behaviour_grade_form.behaviour_2_grade || null }
-                    : { behaviour_grade: this.behaviour_grade_form.behaviour_grade || null }
+            await this.runStudentMutation('save-behaviour-grades', async () => {
+                this.courseStore.ensureCourseStudentCollections(this.selected_course)
+                const gradeFields =
+                    this.semesterCount === 2
+                        ? { behaviour_1_grade: this.behaviour_grade_form.behaviour_1_grade || null, behaviour_2_grade: this.behaviour_grade_form.behaviour_2_grade || null }
+                        : { behaviour_grade: this.behaviour_grade_form.behaviour_grade || null }
 
-            const studentsInfo = (this.selected_course.students_info || []).map((student) => {
-                if (student.id === this.selected_course_student.id) {
-                    return { ...student, ...gradeFields }
+                const studentsInfo = (this.selected_course.students_info || []).map((student) => {
+                    if (student.id === this.selected_course_student.id) {
+                        return { ...student, ...gradeFields }
+                    }
+                    return student
+                })
+                const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
+
+                const payload = {
+                    ...this.selected_course,
+                    students: studentsPayload,
+                    students_deleted: this.selected_course.students_deleted || [],
                 }
-                return student
+
+                const ok = await this.courseStore.update(payload)
+                if (ok) {
+                    if (studentsInfo.length) {
+                        this.selected_course.students_info = studentsInfo
+                        this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
+                    }
+                    this.is_editing_behaviour_grades = false
+                }
             })
-            const studentsPayload = studentsInfo.length ? studentsInfo : (Array.isArray(this.selected_course.students) ? this.selected_course.students : [])
-
-            const payload = {
-                ...this.selected_course,
-                students: studentsPayload,
-                students_deleted: this.selected_course.students_deleted || [],
-            }
-
-            const ok = await this.courseStore.update(payload)
-            if (ok) {
-                if (studentsInfo.length) {
-                    this.selected_course.students_info = studentsInfo
-                    this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
-                }
-                this.is_editing_behaviour_grades = false
-            }
         },
         async deleteBehaviourEntry(entry) {
-            const ok = await this.behaviourEntryStore.destroy(entry.id)
-            if (ok) {
-                await this.loadBehaviourEntries()
-            }
-            this.delete_behaviour_id = null
+            await this.runStudentMutation('delete-behaviour-entry', async () => {
+                const ok = await this.behaviourEntryStore.destroy(entry.id)
+                if (ok) {
+                    await this.loadBehaviourEntries()
+                }
+                this.delete_behaviour_id = null
+            })
         },
         async deleteNotificationEntry(entry) {
-            const ok = await this.behaviourEntryStore.destroy(entry.id)
-            if (ok) {
-                await this.loadBehaviourEntries()
-            }
-            this.delete_notification_id = null
+            await this.runStudentMutation('delete-notification-entry', async () => {
+                const ok = await this.behaviourEntryStore.destroy(entry.id)
+                if (ok) {
+                    await this.loadBehaviourEntries()
+                }
+                this.delete_notification_id = null
+            })
         },
         async completeNotificationToday(entry) {
             if (!entry?.id || !entry?.type || !entry?.due_date) return
-            const payload = {
-                id: entry.id,
-                kind: 'notification',
-                type: entry.type,
-                date: entry.date || null,
-                description: entry.description || null,
-                is_due: true,
-                due_date: entry.due_date,
-                is_done: true,
-                done_date: this.toDateString(new Date()),
-            }
-            const ok = await this.behaviourEntryStore.update(payload)
-            if (ok) {
-                await this.loadBehaviourEntries()
-            }
+            await this.runStudentMutation('complete-notification', async () => {
+                const payload = {
+                    id: entry.id,
+                    kind: 'notification',
+                    type: entry.type,
+                    date: entry.date || null,
+                    description: entry.description || null,
+                    is_due: true,
+                    due_date: entry.due_date,
+                    is_done: true,
+                    done_date: this.toDateString(new Date()),
+                }
+                const ok = await this.behaviourEntryStore.update(payload)
+                if (ok) {
+                    await this.loadBehaviourEntries()
+                }
+            })
         },
         toggleSortByType() {
             this.sort_by_type = !this.sort_by_type

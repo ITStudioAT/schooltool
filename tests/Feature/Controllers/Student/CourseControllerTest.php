@@ -376,6 +376,18 @@ test('show returns schoolyear scoped teacher grade column visibility', function 
                 'show_year' => false,
             ],
         ],
+        'teaching_student_grade_columns_by_schoolyear' => [
+            (string) $this->activeSchoolyear->id => [
+                'show_sem1' => false,
+                'show_sem2' => true,
+                'show_year' => true,
+            ],
+            (string) $this->oldSchoolyear->id => [
+                'show_sem1' => true,
+                'show_sem2' => false,
+                'show_year' => false,
+            ],
+        ],
     ])->save();
 
     $course = TeachingCourse::factory()->create([
@@ -395,7 +407,10 @@ test('show returns schoolyear scoped teacher grade column visibility', function 
     $response->assertOk()
         ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem1', true)
         ->assertJsonPath('course.teacher_teaching_grade_columns.show_sem2', false)
-        ->assertJsonPath('course.teacher_teaching_grade_columns.show_year', true);
+        ->assertJsonPath('course.teacher_teaching_grade_columns.show_year', true)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', false)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem2', true)
+        ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
 });
 
 test('show ignores legacy-only teacher behaviour and notification definitions', function () {

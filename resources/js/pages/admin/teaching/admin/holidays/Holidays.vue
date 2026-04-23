@@ -1,6 +1,6 @@
 <template>
     <v-col cols="12" class="teaching-admin-holidays-col">
-        <ItsGridBox variant="overview" color="primary" title="Ferien" subtitle="Freie Tage erfassen und bereinigen" icon="mdi-beach" class="w-100">
+        <ItsGridBox variant="overview" color="primary" title="Ferien" subtitle="Freie Tage erfassen und bereinigen" icon="mdi-beach" class="w-100" :disabled="isSavingHolidays">
             <div class="d-flex align-center justify-space-between ga-2">
                 <div class="text-subtitle-2">Freie Tage erstellen</div>
                 <v-btn
@@ -8,6 +8,7 @@
                     size="small"
                     color="primary"
                     variant="tonal"
+                    :disabled="isSavingHolidays"
                     @click="toggleCreateForm" />
             </div>
 
@@ -20,8 +21,8 @@
                         <v-text-field v-model="data.reason" label="Grund" class="mt-3" :rules="[maxLength(255)]" hide-details="auto" />
 
                         <div class="d-flex flex-row align-center justify-space-between mt-3">
-                            <v-btn color="warning" flat tile @click="resetForm">Zurücksetzen</v-btn>
-                            <v-btn color="success" flat tile type="submit" :disabled="!data.date_from">Freie Tage erstellen</v-btn>
+                            <v-btn color="warning" flat tile :disabled="isSavingHolidays" @click="resetForm">Zurücksetzen</v-btn>
+                            <v-btn color="success" flat tile type="submit" :loading="holidays_save_action === 'create'" :disabled="!data.date_from || isSavingHolidays">Freie Tage erstellen</v-btn>
                         </div>
                     </v-form>
                 </div>
@@ -43,7 +44,8 @@
                     variant="flat"
                     size="small"
                     prepend-icon="mdi-delete"
-                    :disabled="!selected_holiday_ids.length"
+                    :loading="holidays_save_action === 'delete-selected'"
+                    :disabled="!selected_holiday_ids.length || isSavingHolidays"
                     @click="deleteSelectedHolidays">
                     Löschen ({{ selected_holiday_ids.length }})
                 </v-btn>
@@ -109,12 +111,16 @@ export default {
                 date_until: '',
                 reason: '',
             },
+            holidays_save_action: null,
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
         ...mapWritableState(useHolidayStore, ['holidays']),
+        isSavingHolidays() {
+            return this.holidays_save_action !== null
+        },
         allSelected: {
             get() {
                 const total = this.holidays?.length || 0
@@ -151,6 +157,20 @@ export default {
     },
 
     methods: {
+        async runHolidayMutation(action, callback) {
+            if (this.holidays_save_action) {
+                return false
+            }
+
+            this.holidays_save_action = action
+            await this.$nextTick()
+
+            try {
+                return await callback()
+            } finally {
+                this.holidays_save_action = null
+            }
+        },
         toDateString(date) {
             const parsed = parseLocalDate(date)
             const year = parsed.getFullYear()
@@ -178,6 +198,9 @@ export default {
             }
         },
         toggleCreateForm() {
+            if (this.isSavingHolidays) {
+                return
+            }
             this.show_create_form = !this.show_create_form
             if (!this.show_create_form) {
                 this.resetForm()
@@ -185,30 +208,34 @@ export default {
         },
         async createHolidays() {
             if (!this.data.date_from) return
-            const payload = {
-                date_from: this.data.date_from,
-                date_until: this.data.date_until || null,
-                reason: this.data.reason?.trim() || null,
-            }
+            await this.runHolidayMutation('create', async () => {
+                const payload = {
+                    date_from: this.data.date_from,
+                    date_until: this.data.date_until || null,
+                    reason: this.data.reason?.trim() || null,
+                }
 
-            const ok = await this.holidayStore.store(payload)
-            if (!ok) return
+                const ok = await this.holidayStore.store(payload)
+                if (!ok) return
 
-            await this.holidayStore.index()
-            await this.courseStore.index()
-            this.selected_holiday_ids = []
-            this.show_create_form = false
-            this.resetForm()
+                await this.holidayStore.index()
+                await this.courseStore.index()
+                this.selected_holiday_ids = []
+                this.show_create_form = false
+                this.resetForm()
+            })
         },
         async deleteSelectedHolidays() {
             if (!this.selected_holiday_ids.length) return
-            const ids = [...this.selected_holiday_ids]
-            const result = await this.holidayStore.destroyMany(ids)
-            if (!result || result.deleted <= 0) return
+            await this.runHolidayMutation('delete-selected', async () => {
+                const ids = [...this.selected_holiday_ids]
+                const result = await this.holidayStore.destroyMany(ids)
+                if (!result || result.deleted <= 0) return
 
-            await this.holidayStore.index()
-            await this.courseStore.index()
-            this.selected_holiday_ids = []
+                await this.holidayStore.index()
+                await this.courseStore.index()
+                this.selected_holiday_ids = []
+            })
         },
     },
 }
