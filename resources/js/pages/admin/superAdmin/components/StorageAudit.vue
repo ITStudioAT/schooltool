@@ -229,7 +229,7 @@
                         </div>
 
                         <v-alert v-if="report.differences.database_only.count > 0" type="warning" variant="tonal" class="mb-4">
-                            Diese Aktion löscht die betroffenen Materialeinträge und verschiebt sie in den Papierkorb.
+                            Diese Aktion löscht die betroffenen Materialeinträge endgültig.
                         </v-alert>
 
                         <v-list v-if="report.database_only_attachments.length" class="bg-transparent pa-0" density="compact">
@@ -306,7 +306,7 @@
                 {{ brokenAttachmentDeleteDialogMessage() }}
             </div>
             <v-alert type="warning" variant="tonal" class="mb-4">
-                Diese Aktion verschiebt die betroffenen Materialeinträge in den Papierkorb.
+                Diese Aktion löscht die betroffenen Materialeinträge endgültig. Sie landen nicht im Papierkorb.
             </v-alert>
             <div class="d-flex justify-end ga-2">
                 <v-btn variant="text" :disabled="isDeletingBrokenAttachment" @click="closeBrokenAttachmentDeleteDialog">
@@ -608,7 +608,7 @@ export default {
                 const response = await axios.delete(endpoint, { data: payload })
 
                 await this.loadAudit()
-                this.statusMessage = response.data?.message || 'Das Material mit fehlender Datei wurde gelöscht.'
+                this.statusMessage = response.data?.message || 'Das Material mit fehlender Datei wurde endgültig gelöscht.'
                 this.isBrokenAttachmentDeleteDialogOpen = false
                 this.brokenAttachmentDeleteDialog = null
             } catch (error) {

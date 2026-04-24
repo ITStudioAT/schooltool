@@ -354,7 +354,7 @@ describe('StorageAudit', () => {
             if (url === '/api/admin/materials/storage-audit/database-only-attachments/301') {
                 return Promise.resolve({
                     data: {
-                        message: 'Das Material mit fehlender Datei wurde gelöscht.',
+                        message: 'Das Material mit fehlender Datei wurde endgültig gelöscht.',
                     },
                 })
             }
@@ -362,7 +362,7 @@ describe('StorageAudit', () => {
             if (url === '/api/admin/materials/storage-audit/database-only-materials') {
                 return Promise.resolve({
                     data: {
-                        message: 'Ein Material mit fehlender Datei wurde gelöscht.',
+                        message: 'Ein Material mit fehlender Datei wurde endgültig gelöscht.',
                     },
                 })
             }
@@ -514,7 +514,7 @@ describe('StorageAudit', () => {
         expect(screen.queryAllByRole('button', { name: 'Defekten Anhang löschen' })).toHaveLength(0)
         expect(screen.queryAllByRole('button', { name: 'Nur-online-Dateien löschen' })).toHaveLength(0)
         expect(screen.queryByText('Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.')).not.toBeInTheDocument()
-        expect(screen.getAllByText('Diese Aktion löscht die betroffenen Materialeinträge und verschiebt sie in den Papierkorb.')).toHaveLength(1)
+        expect(screen.getAllByText('Diese Aktion löscht die betroffenen Materialeinträge endgültig.')).toHaveLength(1)
 
         let syncStatusPollCount = 0
         axiosMock.get.mockImplementation((url: string) => {

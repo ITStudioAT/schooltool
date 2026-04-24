@@ -439,7 +439,7 @@ test('sync local rejects all schools scope', function (): void {
         ->assertStatus(422);
 });
 
-test('super_admin can delete a material with missing cloud file from storage audit', function (): void {
+test('super_admin can permanently delete a material with missing cloud file from storage audit', function (): void {
     $response = $this->actingAs($this->superAdmin, 'sanctum')
         ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeMissingOnlineAttachment->id}", [
             'scope_key' => 'active_school',
@@ -447,11 +447,11 @@ test('super_admin can delete a material with missing cloud file from storage aud
         ]);
 
     $response->assertOk()
-        ->assertJsonPath('message', 'Das Material mit fehlender Datei wurde gelöscht.')
+        ->assertJsonPath('message', 'Das Material mit fehlender Datei wurde endgültig gelöscht.')
         ->assertJsonPath('data.deleted_count', 1);
 
-    $this->assertSoftDeleted($this->activeMissingOnlineCard);
-    $this->assertSoftDeleted($this->activeMissingOnlineAttachment);
+    expect(MaterialCard::withTrashed()->whereKey($this->activeMissingOnlineCard->id)->exists())->toBeFalse();
+    expect(MaterialCardAttachment::withTrashed()->whereKey($this->activeMissingOnlineAttachment->id)->exists())->toBeFalse();
     $this->assertNotSoftDeleted($this->activeLiveCard);
 });
 
@@ -469,7 +469,7 @@ test('storage audit only deletes materials whose attachment file is missing onli
     $this->assertNotSoftDeleted($this->activeLiveAttachment);
 });
 
-test('super_admin can delete all active school materials with missing cloud files from storage audit', function (): void {
+test('super_admin can permanently delete all active school materials with missing cloud files from storage audit', function (): void {
     $secondMissingCard = MaterialCard::query()->create([
         'school_id' => $this->activeSchool->id,
         'user_id' => $this->superAdmin->id,
@@ -503,13 +503,13 @@ test('super_admin can delete all active school materials with missing cloud file
         ]);
 
     $response->assertOk()
-        ->assertJsonPath('message', '2 Materialien mit fehlender Datei wurden gelöscht.')
+        ->assertJsonPath('message', '2 Materialien mit fehlender Datei wurden endgültig gelöscht.')
         ->assertJsonPath('data.deleted_count', 2);
 
-    $this->assertSoftDeleted($this->activeMissingOnlineCard);
-    $this->assertSoftDeleted($secondMissingCard);
-    $this->assertSoftDeleted($this->activeMissingOnlineAttachment);
-    $this->assertSoftDeleted($secondMissingAttachment);
+    expect(MaterialCard::withTrashed()->whereKey($this->activeMissingOnlineCard->id)->exists())->toBeFalse();
+    expect(MaterialCard::withTrashed()->whereKey($secondMissingCard->id)->exists())->toBeFalse();
+    expect(MaterialCardAttachment::withTrashed()->whereKey($this->activeMissingOnlineAttachment->id)->exists())->toBeFalse();
+    expect(MaterialCardAttachment::withTrashed()->whereKey($secondMissingAttachment->id)->exists())->toBeFalse();
     $this->assertNotSoftDeleted($this->activeLiveCard);
     $this->assertNotSoftDeleted($this->otherLiveCard);
 });

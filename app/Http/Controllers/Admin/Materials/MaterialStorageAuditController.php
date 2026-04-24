@@ -189,10 +189,10 @@ class MaterialStorageAuditController extends Controller
             ], 422);
         }
 
-        $materialService->deleteCard($materialCard);
+        $materialService->forceDeleteCard($materialCard);
 
         return response()->json([
-            'message' => 'Das Material mit fehlender Datei wurde gelöscht.',
+            'message' => 'Das Material mit fehlender Datei wurde endgültig gelöscht.',
             'data' => [
                 'deleted_count' => 1,
             ],
@@ -235,13 +235,13 @@ class MaterialStorageAuditController extends Controller
             ->values();
 
         foreach ($cards as $card) {
-            $materialService->deleteCard($card);
+            $materialService->forceDeleteCard($card);
         }
 
         return response()->json([
             'message' => $cards->count() === 1
-                ? 'Ein Material mit fehlender Datei wurde gelöscht.'
-                : $cards->count().' Materialien mit fehlender Datei wurden gelöscht.',
+                ? 'Ein Material mit fehlender Datei wurde endgültig gelöscht.'
+                : $cards->count().' Materialien mit fehlender Datei wurden endgültig gelöscht.',
             'data' => [
                 'deleted_count' => $cards->count(),
             ],

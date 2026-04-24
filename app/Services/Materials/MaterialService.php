@@ -437,6 +437,13 @@ class MaterialService
         });
     }
 
+    public function forceDeleteCard(MaterialCard $card): void
+    {
+        DB::transaction(function () use ($card): void {
+            $this->forceDeleteDeletedCard($card);
+        });
+    }
+
     public function restoreLastDeletedCard(User $user): ?MaterialCard
     {
         $workspaceId = $this->optionalActiveWorkspaceIdForUser($user);
