@@ -602,7 +602,7 @@
             </v-card>
         </v-dialog>
 
-        <v-dialog v-model="entryEditDialog" max-width="520" persistent>
+        <v-dialog v-model="entryEditDialog" max-width="760" persistent>
             <v-card rounded="xl">
                 <v-card-title class="d-flex align-center">
                     <span>Eintrag bearbeiten</span>
@@ -616,6 +616,7 @@
                         label="Menü"
                         variant="outlined"
                         density="comfortable"
+                        :readonly="!entryEditForm.isEditing"
                         class="mb-3" />
 
                     <v-text-field
@@ -627,23 +628,164 @@
                         variant="outlined"
                         density="comfortable"
                         clearable
+                        :readonly="!entryEditForm.isEditing"
                         @blur="normalizeEntryEditPriceField" />
 
-                    <v-textarea
-                        v-model="entryEditForm.comments"
-                        label="Kommentare"
-                        variant="outlined"
-                        density="comfortable"
-                        rows="3"
-                        auto-grow
-                        class="mt-3" />
+                    <div class="mt-4">
+                        <div class="text-subtitle-2 mb-2">Speisen</div>
+                        <div class="d-flex flex-wrap ga-2">
+                            <v-chip
+                                v-for="food in entryEditForm.foods"
+                                :key="entryEditFoodKey(food)"
+                                :closable="entryEditForm.isEditing"
+                                :color="Number(entryEditForm.selectedFoodId) === Number(food.id) ? 'primary' : undefined"
+                                :variant="Number(entryEditForm.selectedFoodId) === Number(food.id) ? 'flat' : 'outlined'"
+                                @click="selectEntryEditFood(food.id)"
+                                @click:close="removeEntryEditFood(food.id)">
+                                {{ food.title }}
+                            </v-chip>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <v-btn
+                            v-if="entryEditForm.isEditing && !entryEditForm.isFoodSearchOpen"
+                            color="primary"
+                            variant="tonal"
+                            prepend-icon="mdi-plus"
+                            @click="openEntryEditFoodSearch">
+                            Hinzufügen
+                        </v-btn>
+                        <v-text-field
+                            v-if="entryEditForm.isFoodSearchOpen"
+                            v-model="entryEditForm.foodSearch"
+                            label="Speise suchen und hinzufügen"
+                            prepend-inner-icon="mdi-magnify"
+                            variant="outlined"
+                            density="comfortable"
+                            clearable
+                            :disabled="!entryEditForm.isEditing" />
+                        <div v-if="entryEditForm.isFoodSearchOpen && entryEditForm.isEditing && filteredEntryEditFoodOptions.length" class="mpe-entry-food-search">
+                            <button
+                                v-for="food in filteredEntryEditFoodOptions"
+                                :key="`entry-edit-food-option-${food.id}`"
+                                type="button"
+                                class="mpe-entry-food-search__item"
+                                :class="{ 'mpe-entry-food-search__item--selected': Number(entryEditForm.pendingFoodId) === Number(food.id) }"
+                                @click="selectPendingEntryEditFood(food.id)">
+                                <span>{{ food.title }}</span>
+                                <small>{{ food.category?.title || 'Keine Kategorie' }}</small>
+                            </button>
+                        </div>
+                        <div v-if="entryEditForm.isFoodSearchOpen && entryEditForm.isEditing" class="d-flex justify-end mt-2">
+                            <v-btn variant="text" class="mr-2" @click="closeEntryEditFoodSearch">
+                                Abbrechen
+                            </v-btn>
+                            <v-btn
+                                color="primary"
+                                variant="tonal"
+                                prepend-icon="mdi-plus"
+                                :disabled="!pendingEntryEditFood"
+                                @click="addPendingEntryEditFood">
+                                Hinzufügen
+                            </v-btn>
+                        </div>
+                    </div>
+
+                    <v-sheet v-if="selectedEntryEditFood" rounded="lg" border class="pa-4 mt-4">
+                        <div class="d-flex align-center mb-3">
+                            <div>
+                                <div class="text-overline">Speise</div>
+                                <div class="text-subtitle-1">{{ selectedEntryEditFood.title }}</div>
+                            </div>
+                            <v-spacer />
+                            <v-chip size="small" variant="tonal">
+                                Gang {{ selectedEntryEditFood.course_number || '-' }}
+                            </v-chip>
+                        </div>
+
+                        <v-row dense>
+                            <v-col cols="12" md="8">
+                                <v-text-field
+                                    v-model="selectedEntryEditFood.title"
+                                    label="Titel"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    :readonly="!entryEditForm.isEditing" />
+                            </v-col>
+                            <v-col cols="12" md="4">
+                                <v-text-field
+                                    v-model="selectedEntryEditFood.price"
+                                    label="Preis"
+                                    type="text"
+                                    inputmode="decimal"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    clearable
+                                    :readonly="!entryEditForm.isEditing" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-select
+                                    :model-value="selectedEntryEditFood.category?.id || null"
+                                    :items="categories"
+                                    item-title="title"
+                                    item-value="id"
+                                    label="Kategorie"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    clearable
+                                    :readonly="!entryEditForm.isEditing"
+                                    @update:model-value="setSelectedEntryEditFoodCategory" />
+                            </v-col>
+                            <v-col cols="12" md="6">
+                                <v-select
+                                    :model-value="selectedEntryEditFood.allergens || []"
+                                    :items="allergenOptions"
+                                    item-title="short_description"
+                                    item-value="character"
+                                    label="Allergene"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    multiple
+                                    chips
+                                    :readonly="!entryEditForm.isEditing"
+                                    @update:model-value="setSelectedEntryEditFoodAllergens" />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-select
+                                    :model-value="selectedEntryEditFoodIngredientIconIds"
+                                    :items="ingredientIcons"
+                                    item-title="title"
+                                    item-value="id"
+                                    label="Zutaten-Symbole"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    multiple
+                                    chips
+                                    :readonly="!entryEditForm.isEditing"
+                                    @update:model-value="setSelectedEntryEditFoodIngredientIcons" />
+                            </v-col>
+                            <v-col cols="12">
+                                <v-textarea
+                                    v-model="selectedEntryEditFood.description"
+                                    label="Beschreibung"
+                                    rows="3"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    :readonly="!entryEditForm.isEditing" />
+                            </v-col>
+                        </v-row>
+                    </v-sheet>
                 </v-card-text>
 
                 <v-card-actions class="px-6 pb-5">
                     <v-spacer />
                     <v-btn variant="text" @click="closeEditEntryDialog">Abbrechen</v-btn>
-                    <v-btn color="primary" variant="flat" @click="saveEntryEdit">
-                        Speichern
+                    <v-btn v-if="entryEditForm.isEditing" color="deep-orange-darken-3" variant="flat" @click="saveEntryEdit('base')">
+                        Speichern für immer
+                    </v-btn>
+                    <v-btn v-if="entryEditForm.isEditing" color="primary" variant="flat" @click="saveEntryEdit('plan')">
+                        Speichern nur hier
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -676,13 +818,13 @@
                         </div>
                         <div class="mpe-preview__meta-item">
                             <span class="mpe-preview__meta-label">Gänge</span>
-                            <strong>{{ sortedFoods(entryPreviewEntry.menu?.foods || []).length }}</strong>
+                            <strong>{{ entryFoods(entryPreviewEntry).length }}</strong>
                         </div>
                     </div>
 
-                    <div v-if="sortedFoods(entryPreviewEntry.menu?.foods || []).length" class="mpe-preview__foods">
+                    <div v-if="entryFoods(entryPreviewEntry).length" class="mpe-preview__foods">
                         <article
-                            v-for="food in sortedFoods(entryPreviewEntry.menu?.foods || [])"
+                            v-for="food in entryFoods(entryPreviewEntry)"
                             :key="food.id"
                             class="mpe-preview-food"
                             :class="{ 'mpe-preview-food--no-media': !food.food_image_url }"
@@ -748,7 +890,7 @@
                         <div class="mpe-preview-food__description">{{ entryPreviewEntry.comments }}</div>
                     </div>
 
-                    <v-alert v-if="!sortedFoods(entryPreviewEntry.menu?.foods || []).length" type="info" variant="tonal">
+                    <v-alert v-if="!entryFoods(entryPreviewEntry).length" type="info" variant="tonal">
                         Für dieses Menü wurden noch keine Speisen hinterlegt.
                     </v-alert>
                 </v-card-text>
@@ -1091,6 +1233,19 @@ function emptyNewMenuForm() {
     }
 }
 
+function emptyEntryEditForm() {
+        return {
+            menuTitle: '',
+            price: '',
+            foods: [],
+        isFoodSearchOpen: false,
+        foodSearch: '',
+        pendingFoodId: null,
+        selectedFoodId: null,
+        isEditing: true,
+    }
+}
+
 function emptyIndividualScheduleForm() {
     return {
         visibleStartAt: '',
@@ -1375,11 +1530,7 @@ export default {
                 key: '',
             },
             deleteBoundaryDayTargetIso: '',
-            entryEditForm: {
-                menuTitle: '',
-                price: '',
-                comments: '',
-            },
+            entryEditForm: emptyEntryEditForm(),
             newMenuFoodSearch: '',
             newMenuForm: emptyNewMenuForm(),
             useIndividualScheduleValues: false,
@@ -1407,7 +1558,7 @@ export default {
         ...mapState(useAdminStore, ['config']),
         ...mapState(useFoodStore, ['foods']),
         ...mapState(useFreeDayStore, ['freeDaysByDate']),
-        ...mapState(useRestaurantStore, ['categories', 'allergenOptions', 'onlineSettings']),
+        ...mapState(useRestaurantStore, ['categories', 'ingredientIcons', 'allergenOptions', 'onlineSettings']),
 
         menus() {
             return useMenuStore().menus
@@ -1538,6 +1689,38 @@ export default {
             return this.availableFoodsForNewMenu.filter((food) => {
                 return String(food.title || '').toLocaleLowerCase('de').includes(normalizedSearch)
             })
+        },
+
+        filteredEntryEditFoodOptions() {
+            const selectedFoodIds = new Set(this.entryEditForm.foods.map((food) => Number(food.id)))
+            const normalizedSearch = String(this.entryEditForm.foodSearch || '').trim().toLocaleLowerCase('de')
+
+            return this.newMenuFoodOptions
+                .filter((food) => ! selectedFoodIds.has(Number(food.id)))
+                .filter((food) => {
+                    if (normalizedSearch === '') {
+                        return true
+                    }
+
+                    return [
+                        food.title,
+                        food.description,
+                        food.category?.title,
+                    ].some((value) => String(value || '').toLocaleLowerCase('de').includes(normalizedSearch))
+                })
+                .slice(0, 8)
+        },
+
+        selectedEntryEditFood() {
+            return this.entryEditForm.foods.find((food) => Number(food.id) === Number(this.entryEditForm.selectedFoodId)) || null
+        },
+
+        pendingEntryEditFood() {
+            return this.filteredEntryEditFoodOptions.find((food) => Number(food.id) === Number(this.entryEditForm.pendingFoodId)) || null
+        },
+
+        selectedEntryEditFoodIngredientIconIds() {
+            return (this.selectedEntryEditFood?.ingredient_icons || []).map((icon) => icon.id)
         },
 
         canAddNewMenuDraftCourse() {
@@ -1799,6 +1982,8 @@ export default {
                     id: entry.id || null,
                     _key: newEntryKey(),
                     menu,
+                    foods: Array.isArray(entry.foods) ? entry.foods : null,
+                    hasFoodsSnapshot: entry.has_foods_snapshot === true,
                     menuTitle: entry.menu_title || menu.title || '',
                     price: entry.price != null ? String(entry.price) : (menu.price != null ? String(menu.price) : ''),
                     comments: entry.comments || '',
@@ -1900,6 +2085,8 @@ export default {
                     id: null,
                     _key: newEntryKey(),
                     menu,
+                    foods: null,
+                    hasFoodsSnapshot: false,
                     menuTitle: menu?.title || '',
                     price: menu?.price != null ? String(menu.price) : '',
                     comments: '',
@@ -2103,11 +2290,18 @@ export default {
                 return
             }
 
+            const foods = this.entryFoods(entry).map((food, index) => this.cloneFoodForEntryEdit(food, index))
+
             this.entryEditTarget = { iso, key }
             this.entryEditForm = {
                 menuTitle: entry.menuTitle || entry.menu?.title || '',
                 price: this.normalizeNewMenuPriceInput(entry.price),
-                comments: entry.comments || '',
+                foods,
+                isFoodSearchOpen: false,
+                foodSearch: '',
+                pendingFoodId: null,
+                selectedFoodId: foods[0]?.id || null,
+                isEditing: true,
             }
             this.entryEditDialog = true
         },
@@ -2158,11 +2352,7 @@ export default {
                 iso: '',
                 key: '',
             }
-            this.entryEditForm = {
-                menuTitle: '',
-                price: '',
-                comments: '',
-            }
+            this.entryEditForm = emptyEntryEditForm()
         },
 
         closeEntryPreviewDialog() {
@@ -2676,24 +2866,161 @@ export default {
             this.entriesByDate = nextEntriesByDate
         },
 
-        async saveEntryEdit() {
+        cloneFoodForEntryEdit(food, index = 0) {
+            return {
+                id: food.id,
+                title: food.title || '',
+                description: food.description || '',
+                allergens: [...(food.allergens || [])],
+                category: food.category ? { ...food.category } : null,
+                price: food.price != null ? String(food.price) : '',
+                ingredient_icons: (food.ingredient_icons || []).map((icon) => ({ ...icon })),
+                food_image_url: food.food_image_url || null,
+                food_image_path: food.food_image_path || null,
+                course_number: index + 1,
+            }
+        },
+
+        entryEditFoodKey(food) {
+            return `entry-edit-food-${food.id}`
+        },
+
+        selectEntryEditFood(foodId) {
+            this.entryEditForm.selectedFoodId = foodId
+        },
+
+        openEntryEditFoodSearch() {
+            this.entryEditForm.isFoodSearchOpen = true
+        },
+
+        closeEntryEditFoodSearch() {
+            this.entryEditForm.isFoodSearchOpen = false
+            this.entryEditForm.foodSearch = ''
+            this.entryEditForm.pendingFoodId = null
+        },
+
+        selectPendingEntryEditFood(foodId) {
+            this.entryEditForm.pendingFoodId = foodId
+        },
+
+        addPendingEntryEditFood() {
+            if (! this.pendingEntryEditFood) {
+                return
+            }
+
+            this.addEntryEditFood(this.pendingEntryEditFood)
+        },
+
+        addEntryEditFood(food) {
+            if (! this.entryEditForm.isEditing || ! food?.id) {
+                return
+            }
+
+            if (this.entryEditForm.foods.some((entryFood) => Number(entryFood.id) === Number(food.id))) {
+                this.selectEntryEditFood(food.id)
+                return
+            }
+
+            this.entryEditForm.foods = [
+                ...this.entryEditForm.foods,
+                this.cloneFoodForEntryEdit(food, this.entryEditForm.foods.length),
+            ]
+            this.entryEditForm.selectedFoodId = food.id
+            this.closeEntryEditFoodSearch()
+        },
+
+        removeEntryEditFood(foodId) {
+            if (! this.entryEditForm.isEditing) {
+                return
+            }
+
+            this.entryEditForm.foods = this.entryEditForm.foods
+                .filter((food) => Number(food.id) !== Number(foodId))
+                .map((food, index) => ({ ...food, course_number: index + 1 }))
+
+            if (Number(this.entryEditForm.selectedFoodId) === Number(foodId)) {
+                this.entryEditForm.selectedFoodId = this.entryEditForm.foods[0]?.id || null
+            }
+        },
+
+        setSelectedEntryEditFoodCategory(categoryId) {
+            if (! this.selectedEntryEditFood || ! this.entryEditForm.isEditing) {
+                return
+            }
+
+            const category = this.categories.find((candidate) => Number(candidate.id) === Number(categoryId))
+            this.selectedEntryEditFood.category = category ? { id: category.id, title: category.title } : null
+        },
+
+        setSelectedEntryEditFoodAllergens(allergens) {
+            if (! this.selectedEntryEditFood || ! this.entryEditForm.isEditing) {
+                return
+            }
+
+            this.selectedEntryEditFood.allergens = Array.isArray(allergens) ? allergens : []
+        },
+
+        setSelectedEntryEditFoodIngredientIcons(iconIds) {
+            if (! this.selectedEntryEditFood || ! this.entryEditForm.isEditing) {
+                return
+            }
+
+            const selectedIds = new Set((iconIds || []).map((id) => Number(id)))
+            this.selectedEntryEditFood.ingredient_icons = this.ingredientIcons
+                .filter((icon) => selectedIds.has(Number(icon.id)))
+                .map((icon) => ({ ...icon }))
+        },
+
+        entryEditFoodPayload(food) {
+            return {
+                title: food.title || '',
+                description: food.description || '',
+                category_id: food.category?.id || null,
+                allergens: food.allergens || [],
+                ingredient_icon_ids: (food.ingredient_icons || []).map((icon) => icon.id),
+                price: this.normalizeNewMenuPricePayload(food.price),
+            }
+        },
+
+        async saveEntryEdit(scope) {
             const entries = this.entriesByDate[this.entryEditTarget.iso]
             const entry = this.findEntry(this.entryEditTarget.iso, this.entryEditTarget.key)
 
-            if (! Array.isArray(entries) || ! entry || this.isEntryLocked(entry)) {
+            if (! Array.isArray(entries) || ! entry || this.isEntryLocked(entry) || ! this.entryEditForm.isEditing) {
                 return
             }
 
             const nextMenuTitle = String(this.entryEditForm.menuTitle || '').trim()
             const nextPrice = this.normalizeNewMenuPricePayload(this.entryEditForm.price)
             const menuId = Number(entry?.menu?.id || 0)
+            const entryFoods = this.entryEditForm.foods.map((food, index) => ({
+                ...food,
+                price: this.normalizeNewMenuPricePayload(food.price),
+                course_number: index + 1,
+            }))
+            const entryFoodIds = entryFoods
+                .map((food) => Number(food.id))
+                .filter((foodId) => Number.isFinite(foodId) && foodId > 0)
 
-            if (menuId > 0) {
-                const menuFoods = this.sortedFoods(entry?.menu?.foods || []).map((food) => food.id)
+            if (menuId > 0 && scope === 'base') {
+                const foodStore = useFoodStore()
+
+                for (const food of entryFoods) {
+                    if (! food.id) {
+                        continue
+                    }
+
+                    const savedFood = await foodStore.update(food.id, this.entryEditFoodPayload(food))
+
+                    if (! savedFood) {
+                        return
+                    }
+                }
+
                 const nextMenuPayload = {
                     title: nextMenuTitle !== '' ? nextMenuTitle : String(entry?.menu?.title || ''),
                     price: nextPrice !== '' ? nextPrice : (entry?.menu?.price ?? ''),
-                    food_ids: menuFoods,
+                    food_ids: entryFoodIds,
                 }
                 const savedMenu = await useMenuStore().update(menuId, nextMenuPayload)
 
@@ -2715,7 +3042,8 @@ export default {
                     ...entry,
                     menuTitle: nextMenuTitle,
                     price: nextPrice,
-                    comments: String(this.entryEditForm.comments || '').trim(),
+                    foods: scope === 'plan' ? entryFoods : null,
+                    hasFoodsSnapshot: scope === 'plan',
                 }
             })
 
@@ -2892,6 +3220,7 @@ export default {
                         menu_title: entry.menuTitle !== '' ? entry.menuTitle : null,
                         price: entry.price !== '' ? entry.price : null,
                         comments: entry.comments !== '' ? entry.comments : null,
+                        ...(entry.hasFoodsSnapshot ? { foods: this.entryFoodsSnapshotPayload(entry) } : {}),
                         eating_time_ids: entry.eatingTimeIds,
                     })
                 })
@@ -3100,8 +3429,34 @@ export default {
             return [...(foods || [])].sort((a, b) => (a.course_number ?? 99) - (b.course_number ?? 99))
         },
 
+        foodsForIds(foodIds) {
+            return foodIds
+                .map((foodId, index) => {
+                    const food = this.newMenuFoodOptions.find((candidate) => Number(candidate.id) === Number(foodId))
+
+                    return food ? { ...food, course_number: index + 1 } : null
+                })
+                .filter(Boolean)
+        },
+
+        entryFoods(entry) {
+            if (Array.isArray(entry?.foods)) {
+                return this.sortedFoods(entry.foods)
+            }
+
+            return this.sortedFoods(entry?.menu?.foods || [])
+        },
+
+        entryFoodsSnapshotPayload(entry) {
+            return this.entryFoods(entry).map((food, index) => ({
+                ...food,
+                price: this.normalizeNewMenuPricePayload(food.price),
+                course_number: index + 1,
+            }))
+        },
+
         entryFoodSummary(entry) {
-            const foods = this.sortedFoods(entry.menu?.foods || [])
+            const foods = this.entryFoods(entry)
             if (foods.length === 0) {
                 return ''
             }
@@ -3991,6 +4346,41 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 1px;
+}
+
+.mpe-entry-food-search {
+    display: grid;
+    gap: .5rem;
+    margin-top: -.5rem;
+    margin-bottom: .75rem;
+}
+
+.mpe-entry-food-search__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    width: 100%;
+    padding: .65rem .85rem;
+    border: 1px solid rgba(96, 63, 38, .16);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .76);
+    text-align: left;
+    cursor: pointer;
+}
+
+.mpe-entry-food-search__item:hover {
+    border-color: rgba(96, 63, 38, .32);
+    background: rgba(255, 250, 242, .95);
+}
+
+.mpe-entry-food-search__item--selected {
+    border-color: rgba(180, 83, 9, .58);
+    background: rgba(255, 247, 237, .98);
+}
+
+.mpe-entry-food-search__item small {
+    color: rgba(55, 43, 33, .62);
 }
 
 .mpe-search-result__food {

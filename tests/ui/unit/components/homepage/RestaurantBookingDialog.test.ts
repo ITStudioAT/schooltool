@@ -126,6 +126,15 @@ describe('homepage restaurant booking dialog', () => {
                                         menu_title: 'Ofenkartoffel',
                                         price: '9.40',
                                         eating_times: [],
+                                        foods: [
+                                            {
+                                                id: 3,
+                                                title: 'Plan-Salat',
+                                                description: 'Nur in diesem Menüplan',
+                                                allergens: ['M'],
+                                                ingredient_icons: [],
+                                            },
+                                        ],
                                         menu: {
                                             foods: [
                                                 {
@@ -197,9 +206,9 @@ describe('homepage restaurant booking dialog', () => {
 
         const descriptions = wrapper.findAll('.rp-menu__food-description')
 
-        expect(descriptions).toHaveLength(2)
-        expect(wrapper.text()).toContain('Kräftige Rindsuppe mit Backerbsen')
-        expect(wrapper.text()).toContain('Mit Schnittlauchsauce und Salat')
+        expect(descriptions).toHaveLength(1)
+        expect(wrapper.text()).toContain('Nur in diesem Menüplan')
+        expect(wrapper.text()).not.toContain('Kräftige Rindsuppe mit Backerbsen')
     })
 
     it('opens the booking dialog when the buchen button is clicked', async () => {

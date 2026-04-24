@@ -48,6 +48,7 @@ beforeEach(function () {
     $this->menu->foods()->sync([
         $food->id => ['course_number' => 1],
     ]);
+    $this->food = $food;
     $this->eatingTime = RestaurantEatingTime::factory()->create(['school_id' => $this->school->id, 'eating_time' => '11:30:00']);
 });
 
@@ -148,6 +149,7 @@ test('store creates menu plan with entries and eating times', function () {
                 'menu_title' => 'Montagsmenue',
                 'price' => '8.50',
                 'comments' => 'Ohne Sellerie servieren.',
+                'food_ids' => [$this->food->id],
                 'eating_time_ids' => [$this->eatingTime->id],
             ],
         ],
@@ -168,13 +170,17 @@ test('store creates menu plan with entries and eating times', function () {
         ->assertJsonCount(1, 'data.entries')
         ->assertJsonPath('data.entries.0.menu_title', 'Montagsmenue')
         ->assertJsonPath('data.entries.0.price', '8.50')
-        ->assertJsonPath('data.entries.0.comments', 'Ohne Sellerie servieren.');
+        ->assertJsonPath('data.entries.0.comments', 'Ohne Sellerie servieren.')
+        ->assertJsonPath('data.entries.0.has_foods_snapshot', true)
+        ->assertJsonPath('data.entries.0.foods.0.id', $this->food->id)
+        ->assertJsonPath('data.entries.0.foods.0.course_number', 1);
 
     expect(RestaurantMenuPlan::query()->where('school_id', $this->school->id)->count())->toBe(1);
     expect(RestaurantMenuPlan::query()->first()?->is_available)->toBeTrue();
     expect(RestaurantMenuPlan::query()->first()?->use_individual_schedule_values)->toBeTrue();
     expect(RestaurantMenuPlan::query()->first()?->visible_start_at?->format('Y-m-d\TH:i'))->toBe('2026-04-01T09:15');
     expect(RestaurantMenuPlanEntry::query()->count())->toBe(1);
+    expect(RestaurantMenuPlanEntry::query()->first()?->foods_snapshot)->toBeArray();
 });
 
 test('show returns plan with entries and eating time details', function () {
@@ -329,6 +335,91 @@ test('update replaces entries', function () {
     expect($plan->fresh()?->use_individual_schedule_values)->toBeTrue();
     expect($plan->fresh()?->order_end_at?->format('Y-m-d\TH:i'))->toBe('2026-04-10T17:00');
     expect(RestaurantMenuPlanEntry::query()->where('restaurant_menu_plan_id', $plan->id)->count())->toBe(1);
+});
+
+test('update stores plan specific food snapshots without changing the base menu', function () {
+    $plan = RestaurantMenuPlan::factory()->create(['school_id' => $this->school->id, 'start_date' => '2026-04-07', 'end_date' => '2026-04-11']);
+    $entry = RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-07',
+        'restaurant_menu_id' => $this->menu->id,
+    ]);
+
+    $secondFood = RestaurantFood::factory()->forSchool($this->school)->create(['title' => 'Kartoffelsalat']);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->putJson("/api/admin/restaurant/menu-plans/{$plan->id}", [
+            'title' => 'Aktualisiert',
+            'start_date' => '2026-04-07',
+            'end_date' => '2026-04-11',
+            'is_available' => false,
+            'visibility_start_mode' => 'when_available',
+            'order_start_mode' => 'when_available',
+            'order_end_week_offset' => 0,
+            'order_end_day_of_week' => 5,
+            'order_end_time' => '17:00',
+            'visibility_end_mode' => 'plan_end',
+            'entries' => [
+                [
+                    'id' => $entry->id,
+                    'plan_date' => '2026-04-07',
+                    'menu_id' => $this->menu->id,
+                    'menu_title' => 'Montagsmenue',
+                    'price' => '8.50',
+                    'foods' => [
+                        [
+                            'id' => $secondFood->id,
+                            'title' => 'Kartoffelsalat Spezial',
+                            'description' => 'Nur in diesem Menüplan',
+                            'allergens' => ['M'],
+                            'price' => '3.50',
+                            'category' => [
+                                'id' => $secondFood->restaurant_category_id,
+                                'title' => 'Salat',
+                            ],
+                            'ingredient_icons' => [],
+                        ],
+                    ],
+                    'eating_time_ids' => [],
+                ],
+            ],
+        ])
+        ->assertOk()
+        ->assertJsonPath('data.entries.0.has_foods_snapshot', true)
+        ->assertJsonPath('data.entries.0.foods.0.id', $secondFood->id)
+        ->assertJsonPath('data.entries.0.foods.0.title', 'Kartoffelsalat Spezial')
+        ->assertJsonPath('data.entries.0.foods.0.description', 'Nur in diesem Menüplan')
+        ->assertJsonPath('data.entries.0.foods.0.price', '3.50');
+
+    $persistedEntry = RestaurantMenuPlanEntry::query()
+        ->where('restaurant_menu_plan_id', $plan->id)
+        ->first();
+
+    expect($this->menu->fresh()->foods()->pluck('restaurant_foods.id')->all())->toBe([$this->food->id]);
+    expect($persistedEntry?->foods_snapshot[0]['id'])->toBe($secondFood->id);
+    expect($persistedEntry?->foods_snapshot[0]['title'])->toBe('Kartoffelsalat Spezial');
+});
+
+test('toggle lock closes an available menu plan even when it is not currently orderable', function () {
+    $this->travelTo('2026-04-20 10:00:00');
+
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-27',
+        'end_date' => '2026-04-30',
+        'is_available' => true,
+        'use_individual_schedule_values' => true,
+        'order_start_at' => '2026-04-27 08:00:00',
+        'order_end_at' => '2026-04-30 12:00:00',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->postJson("/api/admin/restaurant/menu-plans/{$plan->id}/toggle-lock")
+        ->assertOk()
+        ->assertJsonPath('data.is_available', false);
+
+    expect($plan->fresh()?->is_available)->toBeFalse();
+    expect($plan->fresh()?->order_end_at?->format('Y-m-d H:i'))->toBe('2026-04-20 09:59');
 });
 
 test('update preserves booked entries while allowing unlocked entries to change', function () {

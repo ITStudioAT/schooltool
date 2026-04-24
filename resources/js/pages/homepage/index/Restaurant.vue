@@ -258,8 +258,8 @@
                                         <div v-if="entry.price" class="rp-menu__price">{{ formatPrice(entry.price) }}</div>
                                     </div>
 
-                                    <div v-if="entry.menu?.foods?.length" class="rp-menu__foods">
-                                        <div v-for="food in entry.menu.foods" :key="food.id" class="rp-menu__food-block">
+                                    <div v-if="entryFoods(entry).length" class="rp-menu__foods">
+                                        <div v-for="food in entryFoods(entry)" :key="food.id" class="rp-menu__food-block">
                                             <span class="rp-menu__food">
                                                 {{ food.title }}
                                                 <span v-if="food.allergens?.length" class="rp-menu__allergens">({{ food.allergens.join(', ') }})</span>
@@ -2270,6 +2270,11 @@ export default {
             }
 
             return Object.values(grouped).sort((a, b) => a.date.localeCompare(b.date))
+        },
+
+        entryFoods(entry) {
+            return [...(entry?.foods || entry?.menu?.foods || [])]
+                .sort((left, right) => Number(left.course_number || 99) - Number(right.course_number || 99))
         },
 
         weekdayLabel(isoDate) {

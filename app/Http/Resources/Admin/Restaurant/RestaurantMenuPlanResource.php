@@ -46,6 +46,12 @@ class RestaurantMenuPlanResource extends JsonResource
                 'booked_menu_count' => (int) ($entry->getAttribute('booked_menu_count') ?? 0),
                 'can_manage_bookings' => (bool) ($entry->getAttribute('can_manage_bookings') ?? false),
                 'comments' => $entry->comments,
+                'foods' => is_array($entry->foods_snapshot)
+                    ? array_values($entry->foods_snapshot)
+                    : ($entry->relationLoaded('menu') && $entry->menu
+                        ? (new RestaurantMenuResource($entry->menu))->resolve($request)['foods']
+                        : []),
+                'has_foods_snapshot' => is_array($entry->foods_snapshot),
                 'menu' => $entry->relationLoaded('menu') && $entry->menu
                     ? (new RestaurantMenuResource($entry->menu))->resolve($request)
                     : null,

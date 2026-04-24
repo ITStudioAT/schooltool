@@ -199,16 +199,28 @@
                                 Erstellen
                             </v-btn>
                             <v-btn
-                                v-if="isExistingPlanSelection && selectedExistingPlan?.is_available"
-                                :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                                v-if="isExistingPlanSelection"
+                                color="info"
                                 variant="tonal"
                                 rounded="xl"
                                 block
-                                :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                                prepend-icon="mdi-printer"
+                                data-testid="menu-plan-print-button"
+                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
+                                @click="showPrintDialog = true">
+                                Drucken
+                            </v-btn>
+                            <v-btn
+                                v-if="isExistingPlanSelection && selectedExistingPlan?.is_available"
+                                color="error"
+                                variant="tonal"
+                                rounded="xl"
+                                block
+                                prepend-icon="mdi-lock"
                                 data-testid="menu-plan-toggle-lock-button"
                                 :disabled="isNavigatingToEditor || isTogglingLock"
                                 @click="showToggleLockDialog = true">
-                                {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                                Zusperren
                             </v-btn>
                             <v-btn
                                 v-if="isExistingPlanSelection && !selectedExistingPlan?.is_available"
@@ -221,18 +233,6 @@
                                 :disabled="isNavigatingToEditor || isTogglingLock"
                                 @click="showToggleLockDialog = true">
                                 Aufsperren
-                            </v-btn>
-                            <v-btn
-                                v-if="isExistingPlanSelection"
-                                color="info"
-                                variant="tonal"
-                                rounded="xl"
-                                block
-                                prepend-icon="mdi-printer"
-                                data-testid="menu-plan-print-button"
-                                :disabled="!selectedExistingPlan || isNavigatingToEditor"
-                                @click="showPrintDialog = true">
-                                Drucken
                             </v-btn>
                             <v-btn
                                 variant="text"
@@ -263,10 +263,10 @@
         <v-dialog v-model="showToggleLockDialog" max-width="450" persistent>
             <v-card rounded="xl">
                 <v-card-title class="pt-5 px-5">
-                    {{ isSelectedPlanOrderableNow ? 'Menüplan zusperren' : 'Menüplan aufsperren' }}
+                    {{ selectedExistingPlan?.is_available ? 'Menüplan zusperren' : 'Menüplan aufsperren' }}
                 </v-card-title>
                 <v-card-text class="px-5">
-                    <template v-if="isSelectedPlanOrderableNow">
+                    <template v-if="selectedExistingPlan?.is_available">
                         Soll der Menüplan
                         <strong>{{ selectedExistingPlan ? formatPeriod(selectedExistingPlan.start_date, selectedExistingPlan.end_date) : '' }}</strong>
                         sofort zugesperrt werden? Bestellungen sind danach nicht mehr m&ouml;glich.
@@ -281,13 +281,13 @@
                     <v-spacer />
                     <v-btn variant="text" color="secondary" rounded="xl" :disabled="isTogglingLock" @click="showToggleLockDialog = false">Abbrechen</v-btn>
                     <v-btn
-                        :color="isSelectedPlanOrderableNow ? 'error' : 'success'"
+                        :color="selectedExistingPlan?.is_available ? 'error' : 'success'"
                         variant="tonal"
                         rounded="xl"
-                        :prepend-icon="isSelectedPlanOrderableNow ? 'mdi-lock' : 'mdi-lock-open'"
+                        :prepend-icon="selectedExistingPlan?.is_available ? 'mdi-lock' : 'mdi-lock-open'"
                         :loading="isTogglingLock"
                         @click="confirmToggleLock">
-                        {{ isSelectedPlanOrderableNow ? 'Zusperren' : 'Aufsperren' }}
+                        {{ selectedExistingPlan?.is_available ? 'Zusperren' : 'Aufsperren' }}
                     </v-btn>
                 </v-card-actions>
             </v-card>

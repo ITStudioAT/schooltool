@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\RestaurantBilling;
+use App\Models\RestaurantFood;
 use App\Models\RestaurantMenu;
 use App\Models\RestaurantMenuPlan;
 use App\Models\RestaurantMenuPlanEntry;
@@ -12,6 +13,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class RestaurantMenuPlanService
@@ -186,13 +188,7 @@ class RestaurantMenuPlanService
                 ->where('school_id', $plan->school_id)
                 ->findOrFail($entry['menu_id']);
 
-            $attributes = [
-                'plan_date' => $entry['plan_date'],
-                'restaurant_menu_id' => $menu->id,
-                'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : (string) $menu->title,
-                'price' => isset($entry['price']) && $entry['price'] !== '' ? $entry['price'] : $menu->price,
-                'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
-            ];
+            $attributes = $this->entryAttributes($plan, $menu, $entry);
 
             if ($existingEntry) {
                 $existingEntry->update($attributes);
@@ -215,16 +211,137 @@ class RestaurantMenuPlanService
                 ->where('school_id', $plan->school_id)
                 ->findOrFail($entry['menu_id']);
 
-            $newEntry = $plan->entries()->create([
-                'plan_date' => $entry['plan_date'],
-                'restaurant_menu_id' => $menu->id,
-                'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : (string) $menu->title,
-                'price' => isset($entry['price']) && $entry['price'] !== '' ? $entry['price'] : $menu->price,
-                'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
-            ]);
+            $newEntry = $plan->entries()->create($this->entryAttributes($plan, $menu, $entry));
 
             $newEntry->eatingTimes()->sync($entry['eating_time_ids'] ?? []);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array<string, mixed>
+     */
+    private function entryAttributes(RestaurantMenuPlan $plan, RestaurantMenu $menu, array $entry): array
+    {
+        return [
+            'plan_date' => $entry['plan_date'],
+            'restaurant_menu_id' => $menu->id,
+            'menu_title' => filled($entry['menu_title'] ?? null) ? trim((string) $entry['menu_title']) : (string) $menu->title,
+            'price' => isset($entry['price']) && $entry['price'] !== '' ? $entry['price'] : $menu->price,
+            'comments' => filled($entry['comments'] ?? null) ? trim((string) $entry['comments']) : null,
+            'foods_snapshot' => $this->entryFoodsSnapshot($plan, $entry),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function entryFoodsSnapshot(RestaurantMenuPlan $plan, array $entry): ?array
+    {
+        if (array_key_exists('foods', $entry)) {
+            return $this->foodSnapshotFromSubmittedFoods(
+                is_array($entry['foods'] ?? null) ? $entry['foods'] : []
+            );
+        }
+
+        if (array_key_exists('food_ids', $entry)) {
+            return $this->foodSnapshotForIds($plan, is_array($entry['food_ids'] ?? null) ? $entry['food_ids'] : []);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $foods
+     * @return array<int, array<string, mixed>>
+     */
+    private function foodSnapshotFromSubmittedFoods(array $foods): array
+    {
+        return collect($foods)
+            ->values()
+            ->map(fn (array $food, int $index): array => [
+                'id' => isset($food['id']) ? (int) $food['id'] : null,
+                'title' => trim((string) ($food['title'] ?? '')),
+                'course_number' => $index + 1,
+                'description' => filled($food['description'] ?? null) ? trim((string) $food['description']) : null,
+                'allergens' => array_values(is_array($food['allergens'] ?? null) ? $food['allergens'] : []),
+                'category' => is_array($food['category'] ?? null) ? [
+                    'id' => isset($food['category']['id']) ? (int) $food['category']['id'] : null,
+                    'title' => filled($food['category']['title'] ?? null) ? trim((string) $food['category']['title']) : null,
+                ] : null,
+                'price' => isset($food['price']) && $food['price'] !== '' ? (string) $food['price'] : null,
+                'ingredient_icons' => collect(is_array($food['ingredient_icons'] ?? null) ? $food['ingredient_icons'] : [])
+                    ->map(fn (array $icon): array => [
+                        'id' => isset($icon['id']) ? (int) $icon['id'] : null,
+                        'title' => filled($icon['title'] ?? null) ? trim((string) $icon['title']) : null,
+                        'image_url' => $icon['image_url'] ?? null,
+                        'image_path' => $icon['image_path'] ?? null,
+                    ])
+                    ->values()
+                    ->all(),
+                'food_image_url' => $food['food_image_url'] ?? null,
+                'food_image_path' => $food['food_image_path'] ?? null,
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  array<int, mixed>  $foodIds
+     * @return array<int, array<string, mixed>>|null
+     */
+    private function foodSnapshotForIds(RestaurantMenuPlan $plan, array $foodIds): ?array
+    {
+        $orderedFoodIds = collect($foodIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->values();
+
+        if ($orderedFoodIds->isEmpty()) {
+            return [];
+        }
+
+        $foods = RestaurantFood::query()
+            ->where('school_id', $plan->school_id)
+            ->whereIn('id', $orderedFoodIds)
+            ->with(['category', 'ingredientIcons'])
+            ->get()
+            ->keyBy('id');
+
+        return $orderedFoodIds
+            ->map(function (int $foodId, int $index) use ($foods): array {
+                /** @var RestaurantFood $food */
+                $food = $foods->get($foodId);
+
+                if (! $food) {
+                    throw new ConflictHttpException('Mindestens eine Speise ist nicht mehr verfügbar.');
+                }
+
+                return [
+                    'id' => $food->id,
+                    'title' => (string) $food->title,
+                    'course_number' => $index + 1,
+                    'description' => $food->description,
+                    'allergens' => array_values(is_array($food->allergens) ? $food->allergens : []),
+                    'category' => $food->category ? [
+                        'id' => $food->category->id,
+                        'title' => (string) $food->category->title,
+                    ] : null,
+                    'price' => $food->price !== null ? (string) $food->price : null,
+                    'ingredient_icons' => $food->ingredientIcons
+                        ->map(fn ($icon): array => [
+                            'id' => $icon->id,
+                            'title' => (string) $icon->title,
+                            'image_url' => $icon->image_path ? Storage::disk('public')->url($icon->image_path) : null,
+                            'image_path' => $icon->image_path,
+                        ])
+                        ->values()
+                        ->all(),
+                    'food_image_url' => $food->food_image_path ? Storage::disk('public')->url($food->food_image_path) : null,
+                    'food_image_path' => $food->food_image_path,
+                ];
+            })
+            ->all();
     }
 
     /**
@@ -335,10 +452,10 @@ class RestaurantMenuPlanService
         }
 
         $now = Carbon::now(config('app.timezone'));
-        $isCurrentlyOrderable = $this->isPlanOrderableNow($plan);
 
-        if ($isCurrentlyOrderable) {
+        if ($plan->is_available) {
             $plan->update([
+                'is_available' => false,
                 'use_individual_schedule_values' => true,
                 'order_end_at' => $now->copy()->subMinute(),
             ]);

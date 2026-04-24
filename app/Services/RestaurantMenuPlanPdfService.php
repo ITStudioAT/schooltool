@@ -130,7 +130,7 @@ class RestaurantMenuPlanPdfService
     private function buildEntries(Collection $entries): array
     {
         return $entries->map(function (RestaurantMenuPlanEntry $entry): array {
-            $foods = collect($entry->menu?->foods ?? [])
+            $foods = $this->entryFoods($entry)
                 ->sortBy(fn ($food): int => (int) ($food->pivot->course_number ?? $food->course_number ?? 999))
                 ->values()
                 ->map(function ($food): array {
@@ -139,7 +139,7 @@ class RestaurantMenuPlanPdfService
                     return [
                         'course_label' => 'Gang '.($courseNumber ?: '?'),
                         'title' => (string) $food->title,
-                        'category' => $food->category?->title,
+                        'category' => $this->foodCategoryTitle($food),
                         'description' => $food->description,
                     ];
                 })
@@ -165,6 +165,24 @@ class RestaurantMenuPlanPdfService
                 'foods' => $foods,
             ];
         })->all();
+    }
+
+    private function entryFoods(RestaurantMenuPlanEntry $entry): Collection
+    {
+        if (is_array($entry->foods_snapshot)) {
+            return collect($entry->foods_snapshot)->map(fn (array $food): object => (object) $food);
+        }
+
+        return collect($entry->menu?->foods ?? []);
+    }
+
+    private function foodCategoryTitle(mixed $food): ?string
+    {
+        if (is_array($food->category ?? null)) {
+            return $food->category['title'] ?? null;
+        }
+
+        return $food->category?->title;
     }
 
     /**

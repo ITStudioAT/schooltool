@@ -21,6 +21,7 @@ class RestaurantMenuPlanEntry extends Model
         'menu_title',
         'price',
         'comments',
+        'foods_snapshot',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class RestaurantMenuPlanEntry extends Model
         return [
             'plan_date' => 'date',
             'price' => 'decimal:2',
+            'foods_snapshot' => 'array',
         ];
     }
 
