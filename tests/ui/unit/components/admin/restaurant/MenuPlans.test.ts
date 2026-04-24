@@ -400,6 +400,29 @@ describe('Restaurant menu plans component', () => {
         expect(wrapper.find('[data-testid="booked-menu-counter-2026-03-26"]').text()).toBe('2')
     })
 
+    it('marks billed menu-plan days and the selected plan', async () => {
+        const wrapper = mountMenuPlans({}, [
+            {
+                id: 'mp-2026-04-20',
+                start_date: '2026-04-20',
+                end_date: '2026-04-24',
+                is_available: true,
+                has_billed_entries: true,
+                entries: [
+                    { id: 1, plan_date: '2026-04-22', can_manage_bookings: false },
+                ],
+            },
+        ])
+
+        ;(wrapper.vm as any).currentWeekStartIso = '2026-04-20'
+        ;(wrapper.vm as any).selectDay('2026-04-22')
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.find('[data-testid="billed-plan-marker-2026-04-22"]').exists()).toBe(true)
+        expect(wrapper.find('[data-testid="selected-plan-billed-note"]').text()).toContain('abgerechnet')
+        expect(wrapper.text()).toContain('Abgerechnet')
+    })
+
     it('opens the bookings print option with the bookings query parameter', () => {
         const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
         const wrapper = mountMenuPlans()

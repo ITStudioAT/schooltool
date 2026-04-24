@@ -93,3 +93,43 @@ it('builds a sepa mandate pdf from the stored mandate snapshot', function (): vo
     expect($path)->toContain('sepa_lastschriftmandat_')
         ->and($path)->toEndWith('.pdf');
 });
+
+it('builds a sepa mandate preview pdf from current settings', function (): void {
+    $school = School::factory()->create(['long_name' => 'Vorschule']);
+
+    $wrapper = Mockery::mock(PDF::class);
+    $wrapper->shouldReceive('setPaper')
+        ->once()
+        ->with('a4', 'portrait')
+        ->andReturnSelf();
+    $wrapper->shouldReceive('save')
+        ->once()
+        ->withArgs(function (string $path): bool {
+            expect($path)->toContain('app/private/pdf')
+                ->and($path)->toEndWith('sepa_lastschriftmandat_vorschau.pdf');
+
+            return true;
+        });
+
+    DomPdf::shouldReceive('loadView')
+        ->once()
+        ->withArgs(function (string $view, array $data): bool {
+            expect($view)->toBe('pdfs.restaurantSepaMandate');
+            expect($data['mandate']['school_name'])->toBe('Vorschule');
+            expect($data['mandate']['account_holder_name'])->toBe('Max Mustermann');
+            expect($data['mandate']['child_entries'][0]['name'])->toBe('Maria Mustermann');
+            expect($data['mandate']['sepa_payee'])->toBe('<p>Zahlungsempfänger Vorschau</p>');
+            expect($data['mandate']['sepa_mandate_text'])->toBe('<p>Mandat Vorschau</p>');
+            expect($data['mandate']['signature_uuid'])->toBe('VORSCHAU');
+
+            return true;
+        })
+        ->andReturn($wrapper);
+
+    $path = app(RestaurantSepaMandatePdfService::class)->createPreviewPdf($school, [
+        'sepa_payee' => '<p>Zahlungsempfänger Vorschau</p>',
+        'sepa_mandate_text' => '<p>Mandat Vorschau</p>',
+    ]);
+
+    expect($path)->toEndWith('sepa_lastschriftmandat_vorschau.pdf');
+});

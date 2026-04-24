@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Storage;
 
 class MaterialStorageAuditService
@@ -80,6 +81,7 @@ class MaterialStorageAuditService
         return [
             'reports' => $reports,
             'generated_at' => now()->toIso8601String(),
+            'is_local_environment' => App::environment(['local', 'testing']),
         ];
     }
 
@@ -292,6 +294,9 @@ class MaterialStorageAuditService
         ?callable $progressCallback = null,
     ): array {
         $bucketFiles = $this->bucketFiles($bucketPrefix);
+        $localFiles = App::environment(['local', 'testing'])
+            ? $this->localFiles($bucketPrefix)
+            : [];
         if (is_callable($progressCallback)) {
             $progressCallback('Bucket-Dateien werden geprüft.');
         }
@@ -329,8 +334,14 @@ class MaterialStorageAuditService
             ] : null,
             'bucket_prefix' => $bucketPrefix,
             'bucket' => [
+                'path' => $this->cloudStoragePath($bucketPrefix),
                 'object_count' => count($bucketFiles),
                 'total_bytes' => $this->sumBytesFromArrays($bucketFiles),
+            ],
+            'local' => [
+                'path' => App::environment(['local', 'testing']) ? $this->localStoragePath($bucketPrefix) : '',
+                'file_count' => count($localFiles),
+                'total_bytes' => $this->sumBytesFromArrays($localFiles),
             ],
             'cloud_sync_source' => [
                 'count' => $cloudBackedFiles->count(),
@@ -412,6 +423,9 @@ class MaterialStorageAuditService
                 ->values()
                 ->take(self::MAX_RECONCILIATION_ITEMS)
                 ->all(),
+            'school_cloud_summaries' => $scopeKey === 'all_schools'
+                ? $this->schoolCloudSummaries($bucketFiles, $bucketOnlyObjects, $databaseOnlyAttachments)
+                : [],
             'has_more_bucket_only_objects' => $bucketOnlyObjects->count() > self::MAX_RECONCILIATION_ITEMS,
             'has_more_database_only_attachments' => $databaseOnlyAttachments->count() > self::MAX_RECONCILIATION_ITEMS,
             'has_more_local_missing_files' => $localMissingFiles->count() > self::MAX_RECONCILIATION_ITEMS,
@@ -637,6 +651,156 @@ class MaterialStorageAuditService
         }
 
         return $normalizedFiles;
+    }
+
+    /**
+     * @return array<int, array{path: string, size_bytes: int}>
+     */
+    private function localFiles(string $bucketPrefix): array
+    {
+        $prefix = $this->normalizeStoragePath($bucketPrefix);
+        $prefix = $prefix !== '' ? rtrim($prefix, '/').'/' : '';
+        $disk = Storage::disk('local');
+        $files = $disk->allFiles($prefix);
+
+        $normalizedFiles = [];
+
+        foreach ($files as $path) {
+            $normalizedPath = $this->normalizeStoragePath((string) $path);
+            if ($normalizedPath === '') {
+                continue;
+            }
+
+            try {
+                $sizeBytes = (int) ($disk->size($normalizedPath) ?: 0);
+            } catch (\Throwable) {
+                $sizeBytes = 0;
+            }
+
+            $normalizedFiles[] = [
+                'path' => $normalizedPath,
+                'size_bytes' => $sizeBytes,
+            ];
+        }
+
+        return $normalizedFiles;
+    }
+
+    private function localStoragePath(string $bucketPrefix): string
+    {
+        $root = rtrim(str_replace('\\', '/', (string) config('filesystems.disks.local.root', storage_path('app/private'))), '/');
+        $prefix = $this->normalizeStoragePath($bucketPrefix);
+
+        return $prefix !== '' ? $root.'/'.$prefix : $root;
+    }
+
+    private function cloudStoragePath(string $bucketPrefix): string
+    {
+        $bucket = trim((string) config('filesystems.disks.s3.bucket', ''));
+        $prefix = $this->normalizeStoragePath($bucketPrefix);
+
+        if ($bucket === '') {
+            return $prefix;
+        }
+
+        return $prefix !== '' ? $bucket.'/'.$prefix : $bucket;
+    }
+
+    /**
+     * @param  array<int, array{path: string, size_bytes: int}>  $bucketFiles
+     * @param  Collection<int, array{path: string, size_bytes: int}>  $bucketOnlyObjects
+     * @param  Collection<int, MaterialCardAttachment>  $databaseOnlyAttachments
+     * @return array<int, array<string, mixed>>
+     */
+    private function schoolCloudSummaries(array $bucketFiles, Collection $bucketOnlyObjects, Collection $databaseOnlyAttachments): array
+    {
+        $summaries = [];
+
+        foreach ($bucketFiles as $bucketFile) {
+            $schoolId = $this->schoolIdFromStoragePath((string) ($bucketFile['path'] ?? ''));
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $summaries[$schoolId] ??= $this->emptySchoolCloudSummary($schoolId);
+            $summaries[$schoolId]['object_count']++;
+            $summaries[$schoolId]['total_bytes'] += max(0, (int) ($bucketFile['size_bytes'] ?? 0));
+        }
+
+        foreach ($bucketOnlyObjects as $bucketOnlyObject) {
+            $schoolId = $this->schoolIdFromStoragePath((string) ($bucketOnlyObject['path'] ?? ''));
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $summaries[$schoolId] ??= $this->emptySchoolCloudSummary($schoolId);
+            $summaries[$schoolId]['files_without_material_count']++;
+        }
+
+        foreach ($databaseOnlyAttachments as $attachment) {
+            $schoolId = (int) ($attachment->materialCard?->school_id ?? 0);
+            if ($schoolId <= 0) {
+                $schoolId = $this->schoolIdFromStoragePath((string) ($attachment->file_path ?? ''));
+            }
+            if ($schoolId <= 0) {
+                continue;
+            }
+
+            $summaries[$schoolId] ??= $this->emptySchoolCloudSummary($schoolId);
+            $summaries[$schoolId]['materials_missing_file_count']++;
+        }
+
+        $schools = School::query()
+            ->whereIn('id', array_keys($summaries))
+            ->get(['id', 'long_name', 'short_name'])
+            ->keyBy(fn (School $school): int => (int) $school->id);
+
+        foreach ($summaries as $schoolId => $summary) {
+            $school = $schools->get((int) $schoolId);
+            $summaries[$schoolId]['school'] = $school instanceof School
+                ? [
+                    'id' => (int) $school->id,
+                    'long_name' => (string) ($school->long_name ?? ''),
+                    'short_name' => (string) ($school->short_name ?? ''),
+                ]
+                : [
+                    'id' => (int) $schoolId,
+                    'long_name' => '',
+                    'short_name' => '',
+                ];
+        }
+
+        return collect($summaries)
+            ->sortBy(fn (array $summary): string => mb_strtolower((string) ($summary['school']['long_name'] ?: $summary['school']['short_name'] ?: $summary['school']['id'])))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptySchoolCloudSummary(int $schoolId): array
+    {
+        return [
+            'school' => [
+                'id' => $schoolId,
+                'long_name' => '',
+                'short_name' => '',
+            ],
+            'object_count' => 0,
+            'total_bytes' => 0,
+            'materials_missing_file_count' => 0,
+            'files_without_material_count' => 0,
+        ];
+    }
+
+    private function schoolIdFromStoragePath(string $path): int
+    {
+        if (preg_match('#(?:^|/)materials/schools/(\d+)(?:/|$)#', $this->normalizeStoragePath($path), $matches) !== 1) {
+            return 0;
+        }
+
+        return (int) ($matches[1] ?? 0);
     }
 
     /**

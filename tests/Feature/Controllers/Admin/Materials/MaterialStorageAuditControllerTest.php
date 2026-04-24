@@ -135,9 +135,13 @@ beforeEach(function (): void {
     $this->activeMissingOnlinePath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$this->activeMissingOnlineCard->id}/missing.docx";
     $this->activeTrashedPath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$this->activeTrashedCard->id}/deleted.pdf";
     $this->activeOrphanPath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/orphans/active-orphan.pdf";
+    $this->activeLocalOnlyPath = "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/local/active-local-only.pdf";
     $this->otherLivePath = "materials/schools/{$this->otherSchool->id}/users/{$this->otherSchoolUser->id}/cards/{$this->otherLiveCard->id}/other.pdf";
     $this->otherOrphanPath = "materials/schools/{$this->otherSchool->id}/users/{$this->otherSchoolUser->id}/cards/orphans/other-orphan.pdf";
+    $this->otherLocalOnlyPath = "materials/schools/{$this->otherSchool->id}/users/{$this->otherSchoolUser->id}/cards/local/other-local-only.pdf";
 
+    Storage::disk('local')->put($this->activeLocalOnlyPath, str_repeat('l', 42));
+    Storage::disk('local')->put($this->otherLocalOnlyPath, str_repeat('m', 84));
     Storage::disk('s3')->put($this->activeLivePath, str_repeat('a', 100));
     Storage::disk('s3')->put($this->activeTrashedPath, str_repeat('b', 200));
     Storage::disk('s3')->put($this->activeOrphanPath, str_repeat('c', 300));
@@ -213,14 +217,23 @@ beforeEach(function (): void {
 });
 
 test('super_admin can load storage reconciliation for active school and all schools', function (): void {
+    $bucketName = trim((string) config('filesystems.disks.s3.bucket', ''));
+    $activeSchoolCloudPath = ($bucketName !== '' ? $bucketName.'/' : '').'materials/schools/'.$this->activeSchool->id;
+    $allSchoolsCloudPath = ($bucketName !== '' ? $bucketName.'/' : '').'materials';
+
     $response = $this->actingAs($this->superAdmin, 'sanctum')
         ->getJson('/api/admin/materials/storage-audit');
 
     $response->assertOk()
+        ->assertJsonPath('data.is_local_environment', true)
         ->assertJsonPath('data.reports.0.scope_key', 'active_school')
         ->assertJsonPath('data.reports.0.school.id', $this->activeSchool->id)
+        ->assertJsonPath('data.reports.0.bucket.path', $activeSchoolCloudPath)
         ->assertJsonPath('data.reports.0.bucket.object_count', 3)
         ->assertJsonPath('data.reports.0.bucket.total_bytes', 600)
+        ->assertJsonPath('data.reports.0.local.path', str_replace('\\', '/', storage_path('app/private/materials/schools/'.$this->activeSchool->id)))
+        ->assertJsonPath('data.reports.0.local.file_count', 1)
+        ->assertJsonPath('data.reports.0.local.total_bytes', 42)
         ->assertJsonPath('data.reports.0.cloud_sync_source.count', 2)
         ->assertJsonPath('data.reports.0.cloud_sync_source.total_bytes', 300)
         ->assertJsonPath('data.reports.0.database.live.count', 2)
@@ -249,8 +262,12 @@ test('super_admin can load storage reconciliation for active school and all scho
         ->assertJsonPath('data.reports.0.cloud_sync_files.0.path', $this->activeTrashedPath)
         ->assertJsonPath('data.reports.0.cloud_sync_files.1.path', $this->activeLivePath)
         ->assertJsonPath('data.reports.1.scope_key', 'all_schools')
+        ->assertJsonPath('data.reports.1.bucket.path', $allSchoolsCloudPath)
         ->assertJsonPath('data.reports.1.bucket.object_count', 5)
         ->assertJsonPath('data.reports.1.bucket.total_bytes', 1500)
+        ->assertJsonPath('data.reports.1.local.path', str_replace('\\', '/', storage_path('app/private/materials')))
+        ->assertJsonPath('data.reports.1.local.file_count', 2)
+        ->assertJsonPath('data.reports.1.local.total_bytes', 126)
         ->assertJsonPath('data.reports.1.cloud_sync_source.count', 3)
         ->assertJsonPath('data.reports.1.cloud_sync_source.total_bytes', 700)
         ->assertJsonPath('data.reports.1.database.live.count', 4)
@@ -269,6 +286,16 @@ test('super_admin can load storage reconciliation for active school and all scho
         ->assertJsonPath('data.reports.1.bucket_only_objects.0.size_bytes', 500)
         ->assertJsonPath('data.reports.1.bucket_only_objects.1.path', $this->activeOrphanPath)
         ->assertJsonPath('data.reports.1.bucket_only_objects.1.size_bytes', 300)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.0.school.id', $this->activeSchool->id)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.0.object_count', 3)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.0.total_bytes', 600)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.0.materials_missing_file_count', 1)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.0.files_without_material_count', 1)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.1.school.id', $this->otherSchool->id)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.1.object_count', 2)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.1.total_bytes', 900)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.1.materials_missing_file_count', 0)
+        ->assertJsonPath('data.reports.1.school_cloud_summaries.1.files_without_material_count', 1)
         ->assertJsonPath('data.reports.1.database_only_attachments.0.file_path', $this->activeMissingOnlinePath)
         ->assertJsonPath('data.reports.1.database_only_attachments.0.school_id', $this->activeSchool->id)
         ->assertJsonPath('data.reports.1.database_only_attachments.0.subject_name', 'Informatik')

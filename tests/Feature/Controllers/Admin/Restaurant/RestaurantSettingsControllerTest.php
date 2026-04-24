@@ -6,6 +6,8 @@ use App\Models\RestaurantIngredientIcon;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
+use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
+use Barryvdh\DomPDF\PDF;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -124,6 +126,45 @@ test('restaurant user can update own foods pagination setting', function () {
         ->assertJsonPath('data.restaurant_foods_pagination_number', 18);
 
     expect((int) $this->admin->fresh()->restaurant_foods_pagination_number)->toBe(18);
+});
+
+test('restaurant admin can preview the sepa form pdf', function () {
+    SchoolTool::query()->create([
+        'school_id' => $this->school->id,
+        'restaurant_sepa_online_enabled' => true,
+        'restaurant_sepa_payee' => '<p>Zahlungsempfänger</p>',
+        'restaurant_sepa_mandate_text' => '<p>Mandatstext</p>',
+    ]);
+
+    $wrapper = Mockery::mock(PDF::class);
+    $wrapper->shouldReceive('setPaper')
+        ->once()
+        ->with('a4', 'portrait')
+        ->andReturnSelf();
+    $wrapper->shouldReceive('save')
+        ->once()
+        ->withArgs(function (string $path): bool {
+            file_put_contents($path, '%PDF-1.4 Vorschau');
+
+            return true;
+        });
+
+    DomPdf::shouldReceive('loadView')
+        ->once()
+        ->withArgs(function (string $view, array $data): bool {
+            expect($view)->toBe('pdfs.restaurantSepaMandate');
+            expect($data['mandate']['sepa_payee'])->toBe('<p>Zahlungsempfänger</p>');
+            expect($data['mandate']['sepa_mandate_text'])->toBe('<p>Mandatstext</p>');
+            expect($data['mandate']['signature_uuid'])->toBe('VORSCHAU');
+
+            return true;
+        })
+        ->andReturn($wrapper);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->get('/api/admin/restaurant/sepa-settings/preview')
+        ->assertOk()
+        ->assertHeader('content-type', 'application/pdf');
 });
 
 test('restaurant admin can update school wide online ordering settings', function () {

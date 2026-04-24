@@ -75,6 +75,13 @@
                                         <v-icon icon="mdi-check-circle" size="12" />
                                     </span>
                                     <span
+                                        v-if="day.hasBilledPlan"
+                                        class="mp-day__billed"
+                                        :data-testid="`billed-plan-marker-${day.iso}`"
+                                        aria-label="Abgerechneter Menüplan">
+                                        <v-icon icon="mdi-cash-check" size="12" />
+                                    </span>
+                                    <span
                                         v-if="day.isFreeDay"
                                         class="mp-day__free"
                                         :data-testid="`free-day-marker-${day.iso}`"
@@ -128,6 +135,12 @@
                                 Freigegebener Menüplan
                             </span>
                             <span class="mp-legend-item">
+                                <span class="mp-legend-billed" aria-hidden="true">
+                                    <v-icon icon="mdi-cash-check" size="12" />
+                                </span>
+                                Abgerechnet
+                            </span>
+                            <span class="mp-legend-item">
                                 <span class="mp-legend-free" aria-hidden="true">
                                     <v-icon icon="mdi-calendar-remove-outline" size="12" />
                                 </span>
@@ -173,6 +186,14 @@
                                     <div class="mp-step__value mp-step__value--note">{{ selectionSummary }}</div>
                                 </div>
                             </div>
+                        </div>
+
+                        <div
+                            v-if="selectedExistingPlanIsBilled"
+                            class="mp-billed-note"
+                            data-testid="selected-plan-billed-note">
+                            <v-icon icon="mdi-cash-check" size="16" />
+                            <span>Dieser Menüplan ist abgerechnet.</span>
                         </div>
 
                         <div class="mp-side-actions">
@@ -440,6 +461,9 @@ export default {
         isSelectedPlanOrderableNow() {
             return this.selectedExistingPlan ? this.isPlanOrderableNow(this.selectedExistingPlan) : false
         },
+        selectedExistingPlanIsBilled() {
+            return this.selectedExistingPlan ? this.isPlanBilled(this.selectedExistingPlan) : false
+        },
         selectionSummary() {
             if (!this.selectedStartIso) {
                 return 'Noch keine Auswahl. Bitte Starttag w\u00e4hlen.'
@@ -481,6 +505,7 @@ export default {
                     hasAvailablePlan: this.availablePlanCountForDay(iso) > 0,
                     hasOrderablePlan: this.orderablePlanCountForDay(iso) > 0,
                     hasFreigegebenPlan: this.freigegebenPlanCountForDay(iso) > 0,
+                    hasBilledPlan: this.billedPlanCountForDay(iso) > 0,
                     bookedMenuCount: this.bookedMenuCountForDay(iso),
                     planCount,
                     weekNumber: index === 0 ? this.getIsoWeekNumber(date) : null,
@@ -587,6 +612,18 @@ export default {
             return useMenuPlanStore().plans.filter((plan) => {
                 return this.isWithinRange(isoString, plan.start_date, plan.end_date) && plan.is_available === true
             }).length
+        },
+        billedPlanCountForDay(isoString) {
+            return useMenuPlanStore().plans.filter((plan) => {
+                return this.isWithinRange(isoString, plan.start_date, plan.end_date) && this.isPlanBilled(plan)
+            }).length
+        },
+        isPlanBilled(plan) {
+            if (plan?.has_billed_entries === true) {
+                return true
+            }
+
+            return Array.isArray(plan?.entries) && plan.entries.some((entry) => entry?.can_manage_bookings === false)
         },
         findPlanForDay(isoString) {
             return useMenuPlanStore().findPlanForDay(isoString)
@@ -1202,6 +1239,20 @@ export default {
     color: #7c3aed;
 }
 
+.mp-day__billed {
+    position: absolute;
+    bottom: 6px;
+    right: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
 .mp-day__free {
     position: absolute;
     bottom: 6px;
@@ -1354,6 +1405,17 @@ export default {
     color: #7c3aed;
 }
 
+.mp-legend-billed {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.12);
+    color: #0f172a;
+}
+
 .mp-legend-free {
     display: inline-flex;
     align-items: center;
@@ -1391,6 +1453,20 @@ export default {
     display: grid;
     gap: 10px;
     margin-bottom: 22px;
+}
+
+.mp-billed-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -8px 0 18px;
+    padding: 10px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 14px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.86rem;
+    font-weight: 700;
 }
 
 .mp-step {

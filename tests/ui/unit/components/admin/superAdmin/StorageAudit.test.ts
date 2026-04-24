@@ -43,6 +43,7 @@ describe('StorageAudit', () => {
 
     const reportsPayload = {
         generated_at: '2026-04-09T23:12:10+02:00',
+        is_local_environment: true,
         reports: [
             {
                 scope_key: 'active_school',
@@ -54,8 +55,14 @@ describe('StorageAudit', () => {
                 },
                 bucket_prefix: 'materials/schools/1',
                 bucket: {
+                    path: 'schooltool-materials/materials/schools/1',
                     object_count: 3,
                     total_bytes: 4096,
+                },
+                local: {
+                    path: 'C:/laravel/schooltool/storage/app/private/materials/schools/1',
+                    file_count: 1,
+                    total_bytes: 1024,
                 },
                 cloud_sync_source: {
                     count: 2,
@@ -144,8 +151,14 @@ describe('StorageAudit', () => {
                 school: null,
                 bucket_prefix: 'materials',
                 bucket: {
+                    path: 'schooltool-materials/materials',
                     object_count: 5,
                     total_bytes: 8192,
+                },
+                local: {
+                    path: 'C:/laravel/schooltool/storage/app/private/materials',
+                    file_count: 2,
+                    total_bytes: 2048,
                 },
                 cloud_sync_source: {
                     count: 3,
@@ -214,6 +227,30 @@ describe('StorageAudit', () => {
                         size_bytes: 2048,
                         reference_count: 1,
                         trashed_reference_count: 0,
+                    },
+                ],
+                school_cloud_summaries: [
+                    {
+                        school: {
+                            id: 1,
+                            long_name: 'Christian-Doppler-Gymnasium Salzburg',
+                            short_name: 'CDGym',
+                        },
+                        object_count: 3,
+                        total_bytes: 4096,
+                        materials_missing_file_count: 1,
+                        files_without_material_count: 1,
+                    },
+                    {
+                        school: {
+                            id: 2,
+                            long_name: 'Andere Schule',
+                            short_name: 'Andere',
+                        },
+                        object_count: 2,
+                        total_bytes: 4096,
+                        materials_missing_file_count: 0,
+                        files_without_material_count: 1,
                     },
                 ],
                 has_more_bucket_only_objects: false,
@@ -432,26 +469,42 @@ describe('StorageAudit', () => {
         })
 
         await waitFor(() => {
-            expect(screen.getAllByText('Was ist hier zu tun?')).toHaveLength(2)
+            expect(screen.getByText('Cloudflare: 4.00 KB')).toBeInTheDocument()
         })
 
-        expect(screen.getAllByText('Lokal fehlt noch')).toHaveLength(2)
-        expect(screen.getAllByText('Fehlt auch online')).toHaveLength(4)
-        expect(screen.getAllByText('Nur online ohne Materialeintrag')).toHaveLength(2)
-        expect(screen.getByText('Belegt 4.00 KB')).toBeInTheDocument()
-        expect(screen.getByText('Belegt 8.00 KB')).toBeInTheDocument()
-        expect(screen.getAllByText('Alle Materialdateien dieser Schule lokal laden')).toHaveLength(1)
-        expect(screen.getAllByRole('button', { name: 'Alle Dateien lokal laden' })).toHaveLength(1)
+        expect(screen.queryByText('Was ist hier zu tun?')).not.toBeInTheDocument()
+        expect(screen.queryByText('Zwei sichere Fälle: remote nach lokal laden oder remote manuell gegenprüfen')).not.toBeInTheDocument()
+        expect(screen.queryByText('Lokal fehlt noch')).not.toBeInTheDocument()
+        expect(screen.getAllByText('Materialien mit fehlender Datei')).toHaveLength(1)
+        expect(screen.queryByText('Nur online ohne Materialeintrag')).not.toBeInTheDocument()
+        expect(screen.queryByText('Cloudflare-Dateien ohne Materialeintrag')).not.toBeInTheDocument()
+        expect(screen.getByText('Cloudflare: 4.00 KB')).toBeInTheDocument()
+        expect(screen.getByText('Cloudflare: 8.00 KB')).toBeInTheDocument()
+        expect(screen.getByText('Lokal')).toBeInTheDocument()
+        expect(screen.getByText('C:/laravel/schooltool/storage/app/private/materials/schools/1')).toBeInTheDocument()
+        expect(screen.getByText('1 Dateien')).toBeInTheDocument()
+        expect(screen.getAllByText('1.00 KB')).not.toHaveLength(0)
+        expect(screen.getByText('Cloudflare')).toBeInTheDocument()
+        expect(screen.getByText('schooltool-materials/materials/schools/1')).toBeInTheDocument()
+        expect(screen.getByText('3 Dateien')).toBeInTheDocument()
+        expect(screen.getAllByText('Alle Materialdateien dieser Schule lokal aktualisieren')).toHaveLength(1)
+        expect(screen.getAllByRole('button', { name: 'Alle Dateien lokal aktualisieren' })).toHaveLength(1)
         expect(screen.getByText('Stand: 09.04.2026, 23:12 Uhr')).toBeInTheDocument()
         expect(screen.getByText('Geteilte oder verknüpfte Materialien sowie gelöschte, aber wiederherstellbare Materialien sind berücksichtigt. Beim Laden zählt jede Datei nur einmal, auch wenn sie in mehreren Karten vorkommt.')).toBeInTheDocument()
-        expect(screen.getAllByText('Informatik - Netzwerke - Sicherheit - Irgendwas • Schule 1')).toHaveLength(2)
+        expect(screen.getAllByText('Informatik - Netzwerke - Sicherheit - Irgendwas • Schule 1')).toHaveLength(1)
+        expect(screen.getByText('Cloudflare je Schule')).toBeInTheDocument()
+        expect(screen.getAllByText('Christian-Doppler-Gymnasium Salzburg').length).toBeGreaterThan(0)
+        expect(screen.getByText('Andere Schule')).toBeInTheDocument()
+        expect(screen.getAllByText('1 Dateien ohne Material')).toHaveLength(2)
         expect(screen.queryByText('materials/schools/1/users/7/cards/101/missing.docx')).not.toBeInTheDocument()
+        expect(screen.queryByText('materials/schools/1/users/7/cards/orphans/active-orphan.pdf')).not.toBeInTheDocument()
+        expect(screen.queryByText('materials/schools/2/users/9/cards/orphans/other-orphan.pdf')).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('2 Verweise'))).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('1 im Papierkorb'))).not.toBeInTheDocument()
         expect(screen.queryAllByRole('button', { name: 'Defekten Anhang löschen' })).toHaveLength(0)
         expect(screen.queryAllByRole('button', { name: 'Nur-online-Dateien löschen' })).toHaveLength(0)
-        expect(screen.getAllByText('Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.')).toHaveLength(2)
-        expect(screen.getAllByText('Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.')).toHaveLength(2)
+        expect(screen.queryByText('Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.')).not.toBeInTheDocument()
+        expect(screen.getAllByText('Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.')).toHaveLength(1)
 
         let syncStatusPollCount = 0
         axiosMock.get.mockImplementation((url: string) => {
@@ -513,7 +566,7 @@ describe('StorageAudit', () => {
             return Promise.reject(new Error(`Unexpected GET ${url}`))
         })
 
-        await fireEvent.click(screen.getByRole('button', { name: 'Alle Dateien lokal laden' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Alle Dateien lokal aktualisieren' }))
 
         await waitFor(() => {
             expect(axiosMock.post).toHaveBeenCalledWith('/api/admin/materials/storage-audit/sync-local', {
@@ -522,7 +575,7 @@ describe('StorageAudit', () => {
             })
         })
 
-        expect(screen.getByRole('button', { name: 'Alle Dateien lokal laden' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Alle Dateien lokal aktualisieren' })).toBeDisabled()
 
         await waitFor(() => {
             expect(screen.getByText('Der Download der Materialdateien wurde im Hintergrund gestartet.')).toBeInTheDocument()
@@ -549,5 +602,137 @@ describe('StorageAudit', () => {
             '/api/admin/materials/storage-audit/database-only-attachments/301',
             expect.anything(),
         )
+    })
+
+    it('hides local storage comparison and update action outside local environments', async () => {
+        const nonLocalPayload = {
+            ...reportsPayload,
+            is_local_environment: false,
+        }
+
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/storage-audit/operations/operation-1') {
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            operation_id: 'operation-1',
+                            status: 'completed',
+                            progress: 100,
+                            completed_steps: 10,
+                            total_steps: 10,
+                            refresh_after_seconds: 1,
+                            message: 'Speicherprüfung abgeschlossen.',
+                            result: nonLocalPayload,
+                        },
+                    },
+                })
+            }
+
+            return Promise.reject(new Error(`Unexpected GET ${url}`))
+        })
+
+        render(StorageAudit, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    selected_school: {
+                                        id: 1,
+                                        long_name: 'Christian-Doppler-Gymnasium Salzburg',
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText('Cloudflare: 4.00 KB')).toBeInTheDocument()
+        })
+
+        expect(screen.queryByText('Was ist hier zu tun?')).not.toBeInTheDocument()
+        expect(screen.queryByText('Lokal')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Alle Dateien lokal aktualisieren' })).not.toBeInTheDocument()
+        expect(screen.getByText('Cloudflare: 4.00 KB')).toBeInTheDocument()
+        expect(screen.getByText('Cloudflare-Dateien ohne Materialeintrag')).toBeInTheDocument()
+        expect(screen.getByText('materials/schools/1/users/7/cards/orphans/active-orphan.pdf')).toBeInTheDocument()
+        expect(screen.queryByText('materials/schools/2/users/9/cards/orphans/other-orphan.pdf')).not.toBeInTheDocument()
+        expect(screen.getAllByText('Materialien mit fehlender Datei')).toHaveLength(1)
+        expect(screen.getByText('Cloudflare je Schule')).toBeInTheDocument()
+        expect(screen.getAllByText('Christian-Doppler-Gymnasium Salzburg').length).toBeGreaterThan(0)
+        expect(screen.getByText('Andere Schule')).toBeInTheDocument()
+        expect(screen.getByText('1 Materialien mit fehlender Datei')).toBeInTheDocument()
+        expect(screen.getByText('0 Materialien mit fehlender Datei')).toBeInTheDocument()
+        expect(screen.getAllByText('1 Dateien ohne Material')).toHaveLength(2)
+    })
+
+    it('falls back to the active school report when all-schools summaries are missing', async () => {
+        const payloadWithoutSchoolSummaries = {
+            ...reportsPayload,
+            reports: reportsPayload.reports.map((report) => report.scope_key === 'all_schools'
+                ? { ...report, school_cloud_summaries: [] }
+                : report),
+        }
+
+        axiosMock.get.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/storage-audit/operations/operation-1') {
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            operation_id: 'operation-1',
+                            status: 'completed',
+                            progress: 100,
+                            completed_steps: 10,
+                            total_steps: 10,
+                            refresh_after_seconds: 1,
+                            message: 'Speicherprüfung abgeschlossen.',
+                            result: payloadWithoutSchoolSummaries,
+                        },
+                    },
+                })
+            }
+
+            return Promise.reject(new Error(`Unexpected GET ${url}`))
+        })
+
+        render(StorageAudit, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    selected_school: {
+                                        id: 1,
+                                        long_name: 'Christian-Doppler-Gymnasium Salzburg',
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText('Cloudflare je Schule')).toBeInTheDocument()
+        })
+
+        expect(screen.getAllByText('Christian-Doppler-Gymnasium Salzburg').length).toBeGreaterThan(0)
+        expect(screen.queryByText('Keine Cloudflare-Dateien für Schulen gefunden.')).not.toBeInTheDocument()
     })
 })

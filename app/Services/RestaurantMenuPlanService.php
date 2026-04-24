@@ -583,14 +583,22 @@ class RestaurantMenuPlanService
 
         $plan->setAttribute('has_bookings', $hasBookings);
         $plan->setAttribute('can_delete', ! $hasBookings);
+        $plan->setAttribute('has_billed_entries', false);
 
         if ($plan->relationLoaded('entries')) {
-            $plan->entries->each(function (RestaurantMenuPlanEntry $entry) use ($plan): void {
-                $entry->setAttribute(
-                    'can_manage_bookings',
-                    ! $this->weekIsBilled((int) $plan->school_id, $entry->plan_date)
-                );
+            $hasBilledEntries = false;
+
+            $plan->entries->each(function (RestaurantMenuPlanEntry $entry) use ($plan, &$hasBilledEntries): void {
+                $isBilled = $this->weekIsBilled((int) $plan->school_id, $entry->plan_date);
+
+                if ($isBilled) {
+                    $hasBilledEntries = true;
+                }
+
+                $entry->setAttribute('can_manage_bookings', ! $isBilled);
             });
+
+            $plan->setAttribute('has_billed_entries', $hasBilledEntries);
         }
 
         return $plan;

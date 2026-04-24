@@ -117,6 +117,34 @@ test('index returns booked menu counters for each entry day', function () {
         ->assertJsonPath('data.0.entries.0.booked_menu_count', 5);
 });
 
+test('index marks menu plans with billed entries', function () {
+    $plan = RestaurantMenuPlan::factory()->create([
+        'school_id' => $this->school->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-24',
+    ]);
+
+    RestaurantMenuPlanEntry::factory()->create([
+        'restaurant_menu_plan_id' => $plan->id,
+        'plan_date' => '2026-04-22',
+        'restaurant_menu_id' => $this->menu->id,
+        'menu_title' => 'Ofenkartoffel',
+    ]);
+
+    RestaurantBilling::factory()->create([
+        'school_id' => $this->school->id,
+        'created_by_user_id' => $this->admin->id,
+        'start_date' => '2026-04-20',
+        'end_date' => '2026-04-26',
+    ]);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->getJson('/api/admin/restaurant/menu-plans')
+        ->assertOk()
+        ->assertJsonPath('data.0.has_billed_entries', true)
+        ->assertJsonPath('data.0.entries.0.can_manage_bookings', false);
+});
+
 test('store creates menu plan with entries and eating times', function () {
     $this->actingAs($this->admin, 'sanctum');
 
@@ -271,6 +299,7 @@ test('show marks entries as not manageable when their week is already billed', f
     $this->actingAs($this->admin, 'sanctum')
         ->getJson("/api/admin/restaurant/menu-plans/{$plan->id}")
         ->assertOk()
+        ->assertJsonPath('data.has_billed_entries', true)
         ->assertJsonPath('data.entries.0.can_manage_bookings', false);
 });
 

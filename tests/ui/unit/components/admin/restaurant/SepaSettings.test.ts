@@ -45,4 +45,47 @@ describe('Restaurant settings SEPA component', () => {
         expect(wrapper.text()).toContain('Mandatstext')
         expect(wrapper.text()).toContain('Ja')
     })
+
+    it('opens the SEPA form preview', async () => {
+        const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+        const wrapper = mount(Sepa, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        createSpy: vi.fn,
+                        initialState: {
+                            AdminRestaurantStore: {
+                                settings: {
+                                    sepa_settings: {
+                                        sepa_online_enabled: true,
+                                        sepa_payee: '<p>Zahlungsempfänger</p>',
+                                        sepa_mandate_text: '<p>Mandatstext</p>',
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    'v-col': { template: '<div><slot /></div>' },
+                    'v-row': { template: '<div><slot /></div>' },
+                    'v-chip': { template: '<span><slot /></span>' },
+                    'v-form': { template: '<form><slot /></form>' },
+                    'v-switch': { template: '<div />' },
+                    'v-btn': { template: '<button v-bind="$attrs" @click="$emit(\'click\')"><slot /></button>' },
+                    ItsGridBox: {
+                        props: ['title'],
+                        template: '<section><h3>{{ title }}</h3><slot name="header-actions" /><slot /></section>',
+                    },
+                    ItsRichTextEditor: { template: '<div />' },
+                },
+            },
+        })
+
+        await wrapper.find('[data-testid="sepa-preview-button"]').trigger('click')
+
+        expect(openSpy).toHaveBeenCalledWith('/api/admin/restaurant/sepa-settings/preview', '_blank', 'noopener')
+
+        openSpy.mockRestore()
+    })
 })

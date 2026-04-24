@@ -280,6 +280,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::delete('/admin/restaurant/users/{user}', [RestaurantUserController::class, 'destroy']);
         Route::put('/admin/restaurant/users/{user}/sepa', [RestaurantUserController::class, 'updateSepa']);
         Route::put('/admin/restaurant/general-settings', [RestaurantGeneralSettingsController::class, 'update']);
+        Route::get('/admin/restaurant/sepa-settings/preview', [RestaurantSepaSettingsController::class, 'preview']);
         Route::put('/admin/restaurant/sepa-settings', [RestaurantSepaSettingsController::class, 'update']);
         Route::put('/admin/restaurant/online-settings', [RestaurantOnlineSettingsController::class, 'update']);
         Route::put('/admin/restaurant/user-settings', [RestaurantUserSettingsController::class, 'update']);

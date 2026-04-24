@@ -19,7 +19,16 @@
                             @click="save" />
                     </template>
                     <v-btn
-                        v-else
+                        size="small"
+                        color="info"
+                        variant="tonal"
+                        prepend-icon="mdi-file-eye-outline"
+                        data-testid="sepa-preview-button"
+                        @click="previewSepaForm">
+                        Vorschau
+                    </v-btn>
+                    <v-btn
+                        v-if="!isEditing"
                         size="small"
                         color="primary"
                         variant="flat"
@@ -146,6 +155,10 @@ export default {
                 await restaurantStore.loadSettings()
                 this.isEditing = false
             }
+        },
+
+        previewSepaForm() {
+            window.open('/api/admin/restaurant/sepa-settings/preview', '_blank', 'noopener')
         },
 
         normalizeRichTextContent(value) {

@@ -22,6 +22,7 @@ class RestaurantMenuPlanResource extends JsonResource
             'order_end_at' => $this->order_end_at?->format('Y-m-d\TH:i'),
             'use_individual_schedule_values' => (bool) $this->use_individual_schedule_values,
             'has_bookings' => (bool) $this->getAttribute('has_bookings'),
+            'has_billed_entries' => (bool) $this->getAttribute('has_billed_entries'),
             'can_delete' => (bool) $this->getAttribute('can_delete'),
             'visibility_start_mode' => $this->visibility_start_mode,
             'visibility_start_week_offset' => $this->visibility_start_week_offset,
