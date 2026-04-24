@@ -177,7 +177,7 @@
                             <div>
                                 <div class="text-subtitle-2 font-weight-bold">Cloudflare je Schule</div>
                                 <div class="text-caption text-medium-emphasis">
-                                    Pro Schule: gespeicherte Objekte, belegter Speicher und fehlende Zuordnungen.
+                                    {{ allSchoolsSummaryDescription }}
                                 </div>
                             </div>
                         </div>
@@ -196,8 +196,8 @@
                                     <div class="storage-audit-school-metrics">
                                         <span>{{ Number(summary.object_count || 0) }} Objekte</span>
                                         <span>{{ formatBytes(summary.total_bytes) }}</span>
-                                        <span>{{ Number(summary.materials_missing_file_count || 0) }} Materialien mit fehlender Datei</span>
-                                        <span>{{ Number(summary.files_without_material_count || 0) }} Dateien ohne Material</span>
+                                        <span>{{ onlineMaterialsMissingFileCount(summary) }} Materialien mit fehlender Datei</span>
+                                        <span>{{ onlineFilesWithoutMaterialCount(summary) }} Dateien ohne Material</span>
                                     </div>
                                 </template>
                             </v-list-item>
@@ -368,6 +368,13 @@ export default {
         },
         isInteractionLocked() {
             return this.isLoading || this.isDeletingBrokenAttachment
+        },
+        allSchoolsSummaryDescription() {
+            if (this.isLocalEnvironment) {
+                return 'Pro Schule: gespeicherte Objekte und belegter Cloudflare-Speicher.'
+            }
+
+            return 'Pro Schule: gespeicherte Objekte, belegter Speicher und fehlende Zuordnungen.'
         },
     },
 
@@ -813,6 +820,20 @@ export default {
 
             return name || (id > 0 ? `Schule ${id}` : 'Unbekannte Schule')
         },
+        onlineMaterialsMissingFileCount(summary) {
+            if (this.isLocalEnvironment) {
+                return 0
+            }
+
+            return Number(summary?.materials_missing_file_count || 0)
+        },
+        onlineFilesWithoutMaterialCount(summary) {
+            if (this.isLocalEnvironment) {
+                return 0
+            }
+
+            return Number(summary?.files_without_material_count || 0)
+        },
         brokenAttachmentDeleteDialogTitle() {
             if (!this.brokenAttachmentDeleteDialog) {
                 return 'Material löschen'
@@ -845,7 +866,7 @@ export default {
             const databaseOnlyCount = Number(report?.differences?.database_only?.count || 0)
             const trashedCount = Number(report?.database?.trashed?.count || 0)
 
-            if (report?.scope_key === 'active_school' && cloudSyncCount > 0) {
+            if (report?.scope_key === 'active_school' && this.isLocalEnvironment && cloudSyncCount > 0) {
                 return `Mit einem Klick startest du den Hintergrund-Download für ${cloudSyncCount} Materialdateien der aktiven Schule. ${trashedCount > 0 ? `Gelöschte, aber wiederherstellbare Materialien sind mit berücksichtigt (${trashedCount}).` : ''}`.trim()
             }
 
