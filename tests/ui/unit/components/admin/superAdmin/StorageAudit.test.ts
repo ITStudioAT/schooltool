@@ -21,8 +21,8 @@ const vuetifyStubs = {
     VSkeletonLoader: { template: '<div><slot /></div>' },
     'v-chip': { template: '<span><slot /></span>' },
     VChip: { template: '<span><slot /></span>' },
-    'v-btn': { props: ['disabled'], template: '<button type="button" :disabled="disabled"><slot /></button>' },
-    VBtn: { props: ['disabled'], template: '<button type="button" :disabled="disabled"><slot /></button>' },
+    'v-btn': { props: ['disabled'], template: '<button v-bind="$attrs" type="button" :disabled="disabled"><slot /></button>' },
+    VBtn: { props: ['disabled'], template: '<button v-bind="$attrs" type="button" :disabled="disabled"><slot /></button>' },
     'v-list': { template: '<div><slot /></div>' },
     VList: { template: '<div><slot /></div>' },
     'v-list-item': { template: '<div><slot name="title" /><slot name="subtitle" /><slot /></div>' },
@@ -354,7 +354,15 @@ describe('StorageAudit', () => {
             if (url === '/api/admin/materials/storage-audit/database-only-attachments/301') {
                 return Promise.resolve({
                     data: {
-                        message: 'Der defekte Anhang wurde entfernt.',
+                        message: 'Das Material mit fehlender Datei wurde gelöscht.',
+                    },
+                })
+            }
+
+            if (url === '/api/admin/materials/storage-audit/database-only-materials') {
+                return Promise.resolve({
+                    data: {
+                        message: 'Ein Material mit fehlender Datei wurde gelöscht.',
                     },
                 })
             }
@@ -501,10 +509,12 @@ describe('StorageAudit', () => {
         expect(screen.queryByText('materials/schools/2/users/9/cards/orphans/other-orphan.pdf')).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('2 Verweise'))).not.toBeInTheDocument()
         expect(screen.queryByText((content) => content.includes('1 im Papierkorb'))).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Alle Materialien löschen' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Material löschen' })).toBeInTheDocument()
         expect(screen.queryAllByRole('button', { name: 'Defekten Anhang löschen' })).toHaveLength(0)
         expect(screen.queryAllByRole('button', { name: 'Nur-online-Dateien löschen' })).toHaveLength(0)
         expect(screen.queryByText('Remote-Löschungen sind hier deaktiviert. Diese Liste dient nur zur Prüfung gegen die Remote-Daten.')).not.toBeInTheDocument()
-        expect(screen.getAllByText('Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.')).toHaveLength(1)
+        expect(screen.getAllByText('Diese Aktion löscht die betroffenen Materialeinträge und verschiebt sie in den Papierkorb.')).toHaveLength(1)
 
         let syncStatusPollCount = 0
         axiosMock.get.mockImplementation((url: string) => {
@@ -673,6 +683,103 @@ describe('StorageAudit', () => {
         expect(screen.getByText('1 Materialien mit fehlender Datei')).toBeInTheDocument()
         expect(screen.getByText('0 Materialien mit fehlender Datei')).toBeInTheDocument()
         expect(screen.getAllByText('1 Dateien ohne Material')).toHaveLength(2)
+    })
+
+    it('confirms and deletes one material with a missing cloud file', async () => {
+        render(StorageAudit, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    selected_school: {
+                                        id: 1,
+                                        long_name: 'Christian-Doppler-Gymnasium Salzburg',
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByText('Materialien mit fehlender Datei')).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Material löschen' }))
+
+        expect(screen.getAllByText('Informatik - Netzwerke - Sicherheit - Irgendwas • Schule 1').length).toBeGreaterThan(1)
+
+        await fireEvent.click(screen.getAllByRole('button', { name: 'Material löschen' }).at(-1)!)
+
+        await waitFor(() => {
+            expect(axiosMock.delete).toHaveBeenCalledWith(
+                '/api/admin/materials/storage-audit/database-only-attachments/301',
+                {
+                    data: {
+                        scope_key: 'active_school',
+                        school_id: 1,
+                    },
+                },
+            )
+        })
+    })
+
+    it('confirms and deletes all materials with missing cloud files', async () => {
+        render(StorageAudit, {
+            global: {
+                plugins: [
+                    createTestingPinia({
+                        stubActions: true,
+                        initialState: {
+                            AdminAdminStore: {
+                                config: {
+                                    is_auth: true,
+                                    selected_school: {
+                                        id: 1,
+                                        long_name: 'Christian-Doppler-Gymnasium Salzburg',
+                                    },
+                                },
+                            },
+                        },
+                    }),
+                ],
+                stubs: {
+                    ...vuetifyStubs,
+                },
+            },
+        })
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Alle Materialien löschen' })).toBeInTheDocument()
+        })
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Alle Materialien löschen' }))
+
+        expect(screen.getByText('Alle Materialien löschen?')).toBeInTheDocument()
+        expect(screen.getByText('1 Materialeinträge mit fehlender Datei werden gelöscht.')).toBeInTheDocument()
+
+        await fireEvent.click(screen.getAllByRole('button', { name: 'Material löschen' }).at(-1)!)
+
+        await waitFor(() => {
+            expect(axiosMock.delete).toHaveBeenCalledWith(
+                '/api/admin/materials/storage-audit/database-only-materials',
+                {
+                    data: {
+                        scope_key: 'active_school',
+                        school_id: 1,
+                    },
+                },
+            )
+        })
     })
 
     it('falls back to the active school report when all-schools summaries are missing', async () => {

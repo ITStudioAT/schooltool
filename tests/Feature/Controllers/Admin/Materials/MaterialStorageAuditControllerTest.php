@@ -439,18 +439,79 @@ test('sync local rejects all schools scope', function (): void {
         ->assertStatus(422);
 });
 
-test('storage audit does not allow deleting broken database only attachments', function (): void {
+test('super_admin can delete a material with missing cloud file from storage audit', function (): void {
     $response = $this->actingAs($this->superAdmin, 'sanctum')
         ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeMissingOnlineAttachment->id}", [
             'scope_key' => 'active_school',
             'school_id' => $this->activeSchool->id,
         ]);
 
-    $response->assertStatus(422)
-        ->assertJsonPath('message', 'Löschungen aus dem Storage-Audit sind hier deaktiviert. Bitte zuerst direkt gegen die Remote-Daten prüfen.');
+    $response->assertOk()
+        ->assertJsonPath('message', 'Das Material mit fehlender Datei wurde gelöscht.')
+        ->assertJsonPath('data.deleted_count', 1);
 
-    expect(MaterialCardAttachment::withTrashed()->find($this->activeMissingOnlineAttachment->id))
-        ->not->toBeNull();
+    $this->assertSoftDeleted($this->activeMissingOnlineCard);
+    $this->assertSoftDeleted($this->activeMissingOnlineAttachment);
+    $this->assertNotSoftDeleted($this->activeLiveCard);
+});
+
+test('storage audit only deletes materials whose attachment file is missing online', function (): void {
+    $response = $this->actingAs($this->superAdmin, 'sanctum')
+        ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeLiveAttachment->id}", [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $response->assertStatus(422)
+        ->assertJsonPath('message', 'Dieses Material hat keine fehlende Datei und wurde nicht gelöscht.');
+
+    $this->assertNotSoftDeleted($this->activeLiveCard);
+    $this->assertNotSoftDeleted($this->activeLiveAttachment);
+});
+
+test('super_admin can delete all active school materials with missing cloud files from storage audit', function (): void {
+    $secondMissingCard = MaterialCard::query()->create([
+        'school_id' => $this->activeSchool->id,
+        'user_id' => $this->superAdmin->id,
+        'title' => 'Noch eine fehlende Datei',
+        'status' => MaterialCard::STATUS_INBOX,
+        'keywords' => [],
+    ]);
+
+    $secondMissingAttachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $secondMissingCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'missing-again.docx',
+        'file_path' => "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$secondMissingCard->id}/missing-again.docx",
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 75,
+    ]);
+
+    MaterialCardAttachment::query()->create([
+        'material_card_id' => $secondMissingCard->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'missing-again-copy.docx',
+        'file_path' => "materials/schools/{$this->activeSchool->id}/users/{$this->superAdmin->id}/cards/{$secondMissingCard->id}/missing-again-copy.docx",
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 76,
+    ]);
+
+    $response = $this->actingAs($this->superAdmin, 'sanctum')
+        ->deleteJson('/api/admin/materials/storage-audit/database-only-materials', [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ]);
+
+    $response->assertOk()
+        ->assertJsonPath('message', '2 Materialien mit fehlender Datei wurden gelöscht.')
+        ->assertJsonPath('data.deleted_count', 2);
+
+    $this->assertSoftDeleted($this->activeMissingOnlineCard);
+    $this->assertSoftDeleted($secondMissingCard);
+    $this->assertSoftDeleted($this->activeMissingOnlineAttachment);
+    $this->assertSoftDeleted($secondMissingAttachment);
+    $this->assertNotSoftDeleted($this->activeLiveCard);
+    $this->assertNotSoftDeleted($this->otherLiveCard);
 });
 
 test('admin users cannot access the storage reconciliation endpoint', function (): void {
@@ -486,6 +547,13 @@ test('admin users cannot access the storage reconciliation endpoint', function (
 
     $this->actingAs($this->admin, 'sanctum')
         ->deleteJson('/api/admin/materials/storage-audit/database-only-attachments/123', [
+            'scope_key' => 'active_school',
+            'school_id' => $this->activeSchool->id,
+        ])
+        ->assertStatus(403);
+
+    $this->actingAs($this->admin, 'sanctum')
+        ->deleteJson('/api/admin/materials/storage-audit/database-only-materials', [
             'scope_key' => 'active_school',
             'school_id' => $this->activeSchool->id,
         ])

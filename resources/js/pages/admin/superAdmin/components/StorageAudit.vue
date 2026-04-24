@@ -211,13 +211,25 @@
                                     Diese Materialeinträge haben einen Anhang, dessen Datei in Cloudflare nicht existiert.
                                 </div>
                             </div>
-                            <div class="text-caption text-medium-emphasis">
-                                {{ report.differences.database_only.count }} Einträge
+                            <div class="d-flex flex-column align-end ga-2">
+                                <div class="text-caption text-medium-emphasis">
+                                    {{ report.differences.database_only.count }} Einträge
+                                </div>
+                                <v-btn
+                                    v-if="report.database_only_attachments.length"
+                                    color="error"
+                                    variant="tonal"
+                                    size="small"
+                                    prepend-icon="mdi-delete"
+                                    :disabled="isDeletingBrokenAttachment"
+                                    @click="openDatabaseOnlyMaterialsDeleteDialog(report)">
+                                    Alle Materialien löschen
+                                </v-btn>
                             </div>
                         </div>
 
                         <v-alert v-if="report.differences.database_only.count > 0" type="warning" variant="tonal" class="mb-4">
-                            Löschungen sind im Audit deaktiviert. Bitte Eintrag und Datei direkt gegen die Remote-Daten prüfen.
+                            Diese Aktion löscht die betroffenen Materialeinträge und verschiebt sie in den Papierkorb.
                         </v-alert>
 
                         <v-list v-if="report.database_only_attachments.length" class="bg-transparent pa-0" density="compact">
@@ -226,8 +238,20 @@
                                 :key="`${report.scope_key}-database-only-${item.id}`"
                                 class="px-0">
                                 <template #title>
-                                    <div class="text-body-2 font-weight-medium">
-                                        {{ formatDatabaseOnlyAttachmentLabel(report, item) }}
+                                    <div class="storage-audit-row-action">
+                                        <div class="text-body-2 font-weight-medium">
+                                            {{ formatDatabaseOnlyAttachmentLabel(report, item) }}
+                                        </div>
+                                        <v-btn
+                                            aria-label="Material löschen"
+                                            title="Material löschen"
+                                            color="error"
+                                            variant="text"
+                                            size="small"
+                                            :disabled="isDeletingBrokenAttachment"
+                                            @click="openBrokenAttachmentDeleteDialog(report, item)">
+                                            X
+                                        </v-btn>
                                     </div>
                                 </template>
                                 <template #subtitle>
@@ -274,7 +298,7 @@
 
     <v-dialog v-model="isBrokenAttachmentDeleteDialogOpen" persistent max-width="620">
         <v-card class="pa-4 pa-md-6" rounded="xl">
-            <div class="text-overline text-error font-weight-bold">Defekten Anhang löschen</div>
+            <div class="text-overline text-error font-weight-bold">Material löschen</div>
             <div class="text-subtitle-1 font-weight-bold mb-2">
                 {{ brokenAttachmentDeleteDialogTitle() }}
             </div>
@@ -282,7 +306,7 @@
                 {{ brokenAttachmentDeleteDialogMessage() }}
             </div>
             <v-alert type="warning" variant="tonal" class="mb-4">
-                Die Datei ist bereits lokal und online nicht mehr vorhanden. Es wird nur der defekte Anhang aus der Materialkarte entfernt.
+                Diese Aktion verschiebt die betroffenen Materialeinträge in den Papierkorb.
             </v-alert>
             <div class="d-flex justify-end ga-2">
                 <v-btn variant="text" :disabled="isDeletingBrokenAttachment" @click="closeBrokenAttachmentDeleteDialog">
@@ -295,7 +319,7 @@
                     :loading="isDeletingBrokenAttachment"
                     :disabled="!brokenAttachmentDeleteDialog"
                     @click="confirmBrokenAttachmentDelete">
-                    Anhang löschen
+                    Material löschen
                 </v-btn>
             </div>
         </v-card>
@@ -530,6 +554,25 @@ export default {
                 scope_key: String(report?.scope_key || ''),
                 school_id: Number(report?.school?.id || 0) || null,
                 label: this.formatDatabaseOnlyAttachmentLabel(report, item),
+                is_bulk: false,
+            }
+            this.isBrokenAttachmentDeleteDialogOpen = true
+        },
+        openDatabaseOnlyMaterialsDeleteDialog(report) {
+            const count = Array.isArray(report?.database_only_attachments)
+                ? report.database_only_attachments.length
+                : 0
+            if (count <= 0) {
+                return
+            }
+
+            this.brokenAttachmentDeleteDialog = {
+                attachment_id: null,
+                scope_key: String(report?.scope_key || ''),
+                school_id: Number(report?.school?.id || 0) || null,
+                label: `${count} Materialien mit fehlender Datei`,
+                count,
+                is_bulk: true,
             }
             this.isBrokenAttachmentDeleteDialogOpen = true
         },
@@ -558,16 +601,18 @@ export default {
                     payload.school_id = this.brokenAttachmentDeleteDialog.school_id
                 }
 
-                const response = await axios.delete(
-                    `/api/admin/materials/storage-audit/database-only-attachments/${this.brokenAttachmentDeleteDialog.attachment_id}`,
-                    { data: payload },
-                )
+                const endpoint = this.brokenAttachmentDeleteDialog.is_bulk
+                    ? '/api/admin/materials/storage-audit/database-only-materials'
+                    : `/api/admin/materials/storage-audit/database-only-attachments/${this.brokenAttachmentDeleteDialog.attachment_id}`
+
+                const response = await axios.delete(endpoint, { data: payload })
 
                 await this.loadAudit()
-                this.statusMessage = response.data?.message || 'Der defekte Anhang wurde entfernt.'
-                this.closeBrokenAttachmentDeleteDialog()
+                this.statusMessage = response.data?.message || 'Das Material mit fehlender Datei wurde gelöscht.'
+                this.isBrokenAttachmentDeleteDialogOpen = false
+                this.brokenAttachmentDeleteDialog = null
             } catch (error) {
-                this.errorMessage = error?.response?.data?.message || 'Der defekte Anhang konnte nicht gelöscht werden.'
+                this.errorMessage = error?.response?.data?.message || 'Das Material konnte nicht gelöscht werden.'
             } finally {
                 this.isDeletingBrokenAttachment = false
             }
@@ -752,7 +797,11 @@ export default {
         },
         brokenAttachmentDeleteDialogTitle() {
             if (!this.brokenAttachmentDeleteDialog) {
-                return 'Defekten Anhang löschen'
+                return 'Material löschen'
+            }
+
+            if (this.brokenAttachmentDeleteDialog.is_bulk) {
+                return 'Alle Materialien löschen?'
             }
 
             return this.brokenAttachmentDeleteDialog.label
@@ -762,7 +811,11 @@ export default {
                 return ''
             }
 
-            return `Der Eintrag "${this.brokenAttachmentDeleteDialog.label}" wird aus der Materialkarte entfernt.`
+            if (this.brokenAttachmentDeleteDialog.is_bulk) {
+                return `${this.brokenAttachmentDeleteDialog.count} Materialeinträge mit fehlender Datei werden gelöscht.`
+            }
+
+            return `Der Materialeintrag "${this.brokenAttachmentDeleteDialog.label}" wird gelöscht.`
         },
         analysisText(report) {
             if (!report) {
@@ -855,6 +908,13 @@ export default {
     margin-top: 4px;
     color: rgba(15, 23, 42, 0.68);
     font-size: 12px;
+}
+
+.storage-audit-row-action {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
 }
 
 @media (max-width: 960px) {
