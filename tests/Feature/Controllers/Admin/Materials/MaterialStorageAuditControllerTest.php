@@ -440,6 +440,9 @@ test('sync local rejects all schools scope', function (): void {
 });
 
 test('super_admin can permanently delete a material with missing cloud file from storage audit', function (): void {
+    $this->activeMissingOnlineAttachment->delete();
+    $this->activeMissingOnlineCard->delete();
+
     $response = $this->actingAs($this->superAdmin, 'sanctum')
         ->deleteJson("/api/admin/materials/storage-audit/database-only-attachments/{$this->activeMissingOnlineAttachment->id}", [
             'scope_key' => 'active_school',
@@ -470,6 +473,9 @@ test('storage audit only deletes materials whose attachment file is missing onli
 });
 
 test('super_admin can permanently delete all active school materials with missing cloud files from storage audit', function (): void {
+    $this->activeMissingOnlineAttachment->delete();
+    $this->activeMissingOnlineCard->delete();
+
     $secondMissingCard = MaterialCard::query()->create([
         'school_id' => $this->activeSchool->id,
         'user_id' => $this->superAdmin->id,

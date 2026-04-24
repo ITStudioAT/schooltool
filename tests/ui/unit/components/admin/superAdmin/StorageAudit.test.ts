@@ -767,7 +767,47 @@ describe('StorageAudit', () => {
         expect(screen.getByText('Alle Materialien löschen?')).toBeInTheDocument()
         expect(screen.getByText('1 Materialeinträge mit fehlender Datei werden gelöscht.')).toBeInTheDocument()
 
+        let resolveReloadStart: (value: unknown) => void = () => {}
+        axiosMock.post.mockImplementation((url: string) => {
+            if (url === '/api/admin/materials/storage-audit/start') {
+                return new Promise((resolve) => {
+                    resolveReloadStart = resolve
+                })
+            }
+
+            return Promise.reject(new Error(`Unexpected POST ${url}`))
+        })
+
         await fireEvent.click(screen.getAllByRole('button', { name: 'Material löschen' }).at(-1)!)
+
+        await waitFor(() => {
+            expect(axiosMock.post).toHaveBeenCalledTimes(2)
+        })
+
+        expect(screen.getByRole('button', { name: 'Neu laden' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Alle Dateien lokal aktualisieren' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Alle Materialien löschen' })).toBeDisabled()
+        expect(screen.getAllByRole('button', { name: 'Material löschen' }).every((button) => button.hasAttribute('disabled'))).toBe(true)
+
+        await fireEvent.click(screen.getByRole('button', { name: 'Neu laden' }))
+        await fireEvent.click(screen.getByRole('button', { name: 'Alle Materialien löschen' }))
+        expect(axiosMock.post).toHaveBeenCalledTimes(2)
+        expect(axiosMock.delete).toHaveBeenCalledTimes(1)
+
+        resolveReloadStart({
+            data: {
+                message: 'Speicherprüfung wurde gestartet.',
+                data: {
+                    operation_id: 'operation-1',
+                    status: 'queued',
+                    progress: 0,
+                    completed_steps: 0,
+                    total_steps: 0,
+                    refresh_after_seconds: 1,
+                    message: 'Speicherprüfung wird gestartet.',
+                },
+            },
+        })
 
         await waitFor(() => {
             expect(axiosMock.delete).toHaveBeenCalledWith(

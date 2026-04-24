@@ -1,5 +1,9 @@
 <template>
-    <v-card class="storage-audit-panel pa-4 pa-md-6" rounded="xl" elevation="0">
+    <v-card
+        class="storage-audit-panel pa-4 pa-md-6"
+        :class="{ 'storage-audit-panel--locked': isInteractionLocked }"
+        rounded="xl"
+        elevation="0">
         <div class="d-flex flex-wrap align-start justify-space-between ga-4 mb-4">
             <div>
                 <div class="text-overline text-primary font-weight-bold">Lokale Materialdateien</div>
@@ -15,7 +19,7 @@
                     variant="tonal"
                     prepend-icon="mdi-refresh"
                     :loading="isLoading"
-                    :disabled="isLoading"
+                    :disabled="isInteractionLocked"
                     @click="loadAudit">
                     Neu laden
                 </v-btn>
@@ -119,7 +123,7 @@
                                 variant="flat"
                                 size="small"
                                 prepend-icon="mdi-cloud-download-outline"
-                                :disabled="report.cloud_sync_source.count === 0 || isSyncing"
+                                :disabled="report.cloud_sync_source.count === 0 || isSyncing || isInteractionLocked"
                                 @click="syncLocalFiles(report)">
                                 Alle Dateien lokal aktualisieren
                             </v-btn>
@@ -221,7 +225,7 @@
                                     variant="tonal"
                                     size="small"
                                     prepend-icon="mdi-delete"
-                                    :disabled="isDeletingBrokenAttachment"
+                                    :disabled="isInteractionLocked"
                                     @click="openDatabaseOnlyMaterialsDeleteDialog(report)">
                                     Alle Materialien löschen
                                 </v-btn>
@@ -248,7 +252,7 @@
                                             color="error"
                                             variant="text"
                                             size="small"
-                                            :disabled="isDeletingBrokenAttachment"
+                                            :disabled="isInteractionLocked"
                                             @click="openBrokenAttachmentDeleteDialog(report, item)">
                                             X
                                         </v-btn>
@@ -317,7 +321,7 @@
                     variant="flat"
                     prepend-icon="mdi-delete"
                     :loading="isDeletingBrokenAttachment"
-                    :disabled="!brokenAttachmentDeleteDialog"
+                    :disabled="!brokenAttachmentDeleteDialog || isDeletingBrokenAttachment"
                     @click="confirmBrokenAttachmentDelete">
                     Material löschen
                 </v-btn>
@@ -361,6 +365,9 @@ export default {
         ...mapWritableState(useAdminStore, ['config']),
         selectedSchoolId() {
             return Number(this.config?.selected_school?.id || 0)
+        },
+        isInteractionLocked() {
+            return this.isLoading || this.isDeletingBrokenAttachment
         },
     },
 
@@ -513,12 +520,15 @@ export default {
                 return
             }
 
+            if (this.isLoading) {
+                return
+            }
+
             this.clearAuditPolling()
             this.isLoading = true
             this.resetAuditProgress()
             this.errorMessage = ''
             this.statusMessage = ''
-            this.isLocalEnvironment = false
 
             try {
                 const payload = {}
@@ -544,6 +554,10 @@ export default {
             }
         },
         openBrokenAttachmentDeleteDialog(report, item) {
+            if (this.isInteractionLocked) {
+                return
+            }
+
             const attachmentId = Number(item?.id || 0)
             if (attachmentId <= 0) {
                 return
@@ -559,6 +573,10 @@ export default {
             this.isBrokenAttachmentDeleteDialogOpen = true
         },
         openDatabaseOnlyMaterialsDeleteDialog(report) {
+            if (this.isInteractionLocked) {
+                return
+            }
+
             const count = Array.isArray(report?.database_only_attachments)
                 ? report.database_only_attachments.length
                 : 0
@@ -619,7 +637,7 @@ export default {
         },
         async syncLocalFiles(report) {
             const cloudSyncCount = Number(report?.cloud_sync_source?.count || 0)
-            if (report?.scope_key !== 'active_school' || cloudSyncCount <= 0 || this.isSyncing) {
+            if (report?.scope_key !== 'active_school' || cloudSyncCount <= 0 || this.isSyncing || this.isInteractionLocked) {
                 return
             }
 
@@ -852,6 +870,16 @@ export default {
 <style scoped>
 .storage-audit-panel {
     width: 100%;
+}
+
+.storage-audit-panel--locked {
+    cursor: progress;
+}
+
+.storage-audit-panel--locked :deep(button),
+.storage-audit-panel--locked :deep(a),
+.storage-audit-panel--locked :deep([role='button']) {
+    pointer-events: none;
 }
 
 .storage-audit-storage-compare {

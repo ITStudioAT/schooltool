@@ -166,6 +166,7 @@ class MaterialStorageAuditController extends Controller
         ]);
 
         $attachment = MaterialCardAttachment::query()
+            ->withTrashed()
             ->with('materialCard')
             ->findOrFail($attachmentId);
 
@@ -175,7 +176,7 @@ class MaterialStorageAuditController extends Controller
             ], 422);
         }
 
-        $materialCard = $attachment->materialCard;
+        $materialCard = $attachment->materialCard()->withTrashed()->first();
         if (! $materialCard) {
             return response()->json([
                 'message' => 'Der Materialeintrag wurde nicht gefunden.',
@@ -220,10 +221,12 @@ class MaterialStorageAuditController extends Controller
             ], 422);
         }
 
-        $attachments = MaterialCardAttachment::query()
-            ->with('materialCard')
+        $attachments = MaterialCardAttachment::withTrashed()
+            ->with([
+                'materialCard' => fn ($query) => $query->withTrashed(),
+            ])
             ->whereHas('materialCard', function ($query) use ($selectedSchoolId): void {
-                $query->where('school_id', $selectedSchoolId);
+                $query->withTrashed()->where('school_id', $selectedSchoolId);
             })
             ->get()
             ->filter(fn (MaterialCardAttachment $attachment): bool => $storageAuditService->isDatabaseOnlyAttachment($attachment));
