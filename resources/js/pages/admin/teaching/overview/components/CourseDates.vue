@@ -39,11 +39,23 @@
 
         <!-- Termine (Anzeige) -->
         <v-card variant="outlined" class="mt-4" v-if="selected_course && action != 'new_course_dates'">
-            <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+            <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
                 <v-icon size="18">mdi-calendar-check</v-icon>
                 Termine
                 <v-chip v-if="displayedCourseDates?.length" size="x-small" color="primary" variant="tonal">
                     {{ displayedCourseDatesCount }}
+                </v-chip>
+                <v-spacer />
+                <v-chip
+                    v-if="selectedCourseCurriculumTitle"
+                    size="small"
+                    color="secondary"
+                    variant="flat"
+                    class="course-date-curriculum-chip"
+                    prepend-icon="mdi-book-open-variant"
+                    title="Zugewiesenes Curriculum">
+                    <span class="course-date-curriculum-chip__label">Curriculum:</span>
+                    <span class="course-date-curriculum-chip__title">{{ selectedCourseCurriculumTitle }}</span>
                 </v-chip>
             </v-card-title>
             <v-divider />
@@ -354,6 +366,12 @@ export default {
 
             const schemaId = this.selected_course?.teaching_schema_id
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
+        },
+        selectedCourseCurriculumTitle() {
+            const curriculum = this.selected_course?.teaching_curriculum
+            if (!curriculum?.id) return ''
+
+            return curriculum.title || `Curriculum #${curriculum.id}`
         },
         semesterCount() {
             const grading = this.selectedCourseSchema?.grading || {}
@@ -815,6 +833,35 @@ export default {
     flex: 0 0 auto;
 }
 
+.course-date-curriculum-chip {
+    align-items: flex-start;
+    font-weight: 700;
+    height: auto;
+    max-width: min(100%, 360px);
+    min-height: 30px;
+    box-shadow: 0 6px 14px rgba(124, 58, 237, 0.2);
+    white-space: normal;
+}
+
+.course-date-curriculum-chip__label {
+    opacity: 0.86;
+    margin-right: 4px;
+}
+
+.course-date-curriculum-chip__title {
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.course-date-curriculum-chip :deep(.v-chip__content) {
+    align-items: flex-start;
+    line-height: 1.25;
+    padding-bottom: 4px;
+    padding-top: 4px;
+    white-space: normal;
+}
+
 @media (max-width: 700px) {
     .course-date-hours {
         flex-basis: 100%;
@@ -825,6 +872,11 @@ export default {
 
     .course-date-actions {
         order: 1;
+    }
+
+    .course-date-curriculum-chip {
+        flex: 1 1 100%;
+        margin-top: 4px;
     }
 }
 

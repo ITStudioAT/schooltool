@@ -189,6 +189,9 @@ describe('CurriculumDetail week card view mode', () => {
         expect(source).toContain('class="curriculum-detail__unit-title-row"')
         expect(source).toContain('class="curriculum-detail__unit-exam-chip"')
         expect(source).toContain('Prüfung')
+        expect(source).toContain("'curriculum-detail__unit-item--exam': unit.is_exam")
+        expect(source).toContain('.curriculum-detail__unit-item--exam {')
+        expect(source).toContain('rgba(245, 158, 11')
         expect(source).toContain('.curriculum-detail__month-topic-unit {')
         expect(source).toContain('font-weight: 500;')
         expect(source).toContain('.curriculum-detail__unit-item--selected {')
@@ -955,7 +958,7 @@ describe('CurriculumDetail week card view mode', () => {
         }
     })
 
-    it('scrolls the calendar to the assigned week when opening unit date assignment editing', async () => {
+    it('opens unit date assignment editing without forcing a calendar scroll', async () => {
         const scrollTo = vi.fn()
         const originalScrollTo = HTMLElement.prototype.scrollTo
 
@@ -993,17 +996,79 @@ describe('CurriculumDetail week card view mode', () => {
             ;(wrapper.vm as any).openUnitAssignmentEditor(topic, unit, 'weeks')
             await wrapper.vm.$nextTick()
 
-            expect(scrollTo).toHaveBeenCalledTimes(1)
-            expect(scrollTo).toHaveBeenCalledWith({
-                top: expect.any(Number),
-                behavior: 'smooth',
-            })
+            expect((wrapper.vm as any).activeTopicAssignmentId).toBe('topic-1')
+            expect((wrapper.vm as any).activeTopicAssignmentUnitId).toBe('unit-1')
+            expect((wrapper.vm as any).activeTopicAssignmentType).toBe('weeks')
+            expect(scrollTo).not.toHaveBeenCalled()
         } finally {
             Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
                 configurable: true,
                 value: originalScrollTo,
             })
         }
+    })
+
+    it('keeps whole-year assignment mode when opening the date editor', () => {
+        const methods = (CurriculumDetail as any).methods
+
+        expect(methods.defaultAssignmentEditorType('all_weeks')).toBe('all_weeks')
+        expect(methods.defaultAssignmentEditorType('month')).toBe('month')
+        expect(methods.defaultAssignmentEditorType('weeks')).toBe('none')
+        expect(methods.defaultAssignmentEditorType('none')).toBe('none')
+    })
+
+    it('opens the unit calendar icon without entering week-selection mode for existing week assignments', () => {
+        const wrapper = mountCurriculumDetail({
+            topics: [
+                {
+                    id: 'topic-1',
+                    title: 'Grammatik',
+                    assignment_type: 'none',
+                    month_keys: [],
+                    week_keys: [],
+                    units: [
+                        {
+                            id: 'unit-1',
+                            title: 'Satzbau',
+                            is_exam: false,
+                            assignment_type: 'weeks',
+                            month_keys: [],
+                            week_keys: ['2025-09-15'],
+                        },
+                    ],
+                },
+            ],
+        })
+        const topic = (wrapper.vm as any).curriculumTopics[0]
+        const unit = topic.units[0]
+
+        ;(wrapper.vm as any).toggleUnitAssignmentEditor(topic, unit)
+
+        expect((wrapper.vm as any).activeTopicAssignmentId).toBe('topic-1')
+        expect((wrapper.vm as any).activeTopicAssignmentUnitId).toBe('unit-1')
+        expect((wrapper.vm as any).activeTopicAssignmentType).toBe('none')
+        expect((wrapper.vm as any).isWeekSelectionActive).toBe(false)
+    })
+
+    it('does not highlight the whole calendar when editing whole-year assignments', () => {
+        const methods = (CurriculumDetail as any).methods
+        const ctx: Record<string, any> = {
+            activeTopicAssignmentId: 'topic-1',
+            activeTopicAssignmentType: 'all_weeks',
+            highlightedAssignmentItems: [
+                {
+                    assignment_type: 'all_weeks',
+                    month_keys: [],
+                    week_keys: [],
+                },
+            ],
+        }
+
+        Object.assign(ctx, methods)
+
+        expect(methods.shouldSuppressActiveAssignmentCalendarHighlight.call(ctx)).toBe(true)
+        expect(methods.isMonthAssignedToHighlightedItem.call(ctx, { assignmentKey: '2025-09' })).toBe(false)
+        expect(methods.isWeekAssignedToHighlightedItem.call(ctx, '2025-09-15')).toBe(false)
     })
 
     it('shows an exam marker for units marked as Prüfung in the Inhalte card', () => {
@@ -1042,8 +1107,10 @@ describe('CurriculumDetail week card view mode', () => {
         expect(unitItems).toHaveLength(2)
         expect(unitItems[0].text()).toContain('Prüfung')
         expect(unitItems[0].find('.curriculum-detail__unit-exam-chip').exists()).toBe(true)
+        expect(unitItems[0].classes()).toContain('curriculum-detail__unit-item--exam')
         expect(unitItems[1].text()).not.toContain('Prüfung')
         expect(unitItems[1].find('.curriculum-detail__unit-exam-chip').exists()).toBe(false)
+        expect(unitItems[1].classes()).not.toContain('curriculum-detail__unit-item--exam')
     })
 
     it('distributes unassigned units to the next visible weeks while skipping free and occupied weeks', async () => {
@@ -1143,7 +1210,7 @@ describe('CurriculumDetail week card view mode', () => {
         }
     })
 
-    it('opens Datumszuordnung bearbeiten in week mode so week selection is possible', () => {
+    it('opens Datumszuordnung bearbeiten in the current assignment mode before week selection is requested', () => {
         const wrapper = mountCurriculumDetail({
             topics: [
                 {
@@ -1171,11 +1238,16 @@ describe('CurriculumDetail week card view mode', () => {
 
         ;(wrapper.vm as any).toggleTopicAssignmentEditor(topic)
 
-        expect((wrapper.vm as any).activeTopicAssignmentType).toBe('weeks')
-        expect((wrapper.vm as any).isWeekSelectionActive).toBe(true)
+        expect((wrapper.vm as any).activeTopicAssignmentType).toBe('none')
+        expect((wrapper.vm as any).isWeekSelectionActive).toBe(false)
 
         ;(wrapper.vm as any).closeTopicAssignmentEditor()
         ;(wrapper.vm as any).toggleUnitAssignmentEditor(topic, unit)
+
+        expect((wrapper.vm as any).activeTopicAssignmentType).toBe('none')
+        expect((wrapper.vm as any).isWeekSelectionActive).toBe(false)
+
+        ;(wrapper.vm as any).activateUnitAssignmentMode(topic, unit, 'weeks')
 
         expect((wrapper.vm as any).activeTopicAssignmentType).toBe('weeks')
         expect((wrapper.vm as any).isWeekSelectionActive).toBe(true)

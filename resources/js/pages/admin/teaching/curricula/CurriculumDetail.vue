@@ -663,7 +663,10 @@
                                             v-for="(unit, unitIndex) in topic.units"
                                             :key="unit.id"
                                             class="curriculum-detail__unit-item"
-                                            :class="{ 'curriculum-detail__unit-item--selected': isUnitSelected(topic.id, unit.id) }"
+                                            :class="{
+                                                'curriculum-detail__unit-item--selected': isUnitSelected(topic.id, unit.id),
+                                                'curriculum-detail__unit-item--exam': unit.is_exam,
+                                            }"
                                             @click="toggleSelectedUnit(topic.id, unit.id)">
                                             <div class="curriculum-detail__topic-row">
                                                 <div class="curriculum-detail__topic-main">
@@ -672,8 +675,9 @@
                                                         <v-chip
                                                             v-if="unit.is_exam"
                                                             size="x-small"
-                                                            color="primary"
-                                                            variant="tonal"
+                                                            color="warning"
+                                                            variant="flat"
+                                                            prepend-icon="mdi-file-alert-outline"
                                                             class="curriculum-detail__unit-exam-chip">
                                                             Prüfung
                                                         </v-chip>
@@ -3498,7 +3502,15 @@ export default {
         },
 
         defaultAssignmentEditorType(assignmentType) {
-            return assignmentType === 'month' ? 'month' : 'weeks'
+            if (assignmentType === 'all_weeks') {
+                return 'all_weeks'
+            }
+
+            if (assignmentType === 'none' || assignmentType === 'weeks') {
+                return 'none'
+            }
+
+            return assignmentType === 'month' ? 'month' : 'none'
         },
 
         openTopicAssignmentEditor(topic, assignmentType = null) {
@@ -3515,7 +3527,6 @@ export default {
             this.activeTopicAssignmentId = topic.id
             this.activeTopicAssignmentUnitId = null
             this.activeTopicAssignmentType = assignmentType ?? topic.assignment_type
-            this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
         },
 
         openUnitAssignmentEditor(topic, unit, assignmentType = null) {
@@ -3533,7 +3544,6 @@ export default {
             this.activeTopicAssignmentId = topic.id
             this.activeTopicAssignmentUnitId = unit.id
             this.activeTopicAssignmentType = assignmentType ?? unit.assignment_type
-            this.$nextTick(() => this.scrollHighlightedCalendarIntoView())
         },
 
         promptDeleteTopic(topic) {
@@ -4102,6 +4112,10 @@ export default {
             const monthKey = month?.assignmentKey
             const assignmentItems = this.highlightedAssignmentItems
 
+            if (this.shouldSuppressActiveAssignmentCalendarHighlight()) {
+                return false
+            }
+
             if (!monthKey || assignmentItems.length === 0) {
                 return false
             }
@@ -4126,6 +4140,10 @@ export default {
         isWeekAssignedToHighlightedItem(weekKey) {
             const assignmentItems = this.highlightedAssignmentItems
 
+            if (this.shouldSuppressActiveAssignmentCalendarHighlight()) {
+                return false
+            }
+
             if (assignmentItems.length === 0) {
                 return false
             }
@@ -4145,6 +4163,11 @@ export default {
 
                 return false
             })
+        },
+
+        shouldSuppressActiveAssignmentCalendarHighlight() {
+            return this.activeTopicAssignmentId !== null
+                && this.activeTopicAssignmentType === 'all_weeks'
         },
 
         isWeekSelectableForTopic(weekKey) {
@@ -6601,6 +6624,26 @@ export default {
     box-shadow:
         0 0 0 1px rgba(165, 180, 252, 0.16),
         0 0 18px rgba(99, 102, 241, 0.16);
+}
+
+.curriculum-detail__unit-item--exam {
+    border-color: rgba(217, 119, 6, 0.38);
+    background:
+        radial-gradient(circle at top right, rgba(245, 158, 11, 0.22), transparent 62%),
+        linear-gradient(180deg, rgba(254, 243, 199, 0.98), rgba(253, 230, 138, 0.84));
+    box-shadow:
+        0 0 0 1px rgba(245, 158, 11, 0.12),
+        0 4px 10px rgba(180, 83, 9, 0.1);
+}
+
+.curriculum-detail__unit-item--exam.curriculum-detail__unit-item--selected {
+    border-color: rgba(217, 119, 6, 0.58);
+    background:
+        radial-gradient(circle at top right, rgba(245, 158, 11, 0.3), transparent 62%),
+        linear-gradient(180deg, rgba(253, 230, 138, 1), rgba(252, 211, 77, 0.9));
+    box-shadow:
+        0 0 0 1px rgba(245, 158, 11, 0.18),
+        0 0 18px rgba(217, 119, 6, 0.18);
 }
 
 .curriculum-detail__unit-title {

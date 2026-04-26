@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/teaching/overview/Overview.vue'
 
@@ -107,6 +109,422 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_attendance).toBe(false)
         expect(ctx.show_performances).toBe(false)
         expect(ctx.show_performances_plus).toBe(false)
+    })
+
+    it('aligns course dates and curriculum assignments by week', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [
+                    { id: 1, date: '2025-09-03', hours: [3], content: '<p>Projekt: Internetrecherche</p>', status: ['free'] },
+                ],
+                teaching_curriculum: {
+                    id: 10,
+                    free_weeks: ['2025-09-15'],
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Grammatik',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-01'],
+                            units: [
+                                {
+                                    id: 'unit-1',
+                                    title: 'Satzglieder',
+                                    assignment_type: 'none',
+                                    is_exam: true,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const rows = computed.curriculumSyncRows.call(ctx)
+
+        expect(rows).toHaveLength(2)
+        expect(rows[0].weekKey).toBe('2025-09-01')
+        expect(rows[0].courseDates).toHaveLength(1)
+        expect(methods.isFreeCourseDateForSync.call(ctx, rows[0].courseDates[0])).toBe(true)
+        expect(methods.courseDateSyncColor.call(ctx, rows[0].courseDates[0])).toBe('success')
+        expect(methods.courseDateSyncVariant.call(ctx, rows[0].courseDates[0])).toBe('flat')
+        expect(methods.courseDateContentText.call(ctx, rows[0].courseDates[0])).toBe('Projekt: Internetrecherche')
+        expect(rows[0].curriculumEntries[0].label).toBe('Grammatik')
+        expect(rows[0].curriculumEntries[1].topicLabel).toBe('Grammatik')
+        expect(rows[0].curriculumEntries[1].unitLabel).toBe('Satzglieder')
+        expect(rows[0].curriculumEntries[1].isExam).toBe(true)
+        expect(rows[0].curriculumEntries[1].color).toBe('warning')
+        expect(rows[1].weekKey).toBe('2025-09-15')
+        expect(rows[1].courseDates).toHaveLength(0)
+        expect(rows[1].curriculumEntries[0].label).toBe('Frei')
+    })
+
+    it('allows long sync chip labels to wrap', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/Overview.vue'), 'utf8')
+
+        expect(source).toContain('class="curriculum-sync-chip"')
+        expect(source).toContain('class="curriculum-sync-chip__text"')
+        expect(source).toContain('class="curriculum-sync-chip__content"')
+        expect(source).toContain('class="curriculum-sync-chip__free-label"')
+        expect(source).toContain('courseDateContentText(courseDate)')
+        expect(source).toContain('isFreeCourseDateForSync(courseDate)')
+        expect(source).toContain('class="curriculum-sync-chip__topic"')
+        expect(source).toContain('entry.topicLabel && entry.unitLabel')
+        expect(source).toContain('class="curriculum-sync-chip__exam-icon"')
+        expect(source).toContain('class="curriculum-sync-entry-actions"')
+        expect(source).toContain('icon="mdi-file-alert-outline"')
+        expect(source).toContain('icon="mdi-arrow-up"')
+        expect(source).toContain('icon="mdi-arrow-up-bold-box-outline"')
+        expect(source).toContain('icon="mdi-arrow-down-bold-box-outline"')
+        expect(source).toContain('align-items: center;')
+        expect(source).toContain('border-radius: 8px !important;')
+        expect(source).toContain('.curriculum-sync-chip :deep(.v-chip__content)')
+        expect(source).toContain('display: inline;')
+        expect(source).toContain('overflow-wrap: anywhere;')
+        expect(source).toContain('white-space: normal;')
+    })
+
+    it('hides curriculum content entries on free curriculum weeks', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    free_weeks: ['2025-09-15'],
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Schreibübungen',
+                            assignment_type: 'all_weeks',
+                            week_keys: [],
+                            units: [],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const rows = computed.curriculumSyncRows.call(ctx)
+        const freeRow = rows.find((row: Record<string, any>) => row.weekKey === '2025-09-15')
+
+        expect(freeRow?.curriculumEntries).toHaveLength(1)
+        expect(freeRow?.curriculumEntries[0].label).toBe('Frei')
+        expect(freeRow?.curriculumEntries.some((entry: Record<string, any>) => entry.label === 'Schreibübungen')).toBe(false)
+    })
+
+    it('moves selected curriculum entries with following entries by week', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: [],
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Recherche',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-08'],
+                            units: [],
+                        },
+                        {
+                            id: 'topic-2',
+                            title: 'Praesentation',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-15'],
+                            units: [],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => entry.label === 'Recherche')
+
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, 1, true)).toBe(true)
+        expect(methods.curriculumEntriesToMove.call(ctx, selectedEntry, 1, true).map((entry: Record<string, any>) => entry.label))
+            .toEqual(['Recherche', 'Praesentation'])
+
+        const shiftedTopics = methods.shiftCurriculumTopics.call(
+            ctx,
+            methods.curriculumEntriesToMove.call(ctx, selectedEntry, 1, true),
+            1,
+        )
+
+        expect(shiftedTopics[0].week_keys).toEqual(['2025-09-15'])
+        expect(shiftedTopics[1].week_keys).toEqual(['2025-09-22'])
+    })
+
+    it('blocks moving curriculum entries up when the previous week is free', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: ['2025-09-01'],
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Recherche',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-08'],
+                            units: [],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => entry.label === 'Recherche')
+
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(false)
+    })
+
+    it('blocks moving curriculum entries up when the previous week is occupied', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: [],
+                    topics: [
+                        {
+                            id: 'topic-1',
+                            title: 'Grundlagen',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-01'],
+                            units: [],
+                        },
+                        {
+                            id: 'topic-2',
+                            title: 'Recherche',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-08'],
+                            units: [],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => entry.label === 'Recherche')
+
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(false)
+    })
+
+    it('allows moving curriculum entries through all-year and month assignments', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: [],
+                    topics: [
+                        {
+                            id: 'topic-all-year',
+                            title: 'Schreibübungen',
+                            assignment_type: 'all_weeks',
+                            week_keys: [],
+                            units: [],
+                        },
+                        {
+                            id: 'topic-month',
+                            title: 'Monatsprojekt',
+                            assignment_type: 'month',
+                            month_key: '2025-09',
+                            units: [],
+                        },
+                        {
+                            id: 'topic-week',
+                            title: 'Recherche',
+                            assignment_type: 'weeks',
+                            week_keys: ['2025-09-08'],
+                            units: [],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => entry.label === 'Recherche')
+
+        expect(ctx.curriculumWeekEntries.some((entry: Record<string, any>) => (
+            entry.weekKey === '2025-09-01'
+            && ['Schreibübungen', 'Monatsprojekt'].includes(entry.label)
+            && methods.isBlockingCurriculumMoveEntry.call(ctx, entry) === false
+        ))).toBe(true)
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(true)
+    })
+
+    it('moves the clicked occurrence when a unit is assigned to multiple weeks', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-03-16',
+                    until: '2026-04-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: ['2026-03-30'],
+                    topics: [
+                        {
+                            id: 'topic-all-year',
+                            title: 'Schreibübungen',
+                            assignment_type: 'all_weeks',
+                            week_keys: [],
+                            units: [],
+                        },
+                        {
+                            id: 'topic-search',
+                            title: 'Suchmaschinen und Internetrecherche - Teil 1',
+                            assignment_type: 'none',
+                            week_keys: [],
+                            units: [
+                                {
+                                    id: 'unit-project',
+                                    title: 'Projekt: Internetrecherche',
+                                    assignment_type: 'weeks',
+                                    week_keys: ['2026-03-23', '2026-04-06'],
+                                    is_exam: true,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const firstProjectEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => (
+            entry.unitLabel === 'Projekt: Internetrecherche'
+            && entry.weekKey === '2026-03-23'
+        ))
+        const secondProjectEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => (
+            entry.unitLabel === 'Projekt: Internetrecherche'
+            && entry.weekKey === '2026-04-06'
+        ))
+
+        expect(methods.canMoveCurriculumEntry.call(ctx, firstProjectEntry, 1, false)).toBe(false)
+        expect(methods.canMoveCurriculumEntry.call(ctx, secondProjectEntry, 1, false)).toBe(true)
+
+        const shiftedTopics = methods.shiftCurriculumTopics.call(
+            ctx,
+            methods.curriculumEntriesToMove.call(ctx, secondProjectEntry, 1, false),
+            1,
+        )
+
+        expect(shiftedTopics[1].units[0].week_keys).toEqual(['2026-03-23', '2026-04-13'])
     })
 
     it('persists active semester updates when diverging from config value', () => {

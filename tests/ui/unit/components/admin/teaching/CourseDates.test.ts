@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import CourseDates from '@/pages/admin/teaching/overview/components/CourseDates.vue'
 
@@ -21,6 +23,38 @@ describe('CourseDates course-specific schema', () => {
 
         expect((ctx.selectedCourseSchema as any).id).toBe('schema-teacher')
         expect(computed.semesterCount.call(ctx)).toBe(2)
+    })
+
+    it('shows the assigned curriculum in the dates card header', () => {
+        const computed = (CourseDates as any).computed
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Deutsch 6',
+                },
+            },
+        }
+
+        expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('Deutsch 6')
+        expect(source).toContain('v-if="selectedCourseCurriculumTitle"')
+        expect(source).toContain('class="course-date-curriculum-chip"')
+        expect(source).toContain('Curriculum:')
+        expect(source).toContain('class="course-date-curriculum-chip__title">{{ selectedCourseCurriculumTitle }}</span>')
+        expect(source).toContain('.course-date-curriculum-chip :deep(.v-chip__content)')
+        expect(source).toContain('overflow-wrap: anywhere;')
+    })
+
+    it('does not show a curriculum label when none is assigned', () => {
+        const computed = (CourseDates as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: {
+                teaching_curriculum: null,
+            },
+        }
+
+        expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('')
     })
 
     it('enters saving mode before waiting for the date content update request', async () => {
