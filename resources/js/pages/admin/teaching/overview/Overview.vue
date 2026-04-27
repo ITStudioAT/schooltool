@@ -211,6 +211,14 @@
                                                         :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, -1, false)"
                                                         @click.stop="moveCurriculumSyncEntry(entry, -1, false)" />
                                                     <v-btn
+                                                        icon="mdi-arrow-down"
+                                                        size="x-small"
+                                                        variant="text"
+                                                        density="comfortable"
+                                                        title="Allein eine Woche später"
+                                                        :disabled="curriculumMoveSaving || !canMoveCurriculumEntry(entry, 1, false)"
+                                                        @click.stop="moveCurriculumSyncEntry(entry, 1, false)" />
+                                                    <v-btn
                                                         icon="mdi-arrow-up-bold-box-outline"
                                                         size="x-small"
                                                         variant="text"

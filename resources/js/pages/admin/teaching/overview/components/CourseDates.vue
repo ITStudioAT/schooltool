@@ -176,11 +176,14 @@
                                     <div v-if="courseDateInlineContent(courseDate)" class="course-date-curriculum-stack__content">
                                         {{ courseDateInlineContent(courseDate) }}
                                     </div>
+                                    <div v-if="courseDateInlineContent(courseDate) && curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
+                                        <span class="course-date-curriculum-divider__label">CURRICULUM</span>
+                                    </div>
                                     <div
                                         v-for="(entry, entryIndex) in curriculumEntriesForCourseDate(courseDate)"
                                         :key="`${courseDate.id}-inline-${entryIndex}`"
                                         class="course-date-curriculum-stack__entry">
-                                        {{ entry }}
+                                        <v-icon v-if="entry.hasMaterials" size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openMaterialOverview(entry)" title="Materialien anzeigen">mdi-paperclip</v-icon>{{ entry.label }}
                                     </div>
                                 </div>
                             </div>
@@ -291,6 +294,89 @@
                 </v-card-text>
             </v-form>
         </v-card>
+
+        <!-- Material Overview Dialog -->
+        <v-dialog v-model="materialOverlayOpen" max-width="640" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon color="primary" size="22">mdi-paperclip</v-icon>
+                    Materialien
+                </v-card-title>
+                <v-card-subtitle v-if="materialOverlayEntry" class="px-4 pb-1">
+                    {{ materialOverlayEntry.label }}
+                </v-card-subtitle>
+                <v-card-text class="px-4 pb-2">
+                    <div v-if="materialOverlayLoading" class="text-center py-6">
+                        <v-progress-circular indeterminate color="primary" size="24" />
+                    </div>
+                    <template v-else-if="materialOverlayCards.length">
+                        <div v-for="card in materialOverlayCards" :key="`mo-card-${card.id}`" class="material-overview-card mb-3">
+                            <div class="material-overview-card__header d-flex align-center ga-2">
+                                <v-icon size="18" color="primary">mdi-package-variant-closed</v-icon>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-center ga-2 flex-wrap">
+                                        <span class="text-body-2 font-weight-medium">{{ card.title }}</span>
+                                        <v-chip v-if="card.type" size="x-small" variant="tonal" color="primary">{{ card.type }}</v-chip>
+                                        <v-chip v-if="materialStatusDisplay(card.status)" size="x-small" variant="tonal" :color="materialStatusDisplay(card.status).color">{{ materialStatusDisplay(card.status).label }}</v-chip>
+                                    </div>
+                                    <div v-if="materialSubtitle(card)" class="text-caption text-medium-emphasis">{{ materialSubtitle(card) }}</div>
+                                </div>
+                            </div>
+                            <v-list v-if="card.attachments && card.attachments.length" bg-color="transparent" density="compact" class="py-0 mt-2">
+                                <v-list-item
+                                    v-for="attachment in card.attachments"
+                                    :key="`mo-att-${attachment.id}`"
+                                    class="material-overview-attachment mb-1 px-3"
+                                    rounded="lg">
+                                    <template #prepend>
+                                        <v-icon size="18" color="#a5b4fc" class="mr-2">
+                                            {{ attachmentIcon(attachment) }}
+                                        </v-icon>
+                                    </template>
+                                    <v-list-item-title class="text-body-2">{{ attachment.name }}</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatFileSize(attachment.size_bytes) }}</span>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <div class="d-flex ga-1">
+                                            <v-btn
+                                                v-if="attachment.preview_url"
+                                                variant="text"
+                                                color="primary"
+                                                size="x-small"
+                                                class="text-none"
+                                                :href="attachment.preview_url"
+                                                target="_blank">
+                                                Vorschau
+                                            </v-btn>
+                                            <v-btn
+                                                v-if="attachment.download_url"
+                                                variant="text"
+                                                color="primary"
+                                                size="x-small"
+                                                class="text-none"
+                                                :href="attachment.download_url"
+                                                target="_blank">
+                                                Download
+                                            </v-btn>
+                                        </div>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                            <div v-else class="text-caption text-medium-emphasis py-2 pl-1">
+                                Keine Anhänge vorhanden.
+                            </div>
+                        </div>
+                    </template>
+                    <div v-else class="text-center py-6 text-caption text-medium-emphasis">
+                        Keine Materialien gefunden.
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-btn variant="tonal" @click="closeMaterialOverview">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
     </ItsGridBox>
 </template>
 
@@ -303,6 +389,7 @@ import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
+import axios from 'axios'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
@@ -357,6 +444,10 @@ export default {
             pending_date_mutation_action: null,
             pending_date_mutation_id: null,
             content_drafts: {},
+            materialOverlayOpen: false,
+            materialOverlayEntry: null,
+            materialOverlayLoading: false,
+            materialOverlayCards: [],
             dateRangeSelection: ['today'],
             data: {
                 from: '',
@@ -752,16 +843,21 @@ export default {
                     .map((entryWeekKey) => String(entryWeekKey).trim())
             )]
             if (freeWeekKeys.includes(weekKey)) {
-                return ['Frei']
+                return [{ label: 'Frei', hasMaterials: false }]
             }
 
             const allWeekKeys = this.schoolyearWeekKeys()
-            const labels = []
+            const entries = []
+            const seenLabels = new Set()
 
             ;(Array.isArray(curriculum.topics) ? curriculum.topics : []).forEach((topic) => {
                 const topicWeekKeys = this.assignmentWeekKeys(topic, allWeekKeys)
                 if (topic?.title && ['all_weeks', 'month', 'weeks'].includes(topic.assignment_type) && topicWeekKeys.includes(weekKey)) {
-                    labels.push(String(topic.title))
+                    const label = String(topic.title)
+                    if (!seenLabels.has(label)) {
+                        seenLabels.add(label)
+                        entries.push({ label, hasMaterials: Array.isArray(topic.materials) && topic.materials.length > 0, materials: Array.isArray(topic.materials) ? topic.materials : [] })
+                    }
                 }
 
                 ;(Array.isArray(topic?.units) ? topic.units : []).forEach((unit) => {
@@ -773,11 +869,21 @@ export default {
                     }
 
                     const topicPrefix = topic?.title ? `${topic.title}: ` : ''
-                    labels.push(`${topicPrefix}${unit.title}`)
+                    const label = `${topicPrefix}${unit.title}`
+                    if (!seenLabels.has(label)) {
+                        seenLabels.add(label)
+                        const unitHasMaterials = Array.isArray(unit.materials) && unit.materials.length > 0
+                        const topicHasMaterials = Array.isArray(topic.materials) && topic.materials.length > 0
+                        const materials = [
+                            ...(Array.isArray(topic.materials) ? topic.materials : []),
+                            ...(Array.isArray(unit.materials) ? unit.materials : []),
+                        ].filter((m, i, arr) => m?.id && arr.findIndex((x) => x.id === m.id) === i)
+                        entries.push({ label, hasMaterials: unitHasMaterials || topicHasMaterials, materials })
+                    }
                 })
             })
 
-            return [...new Set(labels)]
+            return entries
         },
         async runDateMutation(action, callback, courseDateId = null) {
             if (this.isBusyDateUi) {
@@ -1049,6 +1155,74 @@ export default {
             const textarea = el?.querySelector?.('textarea')
             if (textarea) textarea.focus()
         },
+        async openMaterialOverview(entry) {
+            if (!entry?.materials?.length) return
+            this.materialOverlayEntry = entry
+            this.materialOverlayCards = []
+            this.materialOverlayLoading = true
+            this.materialOverlayOpen = true
+
+            const curriculumId = this.selectedCourseCurriculumId
+            if (!curriculumId) {
+                this.materialOverlayCards = entry.materials.map((m) => ({ ...m, attachments: [] }))
+                this.materialOverlayLoading = false
+                return
+            }
+
+            const cards = []
+            for (const material of entry.materials) {
+                try {
+                    const res = await axios.get(`/api/admin/teaching/curricula/${curriculumId}/materials/cards/${material.id}`)
+                    const card = res.data?.data
+                    if (card) {
+                        cards.push(card)
+                    }
+                } catch {
+                    cards.push({ ...material, attachments: [] })
+                }
+            }
+
+            this.materialOverlayCards = cards
+            this.materialOverlayLoading = false
+        },
+        closeMaterialOverview() {
+            this.materialOverlayOpen = false
+            this.materialOverlayEntry = null
+            this.materialOverlayCards = []
+            this.materialOverlayLoading = false
+        },
+        materialSubtitle(card) {
+            return [card.subject, card.topic, card.unit, card.type]
+                .map((v) => (typeof v === 'string' ? v.trim() : ''))
+                .filter(Boolean)
+                .join(' · ')
+        },
+        materialStatusDisplay(status) {
+            const map = {
+                inbox: { label: 'Neu/Idee', color: '#607d8b' },
+                in_progress: { label: 'In Arbeit', color: '#f9a825' },
+                done: { label: 'ok', color: '#2e7d32' },
+                update_needed: { label: 'Änderung nötig', color: '#c62828' },
+            }
+            return map[status] || null
+        },
+        attachmentIcon(attachment) {
+            const mimeType = String(attachment?.mime_type || '').toLowerCase()
+            return mimeType.startsWith('image/') ? 'mdi-file-image-outline' : 'mdi-file-document-outline'
+        },
+        formatFileSize(bytes) {
+            const size = Number(bytes)
+            if (!Number.isFinite(size) || size <= 0) return ''
+            if (size < 1024) return `${size} B`
+            const units = ['KB', 'MB', 'GB']
+            let value = size / 1024
+            let unitIndex = 0
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024
+                unitIndex += 1
+            }
+            return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`
+        },
     },
 }
 </script>
@@ -1110,6 +1284,29 @@ export default {
     margin-top: -2px;
 }
 
+.course-date-curriculum-divider {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 2px;
+}
+
+.course-date-curriculum-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(var(--v-theme-primary), 0.25);
+}
+
+.course-date-curriculum-divider__label {
+    font-size: 0.6rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: rgba(var(--v-theme-primary), 0.5);
+    line-height: 1;
+    flex-shrink: 0;
+}
+
 .course-date-curriculum-stack {
     display: flex;
     flex-direction: column;
@@ -1125,8 +1322,8 @@ export default {
 }
 
 .course-date-curriculum-stack__entry {
-    border-left: 2px solid rgba(var(--v-theme-secondary), 0.35);
-    color: rgb(var(--v-theme-secondary));
+    border-left: 2px solid rgba(var(--v-theme-primary), 0.35);
+    color: rgb(var(--v-theme-primary));
     font-size: 0.76rem;
     line-height: 1.25;
     padding-left: 8px;
@@ -1173,5 +1370,26 @@ export default {
 .course-date-row--next {
     background-color: #e3f2fd !important;
     border-left: 5px solid #1565c0;
+}
+
+.course-date-material-icon {
+    opacity: 0.7;
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.course-date-material-icon:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+
+.material-overview-card {
+    border: 1px solid rgba(var(--v-theme-primary), 0.15);
+    border-radius: 12px;
+    padding: 12px;
+}
+
+.material-overview-attachment {
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+    border-radius: 8px;
 }
 </style>

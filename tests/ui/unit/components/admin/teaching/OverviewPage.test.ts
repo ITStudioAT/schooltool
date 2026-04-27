@@ -189,6 +189,7 @@ describe('Teaching overview controls', () => {
         expect(source).toContain('class="curriculum-sync-entry-actions"')
         expect(source).toContain('icon="mdi-file-alert-outline"')
         expect(source).toContain('icon="mdi-arrow-up"')
+        expect(source).toContain('icon="mdi-arrow-down"')
         expect(source).toContain('icon="mdi-arrow-up-bold-box-outline"')
         expect(source).toContain('icon="mdi-arrow-down-bold-box-outline"')
         expect(source).toContain('align-items: center;')
