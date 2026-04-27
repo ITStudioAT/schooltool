@@ -302,13 +302,13 @@ describe('Teaching overview controls', () => {
         expect(shiftedTopics[1].week_keys).toEqual(['2025-09-22'])
     })
 
-    it('blocks moving curriculum entries up when the previous week is free', () => {
+    it('allows moving curriculum entries up to the previous non-free week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
             config: {
                 selected_schoolyear: {
-                    from: '2025-09-01',
+                    from: '2025-08-18',
                     until: '2025-09-30',
                 },
             },
@@ -318,7 +318,7 @@ describe('Teaching overview controls', () => {
                     id: 10,
                     title: 'Medien',
                     semester_count: 2,
-                    free_weeks: ['2025-09-01'],
+                    free_weeks: ['2025-08-25', '2025-09-01'],
                     topics: [
                         {
                             id: 'topic-1',
@@ -341,7 +341,83 @@ describe('Teaching overview controls', () => {
 
         const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => entry.label === 'Recherche')
 
-        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(false)
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(true)
+
+        const shiftedTopics = methods.shiftCurriculumTopics.call(
+            ctx,
+            methods.curriculumEntriesToMove.call(ctx, selectedEntry, -1, false),
+            -1,
+        )
+
+        expect(shiftedTopics[0].week_keys).toEqual(['2025-08-18'])
+    })
+
+    it('allows moving curriculum entries down to the next non-free week', () => {
+        const computed = (Overview as any).computed
+        const methods = (Overview as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2026-03-16',
+                    until: '2026-04-30',
+                },
+            },
+            selected_course: {
+                course_dates: [],
+                teaching_curriculum: {
+                    id: 10,
+                    title: 'Medien',
+                    semester_count: 2,
+                    free_weeks: ['2026-03-30'],
+                    topics: [
+                        {
+                            id: 'topic-all-year',
+                            title: 'Schreibuebungen',
+                            assignment_type: 'all_weeks',
+                            week_keys: [],
+                            units: [],
+                        },
+                        {
+                            id: 'topic-search',
+                            title: 'Suchmaschinen und Internetrecherche - Teil 1',
+                            assignment_type: 'none',
+                            week_keys: [],
+                            units: [
+                                {
+                                    id: 'unit-project',
+                                    title: 'Projekt: Internetrecherche',
+                                    assignment_type: 'weeks',
+                                    week_keys: ['2026-03-23'],
+                                    is_exam: true,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+            selectedCourseCurriculumId: 10,
+            selectedCurriculumDetail: null,
+        }
+
+        Object.assign(ctx, methods)
+        ctx.selectedCourseCurriculum = computed.selectedCourseCurriculum.call(ctx)
+        ctx.selectedCourseCurriculumForSync = computed.selectedCourseCurriculumForSync.call(ctx)
+        ctx.curriculumWeekEntries = computed.curriculumWeekEntries.call(ctx)
+
+        const selectedEntry = ctx.curriculumWeekEntries.find((entry: Record<string, any>) => (
+            entry.unitLabel === 'Projekt: Internetrecherche'
+            && entry.weekKey === '2026-03-23'
+        ))
+
+        expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, 1, false)).toBe(true)
+
+        const shiftedTopics = methods.shiftCurriculumTopics.call(
+            ctx,
+            methods.curriculumEntriesToMove.call(ctx, selectedEntry, 1, false),
+            1,
+        )
+
+        expect(shiftedTopics[1].units[0].week_keys).toEqual(['2026-04-06'])
     })
 
     it('blocks moving curriculum entries up when the previous week is occupied', () => {
@@ -393,7 +469,7 @@ describe('Teaching overview controls', () => {
         expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(false)
     })
 
-    it('allows moving curriculum entries through all-year and month assignments', () => {
+    it('allows moving curriculum entries up through free weeks and all-year/month assignments', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods
         const ctx: Record<string, any> = {
@@ -409,7 +485,7 @@ describe('Teaching overview controls', () => {
                     id: 10,
                     title: 'Medien',
                     semester_count: 2,
-                    free_weeks: [],
+                    free_weeks: ['2025-09-08'],
                     topics: [
                         {
                             id: 'topic-all-year',
@@ -429,7 +505,7 @@ describe('Teaching overview controls', () => {
                             id: 'topic-week',
                             title: 'Recherche',
                             assignment_type: 'weeks',
-                            week_keys: ['2025-09-08'],
+                            week_keys: ['2025-09-15'],
                             units: [],
                         },
                     ],
@@ -452,6 +528,14 @@ describe('Teaching overview controls', () => {
             && methods.isBlockingCurriculumMoveEntry.call(ctx, entry) === false
         ))).toBe(true)
         expect(methods.canMoveCurriculumEntry.call(ctx, selectedEntry, -1, false)).toBe(true)
+
+        const shiftedTopics = methods.shiftCurriculumTopics.call(
+            ctx,
+            methods.curriculumEntriesToMove.call(ctx, selectedEntry, -1, false),
+            -1,
+        )
+
+        expect(shiftedTopics[2].week_keys).toEqual(['2025-09-01'])
     })
 
     it('moves the clicked occurrence when a unit is assigned to multiple weeks', () => {

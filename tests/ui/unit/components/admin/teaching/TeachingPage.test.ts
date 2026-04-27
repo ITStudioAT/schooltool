@@ -252,6 +252,17 @@ describe('Teaching page navigation', () => {
         expect(source).not.toContain('toolbar-width-xl-')
     })
 
+    it('renders course date contents in normal font weight', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseDates.vue', 'utf8')
+        )
+
+        expect(source).toContain('.content-readonly,')
+        expect(source).toContain('.content-readonly :deep(p),')
+        expect(source).toContain('.content-readonly :deep(li),')
+        expect(source).toContain('font-weight: 400;')
+    })
+
     it('renders the course clear action as a colored tonal button', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')

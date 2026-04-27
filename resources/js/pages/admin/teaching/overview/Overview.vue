@@ -805,6 +805,18 @@ export default {
 
             return weekKeys[index + direction] || null
         },
+        shiftedCurriculumMoveWeekKey(weekKey, direction) {
+            if (!weekKey || !Number.isInteger(direction) || direction === 0) {
+                return null
+            }
+
+            let targetWeekKey = this.shiftedWeekKey(weekKey, direction)
+            while (targetWeekKey && this.isCurriculumWeekFree(targetWeekKey)) {
+                targetWeekKey = this.shiftedWeekKey(targetWeekKey, direction)
+            }
+
+            return targetWeekKey
+        },
         isCurriculumWeekFree(weekKey) {
             const curriculum = this.selectedCourseCurriculumForSync
 
@@ -819,7 +831,7 @@ export default {
                 .filter((candidate) => this.isBlockingCurriculumMoveEntry(candidate))
 
             return entries.every((candidate) => {
-                const targetWeekKey = this.shiftedWeekKey(candidate.weekKey, direction)
+                const targetWeekKey = this.shiftedCurriculumMoveWeekKey(candidate.weekKey, direction)
                 const isOccupiedByStationaryEntry = occupiedWeeklyEntries.some((occupiedEntry) => (
                     occupiedEntry.weekKey === targetWeekKey
                     && !movingEntryKeys.has(occupiedEntry.key)
@@ -884,8 +896,8 @@ export default {
         },
         shiftWeekKeys(weekKeys, direction) {
             return (Array.isArray(weekKeys) ? weekKeys : [])
-                .map((weekKey) => this.shiftedWeekKey(weekKey, direction))
-                .filter((weekKey) => weekKey && !this.isCurriculumWeekFree(weekKey))
+                .map((weekKey) => this.shiftedCurriculumMoveWeekKey(weekKey, direction))
+                .filter(Boolean)
                 .filter((weekKey, index, keys) => keys.indexOf(weekKey) === index)
         },
         shiftSelectedWeekKeys(sourceKey, weekKeys, direction, movingWeekKeysBySource) {
@@ -894,7 +906,7 @@ export default {
             return (Array.isArray(weekKeys) ? weekKeys : [])
                 .map((weekKey) => (
                     movingWeekKeys.has(weekKey)
-                        ? this.shiftedWeekKey(weekKey, direction)
+                        ? this.shiftedCurriculumMoveWeekKey(weekKey, direction)
                         : weekKey
                 ))
                 .filter(Boolean)

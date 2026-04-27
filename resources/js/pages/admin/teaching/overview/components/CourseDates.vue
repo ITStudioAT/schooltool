@@ -810,6 +810,13 @@ export default {
     cursor: default;
 }
 
+.content-readonly,
+.content-readonly :deep(p),
+.content-readonly :deep(li),
+.content-readonly :deep(span) {
+    font-weight: 400;
+}
+
 .course-date-row {
     display: flex;
     flex-wrap: wrap;
