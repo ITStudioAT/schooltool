@@ -40,12 +40,12 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('Deutsch 6')
         expect(source).toContain('v-if="selectedCourseCurriculumTitle"')
         expect(source).toContain('class="course-date-curriculum-chip"')
-        expect(source).toContain('Curriculum:')
-        expect(source).toContain('class="course-date-curriculum-chip__title">{{ selectedCourseCurriculumTitle }}</span>')
-        expect(source).toContain('.course-date-curriculum-chip :deep(.v-chip__content)')
-        expect(source).toContain('overflow-wrap: anywhere;')
         expect(source).toContain('class="course-date-curriculum-inline pl-1 pr-2"')
-        expect(source).toContain(':key="`${courseDate.id}-inline-${entry}`"')
+        expect(source).toContain('class="course-date-curriculum-stack"')
+        expect(source).toContain('class="course-date-curriculum-stack__content"')
+        expect(source).toContain('class="course-date-curriculum-stack__entry"')
+        expect(source).toContain('courseDateInlineContent(courseDate)')
+        expect(source).toContain(':key="`${courseDate.id}-inline-${entryIndex}`"')
         expect(source).toContain('await this.loadSelectedCourseCurriculumDetail()')
     })
 
@@ -112,6 +112,16 @@ describe('CourseDates course-specific schema', () => {
             'Suchmaschinen und Internetrecherche - Teil 1: Projekt: Internetrecherche',
         ])
         expect(methods.curriculumEntriesForCourseDate.call(ctx, { date: '2025-09-15' })).toEqual(['Frei'])
+    })
+
+    it('normalizes course date content to a single inline line', () => {
+        const methods = (CourseDates as any).methods
+
+        expect(methods.courseDateInlineContent.call({}, {
+            content: '<p>Algorithmen, Flussdiagramm</p><p>Schleifen, Zählen bis 5.</p>',
+        })).toBe('Algorithmen, Flussdiagramm Schleifen, Zählen bis 5.')
+
+        expect(methods.courseDateInlineContent.call({}, { content: '   ' })).toBe('')
     })
 
     it('enters saving mode before waiting for the date content update request', async () => {

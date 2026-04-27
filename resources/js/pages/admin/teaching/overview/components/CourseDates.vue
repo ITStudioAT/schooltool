@@ -49,13 +49,12 @@
                 <v-chip
                     v-if="selectedCourseCurriculumTitle"
                     size="small"
-                    color="secondary"
-                    variant="flat"
+                    color="primary"
+                    variant="tonal"
                     class="course-date-curriculum-chip"
                     prepend-icon="mdi-book-open-variant"
                     title="Zugewiesenes Curriculum">
-                    <span class="course-date-curriculum-chip__label">Curriculum:</span>
-                    <span class="course-date-curriculum-chip__title">{{ selectedCourseCurriculumTitle }}</span>
+                    {{ selectedCourseCurriculumTitle }}
                 </v-chip>
             </v-card-title>
             <v-divider />
@@ -170,25 +169,23 @@
                                 </div>
                             </div>
                             <div
-                                v-if="curriculumEntriesForCourseDate(courseDate).length"
+                                v-if="courseDateInlineContent(courseDate) || curriculumEntriesForCourseDate(courseDate).length"
                                 class="course-date-curriculum-inline pl-1 pr-2"
                                 @click.stop>
-                                <div class="course-date-curriculum-inline__entries d-flex flex-wrap ga-1">
-                                    <v-chip
-                                        v-for="entry in curriculumEntriesForCourseDate(courseDate)"
-                                        :key="`${courseDate.id}-inline-${entry}`"
-                                        size="x-small"
-                                        color="secondary"
-                                        variant="tonal">
+                                <div class="course-date-curriculum-stack">
+                                    <div v-if="courseDateInlineContent(courseDate)" class="course-date-curriculum-stack__content">
+                                        {{ courseDateInlineContent(courseDate) }}
+                                    </div>
+                                    <div
+                                        v-for="(entry, entryIndex) in curriculumEntriesForCourseDate(courseDate)"
+                                        :key="`${courseDate.id}-inline-${entryIndex}`"
+                                        class="course-date-curriculum-stack__entry">
                                         {{ entry }}
-                                    </v-chip>
+                                    </div>
                                 </div>
                             </div>
-                            <div v-if="isContentVisible(courseDate.id)" class="pl-6 pr-2 pb-2" @click.stop>
-                                <div v-if="editing_content_id !== courseDate.id">
-                                    <div v-if="courseDate.content" class="text-caption content-readonly" v-html="contentHtml(courseDate.content)"></div>
-                                </div>
-                                <div v-else class="d-flex flex-column ga-2">
+                            <div v-if="editing_content_id === courseDate.id" class="pl-6 pr-2 pb-2" @click.stop>
+                                <div class="d-flex flex-column ga-2">
                                     <ItsRichTextEditor
                                         v-model="content_drafts[courseDate.id]"
                                         :disabled="isSavingContent"
@@ -829,6 +826,20 @@ export default {
                 .map((line) => `<p>${line || '<br>'}</p>`)
                 .join('')
         },
+        courseDateInlineContent(courseDate) {
+            const content = String(courseDate?.content || '').trim()
+            if (!content) {
+                return ''
+            }
+
+            return content
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/p>/gi, '\n')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+        },
         toDateString(date) {
             const d = parseLocalDate(date)
             const year = d.getFullYear()
@@ -1080,45 +1091,45 @@ export default {
 }
 
 .course-date-curriculum-chip {
-    align-items: flex-start;
-    font-weight: 700;
+    font-weight: 500;
     height: auto;
     max-width: min(100%, 360px);
-    min-height: 30px;
-    box-shadow: 0 6px 14px rgba(124, 58, 237, 0.2);
-    white-space: normal;
-}
-
-.course-date-curriculum-chip__label {
-    opacity: 0.86;
-    margin-right: 4px;
-}
-
-.course-date-curriculum-chip__title {
-    line-height: 1.25;
-    overflow-wrap: anywhere;
+    min-height: 26px;
     white-space: normal;
 }
 
 .course-date-curriculum-chip :deep(.v-chip__content) {
-    align-items: flex-start;
-    line-height: 1.25;
-    padding-bottom: 4px;
-    padding-top: 4px;
+    line-height: 1.3;
+    padding-bottom: 2px;
+    padding-top: 2px;
     white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .course-date-curriculum-inline {
-    margin-top: -4px;
+    margin-top: -2px;
 }
 
-.course-date-curriculum-inline :deep(.v-chip) {
+.course-date-curriculum-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     max-width: 100%;
 }
 
-.course-date-curriculum-inline :deep(.v-chip__content) {
+.course-date-curriculum-stack__content {
+    color: rgba(var(--v-theme-on-surface), 0.78);
+    font-size: 0.78rem;
+    line-height: 1.3;
     overflow-wrap: anywhere;
-    white-space: normal;
+}
+
+.course-date-curriculum-stack__entry {
+    border-left: 2px solid rgba(var(--v-theme-secondary), 0.35);
+    color: rgb(var(--v-theme-secondary));
+    font-size: 0.76rem;
+    line-height: 1.25;
+    padding-left: 8px;
 }
 
 @media (max-width: 700px) {
