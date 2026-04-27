@@ -44,6 +44,9 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('class="course-date-curriculum-chip__title">{{ selectedCourseCurriculumTitle }}</span>')
         expect(source).toContain('.course-date-curriculum-chip :deep(.v-chip__content)')
         expect(source).toContain('overflow-wrap: anywhere;')
+        expect(source).toContain('class="course-date-curriculum-inline pl-1 pr-2"')
+        expect(source).toContain(':key="`${courseDate.id}-inline-${entry}`"')
+        expect(source).toContain('await this.loadSelectedCourseCurriculumDetail()')
     })
 
     it('does not show a curriculum label when none is assigned', () => {
@@ -55,6 +58,60 @@ describe('CourseDates course-specific schema', () => {
         }
 
         expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('')
+    })
+
+    it('resolves matching curriculum entries for a course date and prioritizes free weeks', () => {
+        const methods = (CourseDates as any).methods
+        const ctx: Record<string, any> = {
+            config: {
+                selected_schoolyear: {
+                    from: '2025-09-01',
+                    until: '2025-09-30',
+                },
+            },
+            selectedCourseCurriculumForContent: {
+                free_weeks: ['2025-09-15'],
+                topics: [
+                    {
+                        id: 'topic-all-weeks',
+                        title: 'Schreibuebungen',
+                        assignment_type: 'all_weeks',
+                        week_keys: [],
+                        units: [],
+                    },
+                    {
+                        id: 'topic-month',
+                        title: 'Monatsprojekt',
+                        assignment_type: 'month',
+                        month_key: '2025-09',
+                        units: [],
+                    },
+                    {
+                        id: 'topic-search',
+                        title: 'Suchmaschinen und Internetrecherche - Teil 1',
+                        assignment_type: 'none',
+                        week_keys: [],
+                        units: [
+                            {
+                                id: 'unit-project',
+                                title: 'Projekt: Internetrecherche',
+                                assignment_type: 'weeks',
+                                week_keys: ['2025-09-08'],
+                            },
+                        ],
+                    },
+                ],
+            },
+        }
+
+        Object.assign(ctx, methods)
+
+        expect(methods.curriculumEntriesForCourseDate.call(ctx, { date: '2025-09-08' })).toEqual([
+            'Schreibuebungen',
+            'Monatsprojekt',
+            'Suchmaschinen und Internetrecherche - Teil 1: Projekt: Internetrecherche',
+        ])
+        expect(methods.curriculumEntriesForCourseDate.call(ctx, { date: '2025-09-15' })).toEqual(['Frei'])
     })
 
     it('enters saving mode before waiting for the date content update request', async () => {

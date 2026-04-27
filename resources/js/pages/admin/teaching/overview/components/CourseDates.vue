@@ -169,6 +169,21 @@
                                         @click="deleteDate(courseDate)" />
                                 </div>
                             </div>
+                            <div
+                                v-if="curriculumEntriesForCourseDate(courseDate).length"
+                                class="course-date-curriculum-inline pl-1 pr-2"
+                                @click.stop>
+                                <div class="course-date-curriculum-inline__entries d-flex flex-wrap ga-1">
+                                    <v-chip
+                                        v-for="entry in curriculumEntriesForCourseDate(courseDate)"
+                                        :key="`${courseDate.id}-inline-${entry}`"
+                                        size="x-small"
+                                        color="secondary"
+                                        variant="tonal">
+                                        {{ entry }}
+                                    </v-chip>
+                                </div>
+                            </div>
                             <div v-if="isContentVisible(courseDate.id)" class="pl-6 pr-2 pb-2" @click.stop>
                                 <div v-if="editing_content_id !== courseDate.id">
                                     <div v-if="courseDate.content" class="text-caption content-readonly" v-html="contentHtml(courseDate.content)"></div>
@@ -290,6 +305,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
@@ -312,9 +328,11 @@ export default {
         this.courseStore = useCourseStore()
         this.courseDateStore = useCourseDateStore()
         this.teachingStore = useTeachingStore()
+        this.curriculumStore = useCurriculumStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
+        await this.loadSelectedCourseCurriculumDetail()
         this.activeSemester = this.config?.user?.teaching_active_semester || 1
     },
 
@@ -328,6 +346,9 @@ export default {
             courseStore: null,
             courseDateStore: null,
             teachingStore: null,
+            curriculumStore: null,
+            selectedCourseCurriculumDetail: null,
+            selectedCourseCurriculumDetailLoadingId: null,
             activeSemester: null,
             is_valid: false,
             delete_date_id: null,
@@ -367,8 +388,35 @@ export default {
             const schemaId = this.selected_course?.teaching_schema_id
             return schemaId ? this.teachingStore?.schemaById(schemaId) : null
         },
+        selectedCourseCurriculumId() {
+            const rawCandidates = [
+                this.selected_course?.teaching_curriculum_id,
+                this.selected_course?.teaching_curriculum?.id,
+                this.$route?.query?.curriculum,
+            ]
+
+            for (const candidate of rawCandidates) {
+                const normalized = Number(candidate)
+                if (Number.isFinite(normalized) && normalized > 0) {
+                    return normalized
+                }
+            }
+
+            return null
+        },
+        selectedCourseCurriculumForContent() {
+            const selectedCurriculumId = this.selectedCourseCurriculumId
+            if (
+                selectedCurriculumId
+                && Number(this.selectedCourseCurriculumDetail?.id) === Number(selectedCurriculumId)
+            ) {
+                return this.selectedCourseCurriculumDetail
+            }
+
+            return this.selected_course?.teaching_curriculum || null
+        },
         selectedCourseCurriculumTitle() {
-            const curriculum = this.selected_course?.teaching_curriculum
+            const curriculum = this.selectedCourseCurriculumForContent || this.selected_course?.teaching_curriculum
             if (!curriculum?.id) return ''
 
             return curriculum.title || `Curriculum #${curriculum.id}`
@@ -509,13 +557,26 @@ export default {
     watch: {
         selected_course: {
             immediate: true,
-            handler(course) {
-                if (!course || this.selected_courseDate) return
+            async handler(course) {
+                if (!course) {
+                    this.selectedCourseCurriculumDetail = null
+                    this.selectedCourseCurriculumDetailLoadingId = null
+                    return
+                }
+
+                await this.loadSelectedCourseCurriculumDetail()
+                if (this.selected_courseDate) return
                 if (this.$route.query.date) return
                 const highlightedId = this.highlightedDateId
                 if (!highlightedId) return
                 const date = (course.course_dates || []).find((d) => d.id === highlightedId)
                 if (date) this.selectCourseDate(date)
+            },
+        },
+        selectedCourseCurriculumId: {
+            immediate: true,
+            async handler() {
+                await this.loadSelectedCourseCurriculumDetail()
             },
         },
         activeSemester(val) {
@@ -543,6 +604,184 @@ export default {
     },
 
     methods: {
+        async loadSelectedCourseCurriculumDetail() {
+            const curriculumId = this.selectedCourseCurriculumId
+            if (!curriculumId || !this.curriculumStore) {
+                this.selectedCourseCurriculumDetail = null
+                this.selectedCourseCurriculumDetailLoadingId = null
+                return
+            }
+
+            if (
+                Number(this.selectedCourseCurriculumDetail?.id) === Number(curriculumId)
+                && Array.isArray(this.selectedCourseCurriculumDetail?.topics)
+            ) {
+                return
+            }
+
+            if (Number(this.selectedCourseCurriculumDetailLoadingId) === Number(curriculumId)) {
+                return
+            }
+
+            const inlineCurriculum = this.selected_course?.teaching_curriculum
+            if (Number(inlineCurriculum?.id) === Number(curriculumId) && Array.isArray(inlineCurriculum?.topics)) {
+                this.selectedCourseCurriculumDetail = inlineCurriculum
+                this.selectedCourseCurriculumDetailLoadingId = null
+                return
+            }
+
+            this.selectedCourseCurriculumDetailLoadingId = curriculumId
+            try {
+                const curriculum = await this.curriculumStore.show(curriculumId)
+                if (Number(this.selectedCourseCurriculumId) === Number(curriculumId)) {
+                    this.selectedCourseCurriculumDetail = curriculum
+                }
+            } finally {
+                this.selectedCourseCurriculumDetailLoadingId = null
+            }
+        },
+        weekStartKey(date) {
+            if (!date) {
+                return null
+            }
+
+            const parsedDate = new Date(parseLocalDate(date))
+            if (Number.isNaN(parsedDate.getTime())) {
+                return null
+            }
+
+            const day = parsedDate.getDay()
+            const offset = day === 0 ? -6 : 1 - day
+            parsedDate.setDate(parsedDate.getDate() + offset)
+
+            return this.toDateString(parsedDate)
+        },
+        schoolyearWeekKeys() {
+            const from = this.config?.selected_schoolyear?.from
+            const until = this.config?.selected_schoolyear?.until
+            if (!from || !until) {
+                return []
+            }
+
+            const start = new Date(parseLocalDate(from))
+            const end = new Date(parseLocalDate(until))
+            if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+                return []
+            }
+
+            const cursor = new Date(parseLocalDate(start))
+            const day = cursor.getDay()
+            const offset = day === 0 ? -6 : 1 - day
+            cursor.setDate(cursor.getDate() + offset)
+
+            const keys = []
+            while (cursor <= end) {
+                keys.push(this.toDateString(cursor))
+                cursor.setDate(cursor.getDate() + 7)
+            }
+
+            return keys
+        },
+        weekKeysForMonth(monthKey) {
+            const match = String(monthKey).match(/^(\d{4})-(\d{2})$/)
+            if (!match) return []
+
+            const year = Number(match[1])
+            const monthIndex = Number(match[2]) - 1
+            const firstDay = new Date(year, monthIndex, 1)
+            const lastDay = new Date(year, monthIndex + 1, 0)
+            const cursor = new Date(firstDay)
+
+            const day = cursor.getDay()
+            const offset = day === 0 ? -6 : 1 - day
+            cursor.setDate(cursor.getDate() + offset)
+
+            const keys = []
+            while (cursor <= lastDay || cursor.getDay() !== 1) {
+                const weekStart = new Date(cursor)
+                let weekHasMonthDay = false
+
+                for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+                    const date = new Date(cursor)
+                    if (date.getFullYear() === year && date.getMonth() === monthIndex) {
+                        weekHasMonthDay = true
+                    }
+                    cursor.setDate(cursor.getDate() + 1)
+                }
+
+                if (!weekHasMonthDay) {
+                    break
+                }
+                keys.push(this.toDateString(weekStart))
+            }
+
+            return keys
+        },
+        assignmentWeekKeys(assignment, allWeekKeys) {
+            if (!assignment) return []
+
+            if (assignment.assignment_type === 'all_weeks') {
+                return [...allWeekKeys]
+            }
+
+            if (assignment.assignment_type === 'weeks') {
+                return [...new Set(
+                    (Array.isArray(assignment.week_keys) ? assignment.week_keys : [])
+                        .filter(Boolean)
+                        .map((weekKey) => String(weekKey).trim())
+                )]
+            }
+
+            if (assignment.assignment_type === 'month') {
+                const monthKeys = (Array.isArray(assignment.month_keys) ? assignment.month_keys : [assignment.month_key])
+                    .filter(Boolean)
+                    .map((monthKey) => String(monthKey).trim())
+
+                return [...new Set(monthKeys.flatMap((monthKey) => this.weekKeysForMonth(monthKey)))]
+            }
+
+            return []
+        },
+        curriculumEntriesForCourseDate(courseDate) {
+            const weekKey = this.weekStartKey(courseDate?.date)
+            const curriculum = this.selectedCourseCurriculumForContent
+            if (!weekKey || !curriculum) {
+                return []
+            }
+
+            const freeWeekKeys = [...new Set(
+                (Array.isArray(curriculum.free_weeks) ? curriculum.free_weeks : [])
+                    .filter(Boolean)
+                    .map((entryWeekKey) => String(entryWeekKey).trim())
+            )]
+            if (freeWeekKeys.includes(weekKey)) {
+                return ['Frei']
+            }
+
+            const allWeekKeys = this.schoolyearWeekKeys()
+            const labels = []
+
+            ;(Array.isArray(curriculum.topics) ? curriculum.topics : []).forEach((topic) => {
+                const topicWeekKeys = this.assignmentWeekKeys(topic, allWeekKeys)
+                if (topic?.title && ['all_weeks', 'month', 'weeks'].includes(topic.assignment_type) && topicWeekKeys.includes(weekKey)) {
+                    labels.push(String(topic.title))
+                }
+
+                ;(Array.isArray(topic?.units) ? topic.units : []).forEach((unit) => {
+                    const unitWeekKeys = unit?.assignment_type === 'none'
+                        ? topicWeekKeys
+                        : this.assignmentWeekKeys(unit, allWeekKeys)
+                    if (!unitWeekKeys.includes(weekKey) || !unit?.title) {
+                        return
+                    }
+
+                    const topicPrefix = topic?.title ? `${topic.title}: ` : ''
+                    labels.push(`${topicPrefix}${unit.title}`)
+                })
+            })
+
+            return [...new Set(labels)]
+        },
         async runDateMutation(action, callback, courseDateId = null) {
             if (this.isBusyDateUi) {
                 return false
@@ -866,6 +1105,19 @@ export default {
     line-height: 1.25;
     padding-bottom: 4px;
     padding-top: 4px;
+    white-space: normal;
+}
+
+.course-date-curriculum-inline {
+    margin-top: -4px;
+}
+
+.course-date-curriculum-inline :deep(.v-chip) {
+    max-width: 100%;
+}
+
+.course-date-curriculum-inline :deep(.v-chip__content) {
+    overflow-wrap: anywhere;
     white-space: normal;
 }
 
