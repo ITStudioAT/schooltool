@@ -726,23 +726,24 @@ export default {
             const includeBefore = selectedRanges.includes('before')
             const includeToday = selectedRanges.includes('today')
             const includeAfter = selectedRanges.includes('after')
+            const adjacentDateCount = 2
             const visibleDates = []
 
             if (this.compactStudentView) {
                 if (includeBefore) {
-                    visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - 1)))
+                    visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - adjacentDateCount)))
                 }
-                if (activeIndex > 0) visibleDates.push(dates[activeIndex - 1])
+                visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
                 if (dates[activeIndex]) visibleDates.push(dates[activeIndex])
-                if (activeIndex < dates.length - 1) visibleDates.push(dates[activeIndex + 1])
+                visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
                 if (includeAfter) {
-                    visibleDates.push(...dates.slice(activeIndex + 2))
+                    visibleDates.push(...dates.slice(activeIndex + 1 + adjacentDateCount))
                 }
             } else {
                 if (includeBefore) {
                     visibleDates.push(...dates.slice(0, activeIndex))
                 } else if (activeIndex > 0) {
-                    visibleDates.push(dates[activeIndex - 1])
+                    visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
                 }
                 if (includeToday && dates[activeIndex]) {
                     visibleDates.push(dates[activeIndex])
@@ -750,7 +751,7 @@ export default {
                 if (includeAfter) {
                     visibleDates.push(...dates.slice(activeIndex + 1))
                 } else if (activeIndex < dates.length - 1) {
-                    visibleDates.push(dates[activeIndex + 1])
+                    visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
                 }
             }
 

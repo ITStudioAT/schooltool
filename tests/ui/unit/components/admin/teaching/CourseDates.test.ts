@@ -72,6 +72,28 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('')
     })
 
+    it('shows two previous and two next dates around the active date by default', () => {
+        const computed = (CourseDates as any).computed
+        const dates = [
+            { id: 1, date: '2026-01-01' },
+            { id: 2, date: '2026-01-08' },
+            { id: 3, date: '2026-01-15' },
+            { id: 4, date: '2026-01-22' },
+            { id: 5, date: '2026-01-29' },
+            { id: 6, date: '2026-02-05' },
+            { id: 7, date: '2026-02-12' },
+        ]
+        const ctx: Record<string, unknown> = {
+            filteredCourseDates: dates,
+            selected_courseDate: { id: 4, date: '2026-01-22' },
+            highlightedDateId: null,
+            dateRangeSelection: ['today'],
+            compactStudentView: false,
+        }
+
+        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([2, 3, 4, 5, 6])
+    })
+
     it('resolves matching curriculum entries for a course date and prioritizes free weeks', () => {
         const methods = (CourseDates as any).methods
         const ctx: Record<string, any> = {

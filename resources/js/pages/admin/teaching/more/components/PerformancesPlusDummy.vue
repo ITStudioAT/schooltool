@@ -35,7 +35,22 @@
                     <tbody>
                         <tr v-for="row in rows" :key="row.student_id" :class="{ 'row--canceled': row.is_canceled }">
                             <td class="student-cell" :class="{ 'student-cell--canceled': row.is_canceled }">
-                                {{ row.student_label }}
+                                <div>{{ row.student_label }}</div>
+                                <div v-if="row.email" class="student-email">
+                                    <span class="student-email-text">{{ row.email }}</span>
+                                    <v-icon
+                                        size="13"
+                                        class="student-email-copy"
+                                        :title="'E-Mail kopieren'"
+                                        @click.stop="copyEmail(row.email)"
+                                    >mdi-content-copy</v-icon>
+                                    <v-icon
+                                        v-if="copiedEmail === row.email"
+                                        size="13"
+                                        class="student-email-copied"
+                                        color="success"
+                                    >mdi-check</v-icon>
+                                </div>
                             </td>
                             <td v-for="col in gradeColumns" :key="`${row.student_id}-${col.key}`" class="grade-cell">
                                 <div class="grade-cell-inner">
@@ -108,6 +123,7 @@ export default {
             sortMode: 'last_name_first_name',
             loading: false,
             allEntries: [],
+            copiedEmail: null,
         }
     },
 
@@ -250,6 +266,7 @@ export default {
                 return {
                     student_id: studentId,
                     student_label: this.studentLabelWithClass(student),
+                    email: student.email || null,
                     is_canceled: this.isStudentCanceled(student),
                     grades,
                 }
@@ -586,6 +603,16 @@ export default {
             return Number.isNaN(parsed) ? null : parsed
         },
 
+        async copyEmail(email) {
+            try {
+                await navigator.clipboard.writeText(email)
+                this.copiedEmail = email
+                setTimeout(() => { this.copiedEmail = null }, 1500)
+            } catch {
+                /* clipboard not available */
+            }
+        },
+
         // --- Display helpers ---
         formatGrade(value) {
             if (value == null || value === '') return '–'
@@ -657,6 +684,35 @@ export default {
 .student-cell--canceled {
     text-decoration: line-through;
     opacity: 0.75;
+}
+
+.student-email {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.student-email-text {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: rgba(16, 38, 58, 0.5);
+    word-break: break-all;
+}
+
+.student-email-copy {
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.student-email-copy:hover {
+    opacity: 0.9;
+}
+
+.student-email-copied {
+    flex-shrink: 0;
 }
 
 .row--canceled td {

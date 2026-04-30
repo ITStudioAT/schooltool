@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import CourseStudents from '@/pages/admin/teaching/overview/components/CourseStudents.vue'
 
 describe('CourseStudents sorting', () => {
@@ -8,6 +8,14 @@ describe('CourseStudents sorting', () => {
         })
 
         expect(data.students_sort_mode).toBe('last_name_first_name')
+    })
+
+    it('does not show the bulk entry saving state by default', () => {
+        const data = (CourseStudents as any).data.call({
+            emptyBulkEntryForm: () => ({}),
+        })
+
+        expect(data.bulk_entry_saving).toBe(false)
     })
 
     it('places canceled students at the bottom of the list', () => {
@@ -88,6 +96,52 @@ describe('CourseStudents sorting', () => {
         expect(source).not.toContain('studentPerformancePdfUrl')
         expect(source).toContain('studentEmailText(student)')
         expect(source).toContain('studentLastLoginText(student)')
+    })
+
+    it('shows the bulk entry button loading state before saving entries', async () => {
+        const methods = (CourseStudents as any).methods
+        let continueNextTick: (() => void) | null = null
+        const store = vi.fn().mockResolvedValue(true)
+        const cancelBulkEntry = vi.fn()
+        const ctx: Record<string, any> = {
+            bulk_entry_saving: false,
+            selected_course: {
+                id: 8,
+                students_info: [{ id: 11 }, { id: 12 }],
+            },
+            bulk_entry_form: {
+                student_ids: [11],
+                type: 'MA',
+                grade: '1',
+                date: '2026-04-30',
+                description: 'Aktive Mitarbeit',
+            },
+            entryStore: { store },
+            cancelBulkEntry,
+            $nextTick: vi.fn(() => new Promise<void>((resolve) => {
+                continueNextTick = resolve
+            })),
+        }
+
+        const promise = methods.saveBulkEntry.call(ctx)
+
+        expect(ctx.bulk_entry_saving).toBe(true)
+        expect(ctx.$nextTick).toHaveBeenCalledTimes(1)
+        expect(store).not.toHaveBeenCalled()
+
+        continueNextTick?.()
+        await promise
+
+        expect(store).toHaveBeenCalledWith({
+            teaching_course_id: 8,
+            user_id: 11,
+            type: 'MA',
+            grade: '1',
+            date: '2026-04-30',
+            description: 'Aktive Mitarbeit',
+        })
+        expect(cancelBulkEntry).toHaveBeenCalledTimes(1)
+        expect(ctx.bulk_entry_saving).toBe(false)
     })
 })
 

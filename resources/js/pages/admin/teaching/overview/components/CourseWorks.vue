@@ -565,9 +565,10 @@
                                             size="small"
                                             color="primary"
                                             variant="tonal"
-                                            :disabled="!bulk_grade && !bulk_comment"
+                                            :loading="is_applying_bulk_action"
+                                            :disabled="is_applying_bulk_action || (!bulk_grade && !bulk_comment)"
                                             @click="applyBulkAction">
-                                            {{ selected_student_ids.length ? `Auf ${selected_student_ids.length} Schüler:in(nen) anwenden` : 'Auf alle anwenden' }}
+                                            {{ is_applying_bulk_action ? 'Wird angewendet...' : (selected_student_ids.length ? `Auf ${selected_student_ids.length} Schüler:in(nen) anwenden` : 'Auf alle anwenden') }}
                                         </v-btn>
                                     </div>
                                 </div>
@@ -844,6 +845,7 @@ export default {
             bulk_grade: null,
             bulk_comment: '',
             selected_student_ids: [],
+            is_applying_bulk_action: false,
             students_sort_mode: 'last_name_first_name',
             details_editable: false,
             details_snapshot: null,
@@ -2054,23 +2056,48 @@ export default {
         deselectAllStudents() {
             this.selected_student_ids = []
         },
-        applyBulkAction() {
-            const targetIds = this.selected_student_ids.length > 0 ? new Set(this.selected_student_ids) : null
-            ;(this.work_form.groups || []).forEach((group) => {
-                ;(group.student_ids || []).forEach((studentId) => {
-                    if (targetIds && !targetIds.has(studentId)) return
-                    if (this.bulk_grade) {
-                        group.grades[studentId] = this.bulk_grade
-                    }
-                    if (this.bulk_comment) {
-                        group.comments[studentId] = this.bulk_comment
-                    }
-                })
+        async waitForBulkActionPaint() {
+            await this.$nextTick?.()
+
+            await new Promise((resolve) => {
+                const requestFrame = typeof window !== 'undefined' ? window.requestAnimationFrame : null
+
+                if (requestFrame) {
+                    requestFrame(() => setTimeout(resolve, 0))
+
+                    return
+                }
+
+                setTimeout(resolve, 0)
             })
-            // Reset bulk fields after applying
-            this.bulk_grade = null
-            this.bulk_comment = ''
-            this.selected_student_ids = []
+        },
+        async applyBulkAction() {
+            if (this.is_applying_bulk_action || (!this.bulk_grade && !this.bulk_comment)) return
+
+            this.is_applying_bulk_action = true
+
+            try {
+                await this.waitForBulkActionPaint()
+
+                const targetIds = this.selected_student_ids.length > 0 ? new Set(this.selected_student_ids) : null
+                ;(this.work_form.groups || []).forEach((group) => {
+                    ;(group.student_ids || []).forEach((studentId) => {
+                        if (targetIds && !targetIds.has(studentId)) return
+                        if (this.bulk_grade) {
+                            group.grades[studentId] = this.bulk_grade
+                        }
+                        if (this.bulk_comment) {
+                            group.comments[studentId] = this.bulk_comment
+                        }
+                    })
+                })
+                // Reset bulk fields after applying
+                this.bulk_grade = null
+                this.bulk_comment = ''
+                this.selected_student_ids = []
+            } finally {
+                this.is_applying_bulk_action = false
+            }
         },
     },
 }

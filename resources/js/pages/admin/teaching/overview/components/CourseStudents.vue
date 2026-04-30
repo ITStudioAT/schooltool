@@ -158,9 +158,10 @@
                                         size="small"
                                         color="primary"
                                         variant="tonal"
-                                        :disabled="!bulkEntryEnabled"
+                                        :loading="bulk_entry_saving"
+                                        :disabled="bulk_entry_saving || !bulkEntryEnabled"
                                         type="submit">
-                                        {{ bulk_entry_form.student_ids.length ? `Auf ${bulk_entry_form.student_ids.length} Schüler:in(nen) anwenden` : 'Auf ausgewählte Schüler:innen anwenden' }}
+                                        {{ bulk_entry_saving ? 'Wird angewendet...' : (bulk_entry_form.student_ids.length ? `Auf ${bulk_entry_form.student_ids.length} Schüler:in(nen) anwenden` : 'Auf ausgewählte Schüler:innen anwenden') }}
                                     </v-btn>
                                 </div>
                             </v-form>
@@ -365,6 +366,7 @@ export default {
             show_bulk_entry: false,
             students_view_mode: 'students',
             bulk_entry_form: this.emptyBulkEntryForm(),
+            bulk_entry_saving: false,
             activeSemester: null,
             presence_date_id: null,
             presence_by_student: {},
@@ -846,28 +848,36 @@ export default {
             this.bulk_entry_form = this.emptyBulkEntryForm()
         },
         async saveBulkEntry() {
-            if (!this.selected_course) return
+            if (this.bulk_entry_saving || !this.selected_course) return
             const allIds = (this.selected_course?.students_info || []).map((s) => s.id)
             const targetIds = this.bulk_entry_form.student_ids.length ? this.bulk_entry_form.student_ids : allIds
             if (!targetIds.length) return
 
-            const date = this.bulk_entry_form.date instanceof Date ? this.toDateString(this.bulk_entry_form.date) : this.bulk_entry_form.date
-            const basePayload = {
-                teaching_course_id: this.selected_course.id,
-                type: this.bulk_entry_form.type,
-                grade: this.bulk_entry_form.grade,
-                date,
-                description: this.bulk_entry_form.description,
-            }
+            this.bulk_entry_saving = true
 
-            let ok = true
-            for (const userId of targetIds) {
-                const result = await this.entryStore.store({ ...basePayload, user_id: userId })
-                if (!result) ok = false
-            }
+            try {
+                await this.$nextTick?.()
 
-            if (ok) {
-                this.cancelBulkEntry()
+                const date = this.bulk_entry_form.date instanceof Date ? this.toDateString(this.bulk_entry_form.date) : this.bulk_entry_form.date
+                const basePayload = {
+                    teaching_course_id: this.selected_course.id,
+                    type: this.bulk_entry_form.type,
+                    grade: this.bulk_entry_form.grade,
+                    date,
+                    description: this.bulk_entry_form.description,
+                }
+
+                let ok = true
+                for (const userId of targetIds) {
+                    const result = await this.entryStore.store({ ...basePayload, user_id: userId })
+                    if (!result) ok = false
+                }
+
+                if (ok) {
+                    this.cancelBulkEntry()
+                }
+            } finally {
+                this.bulk_entry_saving = false
             }
         },
         selectAllBulkStudents() {

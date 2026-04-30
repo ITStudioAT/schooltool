@@ -11,6 +11,14 @@ describe('CourseWorks defaults', () => {
 
         expect(data.students_sort_mode).toBe('last_name_first_name')
     })
+
+    it('does not show the bulk action processing state by default', () => {
+        const data = (CourseWorks as any).data.call({
+            emptyWorkForm: () => ({}),
+        })
+
+        expect(data.is_applying_bulk_action).toBe(false)
+    })
 })
 
 describe('CourseWorks title rendering', () => {
@@ -256,5 +264,37 @@ describe('CourseWorks points mode', () => {
 
         methods.toggleGroupStudentPicker.call(ctx)
         expect(ctx.group_dialog_add_students_open).toBe(false)
+    })
+
+    it('shows processing before applying a bulk grade', async () => {
+        const methods = (CourseWorks as any).methods
+        let sawProcessingState = false
+        const ctx: Record<string, any> = {
+            is_applying_bulk_action: false,
+            selected_student_ids: [11],
+            bulk_grade: '1',
+            bulk_comment: '',
+            work_form: {
+                groups: [
+                    {
+                        student_ids: [11, 12],
+                        grades: {},
+                        comments: {},
+                    },
+                ],
+            },
+            async waitForBulkActionPaint() {
+                sawProcessingState = this.is_applying_bulk_action
+            },
+        }
+
+        await methods.applyBulkAction.call(ctx)
+
+        expect(sawProcessingState).toBe(true)
+        expect(ctx.work_form.groups[0].grades).toEqual({ 11: '1' })
+        expect(ctx.work_form.groups[0].comments).toEqual({})
+        expect(ctx.bulk_grade).toBeNull()
+        expect(ctx.selected_student_ids).toEqual([])
+        expect(ctx.is_applying_bulk_action).toBe(false)
     })
 })
