@@ -24,6 +24,10 @@
             </v-alert>
             <div v-else class="performances-plus-table-wrap">
                 <table class="performances-plus-table" data-testid="teaching-performances-plus-table">
+                    <colgroup>
+                        <col style="width: 240px; max-width: 400px;">
+                        <col v-for="col in gradeColumns" :key="'cg-'+col.key" style="width: 400px;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th class="student-col">Schüler:in</th>
@@ -60,6 +64,7 @@
                                     <div v-if="row.grades[col.key]?.effectiveSource" class="grade-source-label">
                                         {{ row.grades[col.key].effectiveSource }}
                                     </div>
+                                    <div v-if="row.grades[col.key]?.isFixed" class="grade-fixed-label">FIX</div>
                                 </div>
                                 <div v-if="row.grades[col.key]?.secondary != null" class="grade-secondary">
                                     {{ row.grades[col.key].secondaryLabel }}: {{ formatGrade(row.grades[col.key].secondary) }}
@@ -223,9 +228,10 @@ export default {
                     grades.sem1 = {
                         effective: sem1Effective,
                         effectiveSource: useSemGradeOnly ? 'Semesternote' : 'Berechnung',
-                        secondary: useSemGradeOnly ? sem1Calculated : storedSem1Parsed,
-                        secondaryLabel: useSemGradeOnly ? 'Berechnung' : 'Semesternote',
-                        categories: this.categoryDetails(sem1Groups),
+                        secondary: useSemGradeOnly ? null : storedSem1Parsed,
+                        secondaryLabel: useSemGradeOnly ? null : 'Semesternote',
+                        categories: useSemGradeOnly ? [] : this.categoryDetails(sem1Groups),
+                        isFixed: useSemGradeOnly,
                     }
 
                     // Sem 2: always calculated
@@ -643,7 +649,6 @@ export default {
 }
 
 .performances-plus-table {
-    width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     min-width: 600px;
@@ -667,14 +672,17 @@ export default {
 .student-col {
     width: 240px;
     min-width: 240px;
+    max-width: 400px;
 }
 
 .grade-col {
     text-align: center !important;
+    max-width: 400px;
 }
 
 .grade-col--narrow {
     width: 140px;
+    max-width: 400px;
 }
 
 .student-cell {
@@ -743,6 +751,15 @@ export default {
     letter-spacing: 0.04em;
     color: rgba(16, 38, 58, 0.45);
     line-height: 1;
+}
+
+.grade-fixed-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #c62828;
+    line-height: 1;
+    margin-top: 2px;
 }
 
 .grade-secondary {

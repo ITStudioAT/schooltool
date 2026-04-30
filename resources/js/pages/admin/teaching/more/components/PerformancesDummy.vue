@@ -17,6 +17,10 @@
             </v-alert>
             <div v-else class="performances-table-wrap">
                 <table class="performances-table" data-testid="teaching-performances-table">
+                    <colgroup>
+                        <col style="width: 260px;">
+                        <col v-for="column in typeColumns" :key="'cg-'+column.key" style="width: 400px;">
+                    </colgroup>
                     <thead>
                         <tr>
                             <th>Schüler:in</th>
@@ -27,7 +31,24 @@
                     </thead>
                     <tbody>
                         <tr v-for="row in rows" :key="`performance-row-${row.student_id}`" :class="{ 'performance-row--canceled': row.is_canceled }">
-                            <td class="student-cell" :class="{ 'student-cell--canceled': row.is_canceled }">{{ row.student_label }}</td>
+                            <td class="student-cell" :class="{ 'student-cell--canceled': row.is_canceled }">
+                                <div>{{ row.student_label }}</div>
+                                <div v-if="row.email" class="student-email">
+                                    <span class="student-email-text">{{ row.email }}</span>
+                                    <v-icon
+                                        size="13"
+                                        class="student-email-copy"
+                                        :title="'E-Mail kopieren'"
+                                        @click.stop="copyEmail(row.email)"
+                                    >mdi-content-copy</v-icon>
+                                    <v-icon
+                                        v-if="copiedEmail === row.email"
+                                        size="13"
+                                        class="student-email-copied"
+                                        color="success"
+                                    >mdi-check</v-icon>
+                                </div>
+                            </td>
                             <td v-for="column in typeColumns" :key="`performance-cell-${row.student_id}-${column.key}`">
                                 <div v-if="row.byType[column.type]?.length" class="performance-items">
                                     <div v-for="(item, index) in row.byType[column.type]" :key="`item-${row.student_id}-${column.type}-${index}`" class="performance-item">
@@ -112,6 +133,7 @@ export default {
             sortMode: 'last_name_first_name',
             localCategoryEvaluationValues: {},
             savingCategoryEvaluationKeys: {},
+            copiedEmail: null,
         }
     },
     async beforeMount() {
@@ -346,6 +368,7 @@ export default {
                 return {
                     student_id: studentId,
                     student_label: this.studentLabelWithClass(student),
+                    email: student.email || null,
                     is_canceled: this.isStudentCanceled(student),
                     byType: grouped[studentId] || {},
                 }
@@ -364,6 +387,15 @@ export default {
         },
     },
     methods: {
+        async copyEmail(email) {
+            try {
+                await navigator.clipboard.writeText(email)
+                this.copiedEmail = email
+                setTimeout(() => { this.copiedEmail = null }, 1500)
+            } catch {
+                /* clipboard not available */
+            }
+        },
         isStudentCanceled(student) {
             return !!student?.canceled_at || !!student?.deleted_at
         },
@@ -608,10 +640,10 @@ export default {
 }
 
 .performances-table {
-    width: 100%;
     border-collapse: separate;
     border-spacing: 0;
     min-width: 980px;
+    table-layout: fixed;
 }
 
 .performances-table th,
@@ -680,6 +712,35 @@ export default {
 
 .performance-category-chip.v-chip--disabled {
     cursor: default;
+}
+
+.student-email {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.student-email-text {
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: rgba(16, 38, 58, 0.5);
+    word-break: break-all;
+}
+
+.student-email-copy {
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.student-email-copy:hover {
+    opacity: 0.9;
+}
+
+.student-email-copied {
+    flex-shrink: 0;
 }
 
 .student-cell--canceled {
