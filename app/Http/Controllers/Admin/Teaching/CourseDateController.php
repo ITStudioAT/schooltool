@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Teaching\CourseDateResource;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseDateMaterial;
+use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Services\TeachingCourseDateService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CourseDateController extends Controller
 {
@@ -124,6 +127,49 @@ class CourseDateController extends Controller
         return response()->json(null, 204);
     }
 
+    public function adoptCurriculumContent(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)
+    {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $course = $course_date->teachingCourse;
+        if (! $course) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $validated = $request->validate([
+            'content' => 'required|string|max:4096',
+            'material_card_ids' => 'nullable|array',
+            'material_card_ids.*' => 'integer|min:1',
+            'material_attachment_ids' => 'nullable|array',
+            'material_attachment_ids.*' => 'array',
+            'material_attachment_ids.*.*' => 'integer|min:1',
+        ]);
+
+        $materialCardIds = array_map('intval', $validated['material_card_ids'] ?? []);
+        $materialAttachmentIds = collect($validated['material_attachment_ids'] ?? [])
+            ->mapWithKeys(fn (array $attachmentIds, int|string $materialCardId): array => [
+                (int) $materialCardId => array_map('intval', $attachmentIds),
+            ])
+            ->all();
+
+        $copiedMaterials = $service->adoptCurriculumContent($course_date, $validated['content'], $materialCardIds, $materialAttachmentIds);
+
+        $course_date->refresh();
+
+        return response()->json([
+            'data' => new CourseDateResource($course_date),
+            'adopted_materials' => collect($copiedMaterials)->map(fn ($m) => [
+                'id' => $m->id,
+                'title' => $m->title,
+                'attachments_count' => $m->attachments->count(),
+            ])->values(),
+        ]);
+    }
+
     public function updateStatus(Request $request, TeachingCourseDate $course_date, TeachingCourseDateService $service)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
@@ -152,5 +198,96 @@ class CourseDateController extends Controller
         $course_date->refresh();
 
         return response()->json(new CourseDateResource($course_date));
+    }
+
+    public function toggleAttachmentVisibility(TeachingCourseDateMaterialAttachment $attachment)
+    {
+        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $material = $attachment->material;
+        $course = $material?->courseDate?->teachingCourse;
+        if (! $course) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $this->userHasRole(['admin', 'teaching_admin', 'teacher']));
+
+        $attachment->update(['student_visible' => ! $attachment->student_visible]);
+
+        return response()->json(['student_visible' => $attachment->student_visible]);
+    }
+
+    public function destroyAdoptedMaterial(TeachingCourseDateMaterial $material, TeachingCourseDateService $service)
+    {
+        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $courseDate = $material->courseDate;
+        $course = $courseDate?->teachingCourse;
+        if (! $course) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $this->userHasRole(['admin', 'teaching_admin', 'teacher']));
+
+        $service->deleteAdoptedMaterial($material);
+
+        return response()->json(null, 204);
+    }
+
+    public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
+    {
+        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $this->serveAdoptedAttachment($attachment, 'inline');
+    }
+
+    public function downloadAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
+    {
+        if (! $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        return $this->serveAdoptedAttachment($attachment, 'attachment');
+    }
+
+    private function serveAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment, string $disposition)
+    {
+        $path = trim((string) $attachment->file_path);
+        if ($path === '') {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $candidates = array_values(array_unique(array_filter([
+            (string) config('filesystems.default'),
+            's3',
+            'local',
+        ])));
+
+        $disk = null;
+        foreach ($candidates as $diskName) {
+            $candidate = Storage::disk($diskName);
+            if ($candidate->exists($path)) {
+                $disk = $candidate;
+                break;
+            }
+        }
+
+        if (! $disk) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $name = $attachment->name ?: basename($path);
+        $mime = $attachment->mime_type ?: ($disk->mimeType($path) ?: 'application/octet-stream');
+
+        return $disk->response($path, $name, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
+        ]);
     }
 }

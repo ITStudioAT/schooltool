@@ -36,6 +36,7 @@ class TeachingCourseController extends Controller
             'user:id,first_name,last_name,short,email,teaching_behaviour_by_schoolyear,teaching_notifications_by_schoolyear,teaching_show_behaviour',
             'teachingCurriculum:id,school_id,schoolyear_id,user_id,title,description,semester_count',
             'teachingCourseDates' => fn ($q) => $q->orderBy('date')->orderByRaw('JSON_EXTRACT(hours, "$[0]")'),
+            'teachingCourseDates.materials.attachments',
             'teachingCourseStudents',
             'teachingCourseStudentsWithTrashed',
         ])

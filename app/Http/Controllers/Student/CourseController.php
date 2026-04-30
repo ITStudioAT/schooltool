@@ -271,6 +271,7 @@ class CourseController extends Controller
         // Get course dates (TeachingCourseDate)
         $holidaySync = app(TeachingHolidaySyncService::class);
         $courseDateModels = $course->teachingCourseDates()
+            ->with('materials.attachments')
             ->orderBy('date', 'asc')
             ->get();
         $courseDates = $courseDateModels
@@ -286,6 +287,20 @@ class CourseController extends Controller
                     )
                     : null;
 
+                $adoptedMaterials = $courseDate->materials->map(fn ($m) => [
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'type' => $m->type,
+                    'attachments' => $m->attachments->filter(fn ($a) => $a->student_visible)->map(fn ($a) => [
+                        'id' => $a->id,
+                        'name' => $a->name,
+                        'mime_type' => $a->mime_type,
+                        'size_bytes' => $a->size_bytes,
+                        'preview_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/preview',
+                        'download_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/download',
+                    ]),
+                ]);
+
                 return [
                     'id' => $courseDate->id,
                     'date' => $date,
@@ -293,6 +308,7 @@ class CourseController extends Controller
                     'content' => $courseDate->content,
                     'status' => $status,
                     'free_reason' => $freeReason,
+                    'adopted_materials' => $adoptedMaterials,
                 ];
             });
         $courseWithTiming = clone $course;

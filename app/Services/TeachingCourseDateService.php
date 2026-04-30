@@ -2,11 +2,18 @@
 
 namespace App\Services;
 
+use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseDateMaterial;
 use Carbon\Carbon;
+use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class TeachingCourseDateService
 {
@@ -524,5 +531,132 @@ class TeachingCourseDateService
                 'status' => $this->buildStatusWithAttendanceMeta($publicStatus, $attendance, $attendanceChecked),
             ]);
         }
+    }
+
+    /**
+     * @param  array<int, int>  $materialCardIds
+     * @param  array<int, array<int, int>>  $materialAttachmentIdsByCard
+     * @return array<int, TeachingCourseDateMaterial>
+     */
+    public function adoptCurriculumContent(
+        TeachingCourseDate $courseDate,
+        string $content,
+        array $materialCardIds,
+        array $materialAttachmentIdsByCard = []
+    ): array {
+        return DB::transaction(function () use ($courseDate, $content, $materialCardIds, $materialAttachmentIdsByCard) {
+            $copiedMaterials = [];
+
+            if (! empty($materialCardIds)) {
+                foreach ($materialCardIds as $cardId) {
+                    $card = MaterialCard::with('attachments')->find($cardId);
+                    if (! $card) {
+                        continue;
+                    }
+
+                    $material = $courseDate->materials()->create([
+                        'title' => $content,
+                        'material_title' => $card->title,
+                        'type' => $card->type,
+                        'status' => $card->status,
+                        'subject' => $card->subject,
+                        'area' => $card->area,
+                        'unit' => $card->unit,
+                        'source_material_card_id' => $card->id,
+                    ]);
+
+                    $sourceAttachments = $card->attachments;
+                    if (array_key_exists((int) $card->id, $materialAttachmentIdsByCard)) {
+                        $selectedAttachmentIds = array_fill_keys(
+                            array_map('intval', $materialAttachmentIdsByCard[(int) $card->id]),
+                            true
+                        );
+                        $sourceAttachments = $sourceAttachments
+                            ->filter(fn (MaterialCardAttachment $attachment): bool => isset($selectedAttachmentIds[(int) $attachment->id]));
+                    }
+
+                    foreach ($sourceAttachments as $sourceAttachment) {
+                        $this->copyAttachmentToCourseDateMaterial($material, $sourceAttachment);
+                    }
+
+                    $material->load('attachments');
+                    $copiedMaterials[] = $material;
+                }
+            } else {
+                $material = $courseDate->materials()->create([
+                    'title' => $content,
+                ]);
+                $copiedMaterials[] = $material;
+            }
+
+            return $copiedMaterials;
+        });
+    }
+
+    public function deleteAdoptedMaterial(TeachingCourseDateMaterial $material): void
+    {
+        DB::transaction(function () use ($material) {
+            foreach ($material->attachments as $attachment) {
+                $path = trim((string) ($attachment->file_path ?? ''));
+                if ($path !== '') {
+                    $disk = $this->resolveStorageDisk($path);
+                    $disk?->delete($path);
+                }
+                $attachment->delete();
+            }
+            $material->delete();
+        });
+    }
+
+    private function copyAttachmentToCourseDateMaterial(TeachingCourseDateMaterial $material, MaterialCardAttachment $source): void
+    {
+        if ($source->attachment_type !== MaterialCardAttachment::TYPE_FILE) {
+            return;
+        }
+
+        $sourcePath = trim((string) ($source->file_path ?? ''));
+        if ($sourcePath === '') {
+            return;
+        }
+
+        $disk = $this->resolveStorageDisk($sourcePath);
+        if (! $disk || ! $disk->exists($sourcePath)) {
+            return;
+        }
+
+        $extension = pathinfo($sourcePath, PATHINFO_EXTENSION);
+        $targetDir = 'teaching/course_date_materials/'.$material->id;
+        $targetName = Str::uuid().($extension ? '.'.$extension : '');
+        $targetPath = $targetDir.'/'.$targetName;
+
+        if (! $disk->copy($sourcePath, $targetPath)) {
+            return;
+        }
+
+        $material->attachments()->create([
+            'source_material_card_attachment_id' => $source->id,
+            'name' => (string) ($source->name ?? 'Anhang'),
+            'file_path' => $targetPath,
+            'mime_type' => $source->mime_type,
+            'size_bytes' => $source->size_bytes,
+        ]);
+    }
+
+    private function resolveStorageDisk(string $relativePath): ?Filesystem
+    {
+        $candidates = array_values(array_unique(array_filter([
+            (string) config('filesystems.default'),
+            's3',
+            'local',
+        ])));
+
+        foreach ($candidates as $diskName) {
+            $disk = Storage::disk($diskName);
+            if ($disk->exists($relativePath)) {
+                return $disk;
+            }
+        }
+
+        return null;
     }
 }

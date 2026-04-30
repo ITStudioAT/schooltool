@@ -205,7 +205,17 @@
                                             {{ student.last_name }}, {{ student.first_name }}
                                         </div>
                                         <div v-if="studentEmailText(student) || studentLastLoginText(student)" class="student-meta text-caption text-medium-emphasis">
-                                            <span v-if="studentEmailText(student)">{{ studentEmailText(student) }}</span>
+                                            <span v-if="studentEmailText(student)" class="d-inline-flex align-center ga-1">
+                                                {{ studentEmailText(student) }}
+                                                <v-icon
+                                                    size="13"
+                                                    class="cursor-pointer"
+                                                    :color="copiedEmailId === student.id ? 'success' : undefined"
+                                                    :title="copiedEmailId === student.id ? 'Kopiert!' : 'E-Mail kopieren'"
+                                                    @click.stop="copyEmail(student)">
+                                                    {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
+                                                </v-icon>
+                                            </span>
                                             <span v-if="studentEmailText(student) && studentLastLoginText(student)" class="student-meta-separator">•</span>
                                             <span v-if="studentLastLoginText(student)">{{ studentLastLoginText(student) }}</span>
                                         </div>
@@ -361,6 +371,7 @@ export default {
             savingAttendance: false,
             hasUnsavedAttendanceChanges: false,
             students_sort_mode: 'last_name_first_name',
+            copiedEmailId: null,
         }
     },
 
@@ -751,6 +762,16 @@ export default {
     },
 
     methods: {
+        async copyEmail(student) {
+            const email = this.studentEmailText(student)
+            if (!email) return
+            try {
+                await navigator.clipboard.writeText(email)
+                this.copiedEmailId = student.id
+                setTimeout(() => { this.copiedEmailId = null }, 1500)
+            } catch {
+            }
+        },
         normalizeDateKey(date) {
             if (!date) return ''
             // Keep pure date strings as-is; parse date-time strings in local time.

@@ -23,8 +23,16 @@
                             <div class="text-caption text-medium-emphasis">
                                 {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
                             </div>
-                            <div class="text-caption text-medium-emphasis" v-if="selected_course_student.email">
+                            <div class="text-caption text-medium-emphasis d-flex align-center ga-1" v-if="selected_course_student.email">
                                 {{ selected_course_student.email }}
+                                <v-icon
+                                    size="14"
+                                    class="cursor-pointer"
+                                    :color="copiedEmail ? 'success' : undefined"
+                                    :title="copiedEmail ? 'Kopiert!' : 'E-Mail kopieren'"
+                                    @click.stop="copyEmail(selected_course_student.email)">
+                                    {{ copiedEmail ? 'mdi-check' : 'mdi-content-copy' }}
+                                </v-icon>
                             </div>
                         </div>
                         <v-btn
@@ -811,6 +819,7 @@ export default {
             is_editing_behaviour_grades: false,
             behaviour_grade_form: { behaviour_1_grade: '', behaviour_2_grade: '', behaviour_grade: '' },
             saving_action_key: null,
+            copiedEmail: false,
         }
     },
 
@@ -1369,6 +1378,14 @@ export default {
     },
 
     methods: {
+        async copyEmail(email) {
+            try {
+                await navigator.clipboard.writeText(email)
+                this.copiedEmail = true
+                setTimeout(() => { this.copiedEmail = false }, 1500)
+            } catch {
+            }
+        },
         async runStudentMutation(action, callback) {
             if (this.isSavingMutation) {
                 return false

@@ -104,7 +104,7 @@
             </v-alert>
             <router-view></router-view>
             <its-notification />
-            <v-overlay :model-value="is_loading > 0" class="align-center justify-center" contained opacity="0.1">
+            <v-overlay :model-value="is_loading > 0" class="align-center justify-center" opacity="0.1">
                 <LoadingAnimation />
             </v-overlay>
         </v-main>

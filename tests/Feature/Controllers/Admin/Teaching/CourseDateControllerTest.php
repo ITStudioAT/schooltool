@@ -1,12 +1,16 @@
 <?php
 
 use App\Models\Licence;
+use App\Models\MaterialCard;
+use App\Models\MaterialCardAttachment;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -35,6 +39,12 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($teachingLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
     ]);
 
     $this->admin = User::factory()->create([
@@ -305,6 +315,86 @@ it('update and destroy course date', function () {
 
     $this->deleteJson('/api/admin/teaching/course_dates/'.$courseDate->id)->assertNoContent();
     $this->assertDatabaseMissing('teaching_course_dates', ['id' => $courseDate->id]);
+});
+
+it('adopts only selected curriculum material attachments', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $courseDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-04',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'title' => 'Word - Einführung',
+        'type' => 'Arbeitsblatt',
+    ]);
+
+    Storage::disk('local')->put('materials/source/selected.pdf', 'selected');
+    Storage::disk('local')->put('materials/source/skipped.pdf', 'skipped');
+
+    $selectedAttachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Auswahl.pdf',
+        'file_path' => 'materials/source/selected.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+    $skippedAttachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Nicht übernehmen.pdf',
+        'file_path' => 'materials/source/skipped.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
+    $this->postJson("/api/admin/teaching/course_dates/{$courseDate->id}/adopt-curriculum-content", [
+        'content' => 'Quellenarbeit',
+        'material_card_ids' => [$card->id],
+        'material_attachment_ids' => [
+            $card->id => [$selectedAttachment->id],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('adopted_materials.0.attachments_count', 1)
+        ->assertJsonPath('data.adopted_materials.0.material_title', 'Word - Einführung')
+        ->assertJsonPath('data.adopted_materials.0.attachments.0.source_material_card_attachment_id', $selectedAttachment->id);
+
+    $courseDate->refresh();
+    $adoptedMaterial = $courseDate->materials()->with('attachments')->first();
+
+    expect($adoptedMaterial)->not->toBeNull()
+        ->and($adoptedMaterial->attachments)->toHaveCount(1)
+        ->and($adoptedMaterial->material_title)->toBe('Word - Einführung')
+        ->and($adoptedMaterial->attachments->first()->name)->toBe('Auswahl.pdf')
+        ->and($adoptedMaterial->attachments->first()->source_material_card_attachment_id)->toBe($selectedAttachment->id);
+
+    $this->postJson("/api/admin/teaching/course_dates/{$courseDate->id}/adopt-curriculum-content", [
+        'content' => 'Quellenarbeit',
+        'material_card_ids' => [$card->id],
+        'material_attachment_ids' => [
+            $card->id => [$skippedAttachment->id],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('adopted_materials.0.attachments_count', 1)
+        ->assertJsonPath('data.adopted_materials.1.attachments.0.source_material_card_attachment_id', $skippedAttachment->id);
+
+    $sourceAttachmentIds = $courseDate->materials()
+        ->with('attachments')
+        ->get()
+        ->flatMap(fn ($material) => $material->attachments)
+        ->pluck('source_material_card_attachment_id')
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($sourceAttachmentIds)->toBe([
+        $selectedAttachment->id,
+        $skippedAttachment->id,
+    ]);
 });
 
 it('forbids access for users without role and for other school course', function () {

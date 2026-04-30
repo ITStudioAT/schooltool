@@ -520,6 +520,21 @@
                                                     </v-chip>
                                                     <div class="date-main text-caption">
                                                         <div v-if="dateEntry.content" class="date-content" v-html="dateEntry.content"></div>
+                                                        <div v-if="dateEntry.adopted_materials && dateEntry.adopted_materials.length" class="date-adopted-materials">
+                                                            <div v-for="mat in dateEntry.adopted_materials" :key="mat.id" class="date-adopted-material">
+                                                                <div class="date-adopted-item">
+                                                                    <v-icon size="14" color="#4caf50" class="mr-1">mdi-check-circle-outline</v-icon>
+                                                                    <span>{{ mat.title }}</span>
+                                                                    <v-chip v-if="mat.type" size="x-small" variant="tonal" color="primary" class="ml-1">{{ mat.type }}</v-chip>
+                                                                </div>
+                                                                <div v-if="mat.attachments && mat.attachments.length" class="date-adopted-attachments">
+                                                                    <a v-for="att in mat.attachments" :key="att.id" :href="att.preview_url" target="_blank" class="date-adopted-attachment" :title="att.name">
+                                                                        <v-icon size="14">mdi-paperclip</v-icon>
+                                                                        <span class="text-caption">{{ att.name }}</span>
+                                                                    </a>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </v-list-item>
@@ -1908,6 +1923,43 @@ export default {
     font-weight: 400;
     line-height: 1.5;
     white-space: pre-wrap;
+}
+
+.date-adopted-materials {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.date-adopted-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.88rem;
+    color: #314d5d;
+    line-height: 1.4;
+}
+
+.date-adopted-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 22px;
+}
+
+.date-adopted-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #1976d2;
+    text-decoration: none;
+    font-size: 0.84rem;
+}
+
+.date-adopted-attachment:hover {
+    text-decoration: underline;
 }
 
 .hero-badge.grade {

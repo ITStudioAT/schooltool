@@ -60,12 +60,12 @@
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact">
+                    <template v-for="(courseDate, cdIdx) in displayedCourseDates" :key="courseDate.id">
+                    <v-divider v-if="cdIdx > 0" class="course-date-divider" />
                     <v-list-item
-                        v-for="courseDate in displayedCourseDates"
-                        :key="courseDate.id"
                         :disabled="(isEditingContent && editing_content_id !== courseDate.id) || isSavingContent"
                         :class="courseDateRowClass(courseDate)"
-                        :style="courseDateHighlightStyle(courseDate)">
+                        :style="courseDateHighlightStyle(courseDate, cdIdx)">
                         <div class="d-flex flex-column ga-2 w-100 cursor-pointer" @click="selectCourseDate(courseDate)">
                             <div class="course-date-row d-flex align-center ga-2 w-100">
                                 <v-chip
@@ -79,7 +79,7 @@
                                 <v-chip
                                     size="x-small"
                                     variant="tonal"
-                                    :color="selected_courseDate?.id === courseDate.id ? 'secondary' : (highlightedDateId === courseDate.id ? 'success' : 'primary')"
+                                    :color="selected_courseDate?.id === courseDate.id ? 'primary' : (highlightedDateId === courseDate.id ? 'success' : 'primary')"
                                     class="course-date-chip cursor-pointer"
                                     @click.stop="selectCourseDate(courseDate)">
                                     {{ getWeekday(courseDate.date) }}
@@ -87,7 +87,7 @@
                                 <v-chip
                                     size="x-small"
                                     :variant="selected_courseDate?.id === courseDate.id ? 'flat' : (highlightedDateId === courseDate.id ? 'flat' : 'outlined')"
-                                    :color="selected_courseDate?.id === courseDate.id ? 'secondary' : (highlightedDateId === courseDate.id ? 'success' : undefined)"
+                                    :color="selected_courseDate?.id === courseDate.id ? 'primary' : (highlightedDateId === courseDate.id ? 'success' : undefined)"
                                     class="course-date-chip cursor-pointer"
                                     @click.stop="selectCourseDate(courseDate)">
                                     {{ formatDate(courseDate.date) }}
@@ -169,21 +169,92 @@
                                 </div>
                             </div>
                             <div
-                                v-if="courseDateInlineContent(courseDate) || curriculumEntriesForCourseDate(courseDate).length"
+                                v-if="courseDateInlineContent(courseDate) || courseDateAdoptedMaterials(courseDate).length || curriculumEntriesForCourseDate(courseDate).length"
                                 class="course-date-curriculum-inline pl-1 pr-2"
                                 @click.stop>
                                 <div class="course-date-curriculum-stack">
                                     <div v-if="courseDateInlineContent(courseDate)" class="course-date-curriculum-stack__content">
                                         {{ courseDateInlineContent(courseDate) }}
                                     </div>
-                                    <div v-if="courseDateInlineContent(courseDate) && curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
+                                    <div
+                                        v-for="group in courseDateAdoptedMaterialGroups(courseDate)"
+                                        :key="`${courseDate.id}-adopted-group-${group.key}`"
+                                        class="course-date-curriculum-stack__adopted-group">
+                                        <div class="course-date-curriculum-stack__adopted-title d-flex align-center">
+                                            <v-icon size="14" color="success" class="mr-1">mdi-check-circle-outline</v-icon>
+                                            <span class="flex-grow-1">{{ group.title }}</span>
+                                        </div>
+                                        <div
+                                            v-for="material in group.materials"
+                                            :key="`${courseDate.id}-adopted-material-${material.id}`"
+                                            class="course-date-curriculum-stack__adopted-material">
+                                            <div class="d-flex align-center">
+                                                <template v-if="material.attachments && material.attachments.length">
+                                                    <v-icon size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openAdoptedMaterialOverview(material)" title="Materialien anzeigen">mdi-paperclip</v-icon>
+                                                    <v-icon
+                                                        size="12"
+                                                        class="mr-1 cursor-pointer"
+                                                        :color="adoptedAttachmentVisibilityColor(material)"
+                                                        :title="adoptedAttachmentVisibilityTitle(material)"
+                                                        @click.stop="openAdoptedMaterialOverview(material)">
+                                                        {{ adoptedAttachmentVisibilityIcon(material) }}
+                                                    </v-icon>
+                                                </template>
+                                                <span class="flex-grow-1">{{ material.title }}</span>
+                                                <v-chip v-if="material.type" size="x-small" variant="tonal" color="primary" class="ml-1">{{ material.type }}</v-chip>
+                                                <v-btn
+                                                    icon="mdi-close"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="error"
+                                                    class="course-date-adopt-btn ml-1"
+                                                    title="Übernommenes Material entfernen"
+                                                    :disabled="isEditingContent || isSavingContent || adoptSaving || deletingAdoptedId === material.id"
+                                                    :loading="deletingAdoptedId === material.id"
+                                                    @click.stop="deleteAdoptedMaterialGroup(material)" />
+                                            </div>
+                                            <div v-if="material.attachments && material.attachments.length" class="course-date-curriculum-stack__adopted-attachments">
+                                                <div
+                                                    v-for="attachment in material.attachments"
+                                                    :key="`${courseDate.id}-adopted-material-${material.id}-attachment-${attachment.id}`"
+                                                    class="course-date-curriculum-stack__adopted-attachment d-flex align-center"
+                                                    @click.stop="openAdoptedMaterialOverview(material)">
+                                                    <v-icon size="13" class="mr-1">{{ attachmentIcon(attachment) }}</v-icon>
+                                                    <span class="flex-grow-1">{{ attachment.name }}</span>
+                                                    <span class="text-medium-emphasis ml-1">{{ attachment.mime_type || 'Datei' }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div v-if="(courseDateInlineContent(courseDate) || courseDateAdoptedMaterials(courseDate).length) && curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
                                         <span class="course-date-curriculum-divider__label">CURRICULUM</span>
                                     </div>
                                     <div
                                         v-for="(entry, entryIndex) in curriculumEntriesForCourseDate(courseDate)"
                                         :key="`${courseDate.id}-inline-${entryIndex}`"
-                                        class="course-date-curriculum-stack__entry">
-                                        <v-icon v-if="entry.hasMaterials" size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openMaterialOverview(entry)" title="Materialien anzeigen">mdi-paperclip</v-icon>{{ entry.label }}
+                                        class="course-date-curriculum-stack__entry d-flex align-center">
+                                        <v-icon v-if="entry.hasMaterials" size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openMaterialOverview(entry)" title="Materialien anzeigen">mdi-paperclip</v-icon>
+                                        <span class="flex-grow-1" :class="{ 'text-medium-emphasis': isCurriculumEntryFullyAdopted(courseDate, entry) }">{{ entry.label }}</span>
+                                        <v-btn
+                                            v-if="isCurriculumEntryFullyAdopted(courseDate, entry)"
+                                            icon="mdi-check-circle"
+                                            size="x-small"
+                                            variant="text"
+                                            color="success"
+                                            class="course-date-adopt-btn ml-1"
+                                            style="opacity: 1;"
+                                            title="Bereits übernommen"
+                                            disabled />
+                                        <v-btn
+                                            v-else
+                                            icon="mdi-arrow-down-bold-circle-outline"
+                                            size="x-small"
+                                            variant="text"
+                                            color="primary"
+                                            class="course-date-adopt-btn ml-1"
+                                            title="In Termin-Inhalt übernehmen"
+                                            :disabled="isEditingContent || isSavingContent || adoptSaving"
+                                            @click.stop="openAdoptDialog(courseDate, entry)" />
                                     </div>
                                 </div>
                             </div>
@@ -208,6 +279,7 @@
                             </div>
                         </div>
                     </v-list-item>
+                    </template>
                     <v-list-item v-if="!displayedCourseDates?.length">
                         <v-list-item-title class="text-caption text-medium-emphasis">Keine Termine vorhanden.</v-list-item-title>
                     </v-list-item>
@@ -338,7 +410,17 @@
                                         {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatFileSize(attachment.size_bytes) }}</span>
                                     </v-list-item-subtitle>
                                     <template #append>
-                                        <div class="d-flex ga-1">
+                                        <div class="d-flex align-center ga-1">
+                                            <v-btn
+                                                v-if="materialOverlayIsAdopted"
+                                                :icon="attachment.student_visible ? 'mdi-eye' : 'mdi-eye-off'"
+                                                size="x-small"
+                                                variant="text"
+                                                :color="attachment.student_visible ? 'success' : 'grey'"
+                                                :title="attachment.student_visible ? 'Für Schüler sichtbar' : 'Für Schüler nicht sichtbar'"
+                                                :loading="togglingVisibilityId === attachment.id"
+                                                :disabled="togglingVisibilityId === attachment.id"
+                                                @click.stop="toggleAttachmentVisibility(attachment)" />
                                             <v-btn
                                                 v-if="attachment.preview_url"
                                                 variant="text"
@@ -374,6 +456,88 @@
                 </v-card-text>
                 <v-card-actions class="px-4 pb-4">
                     <v-btn variant="tonal" @click="closeMaterialOverview">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <!-- Adopt Curriculum Content Dialog -->
+        <v-dialog v-model="adoptDialogOpen" max-width="600" persistent>
+            <v-card rounded="xl">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon color="primary" size="22">mdi-arrow-down-bold-circle-outline</v-icon>
+                    Inhalt übernehmen
+                </v-card-title>
+                <v-card-text class="px-4 pb-2">
+                    <div class="text-caption text-medium-emphasis mb-3">
+                        Text bearbeiten und in den Termin-Inhalt übernehmen.
+                    </div>
+                    <v-textarea
+                        v-model="adoptDialogText"
+                        label="Inhalt"
+                        variant="outlined"
+                        rows="3"
+                        auto-grow
+                        :disabled="adoptSaving" />
+                    <div v-if="adoptDialogEntry?.hasMaterials && adoptDialogEntry?.materials?.length" class="mt-2">
+                        <div class="text-caption text-medium-emphasis mb-1">
+                            <v-icon size="14" class="mr-1">mdi-paperclip</v-icon>
+                            Materialien als unabhängige Kopie übernehmen:
+                        </div>
+                        <div
+                            v-for="mat in adoptDialogEntry.materials"
+                            :key="`adopt-mat-${mat.id}`"
+                            class="ml-1">
+                            <v-checkbox
+                                v-model="adoptDialogSelectedMaterialIds"
+                                :value="mat.id"
+                                :disabled="adoptSaving || isAdoptDialogMaterialFullyAdopted(mat)"
+                                density="compact"
+                                hide-details>
+                                <template #label>
+                                    <div class="d-flex align-center ga-2">
+                                        <v-icon size="16" :color="isAdoptDialogMaterialFullyAdopted(mat) ? 'success' : 'primary'">
+                                            {{ isAdoptDialogMaterialFullyAdopted(mat) ? 'mdi-check-circle' : 'mdi-package-variant-closed' }}
+                                        </v-icon>
+                                        <span class="text-body-2" :class="{ 'text-medium-emphasis': isAdoptDialogMaterialFullyAdopted(mat) }">{{ mat.title }}</span>
+                                        <v-chip v-if="mat.type" size="x-small" variant="tonal" color="primary">{{ mat.type }}</v-chip>
+                                        <v-chip v-if="isAdoptDialogMaterialFullyAdopted(mat)" size="x-small" variant="tonal" color="success">vollständig übernommen</v-chip>
+                                    </div>
+                                </template>
+                            </v-checkbox>
+                            <div
+                                v-if="isAdoptDialogMaterialSelected(mat.id) && adoptDialogMaterialAttachments(mat).length"
+                                class="adopt-material-attachments ml-7 mt-n1 mb-2">
+                                <v-checkbox
+                                    v-for="attachment in adoptDialogMaterialAttachments(mat)"
+                                    :key="`adopt-mat-${mat.id}-att-${attachment.id}`"
+                                    v-model="adoptDialogSelectedAttachmentIdsByMaterial[mat.id]"
+                                    :value="attachment.id"
+                                    :disabled="adoptSaving"
+                                    density="compact"
+                                    hide-details>
+                                    <template #label>
+                                        <div class="d-flex align-center ga-2">
+                                            <v-icon size="14">{{ attachmentIcon(attachment) }}</v-icon>
+                                            <span class="text-caption">{{ attachment.name }}</span>
+                                            <span class="text-caption text-medium-emphasis">
+                                                {{ attachment.mime_type || 'Datei' }}<span v-if="attachment.size_bytes"> · {{ formatFileSize(attachment.size_bytes) }}</span>
+                                            </span>
+                                        </div>
+                                    </template>
+                                </v-checkbox>
+                            </div>
+                            <div
+                                v-else-if="isAdoptDialogMaterialSelected(mat.id) && adoptDialogMaterialLoading"
+                                class="ml-7 mt-n1 mb-2 text-caption text-medium-emphasis">
+                                Anhänge werden geladen...
+                            </div>
+                        </div>
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-btn variant="tonal" :disabled="adoptSaving" @click="closeAdoptDialog">Abbrechen</v-btn>
+                    <v-spacer />
+                    <v-btn color="primary" variant="flat" :loading="adoptSaving" :disabled="!adoptDialogText.trim()" @click="confirmAdopt">Übernehmen</v-btn>
                 </v-card-actions>
             </v-card>
         </v-dialog>
@@ -448,6 +612,18 @@ export default {
             materialOverlayEntry: null,
             materialOverlayLoading: false,
             materialOverlayCards: [],
+            materialOverlayIsAdopted: false,
+            adoptDialogOpen: false,
+            adoptDialogCourseDate: null,
+            adoptDialogEntry: null,
+            adoptDialogText: '',
+            adoptDialogSelectedMaterialIds: [],
+            adoptDialogMaterialCards: [],
+            adoptDialogMaterialLoading: false,
+            adoptDialogSelectedAttachmentIdsByMaterial: {},
+            adoptSaving: false,
+            deletingAdoptedId: null,
+            togglingVisibilityId: null,
             dateRangeSelection: ['today'],
             data: {
                 from: '',
@@ -1016,15 +1192,20 @@ export default {
             if (this.hasStatus(courseDate, 'entfaellt')) return 'course-date-row--entfaellt'
             return ''
         },
-        courseDateHighlightStyle(courseDate) {
+        courseDateHighlightStyle(courseDate, index) {
             if (this.selected_courseDate?.id === courseDate.id) {
-                return { backgroundColor: '#fff3e0', borderLeft: '5px solid #e65100' }
+                return { backgroundColor: '#e8eaf6', borderColor: '#3f51b5' }
             }
-            if (this.highlightedDateId !== courseDate.id) return {}
-            if (this.isDateToday(courseDate)) {
-                return { backgroundColor: '#bbdefb', borderLeft: '5px solid #1565c0' }
+            if (this.highlightedDateId === courseDate.id) {
+                if (this.isDateToday(courseDate)) {
+                    return { backgroundColor: '#bbdefb', borderColor: '#1565c0' }
+                }
+                return { backgroundColor: '#e3f2fd', borderColor: '#1976d2' }
             }
-            return { backgroundColor: '#e3f2fd', borderLeft: '3px solid #1976d2' }
+            if (index % 2 === 1) {
+                return { backgroundColor: '#f5f5f5' }
+            }
+            return {}
         },
         selectCourseDate(courseDate) {
             if (this.isBusyDateUi) return
@@ -1155,6 +1336,308 @@ export default {
             const textarea = el?.querySelector?.('textarea')
             if (textarea) textarea.focus()
         },
+        async toggleAttachmentVisibility(attachment) {
+            if (!attachment?.id || this.togglingVisibilityId) return
+            this.togglingVisibilityId = attachment.id
+            try {
+                const { data } = await axios.post(`/api/admin/teaching/course_date_materials/attachments/${attachment.id}/toggle-visibility`)
+                attachment.student_visible = data.student_visible
+            } catch {
+            } finally {
+                this.togglingVisibilityId = null
+            }
+        },
+        async deleteAdoptedMaterial(adopted) {
+            if (!adopted?.id || this.deletingAdoptedId) return
+            this.deletingAdoptedId = adopted.id
+            try {
+                await axios.delete(`/api/admin/teaching/course_date_materials/${adopted.id}`)
+                await this.courseStore.index()
+            } catch {
+                // handled by axios interceptor
+            } finally {
+                this.deletingAdoptedId = null
+            }
+        },
+        async deleteAdoptedMaterialGroup(materialGroup) {
+            const adoptedMaterials = Array.isArray(materialGroup?.items) ? materialGroup.items : [materialGroup].filter(Boolean)
+            if (!adoptedMaterials.length || this.deletingAdoptedId) return
+            if (adoptedMaterials.length === 1) {
+                await this.deleteAdoptedMaterial(adoptedMaterials[0])
+                return
+            }
+
+            this.deletingAdoptedId = materialGroup.id
+            try {
+                for (const adopted of adoptedMaterials) {
+                    if (adopted?.id) {
+                        await axios.delete(`/api/admin/teaching/course_date_materials/${adopted.id}`)
+                    }
+                }
+                await this.courseStore.index()
+            } catch {
+                // handled by axios interceptor
+            } finally {
+                this.deletingAdoptedId = null
+            }
+        },
+        adoptedAttachmentVisibilityCounts(adopted) {
+            const atts = adopted?.attachments || []
+            const total = atts.length
+            const visible = atts.filter((a) => a.student_visible).length
+            return { total, visible }
+        },
+        adoptedAttachmentVisibilityIcon(adopted) {
+            const { total, visible } = this.adoptedAttachmentVisibilityCounts(adopted)
+            if (visible === 0) return 'mdi-eye-off'
+            if (visible === total) return 'mdi-eye'
+            return 'mdi-eye-outline'
+        },
+        adoptedAttachmentVisibilityColor(adopted) {
+            const { total, visible } = this.adoptedAttachmentVisibilityCounts(adopted)
+            if (visible === 0) return 'grey'
+            if (visible === total) return 'success'
+            return 'warning'
+        },
+        adoptedAttachmentVisibilityTitle(adopted) {
+            const { total, visible } = this.adoptedAttachmentVisibilityCounts(adopted)
+            if (visible === 0) return `Keine Anhänge freigegeben (${total})`
+            if (visible === total) return `Alle ${total} Anhänge freigegeben`
+            return `${visible} von ${total} Anhängen freigegeben`
+        },
+        courseDateAdoptedMaterials(courseDate) {
+            return Array.isArray(courseDate?.adopted_materials) ? courseDate.adopted_materials : []
+        },
+        adoptedMaterialDisplayTitle(adopted) {
+            return adopted?.material_title
+                || [adopted?.subject, adopted?.area, adopted?.unit].filter(Boolean).join(' - ')
+                || adopted?.unit
+                || adopted?.type
+                || adopted?.title
+                || 'Material'
+        },
+        courseDateAdoptedMaterialGroups(courseDate) {
+            const groups = []
+            const groupMap = new Map()
+
+            this.courseDateAdoptedMaterials(courseDate).forEach((adopted, adoptedIndex) => {
+                const curriculumTitle = adopted?.title || 'Übernommen'
+                const curriculumKey = curriculumTitle || `curriculum-${adoptedIndex}`
+                let group = groupMap.get(curriculumKey)
+                if (!group) {
+                    group = {
+                        key: String(curriculumKey),
+                        title: curriculumTitle,
+                        materials: [],
+                        materialMap: new Map(),
+                    }
+                    groupMap.set(curriculumKey, group)
+                    groups.push(group)
+                }
+
+                const materialKey = adopted?.source_material_card_id
+                    ? `source-${adopted.source_material_card_id}`
+                    : `adopted-${adopted?.id || adoptedIndex}`
+                let material = group.materialMap.get(materialKey)
+                if (!material) {
+                    material = {
+                        id: materialKey,
+                        title: this.adoptedMaterialDisplayTitle(adopted),
+                        curriculum_title: curriculumTitle,
+                        type: adopted?.type,
+                        items: [],
+                        attachments: [],
+                    }
+                    group.materialMap.set(materialKey, material)
+                    group.materials.push(material)
+                }
+
+                material.items.push(adopted)
+                material.attachments.push(...(Array.isArray(adopted?.attachments) ? adopted.attachments : []))
+            })
+
+            return groups.map((group) => ({
+                key: group.key,
+                title: group.title,
+                materials: group.materials,
+            }))
+        },
+        isCurriculumEntryFullyAdopted(courseDate, entry) {
+            const adopted = this.courseDateAdoptedMaterials(courseDate)
+            if (!adopted.some((a) => a.title === entry.label)) return false
+            const entryMaterials = (entry.materials || []).filter((m) => m?.id)
+            if (!entryMaterials.length) return true
+            return entryMaterials.every((material) => this.isMaterialFullyAdopted(courseDate, material))
+        },
+        adoptedSourceMaterialIds(courseDate) {
+            return new Set(this.courseDateAdoptedMaterials(courseDate)
+                .map((a) => Number(a.source_material_card_id))
+                .filter((id) => Number.isFinite(id) && id > 0))
+        },
+        adoptedSourceAttachmentIds(courseDate, materialId = null) {
+            const normalizedMaterialId = materialId === null || materialId === undefined ? null : Number(materialId)
+
+            return new Set(this.courseDateAdoptedMaterials(courseDate)
+                .filter((material) => normalizedMaterialId === null || Number(material?.source_material_card_id) === normalizedMaterialId)
+                .flatMap((material) => Array.isArray(material?.attachments) ? material.attachments : [])
+                .map((attachment) => Number(attachment?.source_material_card_attachment_id))
+                .filter((id) => Number.isFinite(id) && id > 0))
+        },
+        adoptedAttachmentCountForSource(courseDate, materialId) {
+            const normalizedMaterialId = Number(materialId)
+
+            return this.courseDateAdoptedMaterials(courseDate)
+                .filter((material) => Number(material?.source_material_card_id) === normalizedMaterialId)
+                .reduce((count, material) => count + (Array.isArray(material?.attachments) ? material.attachments.length : 0), 0)
+        },
+        requiredAttachmentIdsForMaterial(material) {
+            const card = this.adoptDialogMaterialCard?.(material?.id) || material
+            if (Array.isArray(card?.attachments)) {
+                return this.adoptableAttachmentIds(card).map((id) => Number(id))
+            }
+
+            const expectedAttachmentCount = Number(material?.attachments_count || 0)
+            return expectedAttachmentCount > 0 ? null : []
+        },
+        missingAdoptableAttachmentIds(courseDate, material) {
+            const requiredAttachmentIds = this.requiredAttachmentIdsForMaterial(material)
+            if (!Array.isArray(requiredAttachmentIds)) return null
+
+            const adoptedAttachmentIds = this.adoptedSourceAttachmentIds(courseDate, material?.id)
+            return requiredAttachmentIds.filter((id) => !adoptedAttachmentIds.has(Number(id)))
+        },
+        isMaterialFullyAdopted(courseDate, material) {
+            const materialId = Number(material?.id)
+            if (!Number.isFinite(materialId) || materialId <= 0) return false
+            if (!this.adoptedSourceMaterialIds(courseDate).has(materialId)) return false
+
+            const missingAttachmentIds = this.missingAdoptableAttachmentIds(courseDate, material)
+            if (Array.isArray(missingAttachmentIds)) return missingAttachmentIds.length === 0
+
+            const expectedAttachmentCount = Number(material?.attachments_count || 0)
+            if (!Number.isFinite(expectedAttachmentCount) || expectedAttachmentCount <= 0) return true
+
+            const knownAdoptedAttachmentCount = this.adoptedSourceAttachmentIds(courseDate, materialId).size
+            if (knownAdoptedAttachmentCount > 0) return knownAdoptedAttachmentCount >= expectedAttachmentCount
+
+            return this.adoptedAttachmentCountForSource(courseDate, materialId) >= expectedAttachmentCount
+        },
+        openAdoptedMaterialOverview(adopted) {
+            if (!adopted?.attachments?.length) return
+            this.materialOverlayEntry = { label: adopted.curriculum_title || adopted.title }
+            this.materialOverlayCards = [adopted]
+            this.materialOverlayLoading = false
+            this.materialOverlayIsAdopted = true
+            this.materialOverlayOpen = true
+        },
+        async openAdoptDialog(courseDate, entry) {
+            this.adoptDialogCourseDate = courseDate
+            this.adoptDialogEntry = entry
+            this.adoptDialogText = entry.label || ''
+            this.adoptDialogMaterialCards = []
+            this.adoptDialogSelectedAttachmentIdsByMaterial = {}
+            this.adoptDialogSelectedMaterialIds = (entry.materials || [])
+                .filter((material) => material?.id && !this.isMaterialFullyAdopted(courseDate, material))
+                .map((material) => material.id)
+            this.adoptDialogOpen = true
+            await this.loadAdoptDialogMaterialCards()
+        },
+        closeAdoptDialog() {
+            this.adoptDialogOpen = false
+            this.adoptDialogCourseDate = null
+            this.adoptDialogEntry = null
+            this.adoptDialogText = ''
+            this.adoptDialogSelectedMaterialIds = []
+            this.adoptDialogMaterialCards = []
+            this.adoptDialogMaterialLoading = false
+            this.adoptDialogSelectedAttachmentIdsByMaterial = {}
+        },
+        async loadAdoptDialogMaterialCards() {
+            const materials = Array.isArray(this.adoptDialogEntry?.materials) ? this.adoptDialogEntry.materials : []
+            const curriculumId = this.selectedCourseCurriculumId
+            if (!materials.length || !curriculumId) return
+
+            this.adoptDialogMaterialLoading = true
+            try {
+                const cards = []
+                for (const material of materials) {
+                    try {
+                        const res = await axios.get(`/api/admin/teaching/curricula/${curriculumId}/materials/cards/${material.id}`)
+                        const card = res.data?.data
+                        if (card) {
+                            cards.push(card)
+                        }
+                    } catch {
+                        cards.push({ ...material })
+                    }
+                }
+                this.adoptDialogMaterialCards = cards
+                materials.forEach((material) => {
+                    const detailedMaterial = this.adoptDialogMaterialCard(material.id) || material
+                    const missingAttachmentIds = this.missingAdoptableAttachmentIds(this.adoptDialogCourseDate, detailedMaterial)
+                    this.adoptDialogSelectedAttachmentIdsByMaterial[material.id] = Array.isArray(missingAttachmentIds)
+                        ? missingAttachmentIds
+                        : this.adoptableAttachmentIds(detailedMaterial)
+                })
+                this.adoptDialogSelectedMaterialIds = materials
+                    .filter((material) => material?.id && !this.isMaterialFullyAdopted(this.adoptDialogCourseDate, this.adoptDialogMaterialCard(material.id) || material))
+                    .map((material) => material.id)
+            } finally {
+                this.adoptDialogMaterialLoading = false
+            }
+        },
+        adoptDialogMaterialCard(materialId) {
+            return this.adoptDialogMaterialCards.find((card) => Number(card?.id) === Number(materialId)) || null
+        },
+        adoptDialogMaterialAttachments(material) {
+            const card = this.adoptDialogMaterialCard(material?.id)
+
+            return (Array.isArray(card?.attachments) ? card.attachments : [])
+                .filter((attachment) => attachment?.attachment_type === 'file')
+        },
+        adoptableAttachmentIds(material) {
+            return (Array.isArray(material?.attachments) ? material.attachments : [])
+                .filter((attachment) => attachment?.attachment_type === 'file' && attachment?.id)
+                .map((attachment) => attachment.id)
+        },
+        isAdoptDialogMaterialSelected(materialId) {
+            return this.adoptDialogSelectedMaterialIds.some((id) => Number(id) === Number(materialId))
+        },
+        isAdoptDialogMaterialFullyAdopted(material) {
+            return this.isMaterialFullyAdopted(this.adoptDialogCourseDate, this.adoptDialogMaterialCard(material?.id) || material)
+        },
+        async confirmAdopt() {
+            const courseDate = this.adoptDialogCourseDate
+            const entry = this.adoptDialogEntry
+            const text = this.adoptDialogText.trim()
+            if (!courseDate?.id || !text) return
+
+            this.adoptSaving = true
+            try {
+                const materialCardIds = this.adoptDialogSelectedMaterialIds
+                    .filter((id) => id && Number(id) > 0)
+                const materialAttachmentIds = materialCardIds.reduce((selectedAttachments, materialId) => {
+                    if (Object.prototype.hasOwnProperty.call(this.adoptDialogSelectedAttachmentIdsByMaterial, materialId)) {
+                        selectedAttachments[materialId] = (this.adoptDialogSelectedAttachmentIdsByMaterial[materialId] || [])
+                            .filter((id) => id && Number(id) > 0)
+                    }
+
+                    return selectedAttachments
+                }, {})
+
+                await axios.post(`/api/admin/teaching/course_dates/${courseDate.id}/adopt-curriculum-content`, {
+                    content: text,
+                    material_card_ids: materialCardIds,
+                    material_attachment_ids: materialAttachmentIds,
+                })
+                await this.courseStore.index()
+                this.closeAdoptDialog()
+            } catch {
+                // error is handled by axios interceptor
+            } finally {
+                this.adoptSaving = false
+            }
+        },
         async openMaterialOverview(entry) {
             if (!entry?.materials?.length) return
             this.materialOverlayEntry = entry
@@ -1190,6 +1673,7 @@ export default {
             this.materialOverlayEntry = null
             this.materialOverlayCards = []
             this.materialOverlayLoading = false
+            this.materialOverlayIsAdopted = false
         },
         materialSubtitle(card) {
             return [card.subject, card.topic, card.unit, card.type]
@@ -1228,6 +1712,16 @@ export default {
 </script>
 
 <style scoped>
+.v-list-item {
+    border: 2px solid transparent;
+    border-radius: 8px;
+}
+
+.course-date-divider {
+    border-color: #1565c0 !important;
+    opacity: 1;
+}
+
 .content-readonly :deep(textarea),
 .content-readonly :deep(.v-field__input) {
     pointer-events: none;
@@ -1321,6 +1815,39 @@ export default {
     overflow-wrap: anywhere;
 }
 
+.course-date-curriculum-stack__adopted-group {
+    border-left: 2px solid rgba(var(--v-theme-success), 0.4);
+    color: rgba(var(--v-theme-on-surface), 0.85);
+    font-size: 0.76rem;
+    line-height: 1.25;
+    padding-left: 8px;
+}
+
+.course-date-curriculum-stack__adopted-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.course-date-curriculum-stack__adopted-material {
+    margin-top: 2px;
+    padding-left: 18px;
+}
+
+.course-date-curriculum-stack__adopted-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 2px;
+    padding-left: 18px;
+}
+
+.course-date-curriculum-stack__adopted-attachment {
+    cursor: pointer;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
 .course-date-curriculum-stack__entry {
     border-left: 2px solid rgba(var(--v-theme-primary), 0.35);
     color: rgb(var(--v-theme-primary));
@@ -1386,6 +1913,16 @@ export default {
     border: 1px solid rgba(var(--v-theme-primary), 0.15);
     border-radius: 12px;
     padding: 12px;
+}
+
+.course-date-adopt-btn {
+    opacity: 0.4;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.course-date-curriculum-stack__entry:hover .course-date-adopt-btn {
+    opacity: 1;
 }
 
 .material-overview-attachment {

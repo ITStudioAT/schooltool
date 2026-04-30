@@ -48,6 +48,10 @@ class CourseDateResource extends JsonResource
             );
         }
 
+        $adoptedMaterials = $this->relationLoaded('materials')
+            ? $this->materials
+            : $this->materials()->with('attachments')->get();
+
         return [
             'id' => $this->id,
             'date' => $this->date?->format('Y-m-d'),
@@ -57,6 +61,27 @@ class CourseDateResource extends JsonResource
             'free_reason' => $freeReason,
             'attendance' => $attendance,
             'attendance_checked' => $attendanceChecked,
+            'adopted_materials' => $adoptedMaterials->map(fn ($m) => [
+                'id' => $m->id,
+                'title' => $m->title,
+                'material_title' => $m->material_title,
+                'type' => $m->type,
+                'status' => $m->status,
+                'subject' => $m->subject,
+                'area' => $m->area,
+                'unit' => $m->unit,
+                'source_material_card_id' => $m->source_material_card_id,
+                'attachments' => $m->attachments->map(fn ($a) => [
+                    'id' => $a->id,
+                    'source_material_card_attachment_id' => $a->source_material_card_attachment_id,
+                    'name' => $a->name,
+                    'mime_type' => $a->mime_type,
+                    'size_bytes' => $a->size_bytes,
+                    'student_visible' => (bool) $a->student_visible,
+                    'preview_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/preview',
+                    'download_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/download',
+                ]),
+            ]),
         ];
     }
 

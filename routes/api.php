@@ -407,6 +407,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/curricula/{curriculum}/export/pdf', [CurriculumExportController::class, 'pdf']);
         Route::apiResource('/admin/teaching/course_dates', CourseDateController::class);
         Route::patch('/admin/teaching/course_dates/{course_date}/status', [CourseDateController::class, 'updateStatus']);
+        Route::post('/admin/teaching/course_dates/{course_date}/adopt-curriculum-content', [CourseDateController::class, 'adoptCurriculumContent']);
+        Route::post('/admin/teaching/course_date_materials/attachments/{attachment}/toggle-visibility', [CourseDateController::class, 'toggleAttachmentVisibility']);
+        Route::delete('/admin/teaching/course_date_materials/{material}', [CourseDateController::class, 'destroyAdoptedMaterial']);
+        Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/preview', [CourseDateController::class, 'previewAdoptedAttachment']);
+        Route::get('/admin/teaching/course_date_materials/attachments/{attachment}/download', [CourseDateController::class, 'downloadAdoptedAttachment']);
         Route::apiResource('/admin/teaching/holidays', HolidayController::class)->only(['index', 'store', 'destroy']);
         Route::apiResource('/admin/teaching/school_hours', SchoolHourController::class)->only(['index', 'store', 'update', 'destroy']);
         Route::apiResource('/admin/teaching/my_holidays', MyHolidayController::class)
