@@ -74,7 +74,7 @@ class CourseDateResource extends JsonResource
                 'attachments' => $m->attachments->map(fn ($a) => [
                     'id' => $a->id,
                     'source_material_card_attachment_id' => $a->source_material_card_attachment_id,
-                    'name' => $a->name,
+                    'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                     'mime_type' => $a->mime_type,
                     'size_bytes' => $a->size_bytes,
                     'student_visible' => (bool) $a->student_visible,
@@ -83,6 +83,21 @@ class CourseDateResource extends JsonResource
                 ]),
             ]),
         ];
+    }
+
+    private function attachmentNameWithStorageExtension(?string $name, ?string $path): string
+    {
+        $relativePath = trim((string) $path);
+        $displayName = trim((string) ($name ?: basename($relativePath)));
+        $displayName = $displayName !== '' ? $displayName : 'Anhang';
+        $displayExtension = strtolower((string) pathinfo($displayName, PATHINFO_EXTENSION));
+        $pathExtension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+
+        if ($displayExtension === '' && preg_match('/^[a-z0-9]{1,10}$/', $pathExtension) === 1) {
+            return $displayName.'.'.$pathExtension;
+        }
+
+        return $displayName;
     }
 
     private function normalizeAttendanceForOutput($attendance, TeachingCourseDateService $service, $course): array

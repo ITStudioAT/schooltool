@@ -183,9 +183,34 @@
                                         <div class="course-date-curriculum-stack__adopted-title d-flex align-center">
                                             <v-icon size="14" color="success" class="mr-1">mdi-check-circle-outline</v-icon>
                                             <span class="flex-grow-1">{{ group.title }}</span>
+                                            <template v-if="group.duplicateSingleMaterial">
+                                                <template v-if="group.materials[0].attachments && group.materials[0].attachments.length">
+                                                    <v-icon size="14" class="mr-1 cursor-pointer course-date-material-icon" @click.stop="openAdoptedMaterialOverview(group.materials[0])" title="Materialien anzeigen">mdi-paperclip</v-icon>
+                                                    <v-icon
+                                                        size="12"
+                                                        class="mr-1 cursor-pointer"
+                                                        :color="adoptedAttachmentVisibilityColor(group.materials[0])"
+                                                        :title="adoptedAttachmentVisibilityTitle(group.materials[0])"
+                                                        @click.stop="openAdoptedMaterialOverview(group.materials[0])">
+                                                        {{ adoptedAttachmentVisibilityIcon(group.materials[0]) }}
+                                                    </v-icon>
+                                                </template>
+                                                <v-chip v-if="group.materials[0].type" size="x-small" variant="tonal" color="primary" class="ml-1">{{ group.materials[0].type }}</v-chip>
+                                                <v-btn
+                                                    icon="mdi-close"
+                                                    size="x-small"
+                                                    variant="text"
+                                                    color="error"
+                                                    class="course-date-adopt-btn ml-1"
+                                                    title="Übernommenes Material entfernen"
+                                                    :disabled="isEditingContent || isSavingContent || adoptSaving || deletingAdoptedId === group.materials[0].id"
+                                                    :loading="deletingAdoptedId === group.materials[0].id"
+                                                    @click.stop="deleteAdoptedMaterialGroup(group.materials[0])" />
+                                            </template>
                                         </div>
                                         <div
                                             v-for="material in group.materials"
+                                            v-show="!group.duplicateSingleMaterial"
                                             :key="`${courseDate.id}-adopted-material-${material.id}`"
                                             class="course-date-curriculum-stack__adopted-material">
                                             <div class="d-flex align-center">
@@ -226,7 +251,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div v-if="(courseDateInlineContent(courseDate) || courseDateAdoptedMaterials(courseDate).length) && curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
+                                    <div v-if="curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
                                         <span class="course-date-curriculum-divider__label">CURRICULUM</span>
                                     </div>
                                     <div
@@ -1436,6 +1461,7 @@ export default {
                     groups.push(group)
                 }
 
+                const materialTitle = this.adoptedMaterialDisplayTitle(adopted)
                 const materialKey = adopted?.source_material_card_id
                     ? `source-${adopted.source_material_card_id}`
                     : `adopted-${adopted?.id || adoptedIndex}`
@@ -1443,7 +1469,7 @@ export default {
                 if (!material) {
                     material = {
                         id: materialKey,
-                        title: this.adoptedMaterialDisplayTitle(adopted),
+                        title: materialTitle,
                         curriculum_title: curriculumTitle,
                         type: adopted?.type,
                         items: [],
@@ -1460,6 +1486,7 @@ export default {
             return groups.map((group) => ({
                 key: group.key,
                 title: group.title,
+                duplicateSingleMaterial: group.materials.length === 1 && group.materials[0].title === group.title,
                 materials: group.materials,
             }))
         },

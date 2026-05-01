@@ -282,12 +282,27 @@ class CourseDateController extends Controller
             abort(404, 'Datei nicht gefunden');
         }
 
-        $name = $attachment->name ?: basename($path);
+        $name = $this->attachmentNameWithStorageExtension($attachment->name, $path);
         $mime = $attachment->mime_type ?: ($disk->mimeType($path) ?: 'application/octet-stream');
 
         return $disk->response($path, $name, [
             'Content-Type' => $mime,
             'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
         ]);
+    }
+
+    private function attachmentNameWithStorageExtension(?string $name, ?string $path): string
+    {
+        $relativePath = trim((string) $path);
+        $displayName = trim((string) ($name ?: basename($relativePath)));
+        $displayName = $displayName !== '' ? $displayName : 'Anhang';
+        $displayExtension = strtolower((string) pathinfo($displayName, PATHINFO_EXTENSION));
+        $pathExtension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+
+        if ($displayExtension === '' && preg_match('/^[a-z0-9]{1,10}$/', $pathExtension) === 1) {
+            return $displayName.'.'.$pathExtension;
+        }
+
+        return $displayName;
     }
 }

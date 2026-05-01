@@ -320,6 +320,30 @@ describe('CourseDates course-specific schema', () => {
         expect(groups[0].materials[1].title).toBe('Browser Grundlagen')
     })
 
+    it('marks duplicate single adopted material so only the checked curriculum title is rendered', () => {
+        const methods = (CourseDates as any).methods
+        const ctx: Record<string, any> = {}
+        Object.assign(ctx, methods)
+
+        const groups = methods.courseDateAdoptedMaterialGroups.call(ctx, {
+            adopted_materials: [
+                {
+                    id: 1,
+                    title: 'Schreibübungen',
+                    material_title: 'Schreibübungen',
+                    source_material_card_id: 10,
+                    type: 'Arbeitsblatt',
+                    attachments: [],
+                },
+            ],
+        })
+
+        expect(groups).toHaveLength(1)
+        expect(groups[0].title).toBe('Schreibübungen')
+        expect(groups[0].duplicateSingleMaterial).toBe(true)
+        expect(groups[0].materials[0].title).toBe('Schreibübungen')
+    })
+
     it('selects only missing attachments when reopening a partially adopted material', async () => {
         const methods = (CourseDates as any).methods
         vi.mocked(axios.get).mockResolvedValueOnce({

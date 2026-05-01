@@ -8,11 +8,13 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\TeachingHolidaySyncService;
 use App\Services\TeachingService;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 
 class CourseController extends Controller
 {
@@ -293,12 +295,12 @@ class CourseController extends Controller
                     'type' => $m->type,
                     'attachments' => $m->attachments->filter(fn ($a) => $a->student_visible)->map(fn ($a) => [
                         'id' => $a->id,
-                        'name' => $a->name,
+                        'name' => $this->attachmentNameWithStorageExtension($a->name, $a->file_path),
                         'mime_type' => $a->mime_type,
                         'size_bytes' => $a->size_bytes,
-                        'preview_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/preview',
-                        'download_url' => '/api/admin/teaching/course_date_materials/attachments/'.$a->id.'/download',
-                    ]),
+                        'preview_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/preview',
+                        'download_url' => '/api/homepage/student/course-date-materials/attachments/'.$a->id.'/download',
+                    ])->values(),
                 ]);
 
                 return [
@@ -357,6 +359,107 @@ class CourseController extends Controller
         return response()->json([
             'course' => $courseData,
         ], 200);
+    }
+
+    public function previewAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
+    {
+        if (! $auth_user = $this->userHasRole(['student'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeStudentAttachmentAccess($attachment, $auth_user);
+
+        return $this->serveAdoptedAttachment($attachment, 'inline');
+    }
+
+    public function downloadAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment)
+    {
+        if (! $auth_user = $this->userHasRole(['student'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeStudentAttachmentAccess($attachment, $auth_user);
+
+        return $this->serveAdoptedAttachment($attachment, 'attachment');
+    }
+
+    private function authorizeStudentAttachmentAccess(TeachingCourseDateMaterialAttachment $attachment, User $authUser): void
+    {
+        if (! $attachment->student_visible) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $attachment->loadMissing('material.courseDate.teachingCourse');
+        $course = $attachment->material?->courseDate?->teachingCourse;
+        if (! $course) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $schoolTool = SchoolTool::where('school_id', $authUser->school_id)->first();
+        $activeSchoolyearId = $schoolTool?->active_schoolyear_id ?? $authUser->schoolyear_id;
+
+        if ((int) $course->school_id !== (int) $authUser->school_id || (int) $course->schoolyear_id !== (int) $activeSchoolyearId) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $isEnrolled = $course->teachingCourseStudents()
+            ->where('user_id', $authUser->id)
+            ->whereNull('canceled_at')
+            ->exists();
+
+        if (! $isEnrolled) {
+            abort(403, 'Sie sind nicht in diesem Fach eingeschrieben');
+        }
+    }
+
+    private function serveAdoptedAttachment(TeachingCourseDateMaterialAttachment $attachment, string $disposition)
+    {
+        $path = trim((string) $attachment->file_path);
+        if ($path === '') {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $candidates = array_values(array_unique(array_filter([
+            (string) config('filesystems.default'),
+            's3',
+            'local',
+        ])));
+
+        $disk = null;
+        foreach ($candidates as $diskName) {
+            $candidate = Storage::disk($diskName);
+            if ($candidate->exists($path)) {
+                $disk = $candidate;
+                break;
+            }
+        }
+
+        if (! $disk) {
+            abort(404, 'Datei nicht gefunden');
+        }
+
+        $name = $this->attachmentNameWithStorageExtension($attachment->name, $path);
+        $mime = $attachment->mime_type ?: ($disk->mimeType($path) ?: 'application/octet-stream');
+
+        return $disk->response($path, $name, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => $disposition.'; filename="'.addcslashes($name, '"').'"',
+        ]);
+    }
+
+    private function attachmentNameWithStorageExtension(?string $name, ?string $path): string
+    {
+        $relativePath = trim((string) $path);
+        $displayName = trim((string) ($name ?: basename($relativePath)));
+        $displayName = $displayName !== '' ? $displayName : 'Anhang';
+        $displayExtension = strtolower((string) pathinfo($displayName, PATHINFO_EXTENSION));
+        $pathExtension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+
+        if ($displayExtension === '' && preg_match('/^[a-z0-9]{1,10}$/', $pathExtension) === 1) {
+            return $displayName.'.'.$pathExtension;
+        }
+
+        return $displayName;
     }
 
     /**

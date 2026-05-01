@@ -395,6 +395,71 @@ it('adopts only selected curriculum material attachments', function () {
         $selectedAttachment->id,
         $skippedAttachment->id,
     ]);
+
+    $this->postJson("/api/admin/teaching/course_dates/{$courseDate->id}/adopt-curriculum-content", [
+        'content' => 'Quellenarbeit',
+        'material_card_ids' => [$card->id],
+        'material_attachment_ids' => [
+            $card->id => [$selectedAttachment->id],
+        ],
+    ])->assertOk()
+        ->assertJsonCount(0, 'adopted_materials');
+
+    $sourceAttachmentIdsAfterDuplicateRequest = $courseDate->materials()
+        ->with('attachments')
+        ->get()
+        ->flatMap(fn ($material) => $material->attachments)
+        ->pluck('source_material_card_attachment_id')
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($sourceAttachmentIdsAfterDuplicateRequest)->toBe([
+        $selectedAttachment->id,
+        $skippedAttachment->id,
+    ]);
+});
+
+it('keeps source storage extension when adopting curriculum attachments without extension in the name', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $courseDate = TeachingCourseDate::query()->create([
+        'teaching_course_id' => $this->course->id,
+        'date' => '2026-04-04',
+        'hours' => [2],
+        'status' => [],
+    ]);
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->admin->id,
+        'title' => 'Word - Einführung',
+        'type' => 'Arbeitsblatt',
+    ]);
+
+    Storage::disk('local')->put('materials/source/schreibuebung.docx', 'docx');
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Schreibübung',
+        'file_path' => 'materials/source/schreibuebung.docx',
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]);
+
+    $this->postJson("/api/admin/teaching/course_dates/{$courseDate->id}/adopt-curriculum-content", [
+        'content' => 'Quellenarbeit',
+        'material_card_ids' => [$card->id],
+        'material_attachment_ids' => [
+            $card->id => [$attachment->id],
+        ],
+    ])->assertOk()
+        ->assertJsonPath('data.adopted_materials.0.attachments.0.name', 'Schreibübung.docx');
+
+    $courseDate->refresh();
+    $adoptedAttachment = $courseDate->materials()->with('attachments')->first()?->attachments->first();
+
+    expect($adoptedAttachment?->name)->toBe('Schreibübung.docx');
 });
 
 it('forbids access for users without role and for other school course', function () {

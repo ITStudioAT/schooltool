@@ -546,11 +546,33 @@ class TeachingCourseDateService
     ): array {
         return DB::transaction(function () use ($courseDate, $content, $materialCardIds, $materialAttachmentIdsByCard) {
             $copiedMaterials = [];
+            $adoptedSourceAttachmentIds = $this->adoptedSourceAttachmentIdSet($courseDate);
 
             if (! empty($materialCardIds)) {
                 foreach ($materialCardIds as $cardId) {
                     $card = MaterialCard::with('attachments')->find($cardId);
                     if (! $card) {
+                        continue;
+                    }
+
+                    $sourceAttachments = $card->attachments;
+                    if (array_key_exists((int) $card->id, $materialAttachmentIdsByCard)) {
+                        $selectedAttachmentIds = array_fill_keys(
+                            array_map('intval', $materialAttachmentIdsByCard[(int) $card->id]),
+                            true
+                        );
+                        $sourceAttachments = $sourceAttachments
+                            ->filter(fn (MaterialCardAttachment $attachment): bool => isset($selectedAttachmentIds[(int) $attachment->id]));
+                    }
+
+                    $hasFileAttachments = $sourceAttachments
+                        ->contains(fn (MaterialCardAttachment $attachment): bool => $attachment->attachment_type === MaterialCardAttachment::TYPE_FILE);
+                    $copyableAttachments = $sourceAttachments
+                        ->filter(fn (MaterialCardAttachment $attachment): bool => $attachment->attachment_type === MaterialCardAttachment::TYPE_FILE)
+                        ->filter(fn (MaterialCardAttachment $attachment): bool => ! isset($adoptedSourceAttachmentIds[(int) $attachment->id]))
+                        ->values();
+
+                    if ($hasFileAttachments && $copyableAttachments->isEmpty()) {
                         continue;
                     }
 
@@ -565,18 +587,10 @@ class TeachingCourseDateService
                         'source_material_card_id' => $card->id,
                     ]);
 
-                    $sourceAttachments = $card->attachments;
-                    if (array_key_exists((int) $card->id, $materialAttachmentIdsByCard)) {
-                        $selectedAttachmentIds = array_fill_keys(
-                            array_map('intval', $materialAttachmentIdsByCard[(int) $card->id]),
-                            true
-                        );
-                        $sourceAttachments = $sourceAttachments
-                            ->filter(fn (MaterialCardAttachment $attachment): bool => isset($selectedAttachmentIds[(int) $attachment->id]));
-                    }
-
-                    foreach ($sourceAttachments as $sourceAttachment) {
-                        $this->copyAttachmentToCourseDateMaterial($material, $sourceAttachment);
+                    foreach ($copyableAttachments as $sourceAttachment) {
+                        if ($this->copyAttachmentToCourseDateMaterial($material, $sourceAttachment)) {
+                            $adoptedSourceAttachmentIds[(int) $sourceAttachment->id] = true;
+                        }
                     }
 
                     $material->load('attachments');
@@ -591,6 +605,21 @@ class TeachingCourseDateService
 
             return $copiedMaterials;
         });
+    }
+
+    /**
+     * @return array<int, true>
+     */
+    private function adoptedSourceAttachmentIdSet(TeachingCourseDate $courseDate): array
+    {
+        return $courseDate->materials()
+            ->with('attachments:id,teaching_course_date_material_id,source_material_card_attachment_id')
+            ->get()
+            ->flatMap(fn (TeachingCourseDateMaterial $material) => $material->attachments)
+            ->map(fn ($attachment): int => (int) $attachment->source_material_card_attachment_id)
+            ->filter(fn (int $id): bool => $id > 0)
+            ->mapWithKeys(fn (int $id): array => [$id => true])
+            ->all();
     }
 
     public function deleteAdoptedMaterial(TeachingCourseDateMaterial $material): void
@@ -608,20 +637,20 @@ class TeachingCourseDateService
         });
     }
 
-    private function copyAttachmentToCourseDateMaterial(TeachingCourseDateMaterial $material, MaterialCardAttachment $source): void
+    private function copyAttachmentToCourseDateMaterial(TeachingCourseDateMaterial $material, MaterialCardAttachment $source): bool
     {
         if ($source->attachment_type !== MaterialCardAttachment::TYPE_FILE) {
-            return;
+            return false;
         }
 
         $sourcePath = trim((string) ($source->file_path ?? ''));
         if ($sourcePath === '') {
-            return;
+            return false;
         }
 
         $disk = $this->resolveStorageDisk($sourcePath);
         if (! $disk || ! $disk->exists($sourcePath)) {
-            return;
+            return false;
         }
 
         $extension = pathinfo($sourcePath, PATHINFO_EXTENSION);
@@ -630,16 +659,31 @@ class TeachingCourseDateService
         $targetPath = $targetDir.'/'.$targetName;
 
         if (! $disk->copy($sourcePath, $targetPath)) {
-            return;
+            return false;
         }
 
         $material->attachments()->create([
             'source_material_card_attachment_id' => $source->id,
-            'name' => (string) ($source->name ?? 'Anhang'),
+            'name' => $this->attachmentNameWithStorageExtension((string) ($source->name ?? 'Anhang'), $sourcePath),
             'file_path' => $targetPath,
             'mime_type' => $source->mime_type,
             'size_bytes' => $source->size_bytes,
         ]);
+
+        return true;
+    }
+
+    private function attachmentNameWithStorageExtension(string $name, string $path): string
+    {
+        $displayName = trim($name) !== '' ? trim($name) : 'Anhang';
+        $displayExtension = strtolower((string) pathinfo($displayName, PATHINFO_EXTENSION));
+        $pathExtension = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+
+        if ($displayExtension === '' && preg_match('/^[a-z0-9]{1,10}$/', $pathExtension) === 1) {
+            return $displayName.'.'.$pathExtension;
+        }
+
+        return $displayName;
     }
 
     private function resolveStorageDisk(string $relativePath): ?Filesystem

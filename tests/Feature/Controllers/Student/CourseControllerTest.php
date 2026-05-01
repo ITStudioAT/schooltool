@@ -7,11 +7,14 @@ use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
+use App\Models\TeachingCourseDateMaterial;
+use App\Models\TeachingCourseDateMaterialAttachment;
 use App\Models\TeachingHoliday;
 use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -42,6 +45,8 @@ beforeEach(function () {
     SchoolTool::factory()->create([
         'school_id' => $this->school->id,
         'active_schoolyear_id' => $this->activeSchoolyear->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
     ]);
 
     $this->studentA = User::factory()->create([
@@ -411,6 +416,162 @@ test('show returns schoolyear scoped teacher grade column visibility', function 
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem1', false)
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_sem2', true)
         ->assertJsonPath('course.teacher_teaching_student_grade_columns.show_year', true);
+});
+
+test('show returns student attachment urls and enrolled student can open visible attachment', function () {
+    Storage::fake('local');
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['id' => $this->studentA->id],
+        ],
+    ]);
+
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => '2026-04-15',
+        'hours' => [1],
+        'status' => [],
+    ]);
+
+    $material = TeachingCourseDateMaterial::create([
+        'teaching_course_date_id' => $courseDate->id,
+        'title' => 'Arbeitsblatt',
+    ]);
+
+    Storage::disk('local')->put('teaching/course_date_materials/'.$material->id.'/arbeitsblatt.txt', 'Dateiinhalt');
+
+    $attachment = TeachingCourseDateMaterialAttachment::create([
+        'teaching_course_date_material_id' => $material->id,
+        'name' => 'Arbeitsblatt.txt',
+        'file_path' => 'teaching/course_date_materials/'.$material->id.'/arbeitsblatt.txt',
+        'mime_type' => 'text/plain',
+        'size_bytes' => 11,
+        'student_visible' => true,
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath(
+            'course.course_dates.0.adopted_materials.0.attachments.0.preview_url',
+            "/api/homepage/student/course-date-materials/attachments/{$attachment->id}/preview"
+        )
+        ->assertJsonPath(
+            'course.course_dates.0.adopted_materials.0.attachments.0.download_url',
+            "/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download"
+        );
+
+    $this->actingAs($this->studentA)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertHeader('content-type', 'text/plain; charset=UTF-8');
+
+    $this->actingAs($this->studentA)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download")
+        ->assertOk()
+        ->assertHeader('content-disposition', 'attachment; filename="Arbeitsblatt.txt"');
+});
+
+test('student attachment names keep storage extension for word files', function () {
+    Storage::fake('local');
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['id' => $this->studentA->id],
+        ],
+    ]);
+
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => '2026-04-15',
+        'hours' => [1],
+        'status' => [],
+    ]);
+
+    $material = TeachingCourseDateMaterial::create([
+        'teaching_course_date_id' => $courseDate->id,
+        'title' => 'Schreibübungen',
+    ]);
+
+    Storage::disk('local')->put('teaching/course_date_materials/'.$material->id.'/schreibuebung.docx', 'docx');
+
+    $attachment = TeachingCourseDateMaterialAttachment::create([
+        'teaching_course_date_material_id' => $material->id,
+        'name' => 'Schreibübung',
+        'file_path' => 'teaching/course_date_materials/'.$material->id.'/schreibuebung.docx',
+        'mime_type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'size_bytes' => 4,
+        'student_visible' => true,
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->getJson("/api/homepage/student/courses/{$course->id}")
+        ->assertOk()
+        ->assertJsonPath('course.course_dates.0.adopted_materials.0.attachments.0.name', 'Schreibübung.docx');
+
+    $this->actingAs($this->studentA)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$attachment->id}/download")
+        ->assertOk()
+        ->assertHeader('content-disposition', 'attachment; filename="Schreibübung.docx"');
+});
+
+test('student attachment route forbids hidden and foreign course attachments', function () {
+    Storage::fake('local');
+
+    $course = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->activeSchoolyear->id,
+        'user_id' => $this->teacher->id,
+        'students' => [
+            ['id' => $this->studentA->id],
+        ],
+    ]);
+
+    $courseDate = TeachingCourseDate::create([
+        'teaching_course_id' => $course->id,
+        'date' => '2026-04-15',
+        'hours' => [1],
+        'status' => [],
+    ]);
+
+    $material = TeachingCourseDateMaterial::create([
+        'teaching_course_date_id' => $courseDate->id,
+        'title' => 'Arbeitsblatt',
+    ]);
+
+    Storage::disk('local')->put('teaching/course_date_materials/'.$material->id.'/hidden.txt', 'hidden');
+    Storage::disk('local')->put('teaching/course_date_materials/'.$material->id.'/visible.txt', 'visible');
+
+    $hiddenAttachment = TeachingCourseDateMaterialAttachment::create([
+        'teaching_course_date_material_id' => $material->id,
+        'name' => 'Hidden.txt',
+        'file_path' => 'teaching/course_date_materials/'.$material->id.'/hidden.txt',
+        'mime_type' => 'text/plain',
+        'student_visible' => false,
+    ]);
+
+    $visibleAttachment = TeachingCourseDateMaterialAttachment::create([
+        'teaching_course_date_material_id' => $material->id,
+        'name' => 'Visible.txt',
+        'file_path' => 'teaching/course_date_materials/'.$material->id.'/visible.txt',
+        'mime_type' => 'text/plain',
+        'student_visible' => true,
+    ]);
+
+    $this->actingAs($this->studentA)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$hiddenAttachment->id}/preview")
+        ->assertForbidden();
+
+    $this->actingAs($this->studentB)
+        ->get("/api/homepage/student/course-date-materials/attachments/{$visibleAttachment->id}/preview")
+        ->assertForbidden();
 });
 
 test('show ignores legacy-only teacher behaviour and notification definitions', function () {
