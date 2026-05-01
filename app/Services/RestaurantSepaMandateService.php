@@ -439,7 +439,7 @@ class RestaurantSepaMandateService
         $user = $mandate->user;
         $school = $user->selectedSchool ?: School::query()->find($user->school_id);
 
-        Notification::route('mail', (string) $user->email)->notify(new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school?->long_name ?: config('app.name'),
             'logo' => $school?->logo ? asset('/storage/images/'.$school->logo) : null,
@@ -470,7 +470,7 @@ class RestaurantSepaMandateService
         $mailData = $this->confirmedSepaMandateMailData($mandate);
 
         $recipientEmails->each(function (string $email) use ($mailData, $pdfPath): void {
-            Notification::route('mail', $email)->notify(new StandardEmail($mailData, $pdfPath));
+            Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mailData, $pdfPath));
         });
     }
 

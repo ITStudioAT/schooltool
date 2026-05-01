@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.31.13',
+    'version' => '3.31.14',
     'copyright' => '(c) 2025 – 2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -11,6 +11,9 @@ return [
     'sa_last_name' => env('SA_LAST_NAME', ''),
     'sa_first_name' => env('SA_FIRST_NAME', ''),
     'sa_email' => env('SA_EMAIL', ''),
+    'email_aliases' => [
+        'a@a.at' => 'kron@naturwelt.at',
+    ],
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
 

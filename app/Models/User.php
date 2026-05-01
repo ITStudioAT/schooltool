@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Notifications\StandardEmail;
 use App\Services\AccessScopeService;
+use App\Services\EmailAliasResolver;
 use App\Traits\UserTrait;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Collection;
@@ -339,7 +340,7 @@ class User extends Authenticatable
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
-        Notification::route('mail', $this->email)->notify(new StandardEmail($data));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($this->email))->notify(new StandardEmail($data));
     }
 
     public function sendConfirmEmail()
@@ -356,7 +357,7 @@ class User extends Authenticatable
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
-        Notification::route('mail', $this->email)->notify(new StandardEmail($data));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($this->email))->notify(new StandardEmail($data));
     }
 
     public function generateUuid(): string

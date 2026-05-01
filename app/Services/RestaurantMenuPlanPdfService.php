@@ -238,38 +238,22 @@ class RestaurantMenuPlanPdfService
             return [];
         }
 
-        $timeKeys = $dayBookings
-            ->map(fn (array $payload): string => $payload['booking']->eatingTime?->eating_time ?: '__none__')
-            ->filter()
-            ->unique()
-            ->sortBy(fn (string $timeKey): string => $this->bookingTimeSortKey($timeKey))
+        $rows = $dayBookings
+            ->flatMap(fn (array $payload): array => $this->buildBookingRows($payload['booking'], $payload['entry']))
+            ->sortBy(fn (array $row): string => mb_strtolower($row['customer_name']).' '.$row['time_sort_key'].' '.mb_strtolower($row['menu_title']))
             ->values()
-            ->all();
+            ->map(function (array $row): array {
+                unset($row['time_sort_key']);
 
-        return collect($timeKeys)
-            ->map(function (string $timeKey) use ($dayBookings, $dayLabel): array {
-                $rows = $dayBookings
-                    ->filter(fn (array $payload): bool => ($payload['booking']->eatingTime?->eating_time ?: '__none__') === $timeKey)
-                    ->flatMap(fn (array $payload): array => $this->buildBookingRows($payload['booking'], $payload['entry']))
-                    ->sortBy(fn (array $row): string => mb_strtolower($row['customer_name'].' '.$row['menu_title']))
-                    ->values()
-                    ->all();
-
-                return [
-                    ...$dayLabel,
-                    'sort_key' => $this->bookingTimeSortKey($timeKey),
-                    'time_label' => $this->bookingTimeLabel($timeKey),
-                    'rows' => $rows,
-                ];
-            })
-            ->sortBy('sort_key')
-            ->values()
-            ->map(function (array $page): array {
-                unset($page['sort_key']);
-
-                return $page;
+                return $row;
             })
             ->all();
+
+        return [[
+            ...$dayLabel,
+            'summary_label' => $this->bookingSummaryLabel($rows),
+            'rows' => $rows,
+        ]];
     }
 
     /**
@@ -330,11 +314,12 @@ class RestaurantMenuPlanPdfService
     }
 
     /**
-     * @return array<int, array{customer_name:string, menu_title:string}>
+     * @return array<int, array{customer_name:string, menu_title:string, time_label:string, time_sort_key:string}>
      */
     private function buildBookingRows(RestaurantMenuPlanBooking $booking, RestaurantMenuPlanEntry $entry): array
     {
         $menuTitle = trim((string) ($entry->menu_title ?: $entry->menu?->title ?: "Men\u{fc}"));
+        $timeKey = $booking->eatingTime?->eating_time ?: '__none__';
 
         $customerNames = collect($this->bookingService->recipientsForBooking($booking))
             ->pluck('name')
@@ -350,8 +335,32 @@ class RestaurantMenuPlanPdfService
             ->map(fn (string $customerName): array => [
                 'customer_name' => $customerName,
                 'menu_title' => $menuTitle,
+                'time_label' => $this->bookingTimeLabel($timeKey),
+                'time_sort_key' => $this->bookingTimeSortKey($timeKey),
             ])
             ->all();
+    }
+
+    /**
+     * @param  array<int, array{menu_title:string}>  $rows
+     */
+    private function bookingSummaryLabel(array $rows): string
+    {
+        $totalCount = count($rows);
+        $menuCounts = collect($rows)
+            ->groupBy(fn (array $row): string => trim((string) ($row['menu_title'] ?? '')) ?: "Men\u{fc}")
+            ->map(fn (Collection $menuRows, string $menuTitle): array => [
+                'menu_title' => $menuTitle,
+                'count' => $menuRows->count(),
+            ])
+            ->sortBy(fn (array $menuCount): string => mb_strtolower($menuCount['menu_title']))
+            ->map(fn (array $menuCount): string => $menuCount['count'].' '.$menuCount['menu_title'])
+            ->values()
+            ->implode(', ');
+
+        $label = $totalCount === 1 ? '1 Bestellung' : $totalCount.' Bestellungen';
+
+        return $menuCounts !== '' ? $label.': '.$menuCounts : $label;
     }
 
     private function filename(RestaurantMenuPlan $plan): string

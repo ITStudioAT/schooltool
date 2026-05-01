@@ -274,7 +274,7 @@ class AdminService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', $email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
     }
 
     public function checkLogin(array $data): array
@@ -349,7 +349,7 @@ class AdminService
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
-        Notification::route('mail', $email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
     }
 
     private function validateUserCanLogin($user): void
@@ -400,6 +400,6 @@ class AdminService
             'email' => $user->email,
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 }

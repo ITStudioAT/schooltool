@@ -16,6 +16,15 @@
 
                 <div class="restaurant-reports-toolbar__actions">
                     <v-btn
+                        color="primary"
+                        variant="tonal"
+                        rounded="xl"
+                        prepend-icon="mdi-format-list-bulleted"
+                        :disabled="!selectedPlan"
+                        @click="openSummaryPrint">
+                        Bestellliste drucken
+                    </v-btn>
+                    <v-btn
                         size="small"
                         variant="outlined"
                         color="secondary"
@@ -157,7 +166,7 @@ export default {
         ...mapState(useRestaurantStore, ['onlineSettings']),
         sortedPlans() {
             return [...(this.plans || [])].sort((left, right) => {
-                return String(left?.start_date || '').localeCompare(String(right?.start_date || ''))
+                return String(right?.start_date || '').localeCompare(String(left?.start_date || ''))
             })
         },
         visiblePlans() {
@@ -343,18 +352,18 @@ export default {
             }
 
             return {
-                visibility_start_mode: plan?.visibility_start_mode || settings.visibility_start_mode,
-                visibility_start_week_offset: Number(plan?.visibility_start_week_offset ?? settings.visibility_start_week_offset),
-                visibility_start_day_of_week: Number(plan?.visibility_start_day_of_week ?? settings.visibility_start_day_of_week),
-                visibility_start_time: String(plan?.visibility_start_time || settings.visibility_start_time || '15:00'),
-                order_start_mode: plan?.order_start_mode || settings.order_start_mode,
-                order_start_week_offset: Number(plan?.order_start_week_offset ?? settings.order_start_week_offset),
-                order_start_day_of_week: Number(plan?.order_start_day_of_week ?? settings.order_start_day_of_week),
-                order_start_time: String(plan?.order_start_time || settings.order_start_time || '15:00'),
-                order_end_week_offset: Number(plan?.order_end_week_offset ?? settings.order_end_week_offset),
-                order_end_day_of_week: Number(plan?.order_end_day_of_week ?? settings.order_end_day_of_week),
-                order_end_time: String(plan?.order_end_time || settings.order_end_time || '09:00'),
-                visibility_end_mode: plan?.visibility_end_mode || settings.visibility_end_mode,
+                visibility_start_mode: settings.visibility_start_mode,
+                visibility_start_week_offset: Number(settings.visibility_start_week_offset),
+                visibility_start_day_of_week: Number(settings.visibility_start_day_of_week),
+                visibility_start_time: String(settings.visibility_start_time || '15:00'),
+                order_start_mode: settings.order_start_mode,
+                order_start_week_offset: Number(settings.order_start_week_offset),
+                order_start_day_of_week: Number(settings.order_start_day_of_week),
+                order_start_time: String(settings.order_start_time || '15:00'),
+                order_end_week_offset: Number(settings.order_end_week_offset),
+                order_end_day_of_week: Number(settings.order_end_day_of_week),
+                order_end_time: String(settings.order_end_time || '09:00'),
+                visibility_end_mode: settings.visibility_end_mode,
             }
         },
         individualScheduleDateTime(plan, field) {

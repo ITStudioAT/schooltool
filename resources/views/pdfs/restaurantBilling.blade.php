@@ -148,6 +148,9 @@
                 <div class="meta-row"><strong>Schule:</strong> {{ $billing['school_name'] }}</div>
             @endif
             <div class="meta-row"><strong>Erstellt am:</strong> {{ $billing['created_at'] }}</div>
+            @if($billing['is_preview'] ?? false)
+                <div class="meta-row"><strong>Status:</strong> Vorschau, nicht endgültig</div>
+            @endif
             <div class="summary-badge">{{ $billing['bookings_count'] }} Menübestellung(en)</div>
         </section>
 
@@ -172,7 +175,9 @@
                         <td class="billing-table__count">{{ $row['total_quantity'] }}</td>
                         <td class="billing-table__total">
                             {{ $row['total_amount_label'] }}
-                            <span class="billing-table__total-note">nicht endgültig</span>
+                            @if($billing['is_preview'] ?? false)
+                                <span class="billing-table__total-note">nicht endgültig</span>
+                            @endif
                         </td>
                     </tr>
                 @endforeach
@@ -183,7 +188,9 @@
                     <td class="billing-table__count">{{ $overallQuantity }}</td>
                     <td class="billing-table__total">
                         {{ $overallTotalLabel }}
-                        <span class="billing-table__total-note">nicht endgültig</span>
+                        @if($billing['is_preview'] ?? false)
+                            <span class="billing-table__total-note">nicht endgültig</span>
+                        @endif
                     </td>
                 </tr>
             </tfoot>

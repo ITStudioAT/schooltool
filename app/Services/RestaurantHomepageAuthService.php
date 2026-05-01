@@ -846,7 +846,7 @@ class RestaurantHomepageAuthService
             ]
         );
 
-        Notification::route('mail', $normalizedEmail)->notify(new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($normalizedEmail))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/'.$school->logo),
@@ -874,7 +874,7 @@ class RestaurantHomepageAuthService
         $user->token_2fa_2_expires_at = null;
         $user->save();
 
-        Notification::route('mail', (string) $user->email)->notify(new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/'.$school->logo),
@@ -891,7 +891,7 @@ class RestaurantHomepageAuthService
             return;
         }
 
-        Notification::route('mail', $confirmerEmail)->notify(new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($confirmerEmail))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/'.$school->logo),
@@ -918,7 +918,7 @@ class RestaurantHomepageAuthService
             trim((string) $user->last_name),
         ])));
 
-        Notification::route('mail', (string) $user->email)->notify(new StandardEmail([
+        Notification::route('mail', EmailAliasResolver::resolveConfigured((string) $user->email))->notify(new StandardEmail([
             'from_address' => config('schooltool.noreply_email'),
             'from_name' => $school->long_name,
             'logo' => asset('/storage/images/'.$school->logo),

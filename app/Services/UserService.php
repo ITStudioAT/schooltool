@@ -311,7 +311,7 @@ class UserService
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
-        Notification::route('mail', $email2fa)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email2fa))->notify(new StandardEmail($mail));
     }
 
     public function isEmailInSchoolAvailable(int $schoolId, string $email): bool
@@ -379,7 +379,7 @@ class UserService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', $email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
     }
 
     public function deleteTutoringUsers(array $data): void

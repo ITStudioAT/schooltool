@@ -73,17 +73,6 @@
             color: #9a3412;
         }
 
-        .time-badge {
-            display: inline-block;
-            margin-top: 8px;
-            padding: 4px 8px;
-            border-radius: 999px;
-            background: #fed7aa;
-            color: #9a3412;
-            font-size: 12px;
-            font-weight: 700;
-        }
-
         .summary {
             margin-bottom: 10px;
             color: #475569;
@@ -110,6 +99,11 @@
 
         .booking-table .col-customer {
             padding-left: 12px;
+        }
+
+        .booking-table .col-time {
+            width: 22mm;
+            white-space: nowrap;
         }
 
         .booking-table th {
@@ -142,12 +136,9 @@
             <div class="meta"><strong>Schule:</strong> {{ $plan['school_name'] }}</div>
             @endif
             <div class="meta"><strong>Erstellt am:</strong> {{ $plan['generated_at'] }}</div>
-            @if($page['time_label'])
-            <div class="time-badge">Speisezeit: {{ $page['time_label'] }}</div>
-            @endif
         </section>
 
-        <div class="summary">{{ count($page['rows']) }} Bestellung(en)</div>
+        <div class="summary">{{ $page['summary_label'] ?? count($page['rows']).' Bestellung(en)' }}</div>
 
         <table class="booking-table">
             <thead>
@@ -155,6 +146,7 @@
                     <th class="col-spacer" style="width:1cm;padding:0;" aria-hidden="true"></th>
                     <th class="col-customer">Kunde</th>
                     <th>Men&uuml;</th>
+                    <th class="col-time">Uhrzeit</th>
                 </tr>
             </thead>
             <tbody>
@@ -163,6 +155,7 @@
                     <td class="col-spacer" style="width:1cm;padding:0;"></td>
                     <td class="col-customer">{{ $row['customer_name'] }}</td>
                     <td>{{ $row['menu_title'] }}</td>
+                    <td class="col-time">{{ $row['time_label'] }}</td>
                 </tr>
                 @endforeach
             </tbody>

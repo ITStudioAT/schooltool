@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Register;
 use App\Notifications\StandardEmail;
+use App\Services\EmailAliasResolver;
 use App\Services\PrintRegisterService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -40,7 +41,7 @@ class PrintRegisterExcelJob implements ShouldQueue
             'markdown' => 'mails.admin.sendPrint',
         ];
 
-        Notification::route('mail', $this->user->email)
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($this->user->email))
             ->notify(new StandardEmail(
                 $email,
                 [

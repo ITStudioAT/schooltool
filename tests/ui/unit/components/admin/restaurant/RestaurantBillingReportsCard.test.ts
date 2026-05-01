@@ -46,6 +46,14 @@ function mountBillingReportsCard() {
                                     total_amount: '72.80',
                                     created_at: '30.03.2026 08:00',
                                 },
+                                {
+                                    id: 5,
+                                    period_label: 'KW 14/2026',
+                                    date_range_label: '30.03.2026 - 05.04.2026',
+                                    bookings_count: 7,
+                                    total_amount: '36.40',
+                                    created_at: '02.04.2026 08:00',
+                                },
                             ],
                             weeks: [
                                 { week_start: '2026-02-09', week_end: '2026-02-15', label: 'KW 07', date_range_label: '09.02.2026 - 15.02.2026', is_billed: true },
@@ -99,14 +107,15 @@ describe('Restaurant billing reports card', () => {
         expect(wrapper.text()).toContain('Abrechnung drucken')
         expect(wrapper.text()).toContain('Kalenderwochen')
         expect(wrapper.text()).toContain('Zeitraum')
-        expect(wrapper.text()).toContain('Letzte Abrechnungen')
+        expect(wrapper.text()).toContain('Zu erstellende Abrechnung')
         expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Zeitraum'))
-        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Letzte Abrechnungen'))
+        expect(wrapper.text().indexOf('Kalenderwochen')).toBeLessThan(wrapper.text().indexOf('Zu erstellende Abrechnung'))
+        expect(wrapper.text().indexOf('KW 14/2026')).toBeLessThan(wrapper.text().indexOf('KW 13/2026'))
 
-        await wrapper.find('[data-testid="restaurant-billing-history-4"]').trigger('click')
+        await wrapper.find('[data-testid="restaurant-billing-history-5"]').trigger('click')
 
         expect(openSpy).toHaveBeenCalledWith(
-            '/api/admin/restaurant/billings/4/print',
+            '/api/admin/restaurant/billings/5/print',
             '_blank',
             'noopener',
         )

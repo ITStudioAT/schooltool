@@ -42,7 +42,7 @@ class RegisterDateBookingService
                 $mail['date'] = $booking->registerDate->date;
                 $mail['from'] = $booking->registerDate->from;
                 $mail['to'] = $booking->registerDate->to;
-                Notification::route('mail', $booking->user->email)->notify(new StandardEmail($mail));
+                Notification::route('mail', EmailAliasResolver::resolveConfigured($booking->user->email))->notify(new StandardEmail($mail));
             }
 
             // Buchung löschen
@@ -110,7 +110,7 @@ class RegisterDateBookingService
             $mail['date'] = $booking->registerDate->date;
             $mail['from'] = $booking->registerDate->from;
             $mail['to'] = $booking->registerDate->to;
-            Notification::route('mail', $booking->user->email)->notify(new StandardEmail($mail));
+            Notification::route('mail', EmailAliasResolver::resolveConfigured($booking->user->email))->notify(new StandardEmail($mail));
         }
 
         return $booking;

@@ -134,7 +134,7 @@ it('builds a booking print pdf with separate pages per day and eating time', fun
     ]);
     $timeB = RestaurantEatingTime::factory()->create([
         'school_id' => $school->id,
-        'eating_time' => '12:45:00',
+        'eating_time' => '10:15:00',
     ]);
     $entryA->eatingTimes()->attach($timeA->id);
     $entryB->eatingTimes()->attach($timeB->id);
@@ -197,14 +197,16 @@ it('builds a booking print pdf with separate pages per day and eating time', fun
             expect($view)->toBe('pdfs.restaurantMenuPlanBookings');
             expect($data['plan']['title'])->toBe("Fr\u{fc}hlingswoche");
             expect($data['plan']['school_name'])->toBe('Testschule');
-            expect($data['pages'])->toHaveCount(2);
+            expect($data['pages'])->toHaveCount(1);
             expect($data['pages'][0]['date_label'])->toBe('23.03.2026');
-            expect($data['pages'][0]['time_label'])->toBe('11:30 Uhr');
-            expect($data['pages'][0]['rows'])->toHaveCount(2);
+            expect($data['pages'][0])->not->toHaveKey('time_label');
+            expect($data['pages'][0]['summary_label'])->toBe('3 Bestellungen: 2 Pasta, 1 Suppe');
+            expect($data['pages'][0]['rows'])->toHaveCount(3);
             expect($data['pages'][0]['rows'][0]['customer_name'])->toBe('Beispiel - Anna');
             expect($data['pages'][0]['rows'][0]['menu_title'])->toBe('Pasta');
-            expect($data['pages'][1]['time_label'])->toBe('12:45 Uhr');
-            expect($data['pages'][1]['rows'][0]['customer_name'])->toBe('Beispiel - Clara');
+            expect($data['pages'][0]['rows'][0]['time_label'])->toBe('11:30 Uhr');
+            expect($data['pages'][0]['rows'][2]['customer_name'])->toBe('Beispiel - Clara');
+            expect($data['pages'][0]['rows'][2]['time_label'])->toBe('10:15 Uhr');
 
             return true;
         })
@@ -412,13 +414,19 @@ it('renders the bookings print layout with separate print pages', function () {
             [
                 'weekday_label' => 'Montag',
                 'date_label' => '23.03.2026',
-                'time_label' => '11:30 Uhr',
                 'rows' => [
                     [
                         'customer_name' => 'Beispiel - Anna',
                         'menu_title' => "Montagsmen\u{fc}",
+                        'time_label' => '11:30 Uhr',
+                    ],
+                    [
+                        'customer_name' => 'Beispiel - Ben',
+                        'menu_title' => "Dienstagsmen\u{fc}",
+                        'time_label' => '12:45 Uhr',
                     ],
                 ],
+                'summary_label' => "2 Bestellungen: 1 Dienstagsmen\u{fc}, 1 Montagsmen\u{fc}",
             ],
         ],
     ])->render();
@@ -429,7 +437,12 @@ it('renders the bookings print layout with separate print pages', function () {
         ->and($html)->toContain('Tag:</span> Montag, 23.03.2026')
         ->and($html)->toContain('width: 1cm;')
         ->and($html)->toContain('class="col-spacer"')
+        ->and($html)->toContain('Uhrzeit')
+        ->and($html)->toContain('11:30 Uhr')
+        ->and($html)->toContain('2 Bestellungen: 1 Dienstagsmen')
+        ->and($html)->toContain('1 Montagsmen')
         ->and($html)->not->toContain('Zeitraum:')
+        ->and($html)->not->toContain('Speisezeit:')
         ->and($html)->toContain('Beispiel - Anna')
         ->and($html)->toContain('Montagsmen')
         ->and($html)->not->toContain('Keine Bestellungen');

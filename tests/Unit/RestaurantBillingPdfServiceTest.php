@@ -61,6 +61,8 @@ it('builds a restaurant billing pdf from the stored snapshot', function () {
             expect($view)->toBe('pdfs.restaurantBilling');
             expect($data['billing']['school_name'])->toBe('Testschule');
             expect($data['billing']['bookings_count'])->toBe(6);
+            expect($data['billing']['title'])->toBe('Abrechnung');
+            expect($data['billing']['is_preview'])->toBeFalse();
             expect($data['rows'])->toHaveCount(1);
             expect($data['rows'][0]['user_name'])->toBe('Buffet Berta');
             expect($data['overallTotalLabel'])->toBe('32,10 €');
@@ -80,6 +82,7 @@ it('renders the restaurant billing print layout with grouped user totals', funct
     $html = view('pdfs.restaurantBilling', [
         'billing' => [
             'title' => 'Abrechnung',
+            'is_preview' => false,
             'period_label' => 'KW 13-14/2026',
             'range_label' => '23.03.2026 - 05.04.2026',
             'school_name' => 'Testschule',
@@ -124,7 +127,41 @@ it('renders the restaurant billing print layout with grouped user totals', funct
     expect($html)->toContain('Restaurant Abrechnung')
         ->and($html)->toContain('KW 13-14/2026')
         ->and($html)->toContain('3 x 5,20 € = 15,60 €')
-        ->and(substr_count($html, 'nicht endgültig'))->toBe(3)
+        ->and($html)->not->toContain('nicht endgültig')
         ->and($html)->toContain('Gesamtsumme aller Kunden')
         ->and($html)->toContain('32,10 €');
+});
+
+it('marks only the restaurant billing preview as not final', function () {
+    $html = view('pdfs.restaurantBilling', [
+        'billing' => [
+            'title' => 'Abrechnungsvorschau',
+            'is_preview' => true,
+            'period_label' => 'KW 13-14/2026',
+            'range_label' => '23.03.2026 - 05.04.2026',
+            'school_name' => 'Testschule',
+            'created_at' => '05.04.2026 12:15',
+            'bookings_count' => 3,
+        ],
+        'rows' => [
+            [
+                'user_name' => 'Buffet Berta',
+                'price_lines' => [
+                    [
+                        'quantity' => 3,
+                        'price_label' => '5,20 €',
+                        'line_total_label' => '15,60 €',
+                    ],
+                ],
+                'total_quantity' => 3,
+                'total_amount_label' => '15,60 €',
+            ],
+        ],
+        'overallTotalLabel' => '15,60 €',
+        'overallQuantity' => 3,
+    ])->render();
+
+    expect($html)->toContain('Abrechnungsvorschau')
+        ->and($html)->toContain('Status:</strong> Vorschau, nicht endgültig')
+        ->and(substr_count($html, 'nicht endgültig'))->toBe(3);
 });

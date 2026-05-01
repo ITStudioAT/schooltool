@@ -1,9 +1,9 @@
 import { createTestingPinia } from '@pinia/testing'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import Reports from '@/pages/admin/restaurant/components/Reports.vue'
 
-function mountReports(plans: Array<Record<string, unknown>> = []) {
+function mountReports(plans: Array<Record<string, unknown>> = [], onlineSettings: Record<string, unknown> = {}) {
     return mount(Reports, {
         global: {
             plugins: [
@@ -29,6 +29,7 @@ function mountReports(plans: Array<Record<string, unknown>> = []) {
                                     order_end_day_of_week: 4,
                                     order_end_time: '09:00',
                                     visibility_end_mode: 'plan_end',
+                                    ...onlineSettings,
                                 },
                             },
                         },
@@ -52,6 +53,10 @@ function mountReports(plans: Array<Record<string, unknown>> = []) {
 }
 
 describe('Restaurant reports component', () => {
+    afterEach(() => {
+        vi.useRealTimers()
+    })
+
     it('opens the summary print pdf for the selected menu plan', async () => {
         const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
         const wrapper = mountReports([
@@ -74,10 +79,11 @@ describe('Restaurant reports component', () => {
 
         expect(wrapper.text()).toContain('Menüsummen drucken')
         expect(wrapper.text()).toContain('5 Bestellungen')
-        expect(wrapper.text()).toContain('Bestellliste drucken')
+        const printButtons = wrapper.findAll('button').filter((button) => button.text().includes('Bestellliste drucken'))
 
-        const printButton = wrapper.findAll('button').find((button) => button.text().includes('Bestellliste drucken'))
-        await printButton?.trigger('click')
+        expect(printButtons).toHaveLength(2)
+
+        await printButtons[0]?.trigger('click')
 
         expect(openSpy).toHaveBeenCalledWith(
             '/api/admin/restaurant/menu-plans/mp-2026-03-23/print?type=summary',
@@ -86,5 +92,68 @@ describe('Restaurant reports component', () => {
         )
 
         openSpy.mockRestore()
+    })
+
+    it('shows menu plans newest first', async () => {
+        const wrapper = mountReports([
+            {
+                id: 'kw-18',
+                title: 'Menüplan KW 18',
+                start_date: '2026-04-27',
+                end_date: '2026-04-30',
+                is_available: true,
+                entries: [],
+            },
+            {
+                id: 'kw-19',
+                title: 'Menüplan KW 19',
+                start_date: '2026-05-04',
+                end_date: '2026-05-07',
+                is_available: true,
+                entries: [],
+            },
+        ])
+
+        await wrapper.vm.$nextTick()
+
+        const text = wrapper.text()
+
+        expect(text.indexOf('Menüplan KW 19')).toBeLessThan(text.indexOf('Menüplan KW 18'))
+    })
+
+    it('uses the current online settings for report orderability instead of stale plan schedule values', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-30T17:30:00+02:00'))
+
+        const wrapper = mountReports([
+            {
+                id: 15,
+                title: 'Menüplan KW 19',
+                start_date: '2026-05-04',
+                end_date: '2026-05-07',
+                is_available: true,
+                order_start_mode: 'when_available',
+                order_end_week_offset: 1,
+                order_end_day_of_week: 5,
+                order_end_time: '17:00',
+                visibility_end_mode: 'plan_end',
+                entries: [],
+            },
+        ], {
+            visibility_start_mode: 'when_orderable',
+            order_start_mode: 'scheduled',
+            order_start_week_offset: 2,
+            order_start_day_of_week: 0,
+            order_start_time: '15:00',
+            order_end_week_offset: 1,
+            order_end_day_of_week: 4,
+            order_end_time: '16:00',
+            visibility_end_mode: 'week_end',
+        })
+
+        await wrapper.vm.$nextTick()
+
+        expect(wrapper.text()).toContain('Menüplan KW 19')
+        expect(wrapper.text()).toContain('Nicht mehr bestellbar')
     })
 })

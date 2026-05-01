@@ -169,7 +169,7 @@ class TeacherListService
             'token-expire-time' => config('spa.token_expire_time'),
         ];
 
-        Notification::route('mail', $email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($email))->notify(new StandardEmail($mail));
     }
 
     public function checkToken($user, string $shouldToken): bool

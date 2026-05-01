@@ -112,7 +112,7 @@
             <div class="billing-reports-section">
                 <div class="billing-reports-toolbar">
                     <div>
-                        <div class="billing-reports-toolbar__eyebrow">Letzte Abrechnungen</div>
+                        <div class="billing-reports-toolbar__eyebrow">Zu erstellende Abrechnung</div>
                         <div class="billing-reports-toolbar__meta">
                             {{ visibleBillingsLabel }}
                         </div>
@@ -232,6 +232,22 @@ import { mapState } from 'pinia'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import { useRestaurantBillingStore } from '@/stores/admin/restaurant/RestaurantBillingStore'
 
+function billingCreatedAtSortValue(value) {
+    const normalized = String(value || '').trim()
+
+    const localizedMatch = normalized.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}):(\d{2}))?$/)
+
+    if (localizedMatch) {
+        const [, day, month, year, hours = '00', minutes = '00'] = localizedMatch
+
+        return new Date(`${year}-${month}-${day}T${hours}:${minutes}:00`).getTime()
+    }
+
+    const timestamp = Date.parse(normalized)
+
+    return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 export default {
     components: { ItsGridBox },
 
@@ -253,7 +269,7 @@ export default {
         ...mapState(useRestaurantBillingStore, ['billings', 'weeks']),
         sortedBillings() {
             return [...(this.billings || [])].sort((left, right) => {
-                return String(right?.created_at || '').localeCompare(String(left?.created_at || ''))
+                return billingCreatedAtSortValue(right?.created_at) - billingCreatedAtSortValue(left?.created_at)
             })
         },
         visibleBillings() {

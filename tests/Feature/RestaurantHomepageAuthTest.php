@@ -163,6 +163,31 @@ it('sends a restaurant login code for a lunch user', function () {
     });
 });
 
+it('sends a manual restaurant registration code to the configured email alias target', function () {
+    config([
+        'schooltool.email_aliases' => [
+            'a@a.at' => 'kron@naturwelt.at',
+        ],
+    ]);
+
+    $this->postJson('/api/homepage/restaurant/register', [
+        'data' => [
+            'school_id' => $this->school->id,
+            'email' => 'a@a.at',
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('status', 'CONFIRM_EMAIL')
+        ->assertJsonPath('registration_source', 'new_user')
+        ->assertJsonPath('requires_email_confirmation', true);
+
+    Notification::assertSentOnDemand(StandardEmail::class, function (StandardEmail $notification, array $channels, object $notifiable): bool {
+        return ($notifiable->routes['mail'] ?? null) === 'kron@naturwelt.at'
+            && ($notification->data['subject'] ?? null) === 'Code zur E-Mail-Bestaetigung'
+            && ($notification->data['markdown'] ?? null) === 'mails.homepage.sendCode';
+    });
+});
+
 it('logs a lunch user in with a restaurant login code and stores login metadata', function () {
     $user = User::factory()->create([
         'school_id' => $this->school->id,

@@ -117,7 +117,7 @@ class TutoringOfferService
             'data' => $data,
         ];
 
-        Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($offer->email_mentor))->notify(new StandardEmail($mail));
     }
 
     public function sendOfferDeletedToMentor(TutoringOffer $offer): void
@@ -153,7 +153,7 @@ class TutoringOfferService
             'data' => $data,
         ];
 
-        Notification::route('mail', $offer->email_mentor)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($offer->email_mentor))->notify(new StandardEmail($mail));
     }
 
     public function sendOfferDeletedToStudent(TutoringOffer $offer): void
@@ -182,7 +182,7 @@ class TutoringOfferService
             'data' => $data,
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
     public function offerConfirmRefuse(array $data): bool
@@ -234,7 +234,7 @@ class TutoringOfferService
             'data' => $data,
         ];
 
-        Notification::route('mail', $offer->user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($offer->user->email))->notify(new StandardEmail($mail));
     }
 
     public function sendOfferRequest(int $userId, int $offerId, string $message): array
@@ -307,7 +307,7 @@ class TutoringOfferService
             'data' => ['url' => url("/homepage/tutoring/offer_request?{$params}")],
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
     public function sendOfferRequestStornoEmail($offerRequest): void
@@ -340,7 +340,7 @@ class TutoringOfferService
             'data' => ['url' => url("/homepage/tutoring_overview/?{$params}")],
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
     public function getUserFromOfferRequest(string $email, int $offerRequestId, string $token)

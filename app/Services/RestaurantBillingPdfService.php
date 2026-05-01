@@ -19,7 +19,8 @@ class RestaurantBillingPdfService
 
         DomPdf::loadView('pdfs.restaurantBilling', [
             'billing' => [
-                'title' => 'Abrechnung',
+                'title' => $billing->exists ? 'Abrechnung' : 'Abrechnungsvorschau',
+                'is_preview' => ! $billing->exists,
                 'period_label' => $this->periodLabel($billing->start_date, $billing->end_date),
                 'range_label' => $this->dateRangeLabel($billing->start_date, $billing->end_date),
                 'school_name' => (string) ($billing->school?->long_name ?: $billing->school?->short_name ?: ''),

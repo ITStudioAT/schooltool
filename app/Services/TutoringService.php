@@ -76,7 +76,7 @@ class TutoringService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
     public function confirmEmail(array $data): array
@@ -149,7 +149,7 @@ class TutoringService
             ])),
         ];
 
-        Notification::route('mail', $confirmerEmail)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($confirmerEmail))->notify(new StandardEmail($mail));
     }
 
     public function confirmUser(int $userId, string $uuid): bool
@@ -198,7 +198,7 @@ class TutoringService
             'login_url' => url('/homepage/tutoring_overview?school='.$school->short_name),
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
     }
 
     public function checkLoginRequirement(array $data): array
@@ -241,7 +241,7 @@ class TutoringService
             'token-expire-time' => config('schooltool.token_expire_time'),
         ];
 
-        Notification::route('mail', $user->email)->notify(new StandardEmail($mail));
+        Notification::route('mail', EmailAliasResolver::resolveConfigured($user->email))->notify(new StandardEmail($mail));
 
         $data['status'] = 'LOGIN_WITH_TOKEN';
 
