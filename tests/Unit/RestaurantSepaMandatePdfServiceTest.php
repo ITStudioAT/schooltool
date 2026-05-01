@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\RestaurantSepaMandatePdfService;
 use Barryvdh\DomPDF\Facade\Pdf as DomPdf;
 use Barryvdh\DomPDF\PDF;
+use Dompdf\Dompdf as BaseDompdf;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -132,4 +133,37 @@ it('builds a sepa mandate preview pdf from current settings', function (): void 
     ]);
 
     expect($path)->toEndWith('sepa_lastschriftmandat_vorschau.pdf');
+});
+
+it('renders the sepa mandate preview on a single pdf page', function (): void {
+    $html = view('pdfs.restaurantSepaMandate', [
+        'mandate' => [
+            'title' => 'SEPA-Lastschriftmandat',
+            'school_name' => 'Christian-Doppler-Gymnasium Salzburg',
+            'email' => 'vorschau@example.test',
+            'account_holder_name' => 'Max Mustermann',
+            'address_line' => 'Musterstraße 1',
+            'postal_code' => '5020',
+            'city' => 'Salzburg',
+            'country' => 'Österreich',
+            'signature_location' => 'Salzburg',
+            'iban' => 'AT611904300234573201',
+            'bic' => 'BKAUATWW',
+            'child_entries' => [
+                ['name' => 'Maria Mustermann', 'schoolclass' => '1A'],
+            ],
+            'sepa_payee' => '<p>Christian-Doppler-Gymnasium Salzburg</p><p>Franz-Josef-Kai 41, 5020 Salzburg</p>',
+            'sepa_mandate_text' => '<p>Ich ermächtige den Zahlungsempfänger, Zahlungen von meinem Konto mittels SEPA-Lastschrift einzuziehen.</p><p>Zugleich weise ich mein Kreditinstitut an, die vom Zahlungsempfänger auf mein Konto gezogenen Lastschriften einzulösen.</p><p>Ich kann innerhalb von acht Wochen, beginnend mit dem Belastungsdatum, die Erstattung des belasteten Betrages verlangen.</p>',
+            'confirmed_at_label' => '01.05.2026',
+            'signature_uuid' => 'VORSCHAU',
+            'flow_uuid' => 'VORSCHAU',
+        ],
+    ])->render();
+
+    $dompdf = new BaseDompdf;
+    $dompdf->loadHtml($html);
+    $dompdf->setPaper('a4', 'portrait');
+    $dompdf->render();
+
+    expect($dompdf->getCanvas()->get_page_count())->toBe(1);
 });
