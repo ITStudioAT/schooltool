@@ -17,47 +17,47 @@
 
         body {
             margin: 0;
-            padding: 12mm 14mm;
+            padding: 15mm 17mm;
             font-family: DejaVu Sans, sans-serif;
             color: #1a1a1a;
             background: #ffffff;
-            font-size: 9.5px;
-            line-height: 1.25;
+            font-size: 10.5px;
+            line-height: 1.34;
         }
 
         h1 {
             text-align: center;
-            font-size: 17px;
+            font-size: 20px;
             font-weight: 700;
             color: #1a5276;
-            margin-bottom: 8px;
-            padding-bottom: 3px;
+            margin-bottom: 11px;
+            padding-bottom: 4px;
             border-bottom: 2px solid #1a5276;
         }
 
         h2 {
-            font-size: 10.5px;
+            font-size: 12px;
             font-weight: 700;
             color: #1a1a1a;
-            margin-top: 8px;
-            margin-bottom: 3px;
+            margin-top: 10px;
+            margin-bottom: 4px;
         }
 
         /* Form table: label left, value right in blue box */
         .form-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
 
         .form-table td {
-            padding: 2px 0;
+            padding: 2.5px 0;
             vertical-align: top;
         }
 
         .form-table .label-cell {
             width: 42%;
-            font-size: 9pt;
+            font-size: 10pt;
             color: #333;
             padding-right: 8px;
         }
@@ -65,9 +65,9 @@
         .form-table .value-cell {
             width: 58%;
             background: #dce6f1;
-            padding: 2px 5px;
-            font-size: 9.5pt;
-            line-height: 1.18;
+            padding: 3px 6px;
+            font-size: 10.5pt;
+            line-height: 1.24;
             font-weight: 600;
             color: #111;
             border: 1px solid #c5d3e2;
@@ -77,17 +77,17 @@
         .payee-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
 
         .payee-table td {
             vertical-align: top;
-            padding: 2px 0;
+            padding: 2.5px 0;
         }
 
         .payee-table .label-cell {
             width: 42%;
-            font-size: 9pt;
+            font-size: 10pt;
             color: #333;
             padding-right: 8px;
         }
@@ -95,9 +95,9 @@
         .payee-table .value-cell {
             width: 58%;
             background: #dce6f1;
-            padding: 3px 5px;
-            font-size: 9.5pt;
-            line-height: 1.18;
+            padding: 4px 6px;
+            font-size: 10.5pt;
+            line-height: 1.24;
             font-style: italic;
             font-weight: 600;
             color: #111;
@@ -105,12 +105,12 @@
         }
 
         .payee-table .value-cell * {
-            font-size: 9.5pt;
-            line-height: 1.18;
+            font-size: 10.5pt;
+            line-height: 1.24;
         }
 
         .payee-table .value-cell p {
-            margin: 0 0 1px;
+            margin: 0 0 2px;
         }
 
         .payee-table .value-cell p:last-child {
@@ -125,19 +125,19 @@
 
         .payment-type-table td {
             vertical-align: middle;
-            padding: 2px 0;
+            padding: 2.5px 0;
         }
 
         .payment-type-table .label-cell {
             width: 42%;
-            font-size: 9pt;
+            font-size: 10pt;
             font-weight: 700;
             color: #1a1a1a;
         }
 
         .payment-type-table .value-cell {
             width: 58%;
-            font-size: 9.5pt;
+            font-size: 10.5pt;
             color: #1a1a1a;
         }
 
@@ -147,14 +147,14 @@
 
         /* SEPA-Ermaechtigung text */
         .mandate-text {
-            margin-top: 2px;
-            font-size: 9pt;
-            line-height: 1.24;
+            margin-top: 3px;
+            font-size: 10pt;
+            line-height: 1.32;
             color: #222;
         }
 
         .mandate-text p {
-            margin: 0 0 3px;
+            margin: 0 0 4px;
         }
 
         .mandate-text p:last-child {
@@ -165,7 +165,7 @@
         .sig-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
+            margin-top: 14px;
         }
 
         .sig-table td {
@@ -178,33 +178,33 @@
         }
 
         .sig-label {
-            font-size: 9pt;
+            font-size: 10pt;
             color: #555;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
         }
 
         .sig-box {
             background: #dce6f1;
             border: 1px solid #c5d3e2;
-            min-height: 24px;
-            padding: 3px 5px;
-            font-size: 9.5pt;
-            line-height: 1.15;
+            min-height: 30px;
+            padding: 4px 6px;
+            font-size: 10.5pt;
+            line-height: 1.2;
             font-weight: 600;
             color: #111;
             word-break: break-word;
         }
 
         .sig-meta {
-            margin-top: 2px;
-            font-size: 9.5pt;
+            margin-top: 3px;
+            font-size: 10.5pt;
             font-weight: 700;
             color: #0f766e;
         }
 
         .mono {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
-            font-size: 9.5pt;
+            font-size: 10.5pt;
             word-break: break-all;
         }
     </style>
@@ -264,7 +264,7 @@
     </table>
 
     {{-- Zahlungsart --}}
-    <table class="payment-type-table" style="margin-top: 7px;">
+    <table class="payment-type-table" style="margin-top: 10px;">
         <tr>
             <td class="label-cell">Zahlungsart</td>
             <td class="value-cell">
