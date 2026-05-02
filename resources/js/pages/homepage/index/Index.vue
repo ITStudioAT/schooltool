@@ -12,7 +12,7 @@
                     <div class="cloud-header-left">
                         <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
                         <nav class="cloud-header-nav" aria-label="Dummy Navigation">
-                            <router-link to="/homepage/products" class="cloud-nav-item">Produkte</router-link>
+                            <a href="/documentation" target="_blank" rel="noopener noreferrer" class="cloud-nav-item">Dokumentation</a>
                         </nav>
                     </div>
                 </header>

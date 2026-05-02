@@ -51,6 +51,14 @@
                         </v-list>
                     </v-menu>
                     <v-list-item
+                        v-else-if="item.href"
+                        :exact="false"
+                        :title="item.title"
+                        :prepend-icon="item.icon"
+                        :href="item.href"
+                        target="_blank"
+                        :disabled="isMenuInteractionDisabled || !item.is_active" />
+                    <v-list-item
                         v-else-if="item.to"
                         :exact="false"
                         :title="item.title"

@@ -1,0 +1,1 @@
+"use strict";(globalThis.webpackChunkschooltool=globalThis.webpackChunkschooltool||[]).push([[774],{8841(o){o.exports=JSON.parse('{"name":"docusaurus-plugin-content-docs","id":"restauranttool"}')}}]);
