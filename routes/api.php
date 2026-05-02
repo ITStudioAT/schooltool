@@ -252,6 +252,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/users20/update', [UserController::class, 'updateUser']);
         Route::post('/admin/users20/store', [UserController::class, 'storeUser']);
         Route::post('/admin/users20/delete_users', [UserController::class, 'deleteUsers']);
+        Route::post('/admin/users20/mark_account_status', [UserController::class, 'markAccountStatus']);
 
         // teachers, teachers_list
         Route::apiResource('/admin/teachers', TeacherController::class);

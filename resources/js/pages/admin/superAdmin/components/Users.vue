@@ -100,7 +100,33 @@
                                                 <div v-if="normalizedSchoolclass(item.schoolclass)" class="person-schoolclass">
                                                     Klasse {{ normalizedSchoolclass(item.schoolclass) }}
                                                 </div>
-                                                <div class="person-email">{{ item.email }}</div>
+                                                <div class="person-email-row">
+                                                    <span class="person-email">{{ item.email }}</span>
+                                                    <v-btn
+                                                        v-if="item.email"
+                                                        icon="mdi-content-copy"
+                                                        variant="text"
+                                                        density="compact"
+                                                        size="x-small"
+                                                        class="person-email-copy"
+                                                        :aria-label="`E-Mail-Adresse kopieren: ${item.email}`"
+                                                        :title="`E-Mail-Adresse kopieren: ${item.email}`"
+                                                        @click.stop="copyEmail(item.email)" />
+                                                </div>
+                                                <div class="person-account-meta">
+                                                    <span class="person-account-meta__item" :class="{ 'is-missing': !item.email_verified_at }">
+                                                        E-Mail: {{ item.email_verified_at || 'Nein' }}
+                                                    </span>
+                                                    <span class="person-account-meta__item" :class="{ 'is-missing': !item.confirmed_at }">
+                                                        Bestätigt: {{ item.confirmed_at || 'Nein' }}
+                                                    </span>
+                                                    <span class="person-account-meta__item">
+                                                        Letztes Login: {{ item.login_at || 'Nie' }}
+                                                    </span>
+                                                    <span class="person-account-meta__item">
+                                                        Login-IP: {{ item.login_ip || '-' }}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -168,19 +194,41 @@
                                     </v-btn>
                                 </template>
 
-                                <v-btn
-                                    block
-                                    color="warning"
-                                    variant="tonal"
-                                    rounded="lg"
-                                    class="crud-action-btn-offset"
-                                    prepend-icon="mdi-delete"
-                                    @click="deleteUser">
-                                    Löschen
-                                </v-btn>
-                            </div>
-                        </template>
-                    </section>
+                                    <v-btn
+                                        block
+                                        color="warning"
+                                        variant="tonal"
+                                        rounded="lg"
+                                        class="crud-action-btn-offset"
+                                        prepend-icon="mdi-delete"
+                                        @click="deleteUser">
+                                        Löschen
+                                    </v-btn>
+
+                                    <v-btn
+                                        block
+                                        color="primary"
+                                        variant="tonal"
+                                        rounded="lg"
+                                        class="crud-action-btn-offset"
+                                        prepend-icon="mdi-email-check"
+                                        @click="markSelectedAccountStatus('email_verified_at')">
+                                        E-Mail
+                                    </v-btn>
+
+                                    <v-btn
+                                        block
+                                        color="primary"
+                                        variant="tonal"
+                                        rounded="lg"
+                                        class="crud-action-btn-offset"
+                                        prepend-icon="mdi-account-check"
+                                        @click="markSelectedAccountStatus('confirmed_at')">
+                                        Bestätigen
+                                    </v-btn>
+                                </div>
+                            </template>
+                        </section>
                 </aside>
             </div>
         </section>
@@ -355,6 +403,32 @@ export default {
             await this.userStore.index(this.meta.current_page)
         },
 
+        async markSelectedAccountStatus(field) {
+            if (this.selected_users.length === 0) { return }
+            await this.userStore.markAccountStatus(this.selected_users, field)
+            await this.userStore.index(this.meta.current_page)
+        },
+
+        async copyEmail(email) {
+            const emailAddress = (email || '').toString().trim()
+            if (!emailAddress) { return }
+
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(emailAddress)
+                return
+            }
+
+            const textArea = document.createElement('textarea')
+            textArea.value = emailAddress
+            textArea.setAttribute('readonly', '')
+            textArea.style.position = 'fixed'
+            textArea.style.opacity = '0'
+            document.body.appendChild(textArea)
+            textArea.select()
+            document.execCommand('copy')
+            document.body.removeChild(textArea)
+        },
+
         selectedUser(user_id) {
             return this.users.find((s) => s.id === user_id)
         },
@@ -517,5 +591,45 @@ export default {
     font-size: 0.78rem;
     font-weight: 600;
     color: rgb(var(--v-theme-primary));
+}
+
+.person-email-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.person-email {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.person-email-copy {
+    flex: 0 0 auto;
+    opacity: 0.72;
+}
+
+.person-email-copy:hover {
+    opacity: 1;
+}
+
+.person-account-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+    margin-top: 6px;
+    color: rgba(var(--v-theme-on-surface), 0.68);
+    font-size: 0.74rem;
+    line-height: 1.25;
+}
+
+.person-account-meta__item {
+    white-space: nowrap;
+}
+
+.person-account-meta__item.is-missing {
+    color: rgb(var(--v-theme-warning));
+    font-weight: 600;
 }
 </style>

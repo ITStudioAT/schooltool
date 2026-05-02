@@ -1008,6 +1008,29 @@ describe('checkLogin', function () {
 
         expect($result)->toBeArray();
     });
+
+    it('accepts lunch_admin role for login', function () {
+        $school = School::factory()->create();
+        $role = Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+        $user = User::factory()->create([
+            'email' => 'test@example.com',
+            'school_id' => $school->id,
+            'password' => Hash::make('password123'),
+            'confirmed_at' => now(),
+            'is_active' => 1,
+        ]);
+        $user->assignRole($role);
+
+        $data = [
+            'email' => 'test@example.com',
+            'school' => ['id' => $school->id],
+            'password' => 'password123',
+        ];
+
+        $result = $this->service->checkLogin($data);
+
+        expect($result)->toBeArray();
+    });
 });
 
 describe('checkUserLogin', function () {

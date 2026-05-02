@@ -16,6 +16,7 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Role;
 
@@ -270,6 +271,10 @@ test('super admin can load users for their school with pagination and sorting', 
         'last_name' => 'Alpha',
         'first_name' => 'User',
         'email' => 'alpha@test.com',
+        'email_verified_at' => '2026-04-01 00:00:00',
+        'confirmed_at' => '2026-04-02 00:00:00',
+        'login_at' => '2026-04-03 08:15:00',
+        'login_ip' => '127.0.0.1',
     ]);
     $beta = User::factory()->create([
         'school_id' => $this->school->id,
@@ -293,9 +298,16 @@ test('super admin can load users for their school with pagination and sorting', 
     $response->assertStatus(200)
         ->assertJsonStructure([
             'data' => [
-                ['id', 'first_name', 'last_name', 'email', 'roles'],
+                ['id', 'first_name', 'last_name', 'email', 'email_verified_at', 'confirmed_at', 'login_at', 'login_ip', 'roles'],
             ],
             'meta' => ['current_page', 'per_page', 'total', 'last_page', 'from', 'to'],
+        ])
+        ->assertJsonFragment([
+            'email' => 'alpha@test.com',
+            'email_verified_at' => '01.04.2026',
+            'confirmed_at' => '02.04.2026',
+            'login_at' => '03.04.2026  08:15',
+            'login_ip' => '127.0.0.1',
         ])
         ->assertJsonMissing(['email' => $otherSchoolUser->email]);
 
@@ -335,6 +347,72 @@ test('users20 load_users supports searching by school class', function () {
         ->assertStatus(200)
         ->assertJsonFragment(['id' => $classUser->id])
         ->assertJsonMissing(['id' => $otherClassUser->id]);
+});
+
+test('admin can mark missing users20 account status fields', function () {
+    $this->travelTo(Carbon::parse('2026-04-04 10:30:00'));
+
+    $target = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email_verified_at' => null,
+        'confirmed_at' => null,
+    ]);
+    $secondTarget = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email_verified_at' => null,
+        'confirmed_at' => null,
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/mark_account_status', [
+        'user_ids' => [$target->id, $secondTarget->id],
+        'field' => 'email_verified_at',
+    ])
+        ->assertSuccessful()
+        ->assertJsonFragment([
+            'id' => $target->id,
+            'email_verified_at' => '04.04.2026',
+            'confirmed_at' => null,
+        ]);
+
+    $this->postJson('/api/admin/users20/mark_account_status', [
+        'user_ids' => [$target->id],
+        'field' => 'confirmed_at',
+    ])
+        ->assertSuccessful()
+        ->assertJsonFragment([
+            'id' => $target->id,
+            'email_verified_at' => '04.04.2026',
+            'confirmed_at' => '04.04.2026',
+        ]);
+
+    $target->refresh();
+    $secondTarget->refresh();
+
+    expect($target->email_verified_at?->toDateTimeString())->toBe('2026-04-04 10:30:00')
+        ->and(Carbon::parse($target->confirmed_at)->toDateTimeString())->toBe('2026-04-04 10:30:00')
+        ->and($secondTarget->email_verified_at?->toDateTimeString())->toBe('2026-04-04 10:30:00')
+        ->and($secondTarget->confirmed_at)->toBeNull();
+});
+
+test('admin cannot mark users20 account status for another school', function () {
+    $foreignUser = User::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email_verified_at' => null,
+    ]);
+
+    $this->actingAs($this->adminUser, 'sanctum');
+
+    $this->postJson('/api/admin/users20/mark_account_status', [
+        'user_ids' => [$foreignUser->id],
+        'field' => 'email_verified_at',
+    ])->assertNotFound();
+
+    expect($foreignUser->fresh()->email_verified_at)->toBeNull();
 });
 
 test('guest is unauthorized from loading users', function () {

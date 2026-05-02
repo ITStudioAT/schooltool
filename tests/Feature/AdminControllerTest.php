@@ -37,6 +37,7 @@ beforeEach(function () {
 
     // Create roles
     Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
 
     // Create test user
     $this->user = User::factory()->create([
@@ -266,6 +267,38 @@ test('login step 2 keeps remember token empty when remember is false', function 
 
     $this->user->refresh();
     expect($this->user->remember_token)->toBeNull();
+});
+
+test('login step 2 allows lunch admin role', function () {
+    $lunchAdmin = User::factory()->create([
+        'email' => 'lunch-admin@example.com',
+        'password' => Hash::make('password123'),
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'confirmed_at' => now(),
+        'email_verified_at' => now(),
+        'is_active' => true,
+    ]);
+    $lunchAdmin->assignRole('lunch_admin');
+
+    $data = [
+        'data' => [
+            'step' => 'LOGIN_ENTER_PASSWORD',
+            'email' => $lunchAdmin->email,
+            'password' => 'password123',
+            'remember' => false,
+            'school' => [
+                'id' => $this->school->id,
+            ],
+        ],
+    ];
+
+    $response = $this->postJson('/api/admin/login_step_2', $data);
+
+    $response->assertSuccessful()
+        ->assertJson([
+            'step' => 'LOGIN_SUCCESS',
+        ]);
 });
 
 test('login step 3 sets remember token when remember is true', function () {

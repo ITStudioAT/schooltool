@@ -29,6 +29,7 @@ use App\Models\User;
 use App\Services\AdminService;
 use App\Services\UserService;
 use App\Traits\PaginationTrait;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
@@ -48,6 +49,7 @@ class UserController extends Controller
         $role = $validated['role'] ?? null;
 
         $users = User::query()
+            ->with('roles')
             ->where('school_id', $auth_user->school_id)
             ->when($search_string, function ($query, $search_string) {
                 $query->where(function ($q) use ($search_string) {
@@ -104,6 +106,45 @@ class UserController extends Controller
         $service->delete($auth_user->id, $validated['data']);
 
         return response()->noContent();
+    }
+
+    public function markAccountStatus(Request $request): JsonResponse
+    {
+        if (! $auth_user = $this->userHasRole(['super_admin', 'admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'exists:users,id'],
+            'field' => ['required', 'string', 'in:email_verified_at,confirmed_at'],
+        ]);
+
+        $userIds = collect($validated['user_ids'])
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->unique()
+            ->values();
+
+        $users = User::where('school_id', $auth_user->school_id)
+            ->whereIn('id', $userIds)
+            ->with('roles')
+            ->get();
+
+        if ($users->count() !== $userIds->count()) {
+            abort(404);
+        }
+
+        foreach ($users as $user) {
+            if (! $user->{$validated['field']}) {
+                $user->{$validated['field']} = now();
+                $user->save();
+            }
+        }
+
+        return response()->json([
+            'data' => UserResource::collection($users->fresh('roles')),
+        ], 200);
     }
 
     public function index(IndexUserRequest $request)

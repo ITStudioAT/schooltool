@@ -289,7 +289,7 @@ class AdminService
 
         $this->validateUserCanLogin($user);
 
-        $allowedRoles = ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'];
+        $allowedRoles = ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin'];
         if (! $user->hasAnyRole($allowedRoles)) {
             abort(423, 'Login aufgrund fehlender Berechtigungen nicht möglich.');
         }
@@ -316,7 +316,7 @@ class AdminService
 
         $this->validateUserCanLogin($user);
 
-        $allowedRoles = ['super_admin', 'admin', 'user', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'];
+        $allowedRoles = ['super_admin', 'admin', 'user', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'lunch_admin'];
         if (! $user->hasAnyRole($allowedRoles)) {
             abort(423, 'Login aufgrund der Berechtigungen nicht möglich.');
         }

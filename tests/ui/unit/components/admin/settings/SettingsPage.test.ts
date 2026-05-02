@@ -697,6 +697,7 @@ describe('Admin settings page', () => {
         expect(screen.getByText('Profil')).toBeInTheDocument()
         expect(screen.queryByText('Nachhilfe')).not.toBeInTheDocument()
         expect(screen.queryByText('Unterricht')).not.toBeInTheDocument()
+        expect(screen.getByText('RestaurantSettings embedded general')).toBeInTheDocument()
         expect(screen.getByText('lunch_admin')).toBeInTheDocument()
     })
 

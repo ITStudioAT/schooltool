@@ -24,6 +24,7 @@ beforeEach(function () {
     Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']);
     Role::firstOrCreate(['name' => 'materials_moderator', 'guard_name' => 'web']);
+    Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
 
     $this->middleware = new WebAllowed;
 });
@@ -249,6 +250,19 @@ describe('handle method - scope parameters', function () {
         $response = $this->middleware->handle($request, $next, 'scope:admin_shell_access');
 
         expect($response->getContent())->toBe('Admin Dashboard');
+    });
+
+    it('allows lunch_admin to access restaurant settings through admin shell scope', function () {
+        $user = User::factory()->create();
+        $user->assignRole('lunch_admin');
+        Auth::login($user);
+
+        $request = Request::create('/admin/settings?tab=restaurant', 'GET');
+        $next = fn ($req) => response('Restaurant Settings');
+
+        $response = $this->middleware->handle($request, $next, 'scope:admin_shell_access');
+
+        expect($response->getContent())->toBe('Restaurant Settings');
     });
 });
 

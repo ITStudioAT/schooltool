@@ -131,5 +131,35 @@ export const useUserStore = defineStore('AdminUser20Store', {
                 adminStore.is_loading--
             }
         },
+
+        async markAccountStatus(userIdOrIds, field) {
+            const notification = useNotificationStore()
+            const adminStore = useAdminStore()
+            adminStore.is_loading++
+            try {
+                const userIds = Array.isArray(userIdOrIds) ? userIdOrIds.map((id) => Number(id)).filter((id) => id > 0) : [Number(userIdOrIds)]
+                const response = await axios.post(`/api/admin/users20/mark_account_status`, {
+                    user_ids: userIds,
+                    field,
+                })
+                for (const updatedUser of response.data.data) {
+                    const userIndex = this.users.findIndex((user) => user.id === updatedUser.id)
+                    if (userIndex >= 0) {
+                        this.users[userIndex] = updatedUser
+                    }
+                }
+                return true
+            } catch (error) {
+                notification.notify({
+                    status: error.response.status,
+                    message: error.response.data.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: this.timeout,
+                })
+                return false
+            } finally {
+                adminStore.is_loading--
+            }
+        },
     },
 })
