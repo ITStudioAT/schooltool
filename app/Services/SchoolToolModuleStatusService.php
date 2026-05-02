@@ -27,6 +27,7 @@ class SchoolToolModuleStatusService
         'materials',
         'restaurant',
         'aba',
+        'students_timetables',
     ];
 
     /**
@@ -39,6 +40,7 @@ class SchoolToolModuleStatusService
         'materials' => false,
         'restaurant' => false,
         'aba' => true,
+        'students_timetables' => false,
     ];
 
     /**
@@ -51,6 +53,7 @@ class SchoolToolModuleStatusService
         'materials' => 'Lizenz aus Tabelle',
         'restaurant' => 'Lizenz aus Tabelle',
         'aba' => 'Lizenz aus Tabelle',
+        'students_timetables' => 'Lizenz aus Tabelle',
     ];
 
     public static function moduleEnabledByDefault(string $moduleKey): bool
@@ -200,6 +203,7 @@ class SchoolToolModuleStatusService
             'Materialientool' => 'materials',
             'Restaurant' => 'restaurant',
             'ABA', 'Auswerten von ABAs' => 'aba',
+            'StudentsTimetables' => 'students_timetables',
             default => null,
         };
     }

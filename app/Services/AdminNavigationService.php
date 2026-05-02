@@ -21,6 +21,8 @@ class AdminNavigationService
 
     private const RESTAURANT_DASHBOARD_ROLES = ['lunch_admin'];
 
+    private const STUDENTS_TIMETABLES_DASHBOARD_ROLES = ['admin', 'studentstimetables_admin'];
+
     private const ABA_DASHBOARD_ROLES = ['aba_teacher'];
 
     private const ADMIN_SHELL_ROLES = [
@@ -33,6 +35,7 @@ class AdminNavigationService
         'teacher',
         'lunch_admin',
         'aba_teacher',
+        'studentstimetables_admin',
     ];
 
     /* MENÜ AUF DER LINKEN SEITE */
@@ -58,12 +61,14 @@ class AdminNavigationService
         $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', self::TEACHING_DASHBOARD_ROLES);
         $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', self::MATERIALS_DASHBOARD_ROLES);
         $restaurantLicenceStatus = $this->toolAccessStatus($user, 'Restaurant', self::RESTAURANT_DASHBOARD_ROLES);
+        $studentsTimetablesLicenceStatus = $this->toolAccessStatus($user, 'StudentsTimetables', self::STUDENTS_TIMETABLES_DASHBOARD_ROLES);
         $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', self::ABA_DASHBOARD_ROLES);
         $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $user->selectedSchool);
         $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $user->selectedSchool);
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $user->selectedSchool);
         $materialsModuleStatus = $moduleStatusService->userStatusForModule('materials', $user->selectedSchool);
         $restaurantModuleStatus = $moduleStatusService->userStatusForModule('restaurant', $user->selectedSchool);
+        $studentsTimetablesModuleStatus = $moduleStatusService->userStatusForModule('students_timetables', $user->selectedSchool);
         $abaModuleStatus = $moduleStatusService->userStatusForModule('aba', $user->selectedSchool);
         // ANMELDESYSTEM
         if ($user->hasAnyRole(self::REGISTER_DASHBOARD_ROLES)) {
@@ -140,6 +145,18 @@ class AdminNavigationService
             }
         }
 
+        // STUDENTS TIMETABLES
+        if ($user->hasAnyRole(self::STUDENTS_TIMETABLES_DASHBOARD_ROLES)) {
+            if ($studentsTimetablesLicenceStatus !== 'missing' && $moduleStatusService->adminVisibleForModule('students_timetables', $user->selectedSchool)) {
+                $menu[] = [
+                    'title' => 'Schülerstundenpläne',
+                    'icon' => 'mdi-calendar-clock',
+                    'to' => '/admin/students-timetables',
+                    'is_active' => ($studentsTimetablesLicenceStatus === 'active'),
+                ] + $this->dashboardStatusMeta($studentsTimetablesLicenceStatus, $studentsTimetablesModuleStatus, 'Schülerstundenpläne');
+            }
+        }
+
         // DOKUMENTATION
         $menu[] = ['title' => 'Dokumentation', 'icon' => 'mdi-book-open-variant', 'href' => '/documentation/index.html', 'is_active' => true];
 
@@ -168,6 +185,7 @@ class AdminNavigationService
             'materials' => false,
             'groups' => false,
             'restaurant' => false,
+            'students_timetables' => false,
             'aba' => false,
         ];
 
@@ -191,6 +209,7 @@ class AdminNavigationService
         $capabilities['materials'] = $this->menuRouteCapability($user, $menuByPath, '/admin/materials', self::MATERIALS_DASHBOARD_ROLES);
         $capabilities['groups'] = false;
         $capabilities['restaurant'] = $this->menuRouteCapability($user, $menuByPath, '/admin/restaurant', self::RESTAURANT_DASHBOARD_ROLES);
+        $capabilities['students_timetables'] = $this->menuRouteCapability($user, $menuByPath, '/admin/students-timetables', self::STUDENTS_TIMETABLES_DASHBOARD_ROLES);
         $capabilities['aba'] = $this->menuRouteCapability($user, $menuByPath, '/admin/aba', self::ABA_DASHBOARD_ROLES);
 
         return $capabilities;

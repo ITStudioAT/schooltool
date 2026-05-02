@@ -261,6 +261,7 @@ class RecordsCreateService
     {
         Role::firstOrCreate(['name' => 'super_admin', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'studentstimetables_admin', 'guard_name' => 'web']);
     }
 
     private function checkOrCreateAdmins(School $school): void

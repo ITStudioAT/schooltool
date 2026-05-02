@@ -9,6 +9,13 @@ it('resolves scope references to role names', function () {
         ->toBe(['admin', 'materials_admin', 'materials_moderator']);
 });
 
+it('resolves the StudentsTimetables scope to admin roles', function () {
+    $service = app(AccessScopeService::class);
+
+    expect($service->resolveRoleNames(['scope:students_timetables_access']))
+        ->toBe(['admin', 'studentstimetables_admin']);
+});
+
 it('deduplicates role names when scopes and explicit roles overlap', function () {
     $service = app(AccessScopeService::class);
 

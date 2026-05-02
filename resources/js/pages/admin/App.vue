@@ -144,7 +144,7 @@ export default {
         return {
             adminStore: null,
             schoolStore: null,
-            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'],
+            admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin'],
             is_route_navigation_pending: false,
             removeRouteBeforeEachHook: null,
             removeRouteAfterEachHook: null,

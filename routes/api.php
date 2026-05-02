@@ -45,6 +45,7 @@ use App\Http\Controllers\Admin\SchoolController;
 use App\Http\Controllers\Admin\SchoolToolController;
 use App\Http\Controllers\Admin\SchoolyearController;
 use App\Http\Controllers\Admin\SpaRoleController;
+use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
 use App\Http\Controllers\Admin\TeacherController;
 use App\Http\Controllers\Admin\TeachersListController;
 use App\Http\Controllers\Admin\Teaching\CourseBehaviourEntryController;
@@ -130,6 +131,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
 
     /***** ADMIN ROUTES *****/
     Route::get('/admin/config', [AdminController::class, 'config']);
+
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {
+        Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
+    });
 
     Route::post('/admin/login_step_email', [AdminController::class, 'loginStepEmail']);
     Route::post('/admin/login_step_2', [AdminController::class, 'loginStep2']);

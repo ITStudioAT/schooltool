@@ -14,17 +14,18 @@ class AccessScopeService
         'super_admin_access' => ['super_admin'],
         'admin_or_super_admin_access' => ['admin', 'super_admin'],
         'aba_teacher_access' => ['aba_teacher'],
-        'admin_user_profile_access' => ['user', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher'],
+        'admin_user_profile_access' => ['user', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'teacher', 'studentstimetables_admin'],
         'teaching_upload_access' => ['admin', 'teaching_admin'],
         'tutoring_user_access' => ['tutoring_user'],
         'school_tool_access' => ['super_admin', 'admin', 'tutoring_admin', 'register_admin', 'teacher'],
         'restaurant_access' => ['admin', 'lunch_admin'],
+        'students_timetables_access' => ['admin', 'studentstimetables_admin'],
         'materials_access' => ['admin', 'materials_admin', 'materials_moderator'],
         'tutoring_admin_access' => ['admin', 'tutoring_admin'],
         'teaching_access' => ['admin', 'teaching_admin', 'teacher'],
         'staff_admin_access' => ['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher'],
         'tool_web_access' => ['admin', 'register_admin', 'tutoring_admin', 'teacher', 'lunch_admin'],
-        'admin_shell_access' => ['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher'],
+        'admin_shell_access' => ['admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin'],
     ];
 
     /**

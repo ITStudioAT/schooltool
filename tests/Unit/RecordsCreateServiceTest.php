@@ -42,7 +42,8 @@ describe('initRecords', function () {
         $this->service->initRecords();
 
         expect(Role::where('name', 'super_admin')->exists())->toBeTrue()
-            ->and(Role::where('name', 'admin')->exists())->toBeTrue();
+            ->and(Role::where('name', 'admin')->exists())->toBeTrue()
+            ->and(Role::where('name', 'studentstimetables_admin')->exists())->toBeTrue();
     });
 
     it('creates super admin user for school', function () {
@@ -266,12 +267,24 @@ describe('checkOrCreateAdminRoles (private method behavior)', function () {
             ->and($role->guard_name)->toBe('web');
     });
 
+    it('creates studentstimetables_admin role', function () {
+        expect(Role::where('name', 'studentstimetables_admin')->exists())->toBeFalse();
+
+        $this->service->initRecords();
+
+        $role = Role::where('name', 'studentstimetables_admin')->first();
+
+        expect($role)->not->toBeNull()
+            ->and($role->guard_name)->toBe('web');
+    });
+
     it('does not duplicate roles on multiple calls', function () {
         $this->service->initRecords();
         $this->service->initRecords();
 
         expect(Role::where('name', 'super_admin')->count())->toBe(1)
-            ->and(Role::where('name', 'admin')->count())->toBe(1);
+            ->and(Role::where('name', 'admin')->count())->toBe(1)
+            ->and(Role::where('name', 'studentstimetables_admin')->count())->toBe(1);
     });
 });
 
@@ -432,7 +445,7 @@ describe('integration scenarios', function () {
 
         expect(School::count())->toBeGreaterThan(0)
             ->and(Schoolyear::count())->toBeGreaterThan(0)
-            ->and(Role::count())->toBeGreaterThanOrEqual(2)
+            ->and(Role::count())->toBeGreaterThanOrEqual(3)
             ->and(User::count())->toBeGreaterThan(0);
     });
 

@@ -20,6 +20,7 @@ const Materials = () => import('@/pages/admin/materials/Materials.vue')
 const MaterialsSubjectsOverview = () => import('@/pages/admin/materials/MaterialsSubjectsOverview.vue')
 const Restaurant = () => import('@/pages/admin/restaurant/Restaurant.vue')
 const MenuPlansEntry = () => import('@/pages/admin/restaurant/components/MenuPlansEntry.vue')
+const StudentsTimetables = () => import('@/pages/admin/studentsTimetables/StudentsTimetables.vue')
 const Settings = () => import('@/pages/admin/settings/Settings.vue')
 const Aba = () => import('@/pages/admin/aba/Aba.vue')
 const AbaDetails = () => import('@/pages/admin/aba/AbaDetails.vue')
@@ -45,6 +46,7 @@ export const routes = [
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
     { path: '/admin/restaurant/:section?', component: Restaurant, meta: { capability: 'restaurant' } },
     { path: '/admin/menu-plans', component: MenuPlansEntry, meta: { capability: 'restaurant' } },
+    { path: '/admin/students-timetables', component: StudentsTimetables, meta: { capability: 'students_timetables' } },
     { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },
     { path: '/admin/aba/details/:abaId', component: AbaDetails, meta: { capability: 'aba' } },
 ]

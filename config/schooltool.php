@@ -16,7 +16,7 @@ return [
         'b@b.at' => 'angelika.mussnig14@gmail.com',
         'c@c.at' => 'angelika.mussnig14@gmail.com',
         'paul.ahlgrimm@cdgym.at' => 'angelika.mussnig14@gmail.com',
-        'felix.algran@cdgym.at' => 'angelika.mussnig14@gmail.com'
+        'felix.algran@cdgym.at' => 'angelika.mussnig14@gmail.com',
     ],
     'licence_renewal_days' => env('LICENCE_RENEWAL_DAYS', 30),
     'licence_free_activation_date' => '2026-07-10',
@@ -177,6 +177,17 @@ return [
         [
             'name' => 'Restaurant',
             'long_name' => 'Tool zum Verwalten des Restaurants',
+            'price_per_year' => 200,
+            'start_day_month' => '01.08.',
+            'school_licence_enabled' => true,
+            'admin_licence_enabled' => false,
+            'admin_role_names' => null,
+            'user_licence_enabled' => false,
+            'user_role_names' => null,
+        ],
+        [
+            'name' => 'StudentsTimetables',
+            'long_name' => 'Tool zum Verwalten von Schülerstundenplänen',
             'price_per_year' => 200,
             'start_day_month' => '01.08.',
             'school_licence_enabled' => true,

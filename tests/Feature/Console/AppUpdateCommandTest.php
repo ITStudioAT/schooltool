@@ -120,6 +120,7 @@ it('runs the full update workflow end to end', function (): void {
         'student',
         'materials_moderator',
         'aba_teacher',
+        'studentstimetables_admin',
     ])->once();
     $install->shouldReceive('findOrCreateFolders')->once();
     $install->shouldReceive('pruneOrphanPrivateSchoolFolders')

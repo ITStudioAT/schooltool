@@ -74,6 +74,14 @@ Route::middleware(['throttle:global', 'throttle:web'])->group(function () {
         'tool-licensed:Restaurant,auth,scope:restaurant_access',
     ]);
 
+    Route::get('/admin/students-timetables/{any?}', function () {
+        return view('spa::admin');
+    })->where('any', '.*')->middleware([
+        'auth:sanctum',
+        'web-allowed:scope:students_timetables_access',
+        'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access',
+    ]);
+
     Route::get('/admin/aba/{any?}', function () {
         return view('spa::admin');
     })->where('any', '.*')->middleware(['auth:sanctum', 'aba-access']);

@@ -40,6 +40,10 @@ class SchoolToolSaveModuleStatusesRequest extends FormRequest
             'data.aba_visible_user' => ['required', 'boolean'],
             'data.aba_user_test_mode' => ['required', 'boolean'],
             'data.aba_user_comming_soon' => ['required', 'boolean'],
+            'data.students_timetables_visible_admin' => ['sometimes', 'boolean'],
+            'data.students_timetables_visible_user' => ['sometimes', 'boolean'],
+            'data.students_timetables_user_test_mode' => ['sometimes', 'boolean'],
+            'data.students_timetables_user_comming_soon' => ['sometimes', 'boolean'],
         ];
     }
 }
