@@ -82,6 +82,108 @@ class LicenceService
         return $this->userLicenceStatusForTool($user, $schoolLicence, $licence, $candidateRoleNames);
     }
 
+    /**
+     * Resolve several tool licence statuses using shared queries for the current request.
+     *
+     * @param  array<string, array<int, string>>  $appsWithCandidateRoles
+     * @return array<string, string>
+     */
+    public function toolAccessStatusesForUser(?User $user, ?School $school, array $appsWithCandidateRoles): array
+    {
+        $statuses = collect($appsWithCandidateRoles)
+            ->mapWithKeys(fn ($_roles, string $app): array => [$app => 'missing'])
+            ->all();
+
+        if (! $school || empty($appsWithCandidateRoles)) {
+            return $statuses;
+        }
+
+        $licences = Licence::query()
+            ->whereIn('name', array_keys($appsWithCandidateRoles))
+            ->get()
+            ->keyBy('name');
+
+        if ($licences->isEmpty()) {
+            return $statuses;
+        }
+
+        $schoolLicences = SchoolLicence::query()
+            ->where('school_id', $school->id)
+            ->whereIn('licence_id', $licences->pluck('id'))
+            ->get()
+            ->keyBy('licence_id');
+
+        $userRoleNames = $user ? $this->roleNamesForUser($user) : [];
+        $structuredAssignmentTypesByLicenceId = [];
+
+        foreach ($appsWithCandidateRoles as $app => $candidateRoleNames) {
+            /** @var Licence|null $licence */
+            $licence = $licences->get($app);
+            if (! $licence || ! $user || ! $this->usesStructuredLicenceModel($licence)) {
+                continue;
+            }
+
+            $assignmentTypes = $this->structuredRelevantAssignmentTypesFromRoleNames($userRoleNames, $licence, $candidateRoleNames);
+            if (! empty($assignmentTypes)) {
+                $structuredAssignmentTypesByLicenceId[$licence->id] = $assignmentTypes;
+            }
+        }
+
+        $structuredAssignments = collect();
+        if ($user && ! empty($structuredAssignmentTypesByLicenceId)) {
+            $structuredAssignments = SchoolUserLicence::query()
+                ->where('school_id', $school->id)
+                ->where('user_id', $user->id)
+                ->whereIn('licence_id', array_keys($structuredAssignmentTypesByLicenceId))
+                ->whereIn('assignment_type', collect($structuredAssignmentTypesByLicenceId)->flatten()->unique()->values()->all())
+                ->orderBy('valid_until')
+                ->get()
+                ->groupBy('licence_id')
+                ->map(fn (Collection $assignments): Collection => $assignments->groupBy('assignment_type'));
+        }
+
+        foreach ($appsWithCandidateRoles as $app => $candidateRoleNames) {
+            /** @var Licence|null $licence */
+            $licence = $licences->get($app);
+            if (! $licence) {
+                continue;
+            }
+
+            /** @var SchoolLicence|null $schoolLicence */
+            $schoolLicence = $schoolLicences->get($licence->id);
+
+            if ($this->usesStructuredLicenceModel($licence)) {
+                $statuses[$app] = $this->structuredToolAccessStatusForUserFromLoaded(
+                    $user,
+                    $schoolLicence,
+                    $licence,
+                    $candidateRoleNames,
+                    $userRoleNames,
+                    $structuredAssignments->get($licence->id, collect())
+                );
+
+                continue;
+            }
+
+            $schoolStatus = $this->schoolLicenceStatus($schoolLicence, $licence);
+            if ($schoolStatus !== 'active') {
+                $statuses[$app] = $schoolStatus;
+
+                continue;
+            }
+
+            if (! $user || ! $schoolLicence) {
+                $statuses[$app] = 'active';
+
+                continue;
+            }
+
+            $statuses[$app] = $this->userLicenceStatusForToolFromRoleNames($user, $schoolLicence, $licence, $candidateRoleNames, $userRoleNames);
+        }
+
+        return $statuses;
+    }
+
     public function schoolLicenceStatus(?SchoolLicence $schoolLicence, ?Licence $licence = null): string
     {
         if (! $schoolLicence) {
@@ -634,6 +736,11 @@ class LicenceService
 
     private function userLicenceStatusForTool(User $user, SchoolLicence $schoolLicence, ?Licence $licence = null, array $candidateRoleNames = []): string
     {
+        return $this->userLicenceStatusForToolFromRoleNames($user, $schoolLicence, $licence, $candidateRoleNames, $this->roleNamesForUser($user));
+    }
+
+    private function userLicenceStatusForToolFromRoleNames(User $user, SchoolLicence $schoolLicence, ?Licence $licence, array $candidateRoleNames, array $userRoleNames): string
+    {
         $licenceModel = $this->mergedSchoolLicenceModel($schoolLicence, $licence);
 
         $requiredRoleNames = collect($licenceModel['user_licence_required_by_role'] ?? [])
@@ -648,14 +755,6 @@ class LicenceService
         if (empty($requiredRoleNames)) {
             return 'active';
         }
-
-        $userRoleNames = $user->roles()
-            ->pluck('name')
-            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
 
         $candidateRoleNames = collect($candidateRoleNames)
             ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
@@ -693,6 +792,52 @@ class LicenceService
             }
 
             $hasExpiredAssignment = true;
+        }
+
+        return $hasExpiredAssignment ? 'expired' : 'missing';
+    }
+
+    private function structuredToolAccessStatusForUserFromLoaded(
+        ?User $user,
+        ?SchoolLicence $schoolLicence,
+        Licence $licence,
+        array $candidateRoleNames,
+        array $userRoleNames,
+        Collection $assignmentsByType
+    ): string {
+        $schoolStatus = $this->structuredSchoolAccessStatusFromAssignment($schoolLicence, $licence);
+        if ($this->structuredSchoolLicenceEnabled($licence) && $schoolStatus !== 'active') {
+            return $schoolStatus;
+        }
+
+        if (! $user) {
+            return 'active';
+        }
+
+        $relevantAssignmentTypes = $this->structuredRelevantAssignmentTypesFromRoleNames($userRoleNames, $licence, $candidateRoleNames);
+        if (empty($relevantAssignmentTypes)) {
+            return 'active';
+        }
+
+        $hasExpiredAssignment = false;
+
+        foreach ($relevantAssignmentTypes as $assignmentType) {
+            $status = $this->structuredUserAssignmentCollectionStatus($assignmentsByType->get($assignmentType, collect()));
+
+            if ($status === 'active') {
+                return 'active';
+            }
+
+            if ($status === 'expired') {
+                $hasExpiredAssignment = true;
+            }
+        }
+
+        if ($schoolLicence) {
+            $legacyStatus = $this->structuredLegacyAssignmentStatusForUserFromRoleNames($user, $schoolLicence, $licence, $candidateRoleNames, $userRoleNames);
+            if ($legacyStatus !== 'missing') {
+                return $legacyStatus;
+            }
         }
 
         return $hasExpiredAssignment ? 'expired' : 'missing';
@@ -776,14 +921,11 @@ class LicenceService
 
     private function structuredRelevantAssignmentTypes(User $user, Licence $licence, array $candidateRoleNames = []): array
     {
-        $userRoleNames = $user->roles()
-            ->pluck('name')
-            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return $this->structuredRelevantAssignmentTypesFromRoleNames($this->roleNamesForUser($user), $licence, $candidateRoleNames);
+    }
 
+    private function structuredRelevantAssignmentTypesFromRoleNames(array $userRoleNames, Licence $licence, array $candidateRoleNames = []): array
+    {
         $candidateRoleNames = collect($candidateRoleNames)
             ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
@@ -816,7 +958,12 @@ class LicenceService
 
     private function structuredLegacyAssignmentStatusForUser(User $user, SchoolLicence $schoolLicence, Licence $licence, array $candidateRoleNames = []): string
     {
-        $relevantRoleNamesByType = $this->structuredRelevantRoleNamesByType($user, $licence, $candidateRoleNames);
+        return $this->structuredLegacyAssignmentStatusForUserFromRoleNames($user, $schoolLicence, $licence, $candidateRoleNames, $this->roleNamesForUser($user));
+    }
+
+    private function structuredLegacyAssignmentStatusForUserFromRoleNames(User $user, SchoolLicence $schoolLicence, Licence $licence, array $candidateRoleNames, array $userRoleNames): string
+    {
+        $relevantRoleNamesByType = $this->structuredRelevantRoleNamesByTypeFromRoleNames($userRoleNames, $licence, $candidateRoleNames);
         if (empty($relevantRoleNamesByType)) {
             return 'active';
         }
@@ -852,14 +999,11 @@ class LicenceService
      */
     private function structuredRelevantRoleNamesByType(User $user, Licence $licence, array $candidateRoleNames = []): array
     {
-        $userRoleNames = $user->roles()
-            ->pluck('name')
-            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        return $this->structuredRelevantRoleNamesByTypeFromRoleNames($this->roleNamesForUser($user), $licence, $candidateRoleNames);
+    }
 
+    private function structuredRelevantRoleNamesByTypeFromRoleNames(array $userRoleNames, Licence $licence, array $candidateRoleNames = []): array
+    {
         $candidateRoleNames = collect($candidateRoleNames)
             ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
             ->filter()
@@ -888,6 +1032,24 @@ class LicenceService
         }
 
         return $relevantRoleNamesByType;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function roleNamesForUser(User $user): array
+    {
+        $roles = $user->relationLoaded('roles')
+            ? $user->roles
+            : $user->roles()->get(['name']);
+
+        return $roles
+            ->pluck('name')
+            ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function structuredUserAssignmentCollectionStatus(Collection $assignments): string

@@ -221,7 +221,9 @@ export default {
         this.schoolStore = useSchoolStore()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
-        await this.adminStore.loadConfig()
+        if (!this.adminStore.config) {
+            await this.adminStore.loadConfig({ includeSchoolInfos: this.isAdminHomeRoute() })
+        }
         this.adminStore.is_loading--
     },
     unmounted() {
@@ -231,6 +233,10 @@ export default {
     },
 
     methods: {
+        isAdminHomeRoute() {
+            return (this.$route?.path || '').replace(/\/+$/, '') === '/admin'
+        },
+
         registerRouteNavigationHooks() {
             if (!this.$router) return
             this.removeRouteBeforeEachHook = this.$router.beforeEach((to, from, next) => {

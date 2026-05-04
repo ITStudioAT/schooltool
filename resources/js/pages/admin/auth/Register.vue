@@ -92,7 +92,11 @@ export default {
     components: {},
 
     async beforeMount() {
-        await axios.get('/sanctum/csrf-cookie');
+        if (typeof window.ensureCsrfCookie === 'function') {
+            await window.ensureCsrfCookie()
+        } else {
+            await axios.get('/sanctum/csrf-cookie')
+        }
         this.adminStore = useAdminStore();
         this.restartRegister();
 

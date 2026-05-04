@@ -40,6 +40,14 @@ async function refreshCsrfCookie() {
     return csrfRefreshPromise;
 }
 
+window.ensureCsrfCookie = async function () {
+    if (document.cookie.split('; ').some((cookie) => cookie.startsWith('XSRF-TOKEN='))) {
+        return null;
+    }
+
+    return refreshCsrfCookie();
+};
+
 window.axios.interceptors.response.use(
     (response) => response,
     async (error) => {

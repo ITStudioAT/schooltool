@@ -46,23 +46,34 @@ class AdminNavigationService
             return [];
         }
 
-        $user = User::findOrFail(Auth::user()->id);
+        /** @var User $user */
+        $user = Auth::user();
+        $user->loadMissing(['roles', 'selectedSchool.schoolTool']);
         $user_name = substr($user->last_name.' '.$user->first_name, 0, 17);
         $isSuperAdmin = $this->userHasRole(['super_admin']);
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
+        $licenceStatuses = app(LicenceService::class)->toolAccessStatusesForUser($user, $user->selectedSchool, [
+            'Anmeldetool' => self::REGISTER_DASHBOARD_ROLES,
+            'Nachhilfetool' => self::TUTORING_DASHBOARD_ROLES,
+            'Lehrertool' => self::TEACHING_DASHBOARD_ROLES,
+            'Materialientool' => self::MATERIALS_DASHBOARD_ROLES,
+            'Restaurant' => self::RESTAURANT_DASHBOARD_ROLES,
+            'StudentsTimetables' => self::STUDENTS_TIMETABLES_DASHBOARD_ROLES,
+            'ABA' => self::ABA_DASHBOARD_ROLES,
+        ]);
 
         $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
         if ($isSuperAdmin || $user->hasAnyRole(self::ADMIN_SHELL_ROLES)) {
             $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'is_active' => true];
         }
 
-        $registerLicenceStatus = $this->toolAccessStatus($user, 'Anmeldetool', self::REGISTER_DASHBOARD_ROLES);
-        $tutoringLicenceStatus = $this->toolAccessStatus($user, 'Nachhilfetool', self::TUTORING_DASHBOARD_ROLES);
-        $teachingLicenceStatus = $this->toolAccessStatus($user, 'Lehrertool', self::TEACHING_DASHBOARD_ROLES);
-        $materialsLicenceStatus = $this->toolAccessStatus($user, 'Materialientool', self::MATERIALS_DASHBOARD_ROLES);
-        $restaurantLicenceStatus = $this->toolAccessStatus($user, 'Restaurant', self::RESTAURANT_DASHBOARD_ROLES);
-        $studentsTimetablesLicenceStatus = $this->toolAccessStatus($user, 'StudentsTimetables', self::STUDENTS_TIMETABLES_DASHBOARD_ROLES);
-        $abaLicenceStatus = $this->toolAccessStatus($user, 'ABA', self::ABA_DASHBOARD_ROLES);
+        $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
+        $tutoringLicenceStatus = $licenceStatuses['Nachhilfetool'] ?? 'missing';
+        $teachingLicenceStatus = $licenceStatuses['Lehrertool'] ?? 'missing';
+        $materialsLicenceStatus = $licenceStatuses['Materialientool'] ?? 'missing';
+        $restaurantLicenceStatus = $licenceStatuses['Restaurant'] ?? 'missing';
+        $studentsTimetablesLicenceStatus = $licenceStatuses['StudentsTimetables'] ?? 'missing';
+        $abaLicenceStatus = $licenceStatuses['ABA'] ?? 'missing';
         $registerModuleStatus = $moduleStatusService->userStatusForModule('register', $user->selectedSchool);
         $tutoringModuleStatus = $moduleStatusService->userStatusForModule('tutoring', $user->selectedSchool);
         $teachingModuleStatus = $moduleStatusService->userStatusForModule('teaching', $user->selectedSchool);
@@ -252,15 +263,6 @@ class AdminNavigationService
         }
 
         return $selection;
-    }
-
-    private function toolAccessStatus(?User $user, string $licenceName, array $allowedRoles = []): string
-    {
-        if (! $user) {
-            return 'missing';
-        }
-
-        return app(LicenceService::class)->toolAccessStatusForUser($user, $user->selectedSchool, $licenceName, $allowedRoles);
     }
 
     private function dashboardStatusMeta(string $licenceStatus, string $moduleStatus, string $moduleLabel): array

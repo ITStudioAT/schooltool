@@ -64,7 +64,7 @@ describe('dashboardMenu', function () {
 
         $result = $this->service->dashboardMenu();
 
-        expect($result)->toBeArray()->toHaveCount(2);
+        expect($result)->toBeArray()->toHaveCount(3);
 
         expect($result[0])
             ->toMatchArray([
@@ -74,6 +74,13 @@ describe('dashboardMenu', function () {
             ]);
 
         expect($result[1])
+            ->toMatchArray([
+                'title' => 'Dokumentation',
+                'icon' => 'mdi-book-open-variant',
+                'href' => '/documentation/index.html',
+            ]);
+
+        expect($result[2])
             ->toMatchArray([
                 'title' => 'Abmelden',
                 'icon' => 'mdi-power-cycle',
@@ -264,9 +271,9 @@ describe('dashboardMenu', function () {
 
         expect($result)
             ->toBeArray()
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and(collect($result)->pluck('title')->toArray())
-            ->toContain('Home', 'Einstellungen', 'Abmelden')
+            ->toContain('Home', 'Einstellungen', 'Dokumentation', 'Abmelden')
             ->not->toContain('Anmeldetool', 'Nachhilfe', 'Unterricht', 'Materialien', 'Restaurant', 'ABA')
             ->not->toContain('Gruppen');
     });
@@ -1061,7 +1068,7 @@ describe('menu item consistency', function () {
                 ->and($item)->toHaveKey('icon');
 
             expect(
-                array_key_exists('to', $item) || array_key_exists('click', $item)
+                array_key_exists('to', $item) || array_key_exists('click', $item) || array_key_exists('href', $item)
             )->toBeTrue();
         }
     });
@@ -1099,6 +1106,7 @@ describe('routeCapabilities', function () {
             'materials' => false,
             'groups' => false,
             'restaurant' => false,
+            'students_timetables' => false,
             'aba' => false,
         ]);
     });

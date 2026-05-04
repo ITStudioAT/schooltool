@@ -428,13 +428,21 @@ export default {
     components: {},
 
     async beforeMount() {
-        await axios.get('/sanctum/csrf-cookie')
+        if (typeof window.ensureCsrfCookie === 'function') {
+            await window.ensureCsrfCookie()
+        } else {
+            await axios.get('/sanctum/csrf-cookie')
+        }
         this.adminStore = useAdminStore()
         this.healthStore = useHealthStore()
         this.schoolStore = useSchoolStore()
         this.adminStore.is_loading++
         if (this.config?.is_auth) {
-            await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+            if (this.config?.school_infos) {
+                this.schoolStore.applySchoolInfos(this.config.school_infos)
+            } else {
+                await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
+            }
         }
         this.adminStore.is_loading--
     },

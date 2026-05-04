@@ -56,6 +56,18 @@ class SchoolToolModuleStatusService
         'students_timetables' => 'Lizenz aus Tabelle',
     ];
 
+    /**
+     * @var array<string, bool|string>|null
+     */
+    private ?array $defaultAttributesCache = null;
+
+    private ?SchoolTool $globalSchoolToolCache = null;
+
+    /**
+     * @var array<int, string>|null
+     */
+    private ?array $schoolToolColumnCache = null;
+
     public static function moduleEnabledByDefault(string $moduleKey): bool
     {
         return self::MODULE_DEFAULT_VISIBILITY[$moduleKey] ?? false;
@@ -66,6 +78,10 @@ class SchoolToolModuleStatusService
      */
     public function defaultAttributes(): array
     {
+        if ($this->defaultAttributesCache !== null) {
+            return $this->defaultAttributesCache;
+        }
+
         $defaults = [];
 
         foreach (self::MODULE_KEYS as $moduleKey) {
@@ -79,10 +95,10 @@ class SchoolToolModuleStatusService
 
         $globalTool = $this->globalSchoolTool();
         if (! $globalTool) {
-            return $this->appendLegacyStatusFields($defaults);
+            return $this->defaultAttributesCache = $this->appendLegacyStatusFields($defaults);
         }
 
-        return $this->appendLegacyStatusFields(array_merge($defaults, $this->normalizeAttributesFromRecord($globalTool)));
+        return $this->defaultAttributesCache = $this->appendLegacyStatusFields(array_merge($defaults, $this->normalizeAttributesFromRecord($globalTool)));
     }
 
     /**
@@ -234,11 +250,12 @@ class SchoolToolModuleStatusService
         $userTestModeField = $this->userTestModeField($moduleKey);
         $userComingSoonField = $this->userComingSoonField($moduleKey);
 
+        $columns = $this->schoolToolColumns();
         if (
-            ! Schema::hasColumn('school_tools', $adminVisibleField)
-            || ! Schema::hasColumn('school_tools', $userVisibleField)
-            || ! Schema::hasColumn('school_tools', $userTestModeField)
-            || ! Schema::hasColumn('school_tools', $userComingSoonField)
+            ! in_array($adminVisibleField, $columns, true)
+            || ! in_array($userVisibleField, $columns, true)
+            || ! in_array($userTestModeField, $columns, true)
+            || ! in_array($userComingSoonField, $columns, true)
         ) {
             return null;
         }
@@ -321,11 +338,31 @@ class SchoolToolModuleStatusService
 
     private function globalSchoolTool(): ?SchoolTool
     {
+        if ($this->globalSchoolToolCache !== null) {
+            return $this->globalSchoolToolCache;
+        }
+
         if (! Schema::hasTable('school_tools')) {
             return null;
         }
 
-        return SchoolTool::query()->orderBy('id')->first();
+        return $this->globalSchoolToolCache = SchoolTool::query()->orderBy('id')->first();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function schoolToolColumns(): array
+    {
+        if ($this->schoolToolColumnCache !== null) {
+            return $this->schoolToolColumnCache;
+        }
+
+        if (! Schema::hasTable('school_tools')) {
+            return $this->schoolToolColumnCache = [];
+        }
+
+        return $this->schoolToolColumnCache = Schema::getColumnListing('school_tools');
     }
 
     /**
@@ -334,6 +371,7 @@ class SchoolToolModuleStatusService
     private function normalizeAttributesFromRecord(SchoolTool $schoolTool): array
     {
         $attributes = [];
+        $recordAttributes = $schoolTool->getAttributes();
 
         foreach (self::MODULE_KEYS as $moduleKey) {
             $legacyStatusField = sprintf('%s_status', $moduleKey);
@@ -343,10 +381,10 @@ class SchoolToolModuleStatusService
             $userComingSoonField = $this->userComingSoonField($moduleKey);
 
             if (
-                Schema::hasColumn('school_tools', $adminVisibleField)
-                && Schema::hasColumn('school_tools', $userVisibleField)
-                && Schema::hasColumn('school_tools', $userTestModeField)
-                && Schema::hasColumn('school_tools', $userComingSoonField)
+                array_key_exists($adminVisibleField, $recordAttributes)
+                && array_key_exists($userVisibleField, $recordAttributes)
+                && array_key_exists($userTestModeField, $recordAttributes)
+                && array_key_exists($userComingSoonField, $recordAttributes)
             ) {
                 $attributes[$adminVisibleField] = (bool) $schoolTool->{$adminVisibleField};
                 $attributes[$userVisibleField] = (bool) $schoolTool->{$userVisibleField};
@@ -356,7 +394,7 @@ class SchoolToolModuleStatusService
                 continue;
             }
 
-            $legacyStatus = Schema::hasColumn('school_tools', $legacyStatusField)
+            $legacyStatus = array_key_exists($legacyStatusField, $recordAttributes)
                 ? (string) ($schoolTool->{$legacyStatusField} ?? self::INACTIVE)
                 : self::INACTIVE;
 

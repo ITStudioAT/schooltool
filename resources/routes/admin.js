@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const Index = () => import('@/pages/admin/index/Index.vue')
 const Auth_Login = () => import('@/pages/admin/auth/Login.vue')
@@ -115,7 +116,7 @@ router.beforeEach(async (to, from, next) => {
         return
     }
 
-    const config = await loadAdminConfigForRouteGuard()
+    const config = await loadAdminConfigForRouteGuard(to)
     if (!config) {
         next(false)
         return
@@ -135,14 +136,22 @@ router.beforeEach(async (to, from, next) => {
     next(false)
 })
 
-async function loadAdminConfigForRouteGuard() {
+async function loadAdminConfigForRouteGuard(to) {
     try {
-        const response = await axios.get('/api/admin/config')
-        return response.data
+        const adminStore = useAdminStore()
+        if (adminStore.config) {
+            return adminStore.config
+        }
+
+        return await adminStore.loadConfig({ includeSchoolInfos: isAdminHomeRoute(to) })
     } catch (error) {
         redirectToApplicationError(error.response?.status || 500, error.response?.data?.message || 'Fehler passiert.')
         return null
     }
+}
+
+function isAdminHomeRoute(to) {
+    return (to.path || '').replace(/\/+$/, '') === '/admin'
 }
 
 function redirectToApplicationError(status, message) {

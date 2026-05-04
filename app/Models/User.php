@@ -416,7 +416,11 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->roles()->where('is_admin', true)->exists()
+        $hasAdminRole = $this->relationLoaded('roles')
+            ? $this->roles->contains(fn ($role): bool => (bool) ($role->is_admin ?? false))
+            : $this->roles()->where('is_admin', true)->exists();
+
+        return $hasAdminRole
             || $this->hasAnyRole(app(AccessScopeService::class)->roleNamesForScope('admin_shell_access'));
     }
 }

@@ -30,6 +30,12 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
     }),
 
     actions: {
+        applySchoolInfos(data = {}) {
+            this.school_licences = data.licences || []
+            this.school_admins = data.admins || []
+            this.teachers = data.teachers || []
+        },
+
         async index(page = null) {
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
@@ -363,9 +369,7 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
             adminStore.is_loading++
             try {
                 const response = await axios.post(`/api/admin/schools/load_school_infos`, { school_id })
-                this.school_licences = response.data.licences
-                this.school_admins = response.data.admins
-                this.teachers = response.data.teachers
+                this.applySchoolInfos(response.data)
 
                 return true
             } catch (error) {

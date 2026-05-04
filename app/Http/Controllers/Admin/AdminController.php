@@ -23,11 +23,11 @@ use App\Http\Resources\Admin\SchoolyearResource;
 use App\Http\Resources\Admin\UserWithRoleResource;
 use App\Models\Role;
 use App\Models\School;
-use App\Models\SchoolTool;
 use App\Models\Teacher;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use App\Services\AdminService;
+use App\Services\SchoolService;
 use App\Services\TeacherListService;
 use App\Traits\HasRoleTrait;
 use Illuminate\Http\Request;
@@ -47,17 +47,23 @@ class AdminController extends Controller
 
         // $viaRemember = Auth::viaRemember();
 
-        $data = $this->getConfigData();
+        $data = $this->getConfigData($request->boolean('include_school_infos'));
 
         return response()->json($data, 200);
     }
 
-    private function getConfigData()
+    private function getConfigData(bool $includeSchoolInfos = false)
     {
         $navigationService = new AdminNavigationService;
 
         /** @var User|null $user */
         $user = Auth::check() ? Auth::user() : null;
+        $user?->loadMissing([
+            'roles',
+            'selectedSchool.schoolTool',
+            'selectedSchoolyear',
+            'selectedRegister',
+        ]);
 
         /** @var ImpersonateManager $impersonateManager */
         $impersonateManager = app(ImpersonateManager::class);
@@ -74,7 +80,7 @@ class AdminController extends Controller
 
         $lastImport116At = null;
         if ($user) {
-            $lastImport116At = SchoolTool::where('school_id', $user->school_id)->value('import_166_at');
+            $lastImport116At = $user->selectedSchool?->schoolTool?->import_166_at;
         }
 
         $menu = $user ? $navigationService->dashboardMenu() : [];
@@ -121,7 +127,25 @@ class AdminController extends Controller
 
         $data['health']['queue_working'] = true;
 
+        if ($includeSchoolInfos && $user?->selectedSchool && $this->canLoadSchoolInfos($user)) {
+            $data['school_infos'] = app(SchoolService::class)->schoolInfos($user->selectedSchool->id);
+        }
+
         return $data;
+    }
+
+    private function canLoadSchoolInfos(User $user): bool
+    {
+        return $user->hasAnyRole([
+            'admin',
+            'register_admin',
+            'tutoring_admin',
+            'teaching_admin',
+            'materials_admin',
+            'materials_moderator',
+            'teacher',
+            'lunch_admin',
+        ]);
     }
 
     public function registerStep1(RegisterStep1Request $request)

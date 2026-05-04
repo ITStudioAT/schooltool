@@ -6,6 +6,15 @@ import Pusher from 'pusher-js'
 
 const resourceStore = createResourceStore('users') // <-- first create it
 
+async function ensureCsrfCookie() {
+    if (typeof window.ensureCsrfCookie === 'function') {
+        await window.ensureCsrfCookie()
+        return
+    }
+
+    await axios.get('/sanctum/csrf-cookie')
+}
+
 export const useAdminStore = defineStore('AdminAdminStore', {
     state: () => ({
         ...resourceStore.state(), // merge the base state
@@ -42,7 +51,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
 
         async initializeEcho() {
             // Sicherstellen, dass CSRF-Cookie vorhanden ist
-            await axios.get('/sanctum/csrf-cookie')
+            await ensureCsrfCookie()
 
             this.pusher_count++
 
@@ -114,7 +123,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             }
         },
 
-        async loadConfig() {
+        async loadConfig(options = {}) {
             if (this.config_request_promise) {
                 return this.config_request_promise
             }
@@ -124,7 +133,11 @@ export const useAdminStore = defineStore('AdminAdminStore', {
                 this.is_loading++
                 this.api_response = null
                 try {
-                    this.api_response = await axios.get('/api/admin/config', {})
+                    this.api_response = await axios.get('/api/admin/config', {
+                        params: {
+                            include_school_infos: options.includeSchoolInfos ? 1 : undefined,
+                        },
+                    })
                     this.config = this.api_response.data
                     this.selected_school = this.config?.selected_school
                     this.selected_schoolyear = this.config?.selected_schoolyear
@@ -401,7 +414,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.api_response = null
 
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/new_teacher_step_email', data)
                 this.data = this.api_response.data
                 return true
@@ -424,7 +437,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.api_response = null
 
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/new_teacher_step_school', data)
                 this.data = this.api_response.data
                 return true
@@ -447,7 +460,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.api_response = null
 
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/new_teacher_step_code', data)
                 this.data = this.api_response.data
                 return true
@@ -469,7 +482,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.is_loading++
             this.api_response = null
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/password_unknown_step_email', { data })
                 this.data = this.api_response.data
                 this.schools = this.data?.schools
@@ -493,7 +506,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.is_loading++
             this.api_response = null
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/login_step_email', { data })
                 this.data = this.api_response.data
                 return true
@@ -516,7 +529,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.api_response = null
 
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/login_step_2', { data })
                 this.data = this.api_response.data
                 return true
@@ -538,7 +551,7 @@ export const useAdminStore = defineStore('AdminAdminStore', {
             this.is_loading++
             this.api_response = null
             try {
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
                 this.api_response = await axios.post('/api/admin/login_step_3', { data })
                 this.data = this.api_response.data
                 return true
@@ -556,13 +569,13 @@ export const useAdminStore = defineStore('AdminAdminStore', {
         },
 
         async executeLogout() {
-            await axios.get('/sanctum/csrf-cookie')
+            await ensureCsrfCookie()
             const notification = useNotificationStore()
             this.is_loading++
             this.api_response = null
             try {
                 this.api_response = await axios.post('/api/admin/execute_logout', {})
-                await axios.get('/sanctum/csrf-cookie')
+                await ensureCsrfCookie()
 
                 this.config = this.api_response.data
                 this.selected_school = this.config?.selected_school

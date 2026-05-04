@@ -13,11 +13,14 @@
  * database constraints in the test environment.
  */
 
+use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Spatie\Permission\Models\Role;
 
@@ -36,8 +39,17 @@ beforeEach(function () {
     ]);
 
     // Create roles
-    Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']);
+    collect([
+        'admin',
+        'super_admin',
+        'register_admin',
+        'tutoring_admin',
+        'teaching_admin',
+        'materials_admin',
+        'materials_moderator',
+        'teacher',
+        'lunch_admin',
+    ])->each(fn (string $roleName): Role => Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'web']));
 
     // Create test user
     $this->user = User::factory()->create([
@@ -103,6 +115,80 @@ test('config returns user data when authenticated', function () {
         ->assertJsonStructure([
             'user' => ['id', 'email', 'first_name', 'last_name'],
         ]);
+});
+
+test('config can include selected school infos for admin home screen', function () {
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config?include_school_infos=1')
+        ->assertSuccessful()
+        ->assertJsonPath('is_auth', true)
+        ->assertJsonStructure([
+            'school_infos' => [
+                'licences',
+                'admins',
+                'teachers',
+            ],
+        ]);
+});
+
+test('authenticated config resolves dashboard licences with a bulk query', function () {
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'register_visible_admin' => true,
+        'tutoring_visible_admin' => true,
+        'teaching_visible_admin' => true,
+        'materials_visible_admin' => true,
+        'restaurant_visible_admin' => true,
+        'aba_visible_admin' => true,
+        'students_timetables_visible_admin' => true,
+    ]);
+
+    collect([
+        'Anmeldetool',
+        'Nachhilfetool',
+        'Lehrertool',
+        'Materialientool',
+        'Restaurant',
+        'StudentsTimetables',
+        'ABA',
+    ])->each(function (string $licenceName): void {
+        $licence = Licence::firstOrCreate(
+            ['name' => $licenceName],
+            ['long_name' => $licenceName]
+        );
+
+        $this->school->licences()->syncWithoutDetaching([
+            $licence->id => ['valid_until' => now()->addYear()->toDateString()],
+        ]);
+    });
+
+    $this->user->assignRole([
+        Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'teaching_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'lunch_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'studentstimetables_admin', 'guard_name' => 'web']),
+        Role::firstOrCreate(['name' => 'aba_teacher', 'guard_name' => 'web']),
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->actingAs($this->user)
+        ->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonPath('is_auth', true);
+
+    $queries = collect(DB::getQueryLog())
+        ->pluck('query')
+        ->map(fn (string $query): string => strtolower($query));
+
+    $licenceQueries = $queries->filter(fn (string $query): bool => str_contains($query, 'from "licences"') || str_contains($query, 'from `licences`'));
+    $singleLicenceLookupQueries = $licenceQueries->filter(fn (string $query): bool => str_contains($query, '"name" =') || str_contains($query, '`name` ='));
+
+    expect($singleLicenceLookupQueries)->toHaveCount(0)
+        ->and($licenceQueries->contains(fn (string $query): bool => str_contains($query, '"name" in') || str_contains($query, '`name` in')))->toBeTrue();
 });
 
 test('config returns selected school when user has one', function () {
