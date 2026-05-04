@@ -2,6 +2,7 @@
 
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
@@ -38,6 +39,12 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($teachingLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
     ]);
 
     $this->admin = User::factory()->create([
@@ -245,6 +252,12 @@ describe('store', function () {
             'grade' => '2',
             'source' => 'course_work',
         ]);
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $workId,
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+        ]);
     });
 
     test('validates work type against schema', function () {
@@ -359,6 +372,12 @@ describe('show update destroy', function () {
         expect($entry)->not->toBeNull()
             ->and($entry->grade)->toBe('1')
             ->and($entry->description)->toBe('Updated');
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
+        ]);
     });
 
     test('destroy deletes work and derived entries', function () {
@@ -382,6 +401,9 @@ describe('show update destroy', function () {
         $this->assertDatabaseMissing('teaching_course_student_entries', [
             'teaching_course_work_id' => $work->id,
             'source' => 'course_work',
+        ]);
+        $this->assertDatabaseMissing('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
         ]);
     });
 
@@ -478,10 +500,140 @@ describe('show update destroy', function () {
             'source' => 'course_work',
         ]);
 
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentA->id,
+        ]);
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentB->id,
+        ]);
+
         $this->assertDatabaseMissing('teaching_course_student_entries', [
             'teaching_course_work_id' => $work->id,
             'user_id' => $staleStudent->id,
             'source' => 'course_work',
+        ]);
+
+        $this->assertDatabaseMissing('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $staleStudent->id,
+        ]);
+    });
+
+    test('syncWork indexes nested group student references', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $studentA = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $studentA->assignRole('student');
+
+        $studentB = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $studentB->assignRole('student');
+
+        $studentC = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+        ]);
+        $studentC->assignRole('student');
+
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'is_group_work' => true,
+            'groups' => [[
+                'student_ids' => [$studentA->id],
+                'date' => '2026-03-11',
+                'name' => 'Gruppe Alpha',
+                'grades' => [[
+                    'student_id' => $studentB->id,
+                    'grade' => '2',
+                ]],
+                'points' => [[
+                    'student_id' => $studentC->id,
+                    'points' => 12,
+                ]],
+                'comments' => [[
+                    'student_id' => $this->student->id,
+                    'comment' => 'OK',
+                ]],
+            ]],
+        ]);
+
+        app(TeachingCourseWorkEntrySyncService::class)->syncWork($work);
+
+        foreach ([$studentA, $studentB, $studentC, $this->student] as $student) {
+            $this->assertDatabaseHas('teaching_course_work_group_students', [
+                'teaching_course_work_id' => $work->id,
+                'teaching_course_id' => $this->course->id,
+                'user_id' => $student->id,
+            ]);
+        }
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentB->id,
+            'group_index' => 0,
+            'group_name' => 'Gruppe Alpha',
+            'group_date' => '2026-03-11',
+            'uses_individual_grades' => true,
+            'student_grade' => '2',
+        ]);
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $studentC->id,
+            'student_points' => 12,
+        ]);
+
+        $work->forceFill(['groups' => []])->save();
+
+        $response = $this->getJson('/api/admin/teaching/course_works/'.$work->id);
+
+        $response->assertOk()
+            ->assertJsonPath('data.groups.0.name', 'Gruppe Alpha')
+            ->assertJsonPath('data.groups.0.student_ids.0', $studentA->id)
+            ->assertJsonPath('data.groups.0.grades.0.student_id', $studentA->id)
+            ->assertJsonPath('data.groups.0.grades.1.student_id', $studentB->id)
+            ->assertJsonPath('data.groups.0.grades.1.grade', '2')
+            ->assertJsonPath('data.groups.0.points.0.student_id', $studentC->id)
+            ->assertJsonPath('data.groups.0.points.0.points', 12)
+            ->assertJsonPath('data.groups.0.comments.2.student_id', $this->student->id)
+            ->assertJsonPath('data.groups.0.comments.2.comment', 'OK');
+    });
+
+    test('backfill command indexes existing legacy work groups', function () {
+        $work = TeachingCourseWork::query()->create([
+            'teaching_course_id' => $this->course->id,
+            'type' => 'MA',
+            'is_group_work' => true,
+            'groups' => [[
+                'student_ids' => [$this->student->id],
+                'grade' => '2',
+            ]],
+        ]);
+
+        $this->artisan('schooltool:backfill-teaching-course-work-group-students', ['--dry-run' => true])
+            ->assertSuccessful();
+
+        $this->assertDatabaseMissing('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'user_id' => $this->student->id,
+        ]);
+
+        $this->artisan('schooltool:backfill-teaching-course-work-group-students')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('teaching_course_work_group_students', [
+            'teaching_course_work_id' => $work->id,
+            'teaching_course_id' => $this->course->id,
+            'user_id' => $this->student->id,
         ]);
     });
 });

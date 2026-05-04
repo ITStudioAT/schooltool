@@ -5,11 +5,16 @@ namespace App\Services;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingCourseWorkGroupStudent;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class TeachingCourseWorkEntrySyncService
 {
     public const SOURCE_COURSE_WORK = 'course_work';
+
+    private static ?bool $supportsGroupStudentIndexCache = null;
 
     public function __construct(private TeachingCourseService $courseService) {}
 
@@ -29,10 +34,13 @@ class TeachingCourseWorkEntrySyncService
                 ->delete();
 
             if (empty($rows)) {
+                $this->syncGroupStudentIndex($work);
+
                 return;
             }
 
             TeachingCourseStudentEntry::insert($rows);
+            $this->syncGroupStudentIndex($work);
         });
     }
 
@@ -41,6 +49,232 @@ class TeachingCourseWorkEntrySyncService
         TeachingCourseStudentEntry::where('teaching_course_work_id', $work->id)
             ->where('source', self::SOURCE_COURSE_WORK)
             ->delete();
+
+        if ($this->supportsGroupStudentIndex()) {
+            TeachingCourseWorkGroupStudent::where('teaching_course_work_id', $work->id)->delete();
+        }
+    }
+
+    public function syncGroupStudentIndex(TeachingCourseWork $work): int
+    {
+        if (! $this->supportsGroupStudentIndex() || ! $work->id) {
+            return 0;
+        }
+
+        $rows = $this->groupStudentRowsFromGroups($work, is_array($work->groups) ? $work->groups : []);
+
+        TeachingCourseWorkGroupStudent::where('teaching_course_work_id', $work->id)->delete();
+
+        if (empty($rows)) {
+            return 0;
+        }
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            TeachingCourseWorkGroupStudent::insert($chunk);
+        }
+
+        return count($rows);
+    }
+
+    public function serializeWork(TeachingCourseWork $work): array
+    {
+        $payload = $work->toArray();
+        $payload['groups'] = $this->groupsForWork($work);
+
+        return $payload;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function groupsForWork(TeachingCourseWork $work): array
+    {
+        if (! $this->supportsGroupStudentIndex()) {
+            return is_array($work->groups) ? $work->groups : [];
+        }
+
+        $rows = $work->relationLoaded('teachingCourseWorkGroupStudents')
+            ? $work->teachingCourseWorkGroupStudents
+            : $work->teachingCourseWorkGroupStudents()->orderBy('group_index')->orderBy('id')->get();
+
+        if ($rows->isEmpty()) {
+            return is_array($work->groups) ? $work->groups : [];
+        }
+
+        return $this->groupsFromGroupStudentRows($rows);
+    }
+
+    /**
+     * @param  Collection<int, TeachingCourseWorkGroupStudent>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    public function groupsFromGroupStudentRows(Collection $rows): array
+    {
+        return $rows
+            ->sortBy([['group_index', 'asc'], ['id', 'asc']])
+            ->groupBy(fn (TeachingCourseWorkGroupStudent $row): int => (int) $row->group_index)
+            ->map(function (Collection $groupRows): array {
+                /** @var TeachingCourseWorkGroupStudent|null $first */
+                $first = $groupRows->first();
+                $usesIndividualGrades = $groupRows->contains(fn (TeachingCourseWorkGroupStudent $row): bool => (bool) $row->uses_individual_grades);
+
+                $studentIds = $groupRows
+                    ->pluck('user_id')
+                    ->map(fn ($userId): int => (int) $userId)
+                    ->filter(fn (int $userId): bool => $userId > 0)
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                return [
+                    'student_ids' => $studentIds,
+                    'date' => $first?->group_date?->format('Y-m-d'),
+                    'comment' => $usesIndividualGrades ? null : $first?->group_comment,
+                    'grade' => $usesIndividualGrades ? null : $first?->group_grade,
+                    'grades' => $usesIndividualGrades
+                        ? $groupRows->map(fn (TeachingCourseWorkGroupStudent $row): array => [
+                            'student_id' => (int) $row->user_id,
+                            'grade' => $row->student_grade ?? '',
+                        ])->values()->all()
+                        : [],
+                    'points' => $groupRows
+                        ->filter(fn (TeachingCourseWorkGroupStudent $row): bool => $row->student_points !== null)
+                        ->map(fn (TeachingCourseWorkGroupStudent $row): array => [
+                            'student_id' => (int) $row->user_id,
+                            'points' => (float) $row->student_points,
+                        ])->values()->all(),
+                    'comments' => $usesIndividualGrades
+                        ? $groupRows->map(fn (TeachingCourseWorkGroupStudent $row): array => [
+                            'student_id' => (int) $row->user_id,
+                            'comment' => $row->student_comment ?? '',
+                        ])->values()->all()
+                        : [],
+                    'name' => $first?->group_name,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $groups
+     * @return array<int, array<string, mixed>>
+     */
+    public function groupStudentRowsFromGroups(TeachingCourseWork $work, array $groups): array
+    {
+        $rows = [];
+
+        foreach ($groups as $groupIndex => $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            $gradesMap = $this->studentValueMap((array) ($group['grades'] ?? []), 'grade');
+            $commentsMap = $this->studentValueMap((array) ($group['comments'] ?? []), 'comment');
+            $pointsMap = $this->studentValueMap((array) ($group['points'] ?? []), 'points');
+
+            $studentIds = array_values(array_unique(array_filter(array_map('intval', array_merge(
+                (array) ($group['student_ids'] ?? []),
+                array_keys($gradesMap),
+                array_keys($commentsMap),
+                array_keys($pointsMap),
+            )), fn (int $id): bool => $id > 0)));
+
+            if (empty($studentIds)) {
+                continue;
+            }
+
+            $usesIndividualGrades = ! empty($gradesMap) || ! empty($commentsMap) || ! empty($pointsMap);
+            $groupDate = $group['date'] ?? $work->date_for_all_groups;
+            $groupDate = $groupDate ? date('Y-m-d', strtotime((string) $groupDate)) : null;
+
+            foreach ($studentIds as $studentId) {
+                $rawPoints = $pointsMap[$studentId] ?? null;
+
+                $rows[] = [
+                    'teaching_course_work_id' => $work->id,
+                    'teaching_course_id' => $work->teaching_course_id,
+                    'user_id' => $studentId,
+                    'group_index' => (int) $groupIndex,
+                    'group_name' => $this->toNullableString($group['name'] ?? null),
+                    'group_date' => $groupDate,
+                    'group_grade' => $usesIndividualGrades ? null : $this->toNullableString($group['grade'] ?? null),
+                    'group_comment' => $usesIndividualGrades ? null : $this->toNullableString($group['comment'] ?? null),
+                    'uses_individual_grades' => $usesIndividualGrades,
+                    'student_grade' => $usesIndividualGrades ? $this->toNullableString($gradesMap[$studentId] ?? null) : null,
+                    'student_points' => $rawPoints === null || $rawPoints === '' ? null : (float) $rawPoints,
+                    'student_comment' => $usesIndividualGrades ? $this->toNullableString($commentsMap[$studentId] ?? null) : null,
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $groups
+     * @return array<int, int>
+     */
+    public function groupStudentIdsFromGroups(array $groups): array
+    {
+        $studentIds = [];
+
+        foreach ($groups as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            foreach ((array) ($group['student_ids'] ?? []) as $studentId) {
+                $id = (int) $studentId;
+                if ($id > 0) {
+                    $studentIds[$id] = true;
+                }
+            }
+
+            foreach (['grades', 'points', 'comments'] as $field) {
+                foreach ((array) ($group[$field] ?? []) as $item) {
+                    if (! is_array($item)) {
+                        continue;
+                    }
+
+                    $id = (int) ($item['student_id'] ?? 0);
+                    if ($id > 0) {
+                        $studentIds[$id] = true;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_map('intval', array_keys($studentIds)));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, mixed>
+     */
+    private function studentValueMap(array $items, string $valueKey): array
+    {
+        $values = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $studentId = (int) ($item['student_id'] ?? 0);
+            if ($studentId <= 0) {
+                continue;
+            }
+
+            $values[$studentId] = $item[$valueKey] ?? null;
+        }
+
+        return $values;
+    }
+
+    public function supportsGroupStudentIndex(): bool
+    {
+        return self::$supportsGroupStudentIndexCache ??= Schema::hasTable('teaching_course_work_group_students');
     }
 
     /**

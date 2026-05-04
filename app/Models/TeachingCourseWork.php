@@ -42,4 +42,9 @@ class TeachingCourseWork extends Model
     {
         return $this->hasMany(TeachingCourseStudentEntry::class);
     }
+
+    public function teachingCourseWorkGroupStudents(): HasMany
+    {
+        return $this->hasMany(TeachingCourseWorkGroupStudent::class);
+    }
 }

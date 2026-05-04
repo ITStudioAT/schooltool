@@ -57,6 +57,12 @@ class AppUpdateCommand extends Command
         }
         $this->line(str_repeat('.', 50));
 
+        $this->info('▶ TEACHING WORK GROUP INDEX BACKFILL');
+        if (! $this->runArtisanCommand('schooltool:backfill-teaching-course-work-group-students', [], 'Teaching course work group student index backfill')) {
+            return self::FAILURE;
+        }
+        $this->line(str_repeat('.', 50));
+
         $this->info('▶ CLEAR TEST-FILES');
         $service->clearModels();
         $this->info('✅ Records in test-files deleted');

@@ -12,11 +12,13 @@ use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\User;
 use App\Services\TeachingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class TeachingController extends Controller
 {
@@ -994,6 +996,26 @@ class TeachingController extends Controller
                 ->where('grade', $oldGrade)
                 ->where($this->scopeQueryToSchemaCourses($authUser, $schoolyearId, $schemaId))
                 ->update(['grade' => $newGrade]);
+
+            if (Schema::hasTable('teaching_course_work_group_students')) {
+                TeachingCourseWorkGroupStudent::query()
+                    ->where('group_grade', $oldGrade)
+                    ->whereHas('teachingCourseWork', function (Builder $workQuery) use ($authUser, $schoolyearId, $schemaId, $workType): void {
+                        $workQuery
+                            ->where('type', $workType)
+                            ->where($this->scopeQueryToSchemaCourses($authUser, $schoolyearId, $schemaId));
+                    })
+                    ->update(['group_grade' => $newGrade]);
+
+                TeachingCourseWorkGroupStudent::query()
+                    ->where('student_grade', $oldGrade)
+                    ->whereHas('teachingCourseWork', function (Builder $workQuery) use ($authUser, $schoolyearId, $schemaId, $workType): void {
+                        $workQuery
+                            ->where('type', $workType)
+                            ->where($this->scopeQueryToSchemaCourses($authUser, $schoolyearId, $schemaId));
+                    })
+                    ->update(['student_grade' => $newGrade]);
+            }
         }
 
         TeachingCourseWork::query()

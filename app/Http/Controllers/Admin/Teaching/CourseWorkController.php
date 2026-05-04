@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 
 class CourseWorkController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -29,10 +29,11 @@ class CourseWorkController extends Controller
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $works = $course->teachingCourseWorks()
+            ->with('teachingCourseWorkGroupStudents')
             ->orderBy('date_for_all_groups', 'desc')
             ->get();
 
-        return response()->json(['data' => $works]);
+        return response()->json(['data' => $works->map(fn (TeachingCourseWork $work): array => $entrySyncService->serializeWork($work))->values()]);
     }
 
     public function store(
@@ -65,10 +66,10 @@ class CourseWorkController extends Controller
         $work = TeachingCourseWork::create($validated);
         $entrySyncService->syncWork($work);
 
-        return response()->json(['data' => $work], 201);
+        return response()->json(['data' => $entrySyncService->serializeWork($work->fresh('teachingCourseWorkGroupStudents'))], 201);
     }
 
-    public function show(TeachingCourseWork $course_work)
+    public function show(TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)
     {
         if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -81,7 +82,7 @@ class CourseWorkController extends Controller
 
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
-        return response()->json(['data' => $course_work]);
+        return response()->json(['data' => $entrySyncService->serializeWork($course_work->load('teachingCourseWorkGroupStudents'))]);
     }
 
     public function update(
@@ -119,7 +120,7 @@ class CourseWorkController extends Controller
         $course_work->update($validated);
         $entrySyncService->syncWork($course_work->fresh());
 
-        return response()->json(['data' => $course_work]);
+        return response()->json(['data' => $entrySyncService->serializeWork($course_work->fresh('teachingCourseWorkGroupStudents'))]);
     }
 
     public function destroy(TeachingCourseWork $course_work, TeachingCourseWorkEntrySyncService $entrySyncService)

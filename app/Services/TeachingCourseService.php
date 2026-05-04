@@ -9,14 +9,18 @@ use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentEntry;
 use App\Models\TeachingCourseWork;
+use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class TeachingCourseService
 {
+    private static ?bool $supportsCourseWorkGroupStudentIndexCache = null;
+
     public function normalizeStudentIds($value): array
     {
         if (is_array($value)) {
@@ -890,6 +894,25 @@ class TeachingCourseService
             return [];
         }
 
+        if ($this->supportsCourseWorkGroupStudentIndex()) {
+            $indexedUserIds = TeachingCourseWorkGroupStudent::query()
+                ->where('teaching_course_id', $courseId)
+                ->whereIn('user_id', $candidateUserIds)
+                ->pluck('user_id')
+                ->map(fn ($userId): int => (int) $userId)
+                ->unique()
+                ->values()
+                ->all();
+
+            if (! empty($indexedUserIds)) {
+                return $indexedUserIds;
+            }
+
+            if (TeachingCourseWorkGroupStudent::query()->where('teaching_course_id', $courseId)->exists()) {
+                return [];
+            }
+        }
+
         $candidateSet = array_fill_keys($candidateUserIds, true);
         $dependent = [];
 
@@ -922,6 +945,17 @@ class TeachingCourseService
                     }
                 }
 
+                foreach ((array) ($group['points'] ?? []) as $pointsItem) {
+                    if (! is_array($pointsItem)) {
+                        continue;
+                    }
+
+                    $id = (int) ($pointsItem['student_id'] ?? 0);
+                    if ($id > 0 && isset($candidateSet[$id])) {
+                        $dependent[$id] = true;
+                    }
+                }
+
                 foreach ((array) ($group['comments'] ?? []) as $commentItem) {
                     if (! is_array($commentItem)) {
                         continue;
@@ -936,6 +970,11 @@ class TeachingCourseService
         }
 
         return array_values(array_map('intval', array_keys($dependent)));
+    }
+
+    private function supportsCourseWorkGroupStudentIndex(): bool
+    {
+        return self::$supportsCourseWorkGroupStudentIndexCache ??= Schema::hasTable('teaching_course_work_group_students');
     }
 
     private function normalizeAttendanceStudentId(mixed $value): ?int
