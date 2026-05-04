@@ -93,7 +93,12 @@ export const useTeachingStore = defineStore('AdminTeachingStore', {
             }
         },
 
-        async loadSettings() {
+        async loadSettings(options = {}) {
+            const force = options?.force === true
+            if (this.settings && !force) {
+                return true
+            }
+
             if (this.settings_request_promise) {
                 return this.settings_request_promise
             }

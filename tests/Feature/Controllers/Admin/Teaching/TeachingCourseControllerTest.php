@@ -14,6 +14,7 @@
 use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
+use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseDate;
@@ -25,6 +26,7 @@ use App\Models\TeachingSchema;
 use App\Models\User;
 use App\Services\TeachingStudentPerformancePdfService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\Permission\Models\Role;
 
@@ -55,6 +57,12 @@ beforeEach(function () {
     );
     $this->school->licences()->attach($teachingLicence->id, [
         'valid_until' => now()->addYear()->toDateString(),
+    ]);
+
+    SchoolTool::factory()->create([
+        'school_id' => $this->school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => true,
     ]);
 
     $this->schoolyear = Schoolyear::factory()->create([
@@ -151,6 +159,55 @@ describe('index', function () {
 
         $response->assertStatus(200)
             ->assertJsonStructure(['data', 'classes']);
+    });
+
+    test('courses index does not query per course date for attendance metadata', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->teacher->id,
+            'title' => 'Deutsch',
+            'classes' => ['1A'],
+        ]);
+
+        $students = User::factory()
+            ->count(2)
+            ->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'schoolclass' => '1A',
+            ]);
+
+        $students->each(fn (User $student) => TeachingCourseStudent::query()->create([
+            'teaching_course_id' => (int) $course->id,
+            'user_id' => (int) $student->id,
+        ]));
+
+        foreach (range(1, 20) as $day) {
+            TeachingCourseDate::query()->create([
+                'teaching_course_id' => (int) $course->id,
+                'date' => now()->startOfMonth()->addDays($day)->toDateString(),
+                'hours' => [1],
+                'status' => [],
+                'attendance' => ['s_'.$students->first()->id => false],
+                'attendance_checked' => true,
+            ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->getJson('/api/admin/teaching/courses')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonCount(20, 'data.0.course_dates');
+
+        $queryCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        expect($queryCount)->toBeLessThan(80);
     });
 
     test('teaching_admin can access courses index', function () {

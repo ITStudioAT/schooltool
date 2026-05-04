@@ -24,12 +24,16 @@ class CourseDateController extends Controller
             'course_id' => 'required|integer|exists:teaching_courses,id',
         ]);
 
-        $course = TeachingCourse::findOrFail($validated['course_id']);
+        $course = TeachingCourse::query()
+            ->with('teachingCourseStudents:id,teaching_course_id,user_id,import116_id')
+            ->findOrFail($validated['course_id']);
         $this->authorizeTeachingCourseAccess($course, $auth_user);
 
         $dates = $course->teachingCourseDates()
+            ->with('materials.attachments')
             ->orderBy('date')
             ->get();
+        $dates->each(fn (TeachingCourseDate $courseDate) => $courseDate->setRelation('teachingCourse', $course));
 
         return response()->json(['data' => CourseDateResource::collection($dates)]);
     }

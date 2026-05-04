@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\Teaching\CourseResource;
 use App\Http\Resources\Admin\Teaching\StudentResource;
 use App\Models\Import116;
 use App\Models\TeachingCourse;
+use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\User;
@@ -50,6 +51,12 @@ class TeachingCourseController extends Controller
         $courses = $coursesQuery
             ->orderBy('title')
             ->get();
+
+        $courses->each(function (TeachingCourse $course): void {
+            $course->teachingCourseDates->each(
+                fn (TeachingCourseDate $courseDate) => $courseDate->setRelation('teachingCourse', $course)
+            );
+        });
 
         $allCourseStudents = $courses->flatMap(
             fn (TeachingCourse $course) => $course->teachingCourseStudentsWithTrashed

@@ -17,6 +17,8 @@ use Illuminate\Support\Str;
 
 class TeachingCourseDateService
 {
+    private static ?bool $supportsAttendanceColumnsCache = null;
+
     public function createDates(int $course_id, string $from, ?string $until, array $hours, int $interval): array
     {
         $course = TeachingCourse::select(['id', 'school_id', 'schoolyear_id', 'user_id'])->find($course_id);
@@ -172,7 +174,7 @@ class TeachingCourseDateService
 
     public function supportsAttendanceColumns(): bool
     {
-        return Schema::hasColumn('teaching_course_dates', 'attendance')
+        return self::$supportsAttendanceColumnsCache ??= Schema::hasColumn('teaching_course_dates', 'attendance')
             && Schema::hasColumn('teaching_course_dates', 'attendance_checked');
     }
 
