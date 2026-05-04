@@ -12,11 +12,15 @@ class SchoolUserLicence extends Model
         'licence_id',
         'user_id',
         'assignment_type',
+        'role_name',
         'valid_from',
         'valid_until',
         'base_price_per_year',
         'charged_price',
         'is_active',
+        'plan_id',
+        'extra_storage_units',
+        'extra_storage_unit_price',
     ];
 
     protected function casts(): array
@@ -27,6 +31,7 @@ class SchoolUserLicence extends Model
             'base_price_per_year' => 'decimal:2',
             'charged_price' => 'decimal:2',
             'is_active' => 'boolean',
+            'extra_storage_unit_price' => 'decimal:2',
         ];
     }
 

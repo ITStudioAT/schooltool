@@ -119,6 +119,19 @@ class SchoolToolModuleStatusService
     }
 
     /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    public function existingSchoolToolAttributes(array $attributes): array
+    {
+        $columns = $this->schoolToolColumns();
+
+        return collect($attributes)
+            ->filter(fn (mixed $value, string $key): bool => in_array($key, $columns, true))
+            ->all();
+    }
+
+    /**
      * @return array<int, array{
      *     key:string,
      *     label:string,

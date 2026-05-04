@@ -773,7 +773,8 @@ class LicenceService
             return 'active';
         }
 
-        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $assignments = app(SchoolUserLicenceAssignmentService::class)
+            ->assignmentsForSchoolLicence($schoolLicence, $requiredRoleNames, [$user->id]);
         $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
             ? $assignments[(string) $user->id]
             : [];
@@ -968,7 +969,8 @@ class LicenceService
             return 'active';
         }
 
-        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $assignments = app(SchoolUserLicenceAssignmentService::class)
+            ->assignmentsForSchoolLicence($schoolLicence, collect($relevantRoleNamesByType)->flatten()->values()->all(), [$user->id]);
         $userAssignments = isset($assignments[(string) $user->id]) && is_array($assignments[(string) $user->id])
             ? $assignments[(string) $user->id]
             : [];

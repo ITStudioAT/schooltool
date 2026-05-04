@@ -266,8 +266,16 @@ class SchoolService
         $licences = School::find($school_id)->licences->sortBy('name')->values();
         $authUser = Auth::user();
         if ($authUser) {
-            $authUser->load('roles');
+            $authUser->loadMissing('roles');
         }
+        $authUserRoleNames = $authUser
+            ? $authUser->roles
+                ->pluck('name')
+                ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
+                ->filter()
+                ->values()
+                ->all()
+            : [];
 
         $licenceService = app(LicenceService::class);
         $schoolLicencesById = SchoolLicence::query()
@@ -284,7 +292,7 @@ class SchoolService
             ->groupBy('licence_id');
 
         $licenceRows = $licences
-            ->map(function ($licence) use ($authUser, $licenceService, $schoolLicencesById, $userLicenceAssignments) {
+            ->map(function ($licence) use ($authUser, $authUserRoleNames, $licenceService, $schoolLicencesById, $userLicenceAssignments) {
                 $row = (new LicenceResource($licence))->resolve();
                 $schoolLicenceId = (string) ($row['school_licence_id'] ?? '');
                 $schoolLicence = $schoolLicencesById->get($schoolLicenceId);
@@ -309,7 +317,7 @@ class SchoolService
 
                 $structuredLicenceConfiguration = $this->dashboardStructuredLicenceConfiguration($schoolLicence, $licence, $licenceService);
 
-                $row = $this->attachCurrentUserLicenceSummary($row, $authUser, $schoolLicence, $structuredLicenceConfiguration);
+                $row = $this->attachCurrentUserLicenceSummary($row, $authUser, $authUserRoleNames, $schoolLicence, $structuredLicenceConfiguration);
 
                 $row = $this->classifyMyLicences($row, $structuredLicenceConfiguration);
 
@@ -325,6 +333,7 @@ class SchoolService
         $roles = ['admin', 'register_admin', 'super_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin'];
         $users = User::where('school_id', $school_id)
             ->role($roles)
+            ->with('roles')
             ->orderBy('last_name')
             ->get();
 
@@ -524,6 +533,7 @@ class SchoolService
     private function attachCurrentUserLicenceSummary(
         array $licence,
         ?User $authUser,
+        array $authUserRoleNames,
         ?SchoolLicence $schoolLicence,
         array $structuredLicenceConfiguration
     ): array {
@@ -539,21 +549,18 @@ class SchoolService
             ->values()
             ->all();
 
-        $userRoles = $authUser
-            ? $authUser->roles()
-                ->pluck('name')
-                ->map(fn ($roleName) => is_string($roleName) ? trim($roleName) : '')
-                ->filter()
-                ->values()
-                ->all()
-            : [];
-
-        $matchedRoles = collect($userRoles)
+        $matchedRoles = collect($authUserRoleNames)
             ->filter(fn (string $roleName) => in_array($roleName, $requiredRoles, true))
             ->values()
             ->all();
 
-        $assignments = is_array($schoolLicence?->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $assignments = $schoolLicence
+            ? app(SchoolUserLicenceAssignmentService::class)->assignmentsForSchoolLicence(
+                $schoolLicence,
+                $requiredRoles,
+                $authUser ? [(int) $authUser->id] : []
+            )
+            : [];
         $userAssignments = [];
         if ($authUser && isset($assignments[(string) $authUser->id]) && is_array($assignments[(string) $authUser->id])) {
             $userAssignments = $assignments[(string) $authUser->id];

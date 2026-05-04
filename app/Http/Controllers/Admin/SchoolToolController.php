@@ -9,7 +9,6 @@ use App\Http\Resources\Admin\SchoolToolResource;
 use App\Models\SchoolTool;
 use App\Services\SchoolToolModuleStatusService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Schema;
 
 class SchoolToolController extends Controller
 {
@@ -20,12 +19,10 @@ class SchoolToolController extends Controller
         }
 
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
-        $defaults = collect(array_merge($moduleStatusService->defaultAttributes(), [
+        $defaults = $moduleStatusService->existingSchoolToolAttributes(array_merge($moduleStatusService->defaultAttributes(), [
             'tutoring_student_must_be_confirmed' => false,
             'tutoring_confirmer_email' => '',
-        ]))
-            ->filter(fn ($value, $key): bool => Schema::hasColumn('school_tools', $key))
-            ->all();
+        ]));
 
         $schoolTool = SchoolTool::firstOrCreate(
             ['school_id' => $auth_user->school_id],
@@ -44,9 +41,11 @@ class SchoolToolController extends Controller
         $validated = $request->validated()['data'];
         $schoolTool = SchoolTool::query()->whereKey($validated['id'])->firstOrFail();
         $moduleStatusService = app(SchoolToolModuleStatusService::class);
-        $updatable = collect($validated)
-            ->only($moduleStatusService->moduleVisibilityFields())
-            ->filter(fn ($value, $key): bool => Schema::hasColumn('school_tools', $key))
+        $updatable = collect($moduleStatusService->existingSchoolToolAttributes(
+            collect($validated)
+                ->only($moduleStatusService->moduleVisibilityFields())
+                ->all()
+        ))
             ->map(fn ($value): bool => (bool) $value)
             ->all();
 
@@ -74,12 +73,8 @@ class SchoolToolController extends Controller
         $schoolTool = SchoolTool::findOrFail($validated['id']);
 
         // Legacy-safe: ignore fields that are missing in older DB schemas.
-        $updatable = collect($validated)
-            ->except(['id'])
-            ->filter(function ($value, $key) {
-                return Schema::hasColumn('school_tools', $key);
-            })
-            ->toArray();
+        $moduleStatusService = app(SchoolToolModuleStatusService::class);
+        $updatable = $moduleStatusService->existingSchoolToolAttributes(collect($validated)->except(['id'])->all());
 
         if (! empty($updatable)) {
             $schoolTool->update($updatable);

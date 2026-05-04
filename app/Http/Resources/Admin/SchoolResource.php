@@ -4,6 +4,7 @@ namespace App\Http\Resources\Admin;
 
 use App\Models\SchoolLicence;
 use App\Models\SchoolUserLicence;
+use App\Services\SchoolUserLicenceAssignmentService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
@@ -187,7 +188,9 @@ class SchoolResource extends JsonResource
             ->all();
 
         $roleNames = $this->roleNamesForAssignmentType($licence, $licenceModel, $assignmentType);
-        $payloadAssignments = is_array($schoolLicence?->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $payloadAssignments = $schoolLicence
+            ? app(SchoolUserLicenceAssignmentService::class)->assignmentsForSchoolLicence($schoolLicence, $roleNames)
+            : [];
 
         if ($roleNames !== []) {
             foreach ($payloadAssignments as $userId => $userAssignments) {

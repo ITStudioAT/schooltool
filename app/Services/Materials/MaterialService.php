@@ -23,6 +23,7 @@ use App\Models\SchoolTool;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\LicenceService;
+use App\Services\SchoolUserLicenceAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -2031,7 +2032,8 @@ class MaterialService
         }
 
         $defaultExtraStorageUnits = $this->defaultExtraStorageUnitsForType($schoolLicence, $type);
-        $assignments = is_array($schoolLicence->user_licence_assignments) ? $schoolLicence->user_licence_assignments : [];
+        $assignments = app(SchoolUserLicenceAssignmentService::class)
+            ->assignmentsForSchoolLicence($schoolLicence, $matchingRoleNames, [$user->id]);
         $candidateCapacities = [];
 
         foreach ($matchingRoleNames as $roleName) {

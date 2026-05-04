@@ -3220,10 +3220,11 @@ export default {
             this.selected_user_licences_school_licence_id = licence?.school_licence_id || null
             this.syncInteractionLockAction()
             this.user_licence_user_search_string = ''
-            this.selected_user_licence_role_filters = []
+            const initialRoleFilters = this.userRolesFromLicenceModel(licence)
+            this.selected_user_licence_role_filters = initialRoleFilters
             this.selected_user_licence_users = []
             this.user_licence_expired_only = false
-            this.user_licence_default_select_all_pending = true
+            this.user_licence_default_select_all_pending = initialRoleFilters.length === 0
             await this.loadSchoolLicenceUsers(1)
         },
         closeUserLicencesCard() {

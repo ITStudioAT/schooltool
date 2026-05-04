@@ -27,6 +27,10 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         school_licence_user_role_details_valid_until: null,
         school_admins: [],
         teachers: [],
+        school_infos_load_key: null,
+        school_infos_load_promise: null,
+        school_licence_users_load_key: null,
+        school_licence_users_load_promise: null,
     }),
 
     actions: {
@@ -364,14 +368,28 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         },
 
         async loadSchoolInfos(school_id) {
+            const requestKey = String(school_id || '')
+            if (this.school_infos_load_promise && this.school_infos_load_key === requestKey) {
+                try {
+                    return await this.school_infos_load_promise
+                } catch (_) {
+                    return false
+                }
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            try {
+            this.school_infos_load_key = requestKey
+            this.school_infos_load_promise = (async () => {
                 const response = await axios.post(`/api/admin/schools/load_school_infos`, { school_id })
                 this.applySchoolInfos(response.data)
 
                 return true
+            })()
+
+            try {
+                return await this.school_infos_load_promise
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
@@ -381,6 +399,8 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 })
                 return false
             } finally {
+                this.school_infos_load_key = null
+                this.school_infos_load_promise = null
                 adminStore.is_loading--
             }
         },
@@ -498,10 +518,26 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
         },
 
         async loadSchoolLicenceUsers(school_licence_id, page = null, search_string = null, role_names = [], expired_only = false) {
+            const requestKey = JSON.stringify({
+                school_licence_id,
+                page,
+                search_string,
+                role_names: Array.isArray(role_names) ? [...role_names].sort() : [],
+                expired_only: !!expired_only,
+            })
+            if (this.school_licence_users_load_promise && this.school_licence_users_load_key === requestKey) {
+                try {
+                    return await this.school_licence_users_load_promise
+                } catch (_) {
+                    return false
+                }
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            try {
+            this.school_licence_users_load_key = requestKey
+            this.school_licence_users_load_promise = (async () => {
                 const response = await axios.get(`/api/admin/school_licences/${school_licence_id}/users`, {
                     params: { page, search_string, role_names, expired_only: expired_only ? 1 : 0 },
                 })
@@ -512,6 +548,10 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 this.school_licence_users_role_statuses = response.data.role_statuses_by_user || {}
 
                 return true
+            })()
+
+            try {
+                return await this.school_licence_users_load_promise
             } catch (error) {
                 this.school_licence_users = []
                 this.school_licence_users_meta = []
@@ -526,6 +566,8 @@ export const useSchoolStore = defineStore('AdminSchoolStore', {
                 })
                 return false
             } finally {
+                this.school_licence_users_load_key = null
+                this.school_licence_users_load_promise = null
                 adminStore.is_loading--
             }
         },

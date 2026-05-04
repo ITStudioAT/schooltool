@@ -51,6 +51,12 @@ class AppUpdateCommand extends Command
         }
         $this->line(str_repeat('.', 50));
 
+        $this->info('▶ LICENCE BACKFILL');
+        if (! $this->runArtisanCommand('schooltool:backfill-school-user-licences', [], 'School user licence backfill')) {
+            return self::FAILURE;
+        }
+        $this->line(str_repeat('.', 50));
+
         $this->info('▶ CLEAR TEST-FILES');
         $service->clearModels();
         $this->info('✅ Records in test-files deleted');

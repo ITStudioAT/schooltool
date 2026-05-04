@@ -28,8 +28,10 @@ use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\LicenceService;
 use App\Services\SchoolService;
+use App\Services\SchoolUserLicenceAssignmentService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 
 class SchoolController extends Controller
@@ -441,7 +443,8 @@ class SchoolController extends Controller
             ->all();
 
         $shouldApplyRoleFilter = ! empty($activeRoleFilters);
-        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $assignmentService = app(SchoolUserLicenceAssignmentService::class);
+        $assignments = $assignmentService->assignmentsForSchoolLicence($school_licence, $licenceFilterRoles);
         $assignmentRoleNames = $shouldApplyRoleFilter
             ? array_values(array_intersect($licenceModelRoles, $activeRoleFilters))
             : $licenceModelRoles;
@@ -473,10 +476,10 @@ class SchoolController extends Controller
                 });
             })
             ->when(
-                empty($licenceModelRoles) || ($assignedOnly && empty($assignedUserIds)),
+                empty($licenceModelRoles) || ($assignedOnly && empty($assignedUserIds) && ! $shouldApplyRoleFilter),
                 fn ($query) => $query->whereRaw('1=0'),
                 function ($query) use ($assignedOnly, $assignedUserIds, $shouldApplyRoleFilter, $activeRoleFilters, $licenceModelRoles) {
-                    if ($assignedOnly) {
+                    if ($assignedOnly && ! empty($assignedUserIds)) {
                         $query->whereIn('id', $assignedUserIds);
                     }
 
@@ -630,7 +633,8 @@ class SchoolController extends Controller
             ->filter(fn ($entry) => is_array($entry) && isset($entry['name']))
             ->keyBy(fn ($entry) => (string) $entry['name']);
 
-        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+        $assignments = app(SchoolUserLicenceAssignmentService::class)
+            ->assignmentsForSchoolLicence($school_licence, $roleNames, [$user->id]);
         $userKey = (string) $user->id;
         $updatedUserAssignments = [];
 
@@ -679,14 +683,23 @@ class SchoolController extends Controller
             $assignments[$userKey] = $updatedUserAssignments;
         }
 
-        $school_licence->user_licence_assignments = $assignments;
-        $school_licence->save();
-        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
+        return DB::transaction(function () use ($school_licence, $assignments, $user, $service) {
+            $school_licence->user_licence_assignments = $assignments;
+            $school_licence->save();
+            app(SchoolUserLicenceAssignmentService::class)->persistUserAssignments(
+                $school_licence->fresh('licence'),
+                $user->fresh('roles'),
+                $assignments[(string) $user->id] ?? [],
+                $this->mergedSchoolLicenceUserLicenceModel($school_licence->fresh('licence'), $service),
+                $school_licence->fresh('licence')->licence
+            );
+            $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
 
-        return response()->json(
-            $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
-            200
-        );
+            return response()->json(
+                $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
+                200
+            );
+        });
     }
 
     public function saveSchoolLicenceUserSpatieRoles(Request $request, SchoolLicence $school_licence, User $user, LicenceService $service)
@@ -742,41 +755,51 @@ class SchoolController extends Controller
         }
 
         sort($rolesToSync);
-        $user->syncRoles($rolesToSync);
 
-        // Remove stale user-licence assignments for licence-model roles that are no longer assigned as Spatie roles.
-        $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
-        $userKey = (string) $user->id;
-        if (isset($assignments[$userKey]) && is_array($assignments[$userKey])) {
-            foreach (array_keys($assignments[$userKey]) as $roleName) {
-                if (! is_string($roleName)) {
-                    continue;
+        return DB::transaction(function () use ($user, $rolesToSync, $school_licence, $licenceRoleNames, $selectedLicenceRoleNames, $service) {
+            $user->syncRoles($rolesToSync);
+
+            // Remove stale user-licence assignments for licence-model roles that are no longer assigned as Spatie roles.
+            $assignments = is_array($school_licence->user_licence_assignments) ? $school_licence->user_licence_assignments : [];
+            $userKey = (string) $user->id;
+            if (isset($assignments[$userKey]) && is_array($assignments[$userKey])) {
+                foreach (array_keys($assignments[$userKey]) as $roleName) {
+                    if (! is_string($roleName)) {
+                        continue;
+                    }
+
+                    $roleName = trim($roleName);
+                    if ($roleName === '') {
+                        continue;
+                    }
+
+                    if (in_array($roleName, $licenceRoleNames, true) && ! in_array($roleName, $selectedLicenceRoleNames, true)) {
+                        unset($assignments[$userKey][$roleName]);
+                    }
                 }
 
-                $roleName = trim($roleName);
-                if ($roleName === '') {
-                    continue;
+                if (empty($assignments[$userKey])) {
+                    unset($assignments[$userKey]);
                 }
 
-                if (in_array($roleName, $licenceRoleNames, true) && ! in_array($roleName, $selectedLicenceRoleNames, true)) {
-                    unset($assignments[$userKey][$roleName]);
-                }
+                $school_licence->user_licence_assignments = $assignments;
+                $school_licence->save();
             }
 
-            if (empty($assignments[$userKey])) {
-                unset($assignments[$userKey]);
-            }
+            app(SchoolUserLicenceAssignmentService::class)->persistUserAssignments(
+                $school_licence->fresh('licence'),
+                $user->fresh('roles'),
+                $assignments[(string) $user->id] ?? [],
+                $this->mergedSchoolLicenceUserLicenceModel($school_licence->fresh('licence'), $service),
+                $school_licence->fresh('licence')->licence
+            );
+            $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
 
-            $school_licence->user_licence_assignments = $assignments;
-            $school_licence->save();
-        }
-
-        $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $user->fresh('roles'), $service);
-
-        return response()->json(
-            $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
-            200
-        );
+            return response()->json(
+                $this->schoolLicenceUserRolesPayload($school_licence->fresh(), $user->fresh('roles'), $service),
+                200
+            );
+        });
     }
 
     public function activateCurrentUserLicence(Request $request, SchoolLicence $school_licence, LicenceService $service)
@@ -860,6 +883,13 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        app(SchoolUserLicenceAssignmentService::class)->persistUserAssignments(
+            $school_licence->fresh('licence'),
+            $auth_user->fresh('roles'),
+            $userAssignments,
+            $licenceModel,
+            $school_licence->fresh('licence')->licence
+        );
         $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
@@ -965,6 +995,13 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        app(SchoolUserLicenceAssignmentService::class)->persistUserAssignments(
+            $school_licence->fresh('licence'),
+            $auth_user->fresh('roles'),
+            $userAssignments,
+            $licenceModel,
+            $school_licence->fresh('licence')->licence
+        );
         $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
@@ -1029,6 +1066,13 @@ class SchoolController extends Controller
         $assignments[$userKey] = $userAssignments;
         $school_licence->user_licence_assignments = $assignments;
         $school_licence->save();
+        app(SchoolUserLicenceAssignmentService::class)->persistUserAssignments(
+            $school_licence->fresh('licence'),
+            $auth_user->fresh('roles'),
+            $userAssignments,
+            $licenceModel,
+            $school_licence->fresh('licence')->licence
+        );
         $this->syncStructuredAccessAssignmentsForUser($school_licence->fresh('licence'), $auth_user->fresh('roles'), $service);
 
         return response()->json([
@@ -1193,6 +1237,10 @@ class SchoolController extends Controller
             ->where('licence_id', $school_licence->licence_id)
             ->where('user_id', $user->id)
             ->where('assignment_type', $assignmentType);
+
+        if (app(SchoolUserLicenceAssignmentService::class)->supportsRoleAssignments()) {
+            $assignmentQuery->where('role_name', '');
+        }
 
         if (empty($matchingRoleNames)) {
             $assignmentQuery->delete();

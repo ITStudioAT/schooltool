@@ -10,6 +10,8 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
         meta: [],
         data: {},
         saved_licence: null,
+        licences_loaded_all: false,
+        licences_load_promise: null,
     }),
 
     actions: {
@@ -22,6 +24,7 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
                 const response = await axios.get(`/api/admin/licences`, { params: { search_string, page } })
                 this.licences = response.data.data
                 this.meta = response.data.meta
+                this.licences_loaded_all = false
                 return true
             } catch (error) {
                 notification.notify({
@@ -89,14 +92,28 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
             }
         },
 
-        async loadLicences() {
+        async loadLicences(force = false) {
+            if (!force && this.licences_loaded_all && this.licences.length > 0) return true
+            if (this.licences_load_promise) {
+                try {
+                    return await this.licences_load_promise
+                } catch (_) {
+                    return false
+                }
+            }
+
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
             adminStore.is_loading++
-            try {
+            this.licences_load_promise = (async () => {
                 const response = await axios.post(`/api/admin/licences/load_licences`, {})
                 this.licences = response.data
+                this.licences_loaded_all = true
                 return true
+            })()
+
+            try {
+                return await this.licences_load_promise
             } catch (error) {
                 notification.notify({
                     status: error.response.status,
@@ -106,6 +123,7 @@ export const useLicenceStore = defineStore('AdminLicenceStore', {
                 })
                 return false
             } finally {
+                this.licences_load_promise = null
                 adminStore.is_loading--
             }
         },

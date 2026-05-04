@@ -66,7 +66,7 @@ class UserWithRoleController extends Controller
         }
         $validated = $request->validated();
         $search_model = $validated['search_model'] ?? [];
-        $query = User::orderBy('last_name')->orderBy('first_name');
+        $query = User::with('roles')->orderBy('last_name')->orderBy('first_name');
 
         // search_string (optional)
         if (! empty($search_model['search_string'])) {
@@ -118,7 +118,7 @@ class UserWithRoleController extends Controller
         }
         $user->save();
 
-        return response()->json(new UserWithRoleResource($user), 200);
+        return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     public function show(User $user)
@@ -127,7 +127,7 @@ class UserWithRoleController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        return response()->json(new UserWithRoleResource($user), 200);
+        return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     public function update(UpdateUserRequest $request, User $user)
@@ -167,7 +167,7 @@ class UserWithRoleController extends Controller
             $user->refresh();
         }
 
-        return response()->json(new UserWithRoleResource($user), 200);
+        return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     private function convertConfirmedVerified($validated, $user = null)
@@ -256,7 +256,7 @@ class UserWithRoleController extends Controller
 
         $user->update($validated);
 
-        return response()->json(new UserWithRoleResource($user), 200);
+        return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     public function updateWithCode(UpdateUserWithCodeRequest $request)
@@ -271,7 +271,7 @@ class UserWithRoleController extends Controller
         $validated['email_verified_at'] = now();
         $user->update($validated);
 
-        return response()->json(new UserWithRoleResource($user), 200);
+        return response()->json(new UserWithRoleResource($user->load('roles')), 200);
     }
 
     public function savePassword(SavePasswordRequest $request)

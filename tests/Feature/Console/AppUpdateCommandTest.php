@@ -141,9 +141,10 @@ it('runs the full update workflow end to end', function (): void {
 
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(4)->andReturn('');
+    Artisan::shouldReceive('output')->times(5)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
@@ -153,6 +154,7 @@ it('runs the full update workflow end to end', function (): void {
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
     expect($result['output'])->toContain('▶ CLEARING CONFIG CACHE');
     expect($result['output'])->toContain('▶ MIGRATIONS');
+    expect($result['output'])->toContain('▶ LICENCE BACKFILL');
 
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'node --version'));
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm --version'));
@@ -220,6 +222,39 @@ it('stops before backend work when npm ci fails', function (): void {
     $records->shouldNotHaveReceived('initRecords');
 });
 
+it('stops when the school user licence backfill fails', function (): void {
+    fakeAppUpdateFiles();
+    fakeAppUpdateProcesses();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
+
+    Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(1);
+    Artisan::shouldReceive('output')->times(3)->andReturn('', '', 'school_user_licences.role_name fehlt.');
+
+    $result = runAppUpdateCommand($install, $records);
+
+    expect($result['exit_code'])->toBe(1);
+    expect($result['output'])->toContain('▶ LICENCE BACKFILL');
+    expect($result['output'])->toContain('School user licence backfill failed — aborting update.');
+    expect($result['output'])->toContain('school_user_licences.role_name fehlt.');
+
+    Artisan::shouldNotHaveReceived('call', ['optimize:clear', []]);
+    Artisan::shouldNotHaveReceived('call', ['queue:restart', []]);
+    $install->shouldNotHaveReceived('clearModels');
+    $install->shouldNotHaveReceived('createRoles');
+    $install->shouldNotHaveReceived('findOrCreateFolders');
+    $install->shouldNotHaveReceived('pruneOrphanPrivateSchoolFolders');
+    $install->shouldNotHaveReceived('clearDebugbar');
+    $install->shouldNotHaveReceived('normalizeRestaurantUserRoles');
+    $records->shouldNotHaveReceived('initRecords');
+});
+
 it('retries npm ci when a windows lock error is transient', function (): void {
     if (PHP_OS_FAMILY !== 'Windows') {
         $this->markTestSkipped('Windows-specific retry logic.');
@@ -255,9 +290,10 @@ it('retries npm ci when a windows lock error is transient', function (): void {
 
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(4)->andReturn('');
+    Artisan::shouldReceive('output')->times(5)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 

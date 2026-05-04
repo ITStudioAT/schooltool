@@ -399,7 +399,7 @@ class MaterialController extends Controller
             if (! $unitStillUsed) {
                 MaterialUnit::query()
                     ->whereKey($unitId)
-                    ->delete();
+                    ->forceDelete();
                 $removedUnit = true;
             }
         });
@@ -522,7 +522,7 @@ class MaterialController extends Controller
             if (! $topicStillUsed) {
                 MaterialTopic::query()
                     ->whereKey($topicId)
-                    ->delete();
+                    ->forceDelete();
                 $removedTopic = true;
             }
         });
