@@ -11,7 +11,7 @@
             secondary-color="#1d4ed8"
             right-orb-color="#a5b4fc" />
 
-        <v-sheet rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
+        <v-sheet v-if="!selected_course" rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
             <div class="teaching-nav__buttons">
                 <v-btn
                     v-for="item in visibleNavigationItems"
@@ -52,6 +52,17 @@
             <div class="teaching-subnav__inner">
                 <div class="teaching-subnav__courses">
                     <v-btn
+                        v-if="selected_course"
+                        size="small"
+                        rounded="xl"
+                        variant="tonal"
+                        class="teaching-subnav__course-btn teaching-subnav__course-btn--overview"
+                        prepend-icon="mdi-arrow-left"
+                        :disabled="isNavigationLocked || isStudentDetailActive"
+                        @click="handleCourseClear">
+                        Übersicht
+                    </v-btn>
+                    <v-btn
                         v-for="course in courses"
                         :key="course.id"
                         size="small"
@@ -64,14 +75,6 @@
                         {{ course.title }}
                     </v-btn>
                 </div>
-                <v-btn
-                    v-if="selected_course"
-                    icon="mdi-close"
-                    variant="tonal"
-                    color="secondary"
-                    title="Auswahl aufheben"
-                    :disabled="isNavigationLocked || isStudentDetailActive"
-                    @click="handleCourseClear" />
                 <div class="teaching-subnav__actions ml-auto d-flex ga-2">
                     <v-btn
                         v-if="selected_course"
@@ -725,6 +728,13 @@ export default {
     background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
     color: #fff !important;
     box-shadow: 0 0 12px rgba(99, 102, 241, 0.45) !important;
+}
+
+.teaching-subnav__course-btn--overview {
+    background: linear-gradient(135deg, #ea580c, #f97316) !important;
+    color: #fff !important;
+    border: 1px solid rgba(234, 88, 12, 0.5) !important;
+    font-weight: 650;
 }
 
 .teaching-subnav__add-btn {

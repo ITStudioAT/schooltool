@@ -17,7 +17,6 @@ export const useCourseStore = defineStore('AdminCourseStore', {
             pending_edit_course_id: null,
             pending_new_course_token: 0,
             students_sort_mode: 'last_name_first_name',
-            show_timetable: true,
             show_my_infos: true,
             show_students: true,
             show_infos: false,

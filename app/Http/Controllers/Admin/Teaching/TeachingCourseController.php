@@ -82,9 +82,10 @@ class TeachingCourseController extends Controller
 
         $teachingService = new TeachingService;
         $schemaCache = [];
+        $removalReasonsByCourseId = $service->removalReasonsForCourses($courses);
 
-        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $service, $teachingService, &$schemaCache) {
-            $removalReasons = $service->removalReasonsForCourse($course);
+        $courses->each(function (TeachingCourse $course) use ($auth_user, $studentsById, $importsById, $request, $teachingService, &$schemaCache, $removalReasonsByCourseId) {
+            $removalReasons = $removalReasonsByCourseId[(int) $course->id] ?? [];
             $courseActor = $this->teachingCourseActor($auth_user, $course);
             $courseSchema = $this->teachingSchemaForCourse($courseActor, $course, $teachingService, $schemaCache);
 
@@ -356,7 +357,7 @@ class TeachingCourseController extends Controller
     }
 
     /**
-     * @param  array<string, array<string, mixed>|null>  $schemaCache
+     * @param  array<string, Collection<string, array<string, mixed>>>  $schemaCache
      * @return array<string, mixed>|null
      */
     private function teachingSchemaForCourse(
@@ -373,15 +374,17 @@ class TeachingCourseController extends Controller
         $cacheKey = implode(':', [
             (string) $courseActor->id,
             (string) $course->schoolyear_id,
-            $schemaId,
         ]);
 
         if (! array_key_exists($cacheKey, $schemaCache)) {
-            $schema = $teachingService->schemaById($courseActor, $schemaId, $course->schoolyear_id);
-            $schemaCache[$cacheKey] = is_array($schema) ? Arr::only($schema, ['id', 'name', 'works', 'grading']) : null;
+            $schemaCache[$cacheKey] = $teachingService
+                ->schemasForUser($courseActor, $course->schoolyear_id)
+                ->keyBy(fn (array $schema): string => (string) ($schema['id'] ?? ''));
         }
 
-        return $schemaCache[$cacheKey];
+        $schema = $schemaCache[$cacheKey]->get($schemaId);
+
+        return is_array($schema) ? Arr::only($schema, ['id', 'name', 'works', 'grading']) : null;
     }
 
     /**

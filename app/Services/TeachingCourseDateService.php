@@ -174,8 +174,10 @@ class TeachingCourseDateService
 
     public function supportsAttendanceColumns(): bool
     {
-        return self::$supportsAttendanceColumnsCache ??= Schema::hasColumn('teaching_course_dates', 'attendance')
-            && Schema::hasColumn('teaching_course_dates', 'attendance_checked');
+        return self::$supportsAttendanceColumnsCache ??= Schema::hasColumns('teaching_course_dates', [
+            'attendance',
+            'attendance_checked',
+        ]);
     }
 
     public function normalizePublicStatus($status): array

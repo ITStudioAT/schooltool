@@ -21,6 +21,7 @@ use App\Models\TeachingCourseDate;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingSchema;
 use App\Models\User;
@@ -466,6 +467,98 @@ describe('index', function () {
         expect($studentPayload)->not->toBeNull()
             ->and($studentPayload['email'])->toBe('student.contact@course.test')
             ->and($studentPayload['login_at'])->toBe('24.03.2026  08:15');
+    });
+
+    test('courses index batches curriculum assignment dependency checks', function () {
+        $this->actingAs($this->admin, 'sanctum');
+
+        $schemaIds = ['batch-schema-one', 'batch-schema-two', 'batch-schema-three'];
+        foreach ($schemaIds as $schemaId) {
+            TeachingSchema::query()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'user_id' => $this->teacher->id,
+                'schema_id' => $schemaId,
+                'name' => $schemaId,
+                'works' => [],
+                'grading' => [],
+            ]);
+        }
+
+        $courses = collect(range(1, 5))->map(function (int $index) use ($schemaIds) {
+            $course = TeachingCourse::factory()->create([
+                'school_id' => $this->school->id,
+                'schoolyear_id' => $this->schoolyear->id,
+                'user_id' => $this->teacher->id,
+                'title' => "Batch {$index}",
+                'classes' => ['1A'],
+                'teaching_schema_id' => $schemaIds[$index % count($schemaIds)],
+            ]);
+
+            $students = User::factory()
+                ->count(3)
+                ->create([
+                    'school_id' => $this->school->id,
+                    'schoolyear_id' => $this->schoolyear->id,
+                    'schoolclass' => '1A',
+                ]);
+
+            $students->each(fn (User $student) => $course->teachingCourseStudents()->create([
+                'user_id' => $student->id,
+            ]));
+
+            TeachingCourseStudentEntry::query()->create([
+                'teaching_course_id' => $course->id,
+                'user_id' => $students[1]->id,
+                'type' => 'MA',
+                'grade' => '+',
+            ]);
+
+            TeachingCourseDate::query()->create([
+                'teaching_course_id' => $course->id,
+                'date' => now()->startOfMonth()->addDays($index)->toDateString(),
+                'hours' => [1],
+                'status' => [],
+                'attendance' => ['s_'.$students[2]->id => false],
+                'attendance_checked' => true,
+            ]);
+
+            TeachingCourseWorkGroupStudent::query()->create([
+                'teaching_course_id' => $course->id,
+                'user_id' => $students[2]->id,
+                'group_index' => 1,
+            ]);
+
+            return [$course, $students];
+        });
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $response = $this->getJson('/api/admin/teaching/courses');
+
+        $queries = collect(DB::getQueryLog())->pluck('query');
+        DB::disableQueryLog();
+
+        $fromTable = fn (string $query, string $table): bool => str_contains($query, "from `{$table}`")
+            || str_contains($query, "from \"{$table}\"");
+
+        expect($queries->filter(fn (string $query): bool => $fromTable($query, 'teaching_course_student_entries')))->toHaveCount(1)
+            ->and($queries->filter(fn (string $query): bool => $fromTable($query, 'teaching_course_behaviour_entries')))->toHaveCount(1)
+            ->and($queries->filter(fn (string $query): bool => $fromTable($query, 'teaching_schemas')))->toHaveCount(1)
+            ->and($queries->filter(fn (string $query): bool => $fromTable($query, 'teaching_course_work_group_students')))->toHaveCount(2);
+
+        $response->assertOk();
+
+        [$firstCourse, $firstStudents] = $courses->first();
+        $firstCoursePayload = collect($response->json('data'))->firstWhere('id', $firstCourse->id);
+        $entryBlockedStudent = collect($firstCoursePayload['students'] ?? [])->firstWhere('id', $firstStudents[1]->id);
+        $attendanceBlockedStudent = collect($firstCoursePayload['students'] ?? [])->firstWhere('id', $firstStudents[2]->id);
+
+        expect($entryBlockedStudent['is_removable'])->toBeFalse()
+            ->and($entryBlockedStudent['remove_block_reason'])->toContain('abhängige Einträge')
+            ->and($attendanceBlockedStudent['is_removable'])->toBeFalse()
+            ->and($attendanceBlockedStudent['remove_block_reason'])->toContain('abhängige Einträge');
     });
 });
 

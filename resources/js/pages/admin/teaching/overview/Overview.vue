@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" class="pb-1">
+    <v-col v-if="functionalPanels.length" cols="12" class="pb-1">
         <div class="teaching-overview-toolbar-width">
             <section class="teaching-overview-toolbar" :class="{ 'is-locked': isControlLocked }">
                 <v-btn-toggle
@@ -21,8 +21,8 @@
         </div>
     </v-col>
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="show_students || (show_timetable && !selected_course)">
-        <v-row v-if="show_timetable && !selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="show_students || !selected_course">
+        <v-row v-if="!selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
             <v-col>
                 <MyTimetable />
             </v-col>
@@ -42,7 +42,7 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="(show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="selected_course && (show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_students">
             <v-col>
                 <CourseDates compact-student-view />
@@ -257,7 +257,7 @@
         </v-row>
     </v-col>
 
-    <v-col cols="12" v-if="(show_attendance || show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" v-if="selected_course && (show_attendance || show_performances || show_performances_plus) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <div v-if="semesterCount === 2" class="d-flex align-center ga-2 mb-2">
             <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">Sem 1</v-btn>
@@ -364,7 +364,6 @@ export default {
         ...mapWritableState(useCourseStore, [
             'selected_course',
             'selected_course_id',
-            'show_timetable',
             'show_students',
             'show_infos',
             'show_works',

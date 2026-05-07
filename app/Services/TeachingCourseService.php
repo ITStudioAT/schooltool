@@ -300,6 +300,66 @@ class TeachingCourseService
         return $this->collectProtectedRemovalReasons($course, $existingByKey, []);
     }
 
+    /**
+     * @param  Collection<int, TeachingCourse>  $courses
+     * @return array<int, array<string, string>>
+     */
+    public function removalReasonsForCourses(Collection $courses): array
+    {
+        $candidatesByCourse = [];
+        $candidateUserIdsByCourse = [];
+
+        foreach ($courses as $course) {
+            $courseId = (int) $course->id;
+            $rows = $course->relationLoaded('teachingCourseStudents')
+                ? $course->teachingCourseStudents
+                : $course->teachingCourseStudents()->get();
+
+            foreach ($rows as $courseStudent) {
+                if ($courseStudent->trashed()) {
+                    continue;
+                }
+
+                $key = $this->courseStudentModelKey($courseStudent);
+                if (! $key) {
+                    continue;
+                }
+
+                $candidatesByCourse[$courseId][$key] = $courseStudent;
+
+                if ($courseStudent->user_id) {
+                    $candidateUserIdsByCourse[$courseId][] = (int) $courseStudent->user_id;
+                }
+            }
+        }
+
+        if (empty($candidatesByCourse)) {
+            return [];
+        }
+
+        $dependentUserIdSetsByCourse = $this->collectDependentUserIdSetsForCourses($candidateUserIdsByCourse);
+        $protectedByCourse = [];
+
+        foreach ($candidatesByCourse as $courseId => $candidates) {
+            $dependentUserIdSet = $dependentUserIdSetsByCourse[$courseId] ?? [];
+
+            foreach ($candidates as $key => $courseStudent) {
+                if ($this->hasProtectedCourseStudentData($courseStudent)) {
+                    $protectedByCourse[$courseId][$key] = 'course_student_data';
+
+                    continue;
+                }
+
+                $userId = (int) ($courseStudent->user_id ?? 0);
+                if ($userId > 0 && isset($dependentUserIdSet[$userId])) {
+                    $protectedByCourse[$courseId][$key] = 'dependent_records';
+                }
+            }
+        }
+
+        return $protectedByCourse;
+    }
+
     public function findImportIdInSchool(int $id, int $schoolId): ?int
     {
         $import = Import116::find($id);
@@ -838,6 +898,63 @@ class TeachingCourseService
     }
 
     /**
+     * @param  array<int, array<int, int>>  $userIdsByCourse
+     * @return array<int, array<int, bool>>
+     */
+    private function collectDependentUserIdSetsForCourses(array $userIdsByCourse): array
+    {
+        $normalizedUserIdsByCourse = [];
+        foreach ($userIdsByCourse as $courseId => $userIds) {
+            $normalizedUserIds = array_values(array_unique(array_filter(
+                array_map('intval', $userIds),
+                fn (int $id): bool => $id > 0
+            )));
+
+            if (! empty($normalizedUserIds)) {
+                $normalizedUserIdsByCourse[(int) $courseId] = $normalizedUserIds;
+            }
+        }
+
+        if (empty($normalizedUserIdsByCourse)) {
+            return [];
+        }
+
+        $courseIds = array_keys($normalizedUserIdsByCourse);
+        $allUserIds = array_values(array_unique(array_merge(...array_values($normalizedUserIdsByCourse))));
+        $dependent = [];
+
+        $entryRows = TeachingCourseStudentEntry::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->whereIn('user_id', $allUserIds)
+            ->get(['teaching_course_id', 'user_id']);
+        foreach ($entryRows as $row) {
+            $dependent[(int) $row->teaching_course_id][(int) $row->user_id] = true;
+        }
+
+        $behaviourRows = TeachingCourseBehaviourEntry::query()
+            ->whereIn('teaching_course_id', $courseIds)
+            ->whereIn('user_id', $allUserIds)
+            ->get(['teaching_course_id', 'user_id']);
+        foreach ($behaviourRows as $row) {
+            $dependent[(int) $row->teaching_course_id][(int) $row->user_id] = true;
+        }
+
+        foreach ($this->collectAttendanceDependentUserIdSets($normalizedUserIdsByCourse) as $courseId => $userIdSet) {
+            foreach ($userIdSet as $userId => $hasDependency) {
+                $dependent[$courseId][$userId] = $hasDependency;
+            }
+        }
+
+        foreach ($this->collectWorkGroupDependentUserIdSets($normalizedUserIdsByCourse) as $courseId => $userIdSet) {
+            foreach ($userIdSet as $userId => $hasDependency) {
+                $dependent[$courseId][$userId] = $hasDependency;
+            }
+        }
+
+        return $dependent;
+    }
+
+    /**
      * @param  array<int, int>  $candidateUserIds
      * @return array<int, int>
      */
@@ -882,6 +999,62 @@ class TeachingCourseService
         }
 
         return array_values(array_map('intval', array_keys($dependent)));
+    }
+
+    /**
+     * @param  array<int, array<int, int>>  $candidateUserIdsByCourse
+     * @return array<int, array<int, bool>>
+     */
+    private function collectAttendanceDependentUserIdSets(array $candidateUserIdsByCourse): array
+    {
+        if (empty($candidateUserIdsByCourse)) {
+            return [];
+        }
+
+        $candidateSetsByCourse = [];
+        foreach ($candidateUserIdsByCourse as $courseId => $userIds) {
+            $candidateSetsByCourse[$courseId] = array_fill_keys($userIds, true);
+        }
+
+        $dependent = [];
+        $courseDates = TeachingCourseDate::query()
+            ->whereIn('teaching_course_id', array_keys($candidateUserIdsByCourse))
+            ->get(['teaching_course_id', 'attendance', 'status']);
+
+        foreach ($courseDates as $courseDate) {
+            $courseId = (int) $courseDate->teaching_course_id;
+            $candidateSet = $candidateSetsByCourse[$courseId] ?? [];
+            if (empty($candidateSet)) {
+                continue;
+            }
+
+            $attendance = is_array($courseDate->attendance) ? $courseDate->attendance : [];
+            foreach (array_keys($attendance) as $studentKey) {
+                $studentId = $this->normalizeAttendanceStudentId($studentKey);
+                if ($studentId !== null && isset($candidateSet[$studentId])) {
+                    $dependent[$courseId][$studentId] = true;
+                }
+            }
+
+            $status = is_array($courseDate->status) ? $courseDate->status : [];
+            foreach ($status as $statusItem) {
+                if (! is_string($statusItem) || ! str_starts_with($statusItem, 'att:')) {
+                    continue;
+                }
+
+                $parts = explode(':', $statusItem);
+                if (count($parts) < 3) {
+                    continue;
+                }
+
+                $studentId = $this->normalizeAttendanceStudentId($parts[1] ?? null);
+                if ($studentId !== null && isset($candidateSet[$studentId])) {
+                    $dependent[$courseId][$studentId] = true;
+                }
+            }
+        }
+
+        return $dependent;
     }
 
     /**
@@ -965,6 +1138,128 @@ class TeachingCourseService
                     if ($id > 0 && isset($candidateSet[$id])) {
                         $dependent[$id] = true;
                     }
+                }
+            }
+        }
+
+        return array_values(array_map('intval', array_keys($dependent)));
+    }
+
+    /**
+     * @param  array<int, array<int, int>>  $candidateUserIdsByCourse
+     * @return array<int, array<int, bool>>
+     */
+    private function collectWorkGroupDependentUserIdSets(array $candidateUserIdsByCourse): array
+    {
+        if (empty($candidateUserIdsByCourse)) {
+            return [];
+        }
+
+        $courseIds = array_keys($candidateUserIdsByCourse);
+        $allUserIds = array_values(array_unique(array_merge(...array_values($candidateUserIdsByCourse))));
+        $dependent = [];
+        $fallbackCandidateUserIdsByCourse = $candidateUserIdsByCourse;
+
+        if ($this->supportsCourseWorkGroupStudentIndex()) {
+            $indexedRows = TeachingCourseWorkGroupStudent::query()
+                ->whereIn('teaching_course_id', $courseIds)
+                ->whereIn('user_id', $allUserIds)
+                ->get(['teaching_course_id', 'user_id']);
+            foreach ($indexedRows as $row) {
+                $dependent[(int) $row->teaching_course_id][(int) $row->user_id] = true;
+            }
+
+            $coursesWithIndexRows = TeachingCourseWorkGroupStudent::query()
+                ->whereIn('teaching_course_id', $courseIds)
+                ->distinct()
+                ->pluck('teaching_course_id')
+                ->map(fn ($courseId): int => (int) $courseId)
+                ->all();
+
+            foreach ($coursesWithIndexRows as $courseId) {
+                unset($fallbackCandidateUserIdsByCourse[$courseId]);
+            }
+        }
+
+        if (empty($fallbackCandidateUserIdsByCourse)) {
+            return $dependent;
+        }
+
+        $candidateSetsByCourse = [];
+        foreach ($fallbackCandidateUserIdsByCourse as $courseId => $userIds) {
+            $candidateSetsByCourse[$courseId] = array_fill_keys($userIds, true);
+        }
+
+        $works = TeachingCourseWork::query()
+            ->whereIn('teaching_course_id', array_keys($fallbackCandidateUserIdsByCourse))
+            ->get(['teaching_course_id', 'groups']);
+
+        foreach ($works as $work) {
+            $courseId = (int) $work->teaching_course_id;
+            $candidateSet = $candidateSetsByCourse[$courseId] ?? [];
+            if (empty($candidateSet)) {
+                continue;
+            }
+
+            foreach ($this->dependentUserIdsFromWorkGroups(is_array($work->groups) ? $work->groups : [], $candidateSet) as $userId) {
+                $dependent[$courseId][$userId] = true;
+            }
+        }
+
+        return $dependent;
+    }
+
+    /**
+     * @param  array<int, mixed>  $groups
+     * @param  array<int, bool>  $candidateSet
+     * @return array<int, int>
+     */
+    private function dependentUserIdsFromWorkGroups(array $groups, array $candidateSet): array
+    {
+        $dependent = [];
+
+        foreach ($groups as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+
+            foreach ((array) ($group['student_ids'] ?? []) as $studentId) {
+                $id = (int) $studentId;
+                if ($id > 0 && isset($candidateSet[$id])) {
+                    $dependent[$id] = true;
+                }
+            }
+
+            foreach ((array) ($group['grades'] ?? []) as $gradeItem) {
+                if (! is_array($gradeItem)) {
+                    continue;
+                }
+
+                $id = (int) ($gradeItem['student_id'] ?? 0);
+                if ($id > 0 && isset($candidateSet[$id])) {
+                    $dependent[$id] = true;
+                }
+            }
+
+            foreach ((array) ($group['points'] ?? []) as $pointsItem) {
+                if (! is_array($pointsItem)) {
+                    continue;
+                }
+
+                $id = (int) ($pointsItem['student_id'] ?? 0);
+                if ($id > 0 && isset($candidateSet[$id])) {
+                    $dependent[$id] = true;
+                }
+            }
+
+            foreach ((array) ($group['comments'] ?? []) as $commentItem) {
+                if (! is_array($commentItem)) {
+                    continue;
+                }
+
+                $id = (int) ($commentItem['student_id'] ?? 0);
+                if ($id > 0 && isset($candidateSet[$id])) {
+                    $dependent[$id] = true;
                 }
             }
         }

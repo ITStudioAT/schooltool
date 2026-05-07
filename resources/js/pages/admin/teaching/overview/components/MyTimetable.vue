@@ -5,7 +5,6 @@
                 <v-btn value="list" size="small" title="Listenansicht"><v-icon size="18">mdi-format-list-bulleted</v-icon></v-btn>
                 <v-btn value="table" size="small" title="Tabellenansicht"><v-icon size="18">mdi-table</v-icon></v-btn>
             </v-btn-toggle>
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_timetable = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
@@ -180,7 +179,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'show_timetable', 'timetable_view_mode']),
+        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'timetable_view_mode']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {

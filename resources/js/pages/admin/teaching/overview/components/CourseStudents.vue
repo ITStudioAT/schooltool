@@ -1,96 +1,61 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" :title="'Schüler:innen – ' + selected_course.title + ' (' + selectedCourseClasses + ')'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
+    <ItsGridBox variant="overview" color="primary" :title="activeStudentsCount + ' Schüler:innen'" icon="mdi-invoice-list" class="w-100" v-if="selected_course" :disabled="action != ''">
         <template #header-actions>
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_students = false" />
+            <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-1">
+                <v-btn icon="mdi-chevron-left" size="x-small" color="primary" variant="tonal" :disabled="!hasPrevCourseDate" @click="selectPrevCourseDate" />
+                <v-chip size="small" color="primary" variant="outlined">{{ selectedCourseDateLabel }}</v-chip>
+                <v-btn icon="mdi-chevron-right" size="x-small" color="primary" variant="tonal" :disabled="!hasNextCourseDate" @click="selectNextCourseDate" />
+            </div>
+            <div v-else class="text-caption text-medium-emphasis">Kein Datum</div>
         </template>
+        <div class="d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
+            <v-btn
+                v-if="selectedCourseDateForCourse"
+                size="small"
+                class="students-attendance-check-btn"
+                :variant="'flat'"
+                :color="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'success' : 'warning'"
+                :class="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? '' : 'students-attendance-check-btn--open'"
+                :loading="savingAttendance"
+                @click="toggleAttendanceChecked">
+                <v-icon start>{{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'mdi-check-circle' : 'mdi-content-save' }}</v-icon>
+                {{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'Anwesenheit geprüft' : 'Anwesenheit prüfen' }}
+            </v-btn>
+            <v-btn
+                v-if="selectedCourseDateForCourse"
+                size="small"
+                class="students-overview-toggle-btn"
+                :variant="isDayOverviewMode ? 'flat' : 'outlined'"
+                :color="isDayOverviewMode ? 'secondary' : 'primary'"
+                @click="toggleStudentsViewMode">
+                <v-icon start>{{ isDayOverviewMode ? 'mdi-account-group' : 'mdi-view-list' }}</v-icon>
+                {{ isDayOverviewMode ? 'Schülerliste' : 'Heute' }}
+            </v-btn>
+            <v-btn
+                v-if="!isDayOverviewMode"
+                size="small"
+                class="students-bulk-btn"
+                :variant="show_bulk_entry ? 'flat' : 'outlined'"
+                :color="show_bulk_entry ? 'warning' : 'primary'"
+                @click="toggleBulkEntry">
+                {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
+            </v-btn>
+            <v-spacer />
+            <v-btn-toggle
+                v-if="!isDayOverviewMode"
+                v-model="students_sort_mode"
+                mandatory
+                density="compact"
+                color="primary"
+                class="students-sort-toggle">
+                <v-btn size="small" value="class_last_name" class="students-sort-toggle-btn">Klasse, Name</v-btn>
+                <v-btn size="small" value="last_name_first_name" class="students-sort-toggle-btn">Name</v-btn>
+            </v-btn-toggle>
+        </div>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <!-- Anzeige ausgewählter Kurs -->
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between" v-if="selected_course">
-                    <div v-if="selectedCourseDateForCourse" class="d-flex align-center ga-2 w-100">
-                        <v-btn
-                            icon="mdi-chevron-left"
-                            size="small"
-                            color="primary"
-                            variant="tonal"
-                            :disabled="!hasPrevCourseDate"
-                            @click="selectPrevCourseDate" />
-                        <v-chip size="x-large" color="primary" variant="outlined" class="selected-course-date-chip flex-grow-1 justify-center">
-                            {{ selectedCourseDateLabel }}
-                        </v-chip>
-                        <v-btn
-                            icon="mdi-chevron-right"
-                            size="small"
-                            color="primary"
-                            variant="tonal"
-                            :disabled="!hasNextCourseDate"
-                            @click="selectNextCourseDate" />
-                    </div>
-                    <div v-else class="text-caption text-medium-emphasis w-100">
-                        Kein Datum verfügbar
-                    </div>
-                </v-card>
-                <div v-if="semesterCount === 2" class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
-                        <v-btn :value="1" size="small">1. Sem</v-btn>
-                        <v-btn :value="2" size="small">2. Sem</v-btn>
-                        <v-btn :value="3" size="small">1+2</v-btn>
-                    </v-btn-toggle>
-                </div>
-
                 <!-- Ausgewählte Schülerinnen (Anzeige) -->
-                <v-card variant="outlined" class="mt-4" v-if="selected_course">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 flex-wrap">
-                        <div class="d-flex align-center ga-2 flex-wrap">
-                            <v-icon size="18">mdi-account-check</v-icon>
-                            Schüler:innen
-                            <v-chip v-if="activeStudentsCount" size="x-small" color="primary" variant="tonal">
-                                {{ activeStudentsCount }}
-                            </v-chip>
-                        </div>
-                        <v-spacer class="students-header-spacer" />
-                        <v-btn
-                            v-if="selectedCourseDateForCourse"
-                            size="small"
-                            class="students-attendance-check-btn"
-                            :variant="'flat'"
-                            :color="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'success' : 'warning'"
-                            :class="attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? '' : 'students-attendance-check-btn--open'"
-                            :loading="savingAttendance"
-                            @click="toggleAttendanceChecked">
-                            <v-icon start>{{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'mdi-check-circle' : 'mdi-content-save' }}</v-icon>
-                            {{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'Anwesenheit geprüft' : 'Anwesenheit speichern & prüfen' }}
-                        </v-btn>
-                        <v-btn
-                            v-if="selectedCourseDateForCourse"
-                            size="small"
-                            class="students-overview-toggle-btn"
-                            :variant="isDayOverviewMode ? 'flat' : 'outlined'"
-                            :color="isDayOverviewMode ? 'secondary' : 'primary'"
-                            @click="toggleStudentsViewMode">
-                            <v-icon start>{{ isDayOverviewMode ? 'mdi-account-group' : 'mdi-view-list' }}</v-icon>
-                            {{ isDayOverviewMode ? 'Schülerliste' : 'Tagesübersicht' }}
-                        </v-btn>
-                        <v-btn-toggle
-                            v-if="!isDayOverviewMode"
-                            v-model="students_sort_mode"
-                            mandatory
-                            density="compact"
-                            color="primary"
-                            class="students-sort-toggle">
-                            <v-btn size="small" value="class_last_name" class="students-sort-toggle-btn">Klasse, Name</v-btn>
-                            <v-btn size="small" value="last_name_first_name" class="students-sort-toggle-btn">Name</v-btn>
-                        </v-btn-toggle>
-                        <v-btn
-                            v-if="!isDayOverviewMode"
-                            size="small"
-                            class="students-bulk-btn"
-                            :variant="show_bulk_entry ? 'flat' : 'outlined'"
-                            :color="show_bulk_entry ? 'warning' : 'primary'"
-                            @click="toggleBulkEntry">
-                            {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
-                        </v-btn>
-                    </v-card-title>
+                <v-card variant="outlined" v-if="selected_course">
                     <v-card-text v-if="show_bulk_entry && !isDayOverviewMode" class="pt-0">
                         <v-card variant="outlined" class="pa-3">
                             <div class="text-caption text-medium-emphasis mb-2">Eintrag für mehrere Schüler:innen</div>
