@@ -1,128 +1,74 @@
 <template>
-    <ItsGridBox variant="overview" color="primary" title="Schüler:in" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != '' || isSavingMutation">
+    <ItsGridBox variant="overview" color="primary" icon="mdi-account" class="w-100" v-if="selected_course_student" :disabled="action != '' || isSavingMutation">
+        <template #title>
+            <div class="its-grid-box__title-text">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
+            <v-menu>
+                <template #activator="{ props }">
+                    <v-btn v-bind="props" icon="mdi-menu" size="x-small" variant="tonal" color="primary" />
+                </template>
+                <v-list density="compact">
+                    <v-list-item prepend-icon="mdi-pencil" title="Bemerkung" @click="editComment" />
+                    <v-list-item v-if="showBehaviourEnabled" prepend-icon="mdi-account-alert" title="Verhalten" @click="newBehaviourEntry" />
+                    <v-list-item prepend-icon="mdi-star" title="Sterne" @click="newStarEntry" />
+                    <v-list-item v-if="showBehaviourEnabled" prepend-icon="mdi-message-text" title="Verständigung" @click="newNotificationEntry" />
+                    <v-divider />
+                    <v-list-item prepend-icon="mdi-plus" title="Neue Bewertung" @click="newEntry" />
+                </v-list>
+            </v-menu>
+        </template>
         <template #header-actions>
+            <div class="d-flex align-center ga-1">
+                <v-btn icon="mdi-chevron-left" size="x-small" color="primary" variant="tonal" :disabled="!hasPreviousStudent" @click="goToPreviousStudent" />
+                <v-btn icon="mdi-chevron-right" size="x-small" color="primary" variant="tonal" :disabled="!hasNextStudent" @click="goToNextStudent" />
+            </div>
             <v-btn-toggle v-if="semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
                 <v-btn :value="1" size="small">1. Sem</v-btn>
                 <v-btn :value="2" size="small">2. Sem</v-btn>
                 <v-btn :value="3" size="small">1+2</v-btn>
             </v-btn-toggle>
+            <v-btn icon="mdi-close" size="x-small" color="warning" variant="tonal" title="Zurück" @click="closeStudent" />
+        </template>
+        <template #header-below>
+            <div class="d-flex flex-wrap align-center ga-2 mt-1">
+                <div v-if="showBehaviourEnabled" class="d-flex flex-wrap align-center ga-2">
+                    <span class="text-caption text-medium-emphasis">Verhalten:</span>
+                    <template v-if="semesterCount === 2">
+                        <v-chip size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.behaviour_1_grade ? 'success' : 'default'" @click="editBehaviourGrades">
+                            1. Sem: {{ selected_course_student.behaviour_1_grade || '–' }}
+                        </v-chip>
+                        <v-chip size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.behaviour_2_grade ? 'success' : 'default'" @click="editBehaviourGrades">
+                            2. Sem: {{ selected_course_student.behaviour_2_grade || '–' }}
+                        </v-chip>
+                    </template>
+                    <v-chip v-else size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.behaviour_grade ? 'success' : 'default'" @click="editBehaviourGrades">
+                        {{ selected_course_student.behaviour_grade || '–' }}
+                    </v-chip>
+                </div>
+                <div class="d-flex flex-wrap align-center ga-2">
+                    <span class="text-caption text-medium-emphasis">Benotung:</span>
+                    <template v-if="semesterCount === 2">
+                        <v-chip size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.sem_1_grade ? 'success' : 'default'" @click="editGrades">
+                            1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
+                        </v-chip>
+                        <v-chip size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.sem_2_grade ? 'success' : 'default'" @click="editGrades">
+                            2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
+                        </v-chip>
+                    </template>
+                    <v-chip v-else size="small" variant="flat" class="cursor-pointer" :color="selected_course_student.sem_grade ? 'success' : 'default'" @click="editGrades">
+                        {{ selected_course_student.sem_grade || '–' }}
+                    </v-chip>
+                </div>
+            </div>
         </template>
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
-                <v-card tile flat color="transparent" class="d-flex flex-row align-center justify-space-between">
-                    <div class="d-flex align-center ga-2">
-                        <v-btn
-                            icon="mdi-chevron-left"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            :disabled="!hasPreviousStudent"
-                            @click="goToPreviousStudent" />
-                        <div>
-                            <div class="text-body-1 font-weight-medium">{{ selected_course_student.last_name }}, {{ selected_course_student.first_name }}</div>
-                            <div class="text-caption text-medium-emphasis">
-                                {{ selected_course_student.schoolclass || selected_course_student.class || '–' }}
-                            </div>
-                            <div class="text-caption text-medium-emphasis d-flex align-center ga-1" v-if="selected_course_student.email">
-                                {{ selected_course_student.email }}
-                                <v-icon
-                                    size="14"
-                                    class="cursor-pointer"
-                                    :color="copiedEmail ? 'success' : undefined"
-                                    :title="copiedEmail ? 'Kopiert!' : 'E-Mail kopieren'"
-                                    @click.stop="copyEmail(selected_course_student.email)">
-                                    {{ copiedEmail ? 'mdi-check' : 'mdi-content-copy' }}
-                                </v-icon>
-                            </div>
-                        </div>
-                        <v-btn
-                            icon="mdi-chevron-right"
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            :disabled="!hasNextStudent"
-                            @click="goToNextStudent" />
-                    </div>
-                    <v-btn color="warning" flat tile @click="closeStudent">Zurück</v-btn>
-                </v-card>
-
-                <div class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <fieldset v-if="showBehaviourEnabled" class="benotung-fieldset">
-                        <legend class="text-caption text-medium-emphasis px-1">Verhalten</legend>
-                        <div class="d-flex flex-wrap align-center ga-2 pa-2">
-                            <template v-if="!is_editing_behaviour_grades">
-                                <template v-if="semesterCount === 2">
-                                    <v-chip size="small" variant="flat" :color="selected_course_student.behaviour_1_grade ? 'success' : 'default'">
-                                        1. Sem: {{ selected_course_student.behaviour_1_grade || '–' }}
-                                    </v-chip>
-                                    <v-chip size="small" variant="flat" :color="selected_course_student.behaviour_2_grade ? 'success' : 'default'">
-                                        2. Sem: {{ selected_course_student.behaviour_2_grade || '–' }}
-                                    </v-chip>
-                                </template>
-                                <v-chip v-else size="small" variant="flat" :color="selected_course_student.behaviour_grade ? 'success' : 'default'">
-                                    Note: {{ selected_course_student.behaviour_grade || '–' }}
-                                </v-chip>
-                                <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editBehaviourGrades" />
-                            </template>
-                            <template v-else>
-                                <template v-if="semesterCount === 2">
-                                    <v-text-field v-model="behaviour_grade_form.behaviour_1_grade" label="1. Sem" density="compact" hide-details style="max-width: 100px" />
-                                    <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
-                                </template>
-                                <v-text-field v-else v-model="behaviour_grade_form.behaviour_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
-                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="isSavingAction('save-behaviour-grades')" :disabled="isSavingMutation" @click="saveBehaviourGrades" />
-                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingMutation" @click="is_editing_behaviour_grades = false" />
-                            </template>
-                        </div>
-                    </fieldset>
-                    <v-spacer />
-                    <fieldset class="benotung-fieldset">
-                        <legend class="text-caption text-medium-emphasis px-1">Benotung</legend>
-                        <div class="d-flex flex-wrap align-center ga-2 pa-2">
-                            <template v-if="!is_editing_grades">
-                                <template v-if="semesterCount === 2">
-                                    <v-chip size="small" variant="flat" :color="selected_course_student.sem_1_grade ? 'success' : 'default'">
-                                        1. Sem: {{ selected_course_student.sem_1_grade || '–' }}
-                                    </v-chip>
-                                    <v-chip size="small" variant="flat" :color="selected_course_student.sem_2_grade ? 'success' : 'default'">
-                                        2. Sem: {{ selected_course_student.sem_2_grade || '–' }}
-                                    </v-chip>
-                                </template>
-                                <v-chip v-else size="small" variant="flat" :color="selected_course_student.sem_grade ? 'success' : 'default'">
-                                    Note: {{ selected_course_student.sem_grade || '–' }}
-                                </v-chip>
-                                <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="flat" @click="editGrades" />
-                            </template>
-                            <template v-else>
-                                <template v-if="semesterCount === 2">
-                                    <v-text-field v-model="grade_form.sem_1_grade" label="1. Sem" density="compact" hide-details style="max-width: 100px" />
-                                    <v-text-field v-model="grade_form.sem_2_grade" label="2. Sem" density="compact" hide-details style="max-width: 100px" />
-                                </template>
-                                <v-text-field v-else v-model="grade_form.sem_grade" label="Note" density="compact" hide-details style="max-width: 120px" />
-                                <v-btn icon="mdi-check" size="x-small" color="success" variant="flat" :loading="isSavingAction('save-grades')" :disabled="isSavingMutation" @click="saveGrades" />
-                                <v-btn icon="mdi-close" size="x-small" color="warning" variant="flat" :disabled="isSavingMutation" @click="is_editing_grades = false" />
-                            </template>
-                        </div>
-                    </fieldset>
-                </div>
-                <div class="d-flex flex-wrap align-center ga-2 mt-2">
-                    <v-btn v-if="!is_editing" flat tile size="small" color="primary" prepend-icon="mdi-pencil" @click="editComment">Bem.</v-btn>
-                    <v-btn v-if="showBehaviourEnabled && !is_editing" flat tile size="small" color="warning" prepend-icon="mdi-account-alert" @click="newBehaviourEntry">Verhalten</v-btn>
-                    <v-btn v-if="!is_editing" flat tile size="small" color="amber" prepend-icon="mdi-star" @click="newStarEntry">Sterne</v-btn>
-                    <v-btn v-if="showBehaviourEnabled && !is_editing" flat tile size="small" color="info" prepend-icon="mdi-message-text" @click="newNotificationEntry">Verständigung</v-btn>
-                    <v-btn
-                        size="small"
-                        :color="show_auswertung ? 'success' : 'primary'"
-                        :variant="show_auswertung ? 'flat' : 'tonal'"
-                        :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
-                        :aria-pressed="show_auswertung ? 'true' : 'false'"
-                        :disabled="!hasAuswertungContent"
-                        @click="show_auswertung = !show_auswertung">
-                        Auswerten
-                    </v-btn>
-                </div>
-
-                <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">
+                <v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">
+                    <v-card-title class="d-flex align-center py-1 px-3">
+                        <span class="text-subtitle-2">Auswertung</span>
+                        <v-spacer />
+                        <v-btn icon="mdi-close" size="x-small" variant="text" @click="show_auswertung = false" />
+                    </v-card-title>
+                    <v-divider />
                     <v-card-text class="py-2">
                         <v-list density="compact">
                             <template v-if="showSemester1Auswertung">
@@ -331,24 +277,31 @@
 
                     </v-card-text>
                 </v-card>
-                <v-card v-if="selected_comment || is_editing" variant="outlined" class="mt-4">
-                    <v-card-text v-if="!is_editing">
+                <v-card v-if="selected_comment" variant="outlined" class="mt-4">
+                    <v-card-text>
                         <div class="text-body-2 course-comment" v-html="commentHtml"></div>
                     </v-card-text>
-                    <v-card-text v-else>
-                        <v-form ref="form" @submit.prevent="saveComment">
-                            <div class="mb-4">
-                                <label class="text-caption text-medium-emphasis">Kommentar</label>
-                                <ItsRichTextEditor v-model="edit_comment" :disabled="isSavingAction('save-comment')" />
-                            </div>
-
-                            <div class="d-flex flex-row align-center justify-space-between mt-4">
-                                <v-btn color="warning" flat tile :disabled="isSavingMutation" @click="abortEdit">Abbruch</v-btn>
-                                <v-btn color="success" flat tile type="submit" :loading="isSavingAction('save-comment')" :disabled="isSavingMutation">Speichern</v-btn>
-                            </div>
-                        </v-form>
-                    </v-card-text>
                 </v-card>
+
+                <v-dialog v-model="show_comment_dialog" persistent max-width="500">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-pencil</v-icon>
+                            Bemerkung bearbeiten
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="show_comment_dialog = false" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <ItsRichTextEditor v-model="edit_comment" :disabled="isSavingAction('save-comment')" />
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="show_comment_dialog = false">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-comment')" :disabled="isSavingMutation" @click="saveComment">Speichern</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
 
 
                 <v-card variant="outlined" class="mt-4">
@@ -359,10 +312,19 @@
                             {{ filteredEntries.length }}
                         </v-chip>
                         <v-spacer />
+                        <v-btn
+                            size="small"
+                            :color="show_auswertung ? 'success' : 'primary'"
+                            :variant="show_auswertung ? 'flat' : 'tonal'"
+                            :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
+                            :aria-pressed="show_auswertung ? 'true' : 'false'"
+                            :disabled="!hasAuswertungContent"
+                            @click="show_auswertung = !show_auswertung">
+                            Auswerten
+                        </v-btn>
                         <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
                             {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
                         </v-btn>
-                        <v-btn icon="mdi-plus" size="small" color="primary" variant="tonal" @click="newEntry" />
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
@@ -752,6 +714,53 @@
                         </v-card-actions>
                     </v-card>
                 </v-dialog>
+                <v-dialog v-model="show_behaviour_grade_dialog" persistent max-width="400">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-account-alert</v-icon>
+                            Verhalten bearbeiten
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="show_behaviour_grade_dialog = false" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <template v-if="semesterCount === 2">
+                                <v-text-field v-model="behaviour_grade_form.behaviour_1_grade" label="1. Semester" density="compact" hide-details class="mb-3" />
+                                <v-text-field v-model="behaviour_grade_form.behaviour_2_grade" label="2. Semester" density="compact" hide-details />
+                            </template>
+                            <v-text-field v-else v-model="behaviour_grade_form.behaviour_grade" label="Note" density="compact" hide-details />
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="show_behaviour_grade_dialog = false">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-behaviour-grades')" :disabled="isSavingMutation" @click="saveBehaviourGradesFromDialog">Speichern</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+
+                <v-dialog v-model="show_grade_dialog" persistent max-width="400">
+                    <v-card>
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-school</v-icon>
+                            Benotung bearbeiten
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="isSavingMutation" @click="show_grade_dialog = false" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text>
+                            <template v-if="semesterCount === 2">
+                                <v-text-field v-model="grade_form.sem_1_grade" label="1. Semester" density="compact" hide-details class="mb-3" />
+                                <v-text-field v-model="grade_form.sem_2_grade" label="2. Semester" density="compact" hide-details />
+                            </template>
+                            <v-text-field v-else v-model="grade_form.sem_grade" label="Note" density="compact" hide-details />
+                        </v-card-text>
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" :disabled="isSavingMutation" @click="show_grade_dialog = false">Abbruch</v-btn>
+                            <v-spacer />
+                            <v-btn color="success" variant="tonal" :loading="isSavingAction('save-grades')" :disabled="isSavingMutation" @click="saveGradesFromDialog">Speichern</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
             </v-card-text>
         </v-card>
     </ItsGridBox>
@@ -800,6 +809,7 @@ export default {
             behaviourEntryStore: null,
             teachingStore: null,
             is_editing: false,
+            show_comment_dialog: false,
             edit_comment: '',
             is_editing_grades: false,
             grade_form: { sem_1_grade: '', sem_2_grade: '', sem_grade: '' },
@@ -818,6 +828,8 @@ export default {
             delete_notification_id: null,
             is_editing_behaviour_grades: false,
             behaviour_grade_form: { behaviour_1_grade: '', behaviour_2_grade: '', behaviour_grade: '' },
+            show_behaviour_grade_dialog: false,
+            show_grade_dialog: false,
             saving_action_key: null,
             copiedEmail: false,
         }
@@ -1507,7 +1519,7 @@ export default {
                 sem_2_grade: this.selected_course_student?.sem_2_grade || '',
                 sem_grade: this.selected_course_student?.sem_grade || '',
             }
-            this.is_editing_grades = true
+            this.show_grade_dialog = true
         },
         async saveGrades() {
             if (!this.selected_course) return
@@ -1539,12 +1551,16 @@ export default {
                         this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
                     }
                     this.is_editing_grades = false
+                    this.show_grade_dialog = false
                 }
             })
         },
+        async saveGradesFromDialog() {
+            await this.saveGrades()
+        },
         editComment() {
             this.edit_comment = this.selected_comment || ''
-            this.is_editing = true
+            this.show_comment_dialog = true
         },
         abortEdit() {
             this.is_editing = false
@@ -1574,7 +1590,9 @@ export default {
                         this.selected_course.students_info = studentsInfo
                         this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
                     }
-                    this.abortEdit()
+                    this.show_comment_dialog = false
+                    this.is_editing = false
+                    this.edit_comment = ''
                 }
             })
         },
@@ -1886,7 +1904,7 @@ export default {
                 behaviour_2_grade: this.selected_course_student?.behaviour_2_grade || '',
                 behaviour_grade: this.selected_course_student?.behaviour_grade || '',
             }
-            this.is_editing_behaviour_grades = true
+            this.show_behaviour_grade_dialog = true
         },
         async saveBehaviourGrades() {
             if (!this.selected_course) return
@@ -1918,8 +1936,12 @@ export default {
                         this.selected_course_student = studentsInfo.find((s) => s.id === this.selected_course_student.id) || this.selected_course_student
                     }
                     this.is_editing_behaviour_grades = false
+                    this.show_behaviour_grade_dialog = false
                 }
             })
+        },
+        async saveBehaviourGradesFromDialog() {
+            await this.saveBehaviourGrades()
         },
         async deleteBehaviourEntry(entry) {
             await this.runStudentMutation('delete-behaviour-entry', async () => {

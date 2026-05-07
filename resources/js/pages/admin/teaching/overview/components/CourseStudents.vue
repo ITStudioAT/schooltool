@@ -8,7 +8,7 @@
             </div>
             <div v-else class="text-caption text-medium-emphasis">Kein Datum</div>
         </template>
-        <div class="d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
+        <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
                 v-if="selectedCourseDateForCourse"
                 size="small"
@@ -1549,6 +1549,18 @@ export default {
 
     .student-metrics {
         max-width: 100%;
+    }
+
+    .students-action-bar {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 6px !important;
+    }
+
+    .students-action-bar .v-btn,
+    .students-action-bar .v-btn-toggle {
+        width: 100%;
+        margin: 0 !important;
     }
 }
 </style>

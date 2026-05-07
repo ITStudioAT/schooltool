@@ -6,7 +6,7 @@
         :rounded="variant === 'overview' ? 'xl' : undefined">
         <v-card flat :rounded="variant === 'overview' ? 'xl' : '0'" :color="cardColor" class="h-100 py-0 its-grid-box__card" :disabled="disabled">
             <v-card-title class="its-grid-box__title">
-                <div class="d-flex flex-row ga-2 align-center">
+                <div class="d-flex flex-row ga-2 align-center flex-wrap">
                     <div v-if="icon && variant === 'overview'" class="its-grid-box__icon-wrap">
                         <v-icon :icon="icon" size="16" />
                     </div>
@@ -18,6 +18,7 @@
                     <slot name="header-actions" />
                 </div>
                 <div class="text-caption its-grid-box__subtitle" v-if="subtitle">{{ subtitle }}</div>
+                <slot name="header-below" />
             </v-card-title>
             <v-card-text :class="bodyClass" class="pt-2 h-100 its-grid-box__content">
                 <slot>
