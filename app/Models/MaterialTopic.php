@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Schema;
 
 class MaterialTopic extends Model
 {
@@ -28,10 +27,7 @@ class MaterialTopic extends Model
     public function units(): HasMany
     {
         return $this->hasMany(MaterialUnit::class, 'topic_id')
-            ->when(
-                Schema::hasColumn('material_units', 'sort_order'),
-                fn ($query) => $query->orderBy('sort_order')
-            )
+            ->orderBy('sort_order')
             ->orderBy('name')
             ->orderBy('id');
     }

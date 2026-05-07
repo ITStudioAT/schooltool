@@ -23,6 +23,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -1300,6 +1301,64 @@ test('config keeps topic deletable without unit usage while subject follows lowe
     $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
     expect($unitNode)->not->toBeNull()
         ->and((bool) ($unitNode['can_delete'] ?? false))->toBeTrue();
+});
+
+test('config keeps taxonomy payload query count bounded', function () {
+    $workspace = MaterialWorkspace::query()
+        ->where('user_id', (int) $this->teacher->id)
+        ->firstOrFail();
+
+    $subject = MaterialSubject::query()->create([
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'name' => 'Biologie',
+        'sort_order' => 2,
+    ]);
+    $topic = $subject->topics()->create([
+        'name' => 'Zellen',
+        'sort_order' => 1,
+    ]);
+    $unit = $topic->units()->create([
+        'name' => 'Mikroskopie',
+        'sort_order' => 1,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->school->id,
+        'user_id' => $this->teacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Zellen Material',
+        'status' => 'inbox',
+        'keywords' => [],
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $card->id,
+        'subject_id' => $subject->id,
+        'topic_id' => $topic->id,
+        'unit_id' => $unit->id,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum');
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $response = $this->getJson('/api/admin/materials/config')
+        ->assertSuccessful();
+
+    $queryCount = count(DB::getQueryLog());
+    DB::disableQueryLog();
+
+    $tree = collect($response->json('classification_tree', []));
+    $subjectNode = $tree->firstWhere('id', $subject->id);
+    $topicNode = collect($subjectNode['topics'] ?? [])->firstWhere('id', $topic->id);
+    $unitNode = collect($topicNode['units'] ?? [])->firstWhere('id', $unit->id);
+
+    expect($subjectNode['name'] ?? null)->toBe('Biologie')
+        ->and($topicNode['name'] ?? null)->toBe('Zellen')
+        ->and($unitNode['name'] ?? null)->toBe('Mikroskopie')
+        ->and($queryCount)->toBeLessThan(70);
 });
 
 test('teacher can create material card and gets keywords', function () {

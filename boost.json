@@ -9,7 +9,8 @@
     "nightwatch_mcp": false,
     "packages": [
         "spatie/laravel-pdf",
-        "fruitcake/laravel-debugbar"
+        "fruitcake/laravel-debugbar",
+        "spatie/guidelines-skills"
     ],
     "sail": false,
     "skills": [
@@ -20,6 +21,10 @@
         "echo-development",
         "laravel-pdf",
         "debug-using-debugbar",
+        "spatie-javascript",
+        "spatie-laravel-php",
+        "spatie-security",
+        "spatie-version-control",
         "laravel-api"
     ]
 }

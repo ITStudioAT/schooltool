@@ -377,9 +377,32 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
 
         async fetchAllCardsPages(baseParams = {}) {
             const allCards = []
+            const requestKey = this.buildSnapshotRequestKey(baseParams)
+            const currentFilterKey = this.buildSnapshotRequestKey(this.filters)
+            const currentPage = Number(this.meta?.current_page || 0)
+            const lastKnownPage = Number(this.meta?.last_page || currentPage)
+            const canReuseCurrentFirstPage =
+                requestKey === currentFilterKey &&
+                currentPage === 1 &&
+                Array.isArray(this.cards) &&
+                Number.isFinite(lastKnownPage) &&
+                lastKnownPage > 0
+
             let page = 1
             let hasMorePages = true
             let lastMeta = null
+
+            if (canReuseCurrentFirstPage) {
+                allCards.push(...this.cards)
+                lastMeta = this.meta
+                if (lastKnownPage <= 1) {
+                    return {
+                        cards: allCards,
+                        meta: lastMeta,
+                    }
+                }
+                page = 2
+            }
 
             while (hasMorePages) {
                 const response = await axios.get('/api/admin/materials/cards', {
