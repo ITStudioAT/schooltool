@@ -337,66 +337,33 @@
                                         <v-divider />
                                     </div>
                                 </v-list-item>
-                                <v-list-item v-else>
+                                <v-list-item v-else-if="item.kind === 'type-header'" class="type-group-header">
+                                    <div class="text-caption font-weight-bold text-medium-emphasis mt-2">{{ item.label }}</div>
+                                </v-list-item>
+                                <v-list-item v-else class="cursor-pointer" @click="onEntryRowClick(item.entry)">
                                     <div
-                                        class="entry-row d-flex flex-column ga-1 w-100"
+                                        class="entry-row d-flex align-center ga-2 w-100"
                                         :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
-                                        <div class="d-flex align-center ga-2 w-100">
                                             <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                                 {{ formatDate(item.entry.date) }}
                                             </v-chip>
                                             <v-chip v-if="entryIsDisplaySem1ButCountsSem2(item.entry)" size="x-small" variant="tonal" color="warning">
                                                 Zählt zu Sem 2
                                             </v-chip>
-                                            <v-chip v-if="item.entry.type" size="x-small" variant="outlined">
-                                                {{ workTypeLabel(item.entry.type) }}
+                                            <v-chip v-if="item.entry.type && !sort_by_type" size="x-small" variant="outlined">
+                                                {{ item.entry.type }}
                                             </v-chip>
                                             <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
                                                 <v-icon start size="12">mdi-lock</v-icon>
                                                 Aus Arbeit
                                             </v-chip>
-                                            <v-btn
-                                                v-if="entryIsDerivedFromWork(item.entry) && item.entry.teaching_course_work_id"
-                                                icon="mdi-open-in-new"
-                                                size="x-small"
-                                                color="info"
-                                                variant="tonal"
-                                                @click="jumpToWork(item.entry)" />
+                                            <span v-if="entryInlineDetail(item.entry)" class="text-caption text-medium-emphasis text-truncate">
+                                                {{ entryInlineDetail(item.entry) }}
+                                            </span>
                                             <v-spacer />
-                                            <div class="entry-actions d-flex align-center ga-1">
                                             <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
                                                 {{ entryDisplayGrade(item.entry) }}
                                             </v-chip>
-                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry)" icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editEntry(item.entry)" />
-                                            <v-btn
-                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id !== item.entry.id"
-                                                icon="mdi-delete"
-                                                size="x-small"
-                                                color="warning"
-                                                variant="tonal"
-                                                @click="delete_entry_id = item.entry.id" />
-                                            <v-btn
-                                                v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id"
-                                                icon="mdi-delete-off"
-                                                size="x-small"
-                                                color="success"
-                                                variant="tonal"
-                                                @click="delete_entry_id = null" />
-                                            <v-btn v-if="!entryIsDerivedFromWork(item.entry) && delete_entry_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteEntry(item.entry)" />
-                                        </div>
-                                        </div>
-                                        <div v-if="entryWorkTitle(item.entry)" class="text-caption text-medium-emphasis entry-work-title-line">
-                                            {{ entryWorkTitle(item.entry) }}
-                                        </div>
-                                        <div v-if="entryWorkDescription(item.entry)" class="text-caption text-medium-emphasis" style="padding-left: 4px;">
-                                            {{ entryWorkDescription(item.entry) }}
-                                        </div>
-                                        <div v-if="entryWorkComment(item.entry)" class="text-caption" style="padding-left: 4px;">
-                                            <strong>Kommentar:</strong> {{ entryWorkComment(item.entry) }}
-                                        </div>
-                                        <div v-if="!entryIsDerivedFromWork(item.entry) && item.entry.description" class="text-caption" style="padding-left: 4px;">
-                                            <strong>Kommentar:</strong> {{ item.entry.description }}
-                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -1247,12 +1214,32 @@ export default {
         },
         sortedEntriesGrouped() {
             const entries = this.sortedEntries
+
+            const buildTypeGrouped = (list) => {
+                if (!this.sort_by_type) {
+                    return list.map((e, index) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: index }))
+                }
+                const result = []
+                let stripeIndex = 0
+                let lastType = null
+                list.forEach((e) => {
+                    const type = e.type || ''
+                    if (type !== lastType) {
+                        result.push({ kind: 'type-header', key: `type-header-${type}`, label: this.workTypeLabel(type) || 'Ohne Typ' })
+                        lastType = type
+                    }
+                    result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
+                    stripeIndex += 1
+                })
+                return result
+            }
+
             if (this.semesterCount !== 2 || this.activeSemester !== 3) {
-                return entries.map((e, index) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: index }))
+                return buildTypeGrouped(entries)
             }
             const boundary = this.displaySem2Boundary()
             if (!boundary) {
-                return entries.map((e, index) => ({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: index }))
+                return buildTypeGrouped(entries)
             }
             const sem1 = entries.filter((e) => {
                 if (!e.date) return true
@@ -1265,20 +1252,13 @@ export default {
                 return !!d && d >= boundary
             })
             const result = []
-            let stripeIndex = 0
             if (sem2.length) {
                 result.push({ kind: 'header', key: 'header-sem2', label: '2. Semester' })
-                sem2.forEach((e) => {
-                    result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
-                    stripeIndex += 1
-                })
+                result.push(...buildTypeGrouped(sem2))
             }
             if (sem1.length) {
                 result.push({ kind: 'header', key: 'header-sem1', label: '1. Semester' })
-                sem1.forEach((e) => {
-                    result.push({ kind: 'entry', key: `entry-${e.id}`, entry: e, stripe: stripeIndex })
-                    stripeIndex += 1
-                })
+                result.push(...buildTypeGrouped(sem1))
             }
             return result
         },
@@ -1599,6 +1579,16 @@ export default {
         newEntry() {
             this.entry_form = this.emptyEntryForm()
             this.show_entry_form = true
+        },
+        onEntryRowClick(entry) {
+            if (!entry) return
+            if (this.entryIsDerivedFromWork(entry) && entry.teaching_course_work_id) {
+                this.jumpToWork(entry)
+                return
+            }
+            if (!this.entryIsDerivedFromWork(entry)) {
+                this.editEntry(entry)
+            }
         },
         editEntry(entry) {
             if (!entry) return
@@ -2152,6 +2142,22 @@ export default {
 
             // Fall back to group comment
             return (group.comment || '').toString().trim()
+        },
+        entryComment(entry) {
+            if (this.entryIsDerivedFromWork(entry)) {
+                return this.entryWorkComment(entry) || ''
+            }
+            return (entry?.description || '').toString().trim()
+        },
+        entryInlineDetail(entry) {
+            const parts = []
+            const title = this.entryWorkTitle(entry)
+            if (title) parts.push(title)
+            const desc = this.entryWorkDescription(entry)
+            if (desc) parts.push(desc)
+            const comment = this.entryComment(entry)
+            if (comment) parts.push(comment)
+            return parts.join(' · ')
         },
         async jumpToWork(entry) {
             if (!entry?.teaching_course_work_id || !this.selected_course?.id) return
