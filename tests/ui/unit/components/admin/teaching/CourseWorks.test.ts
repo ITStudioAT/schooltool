@@ -34,6 +34,44 @@ describe('CourseWorks title rendering', () => {
         expect(source).not.toContain('class="text-caption text-medium-emphasis work-title-second-line"')
         expect(source).not.toContain('<span v-if="work.title || work.description">– {{ work.title || work.description }}</span>')
     })
+
+    it('renders grade distribution chips for each work list item', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="work-grade-distribution d-flex flex-wrap ga-1 mt-1"')
+        expect(source).toContain('v-for="item in workGradeDistribution(work)"')
+        expect(source).toContain('{{ item.grade }}: {{ item.count }}')
+    })
+
+    it('adds vertical spacing between work list items', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="work-list-item cursor-pointer"')
+        expect(source).toContain('.work-list-item {\n    margin-bottom: 12px;\n}')
+        expect(source).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
+    })
+
+    it('renders whether each work list item is group work as a chip beside the work type', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="work-mode-chip ml-1"')
+        expect(source).toContain(":color=\"work.is_group_work ? 'primary' : 'default'\"")
+        expect(source).toContain("{{ work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit' }}")
+        expect(source.indexOf('workTypeLabel(work.type)')).toBeLessThan(source.indexOf("work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'"))
+        expect(source).not.toContain('<span> - {{ work.is_group_work ? \'Gruppenarbeit\' : \'Einzelarbeit\' }}</span>')
+    })
 })
 
 describe('CourseWorks course-specific schema', () => {
@@ -296,5 +334,121 @@ describe('CourseWorks points mode', () => {
         expect(ctx.bulk_grade).toBeNull()
         expect(ctx.selected_student_ids).toEqual([])
         expect(ctx.is_applying_bulk_action).toBe(false)
+    })
+})
+
+describe('CourseWorks grade distribution', () => {
+    it('counts individual grades and missing grades for a work item', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            activeCourseStudents: [
+                { id: 1 },
+                { id: 2 },
+                { id: 3 },
+                { id: 4 },
+            ],
+            teachingWorks: [
+                {
+                    short_name: 'SA',
+                    grades: [
+                        { grade: '1' },
+                        { grade: '2' },
+                        { grade: '3' },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const result = methods.workGradeDistribution.call(ctx, {
+            id: 10,
+            type: 'SA',
+            is_group_work: false,
+            groups: [
+                { student_ids: [1], grades: { 1: '1' } },
+                { student_ids: [2], grades: { 2: '2' } },
+                { student_ids: [3], grades: { 3: '2' } },
+                { student_ids: [4], grades: { 4: '' } },
+            ],
+        })
+
+        expect(result).toEqual([
+            { grade: '1', count: 1, color: 'primary' },
+            { grade: '2', count: 2, color: 'primary' },
+            { grade: 'Offen', count: 1, color: 'warning' },
+        ])
+    })
+
+    it('counts a shared group grade for every student in the group', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            activeCourseStudents: [
+                { id: 1 },
+                { id: 2 },
+                { id: 3 },
+                { id: 4 },
+                { id: 5 },
+            ],
+            teachingWorks: [
+                {
+                    short_name: 'PR',
+                    grades: [
+                        { grade: '1' },
+                        { grade: '2' },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const result = methods.workGradeDistribution.call(ctx, {
+            id: 11,
+            type: 'PR',
+            is_group_work: true,
+            groups: [
+                { student_ids: [1, 2, 3], grade: '1', grades: {} },
+                { student_ids: [4, 5], grade: '2', grades: {} },
+            ],
+        })
+
+        expect(result).toEqual([
+            { grade: '1', count: 3, color: 'primary' },
+            { grade: '2', count: 2, color: 'primary' },
+        ])
+    })
+
+    it('does not count canceled students in the distribution', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            activeCourseStudents: [
+                { id: 1 },
+                { id: 2 },
+            ],
+            teachingWorks: [
+                {
+                    short_name: 'SA',
+                    grades: [
+                        { grade: '1' },
+                        { grade: '5' },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const result = methods.workGradeDistribution.call(ctx, {
+            id: 12,
+            type: 'SA',
+            is_group_work: false,
+            groups: [
+                { student_ids: [1], grades: { 1: '1' } },
+                { student_ids: [2], grades: { 2: '1' } },
+                { student_ids: [3], grades: { 3: '5' } },
+            ],
+        })
+
+        expect(result).toEqual([
+            { grade: '1', count: 2, color: 'primary' },
+        ])
     })
 })

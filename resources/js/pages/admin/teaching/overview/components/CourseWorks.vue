@@ -46,7 +46,7 @@
             <v-divider />
             <v-card-text class="pa-0">
                 <v-list density="compact">
-                    <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="cursor-pointer" @click="editWork(work)">
+                    <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
                         <div class="work-row d-flex align-center ga-2 w-100">
                             <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
                                 {{ formatDate(workListDate(work)) }}
@@ -56,9 +56,27 @@
                                 <div class="text-caption text-medium-emphasis work-type-first-line">
                                     <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
                                     <span v-else class="text-medium-emphasis">eine Arbeit</span>
+                                    <v-chip
+                                        size="x-small"
+                                        :color="work.is_group_work ? 'primary' : 'default'"
+                                        variant="tonal"
+                                        class="work-mode-chip ml-1">
+                                        {{ work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit' }}
+                                    </v-chip>
                                 </div>
                                 <div v-if="work.title || work.description" class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                     {{ work.title || work.description }}
+                                </div>
+                                <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1 mt-1">
+                                    <v-chip
+                                        v-for="item in workGradeDistribution(work)"
+                                        :key="`${work.id}-grade-${item.grade}`"
+                                        size="x-small"
+                                        :color="item.color"
+                                        variant="tonal"
+                                        class="work-grade-distribution-chip">
+                                        {{ item.grade }}: {{ item.count }}
+                                    </v-chip>
                                 </div>
                             </div>
                             <div class="work-actions d-flex align-center ga-1">
@@ -1877,6 +1895,79 @@ export default {
         studentObjectById(studentId) {
             return this.activeCourseStudents.find((s) => String(s.id) === String(studentId)) || null
         },
+        workGradeDistribution(work) {
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            if (!groups.length) return []
+
+            const activeStudentIds = new Set(this.activeCourseStudents.map((student) => String(student.id)))
+            const counts = new Map()
+            const addGrade = (grade) => {
+                const normalized = (grade || '').toString().trim() || 'Offen'
+                counts.set(normalized, (counts.get(normalized) || 0) + 1)
+            }
+
+            groups.forEach((group) => {
+                const studentIds = Array.isArray(group?.student_ids)
+                    ? group.student_ids.filter((studentId) => activeStudentIds.has(String(studentId)))
+                    : []
+                if (!studentIds.length) return
+
+                const sharedGrade = this.effectiveGradeForType(work?.type, group?.grade)
+                if (work?.is_group_work && sharedGrade) {
+                    studentIds.forEach(() => addGrade(sharedGrade))
+                    return
+                }
+
+                const gradesByStudent = this.workGroupGradesByStudent(work, group)
+                if (gradesByStudent.size) {
+                    studentIds.forEach((studentId) => {
+                        addGrade(gradesByStudent.get(String(studentId)))
+                    })
+                    return
+                }
+
+                studentIds.forEach(() => addGrade(sharedGrade))
+            })
+
+            return Array.from(counts.entries())
+                .map(([grade, count]) => ({
+                    grade,
+                    count,
+                    color: grade === 'Offen' ? 'warning' : 'primary',
+                }))
+                .sort((left, right) => this.compareGradeDistributionItems(left.grade, right.grade))
+        },
+        workGroupGradesByStudent(work, group) {
+            const gradesByStudent = new Map()
+            const gradesArray = Array.isArray(group?.grades) ? group.grades : []
+
+            if (gradesArray.length) {
+                gradesArray.forEach((item) => {
+                    if (!item?.student_id) return
+                    gradesByStudent.set(String(item.student_id), this.effectiveGradeForType(work?.type, item.grade))
+                })
+                return gradesByStudent
+            }
+
+            const gradesObject = group?.grades && typeof group.grades === 'object' ? group.grades : {}
+            Object.entries(gradesObject).forEach(([studentId, grade]) => {
+                gradesByStudent.set(String(studentId), this.effectiveGradeForType(work?.type, grade))
+            })
+
+            return gradesByStudent
+        },
+        compareGradeDistributionItems(leftGrade, rightGrade) {
+            if (leftGrade === 'Offen') return 1
+            if (rightGrade === 'Offen') return -1
+
+            const leftNumber = Number(leftGrade)
+            const rightNumber = Number(rightGrade)
+            if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+                return leftNumber - rightNumber
+            }
+
+            return leftGrade.localeCompare(rightGrade, 'de', { numeric: true, sensitivity: 'base' })
+        },
         workHasAllGrades(work) {
             const groups = Array.isArray(work?.groups) ? work.groups : []
             if (!groups.length) return false
@@ -2108,6 +2199,14 @@ export default {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
+}
+
+.work-list-item {
+    margin-bottom: 12px;
+}
+
+.work-list-item:last-child {
+    margin-bottom: 0;
 }
 
 .work-date-chip {
