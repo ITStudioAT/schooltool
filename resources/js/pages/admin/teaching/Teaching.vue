@@ -133,6 +133,7 @@
 </template>
 
 <script>
+import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
@@ -142,12 +143,12 @@ import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 import { parseLocalDate } from '@/helpers/date'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
-import Overview from './overview/Overview.vue'
-import Settings from './settings/Settings.vue'
-import Admin from './admin/Admin.vue'
-import Search from './search/Search.vue'
-import Schoolyear from './schoolyear/Schoolyear.vue'
-import Curricula from './curricula/Curricula.vue'
+const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
+const Settings = defineAsyncComponent(() => import('./settings/Settings.vue'))
+const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
+const Search = defineAsyncComponent(() => import('./search/Search.vue'))
+const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vue'))
+const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
 
 export default {
     components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, Curricula },

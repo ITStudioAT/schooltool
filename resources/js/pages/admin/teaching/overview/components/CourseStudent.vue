@@ -357,8 +357,11 @@
                                                 <v-icon start size="12">mdi-lock</v-icon>
                                                 Aus Arbeit
                                             </v-chip>
-                                            <span v-if="entryInlineDetail(item.entry)" class="text-caption text-medium-emphasis text-truncate">
-                                                {{ entryInlineDetail(item.entry) }}
+                                            <span v-if="entryInlineInfo(item.entry)" class="text-caption text-medium-emphasis text-truncate">
+                                                {{ entryInlineInfo(item.entry) }}
+                                            </span>
+                                            <span v-if="entryComment(item.entry)" class="text-caption text-truncate font-weight-bold">
+                                                {{ entryComment(item.entry) }}
                                             </span>
                                             <v-spacer />
                                             <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
@@ -657,6 +660,102 @@
                     </v-card>
                 </v-dialog>
 
+                <v-dialog v-model="show_work_entry_dialog" persistent max-width="500">
+                    <v-card v-if="work_entry_dialog">
+                        <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
+                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                            Bewertung aus Arbeit
+                            <v-chip v-if="work_entry_dialog.isGroupWork" size="x-small" variant="tonal" color="info">Gruppenarbeit</v-chip>
+                            <v-spacer />
+                            <v-btn icon="mdi-close" size="x-small" variant="text" :disabled="work_entry_saving" @click="closeWorkEntryDialog" />
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text class="d-flex flex-column ga-3">
+                            <div>
+                                <div class="text-caption text-medium-emphasis">Titel</div>
+                                <div class="text-body-2">{{ work_entry_dialog.title || '–' }}</div>
+                            </div>
+                            <div class="d-flex ga-4">
+                                <div>
+                                    <div class="text-caption text-medium-emphasis">Datum</div>
+                                    <div class="text-body-2">{{ work_entry_dialog.date || '–' }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-caption text-medium-emphasis">Typ</div>
+                                    <div class="text-body-2">{{ work_entry_dialog.typeLabel || '–' }}</div>
+                                </div>
+                            </div>
+                            <div v-if="work_entry_dialog.description">
+                                <div class="text-caption text-medium-emphasis">Beschreibung</div>
+                                <div class="text-body-2">{{ work_entry_dialog.description }}</div>
+                            </div>
+                            <template v-if="work_entry_dialog.isGroupWork">
+                                <v-divider />
+                                <div>
+                                    <div class="text-caption text-medium-emphasis mb-1">Gruppe {{ work_entry_dialog.groupIndex + 1 }}</div>
+                                    <div class="d-flex flex-wrap ga-1">
+                                        <v-chip v-for="(member, i) in work_entry_dialog.groupMembers" :key="i" size="x-small" variant="tonal">
+                                            {{ member }}
+                                        </v-chip>
+                                        <v-chip v-if="!work_entry_dialog.groupMembers.length" size="x-small" variant="tonal" color="warning">Keine weiteren Mitglieder</v-chip>
+                                    </div>
+                                </div>
+                            </template>
+                            <v-divider />
+                            <v-alert v-if="work_entry_dialog.isGroupWork && !work_entry_dialog.useIndividualGrades && work_entry_editing" type="info" variant="tonal" density="compact" class="text-caption">
+                                Gilt für die ganze Gruppe
+                            </v-alert>
+                            <template v-if="!work_entry_editing">
+                                <div class="d-flex ga-4 align-center">
+                                    <div>
+                                        <div class="text-caption text-medium-emphasis">
+                                            Note
+                                            <span v-if="work_entry_dialog.isGroupWork && !work_entry_dialog.useIndividualGrades" class="text-info">(Gruppe)</span>
+                                        </div>
+                                        <v-chip variant="tonal" :color="work_entry_dialog.grade && work_entry_dialog.grade !== 'offen' ? 'success' : 'default'">
+                                            {{ work_entry_dialog.grade || 'offen' }}
+                                        </v-chip>
+                                    </div>
+                                    <div v-if="work_entry_dialog.comment" class="flex-grow-1">
+                                        <div class="text-caption text-medium-emphasis">
+                                            Kommentar
+                                            <span v-if="work_entry_dialog.isGroupWork && !work_entry_dialog.useIndividualGrades" class="text-info">(Gruppe)</span>
+                                        </div>
+                                        <div class="text-body-2">{{ work_entry_dialog.comment }}</div>
+                                    </div>
+                                </div>
+                            </template>
+                            <template v-else>
+                                <div>
+                                    <div class="text-caption text-medium-emphasis mb-1">Note</div>
+                                    <div class="d-flex flex-wrap ga-1">
+                                        <v-btn
+                                            v-for="item in workEntryDialogGradeItems"
+                                            :key="item.value"
+                                            :variant="work_entry_edit_form.grade === item.value ? 'flat' : 'tonal'"
+                                            :color="work_entry_edit_form.grade === item.value ? 'success' : 'default'"
+                                            size="small"
+                                            @click="work_entry_edit_form.grade = work_entry_edit_form.grade === item.value ? '' : item.value">
+                                            {{ item.value }}
+                                        </v-btn>
+                                    </div>
+                                    <div class="text-caption text-success mt-1" style="min-height: 1.2em;">
+                                        {{ workEntryDialogGradeItems.find(i => i.value === work_entry_edit_form.grade)?.title ?? '' }}
+                                    </div>
+                                </div>
+                                <v-textarea v-model="work_entry_edit_form.comment" label="Kommentar" rows="2" :counter="1024" :maxlength="1024" />
+                            </template>
+                        </v-card-text>
+                        <v-divider />
+                        <v-card-actions>
+                            <v-btn color="warning" variant="tonal" :disabled="work_entry_saving" @click="closeWorkEntryDialog">Schließen</v-btn>
+                            <v-spacer />
+                            <v-btn v-if="!work_entry_editing" color="primary" variant="tonal" prepend-icon="mdi-pencil" @click="startWorkEntryEdit">Bearbeiten</v-btn>
+                            <v-btn v-else color="success" variant="tonal" prepend-icon="mdi-content-save" :loading="work_entry_saving" @click="saveWorkEntryEdit">Speichern</v-btn>
+                        </v-card-actions>
+                    </v-card>
+                </v-dialog>
+
                 <v-dialog v-model="show_star_form" persistent max-width="500">
                     <v-card>
                         <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
@@ -784,6 +883,11 @@ export default {
             entry_form: this.emptyEntryForm(),
             sort_by_type: false,
             delete_entry_id: null,
+            show_work_entry_dialog: false,
+            work_entry_dialog: null,
+            work_entry_editing: false,
+            work_entry_edit_form: { grade: '', comment: '' },
+            work_entry_saving: false,
             show_auswertung: false,
             activeSemester: null,
             show_behaviour_form: false,
@@ -1041,6 +1145,16 @@ export default {
             const selectedType = this.entry_form.type
             if (!selectedType) return []
             const work = this.teachingWorks.find((w) => w.short_name === selectedType)
+            const grades = work?.grades || []
+            return grades.map((grade) => ({
+                title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
+                value: grade.grade,
+            }))
+        },
+        workEntryDialogGradeItems() {
+            const type = this.work_entry_dialog?.entry?.type
+            if (!type) return []
+            const work = this.teachingWorks.find((w) => w.short_name === type)
             const grades = work?.grades || []
             return grades.map((grade) => ({
                 title: grade.name ? `${grade.grade} (${grade.name})` : grade.grade,
@@ -1583,11 +1697,138 @@ export default {
         onEntryRowClick(entry) {
             if (!entry) return
             if (this.entryIsDerivedFromWork(entry) && entry.teaching_course_work_id) {
-                this.jumpToWork(entry)
+                this.openWorkEntryDialog(entry)
                 return
             }
             if (!this.entryIsDerivedFromWork(entry)) {
                 this.editEntry(entry)
+            }
+        },
+        openWorkEntryDialog(entry) {
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === entry.teaching_course_work_id)
+            const title = (work?.title || '').trim()
+            const desc = (work?.description || '').trim()
+            const isGroupWork = !!work?.is_group_work
+            const userId = entry.user_id
+
+            let groupMembers = []
+            let groupComment = ''
+            let groupGrade = ''
+            let groupIndex = -1
+            let useIndividualGrades = true
+            if (work && Array.isArray(work.groups)) {
+                const gIdx = work.groups.findIndex((g) =>
+                    Array.isArray(g?.student_ids) && g.student_ids.includes(userId)
+                )
+                if (gIdx >= 0) {
+                    const group = work.groups[gIdx]
+                    groupIndex = gIdx
+                    groupComment = (group.comment || '').toString().trim()
+                    groupGrade = (group.grade || '').toString().trim()
+                    const hasIndividualGrades = Array.isArray(group.grades)
+                        ? group.grades.some((item) => item?.student_id && (item.grade ?? '') !== '')
+                        : (typeof group.grades === 'object' && Object.keys(group.grades || {}).length > 0)
+                    useIndividualGrades = isGroupWork ? hasIndividualGrades : true
+                    const studentsInfo = this.selected_course?.students_info || []
+                    groupMembers = (group.student_ids || [])
+                        .filter((id) => id !== userId)
+                        .map((id) => {
+                            const s = studentsInfo.find((st) => String(st.id) === String(id))
+                            return s ? `${s.last_name}, ${s.first_name}` : String(id)
+                        })
+                }
+            }
+
+            this.work_entry_dialog = {
+                entry,
+                work,
+                title: title || desc || '–',
+                description: title && desc ? desc : '',
+                date: entry.date ? this.formatDate(entry.date) : '',
+                typeLabel: this.workTypeLabel(entry.type),
+                grade: this.entryDisplayGrade(entry),
+                comment: this.entryComment(entry),
+                isGroupWork,
+                groupMembers,
+                groupComment,
+                groupGrade,
+                groupIndex,
+                useIndividualGrades,
+            }
+            this.work_entry_editing = false
+            this.show_work_entry_dialog = true
+        },
+        closeWorkEntryDialog() {
+            this.show_work_entry_dialog = false
+            this.work_entry_editing = false
+            this.work_entry_dialog = null
+        },
+        startWorkEntryEdit() {
+            const dialog = this.work_entry_dialog
+            if (dialog.isGroupWork && !dialog.useIndividualGrades) {
+                this.work_entry_edit_form = {
+                    grade: dialog.groupGrade || '',
+                    comment: dialog.groupComment || '',
+                }
+            } else {
+                this.work_entry_edit_form = {
+                    grade: this.effectiveGradeKeyForEntry(dialog.entry) || '',
+                    comment: this.entryComment(dialog.entry) || '',
+                }
+            }
+            this.work_entry_editing = true
+        },
+        async saveWorkEntryEdit() {
+            const dialog = this.work_entry_dialog
+            if (!dialog?.work || !dialog?.entry) return
+
+            this.work_entry_saving = true
+            try {
+                const work = JSON.parse(JSON.stringify(dialog.work))
+                const userId = dialog.entry.user_id
+
+                const group = (work.groups || []).find((g) =>
+                    Array.isArray(g?.student_ids) && g.student_ids.includes(userId)
+                )
+                if (!group) return
+
+                if (dialog.isGroupWork && !dialog.useIndividualGrades) {
+                    group.grade = this.work_entry_edit_form.grade
+                    group.comment = this.work_entry_edit_form.comment
+                } else {
+                    const gradesArray = Array.isArray(group.grades) ? group.grades : []
+                    const gradeObj = gradesArray.find((item) => item?.student_id === userId)
+                    if (gradeObj) {
+                        gradeObj.grade = this.work_entry_edit_form.grade
+                    } else {
+                        gradesArray.push({ student_id: userId, grade: this.work_entry_edit_form.grade })
+                        group.grades = gradesArray
+                    }
+
+                    const commentsArray = Array.isArray(group.comments) ? group.comments : []
+                    const commentObj = commentsArray.find((item) => item?.student_id === userId)
+                    if (commentObj) {
+                        commentObj.comment = this.work_entry_edit_form.comment
+                    } else {
+                        commentsArray.push({ student_id: userId, comment: this.work_entry_edit_form.comment })
+                        group.comments = commentsArray
+                    }
+                }
+
+                const ok = await this.courseWorkStore.update(work)
+                if (ok) {
+                    await this.courseWorkStore.index(this.selected_course.id)
+                    await this.loadEntries()
+                    this.work_entry_dialog.grade = this.work_entry_edit_form.grade || 'offen'
+                    this.work_entry_dialog.comment = this.work_entry_edit_form.comment
+                    if (dialog.isGroupWork && !dialog.useIndividualGrades) {
+                        this.work_entry_dialog.groupGrade = this.work_entry_edit_form.grade
+                        this.work_entry_dialog.groupComment = this.work_entry_edit_form.comment
+                    }
+                    this.work_entry_editing = false
+                }
+            } finally {
+                this.work_entry_saving = false
             }
         },
         editEntry(entry) {
@@ -2149,14 +2390,12 @@ export default {
             }
             return (entry?.description || '').toString().trim()
         },
-        entryInlineDetail(entry) {
+        entryInlineInfo(entry) {
             const parts = []
             const title = this.entryWorkTitle(entry)
             if (title) parts.push(title)
             const desc = this.entryWorkDescription(entry)
             if (desc) parts.push(desc)
-            const comment = this.entryComment(entry)
-            if (comment) parts.push(comment)
             return parts.join(' · ')
         },
         async jumpToWork(entry) {
