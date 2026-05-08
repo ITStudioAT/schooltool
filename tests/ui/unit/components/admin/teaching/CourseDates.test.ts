@@ -63,7 +63,7 @@ describe('CourseDates course-specific schema', () => {
         expect(source).not.toContain('show_dates = false')
     })
 
-    it('shows a left aligned semester selector beside the date range selector', () => {
+    it('shows a left aligned semester selector and keeps the date range selector compact only', () => {
         const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
 
         expect(source).toContain('class="course-date-semester-selection d-flex justify-start"')
@@ -71,6 +71,7 @@ describe('CourseDates course-specific schema', () => {
         expect(source).toContain('<v-btn :value="2" size="small">2. Sem</v-btn>')
         expect(source).toContain('<v-btn :value="3" size="small">Sem 1+2</v-btn>')
         expect(source.indexOf('course-date-semester-selection')).toBeLessThan(source.indexOf('dateRangeSelection'))
+        expect(source).toContain('<div v-if="compactStudentView" class="ml-auto d-flex">')
         expect(source).not.toContain('!compactStudentView && semesterCount === 2')
     })
 
@@ -85,7 +86,29 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.selectedCourseCurriculumTitle.call(ctx)).toBe('')
     })
 
-    it('keeps the visible dates anchored to the highlighted date when selecting another date', () => {
+    it('shows all filtered dates in the standalone dates panel', () => {
+        const computed = (CourseDates as any).computed
+        const dates = [
+            { id: 1, date: '2026-01-01' },
+            { id: 2, date: '2026-01-08' },
+            { id: 3, date: '2026-01-15' },
+            { id: 4, date: '2026-01-22' },
+            { id: 5, date: '2026-01-29' },
+            { id: 6, date: '2026-02-05' },
+            { id: 7, date: '2026-02-12' },
+        ]
+        const ctx: Record<string, unknown> = {
+            filteredCourseDates: dates,
+            selected_courseDate: { id: 4, date: '2026-01-22' },
+            highlightedDateId: 4,
+            dateRangeSelection: ['today'],
+            compactStudentView: false,
+        }
+
+        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    })
+
+    it('keeps the compact visible dates anchored to the highlighted date when selecting another date', () => {
         const computed = (CourseDates as any).computed
         const dates = [
             { id: 1, date: '2026-01-01' },
@@ -101,13 +124,13 @@ describe('CourseDates course-specific schema', () => {
             selected_courseDate: { id: 6, date: '2026-02-05' },
             highlightedDateId: 4,
             dateRangeSelection: ['today'],
-            compactStudentView: false,
+            compactStudentView: true,
         }
 
         expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([2, 3, 4, 5, 6])
     })
 
-    it('falls back to the selected date as visible anchor when no highlighted date exists', () => {
+    it('falls back to the selected date as compact visible anchor when no highlighted date exists', () => {
         const computed = (CourseDates as any).computed
         const dates = [
             { id: 1, date: '2026-01-01' },
@@ -123,7 +146,7 @@ describe('CourseDates course-specific schema', () => {
             selected_courseDate: { id: 4, date: '2026-01-22' },
             highlightedDateId: null,
             dateRangeSelection: ['today'],
-            compactStudentView: false,
+            compactStudentView: true,
         }
 
         expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([2, 3, 4, 5, 6])

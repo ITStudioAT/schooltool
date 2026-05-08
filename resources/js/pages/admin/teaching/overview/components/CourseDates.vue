@@ -22,7 +22,7 @@
                             <v-btn :value="3" size="small">Sem 1+2</v-btn>
                         </v-btn-toggle>
                     </div>
-                    <div class="ml-auto d-flex">
+                    <div v-if="compactStudentView" class="ml-auto d-flex">
                         <v-btn-toggle
                             v-model="dateRangeSelection"
                             multiple
@@ -735,6 +735,8 @@ export default {
             const dates = this.filteredCourseDates || []
             if (!dates.length) return []
 
+            if (!this.compactStudentView) return dates
+
             const activeCourseDateId = this.highlightedDateId || this.selected_courseDate?.id
             let activeIndex = activeCourseDateId
                 ? dates.findIndex((courseDate) => String(courseDate.id) === String(activeCourseDateId))
@@ -750,35 +752,18 @@ export default {
 
             const selectedRanges = Array.isArray(this.dateRangeSelection) && this.dateRangeSelection.length ? this.dateRangeSelection : ['today']
             const includeBefore = selectedRanges.includes('before')
-            const includeToday = selectedRanges.includes('today')
             const includeAfter = selectedRanges.includes('after')
             const adjacentDateCount = 2
             const visibleDates = []
 
-            if (this.compactStudentView) {
-                if (includeBefore) {
-                    visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - adjacentDateCount)))
-                }
-                visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
-                if (dates[activeIndex]) visibleDates.push(dates[activeIndex])
-                visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
-                if (includeAfter) {
-                    visibleDates.push(...dates.slice(activeIndex + 1 + adjacentDateCount))
-                }
-            } else {
-                if (includeBefore) {
-                    visibleDates.push(...dates.slice(0, activeIndex))
-                } else if (activeIndex > 0) {
-                    visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
-                }
-                if (includeToday && dates[activeIndex]) {
-                    visibleDates.push(dates[activeIndex])
-                }
-                if (includeAfter) {
-                    visibleDates.push(...dates.slice(activeIndex + 1))
-                } else if (activeIndex < dates.length - 1) {
-                    visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
-                }
+            if (includeBefore) {
+                visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - adjacentDateCount)))
+            }
+            visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
+            if (dates[activeIndex]) visibleDates.push(dates[activeIndex])
+            visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
+            if (includeAfter) {
+                visibleDates.push(...dates.slice(activeIndex + 1 + adjacentDateCount))
             }
 
             return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)
