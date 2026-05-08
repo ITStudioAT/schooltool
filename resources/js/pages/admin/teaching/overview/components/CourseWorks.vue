@@ -310,6 +310,49 @@
                                     <div v-if="group.comment && group.comment.toString().trim()" class="text-caption text-medium-emphasis mt-1">
                                         {{ group.comment }}
                                     </div>
+                                    <div class="group-grade-overview mt-2">
+                                        <template v-if="group.use_individual_grades">
+                                            <div class="d-flex align-center ga-2 mb-1">
+                                                <v-chip size="x-small" color="secondary" variant="tonal">
+                                                    Einzelwertung
+                                                </v-chip>
+                                            </div>
+                                            <div class="group-grade-list">
+                                                <div
+                                                    v-for="row in groupStudentGradeRows(group)"
+                                                    :key="`group-grade-${index}-${row.studentId}`"
+                                                    class="group-grade-row">
+                                                    <div class="d-flex align-center flex-wrap ga-2">
+                                                        <div class="text-body-2 font-weight-medium group-grade-row__student">
+                                                            {{ row.studentLabel }}
+                                                        </div>
+                                                        <v-chip
+                                                            size="x-small"
+                                                            :color="row.gradeValue ? 'success' : 'warning'"
+                                                            :variant="row.gradeValue ? 'tonal' : 'outlined'">
+                                                            {{ row.gradeLabel }}
+                                                        </v-chip>
+                                                    </div>
+                                                    <div v-if="row.commentPreview" class="text-caption text-medium-emphasis group-grade-row__comment">
+                                                        {{ row.commentPreview }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <template v-else>
+                                            <div class="d-flex flex-wrap align-center ga-1">
+                                                <v-chip size="x-small" color="primary" variant="tonal">
+                                                    Gruppenwertung
+                                                </v-chip>
+                                                <v-chip
+                                                    size="x-small"
+                                                    :color="sharedGroupGradeValue(group) ? 'success' : 'warning'"
+                                                    :variant="sharedGroupGradeValue(group) ? 'tonal' : 'outlined'">
+                                                    Note: {{ sharedGroupGradeLabel(group) }}
+                                                </v-chip>
+                                            </div>
+                                        </template>
+                                    </div>
                                 </v-card>
                             </div>
 
@@ -433,13 +476,12 @@
                                             </div>
                                         </div>
                                         <v-textarea
-                                            v-if="!work_form.groups[group_dialog_index].use_individual_grades"
                                             v-model="work_form.groups[group_dialog_index].comment"
-                                            label="Kommentar (für alle)"
+                                            :label="work_form.groups[group_dialog_index].use_individual_grades ? 'Kommentar (Gruppe)' : 'Kommentar (für alle)'"
                                             rows="2"
                                             :counter="1024"
                                             :maxlength="1024" />
-                                        <div v-else class="d-flex flex-column ga-2">
+                                        <div v-if="work_form.groups[group_dialog_index].use_individual_grades" class="d-flex flex-column ga-2">
                                             <v-card
                                                 v-for="studentId in sortedGroupStudentIds(work_form.groups[group_dialog_index])"
                                                 :key="`dlg-chip-${group_dialog_index}-${studentId}`"
@@ -1630,7 +1672,7 @@ export default {
                         comment: group.comments?.[id] ?? '',
                     }))
                     const points = this.serializeGroupPoints(group)
-                    return { ...group, date: date || null, grade: '', comment: '', grades, comments, points }
+                    return { ...group, date: date || null, grade: '', comment: group.comment ?? '', grades, comments, points }
                 })
 
                 // Convert date_for_all_groups to YYYY-MM-DD string format
@@ -1894,6 +1936,27 @@ export default {
         },
         studentObjectById(studentId) {
             return this.activeCourseStudents.find((s) => String(s.id) === String(studentId)) || null
+        },
+        sharedGroupGradeValue(group) {
+            return this.effectiveGradeForType(this.work_form.type, group?.grade)
+        },
+        sharedGroupGradeLabel(group) {
+            return this.sharedGroupGradeValue(group) || 'Keine Note'
+        },
+        groupStudentGradeRows(group) {
+            return this.sortedGroupStudentIds(group).map((studentId) => {
+                const gradeValue = this.getGroupStudentGrade(group, studentId)
+                const commentValue = this.getGroupStudentComment(group, studentId)
+
+                return {
+                    studentId,
+                    studentLabel: this.studentNameById(studentId),
+                    gradeValue,
+                    gradeLabel: gradeValue || 'Keine Note',
+                    commentValue,
+                    commentPreview: (commentValue || '').toString().trim(),
+                }
+            })
         },
         workGradeDistribution(work) {
             const groups = Array.isArray(work?.groups) ? work.groups : []
@@ -2312,5 +2375,34 @@ export default {
     border-radius: 10px;
     border: 1px dashed rgba(99, 102, 241, 0.35);
     background: rgba(99, 102, 241, 0.05);
+}
+
+.group-grade-overview {
+    padding-top: 8px;
+    border-top: 1px solid rgba(100, 116, 139, 0.14);
+}
+
+.group-grade-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.group-grade-row {
+    padding: 6px 0;
+}
+
+.group-grade-row + .group-grade-row {
+    border-top: 1px solid rgba(100, 116, 139, 0.1);
+}
+
+.group-grade-row__student {
+    min-width: 140px;
+}
+
+.group-grade-row__comment {
+    margin-top: 2px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 </style>

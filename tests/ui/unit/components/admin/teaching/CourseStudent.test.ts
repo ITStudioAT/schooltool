@@ -148,6 +148,68 @@ describe('CourseStudent next and previous navigation order', () => {
         expect(computed.currentStudentIndex.call({ ...ctx, courseStudentsList: sorted })).toBe(1)
     })
 
+    it('skips canceled students when navigating with the arrow buttons', () => {
+        const computed = (CourseStudent as any).computed
+        const methods = (CourseStudent as any).methods
+        const students = [
+            { id: 1, schoolclass: '1A', last_name: 'Auer', first_name: 'Clara', canceled_at: null },
+            { id: 2, schoolclass: '1A', last_name: 'Bauer', first_name: 'Anna', canceled_at: null },
+            { id: 3, schoolclass: '1A', last_name: 'Huber', first_name: 'Berta', canceled_at: '2026-02-16 10:00:00' },
+        ]
+        const ctx: Record<string, any> = {
+            selected_course: {
+                students_info: students,
+            },
+            selected_course_student: students[1],
+            students_sort_mode: 'class_last_name',
+            isStudentCanceled: methods.isStudentCanceled,
+            compareStudentsBySelectedSort: methods.compareStudentsBySelectedSort,
+            studentClassValue: methods.studentClassValue,
+            goToNextStudent: methods.goToNextStudent,
+            goToPreviousStudent: methods.goToPreviousStudent,
+        }
+
+        Object.defineProperties(ctx, {
+            courseStudentsList: {
+                get() {
+                    return computed.courseStudentsList.call(ctx)
+                },
+            },
+            navigableCourseStudentsList: {
+                get() {
+                    return computed.navigableCourseStudentsList.call(ctx)
+                },
+            },
+            currentNavigableStudentIndex: {
+                get() {
+                    return computed.currentNavigableStudentIndex.call(ctx)
+                },
+            },
+            hasPreviousStudent: {
+                get() {
+                    return computed.hasPreviousStudent.call(ctx)
+                },
+            },
+            hasNextStudent: {
+                get() {
+                    return computed.hasNextStudent.call(ctx)
+                },
+            },
+        })
+
+        expect(ctx.courseStudentsList.map((student: { id: number }) => student.id)).toEqual([1, 2, 3])
+        expect(ctx.navigableCourseStudentsList.map((student: { id: number }) => student.id)).toEqual([1, 2])
+        expect(ctx.hasNextStudent).toBe(false)
+
+        methods.goToNextStudent.call(ctx)
+
+        expect(ctx.selected_course_student.id).toBe(2)
+
+        methods.goToPreviousStudent.call(ctx)
+
+        expect(ctx.selected_course_student.id).toBe(1)
+    })
+
     it('uses last name plus first name for name sorting', () => {
         const computed = (CourseStudent as any).computed
         const methods = (CourseStudent as any).methods
@@ -270,8 +332,140 @@ describe('CourseStudent entry title rendering', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="text-caption text-medium-emphasis entry-work-title-line"')
+        expect(source).toContain('class="text-caption text-medium-emphasis entry-work-group-comment-line"')
+        expect(source).toContain('class="text-caption font-weight-bold entry-work-comment-line"')
+        expect(source).toContain('v-if="entryWorkKindLabel(item.entry)"')
+        expect(source).toContain('{{ entryWorkKindLabel(item.entry) }}')
+        expect(source).toContain('v-if="entryWorkGradingLabel(item.entry)" size="x-small" variant="outlined" color="primary"')
+        expect(source).toContain('v-if="entryWorkGradingLabel(item.entry)"')
+        expect(source).toContain('{{ entryWorkGradingLabel(item.entry) }}')
+        expect(source).toContain('v-if="entryGroupComment(item.entry)"')
+        expect(source).toContain('{{ entryGroupComment(item.entry) }}')
+        expect(source).toContain('v-if="entryComment(item.entry)"')
+        expect(source).toContain('{{ entryComment(item.entry) }}')
+        expect(source).not.toContain('Aus Arbeit')
         expect(source).not.toContain('class="entry-work-title"')
         expect(source).not.toContain('v-chip\n                                                v-if="entryWorkTitle(item.entry)"')
+    })
+})
+
+describe('CourseStudent work entry labels', () => {
+    it('labels single work entries as Einzelarbeit without a grading mode', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: 10,
+                    is_group_work: false,
+                }],
+            },
+            sameId: methods.sameId,
+            entryWork: methods.entryWork,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+        }
+
+        const entry = {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+        }
+
+        expect(methods.entryWorkKindLabel.call(ctx, entry)).toBe('Einzelarbeit')
+        expect(methods.entryWorkGradingLabel.call(ctx, entry)).toBe('')
+    })
+
+    it('labels group work entries with their grading mode', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: 10,
+                    is_group_work: true,
+                    groups: [{
+                        student_ids: [20, 21],
+                        grades: [{ student_id: 20, grade: '+' }],
+                    }],
+                }],
+            },
+            sameId: methods.sameId,
+            entryWork: methods.entryWork,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryWorkUsesIndividualGrades: methods.entryWorkUsesIndividualGrades,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+        }
+
+        const entry = {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+        }
+
+        expect(methods.entryWorkKindLabel.call(ctx, entry)).toBe('Gruppenarbeit')
+        expect(methods.entryWorkGradingLabel.call(ctx, entry)).toBe('Einzelbewertung')
+
+        const courseWorkStore = ctx.courseWorkStore as any
+        courseWorkStore.courseWorks[0].groups[0].grades = []
+
+        expect(methods.entryWorkGradingLabel.call(ctx, entry)).toBe('Gruppenbewertung')
+    })
+})
+
+describe('CourseStudent work entry dialog', () => {
+    it('shows every group member and marks the selected student', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: 10,
+                    title: 'Podcast',
+                    description: '',
+                    is_group_work: true,
+                    groups: [{
+                        student_ids: [20, 21],
+                        grades: [{ student_id: 20, grade: '+' }],
+                    }],
+                }],
+            },
+            selected_course: {
+                students_info: [
+                    { id: 20, last_name: 'Müller', first_name: 'Jakob' },
+                    { id: 21, last_name: 'Huber', first_name: 'Anna' },
+                ],
+            },
+            sameId: methods.sameId,
+            formatDate: () => '11.03.2026',
+            workTypeLabel: () => 'AK - Auftrag, klein',
+            entryDisplayGrade: () => '+',
+            entryComment: () => '',
+            work_entry_editing: true,
+            show_work_entry_dialog: false,
+            work_entry_dialog: null,
+        }
+
+        methods.openWorkEntryDialog.call(ctx, {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+            type: 'AK',
+            date: '2026-03-11',
+        })
+
+        expect((ctx.work_entry_dialog as any).groupMembers).toEqual([
+            { name: 'Müller, Jakob', isCurrent: true },
+            { name: 'Huber, Anna', isCurrent: false },
+        ])
+    })
+
+    it('renders the selected group member as a primary chip', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain(':color="member.isCurrent ? \'primary\' : undefined"')
+        expect(source).toContain('{{ member.name }}')
+        expect(source).not.toContain('Keine weiteren Mitglieder')
     })
 })
 
@@ -288,12 +482,151 @@ describe('CourseStudent auswertung entry title rendering', () => {
         expect(source).toContain('class="d-flex align-center ga-2 w-100 auswertung-entry-main-row"')
         expect(source).toContain('class="text-caption text-medium-emphasis auswertung-entry-title"')
         expect(source).toContain('v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title"')
+        expect(source).toContain('v-if="row.workComment" class="text-caption text-medium-emphasis auswertung-entry-work-comment"')
+        expect(source).toContain('{{ row.workComment }}')
+        expect(source).toContain('v-if="row.workIndividualComment" class="text-caption font-weight-bold auswertung-entry-work-individual-comment"')
+        expect(source).toContain('{{ row.workIndividualComment }}')
         expect(source).toContain('v-chip v-if="row.date" size="x-small" variant="tonal" color="primary"')
         expect(source).toContain('v-chip v-if="row.value != null" size="x-small" variant="tonal" :color="isNaGradeKey(row.value) ? \'error\' : \'primary\'"')
         expect(mainRowIndex).toBeGreaterThan(-1)
         expect(workTitleIndex).toBeGreaterThan(mainRowIndex)
         expect(source).toContain('workTitle: this.entryWorkTitle(entry)')
+        expect(source).toContain("workComment: this.entryGroupComment?.(entry) || ''")
+        expect(source).toContain("workIndividualComment: this.entryComment?.(entry) || ''")
         expect(source).not.toContain('v-chip v-if="row.type" size="x-small" variant="outlined"')
+    })
+})
+
+describe('CourseStudent work entry comments', () => {
+    it('falls back to the derived entry description when no group comment can be resolved', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: { courseWorks: [] },
+            sameId: methods.sameId,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+            entryWorkComment: methods.entryWorkComment,
+            entryWorkIndividualComment: methods.entryWorkIndividualComment,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            entryWorkDescription: methods.entryWorkDescription,
+        }
+
+        const result = methods.entryComment.call(ctx, {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+            description: 'Individueller Kommentar zur Arbeit',
+        })
+
+        expect(result).toBe('Individueller Kommentar zur Arbeit')
+    })
+
+    it('does not duplicate the work description as a comment when no comment exists', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: 10,
+                    title: 'Arbeit 1',
+                    description: 'Arbeitsbeschreibung',
+                    groups: [],
+                }],
+            },
+            sameId: methods.sameId,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+            entryWorkComment: methods.entryWorkComment,
+            entryWorkIndividualComment: methods.entryWorkIndividualComment,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            entryWorkDescription: methods.entryWorkDescription,
+        }
+
+        const result = methods.entryComment.call(ctx, {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+            description: 'Arbeitsbeschreibung',
+        })
+
+        expect(result).toBe('')
+    })
+
+    it('resolves group comments when work and student ids differ by string or number type', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: '10',
+                    title: 'Podcast',
+                    description: 'Erstellung eines Podcasts',
+                    groups: [{
+                        student_ids: ['20', '21'],
+                        comment: 'Urheberrecht',
+                        comments: [],
+                    }],
+                }],
+            },
+            sameId: methods.sameId,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+        }
+
+        const entry = {
+            source: 'course_work',
+            teaching_course_work_id: 10,
+            user_id: 20,
+        }
+
+        expect(methods.entryWorkGroupComment.call(ctx, entry)).toBe('Urheberrecht')
+        expect(methods.entryGroupComment.call(ctx, entry)).toBe('Urheberrecht')
+    })
+
+    it('keeps group and individual work comments separate in the overview', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx: Record<string, unknown> = {
+            courseWorkStore: {
+                courseWorks: [{
+                    id: 22,
+                    title: 'Podcast',
+                    description: 'Erstellung eines Podcasts',
+                    groups: [{
+                        student_ids: [478, 486],
+                        comment: 'Urheberrecht',
+                        comments: [
+                            { student_id: 478, comment: 'naja' },
+                        ],
+                    }],
+                }],
+            },
+            sameId: methods.sameId,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryIsDerivedFromWork: methods.entryIsDerivedFromWork,
+            entryWorkIndividualComment: methods.entryWorkIndividualComment,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            entryWorkDescription: methods.entryWorkDescription,
+        }
+
+        const entry = {
+            source: 'course_work',
+            teaching_course_work_id: 22,
+            user_id: 478,
+            description: 'naja',
+        }
+
+        expect(methods.entryGroupComment.call(ctx, entry)).toBe('Urheberrecht')
+        expect(methods.entryComment.call(ctx, entry)).toBe('naja')
+    })
+
+    it('shows the group comment separately in the work entry dialog', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('Kommentar (Gruppe)')
+        expect(source).toContain('work_entry_dialog.groupComment')
     })
 })
 

@@ -551,6 +551,7 @@ describe('show update destroy', function () {
                 'student_ids' => [$studentA->id],
                 'date' => '2026-03-11',
                 'name' => 'Gruppe Alpha',
+                'comment' => 'Gemeinsame Gruppenrückmeldung',
                 'grades' => [[
                     'student_id' => $studentB->id,
                     'grade' => '2',
@@ -582,6 +583,7 @@ describe('show update destroy', function () {
             'group_index' => 0,
             'group_name' => 'Gruppe Alpha',
             'group_date' => '2026-03-11',
+            'group_comment' => 'Gemeinsame Gruppenrückmeldung',
             'uses_individual_grades' => true,
             'student_grade' => '2',
         ]);
@@ -598,6 +600,7 @@ describe('show update destroy', function () {
 
         $response->assertOk()
             ->assertJsonPath('data.groups.0.name', 'Gruppe Alpha')
+            ->assertJsonPath('data.groups.0.comment', 'Gemeinsame Gruppenrückmeldung')
             ->assertJsonPath('data.groups.0.student_ids.0', $studentA->id)
             ->assertJsonPath('data.groups.0.grades.0.student_id', $studentA->id)
             ->assertJsonPath('data.groups.0.grades.1.student_id', $studentB->id)

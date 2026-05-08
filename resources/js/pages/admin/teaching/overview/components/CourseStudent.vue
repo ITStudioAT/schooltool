@@ -131,6 +131,12 @@
                                                     <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
                                                         {{ row.workTitle }}
                                                     </div>
+                                                    <div v-if="row.workComment" class="text-caption text-medium-emphasis auswertung-entry-work-comment">
+                                                        {{ row.workComment }}
+                                                    </div>
+                                                    <div v-if="row.workIndividualComment" class="text-caption font-weight-bold auswertung-entry-work-individual-comment">
+                                                        {{ row.workIndividualComment }}
+                                                    </div>
                                                 </div>
                                             </v-list-item>
                                         </div>
@@ -204,6 +210,12 @@
                                                     </div>
                                                     <div v-if="row.workTitle" class="text-body-2 auswertung-entry-work-title">
                                                         {{ row.workTitle }}
+                                                    </div>
+                                                    <div v-if="row.workComment" class="text-caption text-medium-emphasis auswertung-entry-work-comment">
+                                                        {{ row.workComment }}
+                                                    </div>
+                                                    <div v-if="row.workIndividualComment" class="text-caption font-weight-bold auswertung-entry-work-individual-comment">
+                                                        {{ row.workIndividualComment }}
                                                     </div>
                                                 </div>
                                             </v-list-item>
@@ -321,9 +333,8 @@
                                     <div class="text-caption font-weight-bold text-medium-emphasis mt-2">{{ item.label }}</div>
                                 </v-list-item>
                                 <v-list-item v-else class="cursor-pointer" @click="onEntryRowClick(item.entry)">
-                                    <div
-                                        class="entry-row d-flex align-center ga-2 w-100"
-                                        :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
+                                    <div class="w-100 entry-list-row" :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
+                                        <div class="entry-row d-flex align-center ga-2 w-100">
                                             <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                                 {{ formatDate(item.entry.date) }}
                                             </v-chip>
@@ -333,20 +344,26 @@
                                             <v-chip v-if="item.entry.type && !sort_by_type" size="x-small" variant="outlined">
                                                 {{ item.entry.type }}
                                             </v-chip>
-                                            <v-chip v-if="entryIsDerivedFromWork(item.entry)" size="x-small" variant="tonal" color="info">
-                                                <v-icon start size="12">mdi-lock</v-icon>
-                                                Aus Arbeit
+                                            <v-chip v-if="entryWorkKindLabel(item.entry)" size="x-small" variant="tonal" color="info">
+                                                {{ entryWorkKindLabel(item.entry) }}
                                             </v-chip>
-                                            <span v-if="entryInlineInfo(item.entry)" class="text-caption text-medium-emphasis text-truncate">
-                                                {{ entryInlineInfo(item.entry) }}
-                                            </span>
-                                            <span v-if="entryComment(item.entry)" class="text-caption text-truncate font-weight-bold">
-                                                {{ entryComment(item.entry) }}
-                                            </span>
+                                            <v-chip v-if="entryWorkGradingLabel(item.entry)" size="x-small" variant="outlined" color="primary">
+                                                {{ entryWorkGradingLabel(item.entry) }}
+                                            </v-chip>
                                             <v-spacer />
                                             <v-chip size="small" variant="tonal" :color="isNaGradeKey(entryDisplayGrade(item.entry)) ? 'error' : entryHasDisplayGrade(item.entry) ? 'success' : 'error'">
                                                 {{ entryDisplayGrade(item.entry) }}
                                             </v-chip>
+                                        </div>
+                                        <div v-if="entryInlineInfo(item.entry)" class="text-caption text-medium-emphasis entry-work-title-line">
+                                            {{ entryInlineInfo(item.entry) }}
+                                        </div>
+                                        <div v-if="entryGroupComment(item.entry)" class="text-caption text-medium-emphasis entry-work-group-comment-line">
+                                            {{ entryGroupComment(item.entry) }}
+                                        </div>
+                                        <div v-if="entryComment(item.entry)" class="text-caption font-weight-bold entry-work-comment-line">
+                                            {{ entryComment(item.entry) }}
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -674,11 +691,20 @@
                                 <div>
                                     <div class="text-caption text-medium-emphasis mb-1">Gruppe {{ work_entry_dialog.groupIndex + 1 }}</div>
                                     <div class="d-flex flex-wrap ga-1">
-                                        <v-chip v-for="(member, i) in work_entry_dialog.groupMembers" :key="i" size="x-small" variant="tonal">
-                                            {{ member }}
+                                        <v-chip
+                                            v-for="(member, i) in work_entry_dialog.groupMembers"
+                                            :key="i"
+                                            size="x-small"
+                                            variant="tonal"
+                                            :color="member.isCurrent ? 'primary' : undefined">
+                                            {{ member.name }}
                                         </v-chip>
-                                        <v-chip v-if="!work_entry_dialog.groupMembers.length" size="x-small" variant="tonal" color="warning">Keine weiteren Mitglieder</v-chip>
+                                        <v-chip v-if="!work_entry_dialog.groupMembers.length" size="x-small" variant="tonal" color="warning">Keine Mitglieder</v-chip>
                                     </div>
+                                </div>
+                                <div v-if="work_entry_dialog.groupComment">
+                                    <div class="text-caption text-medium-emphasis">Kommentar (Gruppe)</div>
+                                    <div class="text-body-2">{{ work_entry_dialog.groupComment }}</div>
                                 </div>
                             </template>
                             <v-divider />
@@ -1362,11 +1388,18 @@ export default {
             if (!this.selected_course_student) return -1
             return this.courseStudentsList.findIndex(s => s.id === this.selected_course_student.id)
         },
+        navigableCourseStudentsList() {
+            return this.courseStudentsList.filter((student) => !this.isStudentCanceled(student))
+        },
+        currentNavigableStudentIndex() {
+            if (!this.selected_course_student) return -1
+            return this.navigableCourseStudentsList.findIndex(s => s.id === this.selected_course_student.id)
+        },
         hasPreviousStudent() {
-            return this.currentStudentIndex > 0
+            return this.currentNavigableStudentIndex > 0
         },
         hasNextStudent() {
-            return this.currentStudentIndex >= 0 && this.currentStudentIndex < this.courseStudentsList.length - 1
+            return this.currentNavigableStudentIndex >= 0 && this.currentNavigableStudentIndex < this.navigableCourseStudentsList.length - 1
         },
     },
 
@@ -1563,14 +1596,14 @@ export default {
         },
         goToPreviousStudent() {
             if (!this.hasPreviousStudent) return
-            const prevStudent = this.courseStudentsList[this.currentStudentIndex - 1]
+            const prevStudent = this.navigableCourseStudentsList[this.currentNavigableStudentIndex - 1]
             if (prevStudent) {
                 this.selected_course_student = prevStudent
             }
         },
         goToNextStudent() {
             if (!this.hasNextStudent) return
-            const nextStudent = this.courseStudentsList[this.currentStudentIndex + 1]
+            const nextStudent = this.navigableCourseStudentsList[this.currentNavigableStudentIndex + 1]
             if (nextStudent) {
                 this.selected_course_student = nextStudent
             }
@@ -1673,7 +1706,7 @@ export default {
             }
         },
         openWorkEntryDialog(entry) {
-            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === entry.teaching_course_work_id)
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => this.sameId(w.id, entry.teaching_course_work_id))
             const title = (work?.title || '').trim()
             const desc = (work?.description || '').trim()
             const isGroupWork = !!work?.is_group_work
@@ -1686,7 +1719,7 @@ export default {
             let useIndividualGrades = true
             if (work && Array.isArray(work.groups)) {
                 const gIdx = work.groups.findIndex((g) =>
-                    Array.isArray(g?.student_ids) && g.student_ids.includes(userId)
+                    Array.isArray(g?.student_ids) && g.student_ids.some((id) => this.sameId(id, userId))
                 )
                 if (gIdx >= 0) {
                     const group = work.groups[gIdx]
@@ -1699,10 +1732,12 @@ export default {
                     useIndividualGrades = isGroupWork ? hasIndividualGrades : true
                     const studentsInfo = this.selected_course?.students_info || []
                     groupMembers = (group.student_ids || [])
-                        .filter((id) => id !== userId)
                         .map((id) => {
                             const s = studentsInfo.find((st) => String(st.id) === String(id))
-                            return s ? `${s.last_name}, ${s.first_name}` : String(id)
+                            return {
+                                name: s ? `${s.last_name}, ${s.first_name}` : String(id),
+                                isCurrent: this.sameId(id, userId),
+                            }
                         })
                 }
             }
@@ -1756,7 +1791,7 @@ export default {
                 const userId = dialog.entry.user_id
 
                 const group = (work.groups || []).find((g) =>
-                    Array.isArray(g?.student_ids) && g.student_ids.includes(userId)
+                    Array.isArray(g?.student_ids) && g.student_ids.some((id) => this.sameId(id, userId))
                 )
                 if (!group) return
 
@@ -1765,7 +1800,7 @@ export default {
                     group.comment = this.work_entry_edit_form.comment
                 } else {
                     const gradesArray = Array.isArray(group.grades) ? group.grades : []
-                    const gradeObj = gradesArray.find((item) => item?.student_id === userId)
+                    const gradeObj = gradesArray.find((item) => this.sameId(item?.student_id, userId))
                     if (gradeObj) {
                         gradeObj.grade = this.work_entry_edit_form.grade
                     } else {
@@ -1774,7 +1809,7 @@ export default {
                     }
 
                     const commentsArray = Array.isArray(group.comments) ? group.comments : []
-                    const commentObj = commentsArray.find((item) => item?.student_id === userId)
+                    const commentObj = commentsArray.find((item) => this.sameId(item?.student_id, userId))
                     if (commentObj) {
                         commentObj.comment = this.work_entry_edit_form.comment
                     } else {
@@ -2316,7 +2351,7 @@ export default {
         entryWorkTitle(entry) {
             const workId = entry?.teaching_course_work_id
             if (!workId) return ''
-            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => this.sameId(w.id, workId))
             if (!work) return ''
             const title = (work.title || '').toString().trim()
             const desc = (work.description || '').toString().trim()
@@ -2325,36 +2360,99 @@ export default {
         entryWorkDescription(entry) {
             const workId = entry?.teaching_course_work_id
             if (!workId) return ''
-            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => this.sameId(w.id, workId))
             if (!work) return ''
             const title = (work.title || '').toString().trim()
             const desc = (work.description || '').toString().trim()
             // Only return description if title exists (otherwise description is already shown in title chip)
             return title && desc ? desc : ''
         },
-        entryWorkComment(entry) {
+        entryWork(entry) {
+            const workId = entry?.teaching_course_work_id
+            if (!workId) return null
+
+            return (this.courseWorkStore?.courseWorks || []).find((work) => this.sameId(work.id, workId)) || null
+        },
+        entryWorkKindLabel(entry) {
+            if (!this.entryIsDerivedFromWork(entry)) return ''
+
+            const work = this.entryWork(entry)
+            if (!work) return ''
+
+            return work?.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'
+        },
+        entryWorkUsesIndividualGrades(entry) {
+            const work = this.entryWork(entry)
+            if (!work?.is_group_work) return false
+
+            const group = this.entryWorkGroup(entry)
+            if (!group) return false
+
+            return Array.isArray(group.grades) && group.grades.length > 0
+        },
+        entryWorkGradingLabel(entry) {
+            const work = this.entryWork(entry)
+            if (!work?.is_group_work) return ''
+
+            return this.entryWorkUsesIndividualGrades(entry) ? 'Einzelbewertung' : 'Gruppenbewertung'
+        },
+        sameId(left, right) {
+            if (left == null || right == null) return false
+
+            return String(left) === String(right)
+        },
+        entryWorkGroup(entry) {
             const workId = entry?.teaching_course_work_id
             const userId = entry?.user_id
-            if (!workId || !userId) return ''
-            const work = (this.courseWorkStore?.courseWorks || []).find((w) => w.id === workId)
-            if (!work || !Array.isArray(work.groups)) return ''
+            if (!workId || !userId) return null
+            const work = (this.courseWorkStore?.courseWorks || []).find((w) => this.sameId(w.id, workId))
+            if (!work || !Array.isArray(work.groups)) return null
 
-            // Find the group containing this student
-            const group = work.groups.find((g) => Array.isArray(g?.student_ids) && g.student_ids.includes(userId))
+            return work.groups.find((group) => (
+                Array.isArray(group?.student_ids)
+                && group.student_ids.some((studentId) => this.sameId(studentId, userId))
+            )) || null
+        },
+        entryWorkIndividualComment(entry) {
+            const userId = entry?.user_id
+            if (!userId) return ''
+            const group = this.entryWorkGroup(entry)
             if (!group) return ''
 
-            // Check for individual comment first
             if (Array.isArray(group.comments)) {
-                const commentObj = group.comments.find((c) => c?.student_id === userId)
+                const commentObj = group.comments.find((comment) => this.sameId(comment?.student_id, userId))
                 if (commentObj?.comment) return commentObj.comment.toString().trim()
             }
 
-            // Fall back to group comment
+            if (group.comments && typeof group.comments === 'object') {
+                return (group.comments[userId] ?? group.comments[String(userId)] ?? '').toString().trim()
+            }
+
+            return ''
+        },
+        entryGroupComment(entry) {
+            if (!this.entryIsDerivedFromWork(entry)) return ''
+            return this.entryWorkGroupComment(entry)
+        },
+        entryWorkGroupComment(entry) {
+            const group = this.entryWorkGroup(entry)
+            if (!group) return ''
+
             return (group.comment || '').toString().trim()
+        },
+        entryWorkComment(entry) {
+            return this.entryWorkIndividualComment(entry) || this.entryWorkGroupComment(entry)
         },
         entryComment(entry) {
             if (this.entryIsDerivedFromWork(entry)) {
-                return this.entryWorkComment(entry) || ''
+                const individualComment = this.entryWorkIndividualComment(entry)
+                if (individualComment) return individualComment
+
+                const description = (entry?.description || '').toString().trim()
+                const workDescription = this.entryWorkDescription(entry)
+                const groupComment = this.entryWorkGroupComment(entry)
+
+                return description && description !== workDescription && description !== groupComment ? description : ''
             }
             return (entry?.description || '').toString().trim()
         },
@@ -2505,6 +2603,8 @@ export default {
                             key: `entry-${entry.id}`,
                             type,
                             workTitle: this.entryWorkTitle(entry),
+                            workComment: this.entryGroupComment?.(entry) || '',
+                            workIndividualComment: this.entryComment?.(entry) || '',
                             value: value !== null ? value : (effectiveGrade || 'NA'),
                             date: entry.date || null,
                             requireAllEntries,
@@ -2575,6 +2675,8 @@ export default {
                     key: `entry-${entry.id}`,
                     type: entry.type,
                     workTitle: this.entryWorkTitle(entry),
+                    workComment: this.entryGroupComment?.(entry) || '',
+                    workIndividualComment: this.entryComment?.(entry) || '',
                     value: value !== null ? value : (effectiveGrade || 'NA'),
                     date: entry.date || null,
                     requireAllEntries,
@@ -2807,6 +2909,20 @@ export default {
     line-height: 1.35;
 }
 
+.entry-work-comment-line {
+    padding-left: 4px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.entry-work-group-comment-line {
+    padding-left: 4px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .auswertung-entry-title {
     padding-left: 4px;
     line-height: 1.35;
@@ -2815,6 +2931,20 @@ export default {
 .auswertung-entry-work-title {
     padding-left: 4px;
     line-height: 1.35;
+}
+
+.auswertung-entry-work-comment {
+    padding-left: 4px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.auswertung-entry-work-individual-comment {
+    padding-left: 4px;
+    line-height: 1.35;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .entry-row {
@@ -2833,8 +2963,7 @@ export default {
     border-radius: 8px;
 }
 
-.entry-row.entry-list-row--base,
-.entry-row.entry-list-row--alt {
+.entry-list-row {
     padding: 6px 8px;
 }
 

@@ -72,6 +72,38 @@ describe('CourseWorks title rendering', () => {
         expect(source.indexOf('workTypeLabel(work.type)')).toBeLessThan(source.indexOf("work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'"))
         expect(source).not.toContain('<span> - {{ work.is_group_work ? \'Gruppenarbeit\' : \'Einzelarbeit\' }}</span>')
     })
+
+    it('renders grade summaries in the group-work group list', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="group-grade-overview mt-2"')
+        expect(source).toContain('Einzelwertung')
+        expect(source).toContain('class="group-grade-list"')
+        expect(source).toContain('v-for="row in groupStudentGradeRows(group)"')
+        expect(source).toContain('{{ row.studentLabel }}')
+        expect(source).toContain('{{ row.gradeLabel }}')
+        expect(source).toContain('v-if="row.commentPreview"')
+        expect(source).toContain('{{ row.commentPreview }}')
+        expect(source).toContain('Gruppenwertung')
+        expect(source).toContain('Note: {{ sharedGroupGradeLabel(group) }}')
+    })
+
+    it('keeps the group comment field available for individual group grading', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("v-model=\"work_form.groups[group_dialog_index].comment\"")
+        expect(source).toContain(":label=\"work_form.groups[group_dialog_index].use_individual_grades ? 'Kommentar (Gruppe)' : 'Kommentar (für alle)'\"")
+        expect(source).not.toContain('v-if="!work_form.groups[group_dialog_index].use_individual_grades"\n                                            v-model="work_form.groups[group_dialog_index].comment"')
+        expect(source).toContain("comment: group.comment ?? ''")
+    })
 })
 
 describe('CourseWorks course-specific schema', () => {
@@ -338,6 +370,79 @@ describe('CourseWorks points mode', () => {
 })
 
 describe('CourseWorks grade distribution', () => {
+    it('builds per-student group grade rows for individual group grading', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: { type: 'PR' },
+            activeCourseStudents: [
+                { id: 2, schoolclass: '1A', last_name: 'Beta', first_name: 'Bea' },
+                { id: 1, schoolclass: '1A', last_name: 'Alpha', first_name: 'Ada' },
+            ],
+            teachingWorks: [
+                {
+                    short_name: 'PR',
+                    grades: [
+                        { grade: '1' },
+                        { grade: '2' },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const result = methods.groupStudentGradeRows.call(ctx, {
+            student_ids: [2, 1],
+            use_individual_grades: true,
+            grades: {
+                1: '1',
+                2: '',
+            },
+            comments: {
+                1: 'Sehr gute Mitarbeit',
+                2: '',
+            },
+        })
+
+        expect(result).toEqual([
+            {
+                studentId: 1,
+                studentLabel: '1A Alpha, Ada',
+                gradeValue: '1',
+                gradeLabel: '1',
+                commentValue: 'Sehr gute Mitarbeit',
+                commentPreview: 'Sehr gute Mitarbeit',
+            },
+            {
+                studentId: 2,
+                studentLabel: '1A Beta, Bea',
+                gradeValue: '',
+                gradeLabel: 'Keine Note',
+                commentValue: '',
+                commentPreview: '',
+            },
+        ])
+    })
+
+    it('builds a shared group grade label for group grading', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: { type: 'PR' },
+            teachingWorks: [
+                {
+                    short_name: 'PR',
+                    grades: [
+                        { grade: '1' },
+                        { grade: '2' },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        expect(methods.sharedGroupGradeLabel.call(ctx, { grade: '2' })).toBe('2')
+        expect(methods.sharedGroupGradeLabel.call(ctx, { grade: '' })).toBe('Keine Note')
+    })
+
     it('counts individual grades and missing grades for a work item', () => {
         const methods = (CourseWorks as any).methods
         const ctx: Record<string, any> = {

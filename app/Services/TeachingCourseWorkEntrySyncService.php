@@ -129,7 +129,7 @@ class TeachingCourseWorkEntrySyncService
                 return [
                     'student_ids' => $studentIds,
                     'date' => $first?->group_date?->format('Y-m-d'),
-                    'comment' => $usesIndividualGrades ? null : $first?->group_comment,
+                    'comment' => $first?->group_comment,
                     'grade' => $usesIndividualGrades ? null : $first?->group_grade,
                     'grades' => $usesIndividualGrades
                         ? $groupRows->map(fn (TeachingCourseWorkGroupStudent $row): array => [
@@ -199,7 +199,7 @@ class TeachingCourseWorkEntrySyncService
                     'group_name' => $this->toNullableString($group['name'] ?? null),
                     'group_date' => $groupDate,
                     'group_grade' => $usesIndividualGrades ? null : $this->toNullableString($group['grade'] ?? null),
-                    'group_comment' => $usesIndividualGrades ? null : $this->toNullableString($group['comment'] ?? null),
+                    'group_comment' => $this->toNullableString($group['comment'] ?? null),
                     'uses_individual_grades' => $usesIndividualGrades,
                     'student_grade' => $usesIndividualGrades ? $this->toNullableString($gradesMap[$studentId] ?? null) : null,
                     'student_points' => $rawPoints === null || $rawPoints === '' ? null : (float) $rawPoints,
