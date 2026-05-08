@@ -11,16 +11,17 @@
         </template>
         <template #header-actions>
             <v-btn icon="mdi-plus" size="small" variant="tonal" @click="newDates" :disabled="isEditingContent || isSavingContent || action === 'new_course_dates'" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" @click="show_dates = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="action != '' || isSavingContent">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <div class="d-flex flex-wrap align-center ga-2 mt-2 w-100">
-                    <v-btn-toggle v-if="!compactStudentView && semesterCount === 2" v-model="activeSemester" mandatory density="compact" color="primary">
-                        <v-btn :value="1" size="small">1. Sem</v-btn>
-                        <v-btn :value="2" size="small">2. Sem</v-btn>
-                        <v-btn :value="3" size="small">1+2</v-btn>
-                    </v-btn-toggle>
+                    <div v-if="semesterCount === 2" class="course-date-semester-selection d-flex justify-start">
+                        <v-btn-toggle v-model="activeSemester" mandatory density="compact" color="primary">
+                            <v-btn :value="1" size="small">1. Sem</v-btn>
+                            <v-btn :value="2" size="small">2. Sem</v-btn>
+                            <v-btn :value="3" size="small">Sem 1+2</v-btn>
+                        </v-btn-toggle>
+                    </div>
                     <div class="ml-auto d-flex">
                         <v-btn-toggle
                             v-model="dateRangeSelection"
@@ -734,12 +735,12 @@ export default {
             const dates = this.filteredCourseDates || []
             if (!dates.length) return []
 
-            const activeCourseDateId = this.selected_courseDate?.id || this.highlightedDateId
+            const activeCourseDateId = this.highlightedDateId || this.selected_courseDate?.id
             let activeIndex = activeCourseDateId
                 ? dates.findIndex((courseDate) => String(courseDate.id) === String(activeCourseDateId))
                 : -1
 
-            if (activeIndex < 0 && this.selected_courseDate?.date) {
+            if (activeIndex < 0 && !this.highlightedDateId && this.selected_courseDate?.date) {
                 activeIndex = dates.findIndex((courseDate) => courseDate.date === this.selected_courseDate.date)
             }
 

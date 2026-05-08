@@ -554,9 +554,9 @@ export default {
             const panels = []
             if (this.selected_course) {
                 panels.push({ id: 'students', label: 'Schüler:innen', icon: 'mdi-account-group' })
+                panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'infos', label: 'Infos', icon: 'mdi-information-outline' })
                 panels.push({ id: 'works', label: 'Arbeiten', icon: 'mdi-file-document-edit-outline' })
-                panels.push({ id: 'dates', label: 'Termine', icon: 'mdi-calendar-clock-outline' })
                 panels.push({ id: 'curriculum', label: 'Curriculum', icon: 'mdi-book-open-variant' })
                 panels.push({ id: 'attendance', label: 'Anwesenheit', icon: 'mdi-table' })
                 panels.push({ id: 'performances', label: 'Leistungen', icon: 'mdi-chart-line' })
@@ -614,7 +614,7 @@ export default {
             this.curriculumEditMode = false
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
-                const validPanels = ['students', 'infos', 'works', 'print', 'dates', 'curriculum', 'attendance', 'performances', 'performances_plus']
+                const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
                 if (urlPanel && validPanels.includes(urlPanel)) {
