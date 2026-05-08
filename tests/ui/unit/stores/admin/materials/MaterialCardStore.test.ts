@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useMaterialCardStore } from '@/stores/admin/materials/MaterialCardStore'
 
 vi.mock('@/stores/spa/NotificationStore', () => ({
@@ -60,5 +61,65 @@ describe('Material card store snapshots', () => {
             current_page: 2,
             last_page: 2,
         })
+    })
+
+    it('uses the global loading counter for blocking snapshots by default', async () => {
+        const store = useMaterialCardStore()
+        const adminStore = useAdminStore()
+        let resolveRequest: (value: unknown) => void = () => {}
+
+        vi.mocked(globalThis.axios.get).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveRequest = resolve
+            }) as never,
+        )
+
+        const request = store.listAllCardsSnapshot({})
+
+        expect(adminStore.is_loading).toBe(1)
+
+        resolveRequest({
+            data: {
+                data: [],
+                meta: {
+                    current_page: 1,
+                    last_page: 1,
+                },
+            },
+        })
+
+        await request
+
+        expect(adminStore.is_loading).toBe(0)
+    })
+
+    it('can fetch background snapshots without showing the global loading overlay', async () => {
+        const store = useMaterialCardStore()
+        const adminStore = useAdminStore()
+        let resolveRequest: (value: unknown) => void = () => {}
+
+        vi.mocked(globalThis.axios.get).mockReturnValueOnce(
+            new Promise((resolve) => {
+                resolveRequest = resolve
+            }) as never,
+        )
+
+        const request = store.listAllCardsSnapshot({}, { useGlobalLoading: false })
+
+        expect(adminStore.is_loading).toBe(0)
+
+        resolveRequest({
+            data: {
+                data: [],
+                meta: {
+                    current_page: 1,
+                    last_page: 1,
+                },
+            },
+        })
+
+        await request
+
+        expect(adminStore.is_loading).toBe(0)
     })
 })

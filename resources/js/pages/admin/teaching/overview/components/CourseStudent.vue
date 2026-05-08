@@ -80,6 +80,13 @@
                                                 <span>{{ semesterCount === 2 ? 'Semester 1' : 'Auswertung' }}</span>
                                             </div>
                                             <v-spacer />
+                                            <v-chip
+                                                v-if="semester1Total != null"
+                                                size="small"
+                                                variant="tonal"
+                                                :color="isNaGradeKey(semester1Total) ? 'error' : semester1HasMissingCategory ? 'warning' : 'primary'">
+                                                {{ formatEvaluationValue(semester1Total) }}
+                                            </v-chip>
                                             <v-chip size="small" variant="tonal" color="success">
                                                 Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}
                                             </v-chip>
@@ -101,11 +108,6 @@
                                                     Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                                 </div>
                                             </div>
-                                            </v-list-item>
-                                            <v-list-item v-if="categoryCalculationLine(cat)">
-                                                <div class="text-caption text-medium-emphasis w-100">
-                                                    {{ categoryCalculationLine(cat) }}
-                                                </div>
                                             </v-list-item>
                                             <v-list-item v-for="row in cat.rows" :key="`sem1-cat-${cat.name}-${row.key}`">
                                                 <div class="w-100">
@@ -133,17 +135,6 @@
                                             </v-list-item>
                                         </div>
                                     </template>
-                                    <div v-if="semester1Total != null" class="auswertung-total-card">
-                                        <v-list-item>
-                                            <div class="d-flex align-center ga-2 w-100">
-                                                <v-list-item-title class="text-subtitle-1 font-weight-bold">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>
-                                                <v-spacer />
-                                                <div class="text-subtitle-1 font-weight-bold" :class="isNaGradeKey(semester1Total) ? 'text-error' : semester1HasMissingCategory ? 'text-warning' : 'text-primary'">
-                                                    Bewertung: {{ formatEvaluationValue(semester1Total) }}
-                                                </div>
-                                            </div>
-                                        </v-list-item>
-                                    </div>
                                 </div>
                             </template>
 
@@ -156,6 +147,20 @@
                                                 <span>Semester 2</span>
                                             </div>
                                             <v-spacer />
+                                            <v-chip
+                                                v-if="semester2Total != null"
+                                                size="small"
+                                                variant="tonal"
+                                                :color="isNaGradeKey(semester2Total) ? 'error' : semester2HasMissingCategory ? 'warning' : 'secondary'">
+                                                {{ formatEvaluationValue(semester2Total) }}
+                                            </v-chip>
+                                            <v-chip
+                                                v-if="semesterWeightedGrade"
+                                                size="small"
+                                                variant="tonal"
+                                                :color="isNaGradeKey(semesterWeightedGrade.value) ? 'error' : 'primary'">
+                                                Gesamt: {{ formatEvaluationValue(semesterWeightedGrade.value) }}
+                                            </v-chip>
                                             <v-chip size="small" variant="tonal" color="success">
                                                 Note: {{ selected_course_student?.sem_2_grade || '–' }}
                                             </v-chip>
@@ -177,11 +182,6 @@
                                                     Bewertung: {{ cat.value != null ? formatEvaluationValue(cat.value) : (cat.grade ? formatEvaluationValue(cat.grade) : '–') }}
                                                 </div>
                                             </div>
-                                            </v-list-item>
-                                            <v-list-item v-if="categoryCalculationLine(cat)">
-                                                <div class="text-caption text-medium-emphasis w-100">
-                                                    {{ categoryCalculationLine(cat) }}
-                                                </div>
                                             </v-list-item>
                                             <v-list-item v-for="row in cat.rows" :key="`sem2-cat-${cat.name}-${row.key}`">
                                                 <div class="w-100">
@@ -209,17 +209,6 @@
                                             </v-list-item>
                                         </div>
                                     </template>
-                                    <div v-if="semester2Total != null" class="auswertung-total-card auswertung-total-card--semester-2">
-                                        <v-list-item>
-                                            <div class="d-flex align-center ga-2 w-100">
-                                                <v-list-item-title class="text-subtitle-1 font-weight-bold">Berechnung Sem 2</v-list-item-title>
-                                                <v-spacer />
-                                                <div class="text-subtitle-1 font-weight-bold" :class="isNaGradeKey(semester2Total) ? 'text-error' : semester2HasMissingCategory ? 'text-warning' : 'text-secondary'">
-                                                    Bewertung: {{ formatEvaluationValue(semester2Total) }}
-                                                </div>
-                                            </div>
-                                        </v-list-item>
-                                    </div>
                                 </div>
                             </template>
 
@@ -248,20 +237,11 @@
                                                         Basis Sem 1: Berechnung Sem 1 ({{ formatEvaluationValue(semesterWeightedGrade.sem1CalculatedValue) }}).
                                                     </span>
                                                 </div>
-                                                <div v-if="semesterWeightedGrade.sem1Source === 'calculated' && semesterWeightedGrade.sem1CalculatedFormula" class="text-caption text-medium-emphasis">
-                                                    {{ semesterWeightedGrade.sem1CalculatedFormula }}
-                                                </div>
                                             </div>
                                             <div class="sum-formula-column">
                                                 <div class="sum-formula-column-label">Semester 2</div>
                                                 <div class="sum-formula-column-share">{{ semesterWeightedGrade.sem2Weight }}%</div>
                                                 <div class="sum-formula-column-grade">{{ formatEvaluationValue(semesterWeightedGrade.sem2Value) }}</div>
-                                                <div class="text-caption text-medium-emphasis">
-                                                    Basis Sem 2: Berechnung Sem 2 ({{ formatEvaluationValue(semesterWeightedGrade.sem2CalculatedValue) }}).
-                                                </div>
-                                                <div v-if="semesterWeightedGrade.sem2CalculatedFormula" class="text-caption text-medium-emphasis">
-                                                    {{ semesterWeightedGrade.sem2CalculatedFormula }}
-                                                </div>
                                             </div>
                                         </div>
                                         <div class="sum-formula-result-card">
@@ -304,7 +284,7 @@
                 </v-dialog>
 
 
-                <v-card variant="outlined" class="mt-4">
+                <v-card v-if="!show_auswertung" variant="outlined" class="mt-4">
                     <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
                         <v-icon size="18">mdi-clipboard-text</v-icon>
                         Bewertungen
@@ -1226,9 +1206,6 @@ export default {
             // - otherwise                        -> calculated Semester-1 value
             const sem1ForcedNa = this.hasSingleNaSemesterGrade(sem1Entries)
             const sem1CalculatedValue = sem1ForcedNa ? 5 : this.totalFromCategoryGroups(sem1Groups)
-            const sem1CalculatedFormula = sem1ForcedNa
-                ? 'Regel: Einziger benoteter Eintrag ist NA (NICHT ABGEGEBEN) -> Semesterwertung 5.00'
-                : this.categoryGroupTotalLine(sem1Groups, sem1CalculatedValue)
             const sem1GradeRaw = this.selected_course_student?.sem_1_grade
             const sem1GradeKey = this.normalizeGradeKey(sem1GradeRaw)
             const sem1GradeValue = sem1GradeRaw != null && sem1GradeRaw !== ''
@@ -1243,9 +1220,6 @@ export default {
             // Semester 2 for yearly grade is based on calculated Semester-2 value.
             const sem2ForcedNa = this.hasSingleNaSemesterGrade(sem2Entries)
             const sem2CalculatedValue = sem2ForcedNa ? 5 : this.totalFromCategoryGroups(sem2Groups)
-            const sem2CalculatedFormula = sem2ForcedNa
-                ? 'Regel: Einziger benoteter Eintrag ist NA (NICHT ABGEGEBEN) -> Semesterwertung 5.00'
-                : this.categoryGroupTotalLine(sem2Groups, sem2CalculatedValue)
             const sem2Value = sem2CalculatedValue
 
             if (this.isNaGradeKey(sem1Value) || this.isNaGradeKey(sem2Value)) {
@@ -1258,8 +1232,6 @@ export default {
                     sem2Value,
                     sem1CalculatedValue,
                     sem2CalculatedValue,
-                    sem1CalculatedFormula,
-                    sem2CalculatedFormula,
                     sem1Source,
                     sem1Weight: w1,
                     sem2Weight: w2,
@@ -1279,8 +1251,6 @@ export default {
                     sem2Value,
                     sem1CalculatedValue,
                     sem2CalculatedValue,
-                    sem1CalculatedFormula,
-                    sem2CalculatedFormula,
                     sem1Source,
                     sem1Weight: w1,
                     sem2Weight: w2,
@@ -1302,8 +1272,6 @@ export default {
                 sem2Value,
                 sem1CalculatedValue,
                 sem2CalculatedValue,
-                sem1CalculatedFormula,
-                sem2CalculatedFormula,
                 sem1Source,
                 sem1Weight: w1,
                 sem2Weight: w2,
@@ -1441,7 +1409,6 @@ export default {
                 this.delete_notification_id = null
                 this.is_editing_grades = false
                 this.is_editing_behaviour_grades = false
-                this.show_auswertung = false
                 this.loadEntries()
                 this.loadBehaviourEntries()
             },
@@ -1560,6 +1527,7 @@ export default {
             this.delete_star_id = null
             this.delete_behaviour_id = null
             this.delete_notification_id = null
+            this.show_auswertung = false
         },
         isStudentCanceled(student) {
             return !!student?.canceled_at || !!student?.deleted_at
@@ -2459,7 +2427,6 @@ export default {
                 const works = (cat.works || []).map((w) => (typeof w === 'string' ? { short_name: w, factor: 100 } : w))
                 const rows = []
                 const workAverages = []
-                const calculationParts = []
                 let categoryPointsGrade = null
                 const categoryRequireAllEntries = Boolean(cat?.require_all_entries)
                 let categoryHasAnyEntries = false
@@ -2519,13 +2486,6 @@ export default {
                         if (numericGrade !== null) {
                             workAverages.push({ value: numericGrade, weight })
                         }
-                        calculationParts.push({
-                            type,
-                            factorPercent,
-                            value: numericGrade,
-                            requireAllEntries,
-                            requireAllEntriesIncomplete,
-                        })
                         return
                     }
 
@@ -2537,13 +2497,6 @@ export default {
                         avg = values.reduce((s, v) => s + v, 0) / values.length
                         workAverages.push({ value: avg, weight })
                     }
-                    calculationParts.push({
-                        type,
-                        factorPercent,
-                        value: avg !== null ? Number(avg.toFixed(2)) : null,
-                        requireAllEntries,
-                        requireAllEntriesIncomplete,
-                    })
 
                     workEntries.forEach((entry) => {
                         const effectiveGrade = this.effectiveGradeKeyForEntry(entry, work)
@@ -2583,7 +2536,6 @@ export default {
                     rows,
                     value: categoryValue,
                     grade: categoryGrade,
-                    calculationParts,
                     isNb: categoryIsNb,
                     isNa: categoryIsNa,
                     requireAllEntries: categoryRequireAllEntries,
@@ -2661,63 +2613,6 @@ export default {
             const totalWeight = weightedCats.reduce((s, c) => s + c.weight, 0) || 1
             const weighted = weightedCats.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight
             return Number(weighted.toFixed(2))
-        },
-        categoryGroupTotalLine(groups, totalValue) {
-            if (totalValue == null || !groups?.length) return ''
-            if (this.isNaGradeKey(totalValue) || groups.some((group) => group?.isNa)) {
-                const labels = groups
-                    .filter((group) => group?.isNa)
-                    .map((group) => group.name)
-                if (!labels.length) {
-                    return 'Berechnung: NA'
-                }
-                return `Berechnung: NA (Pflichtkategorie "Alle erforderlich" in ${labels.join(', ')} hat NA-Eintrag)`
-            }
-            if (this.isNbValue(totalValue) || groups.some((group) => group?.isNb)) {
-                const labels = groups
-                    .filter((group) => group?.isNb)
-                    .map((group) => group.name)
-                if (!labels.length) {
-                    return 'Berechnung: NB'
-                }
-                return `Berechnung: NB (Pflichtkategorie "Alle erforderlich" in ${labels.join(', ')} nicht vollständig beurteilt)`
-            }
-
-            const weightedCats = groups
-                .map((cat) => {
-                    const value = cat.value != null ? cat.value : cat.grade != null ? parseFloat(String(cat.grade).replace(',', '.')) : null
-                    const weightPercent = parseFloat(cat.weight) || 0
-                    return {
-                        value,
-                        weightPercent,
-                    }
-                })
-                .filter((cat) => cat.value != null && !Number.isNaN(cat.value) && cat.weightPercent > 0)
-
-            if (!weightedCats.length) return ''
-
-            const denominator = weightedCats.reduce((sum, cat) => sum + cat.weightPercent, 0)
-            if (denominator <= 0) return ''
-
-            const terms = weightedCats.map((cat) => {
-                const sharePercent = (cat.weightPercent / denominator) * 100
-                return `${this.formatTwoDecimals(cat.value)} * ${this.formatTwoDecimals(sharePercent)}%`
-            })
-            return `Berechnung: ${terms.join(' + ')} = ${this.formatTwoDecimals(totalValue)}`
-        },
-        categoryCalculationLine(category) {
-            if (category?.isNb || category?.isNa) return ''
-            const parts = (category?.calculationParts || []).filter((part) => part.value != null && part.factorPercent > 0)
-            if (!parts.length) return ''
-
-            const terms = parts.map((part) => {
-                return `${part.type}(${this.formatTwoDecimals(part.value)}) x ${this.formatTwoDecimals(part.factorPercent / 100)}`
-            })
-            const denominator = parts.reduce((sum, part) => sum + part.factorPercent / 100, 0)
-            const result = category?.value != null ? this.formatTwoDecimals(category.value) : ''
-            if (!result) return ''
-
-            return `Berechnung: (${terms.join(' + ')}) / ${this.formatTwoDecimals(denominator)} = ${result}`
         },
         setDueInAWeek() {
             const d = new Date()
@@ -2814,20 +2709,6 @@ export default {
     box-shadow:
         0 8px 18px rgba(var(--v-theme-primary), 0.08),
         inset 0 1px 0 rgba(var(--v-theme-primary), 0.04);
-}
-
-.auswertung-total-card {
-    margin: 12px;
-    border: 1px solid rgba(var(--v-theme-primary), 0.28);
-    border-radius: 14px;
-    background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.18) 0%, rgba(var(--v-theme-primary), 0.08) 100%);
-    box-shadow: 0 10px 24px rgba(var(--v-theme-primary), 0.12);
-}
-
-.auswertung-total-card--semester-2 {
-    border-color: rgba(var(--v-theme-secondary), 0.3);
-    background: linear-gradient(135deg, rgba(var(--v-theme-secondary), 0.18) 0%, rgba(var(--v-theme-secondary), 0.08) 100%);
-    box-shadow: 0 10px 24px rgba(var(--v-theme-secondary), 0.12);
 }
 
 .auswertung-sum-card {

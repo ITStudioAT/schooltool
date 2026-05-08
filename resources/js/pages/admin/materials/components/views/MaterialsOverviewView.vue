@@ -5018,7 +5018,7 @@ export default {
                 await this.materialCardStore.loadConfig()
                 if (requestId !== this.subjectsContentsOverviewRequestId) return
                 const filters = this.buildSubjectsContentsOverviewFilters()
-                const cards = await this.materialCardStore.listAllCardsSnapshot(filters)
+                const cards = await this.materialCardStore.listAllCardsSnapshot(filters, { useGlobalLoading: false })
                 if (requestId !== this.subjectsContentsOverviewRequestId) return
                 if (!Array.isArray(cards)) return
 
@@ -5052,7 +5052,7 @@ export default {
             this.allListedAttachmentBytesRequestId = requestId
 
             this.allListedAttachmentBytesLoading = true
-            const snapshot = await this.materialCardStore.listAllCardsSnapshot({})
+            const snapshot = await this.materialCardStore.listAllCardsSnapshot({}, { useGlobalLoading: false })
             if (requestId !== this.allListedAttachmentBytesRequestId) return
 
             if (Array.isArray(snapshot)) {
@@ -5306,7 +5306,7 @@ export default {
             this.filterCountCardsRequestId = requestId
             this.filterCountCardsLoading = true
 
-            const snapshot = await this.materialCardStore.listAllCardsSnapshot(filters)
+            const snapshot = await this.materialCardStore.listAllCardsSnapshot(filters, { useGlobalLoading: false })
             if (requestId !== this.filterCountCardsRequestId) return
 
             if (Array.isArray(snapshot)) {
@@ -6162,8 +6162,14 @@ export default {
                     }))
                     .filter((item) => Number.isFinite(Number(item.id)) && Number(item.id) > 0 && item.type !== '')
 
+                const previousContext = this.normalizeDeletedRestoreContext(this.deletedMaterialRestoreContextOverride)
+                const wasVisibleForSameContext =
+                    !this.deletedMaterialRestoreHidden &&
+                    previousContext.source === context.source &&
+                    Number(previousContext.ruleId || 0) === Number(context.ruleId || 0)
+
                 this.deletedMaterialRestoreContextOverride = context
-                this.deletedMaterialRestoreHidden = false
+                this.deletedMaterialRestoreHidden = context.source === 'workspace' ? !wasVisibleForSameContext : false
             } catch (error) {
                 this.deletedMaterialRestoreItems = []
                 this.deletedMaterialRestoreHidden = true

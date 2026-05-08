@@ -458,7 +458,7 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
             }
         },
 
-        async listAllCardsSnapshot(filters = {}) {
+        async listAllCardsSnapshot(filters = {}, options = {}) {
             const requestKey = this.buildSnapshotRequestKey(filters)
             const inFlight = this.snapshotCardsInFlightByKey?.[requestKey]
             if (inFlight) {
@@ -467,8 +467,12 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
 
             const notification = useNotificationStore()
             const adminStore = useAdminStore()
+            const useGlobalLoading = options?.useGlobalLoading !== false
             const requestPromise = (async () => {
-                adminStore.is_loading++
+                if (useGlobalLoading) {
+                    adminStore.is_loading++
+                }
+
                 try {
                     const baseParams = this.buildFilterParams(filters)
                     const result = await this.fetchAllCardsPages(baseParams)
@@ -482,7 +486,10 @@ export const useMaterialCardStore = defineStore('AdminMaterialCardStore', {
                     })
                     return null
                 } finally {
-                    adminStore.is_loading--
+                    if (useGlobalLoading) {
+                        adminStore.is_loading--
+                    }
+
                     const next = { ...(this.snapshotCardsInFlightByKey || {}) }
                     delete next[requestKey]
                     this.snapshotCardsInFlightByKey = next

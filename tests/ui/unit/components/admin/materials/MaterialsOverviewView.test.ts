@@ -2905,7 +2905,7 @@ describe('MaterialsOverviewView', () => {
                     deletedAt: '2026-04-11 12:00:00',
                 },
             ])
-            expect(wrapper.vm.deletedMaterialRestoreHidden).toBe(false)
+            expect(wrapper.vm.deletedMaterialRestoreHidden).toBe(true)
         } finally {
             ;(globalThis as any).axios = originalAxios
             beforeMountSpy.mockRestore()

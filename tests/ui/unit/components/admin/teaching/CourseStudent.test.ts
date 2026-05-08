@@ -311,6 +311,65 @@ describe('CourseStudent auswertung category colors', () => {
 })
 
 describe('CourseStudent auswertung trigger placement', () => {
+    it('keeps auswertung active when switching selected students', () => {
+        const watcher = (CourseStudent as any).watch.selected_course_student.handler
+        const methods = (CourseStudent as any).methods
+        const ctx = {
+            show_entry_form: true,
+            entry_form: { id: 1 },
+            show_behaviour_form: true,
+            behaviour_form: { id: 2 },
+            show_star_form: true,
+            star_form: { id: 3 },
+            delete_star_id: 4,
+            delete_behaviour_id: 5,
+            delete_notification_id: 6,
+            is_editing_grades: true,
+            is_editing_behaviour_grades: true,
+            show_auswertung: true,
+            emptyEntryForm: methods.emptyEntryForm,
+            emptyBehaviourForm: methods.emptyBehaviourForm,
+            emptyStarForm: methods.emptyStarForm,
+            selected_courseDate: null,
+            toInputDate: methods.toInputDate,
+            normalizeDateString: methods.normalizeDateString,
+            toDateString: methods.toDateString,
+            loadEntries: vi.fn(),
+            loadBehaviourEntries: vi.fn(),
+        }
+
+        watcher.call(ctx)
+
+        expect(ctx.show_auswertung).toBe(true)
+        expect(ctx.loadEntries).toHaveBeenCalledOnce()
+        expect(ctx.loadBehaviourEntries).toHaveBeenCalledOnce()
+    })
+
+    it('clears auswertung when closing the student detail', () => {
+        const methods = (CourseStudent as any).methods
+        const ctx = {
+            selected_course_student: { id: 1 },
+            action_2: 'detail',
+            entryStore: { clear: vi.fn() },
+            behaviourEntryStore: { clear: vi.fn() },
+            show_star_form: true,
+            star_form: { id: 2 },
+            delete_star_id: 3,
+            delete_behaviour_id: 4,
+            delete_notification_id: 5,
+            show_auswertung: true,
+            emptyStarForm: methods.emptyStarForm,
+        }
+
+        methods.closeStudent.call(ctx)
+
+        expect(ctx.selected_course_student).toBeNull()
+        expect(ctx.action_2).toBe('')
+        expect(ctx.show_auswertung).toBe(false)
+        expect(ctx.entryStore.clear).toHaveBeenCalledOnce()
+        expect(ctx.behaviourEntryStore.clear).toHaveBeenCalledOnce()
+    })
+
     it('uses Auswerten button near Zurück and removes inline Auswertung header row', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -318,8 +377,8 @@ describe('CourseStudent auswertung trigger placement', () => {
         )
         const source = readFileSync(componentPath, 'utf8')
         const auswertenButtonIndex = source.indexOf('Auswerten')
-        const auswertungCardIndex = source.indexOf('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">')
-        const entriesTitleIndex = source.indexOf('Einträge')
+        const auswertungCardIndex = source.indexOf('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">')
+        const entriesTitleIndex = source.indexOf('Bewertungen')
 
         expect(source).toContain(":color=\"show_auswertung ? 'success' : 'primary'\"")
         expect(source).toContain(":variant=\"show_auswertung ? 'flat' : 'tonal'\"")
@@ -327,11 +386,12 @@ describe('CourseStudent auswertung trigger placement', () => {
         expect(source).toContain(":aria-pressed=\"show_auswertung ? 'true' : 'false'\"")
         expect(source).toContain('@click="show_auswertung = !show_auswertung"')
         expect(source).toContain('Auswerten')
-        expect(source).toContain('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined" class="mt-2">')
+        expect(source).toContain('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">')
+        expect(source).toContain('<v-card v-if="!show_auswertung" variant="outlined" class="mt-4">')
         expect(source).not.toContain('v-card-text v-if="hasAuswertungContent && show_auswertung" class="py-2"')
         expect(source).not.toContain('<div class="text-subtitle-2">Auswertung</div>')
         expect(auswertenButtonIndex).toBeGreaterThan(-1)
-        expect(auswertungCardIndex).toBeGreaterThan(auswertenButtonIndex)
+        expect(auswertungCardIndex).toBeGreaterThan(-1)
         expect(entriesTitleIndex).toBeGreaterThan(auswertungCardIndex)
     })
 })
@@ -384,21 +444,33 @@ describe('CourseStudent auswertung sum chip order', () => {
     })
 })
 
-describe('CourseStudent auswertung total cards', () => {
-    it('renders semester calculation rows inside highlighted bordered cards', () => {
+describe('CourseStudent auswertung semester header totals', () => {
+    it('renders semester Bewertung values in the semester headers instead of footer cards', () => {
         const componentPath = resolve(
             process.cwd(),
             'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
         )
         const source = readFileSync(componentPath, 'utf8')
+        const semester1HeaderIndex = source.indexOf("<span>{{ semesterCount === 2 ? 'Semester 1' : 'Auswertung' }}</span>")
+        const semester1BewertungIndex = source.indexOf('{{ formatEvaluationValue(semester1Total) }}')
+        const semester1NoteIndex = source.indexOf("Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}")
+        const semester2HeaderIndex = source.indexOf('<span>Semester 2</span>')
+        const semester2BewertungIndex = source.indexOf('{{ formatEvaluationValue(semester2Total) }}')
+        const semester2GesamtIndex = source.indexOf('Gesamt: {{ formatEvaluationValue(semesterWeightedGrade.value) }}')
+        const semester2NoteIndex = source.indexOf("Note: {{ selected_course_student?.sem_2_grade || '–' }}")
 
-        expect(source).toContain('class="auswertung-total-card"')
-        expect(source).toContain('class="auswertung-total-card auswertung-total-card--semester-2"')
-        expect(source).toContain("class=\"text-subtitle-1 font-weight-bold\">{{ semesterCount === 2 ? 'Berechnung Sem 1' : 'Berechnung' }}</v-list-item-title>")
-        expect(source).toContain('class="text-subtitle-1 font-weight-bold">Berechnung Sem 2</v-list-item-title>')
-        expect(source).toContain('.auswertung-total-card {')
-        expect(source).toContain('border: 1px solid rgba(var(--v-theme-primary), 0.28);')
-        expect(source).toContain('background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.18) 0%, rgba(var(--v-theme-primary), 0.08) 100%);')
+        expect(source).toContain('v-if="semester1Total != null"')
+        expect(source).toContain('v-if="semester2Total != null"')
+        expect(semester1BewertungIndex).toBeGreaterThan(semester1HeaderIndex)
+        expect(semester2BewertungIndex).toBeGreaterThan(semester2HeaderIndex)
+        expect(semester1NoteIndex).toBeGreaterThan(semester1BewertungIndex)
+        expect(semester2GesamtIndex).toBeGreaterThan(semester2BewertungIndex)
+        expect(semester2NoteIndex).toBeGreaterThan(semester2GesamtIndex)
+        expect(source).not.toContain('Bewertung: {{ formatEvaluationValue(semester1Total) }}')
+        expect(source).not.toContain('Bewertung: {{ formatEvaluationValue(semester2Total) }}')
+        expect(source).not.toContain('class="auswertung-total-card"')
+        expect(source).not.toContain('class="auswertung-total-card auswertung-total-card--semester-2"')
+        expect(source).not.toContain('Berechnung Sem 2</v-list-item-title>')
     })
 })
 
@@ -415,7 +487,11 @@ describe('CourseStudent auswertung sum card', () => {
         expect(source).toContain('border: 1px solid rgba(var(--v-theme-secondary), 0.32);')
         expect(source).toContain('background: linear-gradient(135deg, rgba(var(--v-theme-secondary), 0.18) 0%, rgba(var(--v-theme-secondary), 0.08) 100%);')
         expect(source).toContain('<span>GESAMT</span>')
-        expect(source).not.toContain('Berechnung: {{ formatEvaluationValue(semesterWeightedGrade.value) }}')
+        expect(source).not.toContain('Berechnung:')
+        expect(source).not.toContain('Basis Sem 2:')
+        expect(source).not.toContain('categoryCalculationLine')
+        expect(source).not.toContain('sem1CalculatedFormula')
+        expect(source).not.toContain('sem2CalculatedFormula')
         expect(source).toContain('<div class="auswertung-section-header">')
         expect(source).not.toContain('<div class="auswertung-section-header auswertung-section-header--sum">')
         expect(source).toContain('class="sum-formula-columns" :class="{ \'sum-formula-columns--stacked\': semesterCount !== 2 }"')
@@ -556,18 +632,6 @@ describe('CourseStudent NA cascade (require_all_entries + NA entry)', () => {
         expect(result).toBe('NB')
     })
 
-    it('categoryGroupTotalLine returns NA explanation when a category isNa', () => {
-        const ctx = makeCtx()
-        const groups = [
-            { name: 'Mitarbeit', weight: '100', value: null, grade: 'NA', isNb: false, isNa: true },
-        ]
-
-        const line = methods.categoryGroupTotalLine.call(ctx, groups, 'NA')
-
-        expect(line).toContain('NA')
-        expect(line).toContain('Mitarbeit')
-        expect(line).toContain('Alle erforderlich')
-    })
 })
 
 describe('CourseStudent behaviour visibility', () => {
