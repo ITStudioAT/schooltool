@@ -21,9 +21,15 @@ describe('Teaching data backup page', () => {
                 data: [{ id: 1, filename: 'backup.json' }],
             },
         })
+        vi.mocked(axios.get).mockResolvedValueOnce({
+            data: {
+                data: [{ id: 9, status: 'completed' }],
+            },
+        })
 
         const ctx: Record<string, unknown> = {
             backups: [],
+            restore_runs: [],
             loading: false,
             error: '',
         }
@@ -31,7 +37,9 @@ describe('Teaching data backup page', () => {
         await (DataBackup as any).methods.loadBackups.call(ctx)
 
         expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups')
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/restore-runs')
         expect(ctx.backups).toEqual([{ id: 1, filename: 'backup.json' }])
+        expect(ctx.restore_runs).toEqual([{ id: 9, status: 'completed' }])
         expect(ctx.loading).toBe(false)
         expect(ctx.error).toBe('')
     })
@@ -386,6 +394,7 @@ describe('Teaching data backup page', () => {
     it('does not show stale selections for rows that are no longer restoreable', () => {
         const methods = (DataBackup as any).methods
         const ctx = {
+            overwrite_existing: false,
             restore_selection: {
                 courses: [7],
                 curricula: [8],
@@ -399,6 +408,17 @@ describe('Teaching data backup page', () => {
         expect(methods.isRestoreSelected.call(ctx, 'settings', 'basic_settings', { key: 'basic_settings', count: 1, status: 'current_exists' })).toBe(false)
         expect(methods.isRestoreSelected.call(ctx, 'courses', 7, { id: 7, status: 'current_exists' })).toBe(false)
         expect(methods.isRestoreSelected.call(ctx, 'curricula', 8, { id: 8, status: 'current_exists' })).toBe(false)
+    })
+
+    it('allows existing courses and curricula when overwrite is enabled', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            overwrite_existing: true,
+        }
+
+        expect(methods.isCourseRestoreSelectable.call(ctx, { id: 7, status: 'current_exists' })).toBe(true)
+        expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 8, status: 'different' })).toBe(true)
+        expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 9, status: 'current_exists' })).toBe(true)
     })
 
     it('posts the selected restore plan and refreshes the preview', async () => {
@@ -438,6 +458,7 @@ describe('Teaching data backup page', () => {
             restore_loading: false,
             restore_error: '',
             restore_result: null,
+            overwrite_existing: false,
             canRestoreSelected: true,
             initializeRestoreSelection: (DataBackup as any).methods.initializeRestoreSelection,
             restoreSelectableValues: (DataBackup as any).methods.restoreSelectableValues,
@@ -446,6 +467,7 @@ describe('Teaching data backup page', () => {
             isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
             isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
             sanitizedRestoreSelection: (DataBackup as any).methods.sanitizedRestoreSelection,
+            loadRestoreRuns: vi.fn(),
         }
 
         await (DataBackup as any).methods.restoreSelected.call(ctx)
@@ -454,6 +476,7 @@ describe('Teaching data backup page', () => {
             courses: [7],
             curricula: [],
             settings: [],
+            overwrite_existing: false,
         })
         expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
         expect(ctx.restore_result).toEqual({
@@ -468,6 +491,7 @@ describe('Teaching data backup page', () => {
             curricula: [],
             settings: [],
         })
+        expect(ctx.loadRestoreRuns).toHaveBeenCalled()
     })
 
     it('opens the full restore confirmation dialog', () => {
@@ -599,6 +623,7 @@ describe('Teaching data backup page', () => {
                 curricula: [8, 10],
                 settings: ['basic_settings', 'school_hours'],
             },
+            overwrite_existing: false,
             restoreSelectableValues: methods.restoreSelectableValues,
             previewSettingSections: methods.previewSettingSections,
             isCourseRestoreSelectable: methods.isCourseRestoreSelectable,
@@ -610,6 +635,7 @@ describe('Teaching data backup page', () => {
             courses: [7],
             curricula: [8],
             settings: ['basic_settings'],
+            overwrite_existing: false,
         })
     })
 })

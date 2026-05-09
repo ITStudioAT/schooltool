@@ -390,12 +390,14 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/teaching/backups', [TeachingBackupController::class, 'index']);
         Route::post('/admin/teaching/backups', [TeachingBackupController::class, 'store']);
         Route::post('/admin/teaching/backups/import', [TeachingBackupController::class, 'import']);
+        Route::get('/admin/teaching/backups/restore-runs', [TeachingBackupController::class, 'restoreRuns']);
         Route::get('/admin/teaching/backups/{backup}/preview', [TeachingBackupController::class, 'preview']);
         Route::post('/admin/teaching/backups/{backup}/restore', [TeachingBackupController::class, 'restore']);
         Route::post('/admin/teaching/backups/{backup}/restore-full', [TeachingBackupController::class, 'restoreFull']);
         Route::delete('/admin/teaching/backups/{backup}', [TeachingBackupController::class, 'destroy']);
         Route::get('/admin/teaching/backups/{backup}/download', [TeachingBackupController::class, 'download']);
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
+        Route::get('/admin/teaching/courses/{course}/grades_pdf', [TeachingCourseController::class, 'courseGradesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
         Route::apiResource('/admin/teaching/courses', TeachingCourseController::class);
         Route::get('/admin/teaching/curricula/free-weeks-template', [CurriculumController::class, 'freeWeeksTemplate']);

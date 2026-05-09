@@ -6,6 +6,7 @@ use App\Models\TeachingCourse;
 use App\Models\TeachingCourseStudent;
 use App\Models\TeachingCourseStudentCategoryEvaluation;
 use App\Models\TeachingCourseStudentEntry;
+use App\Models\TeachingCourseWorkGroupStudent;
 use App\Models\TeachingSchema;
 use Illuminate\Contracts\Support\Responsable;
 use Illuminate\Support\Collection;
@@ -101,16 +102,39 @@ class TeachingStudentPerformancePdfService
         int $semesterCount,
         ?string $semesterTwoStart
     ): array {
+        $groupStudentsByWork = $courseStudent->user_id
+            ? TeachingCourseWorkGroupStudent::query()
+                ->where('teaching_course_id', $course->id)
+                ->where('user_id', $courseStudent->user_id)
+                ->get()
+                ->keyBy('teaching_course_work_id')
+            : collect();
+
         $entries = $this->entriesForCourseStudent($course, $courseStudent)
-            ->map(function (TeachingCourseStudentEntry $entry) use ($worksByType, $semesterCount, $semesterTwoStart): array {
+            ->map(function (TeachingCourseStudentEntry $entry) use ($worksByType, $semesterCount, $semesterTwoStart, $groupStudentsByWork): array {
                 $type = trim((string) $entry->type);
                 $workName = trim((string) ($worksByType[$type] ?? ''));
+
+                $workKind = '';
+                if ($entry->teachingCourseWork) {
+                    if ($entry->teachingCourseWork->is_group_work) {
+                        $groupStudent = $groupStudentsByWork->get($entry->teaching_course_work_id);
+                        $gradingLabel = $groupStudent && $groupStudent->uses_individual_grades
+                            ? 'Einzelbewertung'
+                            : 'Gruppenbewertung';
+                        $workKind = "Gruppenarbeit ({$gradingLabel})";
+                    } else {
+                        $workKind = 'Einzelarbeit';
+                    }
+                }
+
+                $typeParts = array_filter([$type, $workName, $workKind]);
 
                 return [
                     'date' => $entry->date?->format('d.m.'),
                     'semester' => $this->semesterForDate($entry->date?->toDateString(), $semesterCount, $semesterTwoStart),
                     'type' => $type,
-                    'type_label' => $workName !== '' ? "{$type} - {$workName}" : $type,
+                    'type_label' => implode(' - ', $typeParts),
                     'work_title' => trim((string) ($entry->teachingCourseWork?->title ?? '')),
                     'grade' => trim((string) ($entry->grade ?? '')),
                     'description' => trim((string) ($entry->description ?? '')),
@@ -129,6 +153,7 @@ class TeachingStudentPerformancePdfService
             ->sortKeys();
 
         $studentName = $this->studentDisplayName($courseStudent);
+        $studentEmail = trim((string) ($courseStudent->user?->email ?? $courseStudent->import116?->email ?? ''));
         $studentClass = trim((string) ($courseStudent->user?->schoolclass ?? $courseStudent->import116?->class ?? ''));
         $teacherName = trim((string) (($course->user?->last_name ?? '').' '.($course->user?->first_name ?? '')));
 
@@ -138,6 +163,7 @@ class TeachingStudentPerformancePdfService
             'course_title' => trim((string) $course->title),
             'teacher_name' => $teacherName,
             'student_name' => $studentName,
+            'student_email' => $studentEmail,
             'student_class' => $studentClass,
             'semester_count' => $semesterCount,
             'comment' => trim((string) ($courseStudent->comment ?? '')),
@@ -164,7 +190,7 @@ class TeachingStudentPerformancePdfService
         }
 
         return TeachingCourseStudentEntry::query()
-            ->with('teachingCourseWork:id,title')
+            ->with('teachingCourseWork:id,title,is_group_work')
             ->where('teaching_course_id', $course->id)
             ->where('user_id', $courseStudent->user_id)
             ->orderBy('date')
@@ -187,6 +213,47 @@ class TeachingStudentPerformancePdfService
             ->orderBy('semester')
             ->orderBy('category_name')
             ->get();
+    }
+
+    /**
+     * @param  list<int>  $semesters
+     */
+    public function downloadGrades(TeachingCourse $course, array $semesters): Responsable
+    {
+        $course->loadMissing([
+            'school:id,long_name,short_name',
+            'schoolyear:id,name',
+            'teachingCourseStudents.user:id,first_name,last_name,schoolclass,email',
+            'teachingCourseStudents.import116:id,first_name,last_name,class,email',
+        ]);
+
+        $students = $course->teachingCourseStudents
+            ->sortBy(fn (TeachingCourseStudent $student) => $this->studentDisplayName($student), SORT_NATURAL | SORT_FLAG_CASE)
+            ->values()
+            ->map(fn (TeachingCourseStudent $student): array => [
+                'name' => $this->studentDisplayName($student),
+                'email' => trim((string) ($student->user?->email ?? $student->import116?->email ?? '')),
+                'class' => trim((string) ($student->user?->schoolclass ?? $student->import116?->class ?? '')),
+                'sem_1_grade' => $student->sem_1_grade,
+                'sem_2_grade' => $student->sem_2_grade,
+                'sem_grade' => $student->sem_grade,
+            ])
+            ->all();
+
+        $filename = Str::slug($course->title !== '' ? $course->title : 'kurs', '_').'_noten.pdf';
+
+        return Pdf::view('pdfs.teachingGrades', [
+            'course_title' => trim((string) $course->title),
+            'school_name' => trim((string) ($course->school?->long_name ?: $course->school?->short_name)),
+            'schoolyear_name' => trim((string) ($course->schoolyear?->name ?? '')),
+            'semesters' => $semesters,
+            'students' => $students,
+            'generated_at' => now()->format('d.m.Y H:i'),
+        ])
+            ->format(Format::A4)
+            ->landscape()
+            ->name($filename)
+            ->download($filename);
     }
 
     private function semesterForDate(?string $date, int $semesterCount, ?string $semesterTwoStart): int

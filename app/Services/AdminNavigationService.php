@@ -15,7 +15,7 @@ class AdminNavigationService
 
     private const TUTORING_DASHBOARD_ROLES = ['tutoring_admin', 'teacher'];
 
-    private const TEACHING_DASHBOARD_ROLES = ['teaching_admin', 'teacher'];
+    private const TEACHING_DASHBOARD_ROLES = ['admin', 'teaching_admin', 'teacher'];
 
     private const MATERIALS_DASHBOARD_ROLES = ['materials_admin', 'materials_moderator'];
 

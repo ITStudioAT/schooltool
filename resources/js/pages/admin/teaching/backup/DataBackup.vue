@@ -109,6 +109,38 @@
             </v-table>
         </section>
 
+        <section v-if="restore_runs.length" class="teaching-data-backup-shell mt-4">
+            <div class="teaching-data-backup-header">
+                <div>
+                    <div class="text-subtitle-1 font-weight-bold">Wiederherstellungsverlauf</div>
+                </div>
+            </div>
+            <v-table density="compact" class="teaching-data-backup-table">
+                <thead>
+                    <tr>
+                        <th>Zeitpunkt</th>
+                        <th>Art</th>
+                        <th>Status</th>
+                        <th>Datensicherung</th>
+                        <th>Sicherheitskopie</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="run in restore_runs" :key="run.id">
+                        <td>{{ formatDateTime(run.created_at) }}</td>
+                        <td>{{ restoreRunTypeLabel(run.type) }}</td>
+                        <td>
+                            <v-chip size="x-small" variant="tonal" :color="restoreRunStatusColor(run.status)">
+                                {{ restoreRunStatusLabel(run.status) }}
+                            </v-chip>
+                        </td>
+                        <td class="teaching-data-backup-file">{{ run.backup_filename || '-' }}</td>
+                        <td class="teaching-data-backup-file">{{ run.pre_restore_backup_filename || '-' }}</td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </section>
+
         <v-dialog v-model="details_open" max-width="760">
             <v-card v-if="selected_backup" rounded="lg">
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
@@ -231,6 +263,12 @@
                                 density="compact"
                                 label="Alle wiederherstellbaren auswählen"
                                 hide-details />
+                            <v-checkbox-btn
+                                v-model="overwrite_existing"
+                                density="compact"
+                                label="Vorhandene Kurse/Curricula überschreiben"
+                                hide-details
+                                @update:model-value="initializeRestoreSelection" />
                             <div class="text-body-2 text-medium-emphasis">{{ restoreSelectionCount }} ausgewählt</div>
                         </div>
 
@@ -243,6 +281,9 @@
                             <div v-if="fullRestoreUserReport(restore_result)" class="text-body-2 mt-1">
                                 {{ fullRestoreUserReport(restore_result) }}
                             </div>
+                            <v-btn size="small" variant="text" class="mt-2 px-0" @click="restore_report_open = true">
+                                Details anzeigen
+                            </v-btn>
                         </v-alert>
 
                         <div class="text-subtitle-2 font-weight-bold mt-5 mb-2">Einstellungen</div>
@@ -376,6 +417,51 @@
             </v-card>
         </v-dialog>
 
+        <v-dialog v-model="restore_report_open" max-width="760" persistent>
+            <v-card v-if="restore_result" rounded="lg">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon size="20" color="success">mdi-clipboard-check-outline</v-icon>
+                    Wiederherstellungsbericht
+                </v-card-title>
+                <v-card-text class="px-4 pb-2">
+                    <v-alert v-if="restore_result.pre_restore_backup" type="info" variant="tonal" density="comfortable" class="mb-4">
+                        Sicherheitskopie erstellt: {{ backupDisplayTitle(restore_result.pre_restore_backup) }}
+                    </v-alert>
+                    <v-table density="compact" class="teaching-data-backup-counts">
+                        <tbody>
+                            <tr v-for="entry in restoreReportEntries(restore_result)" :key="entry.key">
+                                <td>{{ entry.label }}</td>
+                                <td class="text-right">{{ entry.count }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+                    <div v-if="restoreUserReconciliationEntries(restore_result).length" class="text-subtitle-2 font-weight-bold mt-5 mb-2">
+                        Benutzer:innen
+                    </div>
+                    <v-table v-if="restoreUserReconciliationEntries(restore_result).length" density="compact" class="teaching-data-backup-counts">
+                        <thead>
+                            <tr>
+                                <th>Art</th>
+                                <th>Name</th>
+                                <th>E-Mail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="entry in restoreUserReconciliationEntries(restore_result)" :key="`${entry.type}-${entry.user_id}`">
+                                <td>{{ entry.type }}</td>
+                                <td>{{ entry.name || '-' }}</td>
+                                <td>{{ entry.email || '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-spacer />
+                    <v-btn variant="tonal" @click="restore_report_open = false">Schließen</v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
         <v-dialog v-model="delete_confirm_open" max-width="520" persistent>
             <v-card v-if="selected_delete_backup" rounded="lg">
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
@@ -445,6 +531,7 @@ export default {
     data() {
         return {
             backups: [],
+            restore_runs: [],
             loading: false,
             creating: false,
             importing: false,
@@ -467,6 +554,8 @@ export default {
             full_restore_confirm_open: false,
             restore_error: '',
             restore_result: null,
+            restore_report_open: false,
+            overwrite_existing: false,
             restore_selection: {
                 courses: [],
                 curricula: [],
@@ -511,8 +600,12 @@ export default {
             this.error = ''
 
             try {
-                const response = await axios.get('/api/admin/teaching/backups')
-                this.backups = Array.isArray(response.data?.data) ? response.data.data : []
+                const [backupResponse, restoreRunResponse] = await Promise.all([
+                    axios.get('/api/admin/teaching/backups'),
+                    axios.get('/api/admin/teaching/backups/restore-runs'),
+                ])
+                this.backups = Array.isArray(backupResponse.data?.data) ? backupResponse.data.data : []
+                this.restore_runs = Array.isArray(restoreRunResponse.data?.data) ? restoreRunResponse.data.data : []
             } catch (error) {
                 this.error = error?.response?.data?.message || 'Datensicherungen konnten nicht geladen werden.'
             } finally {
@@ -668,6 +761,8 @@ export default {
             this.selected_preview_backup = backup || null
             this.restore_error = ''
             this.restore_result = null
+            this.restore_report_open = false
+            this.overwrite_existing = false
             this.restore_selection = {
                 courses: [],
                 curricula: [],
@@ -704,6 +799,7 @@ export default {
                 const previewResponse = await axios.get(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/preview`)
                 this.selected_preview = previewResponse.data?.data || null
                 this.initializeRestoreSelection()
+                await this.loadRestoreRuns()
             } catch (error) {
                 this.restore_error = error?.response?.data?.message || 'Wiederherstellung konnte nicht durchgeführt werden.'
             } finally {
@@ -759,7 +855,13 @@ export default {
                 courses: this.restore_selection.courses.filter((id) => selectable.courses.includes(id)),
                 curricula: this.restore_selection.curricula.filter((id) => selectable.curricula.includes(id)),
                 settings: this.restore_selection.settings.filter((key) => selectable.settings.includes(key)),
+                overwrite_existing: this.overwrite_existing,
             }
+        },
+
+        async loadRestoreRuns() {
+            const response = await axios.get('/api/admin/teaching/backups/restore-runs')
+            this.restore_runs = Array.isArray(response.data?.data) ? response.data.data : []
         },
 
         initializeRestoreSelection() {
@@ -903,11 +1005,11 @@ export default {
         },
 
         isCourseRestoreSelectable(course) {
-            return course?.status === 'missing_current'
+            return course?.status === 'missing_current' || (this.overwrite_existing && course?.status === 'current_exists')
         },
 
         isCurriculumRestoreSelectable(curriculum) {
-            return curriculum?.status === 'missing_current'
+            return curriculum?.status === 'missing_current' || (this.overwrite_existing && ['current_exists', 'different'].includes(curriculum?.status))
         },
 
         isSettingRestoreSelectable(section) {
@@ -957,6 +1059,59 @@ export default {
             }
 
             return parts.length ? `${parts.join(', ')}.` : ''
+        },
+
+        restoreReportEntries(result) {
+            if (result?.restored === true && result?.counts) {
+                return Object.entries(result.counts)
+                    .filter(([, count]) => Number(count || 0) > 0)
+                    .map(([key, count]) => ({
+                        key,
+                        label: this.tableCountLabel(key),
+                        count,
+                    }))
+            }
+
+            return [
+                { key: 'courses', label: 'Kurse', count: result?.restored?.courses?.length || 0 },
+                { key: 'curricula', label: 'Curricula', count: result?.restored?.curricula?.length || 0 },
+                { key: 'settings', label: 'Einstellungsbereiche', count: result?.restored?.settings?.length || 0 },
+                { key: 'skipped_courses', label: 'Übersprungene Kurse', count: result?.skipped?.courses?.length || 0 },
+                { key: 'skipped_curricula', label: 'Übersprungene Curricula', count: result?.skipped?.curricula?.length || 0 },
+                { key: 'skipped_settings', label: 'Übersprungene Einstellungsbereiche', count: result?.skipped?.settings?.length || 0 },
+            ].filter((entry) => Number(entry.count || 0) > 0)
+        },
+
+        restoreUserReconciliationEntries(result) {
+            const matched = result?.user_reconciliation?.matched_by_email || []
+            const placeholders = result?.user_reconciliation?.created_placeholders || []
+
+            return [
+                ...matched.map((entry) => ({ ...entry, type: 'per E-Mail zugeordnet' })),
+                ...placeholders.map((entry) => ({ ...entry, type: 'Platzhalter angelegt' })),
+            ]
+        },
+
+        restoreRunTypeLabel(type) {
+            return type === 'full' ? 'Vollständig' : 'Teilweise'
+        },
+
+        restoreRunStatusLabel(status) {
+            return {
+                pending: 'ausstehend',
+                running: 'läuft',
+                completed: 'abgeschlossen',
+                failed: 'fehlgeschlagen',
+            }[status] || status
+        },
+
+        restoreRunStatusColor(status) {
+            return {
+                pending: 'secondary',
+                running: 'info',
+                completed: 'success',
+                failed: 'error',
+            }[status] || 'secondary'
         },
 
         previewSettingSections(preview) {

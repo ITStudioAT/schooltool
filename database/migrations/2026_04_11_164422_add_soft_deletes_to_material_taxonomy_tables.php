@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -110,15 +109,6 @@ return new class extends Migration
 
     private function hasIndex(string $tableName, string $indexName): bool
     {
-        $databaseName = DB::getDatabaseName();
-        if (! is_string($databaseName) || $databaseName === '') {
-            return false;
-        }
-
-        return DB::table('information_schema.statistics')
-            ->where('table_schema', $databaseName)
-            ->where('table_name', $tableName)
-            ->where('index_name', $indexName)
-            ->exists();
+        return Schema::hasIndex($tableName, $indexName);
     }
 };

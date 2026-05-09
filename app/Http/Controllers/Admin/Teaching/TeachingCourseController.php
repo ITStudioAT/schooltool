@@ -176,6 +176,39 @@ class TeachingCourseController extends Controller
         return $service->downloadCourse($course, $courseStudent);
     }
 
+    public function courseGradesPdf(
+        Request $request,
+        TeachingCourse $course,
+        TeachingStudentPerformancePdfService $service
+    ): Responsable {
+        if (! $auth_user = $this->userHasRole(['admin', 'teaching_admin', 'teacher'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $this->authorizeTeachingCourseAccess($course, $auth_user);
+
+        $validated = $request->validate([
+            'semesters' => ['required', 'string'],
+        ]);
+
+        $semesters = collect(explode(',', $validated['semesters']))
+            ->map(fn (string $v): int => (int) trim($v))
+            ->filter(fn (int $v): bool => in_array($v, [1, 2]))
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($semesters)) {
+            abort(422, 'Mindestens ein Semester muss ausgewählt werden.');
+        }
+
+        if (! $course->teachingCourseStudents()->exists()) {
+            abort(422, 'Keine Schüler:innen für den Druck vorhanden.');
+        }
+
+        return $service->downloadGrades($course, $semesters);
+    }
+
     /**
      * Store a newly created resource in storage.
      */

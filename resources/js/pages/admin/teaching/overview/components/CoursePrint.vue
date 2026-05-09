@@ -30,6 +30,38 @@
                 </v-btn>
             </div>
         </v-card>
+
+        <v-card rounded="xl" variant="tonal" color="primary" class="pa-4 mt-4">
+            <div class="text-overline text-primary mb-1">Option 2</div>
+            <div class="text-h6 mb-3">Noten drucken</div>
+
+            <v-checkbox
+                v-model="grades_semesters"
+                label="Semester 1"
+                value="1"
+                color="primary"
+                hide-details
+                density="compact" />
+            <v-checkbox
+                v-model="grades_semesters"
+                label="Semester 2"
+                value="2"
+                color="primary"
+                hide-details
+                density="compact"
+                class="mb-3" />
+
+            <div class="d-flex justify-end">
+                <v-btn
+                    color="primary"
+                    variant="flat"
+                    prepend-icon="mdi-printer-outline"
+                    :disabled="!canPrintGrades"
+                    @click="downloadGradesPdf">
+                    Noten drucken
+                </v-btn>
+            </div>
+        </v-card>
     </ItsGridBox>
 </template>
 
@@ -44,6 +76,7 @@ export default {
         return {
             print_scope: 'all',
             selected_course_student_id: null,
+            grades_semesters: ['1', '2'],
         }
     },
     computed: {
@@ -67,6 +100,9 @@ export default {
             }
 
             return this.studentOptions.length > 0
+        },
+        canPrintGrades() {
+            return !!this.selected_course?.id && this.grades_semesters.length > 0 && this.studentOptions.length > 0
         },
     },
     watch: {
@@ -112,6 +148,15 @@ export default {
             }
 
             window.open(url, '_blank', 'noopener')
+        },
+        downloadGradesPdf() {
+            const courseId = this.selected_course?.id
+            if (!courseId || !this.canPrintGrades) {
+                return
+            }
+
+            const semesters = this.grades_semesters.sort().join(',')
+            window.open(`/api/admin/teaching/courses/${courseId}/grades_pdf?semesters=${semesters}`, '_blank', 'noopener')
         },
     },
 }

@@ -253,17 +253,6 @@ return new class extends Migration
 
     private function hasIndex(string $tableName, string $indexName): bool
     {
-        $databaseName = DB::getDatabaseName();
-        if (! is_string($databaseName) || $databaseName === '') {
-            return false;
-        }
-
-        $result = DB::table('information_schema.statistics')
-            ->where('table_schema', $databaseName)
-            ->where('table_name', $tableName)
-            ->where('index_name', $indexName)
-            ->exists();
-
-        return (bool) $result;
+        return Schema::hasIndex($tableName, $indexName);
     }
 };

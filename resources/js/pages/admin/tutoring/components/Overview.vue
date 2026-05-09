@@ -170,9 +170,9 @@
 
                         <template v-if="selected_offers.length >= 1">
                             <!-- Detail / Konversation Buttons (single selection) -->
-                            <div class="d-grid ga-2 mt-3" v-if="selected_offers.length === 1">
-                                <v-btn block variant="tonal" rounded="lg" :color="detail_view === 'details' ? 'primary' : 'secondary'" class="text-caption" prepend-icon="mdi-text-box-outline" @click="detail_view = detail_view === 'details' ? null : 'details'">Details</v-btn>
-                                <v-btn block variant="tonal" rounded="lg" :color="detail_view === 'conversation' ? 'info' : 'secondary'" class="text-caption" prepend-icon="mdi-message-text-outline" @click="detail_view = detail_view === 'conversation' ? null : 'conversation'" v-if="selectedOfferRequests.length > 0">
+                            <div class="d-flex flex-column ga-3 mt-3" v-if="selected_offers.length === 1">
+                                <v-btn block variant="outlined" rounded="lg" color="primary" class="text-caption" prepend-icon="mdi-text-box-outline" @click="detail_view = detail_view === 'details' ? null : 'details'">Details</v-btn>
+                                <v-btn block variant="outlined" rounded="lg" color="primary" class="text-caption" prepend-icon="mdi-message-text-outline" @click="detail_view = detail_view === 'conversation' ? null : 'conversation'" v-if="selectedOfferRequests.length > 0">
                                     Konversation ({{ selectedOfferRequests.length }})
                                 </v-btn>
                             </div>

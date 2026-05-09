@@ -88,17 +88,35 @@ return new class extends Migration
         DB::table('user_group_members')
             ->join('user_groups', 'user_groups.id', '=', 'user_group_members.user_group_id')
             ->leftJoin('users as linked_users', 'linked_users.id', '=', 'user_group_members.linked_user_id')
-            ->update([
-                'user_group_members.school_id' => DB::raw('user_groups.school_id'),
-                'user_group_members.member_provider' => DB::raw("'".addslashes(UserGroupMember::PROVIDER_USER)."'"),
-                'user_group_members.member_ref' => DB::raw("CONCAT('user:', COALESCE(user_group_members.linked_user_id, 0))"),
-                'user_group_members.display_name' => DB::raw("TRIM(CONCAT(COALESCE(linked_users.last_name, ''), ' ', COALESCE(linked_users.first_name, '')))"),
-                'user_group_members.display_email' => DB::raw('linked_users.email'),
-                'user_group_members.display_schoolclass' => DB::raw('linked_users.schoolclass'),
-                'user_group_members.member_type_label' => DB::raw("'Benutzer'"),
-                'user_group_members.source_status' => DB::raw("'".addslashes(UserGroupMember::SOURCE_STATUS_ACTIVE)."'"),
-                'user_group_members.linked_user_status' => DB::raw("CASE WHEN user_group_members.linked_user_id IS NULL THEN '".addslashes(UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE)."' ELSE '".addslashes(UserGroupMember::LINKED_USER_STATUS_LINKED)."' END"),
-            ]);
+            ->select([
+                'user_group_members.id',
+                'user_group_members.linked_user_id',
+                'user_groups.school_id',
+                'linked_users.first_name',
+                'linked_users.last_name',
+                'linked_users.email',
+                'linked_users.schoolclass',
+            ])
+            ->orderBy('user_group_members.id')
+            ->chunk(200, function ($members): void {
+                foreach ($members as $member) {
+                    DB::table('user_group_members')
+                        ->where('id', $member->id)
+                        ->update([
+                            'school_id' => $member->school_id,
+                            'member_provider' => UserGroupMember::PROVIDER_USER,
+                            'member_ref' => 'user:'.($member->linked_user_id ?: 0),
+                            'display_name' => trim(sprintf('%s %s', $member->last_name ?? '', $member->first_name ?? '')),
+                            'display_email' => $member->email,
+                            'display_schoolclass' => $member->schoolclass,
+                            'member_type_label' => 'Benutzer',
+                            'source_status' => UserGroupMember::SOURCE_STATUS_ACTIVE,
+                            'linked_user_status' => $member->linked_user_id === null
+                                ? UserGroupMember::LINKED_USER_STATUS_NOT_APPLICABLE
+                                : UserGroupMember::LINKED_USER_STATUS_LINKED,
+                        ]);
+                }
+            });
 
         DB::table('user_group_members')
             ->where(function ($query) {
@@ -194,24 +212,24 @@ return new class extends Migration
 
     private function hasIndex(string $table, string $index): bool
     {
-        $database = DB::getDatabaseName();
-
-        return DB::table('information_schema.statistics')
-            ->where('table_schema', $database)
-            ->where('table_name', $table)
-            ->where('index_name', $index)
-            ->exists();
+        return Schema::hasIndex($table, $index);
     }
 
     private function hasForeignKey(string $table, string $constraint): bool
     {
-        $database = DB::getDatabaseName();
+        foreach (Schema::getForeignKeys($table) as $foreignKey) {
+            if (($foreignKey['name'] ?? null) === $constraint) {
+                return true;
+            }
 
-        return DB::table('information_schema.table_constraints')
-            ->where('table_schema', $database)
-            ->where('table_name', $table)
-            ->where('constraint_name', $constraint)
-            ->where('constraint_type', 'FOREIGN KEY')
-            ->exists();
+            $columns = $foreignKey['columns'] ?? [];
+            $conventionalName = sprintf('%s_%s_foreign', $table, implode('_', $columns));
+
+            if ($conventionalName === $constraint) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

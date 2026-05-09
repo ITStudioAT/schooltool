@@ -178,6 +178,7 @@ class TeachingBackupService
             ->all();
 
         return DB::transaction(function () use ($backup, $files, $selection, $tables, $user): array {
+            $overwriteExisting = (bool) ($selection['overwrite_existing'] ?? false);
             $result = [
                 'restored' => [
                     'courses' => [],
@@ -195,7 +196,7 @@ class TeachingBackupService
             $curriculumIdMap = [];
 
             foreach ($this->selectedIds($selection['curricula'] ?? []) as $curriculumId) {
-                $curriculumResult = $this->restoreMissingCurriculum($tables, $files, $curriculumId, $backup, $user);
+                $curriculumResult = $this->restoreMissingCurriculum($tables, $files, $curriculumId, $backup, $user, $overwriteExisting);
 
                 if (($curriculumResult['restored'] ?? false) === true) {
                     $curriculumIdMap[$curriculumId] = (int) $curriculumResult['new_id'];
@@ -208,7 +209,7 @@ class TeachingBackupService
             }
 
             foreach ($this->selectedIds($selection['courses'] ?? []) as $courseId) {
-                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap);
+                $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting);
 
                 if (($courseResult['restored'] ?? false) === true) {
                     $result['restored']['courses'][] = $courseResult;
@@ -496,6 +497,48 @@ class TeachingBackupService
             ->where('school_id', $backup->school_id)
             ->where('schoolyear_id', $backup->schoolyear_id)
             ->delete();
+    }
+
+    /**
+     * @param  array<int, int>  $courseIds
+     */
+    private function deleteCourseData(array $courseIds): void
+    {
+        $courseDateIds = $this->idsFromTable('teaching_course_dates', 'teaching_course_id', $courseIds);
+        $courseDateMaterialIds = $this->idsFromTable('teaching_course_date_materials', 'teaching_course_date_id', $courseDateIds);
+        $userGroupIds = DB::table('user_groups')
+            ->whereIn('teaching_course_id', $courseIds ?: [-1])
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $this->deleteWhereIn('user_group_members', 'user_group_id', $userGroupIds);
+        $this->deleteWhereIn('user_groups', 'id', $userGroupIds);
+        $this->deleteWhereIn('teaching_course_date_material_attachments', 'teaching_course_date_material_id', $courseDateMaterialIds);
+        $this->deleteWhereIn('teaching_course_date_materials', 'id', $courseDateMaterialIds);
+        $this->deleteWhereIn('teaching_course_work_group_students', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_student_category_evaluations', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_behaviour_entries', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_student_entries', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_works', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_students', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_dates', 'id', $courseDateIds);
+        $this->deleteWhereIn('teaching_courses', 'id', $courseIds);
+    }
+
+    /**
+     * @param  array<int, int>  $curriculumIds
+     */
+    private function deleteCurriculumData(array $curriculumIds): void
+    {
+        DB::table('teaching_courses')
+            ->whereIn('teaching_curriculum_id', $curriculumIds ?: [-1])
+            ->update(['teaching_curriculum_id' => null]);
+        DB::table('teaching_imported_curricula')
+            ->whereIn('adopted_curriculum_id', $curriculumIds ?: [-1])
+            ->delete();
+        $this->deleteWhereIn('teaching_curriculum_documents', 'teaching_curriculum_id', $curriculumIds);
+        $this->deleteWhereIn('teaching_curricula', 'id', $curriculumIds);
     }
 
     /**
@@ -1347,7 +1390,8 @@ class TeachingBackupService
         int $courseId,
         TeachingBackup $backup,
         User $user,
-        array $curriculumIdMap
+        array $curriculumIdMap,
+        bool $overwriteExisting = false
     ): array {
         $course = $this->rowById($tables['teaching_courses'] ?? [], $courseId);
 
@@ -1359,7 +1403,25 @@ class TeachingBackupService
             ];
         }
 
+        $overwritten = false;
+
         if ($this->currentCourseExists($backup, $courseId)) {
+            if ($overwriteExisting) {
+                $this->deleteCourseData([$courseId]);
+                $overwritten = true;
+            } else {
+                return [
+                    'id' => $courseId,
+                    'title' => (string) ($course['title'] ?? ''),
+                    'reason' => 'current_exists',
+                    'label' => 'Kurs ist aktuell bereits vorhanden.',
+                ];
+            }
+        }
+
+        if ($overwritten && ! $this->currentCourseExists($backup, $courseId)) {
+            // The current row was removed so the backup row can be restored as the selected replacement.
+        } elseif ($this->currentCourseExists($backup, $courseId)) {
             return [
                 'id' => $courseId,
                 'title' => (string) ($course['title'] ?? ''),
@@ -1384,7 +1446,9 @@ class TeachingBackupService
             'school_id' => (int) $backup->school_id,
             'schoolyear_id' => (int) $backup->schoolyear_id,
             'user_id' => isset($validUserIds[$teacherId]) ? $teacherId : (int) $user->id,
-            'title' => $this->restoredTitle('teaching_courses', (string) ($course['title'] ?? ''), (int) $backup->school_id, (int) $backup->schoolyear_id),
+            'title' => $overwritten
+                ? (string) ($course['title'] ?? '')
+                : $this->restoredTitle('teaching_courses', (string) ($course['title'] ?? ''), (int) $backup->school_id, (int) $backup->schoolyear_id),
             'teaching_curriculum_id' => $this->restoredCourseCurriculumId($curriculumId, $curriculumIdMap, $backup),
         ]);
 
@@ -1529,6 +1593,7 @@ class TeachingBackupService
             'old_id' => $courseId,
             'new_id' => $newCourseId,
             'title' => (string) ($course['title'] ?? ''),
+            'overwritten' => $overwritten,
             'counts' => $counts,
         ];
     }
@@ -1538,8 +1603,14 @@ class TeachingBackupService
      * @param  array<string, array<string, mixed>>  $files
      * @return array<string, mixed>
      */
-    private function restoreMissingCurriculum(array $tables, array $files, int $curriculumId, TeachingBackup $backup, User $user): array
-    {
+    private function restoreMissingCurriculum(
+        array $tables,
+        array $files,
+        int $curriculumId,
+        TeachingBackup $backup,
+        User $user,
+        bool $overwriteExisting = false
+    ): array {
         $curriculum = $this->rowById($tables['teaching_curricula'] ?? [], $curriculumId);
 
         if (! $curriculum) {
@@ -1550,7 +1621,25 @@ class TeachingBackupService
             ];
         }
 
+        $overwritten = false;
+
         if ($this->currentCurriculumExists($backup, $curriculumId)) {
+            if ($overwriteExisting) {
+                $this->deleteCurriculumData([$curriculumId]);
+                $overwritten = true;
+            } else {
+                return [
+                    'id' => $curriculumId,
+                    'title' => (string) ($curriculum['title'] ?? ''),
+                    'reason' => 'current_exists',
+                    'label' => 'Curriculum ist aktuell bereits vorhanden.',
+                ];
+            }
+        }
+
+        if ($overwritten && ! $this->currentCurriculumExists($backup, $curriculumId)) {
+            // The current row was removed so the backup row can be restored as the selected replacement.
+        } elseif ($this->currentCurriculumExists($backup, $curriculumId)) {
             return [
                 'id' => $curriculumId,
                 'title' => (string) ($curriculum['title'] ?? ''),
@@ -1574,7 +1663,9 @@ class TeachingBackupService
             'school_id' => (int) $backup->school_id,
             'schoolyear_id' => (int) $backup->schoolyear_id,
             'user_id' => isset($validUserIds[$ownerId]) ? $ownerId : (int) $user->id,
-            'title' => $this->restoredTitle('teaching_curricula', (string) ($curriculum['title'] ?? ''), (int) $backup->school_id, (int) $backup->schoolyear_id),
+            'title' => $overwritten
+                ? (string) ($curriculum['title'] ?? '')
+                : $this->restoredTitle('teaching_curricula', (string) ($curriculum['title'] ?? ''), (int) $backup->school_id, (int) $backup->schoolyear_id),
             'export_key' => (string) Str::uuid(),
         ]);
 
@@ -1596,6 +1687,7 @@ class TeachingBackupService
             'old_id' => $curriculumId,
             'new_id' => $newCurriculumId,
             'title' => (string) ($curriculum['title'] ?? ''),
+            'overwritten' => $overwritten,
             'document_count' => $documentCount,
         ];
     }

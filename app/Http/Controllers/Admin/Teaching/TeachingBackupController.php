@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Models\TeachingBackup;
+use App\Models\TeachingBackupRestoreRun;
+use App\Models\User;
 use App\Services\TeachingBackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,6 +46,31 @@ class TeachingBackupController extends Controller
         return response()->json([
             'data' => $this->backupPayload($backup),
         ], 201);
+    }
+
+    public function restoreRuns(): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $runs = TeachingBackupRestoreRun::query()
+            ->with([
+                'backup:id,filename,created_at',
+                'preRestoreBackup:id,filename,created_at',
+                'user:id,first_name,last_name,email',
+            ])
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->latest()
+            ->limit(20)
+            ->get()
+            ->map(fn (TeachingBackupRestoreRun $run): array => $this->restoreRunPayload($run))
+            ->all();
+
+        return response()->json([
+            'data' => $runs,
+        ]);
     }
 
     public function import(Request $request, TeachingBackupService $service): JsonResponse
@@ -169,13 +196,21 @@ class TeachingBackupController extends Controller
             'curricula.*' => ['integer'],
             'settings' => ['sometimes', 'array'],
             'settings.*' => ['string'],
+            'overwrite_existing' => ['sometimes', 'boolean'],
         ]);
+
+        $run = $this->startRestoreRun($backup, $authUser, 'partial', $selection);
 
         try {
             $result = $service->restoreSelection($backup, $authUser, $selection);
         } catch (JsonException) {
+            $this->failRestoreRun($run, 'Datensicherung kann nicht gelesen werden');
+
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }
+
+        $this->completeRestoreRun($run, $result);
+        $result['restore_run'] = $this->restoreRunPayload($run->refresh());
 
         return response()->json([
             'data' => $result,
@@ -196,11 +231,27 @@ class TeachingBackupController extends Controller
             abort(404, 'Datensicherung nicht gefunden');
         }
 
+        $run = $this->startRestoreRun($backup, $authUser, 'full', []);
+
         try {
+            $preRestoreBackup = $service->createForUser($authUser);
+            $run->update([
+                'pre_restore_backup_id' => $preRestoreBackup->id,
+                'progress_current' => 1,
+                'progress_total' => 2,
+                'message' => 'Sicherheitskopie vor Wiederherstellung erstellt.',
+            ]);
+
             $result = $service->restoreFull($backup, $authUser);
         } catch (JsonException) {
+            $this->failRestoreRun($run, 'Datensicherung kann nicht gelesen werden');
+
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }
+
+        $result['pre_restore_backup'] = $this->backupPayload($preRestoreBackup);
+        $this->completeRestoreRun($run, $result);
+        $result['restore_run'] = $this->restoreRunPayload($run->refresh());
 
         return response()->json([
             'data' => $result,
@@ -224,6 +275,74 @@ class TeachingBackupController extends Controller
             'summary' => $backup->summary,
             'download_url' => "/api/admin/teaching/backups/{$backup->id}/download",
             'created_at' => $backup->created_at?->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     */
+    private function startRestoreRun(TeachingBackup $backup, User $authUser, string $type, array $selection): TeachingBackupRestoreRun
+    {
+        return TeachingBackupRestoreRun::query()->create([
+            'teaching_backup_id' => $backup->id,
+            'school_id' => $backup->school_id,
+            'schoolyear_id' => $backup->schoolyear_id,
+            'user_id' => $authUser->id,
+            'type' => $type,
+            'status' => 'running',
+            'progress_current' => 0,
+            'progress_total' => $type === 'full' ? 2 : 1,
+            'selection' => $selection,
+            'started_at' => now(),
+            'message' => 'Wiederherstellung gestartet.',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function completeRestoreRun(TeachingBackupRestoreRun $run, array $result): void
+    {
+        $run->update([
+            'status' => 'completed',
+            'progress_current' => (int) max(1, $run->progress_total),
+            'result' => $result,
+            'finished_at' => now(),
+            'message' => 'Wiederherstellung abgeschlossen.',
+        ]);
+    }
+
+    private function failRestoreRun(TeachingBackupRestoreRun $run, string $message): void
+    {
+        $run->update([
+            'status' => 'failed',
+            'finished_at' => now(),
+            'message' => $message,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function restoreRunPayload(TeachingBackupRestoreRun $run): array
+    {
+        return [
+            'id' => (int) $run->id,
+            'backup_id' => $run->teaching_backup_id !== null ? (int) $run->teaching_backup_id : null,
+            'backup_filename' => $run->backup?->filename,
+            'pre_restore_backup_id' => $run->pre_restore_backup_id !== null ? (int) $run->pre_restore_backup_id : null,
+            'pre_restore_backup_filename' => $run->preRestoreBackup?->filename,
+            'type' => $run->type,
+            'status' => $run->status,
+            'progress_current' => (int) $run->progress_current,
+            'progress_total' => (int) $run->progress_total,
+            'selection' => $run->selection,
+            'result' => $run->result,
+            'message' => $run->message,
+            'user_name' => trim(sprintf('%s %s', $run->user?->first_name, $run->user?->last_name)) ?: $run->user?->email,
+            'started_at' => $run->started_at?->toDateTimeString(),
+            'finished_at' => $run->finished_at?->toDateTimeString(),
+            'created_at' => $run->created_at?->toDateTimeString(),
         ];
     }
 }

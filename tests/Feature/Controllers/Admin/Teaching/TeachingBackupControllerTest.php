@@ -8,6 +8,7 @@ use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\TeachingBackup;
+use App\Models\TeachingBackupRestoreRun;
 use App\Models\TeachingCourse;
 use App\Models\TeachingCourseBehaviourEntry;
 use App\Models\TeachingCourseDate;
@@ -819,7 +820,9 @@ test('restore recreates selected missing courses and curricula as new records', 
         ->assertJsonCount(1, 'data.restored.courses')
         ->assertJsonCount(1, 'data.restored.curricula')
         ->assertJsonPath('data.restored.courses.0.old_id', $courseId)
-        ->assertJsonPath('data.restored.curricula.0.old_id', $curriculumId);
+        ->assertJsonPath('data.restored.curricula.0.old_id', $curriculumId)
+        ->assertJsonPath('data.restore_run.status', 'completed')
+        ->assertJsonPath('data.restore_run.type', 'partial');
 
     $restoredCourse = TeachingCourse::query()->where('title', 'Gelöschter Kurs')->firstOrFail();
     $restoredCurriculum = TeachingCurriculum::query()->where('title', 'Gelöschtes Curriculum')->firstOrFail();
@@ -844,6 +847,99 @@ test('restore recreates selected missing courses and curricula as new records', 
     ]);
     expect(DB::table('teaching_course_date_material_attachments')->where('name', 'demo.txt')->value('file_path'))
         ->not->toBe('materials/demo.txt');
+});
+
+test('restore can overwrite selected existing courses when explicitly requested', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $currentCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Aktueller Kurs',
+    ]);
+    TeachingCourseStudent::query()->create([
+        'teaching_course_id' => $currentCourse->id,
+        'user_id' => $this->regularUser->id,
+        'comment' => 'Alt',
+    ]);
+
+    $tables = array_fill_keys([
+        'schools',
+        'schoolyears',
+        'school_tools',
+        'users',
+        'teaching_courses',
+        'teaching_course_students',
+        'teaching_course_dates',
+        'teaching_course_date_materials',
+        'teaching_course_date_material_attachments',
+        'teaching_course_works',
+        'teaching_course_work_group_students',
+        'teaching_course_student_entries',
+        'teaching_course_behaviour_entries',
+        'teaching_course_student_category_evaluations',
+        'teaching_curricula',
+        'teaching_curriculum_documents',
+        'teaching_imported_curricula',
+        'teaching_schemas',
+        'teaching_holidays',
+        'teaching_school_hours',
+        'import116',
+        'import116_runs',
+        'import116_run_changes',
+        'user_groups',
+        'user_group_members',
+    ], []);
+    $now = now()->toDateTimeString();
+    $tables['schools'] = [$this->school->only(['id', 'long_name', 'short_name'])];
+    $tables['schoolyears'] = [$this->schoolyear->only(['id', 'school_id', 'name'])];
+    $tables['teaching_courses'] = [[
+        'id' => $currentCourse->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Backup Kurs',
+        'classes' => ['6B'],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+
+    $payload = [
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => $tables,
+        'files' => [],
+    ];
+
+    Storage::disk('local')->put('teaching-backups/overwrite.json', json_encode($payload, JSON_THROW_ON_ERROR));
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/overwrite.json',
+        'filename' => 'overwrite.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore", [
+        'courses' => [$currentCourse->id],
+        'overwrite_existing' => true,
+    ])->assertOk()
+        ->assertJsonPath('data.restored.courses.0.overwritten', true);
+
+    $restoredCourse = TeachingCourse::query()->where('title', 'Backup Kurs')->firstOrFail();
+
+    expect(TeachingCourse::query()->where('title', 'Aktueller Kurs')->exists())->toBeFalse()
+        ->and($restoredCourse->id)->not->toBe($currentCourse->id)
+        ->and(TeachingBackupRestoreRun::query()->where('type', 'partial')->where('status', 'completed')->exists())->toBeTrue();
 });
 
 test('restore overwrites selected active schoolyear setting sections', function () {
@@ -1429,7 +1525,12 @@ test('full restore replaces active teaching data and restores imported records w
         ->assertJsonPath('data.counts.user_groups', 1)
         ->assertJsonPath('data.counts.users_created', 1)
         ->assertJsonPath('data.counts.users_matched_by_email', 0)
+        ->assertJsonPath('data.restore_run.status', 'completed')
+        ->assertJsonPath('data.restore_run.type', 'full')
         ->assertJsonCount(1, 'data.user_reconciliation.created_placeholders');
+
+    expect($response->json('data.pre_restore_backup.id'))->not->toBeNull();
+    Storage::disk('local')->assertExists(TeachingBackup::query()->findOrFail($response->json('data.pre_restore_backup.id'))->path);
 
     $restoredUser = User::query()->where('email', 'restored.student@example.test')->firstOrFail();
     $restoredCourse = TeachingCourse::query()->where('title', 'Voll Kurs')->firstOrFail();

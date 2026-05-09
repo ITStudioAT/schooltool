@@ -29,6 +29,13 @@
             color: #0f172a;
         }
 
+        .student-header {
+            border-bottom: 1px solid #94a3b8;
+            padding-top: 14px;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+        }
+
         .report-table {
             margin-top: 18px;
         }
@@ -68,12 +75,18 @@
 </head>
 <body>
     @php($reports = $reports ?? [isset($report) ? $report : null])
+    @php($firstReport = collect($reports)->first())
+    @if ($firstReport)
+        <div class="report-header">
+            <p class="report-subtitle">{{ $firstReport['course_title'] }} · {{ $firstReport['school_name'] ?: '-' }} · Schuljahr {{ $firstReport['schoolyear_name'] ?: '-' }} · {{ $firstReport['generated_at'] }}</p>
+        </div>
+    @endif
     @foreach ($reports as $report)
         @if (! $report)
             @continue
         @endif
-        <div class="report-header">
-            <p class="report-subtitle">{{ $report['course_title'] }} · {{ $report['student_name'] }} · {{ $report['school_name'] ?: '-' }} · {{ $report['schoolyear_name'] ?: '-' }}</p>
+        <div class="student-header">
+            <p class="report-subtitle">{{ $report['student_name'] }}@if ($report['student_email'] ?? '') <span class="muted">· {{ $report['student_email'] }}</span>@endif</p>
         </div>
 
         @php($entryRows = collect())
