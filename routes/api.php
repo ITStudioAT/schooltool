@@ -389,8 +389,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/teaching/save_semester_2_date', [TeachingController::class, 'saveSemester2Date']);
         Route::get('/admin/teaching/backups', [TeachingBackupController::class, 'index']);
         Route::post('/admin/teaching/backups', [TeachingBackupController::class, 'store']);
+        Route::post('/admin/teaching/backups/import', [TeachingBackupController::class, 'import']);
         Route::get('/admin/teaching/backups/{backup}/preview', [TeachingBackupController::class, 'preview']);
         Route::post('/admin/teaching/backups/{backup}/restore', [TeachingBackupController::class, 'restore']);
+        Route::post('/admin/teaching/backups/{backup}/restore-full', [TeachingBackupController::class, 'restoreFull']);
+        Route::delete('/admin/teaching/backups/{backup}', [TeachingBackupController::class, 'destroy']);
         Route::get('/admin/teaching/backups/{backup}/download', [TeachingBackupController::class, 'download']);
         Route::get('/admin/teaching/courses/{course}/performances_pdf', [TeachingCourseController::class, 'coursePerformancesPdf']);
         Route::get('/admin/teaching/courses/{course}/students/{course_student}/performances_pdf', [TeachingCourseController::class, 'studentPerformancesPdf']);
@@ -586,7 +589,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/tutoring/toggle_active_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleActiveOffer'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
         Route::post('/admin/tutoring/toggle_accepted_offer', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'toggleAcceptedOffer'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
         Route::get('/admin/tutoring/get_stats', [App\Http\Controllers\Admin\Tutoring\OfferController::class, 'getStats'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
-        // /admin/tutoring/get_stats
+        Route::get('/admin/tutoring/requests', [App\Http\Controllers\Admin\Tutoring\OfferRequestController::class, 'index'])->middleware('tool-licensed:Nachhilfetool,auto,scope:staff_admin_access');
 
         // Roles
         Route::get('/admin/roles/load_roles', [RoleController::class, 'loadRoles']);

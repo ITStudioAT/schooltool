@@ -6,6 +6,7 @@ vi.mock('axios', () => ({
     default: {
         get: vi.fn(),
         post: vi.fn(),
+        delete: vi.fn(),
     },
 }))
 
@@ -57,6 +58,166 @@ describe('Teaching data backup page', () => {
             { id: 1, filename: 'old-backup.json' },
         ])
         expect(ctx.creating).toBe(false)
+    })
+
+    it('imports an external backup file and prepends it to the list', async () => {
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: { id: 3, filename: 'external.json' },
+                meta: {
+                    message: 'Backup-Datei wurde importiert.',
+                },
+            },
+        })
+
+        const event = {
+            target: {
+                files: [new File(['{}'], 'external.json', { type: 'application/json' })],
+                value: 'external.json',
+            },
+        }
+        const ctx: Record<string, unknown> = {
+            backups: [{ id: 1, filename: 'old-backup.json' }],
+            importing: false,
+            error: '',
+            import_notice: '',
+            loadBackups: vi.fn(),
+        }
+
+        await (DataBackup as any).methods.importBackup.call(ctx, event)
+
+        expect(axios.post).toHaveBeenCalledWith(
+            '/api/admin/teaching/backups/import',
+            expect.any(FormData),
+            {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            },
+        )
+        expect(ctx.backups).toEqual([
+            { id: 3, filename: 'external.json' },
+            { id: 1, filename: 'old-backup.json' },
+        ])
+        expect(ctx.importing).toBe(false)
+        expect(ctx.import_notice).toBe('Backup-Datei wurde importiert.')
+        expect(event.target.value).toBe('')
+    })
+
+    it('shows the duplicate import message and reuses the existing backup row', async () => {
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: { id: 1, filename: 'old-backup.json' },
+                meta: {
+                    imported: false,
+                    duplicate: true,
+                    message: 'Diese Backup-Datei ist bereits vorhanden. Der vorhandene Eintrag wurde verwendet.',
+                },
+            },
+        })
+
+        const event = {
+            target: {
+                files: [new File(['{}'], 'external.json', { type: 'application/json' })],
+                value: 'external.json',
+            },
+        }
+        const ctx: Record<string, unknown> = {
+            backups: [{ id: 1, filename: 'old-backup.json' }],
+            importing: false,
+            error: '',
+            import_notice: '',
+            loadBackups: vi.fn(),
+        }
+
+        await (DataBackup as any).methods.importBackup.call(ctx, event)
+
+        expect(ctx.backups).toEqual([{ id: 1, filename: 'old-backup.json' }])
+        expect(ctx.import_notice).toBe('Diese Backup-Datei ist bereits vorhanden. Der vorhandene Eintrag wurde verwendet.')
+        expect(ctx.importing).toBe(false)
+        expect(event.target.value).toBe('')
+    })
+
+    it('opens the delete confirmation dialog', () => {
+        const methods = (DataBackup as any).methods
+        const ctx: Record<string, unknown> = {
+            selected_delete_backup: null,
+            delete_confirm_open: false,
+            delete_loading: false,
+            delete_error: 'Alt',
+        }
+
+        methods.openDeleteDialog.call(ctx, { id: 7, filename: 'backup.json' })
+
+        expect(ctx.selected_delete_backup).toEqual({ id: 7, filename: 'backup.json' })
+        expect(ctx.delete_confirm_open).toBe(true)
+        expect(ctx.delete_error).toBe('')
+    })
+
+    it('deletes a backup after confirmation', async () => {
+        vi.mocked(axios.delete).mockResolvedValueOnce({
+            data: {
+                data: { id: 7, deleted: true },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            backups: [
+                { id: 7, filename: 'delete-me.json' },
+                { id: 8, filename: 'keep-me.json' },
+            ],
+            selected_delete_backup: { id: 7, filename: 'delete-me.json' },
+            delete_confirm_open: true,
+            delete_loading: false,
+            delete_loading_id: null,
+            delete_error: '',
+            error: '',
+            details_open: true,
+            selected_backup: { id: 7, filename: 'delete-me.json' },
+            preview_open: true,
+            selected_preview: { courses: [] },
+            selected_preview_backup: { id: 7, filename: 'delete-me.json' },
+        }
+
+        await (DataBackup as any).methods.deleteBackup.call(ctx)
+
+        expect(axios.delete).toHaveBeenCalledWith('/api/admin/teaching/backups/7')
+        expect(ctx.backups).toEqual([{ id: 8, filename: 'keep-me.json' }])
+        expect(ctx.delete_confirm_open).toBe(false)
+        expect(ctx.selected_delete_backup).toBeNull()
+        expect(ctx.delete_loading).toBe(false)
+        expect(ctx.delete_loading_id).toBeNull()
+        expect(ctx.details_open).toBe(false)
+        expect(ctx.preview_open).toBe(false)
+        expect(ctx.selected_preview_backup).toBeNull()
+    })
+
+    it('keeps the delete dialog open when deletion fails', async () => {
+        vi.mocked(axios.delete).mockRejectedValueOnce({
+            response: {
+                data: {
+                    message: 'Nicht erlaubt',
+                },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            backups: [{ id: 7, filename: 'delete-me.json' }],
+            selected_delete_backup: { id: 7, filename: 'delete-me.json' },
+            delete_confirm_open: true,
+            delete_loading: false,
+            delete_loading_id: null,
+            delete_error: '',
+            error: '',
+        }
+
+        await (DataBackup as any).methods.deleteBackup.call(ctx)
+
+        expect(ctx.backups).toEqual([{ id: 7, filename: 'delete-me.json' }])
+        expect(ctx.delete_confirm_open).toBe(true)
+        expect(ctx.delete_error).toBe('Nicht erlaubt')
+        expect(ctx.delete_loading).toBe(false)
+        expect(ctx.delete_loading_id).toBeNull()
     })
 
     it('formats backup creation timestamps for German users', () => {
@@ -307,6 +468,113 @@ describe('Teaching data backup page', () => {
             curricula: [],
             settings: [],
         })
+    })
+
+    it('opens the full restore confirmation dialog', () => {
+        const methods = (DataBackup as any).methods
+        const ctx: Record<string, unknown> = {
+            selected_preview_backup: { id: 12 },
+            full_restore_loading: false,
+            full_restore_confirm_open: false,
+        }
+
+        methods.openFullRestoreDialog.call(ctx)
+
+        expect(ctx.full_restore_confirm_open).toBe(true)
+    })
+
+    it('posts a full restore request and refreshes the preview', async () => {
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: {
+                    restored: true,
+                    counts: {
+                        courses: 1,
+                        curricula: 1,
+                    },
+                },
+            },
+        })
+        vi.mocked(axios.get).mockResolvedValueOnce({
+            data: {
+                data: {
+                    courses: [],
+                    curricula: [],
+                    setting_sections: [],
+                },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            selected_preview_backup: { id: 12 },
+            selected_preview: {
+                courses: [{ id: 7, status: 'missing_current' }],
+                curricula: [],
+                setting_sections: [],
+            },
+            full_restore_loading: false,
+            full_restore_confirm_open: true,
+            restore_error: '',
+            restore_result: null,
+            initializeRestoreSelection: (DataBackup as any).methods.initializeRestoreSelection,
+            restoreSelectableValues: (DataBackup as any).methods.restoreSelectableValues,
+            previewSettingSections: (DataBackup as any).methods.previewSettingSections,
+            isCourseRestoreSelectable: (DataBackup as any).methods.isCourseRestoreSelectable,
+            isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
+            isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
+            loadBackups: vi.fn(),
+        }
+
+        await (DataBackup as any).methods.restoreFull.call(ctx)
+
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/backups/12/restore-full')
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
+        expect(ctx.restore_result).toEqual({
+            restored: true,
+            counts: {
+                courses: 1,
+                curricula: 1,
+            },
+        })
+        expect(ctx.full_restore_loading).toBe(false)
+        expect(ctx.full_restore_confirm_open).toBe(false)
+    })
+
+    it('summarizes full restore result counts', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            fullRestoreCount: methods.fullRestoreCount,
+        }
+
+        expect(methods.restoreResultLabel.call(ctx, {
+            restored: true,
+            counts: {
+                courses: 2,
+                curricula: 1,
+                users_created: 1,
+                users_matched_by_email: 1,
+            },
+        })).toBe('Vollständig wiederhergestellt: 4 Datensätze.')
+    })
+
+    it('summarizes full restore user reconciliation', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.fullRestoreUserReport({
+            restored: true,
+            user_reconciliation: {
+                matched_by_email: [{ user_id: 5 }],
+                created_placeholders: [{ user_id: 6 }],
+            },
+        })).toBe('1 Benutzer:innen per E-Mail zugeordnet, 1 Benutzer:innen als inaktive Platzhalter angelegt.')
+
+        expect(methods.fullRestoreUserReport({
+            restored: true,
+            user_reconciliation: {
+                matched_by_email: [],
+                created_placeholders: [],
+            },
+        })).toBe('')
     })
 
     it('removes non-restoreable rows from the restore payload', () => {

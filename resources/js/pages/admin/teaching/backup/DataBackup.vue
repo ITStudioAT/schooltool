@@ -8,13 +8,27 @@
                         Sichert die Unterrichtsdaten der aktiven Schule und des aktiven Schuljahres.
                     </div>
                 </div>
-                <v-btn color="primary" variant="flat" prepend-icon="mdi-database-plus-outline" :loading="creating" @click="createBackup">
-                    Neue Datensicherung
-                </v-btn>
+                <div class="teaching-data-backup-actions">
+                    <input
+                        ref="backup_import_input"
+                        type="file"
+                        accept="application/json,.json"
+                        class="d-none"
+                        @change="importBackup" />
+                    <v-btn color="secondary" variant="tonal" prepend-icon="mdi-upload-outline" :loading="importing" @click="selectImportFile">
+                        Backup-Datei importieren
+                    </v-btn>
+                    <v-btn color="primary" variant="flat" prepend-icon="mdi-database-plus-outline" :loading="creating" @click="createBackup">
+                        Neue Datensicherung
+                    </v-btn>
+                </div>
             </div>
 
             <v-alert v-if="error" type="error" variant="tonal" density="comfortable" class="ma-4 mt-0">
                 {{ error }}
+            </v-alert>
+            <v-alert v-if="import_notice" type="info" variant="tonal" density="comfortable" class="ma-4 mt-0">
+                {{ import_notice }}
             </v-alert>
 
             <div v-if="loading" class="teaching-data-backup-state">
@@ -81,6 +95,14 @@
                                 size="small"
                                 title="Datensicherung herunterladen"
                                 @click="downloadBackup(backup)" />
+                            <v-btn
+                                icon="mdi-delete-outline"
+                                variant="text"
+                                color="error"
+                                size="small"
+                                title="Datensicherung löschen"
+                                :loading="delete_loading_id === backup.id"
+                                @click="openDeleteDialog(backup)" />
                         </td>
                     </tr>
                 </tbody>
@@ -217,7 +239,10 @@
                         </v-alert>
 
                         <v-alert v-if="restore_result" type="success" variant="tonal" density="comfortable" class="mt-3">
-                            {{ restoreResultLabel(restore_result) }}
+                            <div>{{ restoreResultLabel(restore_result) }}</div>
+                            <div v-if="fullRestoreUserReport(restore_result)" class="text-body-2 mt-1">
+                                {{ fullRestoreUserReport(restore_result) }}
+                            </div>
                         </v-alert>
 
                         <div class="text-subtitle-2 font-weight-bold mt-5 mb-2">Einstellungen</div>
@@ -330,13 +355,82 @@
                     <v-spacer />
                     <v-btn variant="tonal" @click="preview_open = false">Schließen</v-btn>
                     <v-btn
+                        color="error"
+                        variant="tonal"
+                        prepend-icon="mdi-database-refresh-outline"
+                        :disabled="!selected_preview || restore_loading || full_restore_loading"
+                        :loading="full_restore_loading"
+                        @click="openFullRestoreDialog">
+                        Vollständig wiederherstellen
+                    </v-btn>
+                    <v-btn
                         color="primary"
                         variant="flat"
                         prepend-icon="mdi-database-sync-outline"
-                        :disabled="!canRestoreSelected"
+                        :disabled="!canRestoreSelected || full_restore_loading"
                         :loading="restore_loading"
                         @click="restoreSelected">
                         Wiederherstellen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="delete_confirm_open" max-width="520" persistent>
+            <v-card v-if="selected_delete_backup" rounded="lg">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon size="20" color="error">mdi-delete-alert-outline</v-icon>
+                    Datensicherung löschen
+                </v-card-title>
+                <v-card-text class="px-4 pb-2">
+                    <div class="text-body-2">
+                        Diese Datensicherung wird aus der Liste entfernt und die gespeicherte Backup-Datei wird gelöscht.
+                    </div>
+                    <div class="text-body-2 text-medium-emphasis mt-2">
+                        {{ backupDisplayTitle(selected_delete_backup) }}
+                    </div>
+                    <v-alert v-if="delete_error" type="error" variant="tonal" density="comfortable" class="mt-4">
+                        {{ delete_error }}
+                    </v-alert>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-spacer />
+                    <v-btn variant="tonal" :disabled="delete_loading" @click="closeDeleteDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn color="error" variant="flat" prepend-icon="mdi-delete-outline" :loading="delete_loading" @click="deleteBackup">
+                        Löschen
+                    </v-btn>
+                </v-card-actions>
+            </v-card>
+        </v-dialog>
+
+        <v-dialog v-model="full_restore_confirm_open" max-width="560" persistent>
+            <v-card rounded="lg">
+                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                    <v-icon size="20" color="error">mdi-alert-outline</v-icon>
+                    Vollständig wiederherstellen
+                </v-card-title>
+                <v-card-text class="px-4 pb-2">
+                    <div class="text-body-2">
+                        Die aktuellen Unterrichtsdaten dieses Schuljahres werden durch die ausgewählte Datensicherung ersetzt.
+                    </div>
+                    <div class="text-body-2 text-medium-emphasis mt-2">
+                        Diese Aktion betrifft nur die aktive Schule und das aktive Schuljahr.
+                    </div>
+                </v-card-text>
+                <v-card-actions class="px-4 pb-4">
+                    <v-spacer />
+                    <v-btn variant="tonal" :disabled="full_restore_loading" @click="closeFullRestoreDialog">
+                        Abbrechen
+                    </v-btn>
+                    <v-btn
+                        color="error"
+                        variant="flat"
+                        prepend-icon="mdi-database-refresh-outline"
+                        :loading="full_restore_loading"
+                        @click="restoreFull">
+                        Vollständig wiederherstellen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -353,7 +447,14 @@ export default {
             backups: [],
             loading: false,
             creating: false,
+            importing: false,
             error: '',
+            import_notice: '',
+            delete_confirm_open: false,
+            selected_delete_backup: null,
+            delete_loading: false,
+            delete_loading_id: null,
+            delete_error: '',
             details_open: false,
             selected_backup: null,
             preview_open: false,
@@ -362,6 +463,8 @@ export default {
             preview_error: '',
             selected_preview_backup: null,
             restore_loading: false,
+            full_restore_loading: false,
+            full_restore_confirm_open: false,
             restore_error: '',
             restore_result: null,
             restore_selection: {
@@ -437,12 +540,112 @@ export default {
             }
         },
 
+        selectImportFile() {
+            this.$refs.backup_import_input?.click()
+        },
+
+        async importBackup(event) {
+            const file = event?.target?.files?.[0] || null
+
+            if (!file) {
+                return
+            }
+
+            this.importing = true
+            this.error = ''
+            this.import_notice = ''
+
+            const formData = new FormData()
+            formData.append('backup', file)
+
+            try {
+                const response = await axios.post('/api/admin/teaching/backups/import', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                })
+                const backup = response.data?.data
+
+                if (backup) {
+                    this.backups = [backup, ...this.backups.filter((item) => item.id !== backup.id)]
+                } else {
+                    await this.loadBackups()
+                }
+
+                this.import_notice = response.data?.meta?.message || 'Backup-Datei wurde importiert.'
+            } catch (error) {
+                this.error = error?.response?.data?.message || 'Datensicherung konnte nicht importiert werden.'
+            } finally {
+                this.importing = false
+
+                if (event?.target) {
+                    event.target.value = ''
+                }
+            }
+        },
+
         downloadBackup(backup) {
             if (!backup?.download_url) {
                 return
             }
 
             window.location.href = backup.download_url
+        },
+
+        openDeleteDialog(backup) {
+            if (!backup?.id || this.delete_loading) {
+                return
+            }
+
+            this.selected_delete_backup = backup
+            this.delete_error = ''
+            this.delete_confirm_open = true
+        },
+
+        closeDeleteDialog() {
+            if (this.delete_loading) {
+                return
+            }
+
+            this.delete_confirm_open = false
+            this.selected_delete_backup = null
+            this.delete_error = ''
+        },
+
+        async deleteBackup() {
+            if (!this.selected_delete_backup?.id) {
+                return
+            }
+
+            const backupId = this.selected_delete_backup.id
+            this.delete_loading = true
+            this.delete_loading_id = backupId
+            this.delete_error = ''
+            this.error = ''
+
+            try {
+                await axios.delete(`/api/admin/teaching/backups/${backupId}`)
+                this.backups = this.backups.filter((backup) => backup.id !== backupId)
+
+                if (this.selected_backup?.id === backupId) {
+                    this.details_open = false
+                    this.selected_backup = null
+                }
+
+                if (this.selected_preview_backup?.id === backupId) {
+                    this.preview_open = false
+                    this.selected_preview = null
+                    this.selected_preview_backup = null
+                }
+
+                this.delete_confirm_open = false
+                this.selected_delete_backup = null
+            } catch (error) {
+                this.delete_error = error?.response?.data?.message || 'Datensicherung konnte nicht gelöscht werden.'
+            } finally {
+                this.delete_loading = false
+                this.delete_loading_id = null
+            }
         },
 
         backupDisplayTitle(backup) {
@@ -505,6 +708,47 @@ export default {
                 this.restore_error = error?.response?.data?.message || 'Wiederherstellung konnte nicht durchgeführt werden.'
             } finally {
                 this.restore_loading = false
+            }
+        },
+
+        openFullRestoreDialog() {
+            if (!this.selected_preview_backup?.id || this.full_restore_loading) {
+                return
+            }
+
+            this.full_restore_confirm_open = true
+        },
+
+        closeFullRestoreDialog() {
+            if (this.full_restore_loading) {
+                return
+            }
+
+            this.full_restore_confirm_open = false
+        },
+
+        async restoreFull() {
+            if (!this.selected_preview_backup?.id) {
+                return
+            }
+
+            this.full_restore_loading = true
+            this.restore_error = ''
+            this.restore_result = null
+
+            try {
+                const response = await axios.post(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/restore-full`)
+                this.restore_result = response.data?.data || null
+
+                const previewResponse = await axios.get(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/preview`)
+                this.selected_preview = previewResponse.data?.data || null
+                this.initializeRestoreSelection()
+                await this.loadBackups()
+            } catch (error) {
+                this.restore_error = error?.response?.data?.message || 'Vollständige Wiederherstellung konnte nicht durchgeführt werden.'
+            } finally {
+                this.full_restore_loading = false
+                this.full_restore_confirm_open = false
             }
         },
 
@@ -674,11 +918,45 @@ export default {
         },
 
         restoreResultLabel(result) {
+            if (result?.restored === true && result?.counts) {
+                return `Vollständig wiederhergestellt: ${this.fullRestoreCount(result.counts)} Datensätze.`
+            }
+
             const restoredCourses = result?.restored?.courses?.length || 0
             const restoredCurricula = result?.restored?.curricula?.length || 0
             const restoredSettings = result?.restored?.settings?.length || 0
 
             return `Wiederhergestellt: ${restoredCourses} Kurse, ${restoredCurricula} Curricula, ${restoredSettings} Einstellungsbereiche.`
+        },
+
+        fullRestoreCount(counts) {
+            return Object.entries(counts || {}).reduce((total, [key, count]) => {
+                if (key === 'users_matched_by_email') {
+                    return total
+                }
+
+                return total + Number(count || 0)
+            }, 0)
+        },
+
+        fullRestoreUserReport(result) {
+            if (result?.restored !== true || !result?.user_reconciliation) {
+                return ''
+            }
+
+            const matchedByEmail = result.user_reconciliation.matched_by_email?.length || 0
+            const createdPlaceholders = result.user_reconciliation.created_placeholders?.length || 0
+            const parts = []
+
+            if (matchedByEmail > 0) {
+                parts.push(`${matchedByEmail} Benutzer:innen per E-Mail zugeordnet`)
+            }
+
+            if (createdPlaceholders > 0) {
+                parts.push(`${createdPlaceholders} Benutzer:innen als inaktive Platzhalter angelegt`)
+            }
+
+            return parts.length ? `${parts.join(', ')}.` : ''
         },
 
         previewSettingSections(preview) {
@@ -792,6 +1070,12 @@ export default {
     padding: 18px;
 }
 
+.teaching-data-backup-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .teaching-data-backup-empty,
 .teaching-data-backup-state {
     display: flex;
@@ -842,6 +1126,11 @@ export default {
 
 @media (max-width: 720px) {
     .teaching-data-backup-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .teaching-data-backup-actions {
         align-items: stretch;
         flex-direction: column;
     }

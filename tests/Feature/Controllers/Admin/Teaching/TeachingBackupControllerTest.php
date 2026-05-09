@@ -28,8 +28,10 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -115,6 +117,7 @@ test('only school teaching admins may access backups', function () {
 test('store creates a backup for the active school and schoolyear only', function () {
     Storage::fake('local');
     $this->actingAs($this->admin, 'sanctum');
+    $this->teacher->assignRole('teaching_admin');
 
     $student = User::factory()->create([
         'school_id' => $this->school->id,
@@ -315,6 +318,7 @@ test('store creates a backup for the active school and schoolyear only', functio
 
     $payload = json_decode(Storage::disk('local')->get($backup->path), true, 512, JSON_THROW_ON_ERROR);
     $courseTitles = collect($payload['tables']['teaching_courses'])->pluck('title');
+    $backupTeacher = collect($payload['tables']['users'])->firstWhere('id', $this->teacher->id);
 
     expect($payload['meta']['scope'])->toBe('active_school_and_active_schoolyear')
         ->and($courseTitles)->toContain('Aktiver Kurs')
@@ -325,6 +329,8 @@ test('store creates a backup for the active school and schoolyear only', functio
         ->and(array_keys($payload['tables']['users'][0]['teaching_behaviour_by_schoolyear']))->toBe([$this->schoolyear->id])
         ->and($payload['tables']['import116_runs'][0]['id'])->toBe($importRun->id)
         ->and($payload['tables']['user_group_members'][0]['user_group_id'])->toBe($userGroup->id)
+        ->and($backupTeacher['teaching_role_names'])->toContain('teacher')
+        ->and($backupTeacher['teaching_role_names'])->not->toContain('teaching_admin')
         ->and($payload['files'][0]['path'])->toBe('teaching/course_date_materials/demo.txt')
         ->and(base64_decode($payload['files'][0]['base64']))->toBe('Dateiinhalt')
         ->and($backup->summary['validation']['status'])->toBe('valid')
@@ -365,6 +371,56 @@ test('index and download are scoped to the active school and schoolyear', functi
     $this->get("/api/admin/teaching/backups/{$current->id}/download")
         ->assertOk()
         ->assertDownload('current.json');
+});
+
+test('delete removes a scoped backup file and database record', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    Storage::disk('local')->put('teaching-backups/delete-me.json', '{"ok":true}');
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/delete-me.json',
+        'filename' => 'delete-me.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $this->deleteJson("/api/admin/teaching/backups/{$backup->id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $backup->id)
+        ->assertJsonPath('data.deleted', true);
+
+    $this->assertDatabaseMissing('teaching_backups', [
+        'id' => $backup->id,
+    ]);
+    Storage::disk('local')->assertMissing('teaching-backups/delete-me.json');
+});
+
+test('delete is scoped to the active school and schoolyear', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    Storage::disk('local')->put('teaching-backups/other-year.json', '{"ok":true}');
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/other-year.json',
+        'filename' => 'other-year.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $this->deleteJson("/api/admin/teaching/backups/{$backup->id}")
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('teaching_backups', [
+        'id' => $backup->id,
+    ]);
+    Storage::disk('local')->assertExists('teaching-backups/other-year.json');
 });
 
 test('preview compares backup content with current teaching data without restoring anything', function () {
@@ -900,4 +956,625 @@ test('restore overwrites selected active schoolyear setting sections', function 
         'schema_id' => 'new',
         'name' => 'Neu',
     ]);
+});
+
+test('imports an external backup json for the active teaching scope', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $tables = array_fill_keys([
+        'schools',
+        'schoolyears',
+        'school_tools',
+        'users',
+        'teaching_courses',
+        'teaching_course_students',
+        'teaching_course_dates',
+        'teaching_course_date_materials',
+        'teaching_course_date_material_attachments',
+        'teaching_course_works',
+        'teaching_course_work_group_students',
+        'teaching_course_student_entries',
+        'teaching_course_behaviour_entries',
+        'teaching_course_student_category_evaluations',
+        'teaching_curricula',
+        'teaching_curriculum_documents',
+        'teaching_imported_curricula',
+        'teaching_schemas',
+        'teaching_holidays',
+        'teaching_school_hours',
+        'import116',
+        'import116_runs',
+        'import116_run_changes',
+        'user_groups',
+        'user_group_members',
+    ], []);
+    $tables['schools'] = [$this->school->only(['id', 'long_name', 'short_name'])];
+    $tables['schoolyears'] = [$this->schoolyear->only(['id', 'school_id', 'name'])];
+
+    $payload = [
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => $tables,
+        'files' => [],
+    ];
+    $file = UploadedFile::fake()->createWithContent('external-teaching-backup.json', json_encode($payload, JSON_THROW_ON_ERROR));
+
+    $response = $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $file,
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('data.filename', 'external-teaching-backup.json')
+        ->assertJsonPath('data.summary.validation.status', 'valid')
+        ->assertJsonPath('meta.imported', true)
+        ->assertJsonPath('meta.duplicate', false);
+
+    $backup = TeachingBackup::query()->firstOrFail();
+    expect($backup->summary['content_hash'])->toBeString();
+    Storage::disk('local')->assertExists($backup->path);
+});
+
+test('import reuses an existing backup when the uploaded json is already present', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $tables = array_fill_keys([
+        'schools',
+        'schoolyears',
+        'school_tools',
+        'users',
+        'teaching_courses',
+        'teaching_course_students',
+        'teaching_course_dates',
+        'teaching_course_date_materials',
+        'teaching_course_date_material_attachments',
+        'teaching_course_works',
+        'teaching_course_work_group_students',
+        'teaching_course_student_entries',
+        'teaching_course_behaviour_entries',
+        'teaching_course_student_category_evaluations',
+        'teaching_curricula',
+        'teaching_curriculum_documents',
+        'teaching_imported_curricula',
+        'teaching_schemas',
+        'teaching_holidays',
+        'teaching_school_hours',
+        'import116',
+        'import116_runs',
+        'import116_run_changes',
+        'user_groups',
+        'user_group_members',
+    ], []);
+    $tables['schools'] = [$this->school->only(['id', 'long_name', 'short_name'])];
+    $tables['schoolyears'] = [$this->schoolyear->only(['id', 'school_id', 'name'])];
+
+    $payload = [
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => $tables,
+        'files' => [],
+    ];
+    $content = json_encode($payload, JSON_THROW_ON_ERROR);
+    $firstFile = UploadedFile::fake()->createWithContent('external-teaching-backup.json', $content);
+    $secondFile = UploadedFile::fake()->createWithContent('external-teaching-backup.json', $content);
+
+    $firstResponse = $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $firstFile,
+    ]);
+    $secondResponse = $this->postJson('/api/admin/teaching/backups/import', [
+        'backup' => $secondFile,
+    ]);
+
+    $firstResponse->assertCreated();
+    $secondResponse->assertOk()
+        ->assertJsonPath('meta.imported', false)
+        ->assertJsonPath('meta.duplicate', true)
+        ->assertJsonPath('data.id', $firstResponse->json('data.id'));
+
+    expect(TeachingBackup::query()->count())->toBe(1);
+});
+
+test('full restore replaces active teaching data and restores imported records with remapped ids', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $oldCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Wird ersetzt',
+    ]);
+    $oldGroup = UserGroup::query()->create([
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Alte Gruppe',
+        'created_by_user_id' => $this->admin->id,
+        'teaching_course_id' => $oldCourse->id,
+        'teaching_course_group_type' => UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS,
+    ]);
+    UserGroupMember::query()->create([
+        'user_group_id' => $oldGroup->id,
+        'school_id' => $this->school->id,
+        'member_provider' => UserGroupMember::PROVIDER_USER,
+        'member_ref' => (string) $this->regularUser->id,
+        'linked_user_id' => $this->regularUser->id,
+        'display_name' => 'Alt',
+    ]);
+
+    $backupUserId = 99001;
+    $courseId = 99002;
+    $curriculumId = 99003;
+    $dateId = 99004;
+    $workId = 99005;
+    $materialId = 99006;
+    $import116Id = 99007;
+    $importRunId = 99008;
+    $userGroupId = 99009;
+    $now = now()->toDateTimeString();
+
+    $tables = array_fill_keys([
+        'schools',
+        'schoolyears',
+        'school_tools',
+        'users',
+        'teaching_courses',
+        'teaching_course_students',
+        'teaching_course_dates',
+        'teaching_course_date_materials',
+        'teaching_course_date_material_attachments',
+        'teaching_course_works',
+        'teaching_course_work_group_students',
+        'teaching_course_student_entries',
+        'teaching_course_behaviour_entries',
+        'teaching_course_student_category_evaluations',
+        'teaching_curricula',
+        'teaching_curriculum_documents',
+        'teaching_imported_curricula',
+        'teaching_schemas',
+        'teaching_holidays',
+        'teaching_school_hours',
+        'import116',
+        'import116_runs',
+        'import116_run_changes',
+        'user_groups',
+        'user_group_members',
+    ], []);
+    $tables['schools'] = [$this->school->only(['id', 'long_name', 'short_name'])];
+    $tables['schoolyears'] = [$this->schoolyear->only(['id', 'school_id', 'name'])];
+    $tables['school_tools'] = [[
+        'school_id' => $this->school->id,
+        'teaching_visible_admin' => true,
+        'teaching_visible_user' => false,
+        'teaching_user_test_mode' => true,
+        'teaching_user_comming_soon' => false,
+        'teaching_status' => 'active',
+    ]];
+    $tables['users'] = [[
+        'id' => $backupUserId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'restored.student@example.test',
+        'first_name' => 'Restore',
+        'last_name' => 'Student',
+        'schoolclass' => '7C',
+        'import116_id' => $import116Id,
+        'teaching_role_names' => ['user'],
+        'teaching_active_semester' => 2,
+        'teaching_behaviour_by_schoolyear' => [$this->schoolyear->id => [['label' => 'Plus']]],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['import116'] = [[
+        'id' => $import116Id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'class' => '7C',
+        'student_code' => 'S-1',
+        'last_name' => 'Student',
+        'first_name' => 'Restore',
+        'import_date' => $now,
+        'import_user_id' => $backupUserId,
+        'user_id' => $backupUserId,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['import116_runs'] = [[
+        'id' => $importRunId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $backupUserId,
+        'status' => 'finished',
+        'started_at' => $now,
+        'counts' => ['created' => 1],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['import116_run_changes'] = [[
+        'id' => 99010,
+        'import116_run_id' => $importRunId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'student_code' => 'S-1',
+        'change_type' => 'created',
+        'summary' => ['name' => 'Restore Student'],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_curricula'] = [[
+        'id' => $curriculumId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $backupUserId,
+        'title' => 'Voll Curriculum',
+        'description' => 'Plan',
+        'export_key' => (string) Str::uuid(),
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [['title' => 'Thema']],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_imported_curricula'] = [[
+        'id' => 99011,
+        'school_id' => $this->school->id,
+        'user_id' => $backupUserId,
+        'adopted_curriculum_id' => $curriculumId,
+        'curriculum_key' => (string) Str::uuid(),
+        'title' => 'Importiert',
+        'semester_count' => 2,
+        'source_schema_version' => 1,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_courses'] = [[
+        'id' => $courseId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $backupUserId,
+        'title' => 'Voll Kurs',
+        'classes' => ['7C'],
+        'teaching_curriculum_id' => $curriculumId,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_students'] = [[
+        'id' => 99012,
+        'teaching_course_id' => $courseId,
+        'user_id' => $backupUserId,
+        'import116_id' => $import116Id,
+        'stars' => [],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_dates'] = [[
+        'id' => $dateId,
+        'teaching_course_id' => $courseId,
+        'date' => '2026-04-01',
+        'hours' => [1],
+        'status' => [],
+        'attendance' => [],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_works'] = [[
+        'id' => $workId,
+        'teaching_course_id' => $courseId,
+        'type' => 'MA',
+        'title' => 'Mitarbeit',
+        'status' => [],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_student_entries'] = [[
+        'id' => 99013,
+        'teaching_course_id' => $courseId,
+        'user_id' => $backupUserId,
+        'teaching_course_work_id' => $workId,
+        'date' => '2026-04-01',
+        'description' => 'Eintrag',
+        'type' => 'MA',
+        'grade' => '+',
+        'status' => [],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_behaviour_entries'] = [[
+        'id' => 99014,
+        'teaching_course_id' => $courseId,
+        'user_id' => $backupUserId,
+        'date' => '2026-04-01',
+        'description' => 'Verhalten',
+        'type' => 'note',
+        'kind' => 'behaviour',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_student_category_evaluations'] = [[
+        'id' => 99015,
+        'teaching_course_id' => $courseId,
+        'user_id' => $backupUserId,
+        'semester' => 1,
+        'category_name' => 'Mitarbeit',
+        'value' => '1',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_work_group_students'] = [[
+        'id' => 99016,
+        'teaching_course_id' => $courseId,
+        'teaching_course_work_id' => $workId,
+        'user_id' => $backupUserId,
+        'group_index' => 1,
+        'group_name' => 'Gruppe 1',
+    ]];
+    $tables['teaching_course_date_materials'] = [[
+        'id' => $materialId,
+        'teaching_course_date_id' => $dateId,
+        'title' => 'Material',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_course_date_material_attachments'] = [[
+        'id' => 99017,
+        'teaching_course_date_material_id' => $materialId,
+        'name' => 'demo.txt',
+        'file_path' => 'materials/full-demo.txt',
+        'mime_type' => 'text/plain',
+        'size_bytes' => 4,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_schemas'] = [[
+        'id' => 99018,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $backupUserId,
+        'schema_id' => 'restored-schema',
+        'name' => 'Restored',
+        'works' => [],
+        'grading' => [],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_holidays'] = [[
+        'id' => 99019,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'scope' => 'school',
+        'date' => '2026-05-01',
+        'reason' => 'Feiertag',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_school_hours'] = [[
+        'id' => 99020,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'hour' => 1,
+        'from' => '08:00',
+        'until' => '08:50',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['user_groups'] = [[
+        'id' => $userGroupId,
+        'school_id' => $this->school->id,
+        'type' => UserGroup::TYPE_OWN,
+        'name' => 'Wiederhergestellte Gruppe',
+        'created_by_user_id' => $backupUserId,
+        'teaching_course_id' => $courseId,
+        'teaching_course_group_type' => UserGroup::TEACHING_COURSE_GROUP_TYPE_STUDENTS,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['user_group_members'] = [[
+        'id' => 99021,
+        'user_group_id' => $userGroupId,
+        'school_id' => $this->school->id,
+        'member_provider' => UserGroupMember::PROVIDER_USER,
+        'member_ref' => (string) $backupUserId,
+        'linked_user_id' => $backupUserId,
+        'display_name' => 'Restore Student',
+        'added_by_user_id' => $backupUserId,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+
+    $payload = [
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => $tables,
+        'files' => [
+            [
+                'path' => 'materials/full-demo.txt',
+                'exists' => true,
+                'base64' => base64_encode('Demo'),
+            ],
+        ],
+    ];
+
+    Storage::disk('local')->put('teaching-backups/full-restore.json', json_encode($payload, JSON_THROW_ON_ERROR));
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/full-restore.json',
+        'filename' => 'full-restore.json',
+        'summary' => ['total_rows' => 20],
+    ]);
+
+    $response = $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore-full");
+
+    $response->assertOk()
+        ->assertJsonPath('data.restored', true)
+        ->assertJsonPath('data.counts.courses', 1)
+        ->assertJsonPath('data.counts.import116', 1)
+        ->assertJsonPath('data.counts.user_groups', 1)
+        ->assertJsonPath('data.counts.users_created', 1)
+        ->assertJsonPath('data.counts.users_matched_by_email', 0)
+        ->assertJsonCount(1, 'data.user_reconciliation.created_placeholders');
+
+    $restoredUser = User::query()->where('email', 'restored.student@example.test')->firstOrFail();
+    $restoredCourse = TeachingCourse::query()->where('title', 'Voll Kurs')->firstOrFail();
+    $restoredCurriculum = TeachingCurriculum::query()->where('title', 'Voll Curriculum')->firstOrFail();
+
+    expect($restoredUser->id)->not->toBe($backupUserId)
+        ->and((int) $restoredCourse->user_id)->toBe($restoredUser->id)
+        ->and((int) $restoredCourse->teaching_curriculum_id)->toBe($restoredCurriculum->id)
+        ->and((bool) $restoredUser->is_active)->toBeFalse()
+        ->and($restoredUser->hasRole('user'))->toBeTrue();
+
+    $this->assertDatabaseMissing('teaching_courses', [
+        'title' => 'Wird ersetzt',
+    ]);
+    $this->assertDatabaseHas('import116', [
+        'student_code' => 'S-1',
+        'user_id' => $restoredUser->id,
+    ]);
+    $this->assertDatabaseHas('teaching_course_students', [
+        'teaching_course_id' => $restoredCourse->id,
+        'user_id' => $restoredUser->id,
+    ]);
+    $this->assertDatabaseHas('teaching_imported_curricula', [
+        'title' => 'Importiert',
+        'adopted_curriculum_id' => $restoredCurriculum->id,
+    ]);
+    $this->assertDatabaseHas('user_groups', [
+        'name' => 'Wiederhergestellte Gruppe',
+        'teaching_course_id' => $restoredCourse->id,
+    ]);
+    $this->assertDatabaseHas('user_group_members', [
+        'linked_user_id' => $restoredUser->id,
+        'member_ref' => (string) $restoredUser->id,
+    ]);
+    $this->assertDatabaseHas('teaching_schemas', [
+        'schema_id' => 'restored-schema',
+        'user_id' => $restoredUser->id,
+    ]);
+    expect(DB::table('teaching_course_date_material_attachments')->where('name', 'demo.txt')->value('file_path'))
+        ->not->toBe('materials/full-demo.txt');
+});
+
+test('full restore matches missing backup users by same school email before creating placeholders', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $existingUser = User::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'matched.teacher@example.test',
+        'first_name' => 'Existing',
+        'last_name' => 'Teacher',
+    ]);
+
+    $backupUserId = $existingUser->id + 10000;
+    $backupCourseId = $existingUser->id + 10001;
+    $now = now()->toDateTimeString();
+    $tables = array_fill_keys([
+        'schools',
+        'schoolyears',
+        'school_tools',
+        'users',
+        'teaching_courses',
+        'teaching_course_students',
+        'teaching_course_dates',
+        'teaching_course_date_materials',
+        'teaching_course_date_material_attachments',
+        'teaching_course_works',
+        'teaching_course_work_group_students',
+        'teaching_course_student_entries',
+        'teaching_course_behaviour_entries',
+        'teaching_course_student_category_evaluations',
+        'teaching_curricula',
+        'teaching_curriculum_documents',
+        'teaching_imported_curricula',
+        'teaching_schemas',
+        'teaching_holidays',
+        'teaching_school_hours',
+        'import116',
+        'import116_runs',
+        'import116_run_changes',
+        'user_groups',
+        'user_group_members',
+    ], []);
+    $tables['schools'] = [$this->school->only(['id', 'long_name', 'short_name'])];
+    $tables['schoolyears'] = [$this->schoolyear->only(['id', 'school_id', 'name'])];
+    $tables['users'] = [[
+        'id' => $backupUserId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'email' => 'matched.teacher@example.test',
+        'first_name' => 'Backup',
+        'last_name' => 'Teacher',
+        'teaching_role_names' => ['teacher'],
+        'teaching_active_semester' => 2,
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+    $tables['teaching_courses'] = [[
+        'id' => $backupCourseId,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $backupUserId,
+        'title' => 'Per E-Mail zugeordneter Kurs',
+        'classes' => ['8A'],
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]];
+
+    $payload = [
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => $tables,
+        'files' => [],
+    ];
+
+    Storage::disk('local')->put('teaching-backups/email-match-restore.json', json_encode($payload, JSON_THROW_ON_ERROR));
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/email-match-restore.json',
+        'filename' => 'email-match-restore.json',
+        'summary' => ['total_rows' => 2],
+    ]);
+
+    $response = $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore-full");
+
+    $response->assertOk()
+        ->assertJsonPath('data.counts.users_created', 0)
+        ->assertJsonPath('data.counts.users_matched_by_email', 1)
+        ->assertJsonPath('data.user_reconciliation.matched_by_email.0.user_id', $existingUser->id)
+        ->assertJsonPath('data.user_reconciliation.matched_by_email.0.email', 'matched.teacher@example.test');
+
+    $restoredCourse = TeachingCourse::query()->where('title', 'Per E-Mail zugeordneter Kurs')->firstOrFail();
+    $existingUser->refresh();
+
+    expect((int) $restoredCourse->user_id)->toBe($existingUser->id)
+        ->and(User::query()->where('email', 'matched.teacher@example.test')->count())->toBe(1)
+        ->and((int) $existingUser->teaching_active_semester)->toBe(2)
+        ->and($existingUser->hasRole('teacher'))->toBeTrue();
 });

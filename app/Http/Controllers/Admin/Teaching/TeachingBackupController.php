@@ -46,6 +46,41 @@ class TeachingBackupController extends Controller
         ], 201);
     }
 
+    public function import(Request $request, TeachingBackupService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        $validated = $request->validate([
+            'backup' => ['required', 'file', 'mimes:json,txt', 'max:51200'],
+        ]);
+
+        $file = $validated['backup'];
+        $content = file_get_contents($file->getRealPath());
+
+        if (! is_string($content) || trim($content) === '') {
+            abort(422, 'Datensicherung kann nicht gelesen werden');
+        }
+
+        try {
+            $result = $service->importForUser($authUser, $content, $file->getClientOriginalName());
+        } catch (JsonException) {
+            abort(422, 'Datensicherung kann nicht gelesen werden');
+        }
+
+        return response()->json([
+            'data' => $this->backupPayload($result['backup']),
+            'meta' => [
+                'imported' => $result['imported'],
+                'duplicate' => $result['duplicate'],
+                'message' => $result['duplicate']
+                    ? 'Diese Backup-Datei ist bereits vorhanden. Der vorhandene Eintrag wurde verwendet.'
+                    : 'Backup-Datei wurde importiert.',
+            ],
+        ], $result['imported'] ? 201 : 200);
+    }
+
     public function download(TeachingBackup $backup): StreamedResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
@@ -65,6 +100,27 @@ class TeachingBackupController extends Controller
             $backup->filename,
             ['Content-Type' => 'application/json']
         );
+    }
+
+    public function destroy(TeachingBackup $backup): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ($backup->school_id !== $authUser->school_id || $backup->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        Storage::disk($backup->disk)->delete($backup->path);
+        $backup->delete();
+
+        return response()->json([
+            'data' => [
+                'id' => (int) $backup->id,
+                'deleted' => true,
+            ],
+        ]);
     }
 
     public function preview(TeachingBackup $backup, TeachingBackupService $service): JsonResponse
@@ -117,6 +173,31 @@ class TeachingBackupController extends Controller
 
         try {
             $result = $service->restoreSelection($backup, $authUser, $selection);
+        } catch (JsonException) {
+            abort(422, 'Datensicherung kann nicht gelesen werden');
+        }
+
+        return response()->json([
+            'data' => $result,
+        ]);
+    }
+
+    public function restoreFull(TeachingBackup $backup, TeachingBackupService $service): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if ($backup->school_id !== $authUser->school_id || $backup->schoolyear_id !== $authUser->schoolyear_id) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
+
+        if (! Storage::disk($backup->disk)->exists($backup->path)) {
+            abort(404, 'Datensicherung nicht gefunden');
+        }
+
+        try {
+            $result = $service->restoreFull($backup, $authUser);
         } catch (JsonException) {
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }

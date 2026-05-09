@@ -6,6 +6,7 @@ use App\Models\TeachingBackup;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -51,6 +52,59 @@ class TeachingBackupService
             'filename' => $filename,
             'summary' => $summary,
         ]);
+    }
+
+    /**
+     * @return array{backup:TeachingBackup, imported:bool, duplicate:bool}
+     *
+     * @throws JsonException
+     */
+    public function importForUser(User $user, string $content, string $originalFilename): array
+    {
+        $payload = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
+
+        if (! is_array($payload)) {
+            throw new JsonException('Backup file does not contain a JSON object.');
+        }
+
+        $this->assertPayloadMatchesUserScope($payload, $user);
+
+        if ($duplicateBackup = $this->duplicateBackupForPayload($payload, $user)) {
+            return [
+                'backup' => $duplicateBackup,
+                'imported' => false,
+                'duplicate' => true,
+            ];
+        }
+
+        $summary = $this->summaryForPayload($payload);
+        $filename = $this->importFilename($originalFilename);
+        $path = sprintf(
+            'teaching-backups/%d/%d/imported-%s-%s.json',
+            $user->school_id,
+            $user->schoolyear_id,
+            now()->format('Ymd-His'),
+            Str::lower(Str::random(8))
+        );
+
+        Storage::disk('local')->put(
+            $path,
+            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+        );
+
+        return [
+            'backup' => TeachingBackup::query()->create([
+                'school_id' => $user->school_id,
+                'schoolyear_id' => $user->schoolyear_id,
+                'user_id' => $user->id,
+                'disk' => 'local',
+                'path' => $path,
+                'filename' => $filename,
+                'summary' => $summary,
+            ]),
+            'imported' => true,
+            'duplicate' => false,
+        ];
     }
 
     /**
@@ -186,6 +240,94 @@ class TeachingBackupService
      *
      * @throws JsonException
      */
+    public function restoreFull(TeachingBackup $backup, User $user): array
+    {
+        $payload = $this->readPayload($backup);
+        $validation = $this->validationForPayload($payload);
+
+        if (! $validation['is_valid']) {
+            return [
+                'restored' => false,
+                'counts' => [],
+                'warnings' => $validation['issues'],
+            ];
+        }
+
+        $tables = $payload['tables'] ?? [];
+        $files = collect($payload['files'] ?? [])
+            ->filter(fn (mixed $file): bool => is_array($file) && is_string($file['path'] ?? null))
+            ->keyBy('path')
+            ->all();
+
+        return DB::transaction(function () use ($backup, $files, $tables, $user): array {
+            $this->deleteScopedTeachingData($backup);
+
+            $result = [
+                'restored' => true,
+                'counts' => [
+                    'users_created' => 0,
+                    'users_updated' => 0,
+                    'users_matched_by_email' => 0,
+                    'school_tools' => 0,
+                    'import116' => 0,
+                    'import116_runs' => 0,
+                    'import116_run_changes' => 0,
+                    'curricula' => 0,
+                    'curriculum_documents' => 0,
+                    'imported_curricula' => 0,
+                    'courses' => 0,
+                    'course_students' => 0,
+                    'course_dates' => 0,
+                    'course_works' => 0,
+                    'course_student_entries' => 0,
+                    'course_behaviour_entries' => 0,
+                    'course_category_evaluations' => 0,
+                    'course_work_group_students' => 0,
+                    'course_materials' => 0,
+                    'course_material_attachments' => 0,
+                    'teaching_schemas' => 0,
+                    'teaching_holidays' => 0,
+                    'teaching_school_hours' => 0,
+                    'user_groups' => 0,
+                    'user_group_members' => 0,
+                ],
+                'user_reconciliation' => [
+                    'matched_by_email' => [],
+                    'created_placeholders' => [],
+                ],
+                'warnings' => [],
+            ];
+
+            $userRestore = $this->restoreTeachingUsers($tables['users'] ?? [], $backup, $user);
+            $userIdMap = $userRestore['map'];
+            $result['counts']['users_created'] = $userRestore['created'];
+            $result['counts']['users_updated'] = $userRestore['updated'];
+            $result['counts']['users_matched_by_email'] = $userRestore['matched_by_email_count'];
+            $result['user_reconciliation'] = $userRestore['reconciliation'];
+
+            $result['counts']['school_tools'] = $this->restoreSchoolToolSettings($tables['school_tools'] ?? [], $backup);
+
+            $import116IdMap = $this->restoreImport116Rows($tables['import116'] ?? [], $backup, $userIdMap, $user, $result);
+            $this->restoreUserImport116References($tables['users'] ?? [], $backup, $userIdMap, $import116IdMap);
+            $importRunIdMap = $this->restoreImport116Runs($tables['import116_runs'] ?? [], $backup, $userIdMap, $user, $result);
+            $this->restoreImport116RunChanges($tables['import116_run_changes'] ?? [], $backup, $importRunIdMap, $result);
+
+            $curriculumIdMap = $this->restoreFullCurricula($tables, $files, $backup, $userIdMap, $user, $result);
+            $this->restoreImportedCurricula($tables['teaching_imported_curricula'] ?? [], $backup, $userIdMap, $curriculumIdMap, $user, $result);
+
+            $courseMaps = $this->restoreFullCourses($tables, $files, $backup, $userIdMap, $import116IdMap, $curriculumIdMap, $user, $result);
+            $this->restoreFullSettings($tables, $backup, $userIdMap, $result);
+            $this->restoreTeachingUserGroups($tables, $backup, $userIdMap, $import116IdMap, $courseMaps['courses'], $user, $result);
+
+            return $result;
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     *
+     * @throws JsonException
+     */
     private function readPayload(TeachingBackup $backup): array
     {
         $content = Storage::disk($backup->disk)->get($backup->path);
@@ -201,6 +343,996 @@ class TeachingBackupService
         }
 
         return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     *
+     * @throws JsonException
+     */
+    private function assertPayloadMatchesUserScope(array $payload, User $user): void
+    {
+        $validation = $this->validationForPayload($payload);
+
+        if (! $validation['is_valid']) {
+            throw new JsonException(implode(' ', $validation['issues']));
+        }
+
+        if ((int) ($payload['meta']['school_id'] ?? 0) !== (int) $user->school_id) {
+            throw new JsonException('Backup school does not match active school.');
+        }
+
+        if ((int) ($payload['meta']['schoolyear_id'] ?? 0) !== (int) $user->schoolyear_id) {
+            throw new JsonException('Backup schoolyear does not match active schoolyear.');
+        }
+    }
+
+    private function importFilename(string $originalFilename): string
+    {
+        $filename = trim($originalFilename) !== '' ? basename($originalFilename) : 'imported-teaching-backup.json';
+
+        if (! str_ends_with(Str::lower($filename), '.json')) {
+            return "{$filename}.json";
+        }
+
+        return $filename;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function duplicateBackupForPayload(array $payload, User $user): ?TeachingBackup
+    {
+        $backupCreatedAt = (string) ($payload['meta']['created_at'] ?? '');
+
+        if ($backupCreatedAt === '') {
+            return null;
+        }
+
+        $contentHash = $this->payloadContentHash($payload);
+
+        return TeachingBackup::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $user->schoolyear_id)
+            ->latest()
+            ->get()
+            ->first(fn (TeachingBackup $backup): bool => $this->backupMatchesPayload($backup, $backupCreatedAt, $contentHash));
+    }
+
+    private function backupMatchesPayload(TeachingBackup $backup, string $backupCreatedAt, string $contentHash): bool
+    {
+        $summary = $backup->summary ?? [];
+
+        if (($summary['backup_created_at'] ?? null) === $backupCreatedAt && ($summary['content_hash'] ?? null) === $contentHash) {
+            return true;
+        }
+
+        if (isset($summary['content_hash'])) {
+            return false;
+        }
+
+        try {
+            $payload = $this->readPayload($backup);
+        } catch (JsonException) {
+            return false;
+        }
+
+        return ($payload['meta']['created_at'] ?? null) === $backupCreatedAt
+            && $this->payloadContentHash($payload) === $contentHash;
+    }
+
+    private function deleteScopedTeachingData(TeachingBackup $backup): void
+    {
+        $courseIds = DB::table('teaching_courses')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $courseDateIds = $this->idsFromTable('teaching_course_dates', 'teaching_course_id', $courseIds);
+        $courseDateMaterialIds = $this->idsFromTable('teaching_course_date_materials', 'teaching_course_date_id', $courseDateIds);
+        $curriculumIds = DB::table('teaching_curricula')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $importRunIds = DB::table('import116_runs')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $userGroupIds = DB::table('user_groups')
+            ->where('school_id', $backup->school_id)
+            ->whereIn('teaching_course_id', $courseIds ?: [-1])
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $this->deleteWhereIn('user_group_members', 'user_group_id', $userGroupIds);
+        $this->deleteWhereIn('user_groups', 'id', $userGroupIds);
+
+        $this->deleteWhereIn('teaching_course_date_material_attachments', 'teaching_course_date_material_id', $courseDateMaterialIds);
+        $this->deleteWhereIn('teaching_course_date_materials', 'id', $courseDateMaterialIds);
+        $this->deleteWhereIn('teaching_course_work_group_students', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_student_category_evaluations', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_behaviour_entries', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_student_entries', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_works', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_students', 'teaching_course_id', $courseIds);
+        $this->deleteWhereIn('teaching_course_dates', 'id', $courseDateIds);
+        $this->deleteWhereIn('teaching_courses', 'id', $courseIds);
+
+        DB::table('teaching_imported_curricula')
+            ->where('school_id', $backup->school_id)
+            ->where(function (Builder $query) use ($curriculumIds): void {
+                $query->whereNull('adopted_curriculum_id')
+                    ->orWhereIn('adopted_curriculum_id', $curriculumIds ?: [-1]);
+            })
+            ->delete();
+        $this->deleteWhereIn('teaching_curriculum_documents', 'teaching_curriculum_id', $curriculumIds);
+        $this->deleteWhereIn('teaching_curricula', 'id', $curriculumIds);
+
+        DB::table('teaching_schemas')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->delete();
+        DB::table('teaching_holidays')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->delete();
+        DB::table('teaching_school_hours')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->delete();
+
+        DB::table('import116_run_changes')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->delete();
+        $this->deleteWhereIn('import116_runs', 'id', $importRunIds);
+        DB::table('import116')
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->delete();
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     * @return array<int, int>
+     */
+    private function idsFromTable(string $table, string $column, array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        return DB::table($table)
+            ->whereIn($column, $ids)
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     */
+    private function deleteWhereIn(string $table, string $column, array $ids): void
+    {
+        if ($ids === []) {
+            return;
+        }
+
+        DB::table($table)->whereIn($column, $ids)->delete();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $users
+     * @return array{map:array<int, int>, created:int, updated:int, matched_by_email_count:int, reconciliation:array<string, array<int, array<string, mixed>>>}
+     */
+    private function restoreTeachingUsers(array $users, TeachingBackup $backup, User $fallbackUser): array
+    {
+        $map = [];
+        $created = 0;
+        $updated = 0;
+        $matchedByEmailCount = 0;
+        $reconciliation = [
+            'matched_by_email' => [],
+            'created_placeholders' => [],
+        ];
+
+        foreach ($users as $backupUser) {
+            $oldUserId = (int) ($backupUser['id'] ?? 0);
+
+            if ($oldUserId <= 0 || (int) ($backupUser['school_id'] ?? 0) !== (int) $backup->school_id) {
+                continue;
+            }
+
+            $currentUser = DB::table('users')
+                ->where('id', $oldUserId)
+                ->where('school_id', $backup->school_id)
+                ->first();
+            $updates = $this->teachingUserRestoreRow($backupUser, $backup);
+
+            if ($currentUser) {
+                DB::table('users')
+                    ->where('id', $oldUserId)
+                    ->update($this->normalizeRowForInsert('users', $updates));
+                $map[$oldUserId] = $oldUserId;
+                $this->restoreSafeTeachingRoles($oldUserId, $backupUser['teaching_role_names'] ?? []);
+                $updated++;
+
+                continue;
+            }
+
+            $emailMatchedUser = $this->currentUserByBackupEmail($backupUser, $backup);
+
+            if ($emailMatchedUser) {
+                DB::table('users')
+                    ->where('id', $emailMatchedUser->id)
+                    ->update($this->normalizeRowForInsert('users', $updates));
+
+                $map[$oldUserId] = (int) $emailMatchedUser->id;
+                $this->restoreSafeTeachingRoles((int) $emailMatchedUser->id, $backupUser['teaching_role_names'] ?? []);
+                $updated++;
+                $matchedByEmailCount++;
+                $reconciliation['matched_by_email'][] = [
+                    'old_id' => $oldUserId,
+                    'user_id' => (int) $emailMatchedUser->id,
+                    'email' => (string) $emailMatchedUser->email,
+                    'name' => $this->backupUserDisplayName($backupUser),
+                ];
+
+                continue;
+            }
+
+            $row = array_merge($updates, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'email' => $this->restoredUserEmail($backupUser, $oldUserId),
+                'password' => Hash::make(Str::random(48)),
+                'is_active' => false,
+                'created_at' => $backupUser['created_at'] ?? now(),
+                'updated_at' => now(),
+            ]);
+
+            $newUserId = $this->insertRestoredRow('users', $row);
+            $map[$oldUserId] = $newUserId;
+            $this->restoreSafeTeachingRoles($newUserId, $backupUser['teaching_role_names'] ?? []);
+            $reconciliation['created_placeholders'][] = [
+                'old_id' => $oldUserId,
+                'user_id' => $newUserId,
+                'email' => $row['email'],
+                'original_email' => $backupUser['email'] ?? null,
+                'name' => $this->backupUserDisplayName($backupUser),
+            ];
+            $created++;
+        }
+
+        return [
+            'map' => $map + [(int) $fallbackUser->id => (int) $fallbackUser->id],
+            'created' => $created,
+            'updated' => $updated,
+            'matched_by_email_count' => $matchedByEmailCount,
+            'reconciliation' => $reconciliation,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $backupUser
+     */
+    private function currentUserByBackupEmail(array $backupUser, TeachingBackup $backup): ?object
+    {
+        $email = trim((string) ($backupUser['email'] ?? ''));
+
+        if ($email === '') {
+            return null;
+        }
+
+        return DB::table('users')
+            ->where('school_id', $backup->school_id)
+            ->where('email', $email)
+            ->first();
+    }
+
+    /**
+     * @param  array<int, mixed>|mixed  $roleNames
+     */
+    private function restoreSafeTeachingRoles(int $userId, mixed $roleNames): void
+    {
+        if (! is_array($roleNames)) {
+            return;
+        }
+
+        $allowedRoleNames = array_flip($this->safeTeachingRoleNames());
+        $roleNames = collect($roleNames)
+            ->filter(fn (mixed $roleName): bool => is_string($roleName) && isset($allowedRoleNames[$roleName]))
+            ->unique()
+            ->values();
+
+        if ($roleNames->isEmpty()) {
+            return;
+        }
+
+        $roleIds = DB::table('roles')
+            ->where('guard_name', 'web')
+            ->whereIn('name', $roleNames->all())
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id);
+
+        $existingRoleIds = DB::table('model_has_roles')
+            ->where('model_type', User::class)
+            ->where('model_id', $userId)
+            ->pluck('role_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+        $existingRoleIds = array_flip($existingRoleIds);
+
+        $roleIds
+            ->reject(fn (int $roleId): bool => isset($existingRoleIds[$roleId]))
+            ->each(function (int $roleId) use ($userId): void {
+                DB::table('model_has_roles')->insert([
+                    'role_id' => $roleId,
+                    'model_type' => User::class,
+                    'model_id' => $userId,
+                ]);
+            });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function safeTeachingRoleNames(): array
+    {
+        return [
+            'teacher',
+            'user',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $backupUser
+     */
+    private function backupUserDisplayName(array $backupUser): string
+    {
+        $name = trim(implode(' ', array_filter([
+            $backupUser['first_name'] ?? null,
+            $backupUser['last_name'] ?? null,
+        ])));
+
+        if ($name !== '') {
+            return $name;
+        }
+
+        return (string) ($backupUser['email'] ?? '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $backupUser
+     * @return array<string, mixed>
+     */
+    private function teachingUserRestoreRow(array $backupUser, TeachingBackup $backup): array
+    {
+        return [
+            'schoolyear_id' => (int) $backup->schoolyear_id,
+            'last_name' => $backupUser['last_name'] ?? null,
+            'first_name' => $backupUser['first_name'] ?? null,
+            'phone' => $backupUser['phone'] ?? null,
+            'sex' => $backupUser['sex'] ?? null,
+            'schoolclass' => $backupUser['schoolclass'] ?? null,
+            'short' => $backupUser['short'] ?? null,
+            'import116_id' => null,
+            'teaching_active_semester' => $backupUser['teaching_active_semester'] ?? null,
+            'teaching_count_for_semester_2_date' => $backupUser['teaching_count_for_semester_2_date'] ?? null,
+            'teaching_behaviour' => $backupUser['teaching_behaviour'] ?? null,
+            'teaching_behaviour_by_schoolyear' => $this->settingColumnValue(
+                'teaching_behaviour_by_schoolyear',
+                $backupUser['teaching_behaviour_by_schoolyear'] ?? null,
+                null,
+                (int) $backup->schoolyear_id
+            ),
+            'teaching_notifications' => $backupUser['teaching_notifications'] ?? null,
+            'teaching_notifications_by_schoolyear' => $this->settingColumnValue(
+                'teaching_notifications_by_schoolyear',
+                $backupUser['teaching_notifications_by_schoolyear'] ?? null,
+                null,
+                (int) $backup->schoolyear_id
+            ),
+            'teaching_show_behaviour' => $backupUser['teaching_show_behaviour'] ?? true,
+            'teaching_grade_columns_by_schoolyear' => $this->settingColumnValue(
+                'teaching_grade_columns_by_schoolyear',
+                $backupUser['teaching_grade_columns_by_schoolyear'] ?? null,
+                null,
+                (int) $backup->schoolyear_id
+            ),
+            'teaching_student_grade_columns_by_schoolyear' => $this->settingColumnValue(
+                'teaching_student_grade_columns_by_schoolyear',
+                $backupUser['teaching_student_grade_columns_by_schoolyear'] ?? null,
+                null,
+                (int) $backup->schoolyear_id
+            ),
+            'teaching_curriculum_free_weeks_template' => $backupUser['teaching_curriculum_free_weeks_template'] ?? null,
+            'updated_at' => now(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $backupUser
+     */
+    private function restoredUserEmail(array $backupUser, int $oldUserId): string
+    {
+        $email = trim((string) ($backupUser['email'] ?? ''));
+
+        if ($email !== '' && ! DB::table('users')->where('email', $email)->exists()) {
+            return $email;
+        }
+
+        return sprintf('restored-teaching-user-%d-%s@restored.local', $oldUserId, Str::lower(Str::random(8)));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $schoolTools
+     */
+    private function restoreSchoolToolSettings(array $schoolTools, TeachingBackup $backup): int
+    {
+        $backupSchoolTool = collect($schoolTools)
+            ->first(fn (array $row): bool => (int) ($row['school_id'] ?? 0) === (int) $backup->school_id);
+
+        if (! $backupSchoolTool) {
+            return 0;
+        }
+
+        $row = collect($backupSchoolTool)
+            ->only([
+                'teaching_visible_admin',
+                'teaching_visible_user',
+                'teaching_user_test_mode',
+                'teaching_user_comming_soon',
+                'teaching_status',
+            ])
+            ->merge([
+                'school_id' => (int) $backup->school_id,
+                'active_schoolyear_id' => (int) $backup->schoolyear_id,
+                'updated_at' => now(),
+            ])
+            ->all();
+
+        $existingId = DB::table('school_tools')
+            ->where('school_id', $backup->school_id)
+            ->value('id');
+
+        if ($existingId) {
+            DB::table('school_tools')
+                ->where('id', $existingId)
+                ->update($this->normalizeRowForInsert('school_tools', $row));
+
+            return 1;
+        }
+
+        $this->insertRestoredRow('school_tools', array_merge($backupSchoolTool, $row));
+
+        return 1;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $userIdMap
+     * @param  array<string, mixed>  $result
+     * @return array<int, int>
+     */
+    private function restoreImport116Rows(array $rows, TeachingBackup $backup, array $userIdMap, User $fallbackUser, array &$result): array
+    {
+        $idMap = [];
+
+        foreach ($rows as $row) {
+            if ((int) ($row['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($row['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldId = (int) ($row['id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $oldImportUserId = (int) ($row['import_user_id'] ?? 0);
+            $idMap[$oldId] = $this->insertRestoredRow('import116', $row, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+                'import_user_id' => $userIdMap[$oldImportUserId] ?? (int) $fallbackUser->id,
+            ]);
+            $result['counts']['import116']++;
+        }
+
+        return $idMap;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $users
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>  $import116IdMap
+     */
+    private function restoreUserImport116References(array $users, TeachingBackup $backup, array $userIdMap, array $import116IdMap): void
+    {
+        foreach ($users as $backupUser) {
+            $oldUserId = (int) ($backupUser['id'] ?? 0);
+            $oldImport116Id = (int) ($backupUser['import116_id'] ?? 0);
+            $newUserId = $userIdMap[$oldUserId] ?? null;
+
+            if (! $newUserId) {
+                continue;
+            }
+
+            DB::table('users')
+                ->where('id', $newUserId)
+                ->where('school_id', $backup->school_id)
+                ->update([
+                    'import116_id' => $import116IdMap[$oldImport116Id] ?? null,
+                    'updated_at' => now(),
+                ]);
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $userIdMap
+     * @param  array<string, mixed>  $result
+     * @return array<int, int>
+     */
+    private function restoreImport116Runs(array $rows, TeachingBackup $backup, array $userIdMap, User $fallbackUser, array &$result): array
+    {
+        $idMap = [];
+
+        foreach ($rows as $row) {
+            if ((int) ($row['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($row['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldId = (int) ($row['id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $oldUndoneByUserId = (int) ($row['undone_by_user_id'] ?? 0);
+            $idMap[$oldId] = $this->insertRestoredRow('import116_runs', $row, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[$oldUserId] ?? (int) $fallbackUser->id,
+                'undone_by_user_id' => $userIdMap[$oldUndoneByUserId] ?? null,
+            ]);
+            $result['counts']['import116_runs']++;
+        }
+
+        return $idMap;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $importRunIdMap
+     * @param  array<string, mixed>  $result
+     */
+    private function restoreImport116RunChanges(array $rows, TeachingBackup $backup, array $importRunIdMap, array &$result): void
+    {
+        foreach ($rows as $row) {
+            if ((int) ($row['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($row['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldRunId = (int) ($row['import116_run_id'] ?? 0);
+
+            if (! isset($importRunIdMap[$oldRunId])) {
+                continue;
+            }
+
+            $this->insertRestoredRow('import116_run_changes', $row, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'import116_run_id' => $importRunIdMap[$oldRunId],
+            ]);
+            $result['counts']['import116_run_changes']++;
+        }
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<string, array<string, mixed>>  $files
+     * @param  array<int, int>  $userIdMap
+     * @param  array<string, mixed>  $result
+     * @return array<int, int>
+     */
+    private function restoreFullCurricula(array $tables, array $files, TeachingBackup $backup, array $userIdMap, User $fallbackUser, array &$result): array
+    {
+        $curriculumIdMap = [];
+
+        foreach ($tables['teaching_curricula'] ?? [] as $curriculum) {
+            if ((int) ($curriculum['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($curriculum['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldCurriculumId = (int) ($curriculum['id'] ?? 0);
+            $oldOwnerId = (int) ($curriculum['user_id'] ?? 0);
+            $curriculumIdMap[$oldCurriculumId] = $this->insertRestoredRow('teaching_curricula', $curriculum, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[$oldOwnerId] ?? (int) $fallbackUser->id,
+                'export_key' => $this->restorableExportKey($curriculum['export_key'] ?? null),
+            ]);
+            $result['counts']['curricula']++;
+        }
+
+        foreach ($tables['teaching_curriculum_documents'] ?? [] as $document) {
+            $oldCurriculumId = (int) ($document['teaching_curriculum_id'] ?? 0);
+
+            if (! isset($curriculumIdMap[$oldCurriculumId])) {
+                continue;
+            }
+
+            $newPath = $this->restoreFilePath($document['file_path'] ?? null, $files, "teaching/curriculum_documents/{$curriculumIdMap[$oldCurriculumId]}");
+            $this->insertRestoredRow('teaching_curriculum_documents', $document, [
+                'teaching_curriculum_id' => $curriculumIdMap[$oldCurriculumId],
+                'file_path' => $newPath,
+                'material_card_id' => null,
+                'material_card_attachment_id' => null,
+            ]);
+            $result['counts']['curriculum_documents']++;
+        }
+
+        return $curriculumIdMap;
+    }
+
+    private function restorableExportKey(mixed $exportKey): string
+    {
+        $exportKey = is_string($exportKey) && trim($exportKey) !== '' ? trim($exportKey) : (string) Str::uuid();
+
+        if (! DB::table('teaching_curricula')->where('export_key', $exportKey)->exists()) {
+            return $exportKey;
+        }
+
+        return (string) Str::uuid();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>  $curriculumIdMap
+     * @param  array<string, mixed>  $result
+     */
+    private function restoreImportedCurricula(array $rows, TeachingBackup $backup, array $userIdMap, array $curriculumIdMap, User $fallbackUser, array &$result): void
+    {
+        foreach ($rows as $row) {
+            if ((int) ($row['school_id'] ?? 0) !== (int) $backup->school_id) {
+                continue;
+            }
+
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $oldAdoptedCurriculumId = (int) ($row['adopted_curriculum_id'] ?? 0);
+            $this->insertRestoredRow('teaching_imported_curricula', $row, [
+                'school_id' => (int) $backup->school_id,
+                'user_id' => $userIdMap[$oldUserId] ?? (int) $fallbackUser->id,
+                'adopted_curriculum_id' => $curriculumIdMap[$oldAdoptedCurriculumId] ?? null,
+                'curriculum_key' => $this->restorableImportedCurriculumKey($row['curriculum_key'] ?? null, (int) $backup->school_id, $userIdMap[$oldUserId] ?? (int) $fallbackUser->id),
+            ]);
+            $result['counts']['imported_curricula']++;
+        }
+    }
+
+    private function restorableImportedCurriculumKey(mixed $curriculumKey, int $schoolId, int $userId): string
+    {
+        $curriculumKey = is_string($curriculumKey) && trim($curriculumKey) !== '' ? trim($curriculumKey) : (string) Str::uuid();
+
+        if (! DB::table('teaching_imported_curricula')
+            ->where('school_id', $schoolId)
+            ->where('user_id', $userId)
+            ->where('curriculum_key', $curriculumKey)
+            ->exists()) {
+            return $curriculumKey;
+        }
+
+        return (string) Str::uuid();
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<string, array<string, mixed>>  $files
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>  $import116IdMap
+     * @param  array<int, int>  $curriculumIdMap
+     * @param  array<string, mixed>  $result
+     * @return array{courses:array<int, int>, works:array<int, int>}
+     */
+    private function restoreFullCourses(array $tables, array $files, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $curriculumIdMap, User $fallbackUser, array &$result): array
+    {
+        $courseIdMap = [];
+        $dateIdMap = [];
+        $workIdMap = [];
+        $materialIdMap = [];
+
+        foreach ($tables['teaching_courses'] ?? [] as $course) {
+            if ((int) ($course['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($course['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldCourseId = (int) ($course['id'] ?? 0);
+            $oldTeacherId = (int) ($course['user_id'] ?? 0);
+            $oldCurriculumId = (int) ($course['teaching_curriculum_id'] ?? 0);
+            $courseIdMap[$oldCourseId] = $this->insertRestoredRow('teaching_courses', $course, [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+                'user_id' => $userIdMap[$oldTeacherId] ?? (int) $fallbackUser->id,
+                'teaching_curriculum_id' => $curriculumIdMap[$oldCurriculumId] ?? null,
+            ]);
+            $result['counts']['courses']++;
+        }
+
+        foreach ($tables['teaching_course_students'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $oldImport116Id = (int) ($row['import116_id'] ?? 0);
+            $this->insertRestoredRow('teaching_course_students', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+                'import116_id' => $import116IdMap[$oldImport116Id] ?? null,
+            ]);
+            $result['counts']['course_students']++;
+        }
+
+        foreach ($tables['teaching_course_dates'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $oldDateId = (int) ($row['id'] ?? 0);
+            $dateIdMap[$oldDateId] = $this->insertRestoredRow('teaching_course_dates', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+            ]);
+            $result['counts']['course_dates']++;
+        }
+
+        foreach ($tables['teaching_course_works'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $oldWorkId = (int) ($row['id'] ?? 0);
+            $workIdMap[$oldWorkId] = $this->insertRestoredRow('teaching_course_works', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+            ]);
+            $result['counts']['course_works']++;
+        }
+
+        $this->restoreFullCourseEntries($tables, $courseIdMap, $workIdMap, $userIdMap, $result);
+
+        foreach ($tables['teaching_course_date_materials'] ?? [] as $row) {
+            $oldDateId = (int) ($row['teaching_course_date_id'] ?? 0);
+
+            if (! isset($dateIdMap[$oldDateId])) {
+                continue;
+            }
+
+            $oldMaterialId = (int) ($row['id'] ?? 0);
+            $materialIdMap[$oldMaterialId] = $this->insertRestoredRow('teaching_course_date_materials', $row, [
+                'teaching_course_date_id' => $dateIdMap[$oldDateId],
+            ]);
+            $result['counts']['course_materials']++;
+        }
+
+        foreach ($tables['teaching_course_date_material_attachments'] ?? [] as $row) {
+            $oldMaterialId = (int) ($row['teaching_course_date_material_id'] ?? 0);
+
+            if (! isset($materialIdMap[$oldMaterialId])) {
+                continue;
+            }
+
+            $newPath = $this->restoreFilePath($row['file_path'] ?? null, $files, "teaching/course_date_materials/{$materialIdMap[$oldMaterialId]}");
+            $this->insertRestoredRow('teaching_course_date_material_attachments', $row, [
+                'teaching_course_date_material_id' => $materialIdMap[$oldMaterialId],
+                'source_material_card_attachment_id' => null,
+                'file_path' => $newPath,
+            ]);
+            $result['counts']['course_material_attachments']++;
+        }
+
+        return [
+            'courses' => $courseIdMap,
+            'works' => $workIdMap,
+        ];
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<int, int>  $courseIdMap
+     * @param  array<int, int>  $workIdMap
+     * @param  array<int, int>  $userIdMap
+     * @param  array<string, mixed>  $result
+     */
+    private function restoreFullCourseEntries(array $tables, array $courseIdMap, array $workIdMap, array $userIdMap, array &$result): void
+    {
+        foreach ($tables['teaching_course_student_entries'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $oldWorkId = (int) ($row['teaching_course_work_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $this->insertRestoredRow('teaching_course_student_entries', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+                'teaching_course_work_id' => $workIdMap[$oldWorkId] ?? null,
+            ]);
+            $result['counts']['course_student_entries']++;
+        }
+
+        foreach ($tables['teaching_course_behaviour_entries'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $this->insertRestoredRow('teaching_course_behaviour_entries', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+            ]);
+            $result['counts']['course_behaviour_entries']++;
+        }
+
+        foreach ($tables['teaching_course_student_category_evaluations'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $this->insertRestoredRow('teaching_course_student_category_evaluations', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+            ]);
+            $result['counts']['course_category_evaluations']++;
+        }
+
+        foreach ($tables['teaching_course_work_group_students'] ?? [] as $row) {
+            $oldCourseId = (int) ($row['teaching_course_id'] ?? 0);
+            $oldWorkId = (int) ($row['teaching_course_work_id'] ?? 0);
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId]) || ! isset($workIdMap[$oldWorkId])) {
+                continue;
+            }
+
+            $this->insertRestoredRow('teaching_course_work_group_students', $row, [
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+                'teaching_course_work_id' => $workIdMap[$oldWorkId],
+                'user_id' => $userIdMap[$oldUserId] ?? null,
+            ]);
+            $result['counts']['course_work_group_students']++;
+        }
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<int, int>  $userIdMap
+     * @param  array<string, mixed>  $result
+     */
+    private function restoreFullSettings(array $tables, TeachingBackup $backup, array $userIdMap, array &$result): void
+    {
+        $result['counts']['teaching_schemas'] = $this->insertScopedSettingRows($tables['teaching_schemas'] ?? [], 'teaching_schemas', $backup, $userIdMap);
+        $result['counts']['teaching_holidays'] = $this->insertScopedSettingRows($tables['teaching_holidays'] ?? [], 'teaching_holidays', $backup, $userIdMap);
+        $result['counts']['teaching_school_hours'] = $this->insertScopedSettingRows($tables['teaching_school_hours'] ?? [], 'teaching_school_hours', $backup, $userIdMap);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, int>  $userIdMap
+     */
+    private function insertScopedSettingRows(array $rows, string $table, TeachingBackup $backup, array $userIdMap): int
+    {
+        $inserted = 0;
+
+        foreach ($rows as $row) {
+            if ((int) ($row['school_id'] ?? 0) !== (int) $backup->school_id || (int) ($row['schoolyear_id'] ?? 0) !== (int) $backup->schoolyear_id) {
+                continue;
+            }
+
+            $oldUserId = (int) ($row['user_id'] ?? 0);
+            $overrides = [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+            ];
+
+            if (array_key_exists('user_id', $row)) {
+                $overrides['user_id'] = $userIdMap[$oldUserId] ?? null;
+            }
+
+            if ($table === 'teaching_schemas' && empty($overrides['user_id'])) {
+                continue;
+            }
+
+            $this->insertRestoredRow($table, $row, $overrides);
+            $inserted++;
+        }
+
+        return $inserted;
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>  $import116IdMap
+     * @param  array<int, int>  $courseIdMap
+     * @param  array<string, mixed>  $result
+     */
+    private function restoreTeachingUserGroups(array $tables, TeachingBackup $backup, array $userIdMap, array $import116IdMap, array $courseIdMap, User $fallbackUser, array &$result): void
+    {
+        $groupIdMap = [];
+
+        foreach ($tables['user_groups'] ?? [] as $group) {
+            if ((int) ($group['school_id'] ?? 0) !== (int) $backup->school_id) {
+                continue;
+            }
+
+            $oldCourseId = (int) ($group['teaching_course_id'] ?? 0);
+
+            if (! isset($courseIdMap[$oldCourseId])) {
+                continue;
+            }
+
+            $oldGroupId = (int) ($group['id'] ?? 0);
+            $oldCreatorId = (int) ($group['created_by_user_id'] ?? 0);
+            $groupIdMap[$oldGroupId] = $this->insertRestoredRow('user_groups', $group, [
+                'school_id' => (int) $backup->school_id,
+                'created_by_user_id' => $userIdMap[$oldCreatorId] ?? (int) $fallbackUser->id,
+                'teaching_course_id' => $courseIdMap[$oldCourseId],
+            ]);
+            $result['counts']['user_groups']++;
+        }
+
+        foreach ($tables['user_group_members'] ?? [] as $member) {
+            $oldGroupId = (int) ($member['user_group_id'] ?? 0);
+
+            if (! isset($groupIdMap[$oldGroupId])) {
+                continue;
+            }
+
+            $oldLinkedUserId = (int) ($member['linked_user_id'] ?? 0);
+            $oldAddedByUserId = (int) ($member['added_by_user_id'] ?? 0);
+            $this->insertRestoredRow('user_group_members', $member, [
+                'user_group_id' => $groupIdMap[$oldGroupId],
+                'school_id' => (int) $backup->school_id,
+                'linked_user_id' => $userIdMap[$oldLinkedUserId] ?? null,
+                'added_by_user_id' => $userIdMap[$oldAddedByUserId] ?? (int) $fallbackUser->id,
+                'source_schoolyear_id' => (int) $backup->schoolyear_id,
+                'member_ref' => $this->restoredMemberRef($member, $userIdMap, $import116IdMap),
+            ]);
+            $result['counts']['user_group_members']++;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $member
+     * @param  array<int, int>  $userIdMap
+     * @param  array<int, int>  $import116IdMap
+     */
+    private function restoredMemberRef(array $member, array $userIdMap, array $import116IdMap): mixed
+    {
+        $memberRef = $member['member_ref'] ?? null;
+
+        if (! is_numeric($memberRef)) {
+            return $memberRef;
+        }
+
+        return match ($member['member_provider'] ?? null) {
+            'user' => (string) ($userIdMap[(int) $memberRef] ?? $memberRef),
+            'import116.student', 'import116.parent_contact' => (string) ($import116IdMap[(int) $memberRef] ?? $memberRef),
+            default => $memberRef,
+        };
     }
 
     /**
@@ -735,7 +1867,7 @@ class TeachingBackupService
      */
     private function teachingUsers(int $schoolId, int $schoolyearId): array
     {
-        return DB::table('users')
+        $users = DB::table('users')
             ->select([
                 'id',
                 'school_id',
@@ -765,6 +1897,42 @@ class TeachingBackupService
             ->orderBy('id')
             ->get()
             ->map(fn (object $row): array => $this->scopeUserTeachingSettings((array) $row, $schoolyearId))
+            ->all();
+
+        return $this->withTeachingRoleNames($users);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $users
+     * @return array<int, array<string, mixed>>
+     */
+    private function withTeachingRoleNames(array $users): array
+    {
+        $userIds = $this->ids($users);
+
+        if ($userIds === []) {
+            return $users;
+        }
+
+        $allowedRoleNames = $this->safeTeachingRoleNames();
+        $roleNamesByUserId = DB::table('model_has_roles')
+            ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
+            ->where('model_has_roles.model_type', User::class)
+            ->whereIn('model_has_roles.model_id', $userIds)
+            ->whereIn('roles.name', $allowedRoleNames)
+            ->orderBy('roles.name')
+            ->get(['model_has_roles.model_id', 'roles.name'])
+            ->groupBy('model_id')
+            ->mapWithKeys(fn ($rows, mixed $userId): array => [
+                (int) $userId => $rows->pluck('name')->values()->all(),
+            ]);
+
+        return collect($users)
+            ->map(function (array $user) use ($roleNamesByUserId): array {
+                $user['teaching_role_names'] = $roleNamesByUserId->get((int) ($user['id'] ?? 0), []);
+
+                return $user;
+            })
             ->all();
     }
 
@@ -915,6 +2083,9 @@ class TeachingBackupService
 
         return [
             'format_version' => self::FORMAT_VERSION,
+            'backup_created_at' => $payload['meta']['created_at'] ?? null,
+            'scope' => $payload['meta']['scope'] ?? null,
+            'content_hash' => $this->payloadContentHash($payload),
             'validation' => $validation,
             'table_counts' => $tables
                 ->map(fn (array $rows): int => count($rows))
@@ -923,6 +2094,14 @@ class TeachingBackupService
             'file_count' => $files->count(),
             'missing_file_count' => $files->where('exists', false)->count(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function payloadContentHash(array $payload): string
+    {
+        return hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
     }
 
     /**

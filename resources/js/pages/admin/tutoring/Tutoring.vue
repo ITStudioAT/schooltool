@@ -43,6 +43,7 @@
         <div class="tutoring-content">
             <v-row class="w-100 ma-0" dense>
                 <Overview v-if="main_action == 'overview'" />
+                <Requests v-if="main_action == 'requests'" />
                 <Settings v-if="main_action == 'settings'" />
                 <Subjects v-if="main_action == 'subjects'" />
                 <Users v-if="main_action == 'users'" />
@@ -57,12 +58,13 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 import Overview from './components/Overview.vue'
+import Requests from './components/Requests.vue'
 import Settings from './components/Settings.vue'
 import Subjects from './components/Subjects.vue'
 import Users from './components/Users.vue'
 
 export default {
-    components: { AdminSectionHero, Settings, Subjects, Users, Overview },
+    components: { AdminSectionHero, Settings, Subjects, Users, Overview, Requests },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -110,6 +112,11 @@ export default {
                     icon: 'mdi-home',
                     note: 'Allgemeine Übersicht des Nachhilfe-Tools.',
                 },
+                requests: {
+                    label: 'Anfragen',
+                    icon: 'mdi-message-text-outline',
+                    note: 'Alle Anfragen der Schüler:innen einsehen.',
+                },
                 settings: {
                     label: 'Einstellungen',
                     icon: 'mdi-cog-outline',
@@ -136,6 +143,13 @@ export default {
                     label: 'Übersicht',
                     meta: 'Tagesansicht',
                     icon: 'mdi-home',
+                    visible: true,
+                },
+                {
+                    key: 'requests',
+                    label: 'Anfragen',
+                    meta: 'Schüler:innen',
+                    icon: 'mdi-message-text-outline',
                     visible: true,
                 },
             ].filter((item) => item.visible)
