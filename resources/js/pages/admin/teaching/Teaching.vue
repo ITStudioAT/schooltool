@@ -127,6 +127,7 @@
             <Admin v-if="main_action === 'admin'" />
             <Search v-if="main_action === 'search'" />
             <Schoolyear v-if="main_action === 'schoolyear'" />
+            <DataBackup v-if="main_action === 'datensicherung'" />
             <Curricula v-if="main_action === 'curricula'" />
         </v-row>
     </v-container>
@@ -148,10 +149,11 @@ const Settings = defineAsyncComponent(() => import('./settings/Settings.vue'))
 const Admin = defineAsyncComponent(() => import('./admin/Admin.vue'))
 const Search = defineAsyncComponent(() => import('./search/Search.vue'))
 const Schoolyear = defineAsyncComponent(() => import('./schoolyear/Schoolyear.vue'))
+const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))
 const Curricula = defineAsyncComponent(() => import('./curricula/Curricula.vue'))
 
 export default {
-    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, Curricula },
+    components: { AdminSectionHero, Overview, Settings, Admin, Search, Schoolyear, DataBackup, Curricula },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -390,6 +392,11 @@ export default {
                     icon: 'mdi-calendar-month-outline',
                     note: 'Aktives Schuljahr prüfen und wechseln.',
                 },
+                datensicherung: {
+                    label: 'Datensicherung',
+                    icon: 'mdi-database-arrow-down-outline',
+                    note: 'Sicherungen vorbereiten und verwalten.',
+                },
                 curricula: {
                     label: 'Curricula',
                     icon: 'mdi-book-education-outline',
@@ -434,6 +441,13 @@ export default {
                     meta: 'Schema & Regeln',
                     icon: 'mdi-cog-outline',
                     visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin', 'teacher']),
+                },
+                {
+                    key: 'datensicherung',
+                    label: 'Datensicherung',
+                    meta: 'Export & Sicherung',
+                    icon: 'mdi-database-arrow-down-outline',
+                    visible: this.hasAnyRole(['super_admin', 'admin', 'teaching_admin']),
                 },
             ].filter((item) => item.visible)
         },

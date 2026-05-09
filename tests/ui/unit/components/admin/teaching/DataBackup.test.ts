@@ -1,0 +1,347 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import axios from 'axios'
+import DataBackup from '@/pages/admin/teaching/backup/DataBackup.vue'
+
+vi.mock('axios', () => ({
+    default: {
+        get: vi.fn(),
+        post: vi.fn(),
+    },
+}))
+
+describe('Teaching data backup page', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+    })
+
+    it('loads existing backups from the teaching backups endpoint', async () => {
+        vi.mocked(axios.get).mockResolvedValueOnce({
+            data: {
+                data: [{ id: 1, filename: 'backup.json' }],
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            backups: [],
+            loading: false,
+            error: '',
+        }
+
+        await (DataBackup as any).methods.loadBackups.call(ctx)
+
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups')
+        expect(ctx.backups).toEqual([{ id: 1, filename: 'backup.json' }])
+        expect(ctx.loading).toBe(false)
+        expect(ctx.error).toBe('')
+    })
+
+    it('creates a new backup and prepends it to the list', async () => {
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: { id: 2, filename: 'new-backup.json' },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            backups: [{ id: 1, filename: 'old-backup.json' }],
+            creating: false,
+            error: '',
+            loadBackups: vi.fn(),
+        }
+
+        await (DataBackup as any).methods.createBackup.call(ctx)
+
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/backups')
+        expect(ctx.backups).toEqual([
+            { id: 2, filename: 'new-backup.json' },
+            { id: 1, filename: 'old-backup.json' },
+        ])
+        expect(ctx.creating).toBe(false)
+    })
+
+    it('formats backup creation timestamps for German users', () => {
+        const formatted = (DataBackup as any).methods.formatDateTime('2026-05-09 06:30:00')
+
+        expect(formatted).toContain('09.05.2026')
+        expect(formatted).toContain('06:30')
+    })
+
+    it('shows a readable backup title with schoolyear and save time', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            formatDateTime: methods.formatDateTime,
+        }
+
+        const title = methods.backupDisplayTitle.call(ctx, {
+            schoolyear_name: '2025/26',
+            schoolyear_id: 1,
+            created_at: '2026-05-09 06:45:28',
+            filename: 'teaching-backup-school-1-schoolyear-1-20260509-064528.json',
+        })
+
+        expect(title).toContain('2025/26')
+        expect(title).toContain('09.05.2026')
+        expect(title).toContain('06:45')
+        expect(title).not.toContain('teaching-backup-school-1')
+    })
+
+    it('shows validation labels and colors from the backup summary', () => {
+        const methods = (DataBackup as any).methods
+        const backup = {
+            summary: {
+                validation: {
+                    status: 'warning',
+                    issues: [],
+                    warnings: ['Eine Datei fehlt.'],
+                },
+            },
+        }
+
+        expect(methods.validationLabel.call({ validationStatus: methods.validationStatus }, backup)).toBe('Warnung')
+        expect(methods.validationColor.call({ validationStatus: methods.validationStatus }, backup)).toBe('warning')
+        expect(methods.validationWarnings.call({}, backup)).toEqual(['Eine Datei fehlt.'])
+    })
+
+    it('prepares sorted table count entries for the details dialog', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            tableCountLabel: methods.tableCountLabel,
+        }
+        const backup = {
+            summary: {
+                table_counts: {
+                    teaching_courses: 7,
+                    teaching_curricula: 2,
+                },
+            },
+        }
+
+        expect(methods.tableCountEntries.call(ctx, backup)).toEqual([
+            { key: 'teaching_curricula', label: 'Curricula', count: 2 },
+            { key: 'teaching_courses', label: 'Kurse', count: 7 },
+        ])
+    })
+
+    it('loads the restore preview and selects restoreable rows', async () => {
+        vi.mocked(axios.get).mockResolvedValueOnce({
+            data: {
+                data: {
+                    setting_sections: [{ key: 'basic_settings', count: 1, status: 'different' }],
+                    courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'missing_current' }],
+                    curricula: [{ id: 8, title: 'Gelöschtes Curriculum', status: 'missing_current' }],
+                },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            preview_open: false,
+            preview_error: '',
+            selected_preview: null,
+            preview_loading_id: null,
+            selected_preview_backup: null,
+            restore_error: '',
+            restore_result: null,
+            restore_selection: {
+                courses: [],
+                curricula: [],
+                settings: [],
+            },
+            initializeRestoreSelection: (DataBackup as any).methods.initializeRestoreSelection,
+            restoreSelectableValues: (DataBackup as any).methods.restoreSelectableValues,
+            previewSettingSections: (DataBackup as any).methods.previewSettingSections,
+            isCourseRestoreSelectable: (DataBackup as any).methods.isCourseRestoreSelectable,
+            isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
+            isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
+        }
+
+        await (DataBackup as any).methods.openRestorePreview.call(ctx, { id: 12 })
+
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
+        expect(ctx.preview_open).toBe(true)
+        expect(ctx.selected_preview).toEqual({
+            setting_sections: [{ key: 'basic_settings', count: 1, status: 'different' }],
+            courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'missing_current' }],
+            curricula: [{ id: 8, title: 'Gelöschtes Curriculum', status: 'missing_current' }],
+        })
+        expect(ctx.restore_selection).toEqual({
+            courses: [7],
+            curricula: [8],
+            settings: ['basic_settings'],
+        })
+        expect(ctx.preview_loading_id).toBeNull()
+    })
+
+    it('labels preview restore status without implying a write action', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.restoreStatusLabel('missing_current')).toBe('fehlt aktuell')
+        expect(methods.restoreStatusColor('missing_current')).toBe('error')
+        expect(methods.restoreStatusLabel('current_exists')).toBe('aktuell vorhanden')
+        expect(methods.restoreStatusLabel('different')).toBe('abweichend')
+        expect(methods.restoreStatusLabel('in_backup')).toBe('im Backup')
+        expect(methods.classesLabel(['5A', '6B'])).toBe('5A, 6B')
+    })
+
+    it('shows explicit setting sections in the restore preview', () => {
+        const methods = (DataBackup as any).methods
+        const preview = {
+            setting_sections: [
+                { key: 'basic_settings', label: 'Grundeinstellungen', count: 1, unit: 'Benutzer:innen', status: 'current_exists' },
+                { key: 'school_hours', label: 'Schulstunden', count: 10, unit: 'Stunden', status: 'different' },
+                {
+                    key: 'notifications',
+                    label: 'Verständigungen',
+                    count: 6,
+                    unit: 'Regeln',
+                    secondary_count: 2,
+                    secondary_unit: 'Einträge',
+                    status: 'missing_current',
+                },
+            ],
+        }
+        const ctx = {
+            restoreStatusLabel: methods.restoreStatusLabel,
+            restoreStatusColor: methods.restoreStatusColor,
+        }
+
+        expect(methods.previewSettingSections(preview)).toEqual(preview.setting_sections)
+        expect(methods.sectionCountLabel(preview.setting_sections[0])).toBe('1 Benutzer:innen')
+        expect(methods.sectionCountLabel(preview.setting_sections[2])).toBe('6 Regeln / 2 Einträge')
+        expect(methods.settingSectionStatusLabel.call(ctx, preview.setting_sections[0])).toBe('aktuell vorhanden')
+        expect(methods.settingSectionStatusColor.call(ctx, preview.setting_sections[1])).toBe('warning')
+        expect(methods.settingSectionStatusLabel.call(ctx, preview.setting_sections[2])).toBe('fehlt aktuell')
+        expect(methods.settingSectionStatusColor.call(ctx, preview.setting_sections[2])).toBe('error')
+    })
+
+    it('only allows changed or missing settings to be selected for restore', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.isSettingRestoreSelectable({ count: 1, status: 'different' })).toBe(true)
+        expect(methods.isSettingRestoreSelectable({ count: 1, status: 'missing_current' })).toBe(true)
+        expect(methods.isSettingRestoreSelectable({ count: 1, status: 'current_exists' })).toBe(false)
+        expect(methods.isSettingRestoreSelectable({ count: 0, status: 'different' })).toBe(false)
+    })
+
+    it('does not show stale selections for rows that are no longer restoreable', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            restore_selection: {
+                courses: [7],
+                curricula: [8],
+                settings: ['basic_settings'],
+            },
+            isCourseRestoreSelectable: methods.isCourseRestoreSelectable,
+            isCurriculumRestoreSelectable: methods.isCurriculumRestoreSelectable,
+            isSettingRestoreSelectable: methods.isSettingRestoreSelectable,
+        }
+
+        expect(methods.isRestoreSelected.call(ctx, 'settings', 'basic_settings', { key: 'basic_settings', count: 1, status: 'current_exists' })).toBe(false)
+        expect(methods.isRestoreSelected.call(ctx, 'courses', 7, { id: 7, status: 'current_exists' })).toBe(false)
+        expect(methods.isRestoreSelected.call(ctx, 'curricula', 8, { id: 8, status: 'current_exists' })).toBe(false)
+    })
+
+    it('posts the selected restore plan and refreshes the preview', async () => {
+        vi.mocked(axios.post).mockResolvedValueOnce({
+            data: {
+                data: {
+                    restored: {
+                        courses: [{ old_id: 7, new_id: 17 }],
+                        curricula: [],
+                        settings: [],
+                    },
+                },
+            },
+        })
+        vi.mocked(axios.get).mockResolvedValueOnce({
+            data: {
+                data: {
+                    courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'current_exists' }],
+                    curricula: [],
+                    setting_sections: [],
+                },
+            },
+        })
+
+        const ctx: Record<string, unknown> = {
+            selected_preview_backup: { id: 12 },
+            selected_preview: {
+                courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'missing_current' }],
+                curricula: [],
+                setting_sections: [],
+            },
+            restore_selection: {
+                courses: [7],
+                curricula: [],
+                settings: [],
+            },
+            restore_loading: false,
+            restore_error: '',
+            restore_result: null,
+            canRestoreSelected: true,
+            initializeRestoreSelection: (DataBackup as any).methods.initializeRestoreSelection,
+            restoreSelectableValues: (DataBackup as any).methods.restoreSelectableValues,
+            previewSettingSections: (DataBackup as any).methods.previewSettingSections,
+            isCourseRestoreSelectable: (DataBackup as any).methods.isCourseRestoreSelectable,
+            isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
+            isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
+            sanitizedRestoreSelection: (DataBackup as any).methods.sanitizedRestoreSelection,
+        }
+
+        await (DataBackup as any).methods.restoreSelected.call(ctx)
+
+        expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/backups/12/restore', {
+            courses: [7],
+            curricula: [],
+            settings: [],
+        })
+        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
+        expect(ctx.restore_result).toEqual({
+            restored: {
+                courses: [{ old_id: 7, new_id: 17 }],
+                curricula: [],
+                settings: [],
+            },
+        })
+        expect(ctx.restore_selection).toEqual({
+            courses: [],
+            curricula: [],
+            settings: [],
+        })
+    })
+
+    it('removes non-restoreable rows from the restore payload', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            selected_preview: {
+                courses: [
+                    { id: 7, status: 'missing_current' },
+                    { id: 9, status: 'current_exists' },
+                ],
+                curricula: [
+                    { id: 8, status: 'missing_current' },
+                    { id: 10, status: 'current_exists' },
+                ],
+                setting_sections: [
+                    { key: 'basic_settings', count: 1, status: 'different' },
+                    { key: 'school_hours', count: 1, status: 'current_exists' },
+                ],
+            },
+            restore_selection: {
+                courses: [7, 9],
+                curricula: [8, 10],
+                settings: ['basic_settings', 'school_hours'],
+            },
+            restoreSelectableValues: methods.restoreSelectableValues,
+            previewSettingSections: methods.previewSettingSections,
+            isCourseRestoreSelectable: methods.isCourseRestoreSelectable,
+            isCurriculumRestoreSelectable: methods.isCurriculumRestoreSelectable,
+            isSettingRestoreSelectable: methods.isSettingRestoreSelectable,
+        }
+
+        expect(methods.sanitizedRestoreSelection.call(ctx)).toEqual({
+            courses: [7],
+            curricula: [8],
+            settings: ['basic_settings'],
+        })
+    })
+})

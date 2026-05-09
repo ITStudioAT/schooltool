@@ -104,6 +104,23 @@ describe('Teaching page navigation', () => {
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula', 'settings'])
     })
 
+    it('shows datensicherung behind settings for teaching admins', () => {
+        const ctx = {
+            config: {
+                roles: ['teaching_admin'],
+                selected_schoolyear: { name: '2025/26' },
+            },
+            hasAnyRole(requiredRoles: string[]) {
+                return (Teaching as any).methods.hasAnyRole.call(this, requiredRoles)
+            },
+            selectedSchoolyearLabel: '2025/26',
+        }
+
+        const items = (Teaching as any).computed.visibleNavigationItems.call(ctx)
+
+        expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'search', 'schoolyear', 'curricula', 'settings', 'datensicherung'])
+    })
+
     it('builds hero chips from selected school context', () => {
         const ctx = {
             selectedSchoolLabel: 'Christian-Doppler-Gymnasium Salzburg',
@@ -183,6 +200,37 @@ describe('Teaching page navigation', () => {
         expect(ctx.main_action).toBe('search')
         expect(ctx.settings_view_key).toBe(0)
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/search', query: {} })
+    })
+
+    it('opens the datensicherung page from navigation', () => {
+        const routerReplace = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'overview',
+            settings_view_key: 0,
+            $router: { replace: routerReplace },
+            $route: { query: {} },
+            navigateTo(section: string) {
+                return (Teaching as any).methods.navigateTo.call(this, section)
+            },
+            openSettings: (Teaching as any).methods.openSettings,
+        }
+
+        ;(Teaching as any).methods.handleNavigation.call(ctx, 'datensicherung')
+
+        expect(ctx.main_action).toBe('datensicherung')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/datensicherung', query: {} })
+    })
+
+    it('renders the datensicherung navigation item and component hook', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
+        )
+
+        expect(source).toContain("key: 'datensicherung'")
+        expect(source).toContain("label: 'Datensicherung'")
+        expect(source).toContain('<DataBackup v-if="main_action === \'datensicherung\'" />')
+        expect(source).toContain("const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))")
     })
 
     it('opens a fresh new-course flow from the teaching subnav plus button', () => {
