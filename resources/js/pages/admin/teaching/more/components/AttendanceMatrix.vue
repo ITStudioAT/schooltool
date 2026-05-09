@@ -23,7 +23,7 @@
                     <thead>
                         <tr>
                             <th class="sticky-col">Schüler:in</th>
-                            <th v-for="courseDate in filteredCourseDates" :key="courseDate.id">
+                            <th v-for="courseDate in filteredCourseDates" :key="courseDate.id" class="attendance-date-col">
                                 <div class="attendance-date-head">
                                     <div>{{ formatDate(courseDate.date) }}</div>
                                     <div class="attendance-date-weekday">{{ weekdayLabel(courseDate.date) }}</div>
@@ -45,7 +45,7 @@
                             <td
                                 v-for="courseDate in filteredCourseDates"
                                 :key="`${student.id}-${courseDate.id}`"
-                                :class="attendanceCellClass(student.id, courseDate)">
+                                :class="['attendance-date-col', attendanceCellClass(student.id, courseDate)]">
                                 <span v-if="attendanceState(student.id, courseDate) === 'free'" class="attendance-free-marker">E</span>
                                 <v-icon v-else-if="attendanceState(student.id, courseDate) === 'present'" size="16">mdi-check</v-icon>
                                 <v-icon v-else-if="attendanceState(student.id, courseDate) === 'absent'" size="16">mdi-close</v-icon>
@@ -378,10 +378,10 @@ export default {
 }
 
 .attendance-matrix-table {
-    width: 100%;
+    width: max-content;
     border-collapse: separate;
     border-spacing: 0;
-    min-width: 760px;
+    min-width: max-content;
 }
 
 .attendance-matrix-table th,
@@ -409,6 +409,14 @@ export default {
 
 .attendance-date-head {
     line-height: 1.2;
+    white-space: nowrap;
+}
+
+.attendance-date-col {
+    width: 1%;
+    min-width: 0;
+    padding-right: 2px !important;
+    padding-left: 2px !important;
 }
 
 .attendance-date-weekday {
@@ -430,8 +438,8 @@ export default {
 }
 
 .attendance-cell {
-    width: 54px;
-    min-width: 54px;
+    width: 1%;
+    min-width: 0;
 }
 
 .attendance-percent-col {

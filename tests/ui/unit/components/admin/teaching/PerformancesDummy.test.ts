@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import PerformancesDummy from '@/pages/admin/teaching/more/components/PerformancesDummy.vue'
 
@@ -6,6 +8,21 @@ describe('PerformancesDummy type columns', () => {
         const data = (PerformancesDummy as any).data.call({})
 
         expect(data.sortMode).toBe('last_name_first_name')
+    })
+
+    it('sizes performance columns to their content instead of fixed wide columns', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/more/components/PerformancesDummy.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<col v-for="column in typeColumns" :key="\'cg-\'+column.key">')
+        expect(source).toContain('width: max-content;')
+        expect(source).toContain('min-width: max-content;')
+        expect(source).toContain('table-layout: auto;')
+        expect(source).not.toContain('style="width: 400px;"')
+        expect(source).not.toContain('table-layout: fixed;')
     })
 
     it('filters schema work columns by grading categories when categories are configured', () => {

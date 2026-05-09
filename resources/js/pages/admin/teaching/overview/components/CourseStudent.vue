@@ -84,10 +84,10 @@
                                                 v-if="semester1Total != null"
                                                 size="small"
                                                 variant="tonal"
-                                                :color="isNaGradeKey(semester1Total) ? 'error' : semester1HasMissingCategory ? 'warning' : 'primary'">
+                                                :color="isNaGradeKey(semester1Total) ? 'error' : 'primary'">
                                                 {{ formatEvaluationValue(semester1Total) }}
                                             </v-chip>
-                                            <v-chip size="small" variant="tonal" color="success">
+                                            <v-chip size="small" variant="tonal" color="success" class="cursor-pointer" @click="editGrades">
                                                 Note: {{ semesterCount === 2 ? (selected_course_student?.sem_1_grade || '–') : (selected_course_student?.sem_grade || '–') }}
                                             </v-chip>
                                         </div>
@@ -157,7 +157,7 @@
                                                 v-if="semester2Total != null"
                                                 size="small"
                                                 variant="tonal"
-                                                :color="isNaGradeKey(semester2Total) ? 'error' : semester2HasMissingCategory ? 'warning' : 'secondary'">
+                                                :color="isNaGradeKey(semester2Total) ? 'error' : 'primary'">
                                                 {{ formatEvaluationValue(semester2Total) }}
                                             </v-chip>
                                             <v-chip
@@ -167,7 +167,7 @@
                                                 :color="isNaGradeKey(semesterWeightedGrade.value) ? 'error' : 'primary'">
                                                 Gesamt: {{ formatEvaluationValue(semesterWeightedGrade.value) }}
                                             </v-chip>
-                                            <v-chip size="small" variant="tonal" color="success">
+                                            <v-chip size="small" variant="tonal" color="success" class="cursor-pointer" @click="editGrades">
                                                 Note: {{ selected_course_student?.sem_2_grade || '–' }}
                                             </v-chip>
                                         </div>
@@ -269,11 +269,17 @@
 
                     </v-card-text>
                 </v-card>
-                <v-card v-if="selected_comment" variant="outlined" class="mt-4">
-                    <v-card-text>
-                        <div class="text-body-2 course-comment" v-html="commentHtml"></div>
-                    </v-card-text>
-                </v-card>
+                <fieldset
+                    v-if="selected_comment"
+                    class="course-comment-fieldset mt-4 cursor-pointer"
+                    role="button"
+                    tabindex="0"
+                    @click="!isSavingMutation && editComment()"
+                    @keydown.enter.prevent="!isSavingMutation && editComment()"
+                    @keydown.space.prevent="!isSavingMutation && editComment()">
+                    <legend>Bemerkungen</legend>
+                    <div class="text-body-2 course-comment" v-html="commentHtml"></div>
+                </fieldset>
 
                 <v-dialog v-model="show_comment_dialog" persistent max-width="500">
                     <v-card>
@@ -2768,6 +2774,28 @@ export default {
 .course-comment :deep(p) {
     margin: 0;
     min-height: 1.2em;
+}
+
+.course-comment-fieldset {
+    border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity, 0.12));
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 16px 0 0;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.course-comment-fieldset:hover,
+.course-comment-fieldset:focus-visible {
+    border-color: rgba(var(--v-theme-primary), 0.7);
+    background-color: rgba(var(--v-theme-primary), 0.04);
+    outline: none;
+}
+
+.course-comment-fieldset legend {
+    margin-left: 8px;
+    padding: 0 4px;
+    font-size: 0.75rem;
+    color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
 }
 
 .auswertung-section-header {

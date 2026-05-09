@@ -19,7 +19,7 @@
                 <table class="performances-table" data-testid="teaching-performances-table">
                     <colgroup>
                         <col style="width: 260px;">
-                        <col v-for="column in typeColumns" :key="'cg-'+column.key" style="width: 400px;">
+                        <col v-for="column in typeColumns" :key="'cg-'+column.key">
                     </colgroup>
                     <thead>
                         <tr>
@@ -642,8 +642,9 @@ export default {
 .performances-table {
     border-collapse: separate;
     border-spacing: 0;
-    min-width: 980px;
-    table-layout: fixed;
+    width: max-content;
+    min-width: max-content;
+    table-layout: auto;
 }
 
 .performances-table th,

@@ -349,6 +349,22 @@ describe('CourseStudent entry title rendering', () => {
     })
 })
 
+describe('CourseStudent remarks field', () => {
+    it('labels the remarks border and opens the edit dialog from the field', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="course-comment-fieldset mt-4 cursor-pointer"')
+        expect(source).toContain('<legend>Bemerkungen</legend>')
+        expect(source).toContain('@click="!isSavingMutation && editComment()"')
+        expect(source).toContain('@keydown.enter.prevent="!isSavingMutation && editComment()"')
+        expect(source).toContain('@keydown.space.prevent="!isSavingMutation && editComment()"')
+    })
+})
+
 describe('CourseStudent work entry labels', () => {
     it('labels single work entries as Einzelarbeit without a grading mode', () => {
         const methods = (CourseStudent as any).methods
@@ -794,6 +810,10 @@ describe('CourseStudent auswertung semester header totals', () => {
 
         expect(source).toContain('v-if="semester1Total != null"')
         expect(source).toContain('v-if="semester2Total != null"')
+        expect(source).toContain(":color=\"isNaGradeKey(semester1Total) ? 'error' : 'primary'\"")
+        expect(source).toContain(":color=\"isNaGradeKey(semester2Total) ? 'error' : 'primary'\"")
+        expect(source).toContain('<v-chip size="small" variant="tonal" color="success" class="cursor-pointer" @click="editGrades">')
+        expect(source).toContain('<v-dialog v-model="show_grade_dialog" persistent max-width="400">')
         expect(semester1BewertungIndex).toBeGreaterThan(semester1HeaderIndex)
         expect(semester2BewertungIndex).toBeGreaterThan(semester2HeaderIndex)
         expect(semester1NoteIndex).toBeGreaterThan(semester1BewertungIndex)
