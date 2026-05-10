@@ -20,3 +20,8 @@ Schedule::command('private:prune-orphan-school-folders')
     ->dailyAt('03:00')
     ->onOneServer()
     ->withoutOverlapping();
+
+Schedule::command('teaching:backup-maintenance')
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->withoutOverlapping(10);

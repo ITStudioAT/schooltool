@@ -19,6 +19,7 @@ class TeachingBackupRestoreRun extends Model
         'progress_total',
         'selection',
         'result',
+        'audit_metadata',
         'message',
         'started_at',
         'finished_at',
@@ -29,6 +30,7 @@ class TeachingBackupRestoreRun extends Model
         return [
             'selection' => 'array',
             'result' => 'array',
+            'audit_metadata' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

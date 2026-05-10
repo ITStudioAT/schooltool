@@ -19,7 +19,7 @@
                         Backup-Datei importieren
                     </v-btn>
                     <v-btn color="primary" variant="flat" prepend-icon="mdi-database-plus-outline" :loading="creating" @click="createBackup">
-                        Neue Datensicherung
+                        Neue vollständige Datensicherung
                     </v-btn>
                 </div>
             </div>
@@ -29,6 +29,9 @@
             </v-alert>
             <v-alert v-if="import_notice" type="info" variant="tonal" density="comfortable" class="ma-4 mt-0">
                 {{ import_notice }}
+            </v-alert>
+            <v-alert v-if="restoreQueueHealthMessage()" type="warning" variant="tonal" density="comfortable" class="ma-4 mt-0">
+                {{ restoreQueueHealthMessage() }}
             </v-alert>
 
             <div v-if="loading" class="teaching-data-backup-state">
@@ -49,7 +52,9 @@
                 <thead>
                     <tr>
                         <th>Erstellt</th>
+                        <th>Typ</th>
                         <th>Status</th>
+                        <th>Wiederherstellung</th>
                         <th>Datensicherung</th>
                         <th>Datensätze</th>
                         <th>Dateien</th>
@@ -60,9 +65,20 @@
                     <tr v-for="backup in backups" :key="backup.id">
                         <td>{{ formatDateTime(backup.created_at) }}</td>
                         <td>
+                            <v-chip size="small" variant="tonal" :color="backupKindColor(backup)">
+                                {{ backupKindLabel(backup) }}
+                            </v-chip>
+                        </td>
+                        <td>
                             <v-chip size="small" variant="tonal" :color="validationColor(backup)">
                                 {{ validationLabel(backup) }}
                             </v-chip>
+                        </td>
+                        <td>
+                            <v-chip v-if="backupRestoreRun(backup)" size="small" variant="tonal" :color="backupRestoreColor(backup)">
+                                {{ backupRestoreLabel(backup) }}
+                            </v-chip>
+                            <span v-else class="text-medium-emphasis">-</span>
                         </td>
                         <td class="teaching-data-backup-file">{{ backupDisplayTitle(backup) }}</td>
                         <td>{{ backup.summary?.total_rows ?? 0 }}</td>
@@ -78,22 +94,15 @@
                                 variant="text"
                                 color="primary"
                                 size="small"
-                                title="Wiederherstellung prüfen"
+                                title="Datensicherung wiederherstellen"
                                 :loading="preview_loading_id === backup.id"
                                 @click="openRestorePreview(backup)" />
-                            <v-btn
-                                icon="mdi-information-outline"
-                                variant="text"
-                                color="secondary"
-                                size="small"
-                                title="Details anzeigen"
-                                @click="openDetails(backup)" />
                             <v-btn
                                 icon="mdi-download-outline"
                                 variant="text"
                                 color="primary"
                                 size="small"
-                                title="Datensicherung herunterladen"
+                                title="JSON-Datei exportieren"
                                 @click="downloadBackup(backup)" />
                             <v-btn
                                 icon="mdi-delete-outline"
@@ -109,122 +118,11 @@
             </v-table>
         </section>
 
-        <section v-if="restore_runs.length" class="teaching-data-backup-shell mt-4">
-            <div class="teaching-data-backup-header">
-                <div>
-                    <div class="text-subtitle-1 font-weight-bold">Wiederherstellungsverlauf</div>
-                </div>
-            </div>
-            <v-table density="compact" class="teaching-data-backup-table">
-                <thead>
-                    <tr>
-                        <th>Zeitpunkt</th>
-                        <th>Art</th>
-                        <th>Status</th>
-                        <th>Datensicherung</th>
-                        <th>Sicherheitskopie</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="run in restore_runs" :key="run.id">
-                        <td>{{ formatDateTime(run.created_at) }}</td>
-                        <td>{{ restoreRunTypeLabel(run.type) }}</td>
-                        <td>
-                            <v-chip size="x-small" variant="tonal" :color="restoreRunStatusColor(run.status)">
-                                {{ restoreRunStatusLabel(run.status) }}
-                            </v-chip>
-                        </td>
-                        <td class="teaching-data-backup-file">{{ run.backup_filename || '-' }}</td>
-                        <td class="teaching-data-backup-file">{{ run.pre_restore_backup_filename || '-' }}</td>
-                    </tr>
-                </tbody>
-            </v-table>
-        </section>
-
-        <v-dialog v-model="details_open" max-width="760">
-            <v-card v-if="selected_backup" rounded="lg">
-                <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
-                    <v-icon size="20" :color="validationColor(selected_backup)">mdi-database-check-outline</v-icon>
-                    Details zur Datensicherung
-                </v-card-title>
-                <v-card-text class="px-4 pb-2">
-                    <div class="teaching-data-backup-detail-grid">
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Datensicherung</div>
-                            <div class="text-body-2 font-weight-medium">{{ backupDisplayTitle(selected_backup) }}</div>
-                        </div>
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Erstellt</div>
-                            <div class="text-body-2 font-weight-medium">{{ formatDateTime(selected_backup.created_at) }}</div>
-                        </div>
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Status</div>
-                            <v-chip size="small" variant="tonal" :color="validationColor(selected_backup)">
-                                {{ validationLabel(selected_backup) }}
-                            </v-chip>
-                        </div>
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Datensätze</div>
-                            <div class="text-body-2 font-weight-medium">{{ selected_backup.summary?.total_rows ?? 0 }}</div>
-                        </div>
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Dateien</div>
-                            <div class="text-body-2 font-weight-medium">
-                                {{ selected_backup.summary?.file_count ?? 0 }}
-                                <span v-if="selected_backup.summary?.missing_file_count" class="text-warning">
-                                    / {{ selected_backup.summary.missing_file_count }} fehlt
-                                </span>
-                            </div>
-                        </div>
-                        <div>
-                            <div class="text-caption text-medium-emphasis">Dateiname</div>
-                            <div class="text-body-2 font-weight-medium teaching-data-backup-file">{{ selected_backup.filename }}</div>
-                        </div>
-                    </div>
-
-                    <v-alert
-                        v-if="validationIssues(selected_backup).length"
-                        type="error"
-                        variant="tonal"
-                        density="comfortable"
-                        class="mt-4">
-                        <div v-for="issue in validationIssues(selected_backup)" :key="issue">{{ issue }}</div>
-                    </v-alert>
-
-                    <v-alert
-                        v-if="validationWarnings(selected_backup).length"
-                        type="warning"
-                        variant="tonal"
-                        density="comfortable"
-                        class="mt-4">
-                        <div v-for="warning in validationWarnings(selected_backup)" :key="warning">{{ warning }}</div>
-                    </v-alert>
-
-                    <div class="text-subtitle-2 font-weight-bold mt-5 mb-2">Gesicherte Bereiche</div>
-                    <v-table density="compact" class="teaching-data-backup-counts">
-                        <tbody>
-                            <tr v-for="entry in tableCountEntries(selected_backup)" :key="entry.key">
-                                <td>{{ entry.label }}</td>
-                                <td class="text-right">{{ entry.count }}</td>
-                            </tr>
-                        </tbody>
-                    </v-table>
-                </v-card-text>
-                <v-card-actions class="px-4 pb-4">
-                    <v-spacer />
-                    <v-btn variant="tonal" @click="details_open = false">Schließen</v-btn>
-                    <v-btn color="primary" variant="flat" prepend-icon="mdi-download-outline" @click="downloadBackup(selected_backup)">
-                        Herunterladen
-                    </v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
-
         <v-dialog v-model="preview_open" max-width="980" persistent>
             <v-card rounded="lg">
                 <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
                     <v-icon size="20" color="primary">mdi-clipboard-search-outline</v-icon>
-                    Wiederherstellung prüfen
+                    Datensicherung wiederherstellen
                 </v-card-title>
                 <v-card-text class="px-4 pb-2">
                     <v-alert v-if="preview_error" type="error" variant="tonal" density="comfortable">
@@ -236,7 +134,29 @@
                     </div>
 
                     <template v-else>
+                        <v-alert
+                            v-if="isSafetyBackup(selected_preview_backup)"
+                            type="info"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mb-4">
+                            Diese Datensicherung ist eine Sicherheitskopie vor einer früheren Wiederherstellung. Wenn du sie wiederherstellst, gehst du auf den Stand vor dieser Wiederherstellung zurück.
+                        </v-alert>
+                        <v-alert type="info" variant="tonal" density="comfortable" class="mb-4">
+                            Bei der Wiederherstellung wird die ausgewählte Datensicherung vollständig eingespielt. Vorher wird automatisch eine Sicherheitskopie des aktuellen Zustands erstellt.
+                        </v-alert>
+
                         <div class="teaching-data-backup-detail-grid">
+                            <div>
+                                <div class="text-caption text-medium-emphasis">Datensicherung</div>
+                                <div class="text-body-2 font-weight-medium">{{ backupDisplayTitle(selected_preview_backup) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-caption text-medium-emphasis">Typ</div>
+                                <v-chip size="small" variant="tonal" :color="backupKindColor(selected_preview_backup)">
+                                    {{ backupKindLabel(selected_preview_backup) }}
+                                </v-chip>
+                            </div>
                             <div>
                                 <div class="text-caption text-medium-emphasis">Status</div>
                                 <v-chip size="small" variant="tonal" :color="previewStatusColor(selected_preview)">
@@ -255,42 +175,62 @@
                                 <div class="text-caption text-medium-emphasis">Fehlende Dateien</div>
                                 <div class="text-body-2 font-weight-medium">{{ selected_preview.totals?.missing_files ?? 0 }}</div>
                             </div>
+                            <div>
+                                <div class="text-caption text-medium-emphasis">Dateiname</div>
+                                <div class="text-body-2 font-weight-medium teaching-data-backup-file">{{ selected_preview_backup?.filename }}</div>
+                            </div>
                         </div>
 
-                        <div class="teaching-data-backup-restore-bar mt-4">
-                            <v-checkbox-btn
-                                v-model="allRestoreSelected"
-                                density="compact"
-                                label="Alle wiederherstellbaren auswählen"
-                                hide-details />
-                            <v-checkbox-btn
-                                v-model="overwrite_existing"
-                                density="compact"
-                                label="Vorhandene Kurse/Curricula überschreiben"
-                                hide-details
-                                @update:model-value="initializeRestoreSelection" />
-                            <div class="text-body-2 text-medium-emphasis">{{ restoreSelectionCount }} ausgewählt</div>
-                        </div>
+                        <v-alert type="info" variant="tonal" density="comfortable" class="mt-4">
+                            JSON exportieren speichert die Backup-Datei für externe Ablage, Support oder Import auf einem anderen System. Für die normale Wiederherstellung genügt die Wiederherstellung hier im Dialog.
+                        </v-alert>
+
+                        <v-alert
+                            v-if="validationIssues(selected_preview_backup).length"
+                            type="error"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mt-4">
+                            <div v-for="issue in validationIssues(selected_preview_backup)" :key="issue">{{ issue }}</div>
+                        </v-alert>
+
+                        <v-alert
+                            v-if="validationWarnings(selected_preview_backup).length"
+                            type="warning"
+                            variant="tonal"
+                            density="comfortable"
+                            class="mt-4">
+                            <div v-for="warning in validationWarnings(selected_preview_backup)" :key="warning">{{ warning }}</div>
+                        </v-alert>
 
                         <v-alert v-if="restore_error" type="error" variant="tonal" density="comfortable" class="mt-3">
                             {{ restore_error }}
                         </v-alert>
 
-                        <v-alert v-if="restore_result" type="success" variant="tonal" density="comfortable" class="mt-3">
+                        <v-alert v-if="restore_result" :type="restore_result?.queued ? 'info' : 'success'" variant="tonal" density="comfortable" class="mt-3">
                             <div>{{ restoreResultLabel(restore_result) }}</div>
                             <div v-if="fullRestoreUserReport(restore_result)" class="text-body-2 mt-1">
                                 {{ fullRestoreUserReport(restore_result) }}
                             </div>
-                            <v-btn size="small" variant="text" class="mt-2 px-0" @click="restore_report_open = true">
+                            <v-btn v-if="!restore_result?.queued" size="small" variant="text" class="mt-2 px-0" @click="restore_report_open = true">
                                 Details anzeigen
                             </v-btn>
                         </v-alert>
+
+                        <div class="text-subtitle-2 font-weight-bold mt-5 mb-2">Gesicherte Bereiche</div>
+                        <v-table density="compact" class="teaching-data-backup-counts">
+                            <tbody>
+                                <tr v-for="entry in tableCountEntries(selected_preview_backup)" :key="entry.key">
+                                    <td>{{ entry.label }}</td>
+                                    <td class="text-right">{{ entry.count }}</td>
+                                </tr>
+                            </tbody>
+                        </v-table>
 
                         <div class="text-subtitle-2 font-weight-bold mt-5 mb-2">Einstellungen</div>
                         <v-table density="compact" class="teaching-data-backup-counts">
                             <thead>
                                 <tr>
-                                    <th class="teaching-data-backup-select-col"></th>
                                     <th>Bereich</th>
                                     <th class="text-right">Gesichert</th>
                                     <th>Beschreibung</th>
@@ -299,14 +239,6 @@
                             </thead>
                             <tbody>
                                 <tr v-for="section in previewSettingSections(selected_preview)" :key="section.key">
-                                    <td>
-                                        <v-checkbox-btn
-                                            :model-value="isRestoreSelected('settings', section.key, section)"
-                                            :disabled="!isSettingRestoreSelectable(section)"
-                                            density="compact"
-                                            hide-details
-                                            @update:model-value="toggleRestoreSelection('settings', section.key, $event)" />
-                                    </td>
                                     <td>{{ section.label }}</td>
                                     <td class="text-right">{{ sectionCountLabel(section) }}</td>
                                     <td>{{ section.description || '-' }}</td>
@@ -323,9 +255,7 @@
                         <v-table density="compact" class="teaching-data-backup-counts">
                             <thead>
                                 <tr>
-                                    <th class="teaching-data-backup-select-col"></th>
                                     <th>Kurs</th>
-                                    <th>Lehrer:in</th>
                                     <th>Klassen</th>
                                     <th class="text-right">Schüler:innen</th>
                                     <th class="text-right">Termine</th>
@@ -335,16 +265,7 @@
                             </thead>
                             <tbody>
                                 <tr v-for="course in selected_preview.courses" :key="course.id">
-                                    <td>
-                                        <v-checkbox-btn
-                                            :model-value="isRestoreSelected('courses', course.id, course)"
-                                            :disabled="!isCourseRestoreSelectable(course)"
-                                            density="compact"
-                                            hide-details
-                                            @update:model-value="toggleRestoreSelection('courses', course.id, $event)" />
-                                    </td>
                                     <td>{{ course.title }}</td>
-                                    <td>{{ course.teacher || '-' }}</td>
                                     <td>{{ classesLabel(course.classes) }}</td>
                                     <td class="text-right">{{ course.student_count }}</td>
                                     <td class="text-right">{{ course.date_count }}</td>
@@ -362,7 +283,6 @@
                         <v-table density="compact" class="teaching-data-backup-counts">
                             <thead>
                                 <tr>
-                                    <th class="teaching-data-backup-select-col"></th>
                                     <th>Curriculum</th>
                                     <th class="text-right">Themen</th>
                                     <th class="text-right">Dokumente</th>
@@ -371,14 +291,6 @@
                             </thead>
                             <tbody>
                                 <tr v-for="curriculum in selected_preview.curricula" :key="curriculum.id">
-                                    <td>
-                                        <v-checkbox-btn
-                                            :model-value="isRestoreSelected('curricula', curriculum.id, curriculum)"
-                                            :disabled="!isCurriculumRestoreSelectable(curriculum)"
-                                            density="compact"
-                                            hide-details
-                                            @update:model-value="toggleRestoreSelection('curricula', curriculum.id, $event)" />
-                                    </td>
                                     <td>{{ curriculum.title }}</td>
                                     <td class="text-right">{{ curriculum.topic_count }}</td>
                                     <td class="text-right">{{ curriculum.document_count }}</td>
@@ -396,22 +308,21 @@
                     <v-spacer />
                     <v-btn variant="tonal" @click="preview_open = false">Schließen</v-btn>
                     <v-btn
+                        color="primary"
+                        variant="tonal"
+                        prepend-icon="mdi-download-outline"
+                        :disabled="!selected_preview_backup"
+                        @click="downloadBackup(selected_preview_backup)">
+                        JSON exportieren
+                    </v-btn>
+                    <v-btn
                         color="error"
                         variant="tonal"
                         prepend-icon="mdi-database-refresh-outline"
-                        :disabled="!selected_preview || restore_loading || full_restore_loading"
+                        :disabled="!canRestoreFull || restore_loading || full_restore_loading"
                         :loading="full_restore_loading"
                         @click="openFullRestoreDialog">
-                        Vollständig wiederherstellen
-                    </v-btn>
-                    <v-btn
-                        color="primary"
-                        variant="flat"
-                        prepend-icon="mdi-database-sync-outline"
-                        :disabled="!canRestoreSelected || full_restore_loading"
-                        :loading="restore_loading"
-                        @click="restoreSelected">
-                        Wiederherstellen
+                        Diese Datensicherung wiederherstellen
                     </v-btn>
                 </v-card-actions>
             </v-card>
@@ -425,8 +336,16 @@
                 </v-card-title>
                 <v-card-text class="px-4 pb-2">
                     <v-alert v-if="restore_result.pre_restore_backup" type="info" variant="tonal" density="comfortable" class="mb-4">
-                        Sicherheitskopie erstellt: {{ backupDisplayTitle(restore_result.pre_restore_backup) }}
+                        <div class="font-weight-medium">Sicherheitskopie vor der Wiederherstellung</div>
+                        <div class="text-body-2 mt-1">
+                            {{ backupDisplayTitle(restore_result.pre_restore_backup) }}
+                        </div>
+                        <div class="text-body-2 mt-1">
+                            Diese Kopie enthält den Zustand unmittelbar vor der Wiederherstellung. Sie ist nur für Rollback oder Export gedacht und erklärt, warum sie weniger Datensätze enthalten kann als die wiederhergestellte Datensicherung.
+                        </div>
                     </v-alert>
+
+                    <div class="text-subtitle-2 font-weight-bold mb-2">Zusammenfassung</div>
                     <v-table density="compact" class="teaching-data-backup-counts">
                         <tbody>
                             <tr v-for="entry in restoreReportEntries(restore_result)" :key="entry.key">
@@ -435,6 +354,71 @@
                             </tr>
                         </tbody>
                     </v-table>
+
+                    <div v-if="restoreReportCourses(restore_result).length" class="text-subtitle-2 font-weight-bold mt-5 mb-2">
+                        Wiederhergestellte Kurse
+                    </div>
+                    <v-table v-if="restoreReportCourses(restore_result).length" density="compact" class="teaching-data-backup-counts">
+                        <thead>
+                            <tr>
+                                <th>Kurs</th>
+                                <th class="text-right">Schüler:innen</th>
+                                <th class="text-right">Termine</th>
+                                <th class="text-right">Leistung</th>
+                                <th class="text-right">Verhalten</th>
+                                <th class="text-right">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="course in restoreReportCourses(restore_result)" :key="`course-${course.old_id}-${course.new_id}`">
+                                <td>{{ course.title || '-' }}</td>
+                                <td class="text-right">{{ course.counts?.students ?? 0 }}</td>
+                                <td class="text-right">{{ course.counts?.dates ?? 0 }}</td>
+                                <td class="text-right">{{ course.counts?.entries ?? 0 }}</td>
+                                <td class="text-right">{{ course.counts?.behaviour_entries ?? 0 }}</td>
+                                <td class="text-right">{{ course.overwritten ? 'überschrieben' : 'neu angelegt' }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+
+                    <div v-if="restoreReportSettings(restore_result).length" class="text-subtitle-2 font-weight-bold mt-5 mb-2">
+                        Wiederhergestellte Einstellungen
+                    </div>
+                    <v-table v-if="restoreReportSettings(restore_result).length" density="compact" class="teaching-data-backup-counts">
+                        <thead>
+                            <tr>
+                                <th>Bereich</th>
+                                <th class="text-right">Geänderte Datensätze</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="setting in restoreReportSettings(restore_result)" :key="`setting-${setting.key}`">
+                                <td>{{ settingSectionKeyLabel(setting.key) }}</td>
+                                <td class="text-right">{{ setting.count ?? 0 }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+
+                    <div v-if="restoreReportSkipped(restore_result).length" class="text-subtitle-2 font-weight-bold mt-5 mb-2">
+                        Übersprungen
+                    </div>
+                    <v-table v-if="restoreReportSkipped(restore_result).length" density="compact" class="teaching-data-backup-counts">
+                        <thead>
+                            <tr>
+                                <th>Bereich</th>
+                                <th>Eintrag</th>
+                                <th>Grund</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="entry in restoreReportSkipped(restore_result)" :key="entry.key">
+                                <td>{{ entry.scope }}</td>
+                                <td>{{ entry.title || entry.id || entry.setting_key || '-' }}</td>
+                                <td>{{ entry.label || entry.reason || '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </v-table>
+
                     <div v-if="restoreUserReconciliationEntries(restore_result).length" class="text-subtitle-2 font-weight-bold mt-5 mb-2">
                         Benutzer:innen
                     </div>
@@ -532,6 +516,7 @@ export default {
         return {
             backups: [],
             restore_runs: [],
+            restore_queue_health: null,
             loading: false,
             creating: false,
             importing: false,
@@ -542,8 +527,6 @@ export default {
             delete_loading: false,
             delete_loading_id: null,
             delete_error: '',
-            details_open: false,
-            selected_backup: null,
             preview_open: false,
             preview_loading_id: null,
             selected_preview: null,
@@ -561,6 +544,7 @@ export default {
                 curricula: [],
                 settings: [],
             },
+            restore_run_poll_timer: null,
         }
     },
 
@@ -571,6 +555,10 @@ export default {
 
         canRestoreSelected() {
             return this.selected_preview && this.restoreSelectionCount > 0 && !this.restore_loading
+        },
+
+        canRestoreFull() {
+            return this.selected_preview && !this.full_restore_loading
         },
 
         allRestoreSelected: {
@@ -594,6 +582,10 @@ export default {
         this.loadBackups()
     },
 
+    beforeUnmount() {
+        this.clearRestoreRunPolling()
+    },
+
     methods: {
         async loadBackups() {
             this.loading = true
@@ -606,6 +598,8 @@ export default {
                 ])
                 this.backups = Array.isArray(backupResponse.data?.data) ? backupResponse.data.data : []
                 this.restore_runs = Array.isArray(restoreRunResponse.data?.data) ? restoreRunResponse.data.data : []
+                this.restore_queue_health = restoreRunResponse.data?.meta?.queue_health || null
+                this.updateRestoreRunPolling()
             } catch (error) {
                 this.error = error?.response?.data?.message || 'Datensicherungen konnten nicht geladen werden.'
             } finally {
@@ -678,11 +672,27 @@ export default {
         },
 
         downloadBackup(backup) {
-            if (!backup?.download_url) {
+            this.openDownloadUrl(this.backupDownloadUrl(backup))
+        },
+
+        backupDownloadUrl(backup) {
+            if (backup?.download_url) {
+                return backup.download_url
+            }
+
+            if (!backup?.id) {
+                return ''
+            }
+
+            return `/api/admin/teaching/backups/${backup.id}/download`
+        },
+
+        openDownloadUrl(downloadUrl) {
+            if (!downloadUrl) {
                 return
             }
 
-            window.location.href = backup.download_url
+            window.location.href = downloadUrl
         },
 
         openDeleteDialog(backup) {
@@ -720,11 +730,6 @@ export default {
                 await axios.delete(`/api/admin/teaching/backups/${backupId}`)
                 this.backups = this.backups.filter((backup) => backup.id !== backupId)
 
-                if (this.selected_backup?.id === backupId) {
-                    this.details_open = false
-                    this.selected_backup = null
-                }
-
                 if (this.selected_preview_backup?.id === backupId) {
                     this.preview_open = false
                     this.selected_preview = null
@@ -741,16 +746,44 @@ export default {
             }
         },
 
+        backupKind(backup) {
+            return backup?.summary?.backup_kind || 'manual'
+        },
+
+        isSafetyBackup(backup) {
+            return this.backupKind(backup) === 'pre_restore'
+        },
+
+        backupKindLabel(backup) {
+            return {
+                manual: 'Manuell',
+                imported: 'Import',
+                pre_restore: 'Sicherheitskopie',
+            }[this.backupKind(backup)] || 'Datensicherung'
+        },
+
+        backupKindColor(backup) {
+            return {
+                manual: 'primary',
+                imported: 'secondary',
+                pre_restore: 'warning',
+            }[this.backupKind(backup)] || 'primary'
+        },
+
         backupDisplayTitle(backup) {
             const schoolyear = backup?.schoolyear_name || `Schuljahr-ID ${backup?.schoolyear_id ?? '-'}`
             const createdAt = this.formatDateTime(backup?.created_at)
+            const title = `${schoolyear} - gesichert am ${createdAt}`
 
-            return `${schoolyear} - gesichert am ${createdAt}`
-        },
+            if (this.isSafetyBackup(backup)) {
+                return `Sicherheitskopie vor Wiederherstellung - ${title}`
+            }
 
-        openDetails(backup) {
-            this.selected_backup = backup
-            this.details_open = true
+            if (this.backupKind(backup) === 'imported') {
+                return `Importierte Datensicherung - ${title}`
+            }
+
+            return title
         },
 
         async openRestorePreview(backup) {
@@ -795,11 +828,8 @@ export default {
                     this.sanitizedRestoreSelection(),
                 )
                 this.restore_result = response.data?.data || null
-
-                const previewResponse = await axios.get(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/preview`)
-                this.selected_preview = previewResponse.data?.data || null
-                this.initializeRestoreSelection()
-                await this.loadRestoreRuns()
+                this.closeRestorePreviewAfterSuccess()
+                await this.loadBackups()
             } catch (error) {
                 this.restore_error = error?.response?.data?.message || 'Wiederherstellung konnte nicht durchgeführt werden.'
             } finally {
@@ -808,7 +838,7 @@ export default {
         },
 
         openFullRestoreDialog() {
-            if (!this.selected_preview_backup?.id || this.full_restore_loading) {
+            if (!this.selected_preview_backup?.id || !this.canRestoreFull) {
                 return
             }
 
@@ -835,17 +865,31 @@ export default {
             try {
                 const response = await axios.post(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/restore-full`)
                 this.restore_result = response.data?.data || null
+                this.closeRestorePreviewAfterSuccess()
 
-                const previewResponse = await axios.get(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/preview`)
-                this.selected_preview = previewResponse.data?.data || null
-                this.initializeRestoreSelection()
-                await this.loadBackups()
+                try {
+                    await this.loadBackups()
+                } catch {
+                    this.restore_error = 'Wiederherstellung wurde gestartet, aber der Verlauf konnte nicht aktualisiert werden.'
+                }
             } catch (error) {
                 this.restore_error = error?.response?.data?.message || 'Vollständige Wiederherstellung konnte nicht durchgeführt werden.'
             } finally {
                 this.full_restore_loading = false
                 this.full_restore_confirm_open = false
             }
+        },
+
+        closeRestorePreviewAfterSuccess() {
+            this.preview_open = false
+            this.selected_preview = null
+            this.selected_preview_backup = null
+            this.restore_selection = {
+                courses: [],
+                curricula: [],
+                settings: [],
+            }
+            this.overwrite_existing = false
         },
 
         sanitizedRestoreSelection() {
@@ -859,9 +903,176 @@ export default {
             }
         },
 
-        async loadRestoreRuns() {
+        async loadRestoreRuns(options = {}) {
             const response = await axios.get('/api/admin/teaching/backups/restore-runs')
             this.restore_runs = Array.isArray(response.data?.data) ? response.data.data : []
+            this.restore_queue_health = response.data?.meta?.queue_health || null
+
+            if (options.schedulePolling !== false) {
+                this.updateRestoreRunPolling()
+            }
+        },
+
+        restoreQueueHealthMessage() {
+            return this.restore_queue_health?.needs_attention ? this.restore_queue_health.message : ''
+        },
+
+        backupRestoreRun(backup) {
+            const backupId = Number(backup?.id || 0)
+
+            if (!backupId) {
+                return null
+            }
+
+            return this.restore_runs.find((run) => {
+                return Number(run?.backup_id || 0) === backupId && ['pending', 'running', 'completed'].includes(run?.status)
+            }) || null
+        },
+
+        backupRestoreLabel(backup) {
+            const run = this.backupRestoreRun(backup)
+
+            if (!run) {
+                return ''
+            }
+
+            if (run.status === 'completed') {
+                return `wiederhergestellt ${this.formatDateTime(run.finished_at || run.created_at)}`
+            }
+
+            if (run.status === 'running') {
+                return 'Wiederherstellung läuft'
+            }
+
+            return 'Wiederherstellung wartet'
+        },
+
+        backupRestoreColor(backup) {
+            const run = this.backupRestoreRun(backup)
+
+            return {
+                pending: 'secondary',
+                running: 'info',
+                completed: 'success',
+            }[run?.status] || 'secondary'
+        },
+
+        hasRunningRestoreRun() {
+            return this.restore_runs.some((run) => ['pending', 'running'].includes(run?.status))
+        },
+
+        updateRestoreRunPolling(delay = 3000) {
+            if (!this.hasRunningRestoreRun()) {
+                this.clearRestoreRunPolling()
+
+                return
+            }
+
+            this.scheduleRestoreRunPolling(delay)
+        },
+
+        scheduleRestoreRunPolling(delay = 3000) {
+            this.clearRestoreRunPolling()
+
+            this.restore_run_poll_timer = window.setTimeout(async () => {
+                this.restore_run_poll_timer = null
+                await this.refreshRestoreRunsForPolling()
+            }, delay)
+        },
+
+        clearRestoreRunPolling() {
+            if (!this.restore_run_poll_timer) {
+                return
+            }
+
+            window.clearTimeout(this.restore_run_poll_timer)
+            this.restore_run_poll_timer = null
+        },
+
+        async refreshRestoreRunsForPolling() {
+            try {
+                await this.loadRestoreRuns({ schedulePolling: false })
+            } catch {
+                this.updateRestoreRunPolling(5000)
+
+                return
+            }
+
+            if (this.hasRunningRestoreRun()) {
+                this.scheduleRestoreRunPolling()
+
+                return
+            }
+
+            await this.loadBackups()
+
+            if (this.preview_open && this.selected_preview_backup?.id) {
+                try {
+                    const previewResponse = await axios.get(`/api/admin/teaching/backups/${this.selected_preview_backup.id}/preview`)
+                    this.selected_preview = previewResponse.data?.data || null
+                    this.initializeRestoreSelection()
+                } catch (error) {
+                    this.preview_error = error?.response?.data?.message || 'Wiederherstellungsprüfung konnte nicht geladen werden.'
+                }
+            }
+        },
+
+        rollbackBackupForRun(run) {
+            if (run?.pre_restore_backup?.id) {
+                return run.pre_restore_backup
+            }
+
+            if (!run?.pre_restore_backup_id) {
+                return null
+            }
+
+            return {
+                id: run.pre_restore_backup_id,
+                filename: run.pre_restore_backup_filename,
+                created_at: run.created_at,
+            }
+        },
+
+        canRollbackRun(run) {
+            return run?.type === 'full' && run?.status === 'completed' && Boolean(this.rollbackBackupForRun(run)?.id)
+        },
+
+        canViewRestoreRunReport(run) {
+            return ['completed', 'failed'].includes(run?.status) && Boolean(run?.result)
+        },
+
+        openRestoreRunReport(run) {
+            if (!this.canViewRestoreRunReport(run)) {
+                return
+            }
+
+            this.restore_result = {
+                ...run.result,
+                pre_restore_backup: run.result.pre_restore_backup || run.pre_restore_backup || null,
+            }
+            this.restore_report_open = true
+        },
+
+        restoreRunBackupDownloadUrl(run, type) {
+            if (type === 'pre_restore') {
+                return this.backupDownloadUrl(run?.pre_restore_backup || { id: run?.pre_restore_backup_id })
+            }
+
+            return this.backupDownloadUrl(run?.backup || { id: run?.backup_id })
+        },
+
+        downloadRestoreRunBackup(run, type) {
+            this.openDownloadUrl(this.restoreRunBackupDownloadUrl(run, type))
+        },
+
+        async openRollbackPreview(run) {
+            const backup = this.rollbackBackupForRun(run)
+
+            if (!backup) {
+                return
+            }
+
+            await this.openRestorePreview(backup)
         },
 
         initializeRestoreSelection() {
@@ -1005,11 +1216,11 @@ export default {
         },
 
         isCourseRestoreSelectable(course) {
-            return course?.status === 'missing_current' || (this.overwrite_existing && course?.status === 'current_exists')
+            return course?.status === 'missing_current' || (this.overwrite_existing && course?.status === 'different')
         },
 
         isCurriculumRestoreSelectable(curriculum) {
-            return curriculum?.status === 'missing_current' || (this.overwrite_existing && ['current_exists', 'different'].includes(curriculum?.status))
+            return curriculum?.status === 'missing_current' || (this.overwrite_existing && curriculum?.status === 'different')
         },
 
         isSettingRestoreSelectable(section) {
@@ -1019,7 +1230,27 @@ export default {
             return ['missing_current', 'different'].includes(section?.status) && count + secondaryCount > 0
         },
 
+        hasFullRestoreReason(preview) {
+            const courses = Array.isArray(preview?.courses) ? preview.courses : []
+            const curricula = Array.isArray(preview?.curricula) ? preview.curricula : []
+            const settings = this.previewSettingSections(preview)
+
+            return (
+                courses.some((course) => ['missing_current', 'different'].includes(course?.status)) ||
+                curricula.some((curriculum) => ['missing_current', 'different'].includes(curriculum?.status)) ||
+                settings.some((section) => this.isSettingRestoreSelectable(section))
+            )
+        },
+
         restoreResultLabel(result) {
+            if (result?.failed) {
+                return result.message || 'Wiederherstellung fehlgeschlagen.'
+            }
+
+            if (result?.queued) {
+                return result.message || 'Vollständige Wiederherstellung wurde gestartet. Der Verlauf zeigt den Fortschritt.'
+            }
+
             if (result?.restored === true && result?.counts) {
                 return `Vollständig wiederhergestellt: ${this.fullRestoreCount(result.counts)} Datensätze.`
             }
@@ -1062,6 +1293,13 @@ export default {
         },
 
         restoreReportEntries(result) {
+            if (result?.failed) {
+                return [
+                    { key: 'failure_message', label: 'Meldung', count: result.message || 'Wiederherstellung fehlgeschlagen.' },
+                    { key: 'failure_reason', label: 'Code', count: result.reason || '-' },
+                ]
+            }
+
             if (result?.restored === true && result?.counts) {
                 return Object.entries(result.counts)
                     .filter(([, count]) => Number(count || 0) > 0)
@@ -1072,14 +1310,44 @@ export default {
                     }))
             }
 
+            if (result?.restored?.courses || result?.restored?.curricula || result?.restored?.settings) {
+                return [
+                    { key: 'courses', label: 'Kurse wiederhergestellt', count: result?.restored?.courses?.length || 0 },
+                    { key: 'curricula', label: 'Curricula wiederhergestellt', count: result?.restored?.curricula?.length || 0 },
+                    { key: 'settings', label: 'Einstellungsbereiche wiederhergestellt', count: result?.restored?.settings?.length || 0 },
+                    { key: 'rows', label: 'Wiederhergestellte abhängige Datensätze', count: this.partialRestoreRowCount(result) },
+                    { key: 'warnings', label: 'Warnungen', count: result?.warnings?.length || 0 },
+                ].filter((entry) => Number(entry.count || 0) > 0)
+            }
+
+            return []
+        },
+
+        partialRestoreRowCount(result) {
+            return this.restoreReportCourses(result).reduce((total, course) => {
+                return total + Object.values(course?.counts || {}).reduce((courseTotal, count) => courseTotal + Number(count || 0), 0)
+            }, 0)
+        },
+
+        restoreReportCourses(result) {
+            return Array.isArray(result?.restored?.courses) ? result.restored.courses : []
+        },
+
+        restoreReportSettings(result) {
+            return Array.isArray(result?.restored?.settings) ? result.restored.settings : []
+        },
+
+        restoreReportSkipped(result) {
             return [
-                { key: 'courses', label: 'Kurse', count: result?.restored?.courses?.length || 0 },
-                { key: 'curricula', label: 'Curricula', count: result?.restored?.curricula?.length || 0 },
-                { key: 'settings', label: 'Einstellungsbereiche', count: result?.restored?.settings?.length || 0 },
-                { key: 'skipped_courses', label: 'Übersprungene Kurse', count: result?.skipped?.courses?.length || 0 },
-                { key: 'skipped_curricula', label: 'Übersprungene Curricula', count: result?.skipped?.curricula?.length || 0 },
-                { key: 'skipped_settings', label: 'Übersprungene Einstellungsbereiche', count: result?.skipped?.settings?.length || 0 },
-            ].filter((entry) => Number(entry.count || 0) > 0)
+                ...(result?.skipped?.courses || []).map((entry) => ({ ...entry, key: `course-${entry.id}`, scope: 'Kurs' })),
+                ...(result?.skipped?.curricula || []).map((entry) => ({ ...entry, key: `curriculum-${entry.id}`, scope: 'Curriculum' })),
+                ...(result?.skipped?.settings || []).map((entry) => ({
+                    ...entry,
+                    key: `setting-${entry.key}`,
+                    scope: 'Einstellung',
+                    setting_key: this.settingSectionKeyLabel(entry.key),
+                })),
+            ]
         },
 
         restoreUserReconciliationEntries(result) {
@@ -1144,6 +1412,18 @@ export default {
 
         settingSectionStatusColor(section) {
             return this.restoreStatusColor(section?.status || 'in_backup')
+        },
+
+        settingSectionKeyLabel(key) {
+            return {
+                basic_settings: 'Grundeinstellungen',
+                behaviour: 'Verhalten',
+                notifications: 'Verständigungen',
+                grading_schemas: 'Benotungsschemas',
+                own_free_days: 'Eigene freie Tage',
+                school_holidays: 'Ferien',
+                school_hours: 'Schulstunden',
+            }[key] || key || '-'
         },
 
         tableCountEntries(backup) {
@@ -1262,21 +1542,6 @@ export default {
 .teaching-data-backup-counts {
     border: 1px solid rgba(16, 38, 58, 0.1);
     border-radius: 8px;
-}
-
-.teaching-data-backup-restore-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 10px;
-    border: 1px solid rgba(16, 38, 58, 0.1);
-    border-radius: 8px;
-    background: rgba(16, 38, 58, 0.03);
-}
-
-.teaching-data-backup-select-col {
-    width: 42px;
 }
 
 @media (max-width: 720px) {

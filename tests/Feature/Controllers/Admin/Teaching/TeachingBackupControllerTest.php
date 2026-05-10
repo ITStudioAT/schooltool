@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Teaching\RestoreTeachingBackupJob;
 use App\Models\Import116;
 use App\Models\Import116Run;
 use App\Models\Import116RunChange;
@@ -28,9 +29,11 @@ use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
+use App\Services\TeachingBackupService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -822,7 +825,14 @@ test('restore recreates selected missing courses and curricula as new records', 
         ->assertJsonPath('data.restored.courses.0.old_id', $courseId)
         ->assertJsonPath('data.restored.curricula.0.old_id', $curriculumId)
         ->assertJsonPath('data.restore_run.status', 'completed')
-        ->assertJsonPath('data.restore_run.type', 'partial');
+        ->assertJsonPath('data.restore_run.type', 'partial')
+        ->assertJsonPath('data.restore_run.audit_metadata.type', 'partial');
+
+    expect($response->json('data.pre_restore_backup.id'))->not->toBeNull()
+        ->and($response->json('data.restore_run.pre_restore_backup.id'))->toBe($response->json('data.pre_restore_backup.id'))
+        ->and($response->json('data.restore_run.audit_metadata.actor.user_id'))->toBe($this->admin->id)
+        ->and($response->json('data.restore_run.audit_metadata.selection.courses'))->toBe([$courseId]);
+    Storage::disk('local')->assertExists(TeachingBackup::query()->findOrFail($response->json('data.pre_restore_backup.id'))->path);
 
     $restoredCourse = TeachingCourse::query()->where('title', 'Gelöschter Kurs')->firstOrFail();
     $restoredCurriculum = TeachingCurriculum::query()->where('title', 'Gelöschtes Curriculum')->firstOrFail();
@@ -940,6 +950,439 @@ test('restore can overwrite selected existing courses when explicitly requested'
     expect(TeachingCourse::query()->where('title', 'Aktueller Kurs')->exists())->toBeFalse()
         ->and($restoredCourse->id)->not->toBe($currentCourse->id)
         ->and(TeachingBackupRestoreRun::query()->where('type', 'partial')->where('status', 'completed')->exists())->toBeTrue();
+});
+
+test('restore skips current existing courses even when overwrite is requested', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $currentCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Unveränderter Kurs',
+        'classes' => ['5A'],
+    ]);
+
+    $backupResponse = $this->postJson('/api/admin/teaching/backups');
+    $backup = TeachingBackup::query()->findOrFail($backupResponse->json('data.id'));
+
+    $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore", [
+        'courses' => [$currentCourse->id],
+        'overwrite_existing' => true,
+    ])->assertOk()
+        ->assertJsonCount(0, 'data.restored.courses')
+        ->assertJsonPath('data.skipped.courses.0.reason', 'not_restoreable')
+        ->assertJsonPath('data.skipped.courses.0.status', 'current_exists');
+
+    $this->assertDatabaseHas('teaching_courses', [
+        'id' => $currentCourse->id,
+        'title' => 'Unveränderter Kurs',
+    ]);
+});
+
+test('preview marks existing courses as different when backup content differs', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $currentCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Backup Titel',
+        'classes' => ['5A'],
+    ]);
+
+    $backupResponse = $this->postJson('/api/admin/teaching/backups');
+    $backup = TeachingBackup::query()->findOrFail($backupResponse->json('data.id'));
+
+    $currentCourse->update([
+        'title' => 'Aktueller Titel',
+    ]);
+
+    $this->getJson("/api/admin/teaching/backups/{$backup->id}/preview")
+        ->assertOk()
+        ->assertJsonPath('data.courses.0.id', $currentCourse->id)
+        ->assertJsonPath('data.courses.0.status', 'different');
+});
+
+test('full restore can be queued even when backup matches current data', function () {
+    Storage::fake('local');
+    Queue::fake();
+    $this->actingAs($this->admin, 'sanctum');
+
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Unveränderter Kurs',
+    ]);
+
+    $backupResponse = $this->postJson('/api/admin/teaching/backups');
+    $backupId = $backupResponse->json('data.id');
+
+    $this->postJson("/api/admin/teaching/backups/{$backupId}/restore-full")
+        ->assertStatus(202)
+        ->assertJsonPath('data.queued', true)
+        ->assertJsonPath('data.restore_run.status', 'pending');
+
+    Queue::assertPushed(RestoreTeachingBackupJob::class);
+
+    expect(TeachingBackup::query()->count())->toBe(1)
+        ->and(TeachingBackupRestoreRun::query()->where('type', 'full')->where('status', 'pending')->exists())->toBeTrue();
+});
+
+test('restore is rejected while another restore is active', function () {
+    Storage::fake('local');
+    Queue::fake();
+    $this->actingAs($this->admin, 'sanctum');
+
+    TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Kurs',
+    ]);
+
+    $backupResponse = $this->postJson('/api/admin/teaching/backups');
+    $backupId = $backupResponse->json('data.id');
+    $backup = TeachingBackup::query()->findOrFail($backupId);
+
+    TeachingBackupRestoreRun::query()->create([
+        'teaching_backup_id' => $backup->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'type' => 'full',
+        'status' => 'running',
+        'progress_current' => 1,
+        'progress_total' => 3,
+        'selection' => [],
+        'started_at' => now(),
+        'message' => 'Wiederherstellung läuft.',
+    ]);
+
+    $this->postJson("/api/admin/teaching/backups/{$backupId}/restore-full")
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Eine Wiederherstellung läuft bereits.');
+
+    $this->postJson("/api/admin/teaching/backups/{$backupId}/restore", [
+        'courses' => [1],
+    ])
+        ->assertStatus(409)
+        ->assertJsonPath('message', 'Eine Wiederherstellung läuft bereits.');
+
+    Queue::assertNotPushed(RestoreTeachingBackupJob::class);
+});
+
+test('stale restore runs are failed before checking active restore guards', function () {
+    Storage::fake('local');
+    Queue::fake();
+    $this->actingAs($this->admin, 'sanctum');
+
+    $currentCourse = TeachingCourse::factory()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Backup Titel',
+    ]);
+
+    $backupResponse = $this->postJson('/api/admin/teaching/backups');
+    $backupId = $backupResponse->json('data.id');
+    $backup = TeachingBackup::query()->findOrFail($backupId);
+
+    $currentCourse->update([
+        'title' => 'Aktueller Titel',
+    ]);
+
+    $staleRun = TeachingBackupRestoreRun::query()->create([
+        'teaching_backup_id' => $backup->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'type' => 'full',
+        'status' => 'running',
+        'progress_current' => 1,
+        'progress_total' => 3,
+        'selection' => [],
+        'started_at' => now()->subMinutes(31),
+        'message' => 'Wiederherstellung läuft.',
+    ]);
+
+    $this->postJson("/api/admin/teaching/backups/{$backupId}/restore-full")
+        ->assertStatus(202)
+        ->assertJsonPath('data.restore_run.status', 'pending');
+
+    $staleRun->refresh();
+
+    expect($staleRun->status)->toBe('failed')
+        ->and($staleRun->result['reason'])->toBe('stale_restore_run')
+        ->and($staleRun->message)->toBe('Wiederherstellung wurde automatisch entsperrt, weil sie zu lange aktiv war.');
+
+    Queue::assertPushed(RestoreTeachingBackupJob::class);
+});
+
+test('restore runs endpoint reports queue health for old pending restores', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    Storage::disk('local')->put('teaching-backups/pending.json', '{"ok":true}');
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/pending.json',
+        'filename' => 'pending.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    TeachingBackupRestoreRun::query()->create([
+        'teaching_backup_id' => $backup->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'type' => 'full',
+        'status' => 'pending',
+        'progress_current' => 0,
+        'progress_total' => 3,
+        'selection' => [],
+        'started_at' => now()->subMinutes(3),
+        'message' => 'Wiederherstellung wurde in die Warteschlange gestellt.',
+    ]);
+
+    $this->getJson('/api/admin/teaching/backups/restore-runs')
+        ->assertOk()
+        ->assertJsonPath('meta.queue_health.needs_attention', true)
+        ->assertJsonPath('meta.queue_health.message', 'Eine vollständige Wiederherstellung wartet ungewöhnlich lange. Bitte prüfen, ob der Queue-Worker läuft.');
+});
+
+test('teaching backup maintenance command recovers stale runs and prunes retained backups', function () {
+    Storage::fake('local');
+    config()->set('schooltool.teaching_backup_retention.safety_keep_per_scope', 2);
+    config()->set('schooltool.teaching_backup_retention.safety_retention_days', 30);
+    config()->set('schooltool.teaching_backup_retention.manual_keep_per_scope', 2);
+    config()->set('schooltool.teaching_backup_retention.manual_retention_days', 365);
+
+    $sourceBackupIds = [];
+    for ($index = 0; $index < 12; $index++) {
+        Storage::disk('local')->put("teaching-backups/source-{$index}.json", '{"ok":true}');
+        $backup = TeachingBackup::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'disk' => 'local',
+            'path' => "teaching-backups/source-{$index}.json",
+            'filename' => "source-{$index}.json",
+            'summary' => ['total_rows' => 1, 'backup_kind' => 'manual'],
+        ]);
+        $backup->forceFill([
+            'created_at' => now()->subDays(40 + $index),
+            'updated_at' => now()->subDays(40 + $index),
+        ])->save();
+        $sourceBackupIds[] = $backup->id;
+    }
+
+    $oldestSafetyBackupId = null;
+    for ($index = 0; $index < 11; $index++) {
+        Storage::disk('local')->put("teaching-backups/safety-{$index}.json", '{"ok":true}');
+        $backup = TeachingBackup::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'disk' => 'local',
+            'path' => "teaching-backups/safety-{$index}.json",
+            'filename' => "safety-{$index}.json",
+            'summary' => ['total_rows' => 1, 'backup_kind' => 'pre_restore'],
+        ]);
+        $backup->forceFill([
+            'created_at' => now()->subDays(40 + $index),
+            'updated_at' => now()->subDays(40 + $index),
+        ])->save();
+        $oldestSafetyBackupId = $backup->id;
+
+        TeachingBackupRestoreRun::query()->create([
+            'teaching_backup_id' => $sourceBackupIds[0],
+            'pre_restore_backup_id' => $backup->id,
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'type' => 'partial',
+            'status' => 'completed',
+            'progress_current' => 2,
+            'progress_total' => 2,
+            'selection' => [],
+            'started_at' => now()->subDays(40 + $index),
+            'finished_at' => now()->subDays(40 + $index),
+        ]);
+    }
+
+    $oldestManualBackupId = null;
+    for ($index = 0; $index < 51; $index++) {
+        Storage::disk('local')->put("teaching-backups/manual-{$index}.json", '{"ok":true}');
+        $backup = TeachingBackup::query()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+            'disk' => 'local',
+            'path' => "teaching-backups/manual-{$index}.json",
+            'filename' => "manual-{$index}.json",
+            'summary' => ['total_rows' => 1, 'backup_kind' => 'manual'],
+        ]);
+        $backup->forceFill([
+            'created_at' => now()->subDays(366 + $index),
+            'updated_at' => now()->subDays(366 + $index),
+        ])->save();
+        $oldestManualBackupId = $backup->id;
+    }
+
+    $staleRun = TeachingBackupRestoreRun::query()->create([
+        'teaching_backup_id' => $sourceBackupIds[0],
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'type' => 'full',
+        'status' => 'running',
+        'progress_current' => 1,
+        'progress_total' => 3,
+        'selection' => [],
+        'started_at' => now()->subMinutes(31),
+        'message' => 'Wiederherstellung läuft.',
+    ]);
+
+    $this->artisan('teaching:backup-maintenance')
+        ->expectsOutput('Stale restore runs failed: 1')
+        ->expectsOutput('Safety backups pruned: 9')
+        ->expectsOutput('Manual/imported backups pruned: 49')
+        ->assertExitCode(0);
+
+    $staleRun->refresh();
+
+    expect($staleRun->status)->toBe('failed')
+        ->and($staleRun->result['reason'])->toBe('stale_restore_run')
+        ->and(TeachingBackup::query()->whereKey($oldestSafetyBackupId)->exists())->toBeFalse()
+        ->and(TeachingBackup::query()->whereKey($oldestManualBackupId)->exists())->toBeFalse();
+    Storage::disk('local')->assertMissing('teaching-backups/safety-10.json');
+    Storage::disk('local')->assertMissing('teaching-backups/manual-50.json');
+});
+
+test('restore job timeout is lower than queue retry window', function () {
+    $job = new RestoreTeachingBackupJob(1, $this->school->id, $this->schoolyear->id);
+
+    expect($job->timeout)->toBe(RestoreTeachingBackupJob::TIMEOUT_SECONDS)
+        ->and($job->timeout)->toBeLessThan(config('queue.connections.database.retry_after'))
+        ->and($job->failOnTimeout)->toBeTrue();
+});
+
+test('restore job stores a sanitized failure result when backup json is unreadable', function () {
+    Storage::fake('local');
+
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/broken.json',
+        'filename' => 'broken.json',
+        'summary' => ['total_rows' => 0],
+    ]);
+
+    Storage::disk('local')->put('teaching-backups/broken.json', '{broken');
+
+    $run = TeachingBackupRestoreRun::query()->create([
+        'teaching_backup_id' => $backup->id,
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'type' => 'full',
+        'status' => 'pending',
+        'progress_current' => 0,
+        'progress_total' => 3,
+        'selection' => [],
+        'started_at' => now(),
+        'message' => 'Wiederherstellung wurde in die Warteschlange gestellt.',
+    ]);
+
+    (new RestoreTeachingBackupJob($run->id, $this->school->id, $this->schoolyear->id))
+        ->handle(app(TeachingBackupService::class));
+
+    $run->refresh();
+
+    expect($run->status)->toBe('failed')
+        ->and($run->result)->toMatchArray([
+            'failed' => true,
+            'reason' => 'invalid_backup',
+            'message' => 'Datensicherung kann nicht gelesen werden',
+        ]);
+});
+
+test('restore run is marked failed when partial restore throws unexpectedly', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    Storage::disk('local')->put('teaching-backups/failing.json', json_encode([
+        'meta' => [
+            'format_version' => 1,
+            'created_at' => now()->toISOString(),
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'scope' => 'active_school_and_active_schoolyear',
+        ],
+        'tables' => array_fill_keys([
+            'schools',
+            'schoolyears',
+            'school_tools',
+            'users',
+            'teaching_courses',
+            'teaching_course_students',
+            'teaching_course_dates',
+            'teaching_course_date_materials',
+            'teaching_course_date_material_attachments',
+            'teaching_course_works',
+            'teaching_course_work_group_students',
+            'teaching_course_student_entries',
+            'teaching_course_behaviour_entries',
+            'teaching_course_student_category_evaluations',
+            'teaching_curricula',
+            'teaching_curriculum_documents',
+            'teaching_imported_curricula',
+            'teaching_schemas',
+            'teaching_holidays',
+            'teaching_school_hours',
+            'import116',
+            'import116_runs',
+            'import116_run_changes',
+            'user_groups',
+            'user_group_members',
+        ], []),
+        'files' => [],
+    ], JSON_THROW_ON_ERROR));
+
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/failing.json',
+        'filename' => 'failing.json',
+        'summary' => ['total_rows' => 0],
+    ]);
+
+    $this->app->instance(TeachingBackupService::class, new class extends TeachingBackupService
+    {
+        public function restoreSelection(TeachingBackup $backup, User $user, array $selection): array
+        {
+            throw new RuntimeException('Unexpected restore failure');
+        }
+    });
+
+    $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore", [
+        'courses' => [123],
+    ])->assertServerError();
+
+    expect(TeachingBackupRestoreRun::query()->first()?->status)->toBe('failed')
+        ->and(TeachingBackupRestoreRun::query()->first()?->message)->toBe('Wiederherstellung fehlgeschlagen.')
+        ->and(TeachingBackupRestoreRun::query()->first()?->result['reason'])->toBe('unexpected_error');
 });
 
 test('restore overwrites selected active schoolyear setting sections', function () {
@@ -1516,21 +1959,48 @@ test('full restore replaces active teaching data and restores imported records w
         'summary' => ['total_rows' => 20],
     ]);
 
+    Queue::fake();
+
     $response = $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore-full");
 
-    $response->assertOk()
-        ->assertJsonPath('data.restored', true)
-        ->assertJsonPath('data.counts.courses', 1)
-        ->assertJsonPath('data.counts.import116', 1)
-        ->assertJsonPath('data.counts.user_groups', 1)
-        ->assertJsonPath('data.counts.users_created', 1)
-        ->assertJsonPath('data.counts.users_matched_by_email', 0)
-        ->assertJsonPath('data.restore_run.status', 'completed')
+    $response->assertStatus(202)
+        ->assertJsonPath('data.queued', true)
+        ->assertJsonPath('data.restore_run.status', 'pending')
         ->assertJsonPath('data.restore_run.type', 'full')
-        ->assertJsonCount(1, 'data.user_reconciliation.created_placeholders');
+        ->assertJsonPath('data.restore_run.progress_total', 3)
+        ->assertJsonPath('data.restore_run.audit_metadata.type', 'full')
+        ->assertJsonPath('data.restore_run.audit_metadata.actor.user_id', $this->admin->id);
 
-    expect($response->json('data.pre_restore_backup.id'))->not->toBeNull();
-    Storage::disk('local')->assertExists(TeachingBackup::query()->findOrFail($response->json('data.pre_restore_backup.id'))->path);
+    $restoreRunId = (int) $response->json('data.restore_run.id');
+
+    Queue::assertPushed(RestoreTeachingBackupJob::class, function (RestoreTeachingBackupJob $job) use ($backup, $restoreRunId): bool {
+        return $job->restoreRunId === $restoreRunId
+            && $job->schoolId === (int) $backup->school_id
+            && $job->schoolyearId === (int) $backup->schoolyear_id;
+    });
+
+    expect(TeachingCourse::query()->where('title', 'Wird ersetzt')->exists())->toBeTrue();
+
+    (new RestoreTeachingBackupJob($restoreRunId, $this->school->id, $this->schoolyear->id))
+        ->handle(app(TeachingBackupService::class));
+
+    $run = TeachingBackupRestoreRun::query()->findOrFail($restoreRunId);
+
+    expect($run->status)->toBe('completed')
+        ->and($run->result['restored'])->toBeTrue()
+        ->and($run->result['counts']['courses'])->toBe(1)
+        ->and($run->result['counts']['import116'])->toBe(1)
+        ->and($run->result['counts']['user_groups'])->toBe(1)
+        ->and($run->result['counts']['users_created'])->toBe(1)
+        ->and($run->result['counts']['users_matched_by_email'])->toBe(0)
+        ->and($run->result['user_reconciliation']['created_placeholders'])->toHaveCount(1)
+        ->and($run->pre_restore_backup_id)->not->toBeNull();
+
+    Storage::disk('local')->assertExists(TeachingBackup::query()->findOrFail($run->pre_restore_backup_id)->path);
+
+    $this->getJson('/api/admin/teaching/backups/restore-runs')
+        ->assertOk()
+        ->assertJsonPath('data.0.pre_restore_backup.id', $run->pre_restore_backup_id);
 
     $restoredUser = User::query()->where('email', 'restored.student@example.test')->firstOrFail();
     $restoredCourse = TeachingCourse::query()->where('title', 'Voll Kurs')->firstOrFail();
@@ -1663,13 +2133,27 @@ test('full restore matches missing backup users by same school email before crea
         'summary' => ['total_rows' => 2],
     ]);
 
+    Queue::fake();
+
     $response = $this->postJson("/api/admin/teaching/backups/{$backup->id}/restore-full");
 
-    $response->assertOk()
-        ->assertJsonPath('data.counts.users_created', 0)
-        ->assertJsonPath('data.counts.users_matched_by_email', 1)
-        ->assertJsonPath('data.user_reconciliation.matched_by_email.0.user_id', $existingUser->id)
-        ->assertJsonPath('data.user_reconciliation.matched_by_email.0.email', 'matched.teacher@example.test');
+    $response->assertStatus(202)
+        ->assertJsonPath('data.queued', true)
+        ->assertJsonPath('data.restore_run.status', 'pending');
+
+    $restoreRunId = (int) $response->json('data.restore_run.id');
+
+    Queue::assertPushed(RestoreTeachingBackupJob::class);
+
+    (new RestoreTeachingBackupJob($restoreRunId, $this->school->id, $this->schoolyear->id))
+        ->handle(app(TeachingBackupService::class));
+
+    $run = TeachingBackupRestoreRun::query()->findOrFail($restoreRunId);
+
+    expect($run->result['counts']['users_created'])->toBe(0)
+        ->and($run->result['counts']['users_matched_by_email'])->toBe(1)
+        ->and($run->result['user_reconciliation']['matched_by_email'][0]['user_id'])->toBe($existingUser->id)
+        ->and($run->result['user_reconciliation']['matched_by_email'][0]['email'])->toBe('matched.teacher@example.test');
 
     $restoredCourse = TeachingCourse::query()->where('title', 'Per E-Mail zugeordneter Kurs')->firstOrFail();
     $existingUser->refresh();

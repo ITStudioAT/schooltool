@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\TeachingBackup;
+use App\Models\TeachingBackupRestoreRun;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -16,13 +17,20 @@ class TeachingBackupService
 {
     private const FORMAT_VERSION = 1;
 
+    public const ACTIVE_RESTORE_STATUSES = ['pending', 'running'];
+
+    public const STALE_RESTORE_RUN_MINUTES = 30;
+
+    public const PENDING_RESTORE_WARNING_MINUTES = 2;
+
     /**
      * @throws JsonException
      */
-    public function createForUser(User $user): TeachingBackup
+    public function createForUser(User $user, string $kind = 'manual'): TeachingBackup
     {
         $payload = $this->payloadForUser($user);
         $summary = $this->summaryForPayload($payload);
+        $summary['backup_kind'] = $kind;
 
         $filename = sprintf(
             'teaching-backup-school-%d-schoolyear-%d-%s.json',
@@ -55,6 +63,86 @@ class TeachingBackupService
     }
 
     /**
+     * @return array{failed:int}
+     */
+    public function recoverStaleRestoreRuns(?int $schoolId = null, ?int $schoolyearId = null): array
+    {
+        $message = 'Wiederherstellung wurde automatisch entsperrt, weil sie zu lange aktiv war.';
+        $query = TeachingBackupRestoreRun::query()
+            ->whereIn('status', self::ACTIVE_RESTORE_STATUSES)
+            ->where('started_at', '<', now()->subMinutes(self::STALE_RESTORE_RUN_MINUTES));
+
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
+
+        if ($schoolyearId !== null) {
+            $query->where('schoolyear_id', $schoolyearId);
+        }
+
+        $failed = 0;
+        $query->get()->each(function (TeachingBackupRestoreRun $run) use ($message, &$failed): void {
+            $this->markRestoreRunFailed($run, $message, 'stale_restore_run');
+            $failed++;
+        });
+
+        return ['failed' => $failed];
+    }
+
+    /**
+     * @return array{needs_attention:bool,message:?string,pending_seconds:?int,active_status:?string}
+     */
+    public function restoreQueueHealth(int $schoolId, int $schoolyearId): array
+    {
+        $activeRun = TeachingBackupRestoreRun::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereIn('status', self::ACTIVE_RESTORE_STATUSES)
+            ->oldest('started_at')
+            ->first();
+
+        if (! $activeRun || $activeRun->status !== 'pending' || ! $activeRun->started_at) {
+            return [
+                'needs_attention' => false,
+                'message' => null,
+                'pending_seconds' => null,
+                'active_status' => $activeRun?->status,
+            ];
+        }
+
+        $pendingSeconds = (int) $activeRun->started_at->diffInSeconds(now());
+        $needsAttention = $pendingSeconds >= self::PENDING_RESTORE_WARNING_MINUTES * 60;
+
+        return [
+            'needs_attention' => $needsAttention,
+            'message' => $needsAttention
+                ? 'Eine vollständige Wiederherstellung wartet ungewöhnlich lange. Bitte prüfen, ob der Queue-Worker läuft.'
+                : null,
+            'pending_seconds' => $pendingSeconds,
+            'active_status' => $activeRun->status,
+        ];
+    }
+
+    /**
+     * @return array{safety_deleted:int,manual_deleted:int}
+     */
+    public function pruneBackupRetention(?int $schoolId = null, ?int $schoolyearId = null): array
+    {
+        $scopes = $this->backupRetentionScopes($schoolId, $schoolyearId);
+        $result = [
+            'safety_deleted' => 0,
+            'manual_deleted' => 0,
+        ];
+
+        foreach ($scopes as $scope) {
+            $result['safety_deleted'] += $this->pruneSafetyBackupsForScope($scope['school_id'], $scope['schoolyear_id']);
+            $result['manual_deleted'] += $this->pruneManualBackupsForScope($scope['school_id'], $scope['schoolyear_id']);
+        }
+
+        return $result;
+    }
+
+    /**
      * @return array{backup:TeachingBackup, imported:bool, duplicate:bool}
      *
      * @throws JsonException
@@ -78,6 +166,7 @@ class TeachingBackupService
         }
 
         $summary = $this->summaryForPayload($payload);
+        $summary['backup_kind'] = 'imported';
         $filename = $this->importFilename($originalFilename);
         $path = sprintf(
             'teaching-backups/%d/%d/imported-%s-%s.json',
@@ -145,6 +234,28 @@ class TeachingBackupService
     }
 
     /**
+     * @throws JsonException
+     */
+    public function hasRestoreReasons(TeachingBackup $backup): bool
+    {
+        $payload = $this->readPayload($backup);
+        $validation = $this->validationForPayload($payload);
+
+        if (! $validation['is_valid']) {
+            return false;
+        }
+
+        $tables = $payload['tables'] ?? [];
+
+        return collect($this->coursePreviewRows($tables, $backup))
+            ->contains(fn (array $course): bool => $this->isRestoreReasonStatus($course['status'] ?? null))
+            || collect($this->curriculumPreviewRows($tables, $backup))
+                ->contains(fn (array $curriculum): bool => $this->isRestoreReasonStatus($curriculum['status'] ?? null))
+            || collect($this->settingSectionPreviewRows($tables, $backup))
+                ->contains(fn (array $section): bool => $this->settingSectionCanBeRestored($section));
+    }
+
+    /**
      * @param  array<string, mixed>  $selection
      * @return array<string, mixed>
      *
@@ -179,6 +290,9 @@ class TeachingBackupService
 
         return DB::transaction(function () use ($backup, $files, $selection, $tables, $user): array {
             $overwriteExisting = (bool) ($selection['overwrite_existing'] ?? false);
+            $coursePreviewRows = collect($this->coursePreviewRows($tables, $backup))->keyBy('id');
+            $curriculumPreviewRows = collect($this->curriculumPreviewRows($tables, $backup))->keyBy('id');
+            $settingPreviewRows = collect($this->settingSectionPreviewRows($tables, $backup))->keyBy('key');
             $result = [
                 'restored' => [
                     'courses' => [],
@@ -196,6 +310,14 @@ class TeachingBackupService
             $curriculumIdMap = [];
 
             foreach ($this->selectedIds($selection['curricula'] ?? []) as $curriculumId) {
+                $curriculumPreview = $curriculumPreviewRows->get($curriculumId);
+
+                if (! $this->itemCanBeRestored($curriculumPreview, $overwriteExisting)) {
+                    $result['skipped']['curricula'][] = $this->notRestorableSelectionResult($curriculumId, $curriculumPreview, 'Curriculum');
+
+                    continue;
+                }
+
                 $curriculumResult = $this->restoreMissingCurriculum($tables, $files, $curriculumId, $backup, $user, $overwriteExisting);
 
                 if (($curriculumResult['restored'] ?? false) === true) {
@@ -209,6 +331,14 @@ class TeachingBackupService
             }
 
             foreach ($this->selectedIds($selection['courses'] ?? []) as $courseId) {
+                $coursePreview = $coursePreviewRows->get($courseId);
+
+                if (! $this->itemCanBeRestored($coursePreview, $overwriteExisting)) {
+                    $result['skipped']['courses'][] = $this->notRestorableSelectionResult($courseId, $coursePreview, 'Kurs');
+
+                    continue;
+                }
+
                 $courseResult = $this->restoreMissingCourse($tables, $files, $courseId, $backup, $user, $curriculumIdMap, $overwriteExisting);
 
                 if (($courseResult['restored'] ?? false) === true) {
@@ -221,6 +351,18 @@ class TeachingBackupService
             }
 
             foreach ($this->selectedSettingKeys($selection['settings'] ?? []) as $settingKey) {
+                $settingPreview = $settingPreviewRows->get($settingKey);
+
+                if (! $this->settingSectionCanBeRestored($settingPreview)) {
+                    $result['skipped']['settings'][] = [
+                        'key' => $settingKey,
+                        'reason' => 'not_restoreable',
+                        'label' => 'Einstellungsbereich ist aktuell nicht wiederherstellbar.',
+                    ];
+
+                    continue;
+                }
+
                 $settingResult = $this->restoreSettingSection($tables, $settingKey, $backup);
 
                 if (($settingResult['restored'] ?? false) === true) {
@@ -322,6 +464,166 @@ class TeachingBackupService
 
             return $result;
         });
+    }
+
+    public function markRestoreRunFailed(TeachingBackupRestoreRun $run, string $message, string $reason): void
+    {
+        $run->update([
+            'status' => 'failed',
+            'finished_at' => now(),
+            'result' => [
+                'failed' => true,
+                'reason' => $reason,
+                'message' => $message,
+            ],
+            'message' => $message,
+        ]);
+    }
+
+    /**
+     * @return array<int, array{school_id:int,schoolyear_id:int}>
+     */
+    private function backupRetentionScopes(?int $schoolId, ?int $schoolyearId): array
+    {
+        $query = TeachingBackup::query()
+            ->select(['school_id', 'schoolyear_id'])
+            ->distinct();
+
+        if ($schoolId !== null) {
+            $query->where('school_id', $schoolId);
+        }
+
+        if ($schoolyearId !== null) {
+            $query->where('schoolyear_id', $schoolyearId);
+        }
+
+        return $query
+            ->get()
+            ->map(fn (TeachingBackup $backup): array => [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+            ])
+            ->all();
+    }
+
+    private function pruneSafetyBackupsForScope(int $schoolId, int $schoolyearId): int
+    {
+        $safetyBackupIds = TeachingBackupRestoreRun::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotNull('pre_restore_backup_id')
+            ->pluck('pre_restore_backup_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($safetyBackupIds === []) {
+            return 0;
+        }
+
+        $oldSafetyBackupIds = TeachingBackup::query()
+            ->whereIn('id', $safetyBackupIds)
+            ->where('created_at', '<', now()->subDays($this->safetyBackupRetentionDays()))
+            ->latest()
+            ->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $deleteIds = array_slice($oldSafetyBackupIds, $this->safetyBackupKeepPerScope());
+
+        if ($deleteIds === []) {
+            return 0;
+        }
+
+        $backups = TeachingBackup::query()
+            ->whereIn('id', $deleteIds)
+            ->get();
+
+        return $this->deleteBackupRecords($backups);
+    }
+
+    private function pruneManualBackupsForScope(int $schoolId, int $schoolyearId): int
+    {
+        $safetyBackupIds = TeachingBackupRestoreRun::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotNull('pre_restore_backup_id')
+            ->pluck('pre_restore_backup_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $sourceBackupIds = TeachingBackupRestoreRun::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotNull('teaching_backup_id')
+            ->pluck('teaching_backup_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $excludedIds = array_values(array_unique(array_merge($safetyBackupIds, $sourceBackupIds)));
+        $query = TeachingBackup::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->latest();
+
+        if ($excludedIds !== []) {
+            $query->whereNotIn('id', $excludedIds);
+        }
+
+        $candidateIds = $query
+            ->get()
+            ->filter(fn (TeachingBackup $backup): bool => ($backup->summary['backup_kind'] ?? 'manual') !== 'pre_restore')
+            ->filter(fn (TeachingBackup $backup): bool => $backup->created_at !== null && $backup->created_at->lt(now()->subDays($this->manualBackupRetentionDays())))
+            ->skip($this->manualBackupKeepPerScope())
+            ->pluck('id')
+            ->all();
+
+        if ($candidateIds === []) {
+            return 0;
+        }
+
+        return $this->deleteBackupRecords(TeachingBackup::query()->whereIn('id', $candidateIds)->get());
+    }
+
+    /**
+     * @param  iterable<TeachingBackup>  $backups
+     */
+    private function deleteBackupRecords(iterable $backups): int
+    {
+        $deleted = 0;
+
+        foreach ($backups as $backup) {
+            Storage::disk($backup->disk)->delete($backup->path);
+            $backup->delete();
+            $deleted++;
+        }
+
+        return $deleted;
+    }
+
+    private function safetyBackupKeepPerScope(): int
+    {
+        return max(0, (int) config('schooltool.teaching_backup_retention.safety_keep_per_scope', 10));
+    }
+
+    private function safetyBackupRetentionDays(): int
+    {
+        return max(0, (int) config('schooltool.teaching_backup_retention.safety_retention_days', 30));
+    }
+
+    private function manualBackupKeepPerScope(): int
+    {
+        return max(0, (int) config('schooltool.teaching_backup_retention.manual_keep_per_scope', 50));
+    }
+
+    private function manualBackupRetentionDays(): int
+    {
+        return max(0, (int) config('schooltool.teaching_backup_retention.manual_retention_days', 365));
     }
 
     /**
@@ -2286,18 +2588,10 @@ class TeachingBackupService
     {
         $courses = $tables['teaching_courses'] ?? [];
         $users = collect($tables['users'] ?? [])->keyBy('id');
-        $existingIds = DB::table('teaching_courses')
-            ->where('school_id', $backup->school_id)
-            ->where('schoolyear_id', $backup->schoolyear_id)
-            ->whereIn('id', $this->ids($courses) ?: [-1])
-            ->pluck('id')
-            ->map(fn (mixed $id): int => (int) $id)
-            ->all();
-
-        $existingIds = array_flip($existingIds);
+        $currentCourseGraphs = $this->currentCourseGraphs($backup, $this->ids($courses));
 
         return collect($courses)
-            ->map(function (array $course) use ($tables, $users, $existingIds): array {
+            ->map(function (array $course) use ($currentCourseGraphs, $tables, $users): array {
                 $courseId = (int) $course['id'];
                 $teacher = $users->get($course['user_id'] ?? null);
 
@@ -2311,7 +2605,10 @@ class TeachingBackupService
                     'work_count' => $this->countRowsForCourse($tables['teaching_course_works'] ?? [], $courseId),
                     'entry_count' => $this->countRowsForCourse($tables['teaching_course_student_entries'] ?? [], $courseId),
                     'behaviour_count' => $this->countRowsForCourse($tables['teaching_course_behaviour_entries'] ?? [], $courseId),
-                    'status' => isset($existingIds[$courseId]) ? 'current_exists' : 'missing_current',
+                    'status' => $this->courseComparisonStatus(
+                        $this->backupCourseGraph($tables, $courseId),
+                        $currentCourseGraphs[$courseId] ?? null
+                    ),
                 ];
             })
             ->values()
@@ -2378,12 +2675,14 @@ class TeachingBackupService
             ->join('teaching_courses', 'teaching_courses.id', '=', 'teaching_course_behaviour_entries.teaching_course_id')
             ->where('teaching_courses.school_id', $backup->school_id)
             ->where('teaching_courses.schoolyear_id', $backup->schoolyear_id)
-            ->select('teaching_course_behaviour_entries.kind')
-            ->get();
+            ->select('teaching_course_behaviour_entries.*')
+            ->get()
+            ->map(fn (object $row): array => (array) $row);
         $currentHolidays = DB::table('teaching_holidays')
             ->where('school_id', $backup->school_id)
             ->where('schoolyear_id', $backup->schoolyear_id)
-            ->get();
+            ->get()
+            ->map(fn (object $row): array => (array) $row);
 
         $basicCount = $this->countUsersWithAnyTeachingSetting($users, [
             'teaching_active_semester',
@@ -2420,19 +2719,25 @@ class TeachingBackupService
         $notificationEntryCount = $behaviourEntries->where('kind', 'notification')->count();
         $currentNotificationEntryCount = $currentBehaviourEntries->where('kind', 'notification')->count();
         $schemaCount = count($tables['teaching_schemas'] ?? []);
-        $currentSchemaCount = DB::table('teaching_schemas')
+        $currentSchemas = DB::table('teaching_schemas')
             ->where('school_id', $backup->school_id)
             ->where('schoolyear_id', $backup->schoolyear_id)
-            ->count();
+            ->get()
+            ->map(fn (object $row): array => (array) $row)
+            ->all();
+        $currentSchemaCount = count($currentSchemas);
         $ownFreeDaysCount = $holidays->where('scope', 'teacher')->count();
         $currentOwnFreeDaysCount = $currentHolidays->where('scope', 'teacher')->count();
         $schoolHolidayCount = $holidays->where('scope', 'school')->count();
         $currentSchoolHolidayCount = $currentHolidays->where('scope', 'school')->count();
         $schoolHourCount = count($tables['teaching_school_hours'] ?? []);
-        $currentSchoolHourCount = DB::table('teaching_school_hours')
+        $currentSchoolHours = DB::table('teaching_school_hours')
             ->where('school_id', $backup->school_id)
             ->where('schoolyear_id', $backup->schoolyear_id)
-            ->count();
+            ->get()
+            ->map(fn (object $row): array => (array) $row)
+            ->all();
+        $currentSchoolHourCount = count($currentSchoolHours);
 
         return [
             [
@@ -2442,7 +2747,24 @@ class TeachingBackupService
                 'unit' => 'Benutzer:innen',
                 'current_count' => $currentBasicCount,
                 'description' => 'Aktives Semester, Semester-2-Grenze, Notenspalten und Curriculum-Vorlage je Benutzer:in.',
-                'status' => $this->comparisonStatus($basicCount, $currentBasicCount),
+                'status' => $this->comparisonStatusForData(
+                    $basicCount,
+                    $currentBasicCount,
+                    $this->userSettingsComparableData($users, [
+                        'teaching_active_semester',
+                        'teaching_count_for_semester_2_date',
+                        'teaching_grade_columns_by_schoolyear',
+                        'teaching_student_grade_columns_by_schoolyear',
+                        'teaching_curriculum_free_weeks_template',
+                    ]),
+                    $this->userSettingsComparableData($currentUsers, [
+                        'teaching_active_semester',
+                        'teaching_count_for_semester_2_date',
+                        'teaching_grade_columns_by_schoolyear',
+                        'teaching_student_grade_columns_by_schoolyear',
+                        'teaching_curriculum_free_weeks_template',
+                    ])
+                ),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2455,7 +2777,20 @@ class TeachingBackupService
                 'secondary_unit' => 'Einträge',
                 'current_secondary_count' => $currentBehaviourEntryCount,
                 'description' => 'Gespeicherte Verhaltensregeln und vorhandene Verhaltenseinträge.',
-                'status' => $this->comparisonStatus($behaviourCount, $currentBehaviourCount, $behaviourEntryCount, $currentBehaviourEntryCount),
+                'status' => $this->comparisonStatusForData(
+                    $behaviourCount,
+                    $currentBehaviourCount,
+                    [
+                        'settings' => $this->userSettingsComparableData($users, ['teaching_behaviour', 'teaching_behaviour_by_schoolyear', 'teaching_show_behaviour']),
+                        'entries' => $this->normalizeRowsForComparison($behaviourEntries->where('kind', 'behaviour')->values()->all()),
+                    ],
+                    [
+                        'settings' => $this->userSettingsComparableData($currentUsers, ['teaching_behaviour', 'teaching_behaviour_by_schoolyear', 'teaching_show_behaviour']),
+                        'entries' => $this->normalizeRowsForComparison($currentBehaviourEntries->where('kind', 'behaviour')->values()->all()),
+                    ],
+                    $behaviourEntryCount,
+                    $currentBehaviourEntryCount
+                ),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2468,7 +2803,20 @@ class TeachingBackupService
                 'secondary_unit' => 'Einträge',
                 'current_secondary_count' => $currentNotificationEntryCount,
                 'description' => 'Gespeicherte Verständigungsregeln und vorhandene Verständigungseinträge.',
-                'status' => $this->comparisonStatus($notificationCount, $currentNotificationCount, $notificationEntryCount, $currentNotificationEntryCount),
+                'status' => $this->comparisonStatusForData(
+                    $notificationCount,
+                    $currentNotificationCount,
+                    [
+                        'settings' => $this->userSettingsComparableData($users, ['teaching_notifications', 'teaching_notifications_by_schoolyear']),
+                        'entries' => $this->normalizeRowsForComparison($behaviourEntries->where('kind', 'notification')->values()->all()),
+                    ],
+                    [
+                        'settings' => $this->userSettingsComparableData($currentUsers, ['teaching_notifications', 'teaching_notifications_by_schoolyear']),
+                        'entries' => $this->normalizeRowsForComparison($currentBehaviourEntries->where('kind', 'notification')->values()->all()),
+                    ],
+                    $notificationEntryCount,
+                    $currentNotificationEntryCount
+                ),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2478,7 +2826,7 @@ class TeachingBackupService
                 'unit' => 'Schemata',
                 'current_count' => $currentSchemaCount,
                 'description' => 'Gespeicherte Noten- und Arbeitsschemata.',
-                'status' => $this->comparisonStatus($schemaCount, $currentSchemaCount),
+                'status' => $this->comparisonStatusForData($schemaCount, $currentSchemaCount, $this->normalizeRowsForComparison($tables['teaching_schemas'] ?? []), $this->normalizeRowsForComparison($currentSchemas)),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2488,7 +2836,7 @@ class TeachingBackupService
                 'unit' => 'Tage',
                 'current_count' => $currentOwnFreeDaysCount,
                 'description' => 'Lehrer:innenbezogene freie Tage.',
-                'status' => $this->comparisonStatus($ownFreeDaysCount, $currentOwnFreeDaysCount),
+                'status' => $this->comparisonStatusForData($ownFreeDaysCount, $currentOwnFreeDaysCount, $this->normalizeRowsForComparison($holidays->where('scope', 'teacher')->values()->all()), $this->normalizeRowsForComparison($currentHolidays->where('scope', 'teacher')->values()->all())),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2498,7 +2846,7 @@ class TeachingBackupService
                 'unit' => 'Tage',
                 'current_count' => $currentSchoolHolidayCount,
                 'description' => 'Schulweite unterrichtsfreie Tage.',
-                'status' => $this->comparisonStatus($schoolHolidayCount, $currentSchoolHolidayCount),
+                'status' => $this->comparisonStatusForData($schoolHolidayCount, $currentSchoolHolidayCount, $this->normalizeRowsForComparison($holidays->where('scope', 'school')->values()->all()), $this->normalizeRowsForComparison($currentHolidays->where('scope', 'school')->values()->all())),
                 'restore_scope' => 'settings',
             ],
             [
@@ -2508,7 +2856,7 @@ class TeachingBackupService
                 'unit' => 'Stunden',
                 'current_count' => $currentSchoolHourCount,
                 'description' => 'Zeitdefinitionen der Schulstunden.',
-                'status' => $this->comparisonStatus($schoolHourCount, $currentSchoolHourCount),
+                'status' => $this->comparisonStatusForData($schoolHourCount, $currentSchoolHourCount, $this->normalizeRowsForComparison($tables['teaching_school_hours'] ?? []), $this->normalizeRowsForComparison($currentSchoolHours)),
                 'restore_scope' => 'settings',
             ],
         ];
@@ -2554,6 +2902,38 @@ class TeachingBackupService
     }
 
     /**
+     * @param  array<int, array<string, mixed>>  $users
+     * @param  array<int, string>  $columns
+     * @return array<int, array<string, mixed>>
+     */
+    private function userSettingsComparableData(array $users, array $columns): array
+    {
+        return collect($users)
+            ->map(function (array $user) use ($columns): array {
+                $row = [
+                    'id' => (int) ($user['id'] ?? 0),
+                ];
+
+                foreach ($columns as $column) {
+                    $row[$column] = $user[$column] ?? null;
+                }
+
+                return $row;
+            })
+            ->filter(function (array $row) use ($columns): bool {
+                foreach ($columns as $column) {
+                    if ($this->hasBackupValue($row[$column] ?? null)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int, mixed>
      */
     private function definitionItems(mixed $value): array
@@ -2590,6 +2970,118 @@ class TeachingBackupService
         }
 
         return 'different';
+    }
+
+    private function comparisonStatusForData(
+        int $backupCount,
+        int $currentCount,
+        mixed $backupData,
+        mixed $currentData,
+        int $backupSecondaryCount = 0,
+        int $currentSecondaryCount = 0
+    ): string {
+        $countStatus = $this->comparisonStatus($backupCount, $currentCount, $backupSecondaryCount, $currentSecondaryCount);
+
+        if ($countStatus !== 'current_exists') {
+            return $countStatus;
+        }
+
+        return $this->normalizeComparableValue($backupData) === $this->normalizeComparableValue($currentData)
+            ? 'current_exists'
+            : 'different';
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $tables
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function backupCourseGraph(array $tables, int $courseId): array
+    {
+        $courseDates = $this->rowsByColumn($tables['teaching_course_dates'] ?? [], 'teaching_course_id', $courseId);
+        $courseDateIds = $this->ids($courseDates);
+        $courseDateMaterials = collect($tables['teaching_course_date_materials'] ?? [])
+            ->filter(fn (array $row): bool => in_array((int) ($row['teaching_course_date_id'] ?? 0), $courseDateIds, true))
+            ->values()
+            ->all();
+        $courseDateMaterialIds = $this->ids($courseDateMaterials);
+
+        return [
+            'course' => array_filter([$this->rowById($tables['teaching_courses'] ?? [], $courseId)]),
+            'students' => $this->rowsByColumn($tables['teaching_course_students'] ?? [], 'teaching_course_id', $courseId),
+            'dates' => $courseDates,
+            'materials' => $courseDateMaterials,
+            'attachments' => collect($tables['teaching_course_date_material_attachments'] ?? [])
+                ->filter(fn (array $row): bool => in_array((int) ($row['teaching_course_date_material_id'] ?? 0), $courseDateMaterialIds, true))
+                ->values()
+                ->all(),
+            'works' => $this->rowsByColumn($tables['teaching_course_works'] ?? [], 'teaching_course_id', $courseId),
+            'student_entries' => $this->rowsByColumn($tables['teaching_course_student_entries'] ?? [], 'teaching_course_id', $courseId),
+            'behaviour_entries' => $this->rowsByColumn($tables['teaching_course_behaviour_entries'] ?? [], 'teaching_course_id', $courseId),
+            'category_evaluations' => $this->rowsByColumn($tables['teaching_course_student_category_evaluations'] ?? [], 'teaching_course_id', $courseId),
+            'work_group_students' => $this->rowsByColumn($tables['teaching_course_work_group_students'] ?? [], 'teaching_course_id', $courseId),
+        ];
+    }
+
+    /**
+     * @param  array<int, int>  $courseIds
+     * @return array<int, array<string, array<int, array<string, mixed>>>>
+     */
+    private function currentCourseGraphs(TeachingBackup $backup, array $courseIds): array
+    {
+        if ($courseIds === []) {
+            return [];
+        }
+
+        $courses = $this->rows('teaching_courses', fn (Builder $query): Builder => $query
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->whereIn('id', $courseIds));
+        $currentCourseIds = $this->ids($courses);
+        $courseDates = $this->rowsForIds('teaching_course_dates', 'teaching_course_id', $currentCourseIds);
+        $courseDateMaterials = $this->rowsForIds('teaching_course_date_materials', 'teaching_course_date_id', $this->ids($courseDates));
+
+        $tables = [
+            'teaching_courses' => $courses,
+            'teaching_course_students' => $this->rowsForIds('teaching_course_students', 'teaching_course_id', $currentCourseIds),
+            'teaching_course_dates' => $courseDates,
+            'teaching_course_date_materials' => $courseDateMaterials,
+            'teaching_course_date_material_attachments' => $this->rowsForIds('teaching_course_date_material_attachments', 'teaching_course_date_material_id', $this->ids($courseDateMaterials)),
+            'teaching_course_works' => $this->rowsForIds('teaching_course_works', 'teaching_course_id', $currentCourseIds),
+            'teaching_course_student_entries' => $this->rowsForIds('teaching_course_student_entries', 'teaching_course_id', $currentCourseIds),
+            'teaching_course_behaviour_entries' => $this->rowsForIds('teaching_course_behaviour_entries', 'teaching_course_id', $currentCourseIds),
+            'teaching_course_student_category_evaluations' => $this->rowsForIds('teaching_course_student_category_evaluations', 'teaching_course_id', $currentCourseIds),
+            'teaching_course_work_group_students' => $this->rowsForIds('teaching_course_work_group_students', 'teaching_course_id', $currentCourseIds),
+        ];
+
+        return collect($currentCourseIds)
+            ->mapWithKeys(fn (int $courseId): array => [$courseId => $this->backupCourseGraph($tables, $courseId)])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>|null  $currentGraph
+     * @param  array<string, array<int, array<string, mixed>>>  $backupGraph
+     */
+    private function courseComparisonStatus(array $backupGraph, ?array $currentGraph): string
+    {
+        if (! $currentGraph || ($currentGraph['course'] ?? []) === []) {
+            return 'missing_current';
+        }
+
+        return $this->normalizeCourseGraphForComparison($backupGraph) === $this->normalizeCourseGraphForComparison($currentGraph)
+            ? 'current_exists'
+            : 'different';
+    }
+
+    /**
+     * @param  array<string, array<int, array<string, mixed>>>  $graph
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function normalizeCourseGraphForComparison(array $graph): array
+    {
+        return collect($graph)
+            ->map(fn (array $rows): array => $this->normalizeRowsForComparison($rows, ['created_at', 'updated_at']))
+            ->all();
     }
 
     /**
@@ -2644,6 +3136,56 @@ class TeachingBackupService
 
         if (! array_is_list($value)) {
             ksort($value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<int, string>  $ignoredColumns
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeRowsForComparison(array $rows, array $ignoredColumns = ['id', 'created_at', 'updated_at']): array
+    {
+        $ignored = array_flip($ignoredColumns);
+
+        return collect($rows)
+            ->map(function (array $row) use ($ignored): array {
+                $row = collect($row)
+                    ->reject(fn (mixed $value, string $key): bool => isset($ignored[$key]) || $value === null)
+                    ->map(fn (mixed $value): mixed => $this->normalizeComparableValue($value))
+                    ->all();
+
+                ksort($row);
+
+                return $row;
+            })
+            ->sortBy(fn (array $row): string => json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR))
+            ->values()
+            ->all();
+    }
+
+    private function normalizeComparableValue(mixed $value): mixed
+    {
+        if (is_string($value)) {
+            $trimmed = trim($value);
+
+            if ($trimmed === '') {
+                return $value;
+            }
+
+            try {
+                $decoded = json_decode($trimmed, true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return $value;
+            }
+
+            return is_array($decoded) ? $this->normalizeArrayForComparison($decoded) : $decoded;
+        }
+
+        if (is_array($value)) {
+            return $this->normalizeArrayForComparison($value);
         }
 
         return $value;
@@ -2765,6 +3307,52 @@ class TeachingBackupService
             ->unique()
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $preview
+     */
+    private function itemCanBeRestored(?array $preview, bool $overwriteExisting): bool
+    {
+        $status = $preview['status'] ?? null;
+
+        if ($status === 'missing_current') {
+            return true;
+        }
+
+        return $overwriteExisting && $status === 'different';
+    }
+
+    private function isRestoreReasonStatus(mixed $status): bool
+    {
+        return in_array($status, ['missing_current', 'different'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $section
+     */
+    private function settingSectionCanBeRestored(?array $section): bool
+    {
+        if (! $section || ! $this->isRestoreReasonStatus($section['status'] ?? null)) {
+            return false;
+        }
+
+        return (int) ($section['count'] ?? 0) + (int) ($section['secondary_count'] ?? 0) > 0;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $preview
+     * @return array<string, mixed>
+     */
+    private function notRestorableSelectionResult(int $id, ?array $preview, string $label): array
+    {
+        return [
+            'id' => $id,
+            'title' => $preview['title'] ?? null,
+            'reason' => 'not_restoreable',
+            'status' => $preview['status'] ?? 'missing_backup_preview',
+            'label' => "{$label} ist aktuell nicht wiederherstellbar.",
+        ];
     }
 
     /**

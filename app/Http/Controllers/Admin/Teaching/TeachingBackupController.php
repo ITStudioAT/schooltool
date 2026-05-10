@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\Teaching\RestoreTeachingBackupJob;
 use App\Models\TeachingBackup;
 use App\Models\TeachingBackupRestoreRun;
 use App\Models\User;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use JsonException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class TeachingBackupController extends Controller
 {
@@ -42,22 +44,26 @@ class TeachingBackupController extends Controller
         }
 
         $backup = $service->createForUser($authUser);
+        $service->pruneBackupRetention((int) $authUser->school_id, (int) $authUser->schoolyear_id);
 
         return response()->json([
             'data' => $this->backupPayload($backup),
         ], 201);
     }
 
-    public function restoreRuns(): JsonResponse
+    public function restoreRuns(TeachingBackupService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
+        $service->recoverStaleRestoreRuns((int) $authUser->school_id, (int) $authUser->schoolyear_id);
+
         $runs = TeachingBackupRestoreRun::query()
             ->with([
                 'backup:id,filename,created_at',
-                'preRestoreBackup:id,filename,created_at',
+                'preRestoreBackup:id,school_id,schoolyear_id,user_id,disk,path,filename,summary,created_at',
+                'preRestoreBackup.schoolyear:id,name',
                 'user:id,first_name,last_name,email',
             ])
             ->where('school_id', $authUser->school_id)
@@ -70,6 +76,9 @@ class TeachingBackupController extends Controller
 
         return response()->json([
             'data' => $runs,
+            'meta' => [
+                'queue_health' => $service->restoreQueueHealth((int) $authUser->school_id, (int) $authUser->schoolyear_id),
+            ],
         ]);
     }
 
@@ -95,6 +104,8 @@ class TeachingBackupController extends Controller
         } catch (JsonException) {
             abort(422, 'Datensicherung kann nicht gelesen werden');
         }
+
+        $service->pruneBackupRetention((int) $authUser->school_id, (int) $authUser->schoolyear_id);
 
         return response()->json([
             'data' => $this->backupPayload($result['backup']),
@@ -189,6 +200,10 @@ class TeachingBackupController extends Controller
             abort(404, 'Datensicherung nicht gefunden');
         }
 
+        if ($this->hasActiveRestore($backup, $service)) {
+            abort(409, 'Eine Wiederherstellung läuft bereits.');
+        }
+
         $selection = $request->validate([
             'courses' => ['sometimes', 'array'],
             'courses.*' => ['integer'],
@@ -199,16 +214,31 @@ class TeachingBackupController extends Controller
             'overwrite_existing' => ['sometimes', 'boolean'],
         ]);
 
-        $run = $this->startRestoreRun($backup, $authUser, 'partial', $selection);
+        $run = $this->startRestoreRun($backup, $authUser, 'partial', $selection, 'running', $this->restoreAuditMetadata($request, $backup, $authUser, 'partial', $selection));
 
         try {
+            $preRestoreBackup = $service->createForUser($authUser, 'pre_restore');
+            $service->pruneBackupRetention((int) $authUser->school_id, (int) $authUser->schoolyear_id);
+            $run->update([
+                'pre_restore_backup_id' => $preRestoreBackup->id,
+                'progress_current' => 1,
+                'progress_total' => 2,
+                'message' => 'Sicherheitskopie vor Wiederherstellung erstellt.',
+            ]);
+
             $result = $service->restoreSelection($backup, $authUser, $selection);
         } catch (JsonException) {
-            $this->failRestoreRun($run, 'Datensicherung kann nicht gelesen werden');
+            $this->failRestoreRun($run, 'Datensicherung kann nicht gelesen werden', 'invalid_backup');
 
             abort(422, 'Datensicherung kann nicht gelesen werden');
+        } catch (Throwable $exception) {
+            $this->failRestoreRun($run, 'Wiederherstellung fehlgeschlagen.', 'unexpected_error');
+
+            throw $exception;
         }
 
+        $result['pre_restore_backup'] = $this->backupPayload($preRestoreBackup);
+        $result['pre_restore_backup_id'] = $preRestoreBackup->id;
         $this->completeRestoreRun($run, $result);
         $result['restore_run'] = $this->restoreRunPayload($run->refresh());
 
@@ -217,7 +247,7 @@ class TeachingBackupController extends Controller
         ]);
     }
 
-    public function restoreFull(TeachingBackup $backup, TeachingBackupService $service): JsonResponse
+    public function restoreFull(Request $request, TeachingBackup $backup, TeachingBackupService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -231,31 +261,30 @@ class TeachingBackupController extends Controller
             abort(404, 'Datensicherung nicht gefunden');
         }
 
-        $run = $this->startRestoreRun($backup, $authUser, 'full', []);
-
-        try {
-            $preRestoreBackup = $service->createForUser($authUser);
-            $run->update([
-                'pre_restore_backup_id' => $preRestoreBackup->id,
-                'progress_current' => 1,
-                'progress_total' => 2,
-                'message' => 'Sicherheitskopie vor Wiederherstellung erstellt.',
-            ]);
-
-            $result = $service->restoreFull($backup, $authUser);
-        } catch (JsonException) {
-            $this->failRestoreRun($run, 'Datensicherung kann nicht gelesen werden');
-
-            abort(422, 'Datensicherung kann nicht gelesen werden');
+        if ($this->hasActiveRestore($backup, $service)) {
+            abort(409, 'Eine Wiederherstellung läuft bereits.');
         }
 
-        $result['pre_restore_backup'] = $this->backupPayload($preRestoreBackup);
-        $this->completeRestoreRun($run, $result);
-        $result['restore_run'] = $this->restoreRunPayload($run->refresh());
+        $run = $this->startRestoreRun($backup, $authUser, 'full', [], 'pending', $this->restoreAuditMetadata($request, $backup, $authUser, 'full', []));
+        $run->update([
+            'message' => 'Wiederherstellung wurde in die Warteschlange gestellt.',
+        ]);
+
+        try {
+            RestoreTeachingBackupJob::dispatch($run->id, $backup->school_id, $backup->schoolyear_id);
+        } catch (Throwable $exception) {
+            $this->failRestoreRun($run, 'Wiederherstellung fehlgeschlagen.', 'dispatch_failed');
+
+            throw $exception;
+        }
 
         return response()->json([
-            'data' => $result,
-        ]);
+            'data' => [
+                'queued' => true,
+                'message' => 'Vollständige Wiederherstellung wurde gestartet. Der Verlauf zeigt den Fortschritt.',
+                'restore_run' => $this->restoreRunPayload($run->refresh()),
+            ],
+        ], 202);
     }
 
     /**
@@ -281,7 +310,7 @@ class TeachingBackupController extends Controller
     /**
      * @param  array<string, mixed>  $selection
      */
-    private function startRestoreRun(TeachingBackup $backup, User $authUser, string $type, array $selection): TeachingBackupRestoreRun
+    private function startRestoreRun(TeachingBackup $backup, User $authUser, string $type, array $selection, string $status = 'running', array $auditMetadata = []): TeachingBackupRestoreRun
     {
         return TeachingBackupRestoreRun::query()->create([
             'teaching_backup_id' => $backup->id,
@@ -289,10 +318,11 @@ class TeachingBackupController extends Controller
             'schoolyear_id' => $backup->schoolyear_id,
             'user_id' => $authUser->id,
             'type' => $type,
-            'status' => 'running',
+            'status' => $status,
             'progress_current' => 0,
-            'progress_total' => $type === 'full' ? 2 : 1,
+            'progress_total' => $type === 'full' ? 3 : 1,
             'selection' => $selection,
+            'audit_metadata' => $auditMetadata,
             'started_at' => now(),
             'message' => 'Wiederherstellung gestartet.',
         ]);
@@ -312,13 +342,29 @@ class TeachingBackupController extends Controller
         ]);
     }
 
-    private function failRestoreRun(TeachingBackupRestoreRun $run, string $message): void
+    private function failRestoreRun(TeachingBackupRestoreRun $run, string $message, string $reason): void
     {
         $run->update([
             'status' => 'failed',
             'finished_at' => now(),
+            'result' => [
+                'failed' => true,
+                'reason' => $reason,
+                'message' => $message,
+            ],
             'message' => $message,
         ]);
+    }
+
+    private function hasActiveRestore(TeachingBackup $backup, TeachingBackupService $service): bool
+    {
+        $service->recoverStaleRestoreRuns((int) $backup->school_id, (int) $backup->schoolyear_id);
+
+        return TeachingBackupRestoreRun::query()
+            ->where('school_id', $backup->school_id)
+            ->where('schoolyear_id', $backup->schoolyear_id)
+            ->whereIn('status', TeachingBackupService::ACTIVE_RESTORE_STATUSES)
+            ->exists();
     }
 
     /**
@@ -332,17 +378,49 @@ class TeachingBackupController extends Controller
             'backup_filename' => $run->backup?->filename,
             'pre_restore_backup_id' => $run->pre_restore_backup_id !== null ? (int) $run->pre_restore_backup_id : null,
             'pre_restore_backup_filename' => $run->preRestoreBackup?->filename,
+            'pre_restore_backup' => $run->preRestoreBackup ? $this->backupPayload($run->preRestoreBackup) : null,
             'type' => $run->type,
             'status' => $run->status,
             'progress_current' => (int) $run->progress_current,
             'progress_total' => (int) $run->progress_total,
             'selection' => $run->selection,
             'result' => $run->result,
+            'audit_metadata' => $run->audit_metadata,
             'message' => $run->message,
             'user_name' => trim(sprintf('%s %s', $run->user?->first_name, $run->user?->last_name)) ?: $run->user?->email,
             'started_at' => $run->started_at?->toDateTimeString(),
             'finished_at' => $run->finished_at?->toDateTimeString(),
             'created_at' => $run->created_at?->toDateTimeString(),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $selection
+     * @return array<string, mixed>
+     */
+    private function restoreAuditMetadata(Request $request, TeachingBackup $backup, User $authUser, string $type, array $selection): array
+    {
+        return [
+            'requested_at' => now()->toIso8601String(),
+            'type' => $type,
+            'actor' => [
+                'user_id' => (int) $authUser->id,
+                'email' => $authUser->email,
+                'name' => trim(sprintf('%s %s', $authUser->first_name, $authUser->last_name)) ?: null,
+            ],
+            'scope' => [
+                'school_id' => (int) $backup->school_id,
+                'schoolyear_id' => (int) $backup->schoolyear_id,
+            ],
+            'backup' => [
+                'id' => (int) $backup->id,
+                'filename' => $backup->filename,
+            ],
+            'request' => [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ],
+            'selection' => $selection,
         ];
     }
 }

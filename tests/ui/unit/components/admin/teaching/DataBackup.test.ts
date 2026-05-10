@@ -24,14 +24,22 @@ describe('Teaching data backup page', () => {
         vi.mocked(axios.get).mockResolvedValueOnce({
             data: {
                 data: [{ id: 9, status: 'completed' }],
+                meta: {
+                    queue_health: {
+                        needs_attention: true,
+                        message: 'Queue worker prüfen.',
+                    },
+                },
             },
         })
 
         const ctx: Record<string, unknown> = {
             backups: [],
             restore_runs: [],
+            restore_queue_health: null,
             loading: false,
             error: '',
+            updateRestoreRunPolling: vi.fn(),
         }
 
         await (DataBackup as any).methods.loadBackups.call(ctx)
@@ -40,8 +48,13 @@ describe('Teaching data backup page', () => {
         expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/restore-runs')
         expect(ctx.backups).toEqual([{ id: 1, filename: 'backup.json' }])
         expect(ctx.restore_runs).toEqual([{ id: 9, status: 'completed' }])
+        expect(ctx.restore_queue_health).toEqual({
+            needs_attention: true,
+            message: 'Queue worker prüfen.',
+        })
         expect(ctx.loading).toBe(false)
         expect(ctx.error).toBe('')
+        expect(ctx.updateRestoreRunPolling).toHaveBeenCalled()
     })
 
     it('creates a new backup and prepends it to the list', async () => {
@@ -162,6 +175,14 @@ describe('Teaching data backup page', () => {
         expect(ctx.delete_error).toBe('')
     })
 
+    it('builds a backup download url from explicit urls or ids', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.backupDownloadUrl({ id: 7, download_url: '/custom/download' })).toBe('/custom/download')
+        expect(methods.backupDownloadUrl({ id: 7 })).toBe('/api/admin/teaching/backups/7/download')
+        expect(methods.backupDownloadUrl(null)).toBe('')
+    })
+
     it('deletes a backup after confirmation', async () => {
         vi.mocked(axios.delete).mockResolvedValueOnce({
             data: {
@@ -180,8 +201,6 @@ describe('Teaching data backup page', () => {
             delete_loading_id: null,
             delete_error: '',
             error: '',
-            details_open: true,
-            selected_backup: { id: 7, filename: 'delete-me.json' },
             preview_open: true,
             selected_preview: { courses: [] },
             selected_preview_backup: { id: 7, filename: 'delete-me.json' },
@@ -195,7 +214,6 @@ describe('Teaching data backup page', () => {
         expect(ctx.selected_delete_backup).toBeNull()
         expect(ctx.delete_loading).toBe(false)
         expect(ctx.delete_loading_id).toBeNull()
-        expect(ctx.details_open).toBe(false)
         expect(ctx.preview_open).toBe(false)
         expect(ctx.selected_preview_backup).toBeNull()
     })
@@ -239,6 +257,8 @@ describe('Teaching data backup page', () => {
         const methods = (DataBackup as any).methods
         const ctx = {
             formatDateTime: methods.formatDateTime,
+            backupKind: methods.backupKind,
+            isSafetyBackup: methods.isSafetyBackup,
         }
 
         const title = methods.backupDisplayTitle.call(ctx, {
@@ -252,6 +272,26 @@ describe('Teaching data backup page', () => {
         expect(title).toContain('09.05.2026')
         expect(title).toContain('06:45')
         expect(title).not.toContain('teaching-backup-school-1')
+    })
+
+    it('labels safety backups as rollback points', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            formatDateTime: methods.formatDateTime,
+            backupKind: methods.backupKind,
+            isSafetyBackup: methods.isSafetyBackup,
+        }
+        const backup = {
+            schoolyear_name: '2025/26',
+            created_at: '2026-05-10 19:20:00',
+            summary: {
+                backup_kind: 'pre_restore',
+            },
+        }
+
+        expect(methods.backupKindLabel(backup)).toBe('Sicherheitskopie')
+        expect(methods.backupKindColor(backup)).toBe('warning')
+        expect(methods.backupDisplayTitle.call(ctx, backup)).toContain('Sicherheitskopie vor Wiederherstellung')
     })
 
     it('shows validation labels and colors from the backup summary', () => {
@@ -291,7 +331,7 @@ describe('Teaching data backup page', () => {
         ])
     })
 
-    it('loads the restore preview and selects restoreable rows', async () => {
+    it('loads the combined backup dialog and restore preview', async () => {
         vi.mocked(axios.get).mockResolvedValueOnce({
             data: {
                 data: {
@@ -410,18 +450,37 @@ describe('Teaching data backup page', () => {
         expect(methods.isRestoreSelected.call(ctx, 'curricula', 8, { id: 8, status: 'current_exists' })).toBe(false)
     })
 
-    it('allows existing courses and curricula when overwrite is enabled', () => {
+    it('allows only different courses and curricula when overwrite is enabled', () => {
         const methods = (DataBackup as any).methods
         const ctx = {
             overwrite_existing: true,
         }
 
-        expect(methods.isCourseRestoreSelectable.call(ctx, { id: 7, status: 'current_exists' })).toBe(true)
+        expect(methods.isCourseRestoreSelectable.call(ctx, { id: 7, status: 'current_exists' })).toBe(false)
+        expect(methods.isCourseRestoreSelectable.call(ctx, { id: 10, status: 'different' })).toBe(true)
         expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 8, status: 'different' })).toBe(true)
-        expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 9, status: 'current_exists' })).toBe(true)
+        expect(methods.isCurriculumRestoreSelectable.call(ctx, { id: 9, status: 'current_exists' })).toBe(false)
     })
 
-    it('posts the selected restore plan and refreshes the preview', async () => {
+    it('allows full restore once a preview is loaded', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            selected_preview: {
+                courses: [{ id: 7, status: 'current_exists' }],
+                curricula: [{ id: 8, status: 'current_exists' }],
+                setting_sections: [{ key: 'basic_settings', count: 1, status: 'current_exists' }],
+            },
+            full_restore_loading: false,
+        }
+
+        expect((DataBackup as any).computed.canRestoreFull.call(ctx)).toBe(true)
+
+        ctx.full_restore_loading = true
+
+        expect((DataBackup as any).computed.canRestoreFull.call(ctx)).toBe(false)
+    })
+
+    it('posts the selected restore plan, closes preview, and refreshes backups', async () => {
         vi.mocked(axios.post).mockResolvedValueOnce({
             data: {
                 data: {
@@ -433,17 +492,9 @@ describe('Teaching data backup page', () => {
                 },
             },
         })
-        vi.mocked(axios.get).mockResolvedValueOnce({
-            data: {
-                data: {
-                    courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'current_exists' }],
-                    curricula: [],
-                    setting_sections: [],
-                },
-            },
-        })
 
         const ctx: Record<string, unknown> = {
+            preview_open: true,
             selected_preview_backup: { id: 12 },
             selected_preview: {
                 courses: [{ id: 7, title: 'Gelöschter Kurs', status: 'missing_current' }],
@@ -467,7 +518,8 @@ describe('Teaching data backup page', () => {
             isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
             isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
             sanitizedRestoreSelection: (DataBackup as any).methods.sanitizedRestoreSelection,
-            loadRestoreRuns: vi.fn(),
+            closeRestorePreviewAfterSuccess: (DataBackup as any).methods.closeRestorePreviewAfterSuccess,
+            loadBackups: vi.fn(),
         }
 
         await (DataBackup as any).methods.restoreSelected.call(ctx)
@@ -478,7 +530,6 @@ describe('Teaching data backup page', () => {
             settings: [],
             overwrite_existing: false,
         })
-        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
         expect(ctx.restore_result).toEqual({
             restored: {
                 courses: [{ old_id: 7, new_id: 17 }],
@@ -486,18 +537,22 @@ describe('Teaching data backup page', () => {
                 settings: [],
             },
         })
+        expect(ctx.preview_open).toBe(false)
+        expect(ctx.selected_preview).toBeNull()
+        expect(ctx.selected_preview_backup).toBeNull()
         expect(ctx.restore_selection).toEqual({
             courses: [],
             curricula: [],
             settings: [],
         })
-        expect(ctx.loadRestoreRuns).toHaveBeenCalled()
+        expect(ctx.loadBackups).toHaveBeenCalled()
     })
 
     it('opens the full restore confirmation dialog', () => {
         const methods = (DataBackup as any).methods
         const ctx: Record<string, unknown> = {
             selected_preview_backup: { id: 12 },
+            canRestoreFull: true,
             full_restore_loading: false,
             full_restore_confirm_open: false,
         }
@@ -507,29 +562,123 @@ describe('Teaching data backup page', () => {
         expect(ctx.full_restore_confirm_open).toBe(true)
     })
 
-    it('posts a full restore request and refreshes the preview', async () => {
+    it('opens the restore preview for a rollback safety backup', async () => {
+        const methods = (DataBackup as any).methods
+        const backup = { id: 44, filename: 'safety.json' }
+        const run = {
+            type: 'full',
+            status: 'completed',
+            pre_restore_backup: backup,
+        }
+        const ctx = {
+            rollbackBackupForRun: methods.rollbackBackupForRun,
+            openRestorePreview: vi.fn(),
+        }
+
+        expect(methods.canRollbackRun.call(ctx, run)).toBe(true)
+
+        await methods.openRollbackPreview.call(ctx, run)
+
+        expect(ctx.openRestorePreview).toHaveBeenCalledWith(backup)
+    })
+
+    it('opens a restore run report from history', () => {
+        const methods = (DataBackup as any).methods
+        const backup = { id: 44, filename: 'safety.json' }
+        const run = {
+            type: 'full',
+            status: 'completed',
+            pre_restore_backup: backup,
+            result: {
+                restored: true,
+                counts: {
+                    courses: 1,
+                },
+            },
+        }
+        const ctx: Record<string, unknown> = {
+            restore_result: null,
+            restore_report_open: false,
+            canViewRestoreRunReport: methods.canViewRestoreRunReport,
+        }
+
+        expect(methods.canViewRestoreRunReport.call(ctx, run)).toBe(true)
+
+        methods.openRestoreRunReport.call(ctx, run)
+
+        expect(ctx.restore_result).toEqual({
+            restored: true,
+            counts: {
+                courses: 1,
+            },
+            pre_restore_backup: backup,
+        })
+        expect(ctx.restore_report_open).toBe(true)
+        expect(methods.canViewRestoreRunReport.call(ctx, { ...run, status: 'running' })).toBe(false)
+    })
+
+    it('opens a failed restore run report from history', () => {
+        const methods = (DataBackup as any).methods
+        const run = {
+            type: 'full',
+            status: 'failed',
+            result: {
+                failed: true,
+                reason: 'stale_restore_run',
+                message: 'Wiederherstellung wurde automatisch entsperrt, weil sie zu lange aktiv war.',
+            },
+        }
+        const ctx: Record<string, unknown> = {
+            restore_result: null,
+            restore_report_open: false,
+            canViewRestoreRunReport: methods.canViewRestoreRunReport,
+        }
+
+        expect(methods.canViewRestoreRunReport.call(ctx, run)).toBe(true)
+
+        methods.openRestoreRunReport.call(ctx, run)
+
+        expect(ctx.restore_result).toEqual({
+            failed: true,
+            reason: 'stale_restore_run',
+            message: 'Wiederherstellung wurde automatisch entsperrt, weil sie zu lange aktiv war.',
+            pre_restore_backup: null,
+        })
+        expect(ctx.restore_report_open).toBe(true)
+    })
+
+    it('builds restore run backup download urls', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            backupDownloadUrl: methods.backupDownloadUrl,
+        }
+        const run = {
+            backup_id: 12,
+            pre_restore_backup_id: 44,
+            pre_restore_backup: {
+                id: 44,
+                download_url: '/api/admin/teaching/backups/44/download',
+            },
+        }
+
+        expect(methods.restoreRunBackupDownloadUrl.call(ctx, run, 'backup')).toBe('/api/admin/teaching/backups/12/download')
+        expect(methods.restoreRunBackupDownloadUrl.call(ctx, run, 'pre_restore')).toBe('/api/admin/teaching/backups/44/download')
+        expect(methods.restoreRunBackupDownloadUrl.call(ctx, {}, 'backup')).toBe('')
+    })
+
+    it('posts a full restore request, closes preview, and refreshes backups', async () => {
         vi.mocked(axios.post).mockResolvedValueOnce({
             data: {
                 data: {
-                    restored: true,
-                    counts: {
-                        courses: 1,
-                        curricula: 1,
-                    },
-                },
-            },
-        })
-        vi.mocked(axios.get).mockResolvedValueOnce({
-            data: {
-                data: {
-                    courses: [],
-                    curricula: [],
-                    setting_sections: [],
+                    queued: true,
+                    message: 'Vollständige Wiederherstellung wurde gestartet.',
+                    restore_run: { id: 15, status: 'pending' },
                 },
             },
         })
 
         const ctx: Record<string, unknown> = {
+            preview_open: true,
             selected_preview_backup: { id: 12 },
             selected_preview: {
                 courses: [{ id: 7, status: 'missing_current' }],
@@ -540,28 +689,157 @@ describe('Teaching data backup page', () => {
             full_restore_confirm_open: true,
             restore_error: '',
             restore_result: null,
-            initializeRestoreSelection: (DataBackup as any).methods.initializeRestoreSelection,
-            restoreSelectableValues: (DataBackup as any).methods.restoreSelectableValues,
-            previewSettingSections: (DataBackup as any).methods.previewSettingSections,
-            isCourseRestoreSelectable: (DataBackup as any).methods.isCourseRestoreSelectable,
-            isCurriculumRestoreSelectable: (DataBackup as any).methods.isCurriculumRestoreSelectable,
-            isSettingRestoreSelectable: (DataBackup as any).methods.isSettingRestoreSelectable,
+            restore_selection: {
+                courses: [7],
+                curricula: [],
+                settings: [],
+            },
+            overwrite_existing: true,
+            closeRestorePreviewAfterSuccess: (DataBackup as any).methods.closeRestorePreviewAfterSuccess,
             loadBackups: vi.fn(),
         }
 
         await (DataBackup as any).methods.restoreFull.call(ctx)
 
         expect(axios.post).toHaveBeenCalledWith('/api/admin/teaching/backups/12/restore-full')
-        expect(axios.get).toHaveBeenCalledWith('/api/admin/teaching/backups/12/preview')
         expect(ctx.restore_result).toEqual({
-            restored: true,
-            counts: {
-                courses: 1,
-                curricula: 1,
-            },
+            queued: true,
+            message: 'Vollständige Wiederherstellung wurde gestartet.',
+            restore_run: { id: 15, status: 'pending' },
         })
+        expect(ctx.preview_open).toBe(false)
+        expect(ctx.selected_preview).toBeNull()
+        expect(ctx.selected_preview_backup).toBeNull()
+        expect(ctx.restore_selection).toEqual({
+            courses: [],
+            curricula: [],
+            settings: [],
+        })
+        expect(ctx.overwrite_existing).toBe(false)
+        expect(ctx.loadBackups).toHaveBeenCalled()
         expect(ctx.full_restore_loading).toBe(false)
         expect(ctx.full_restore_confirm_open).toBe(false)
+    })
+
+    it('summarizes queued full restore results', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.restoreResultLabel.call({}, {
+            queued: true,
+            message: 'Vollständige Wiederherstellung wurde gestartet.',
+        })).toBe('Vollständige Wiederherstellung wurde gestartet.')
+    })
+
+    it('shows queue health warnings when restore processing is delayed', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.restoreQueueHealthMessage.call({
+            restore_queue_health: {
+                needs_attention: true,
+                message: 'Eine vollständige Wiederherstellung wartet ungewöhnlich lange.',
+            },
+        })).toBe('Eine vollständige Wiederherstellung wartet ungewöhnlich lange.')
+
+        expect(methods.restoreQueueHealthMessage.call({
+            restore_queue_health: {
+                needs_attention: false,
+                message: 'Nicht anzeigen.',
+            },
+        })).toBe('')
+    })
+
+    it('shows when a backup was used for restore', () => {
+        const methods = (DataBackup as any).methods
+        const ctx = {
+            restore_runs: [
+                {
+                    backup_id: 12,
+                    status: 'completed',
+                    finished_at: '2026-05-10 19:20:00',
+                },
+                {
+                    backup_id: 13,
+                    status: 'running',
+                },
+            ],
+            backupRestoreRun: methods.backupRestoreRun,
+            formatDateTime: methods.formatDateTime,
+        }
+
+        expect(methods.backupRestoreRun.call(ctx, { id: 12 })?.status).toBe('completed')
+        expect(methods.backupRestoreLabel.call(ctx, { id: 12 })).toContain('wiederhergestellt')
+        expect(methods.backupRestoreLabel.call(ctx, { id: 12 })).toContain('10.05.2026')
+        expect(methods.backupRestoreColor.call(ctx, { id: 12 })).toBe('success')
+        expect(methods.backupRestoreLabel.call(ctx, { id: 13 })).toBe('Wiederherstellung läuft')
+        expect(methods.backupRestoreRun.call(ctx, { id: 99 })).toBeNull()
+    })
+
+    it('summarizes failed restore results', () => {
+        const methods = (DataBackup as any).methods
+
+        expect(methods.restoreResultLabel.call({}, {
+            failed: true,
+            message: 'Wiederherstellung fehlgeschlagen.',
+        })).toBe('Wiederherstellung fehlgeschlagen.')
+
+        expect(methods.restoreReportEntries({
+            failed: true,
+            reason: 'unexpected_error',
+            message: 'Wiederherstellung fehlgeschlagen.',
+        })).toEqual([
+            { key: 'failure_message', label: 'Meldung', count: 'Wiederherstellung fehlgeschlagen.' },
+            { key: 'failure_reason', label: 'Code', count: 'unexpected_error' },
+        ])
+    })
+
+    it('builds detailed partial restore reports', () => {
+        const methods = (DataBackup as any).methods
+        const result = {
+            restored: {
+                courses: [
+                    {
+                        old_id: 1,
+                        new_id: 17,
+                        title: 'Informatik - 5B1',
+                        counts: {
+                            students: 10,
+                            dates: 21,
+                            entries: 53,
+                            behaviour_entries: 1,
+                        },
+                    },
+                ],
+                curricula: [],
+                settings: [
+                    {
+                        key: 'behaviour',
+                        count: 854,
+                    },
+                ],
+            },
+            skipped: {
+                courses: [],
+                curricula: [],
+                settings: [],
+            },
+            warnings: [],
+        }
+        const ctx = {
+            partialRestoreRowCount: methods.partialRestoreRowCount,
+            restoreReportCourses: methods.restoreReportCourses,
+            restoreReportSettings: methods.restoreReportSettings,
+            restoreReportSkipped: methods.restoreReportSkipped,
+            settingSectionKeyLabel: methods.settingSectionKeyLabel,
+        }
+
+        expect(methods.restoreReportEntries.call(ctx, result)).toEqual([
+            { key: 'courses', label: 'Kurse wiederhergestellt', count: 1 },
+            { key: 'settings', label: 'Einstellungsbereiche wiederhergestellt', count: 1 },
+            { key: 'rows', label: 'Wiederhergestellte abhängige Datensätze', count: 85 },
+        ])
+        expect(methods.restoreReportCourses(result)).toEqual(result.restored.courses)
+        expect(methods.restoreReportSettings(result)).toEqual(result.restored.settings)
+        expect(methods.settingSectionKeyLabel('behaviour')).toBe('Verhalten')
     })
 
     it('summarizes full restore result counts', () => {

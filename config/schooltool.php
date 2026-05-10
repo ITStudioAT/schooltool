@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'version' => '3.33.4',
+    'version' => '3.34.0',
     'copyright' => '(c) 2025 – 2026 ITStudio.at by Günther Kron',
     'logo' => 'schooltool_white.png',
     'pagination' => 30,
@@ -117,6 +117,12 @@ return [
     'teaching_max_schools_shown' => (int) env('TEACHING_MAX_SCHOOLS_SHOWN', 20),
     'import116_reset_max_runs' => (int) env('IMPORT116_RESET_MAX_RUNS', 5),
     'import116_runs_history_limit' => (int) env('IMPORT116_RUNS_HISTORY_LIMIT', 10),
+    'teaching_backup_retention' => [
+        'safety_keep_per_scope' => (int) env('TEACHING_BACKUP_SAFETY_KEEP_PER_SCOPE', 10),
+        'safety_retention_days' => (int) env('TEACHING_BACKUP_SAFETY_RETENTION_DAYS', 30),
+        'manual_keep_per_scope' => (int) env('TEACHING_BACKUP_MANUAL_KEEP_PER_SCOPE', 50),
+        'manual_retention_days' => (int) env('TEACHING_BACKUP_MANUAL_RETENTION_DAYS', 365),
+    ],
 
     'licences' => [
         [
