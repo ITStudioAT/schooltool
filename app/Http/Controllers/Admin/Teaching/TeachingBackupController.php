@@ -10,10 +10,11 @@ use App\Models\User;
 use App\Services\TeachingBackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use JsonException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 use Throwable;
 
 class TeachingBackupController extends Controller
@@ -120,7 +121,7 @@ class TeachingBackupController extends Controller
         ], $result['imported'] ? 201 : 200);
     }
 
-    public function download(TeachingBackup $backup): StreamedResponse
+    public function download(TeachingBackup $backup): Response
     {
         if (! $authUser = $this->userHasRole(['admin', 'teaching_admin'])) {
             abort(403, 'Sie haben keine Berechtigung');
@@ -144,30 +145,20 @@ class TeachingBackupController extends Controller
         }
 
         try {
-            $stream = $disk->readStream($backup->path);
+            $content = $disk->get($backup->path);
         } catch (Throwable $exception) {
             report($exception);
 
             abort(404, 'Datensicherung nicht gefunden');
         }
 
-        if (! is_resource($stream)) {
-            abort(404, 'Datensicherung nicht gefunden');
-        }
+        $filename = $this->downloadFilename($backup);
 
-        return response()->streamDownload(
-            function () use ($stream): void {
-                try {
-                    fpassthru($stream);
-                } finally {
-                    if (is_resource($stream)) {
-                        fclose($stream);
-                    }
-                }
-            },
-            $this->downloadFilename($backup),
-            ['Content-Type' => 'application/json']
-        );
+        return response($content, 200, [
+            'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, $filename),
+            'Content-Length' => (string) strlen($content),
+            'Content-Type' => 'application/json',
+        ]);
     }
 
     public function destroy(TeachingBackup $backup): JsonResponse
