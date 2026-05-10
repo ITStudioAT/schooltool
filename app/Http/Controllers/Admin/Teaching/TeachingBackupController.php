@@ -11,6 +11,7 @@ use App\Services\TeachingBackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use JsonException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -129,13 +130,42 @@ class TeachingBackupController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        if (! Storage::disk($backup->disk)->exists($backup->path)) {
+        try {
+            $disk = Storage::disk($backup->disk);
+            $exists = $disk->exists($backup->path);
+        } catch (Throwable $exception) {
+            report($exception);
+
             abort(404, 'Datensicherung nicht gefunden');
         }
 
-        return Storage::disk($backup->disk)->download(
-            $backup->path,
-            $backup->filename,
+        if (! $exists) {
+            abort(404, 'Datensicherung nicht gefunden');
+        }
+
+        try {
+            $stream = $disk->readStream($backup->path);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            abort(404, 'Datensicherung nicht gefunden');
+        }
+
+        if (! is_resource($stream)) {
+            abort(404, 'Datensicherung nicht gefunden');
+        }
+
+        return response()->streamDownload(
+            function () use ($stream): void {
+                try {
+                    fpassthru($stream);
+                } finally {
+                    if (is_resource($stream)) {
+                        fclose($stream);
+                    }
+                }
+            },
+            $this->downloadFilename($backup),
             ['Content-Type' => 'application/json']
         );
     }
@@ -305,6 +335,26 @@ class TeachingBackupController extends Controller
             'download_url' => "/api/admin/teaching/backups/{$backup->id}/download",
             'created_at' => $backup->created_at?->toDateTimeString(),
         ];
+    }
+
+    private function downloadFilename(TeachingBackup $backup): string
+    {
+        $filename = basename(str_replace('\\', '/', $backup->filename));
+        $filename = trim($filename) !== '' ? $filename : "teaching-backup-{$backup->id}.json";
+        $filename = Str::ascii($filename);
+        $filename = preg_replace('/[^\x20-\x7E]/', '', $filename) ?? '';
+        $filename = preg_replace('/[\/\\\\]+/', '-', $filename) ?? '';
+        $filename = trim($filename, " \t\n\r\0\x0B.");
+
+        if ($filename === '') {
+            return "teaching-backup-{$backup->id}.json";
+        }
+
+        if (! str_ends_with(Str::lower($filename), '.json')) {
+            return "{$filename}.json";
+        }
+
+        return $filename;
     }
 
     /**

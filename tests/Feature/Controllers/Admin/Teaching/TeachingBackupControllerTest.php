@@ -377,6 +377,44 @@ test('index and download are scoped to the active school and schoolyear', functi
         ->assertDownload('current.json');
 });
 
+test('download uses an ascii filename for imported backup names', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    Storage::disk('local')->put('teaching-backups/current.json', '{"ok":true}');
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/current.json',
+        'filename' => 'Datensicherung-äöü.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $this->get("/api/admin/teaching/backups/{$backup->id}/download")
+        ->assertOk()
+        ->assertDownload('Datensicherung-aou.json');
+});
+
+test('download returns not found when the stored backup file is missing', function () {
+    Storage::fake('local');
+    $this->actingAs($this->admin, 'sanctum');
+
+    $backup = TeachingBackup::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->admin->id,
+        'disk' => 'local',
+        'path' => 'teaching-backups/missing.json',
+        'filename' => 'missing.json',
+        'summary' => ['total_rows' => 1],
+    ]);
+
+    $this->getJson("/api/admin/teaching/backups/{$backup->id}/download")
+        ->assertNotFound();
+});
+
 test('delete removes a scoped backup file and database record', function () {
     Storage::fake('local');
     $this->actingAs($this->admin, 'sanctum');
