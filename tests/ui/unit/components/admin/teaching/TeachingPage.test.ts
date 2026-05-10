@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Teaching from '@/pages/admin/teaching/Teaching.vue'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useSchoolHourStore } from '@/stores/admin/teaching/SchoolHourStore'
 
 vi.mock('@/stores/admin/AdminStore', () => ({
     useAdminStore: vi.fn(),
+}))
+
+vi.mock('@/stores/admin/SchoolStore', () => ({
+    useSchoolStore: vi.fn(),
 }))
 
 vi.mock('@/stores/admin/teaching/TeachingStore', () => ({
@@ -24,6 +29,7 @@ vi.mock('@/stores/admin/teaching/SchoolHourStore', () => ({
 describe('Teaching page navigation', () => {
     beforeEach(() => {
         vi.mocked(useAdminStore).mockReset()
+        vi.mocked(useSchoolStore).mockReset()
         vi.mocked(useTeachingStore).mockReset()
         vi.mocked(useCourseStore).mockReset()
         vi.mocked(useSchoolHourStore).mockReset()
@@ -31,6 +37,9 @@ describe('Teaching page navigation', () => {
 
     it('loads teaching settings on beforeMount when missing', async () => {
         const adminStoreMock = { config: {} }
+        const schoolStoreMock = {
+            loadHopperAccounts: vi.fn().mockResolvedValue([]),
+        }
         const courseStoreMock = {
             courses: [],
             index: vi.fn().mockResolvedValue(true),
@@ -45,6 +54,7 @@ describe('Teaching page navigation', () => {
         }
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
+        vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
         vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
         vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
@@ -53,6 +63,8 @@ describe('Teaching page navigation', () => {
         await (Teaching as any).beforeMount.call(ctx)
 
         expect(ctx.adminStore).toBe(adminStoreMock)
+        expect(ctx.schoolStore).toBe(schoolStoreMock)
+        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
         expect(teachingStoreMock.loadSettings).toHaveBeenCalledTimes(1)
         expect(courseStoreMock.index).toHaveBeenCalledTimes(1)
         expect(schoolHourStoreMock.index).toHaveBeenCalledTimes(1)
@@ -60,6 +72,9 @@ describe('Teaching page navigation', () => {
 
     it('skips loading teaching settings on beforeMount when already present', async () => {
         const adminStoreMock = { config: {} }
+        const schoolStoreMock = {
+            loadHopperAccounts: vi.fn().mockResolvedValue([]),
+        }
         const courseStoreMock = {
             courses: [{ id: 7 }],
             index: vi.fn(),
@@ -74,6 +89,7 @@ describe('Teaching page navigation', () => {
         }
 
         vi.mocked(useAdminStore).mockReturnValue(adminStoreMock as never)
+        vi.mocked(useSchoolStore).mockReturnValue(schoolStoreMock as never)
         vi.mocked(useCourseStore).mockReturnValue(courseStoreMock as never)
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
         vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
@@ -82,6 +98,8 @@ describe('Teaching page navigation', () => {
         await (Teaching as any).beforeMount.call(ctx)
 
         expect(ctx.adminStore).toBe(adminStoreMock)
+        expect(ctx.schoolStore).toBe(schoolStoreMock)
+        expect(schoolStoreMock.loadHopperAccounts).toHaveBeenCalledTimes(1)
         expect(teachingStoreMock.loadSettings).not.toHaveBeenCalled()
         expect(courseStoreMock.index).not.toHaveBeenCalled()
         expect(schoolHourStoreMock.index).not.toHaveBeenCalled()
@@ -231,6 +249,51 @@ describe('Teaching page navigation', () => {
         expect(source).toContain("label: 'Datensicherung'")
         expect(source).toContain('<DataBackup v-if="main_action === \'datensicherung\'" />')
         expect(source).toContain("const DataBackup = defineAsyncComponent(() => import('./backup/DataBackup.vue'))")
+    })
+
+    it('renders hopper schools inside the teaching header', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
+        )
+
+        expect(source).toContain('<template #chips>')
+        expect(source).toContain('Hopper-Schulen')
+        expect(source).toContain('v-for="account in hopper_accounts"')
+        expect(source).toContain('@click="switchTeachingHopperAccount(account)"')
+    })
+
+    it('switches to a teaching hopper account and redirects to teaching', async () => {
+        const switchHopperAccount = vi.fn().mockResolvedValue(true)
+        const redirectToTeachingAfterHopperSwitch = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            hopper_switching_id: null,
+            schoolStore: { switchHopperAccount },
+            redirectToTeachingAfterHopperSwitch,
+        }
+
+        await (Teaching as any).methods.switchTeachingHopperAccount.call(ctx, { id: 42 })
+
+        expect(ctx.hopper_switching_id).toBeNull()
+        expect(switchHopperAccount).toHaveBeenCalledWith(42)
+        expect(redirectToTeachingAfterHopperSwitch).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not switch hopper accounts while teaching controls are locked', async () => {
+        const switchHopperAccount = vi.fn()
+        const redirectToTeachingAfterHopperSwitch = vi.fn()
+        const ctx = {
+            isNavigationLocked: true,
+            hopper_switching_id: null,
+            schoolStore: { switchHopperAccount },
+            redirectToTeachingAfterHopperSwitch,
+        }
+
+        await (Teaching as any).methods.switchTeachingHopperAccount.call(ctx, { id: 42 })
+
+        expect(ctx.hopper_switching_id).toBeNull()
+        expect(switchHopperAccount).not.toHaveBeenCalled()
+        expect(redirectToTeachingAfterHopperSwitch).not.toHaveBeenCalled()
     })
 
     it('opens a fresh new-course flow from the teaching subnav plus button', () => {

@@ -9,7 +9,27 @@
             :show-current-user-chip="true"
             :focus-label="nowLabel"
             secondary-color="#1d4ed8"
-            right-orb-color="#a5b4fc" />
+            right-orb-color="#a5b4fc">
+            <template #chips>
+                <div v-if="hopper_accounts.length > 0" class="teaching-hero-hopper">
+                    <span class="teaching-hero-hopper__label">Hopper-Schulen</span>
+                    <v-btn
+                        v-for="account in hopper_accounts"
+                        :key="`teaching-hopper-account-${account.id}`"
+                        size="small"
+                        rounded="xl"
+                        variant="tonal"
+                        color="white"
+                        prepend-icon="mdi-account-switch-outline"
+                        class="teaching-hero-hopper__button"
+                        :disabled="isNavigationLocked || hopper_switching_id === Number(account.id)"
+                        :loading="hopper_switching_id === Number(account.id)"
+                        @click="switchTeachingHopperAccount(account)">
+                        {{ hopperAccountLabel(account) }}
+                    </v-btn>
+                </div>
+            </template>
+        </AdminSectionHero>
 
         <v-sheet v-if="!selected_course" rounded="xl" class="teaching-nav mb-2" :class="{ 'is-locked': isNavigationLocked }">
             <div class="teaching-nav__buttons">
@@ -137,6 +157,7 @@
 import { defineAsyncComponent } from 'vue'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import { useSchoolStore } from '@/stores/admin/SchoolStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
@@ -157,9 +178,11 @@ export default {
 
     async beforeMount() {
         this.adminStore = useAdminStore()
+        this.schoolStore = useSchoolStore()
         this.courseStore = useCourseStore()
         this.schoolHourStore = useSchoolHourStore()
         const teachingStore = useTeachingStore()
+        await this.schoolStore.loadHopperAccounts()
         if (!teachingStore.settings) {
             await teachingStore.loadSettings()
         }
@@ -184,12 +207,14 @@ export default {
     data() {
         return {
             adminStore: null,
+            schoolStore: null,
             courseStore: null,
             schoolHourStore: null,
             main_action: this.$route.params.section || 'overview',
             settings_view_key: 0,
             show_delete_confirm: false,
             delete_loading: false,
+            hopper_switching_id: null,
             nowTs: Date.now(),
             nowTimer: null,
             _urlRestored: false,
@@ -198,6 +223,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'action', 'action_2']),
+        ...mapWritableState(useSchoolStore, ['hopper_accounts']),
         ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'pending_edit_course_id', 'pending_new_course_token']),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
@@ -597,6 +623,30 @@ export default {
             this.navigateTo('overview')
             this.action = 'teaching_course_new_or_edit'
         },
+        async switchTeachingHopperAccount(account) {
+            const targetUserId = Number(account?.id)
+            if (!Number.isInteger(targetUserId) || targetUserId <= 0 || this.isNavigationLocked) {
+                return
+            }
+
+            this.hopper_switching_id = targetUserId
+            const switched = await this.schoolStore.switchHopperAccount(targetUserId)
+            if (switched) {
+                this.redirectToTeachingAfterHopperSwitch()
+            }
+            this.hopper_switching_id = null
+        },
+        redirectToTeachingAfterHopperSwitch() {
+            window.location.assign('/admin/teaching')
+        },
+        hopperAccountLabel(account) {
+            const schoolLabel = String(account?.school_label || '').trim()
+            if (schoolLabel !== '') {
+                return schoolLabel
+            }
+
+            return String(account?.email || 'Hopper-Konto').trim()
+        },
     },
 }
 </script>
@@ -615,6 +665,33 @@ export default {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.teaching-hero-hopper {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.teaching-hero-hopper__label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.82;
+}
+
+.teaching-hero-hopper__button {
+    height: 28px !important;
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 700;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    background: rgba(255, 255, 255, 0.16) !important;
+    color: #ffffff !important;
 }
 
 .teaching-nav__buttons {
