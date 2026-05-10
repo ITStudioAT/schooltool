@@ -185,6 +185,14 @@ class MaterialAttachmentPreviewService
         );
     }
 
+    public function missingFilePreview(MaterialCardAttachment $attachment): Response
+    {
+        return $this->messageResponse(
+            $this->displayName($attachment),
+            'Die Datei wurde im Speicher nicht gefunden. Das Material ist vorhanden, aber der verknüpfte Anhang kann nicht geöffnet werden.'
+        );
+    }
+
     /**
      * @return array{path: string, is_temp: bool}
      */

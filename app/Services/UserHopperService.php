@@ -15,13 +15,24 @@ class UserHopperService
      */
     public function loadHopperAccounts(User $user): array
     {
+        return $this->linkedAccountUsers($user)
+            ->map(fn (User $account) => $this->hopperAccountPayload($account))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    public function linkedAccountUsers(User $user): Collection
+    {
         $accountIds = $this->normalizeHopperAccountIds($user->hopper_account_ids);
         if ($accountIds === []) {
-            return [];
+            return collect();
         }
 
         $accounts = User::query()
-            ->with(['selectedSchool:id,long_name,short_name'])
+            ->with(['roles', 'selectedSchool:id,long_name,short_name'])
             ->whereIn('id', $accountIds)
             ->get()
             ->filter(fn (User $account) => $this->canUseAsHopperTarget($account))
@@ -41,9 +52,7 @@ class UserHopperService
         return collect($resolvedAccountIds)
             ->map(fn (int $accountId) => $accounts->get($accountId))
             ->filter()
-            ->map(fn (User $account) => $this->hopperAccountPayload($account))
-            ->values()
-            ->all();
+            ->values();
     }
 
     /**

@@ -27,6 +27,7 @@ class MaterialCardIndexRequest extends FormRequest
             'unit' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:255'],
             'page' => ['nullable', 'integer', 'min:1'],
+            'shared_only' => ['nullable', 'boolean'],
         ];
     }
 

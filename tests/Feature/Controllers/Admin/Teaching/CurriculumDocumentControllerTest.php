@@ -3,6 +3,7 @@
 use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
+use App\Models\MaterialWorkspace;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
@@ -142,4 +143,72 @@ test('teacher can select a material attachment for curriculum documents and prev
 
     expect($this->curriculum->documents()->firstOrFail()->material_card_attachment_id)->toBe($pdfAttachment->id)
         ->and($previewResponse->headers->get('content-type'))->toContain('application/pdf');
+});
+
+test('teacher can attach hopper account material to curriculum documents while the link exists', function () {
+    $sourceSchool = School::factory()->create([
+        'long_name' => 'Hopper Source School',
+    ]);
+    $sourceSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $sourceSchool->id,
+    ]);
+    $sourceTeacher = User::factory()->create([
+        'school_id' => $sourceSchool->id,
+        'schoolyear_id' => $sourceSchoolyear->id,
+        'email' => 'hopper-source@curriculum-documents.test',
+    ]);
+    $sourceTeacher->assignRole('teacher');
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $sourceTeacher->id,
+        'name' => 'Source Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::query()->create([
+        'school_id' => $sourceSchool->id,
+        'user_id' => $sourceTeacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Hopper Material',
+        'subject' => 'Deutsch',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_DONE,
+    ]);
+
+    $attachment = MaterialCardAttachment::query()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Hopper Material PDF',
+        'file_path' => 'materials/tests/hopper-material.pdf',
+        'mime_type' => 'application/pdf',
+        'size_bytes' => 24,
+    ]);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [$sourceTeacher->id],
+    ])->save();
+
+    $attachResponse = $this->actingAs($this->teacher, 'sanctum')
+        ->postJson("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/attach-material", [
+            'material_card_id' => $card->id,
+        ]);
+
+    $documentId = (int) $attachResponse->json('data.id');
+
+    $attachResponse->assertCreated()
+        ->assertJsonPath('data.source_type', 'material')
+        ->assertJsonPath('data.material_card_id', $card->id);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/{$documentId}/material-attachments")
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $attachment->id);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [],
+    ])->save();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$this->curriculum->id}/documents/{$documentId}/material-attachments")
+        ->assertForbidden();
 });

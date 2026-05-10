@@ -1139,6 +1139,15 @@
                                         @click="setContentMaterialDialogMode('workspace')">
                                         Arbeitsbereich
                                     </v-btn>
+                                    <v-btn
+                                        :variant="contentMaterialDialogMode === 'shared' ? 'flat' : 'tonal'"
+                                        color="primary"
+                                        size="small"
+                                        rounded="lg"
+                                        class="text-none"
+                                        @click="setContentMaterialDialogMode('shared')">
+                                        Für mich geteilt
+                                    </v-btn>
                                 </div>
                             </div>
 
@@ -1253,15 +1262,34 @@
 
                             <div v-else class="curriculum-detail__material-browser">
                                 <div class="curriculum-detail__material-browser-panel">
-                                    <div class="curriculum-detail__material-browser-heading">Arbeitsbereich filtern</div>
+                                    <div class="curriculum-detail__material-browser-heading">
+                                        {{ contentMaterialDialogMode === 'shared' ? 'Für mich geteilte Materialien filtern' : 'Arbeitsbereich filtern' }}
+                                    </div>
                                     <div class="curriculum-detail__material-dialog-subtitle mb-3">
-                                        Zuerst ein Fach wählen, danach bei Bedarf Thema und Einheit eingrenzen.
+                                        {{ contentMaterialDialogMode === 'shared'
+                                            ? 'Zuerst eine Quelle wählen, danach Fach, Thema und Einheit eingrenzen.'
+                                            : 'Zuerst ein Fach wählen, danach bei Bedarf Thema und Einheit eingrenzen.' }}
                                     </div>
 
                                     <div class="curriculum-detail__material-filter-grid">
                                         <v-autocomplete
+                                            v-if="contentMaterialDialogMode === 'shared'"
+                                            :model-value="selectedContentMaterialSource"
+                                            :items="sharedMaterialClassificationTree"
+                                            item-title="label"
+                                            item-value="user_id"
+                                            label="Quelle"
+                                            variant="outlined"
+                                            density="comfortable"
+                                            hide-details
+                                            return-object
+                                            clearable
+                                            :disabled="contentMaterialClassificationLoading"
+                                            @update:modelValue="selectContentMaterialSource" />
+
+                                        <v-autocomplete
                                             :model-value="selectedContentMaterialSubject"
-                                            :items="contentMaterialClassificationTree"
+                                            :items="activeClassificationTree"
                                             item-title="name"
                                             item-value="id"
                                             label="Fach"
@@ -1270,7 +1298,7 @@
                                             hide-details
                                             return-object
                                             clearable
-                                            :disabled="contentMaterialClassificationLoading"
+                                            :disabled="contentMaterialDialogMode === 'shared' ? !selectedContentMaterialSource : contentMaterialClassificationLoading"
                                             @update:modelValue="selectContentMaterialSubject" />
 
                                         <v-autocomplete
@@ -1320,7 +1348,7 @@
                                             color="secondary"
                                             size="small"
                                             class="text-none curriculum-detail__material-browser-reset"
-                                            :disabled="!selectedContentMaterialSubject && !selectedContentMaterialTopic && !selectedContentMaterialUnit"
+                                            :disabled="!selectedContentMaterialSource && !selectedContentMaterialSubject && !selectedContentMaterialTopic && !selectedContentMaterialUnit"
                                             @click="resetContentMaterialWorkspaceSelection">
                                             Auswahl zurücksetzen
                                         </v-btn>
@@ -1339,7 +1367,9 @@
                                         <div
                                             v-else-if="!selectedContentMaterialSubject"
                                             class="text-center py-4 text-caption curriculum-detail__material-dialog-empty">
-                                            Bitte zuerst ein Fach auswählen.
+                                            {{ contentMaterialDialogMode === 'shared' && !selectedContentMaterialSource
+                                                ? 'Bitte zuerst eine Quelle wählen.'
+                                                : 'Bitte zuerst ein Fach auswählen.' }}
                                         </div>
                                         <v-list
                                             v-else-if="contentMaterialWorkspaceResults.length"
@@ -1976,7 +2006,9 @@ export default {
             contentMaterialsLoading: false,
             _contentMaterialSearchTimer: null,
             contentMaterialClassificationTree: [],
+            sharedMaterialClassificationTree: [],
             contentMaterialClassificationLoading: false,
+            selectedContentMaterialSource: null,
             selectedContentMaterialSubject: null,
             selectedContentMaterialTopic: null,
             selectedContentMaterialUnit: null,
@@ -2256,6 +2288,13 @@ export default {
                 : []
         },
 
+        activeClassificationTree() {
+            if (this.contentMaterialDialogMode === 'shared') {
+                return this.selectedContentMaterialSource?.subjects || []
+            }
+            return this.contentMaterialClassificationTree
+        },
+
         contentMaterialTopicSelectOptions() {
             if (!this.selectedContentMaterialSubject) {
                 return []
@@ -2285,20 +2324,34 @@ export default {
         },
 
         contentMaterialWorkspaceSelectionLabel() {
-            if (this.selectedContentMaterialUnit?.name) {
-                return `${this.selectedContentMaterialSubject?.name || 'Fach'} · ${this.selectedContentMaterialTopic?.name || 'Thema'} · ${this.selectedContentMaterialUnit.name}`
-            }
+            const parts = []
 
-            if (this.selectedContentMaterialTopic?.name) {
-                return `${this.selectedContentMaterialSubject?.name || 'Fach'} · ${this.selectedContentMaterialTopic.name}`
+            if (this.contentMaterialDialogMode === 'shared' && this.selectedContentMaterialSource?.user_name) {
+                parts.push(this.selectedContentMaterialSource.user_name)
             }
 
             if (this.selectedContentMaterialSubject?.name) {
-                return this.selectedContentMaterialSubject.name
+                parts.push(this.selectedContentMaterialSubject.name)
+            }
+
+            if (this.selectedContentMaterialTopic?.name) {
+                parts.push(this.selectedContentMaterialTopic.name)
+            }
+
+            if (this.selectedContentMaterialUnit?.name) {
+                parts.push(this.selectedContentMaterialUnit.name)
+            }
+
+            if (parts.length) {
+                return parts.join(' · ')
             }
 
             if (this.contentMaterialClassificationLoading) {
-                return 'Arbeitsbereich wird geladen...'
+                return 'Wird geladen...'
+            }
+
+            if (this.contentMaterialDialogMode === 'shared') {
+                return 'Bitte zuerst eine Quelle wählen.'
             }
 
             return 'Bitte zuerst ein Fach auswählen.'
@@ -2461,6 +2514,14 @@ export default {
             const type = typeof normalizedMaterial.type === 'string' ? normalizedMaterial.type.trim() : ''
             const status = typeof normalizedMaterial.status === 'string' ? normalizedMaterial.status.trim() : ''
             const attachmentsCount = Number(normalizedMaterial.attachments_count ?? 0)
+            const sourceSchoolId = Number(normalizedMaterial.source_school_id ?? normalizedMaterial.school_id ?? 0)
+            const sourceUserId = Number(normalizedMaterial.source_user_id ?? normalizedMaterial.user_id ?? 0)
+            const sourceSchoolLabel = typeof normalizedMaterial.source_school_label === 'string'
+                ? normalizedMaterial.source_school_label.trim()
+                : ''
+            const sourceUserLabel = typeof normalizedMaterial.source_user_label === 'string'
+                ? normalizedMaterial.source_user_label.trim()
+                : ''
 
             return {
                 id: Number.isFinite(id) && id > 0 ? id : null,
@@ -2471,6 +2532,15 @@ export default {
                 type,
                 status,
                 attachments_count: Number.isFinite(attachmentsCount) && attachmentsCount > 0 ? attachmentsCount : 0,
+                source_school_id: Number.isFinite(sourceSchoolId) && sourceSchoolId > 0 ? sourceSchoolId : null,
+                source_school_label: sourceSchoolLabel,
+                source_user_id: Number.isFinite(sourceUserId) && sourceUserId > 0 ? sourceUserId : null,
+                source_user_label: sourceUserLabel,
+                is_hopper_material: Boolean(normalizedMaterial.is_hopper_material),
+                is_shared_material: Boolean(normalizedMaterial.is_shared_material),
+                shared_rule_id: Number.isFinite(Number(normalizedMaterial.shared_rule_id ?? 0)) && Number(normalizedMaterial.shared_rule_id ?? 0) > 0
+                    ? Number(normalizedMaterial.shared_rule_id)
+                    : null,
                 attachments: (Array.isArray(normalizedMaterial.attachments) ? normalizedMaterial.attachments : [])
                     .map((attachment) => this.normalizeMaterialPreviewAttachment(attachment))
                     .filter((attachment) => attachment.id),
@@ -3045,6 +3115,7 @@ export default {
 
         attachedMaterialSubtitle(material) {
             const parts = [
+                this.materialSourceLabel(material),
                 typeof material?.subject === 'string' ? material.subject.trim() : '',
                 typeof material?.topic === 'string' ? material.topic.trim() : '',
                 typeof material?.unit === 'string' ? material.unit.trim() : '',
@@ -3060,6 +3131,21 @@ export default {
                 : 'Material'
         },
 
+        materialSourceLabel(material) {
+            if (!material?.is_hopper_material && !material?.is_shared_material) {
+                return ''
+            }
+
+            const schoolLabel = typeof material.source_school_label === 'string' ? material.source_school_label.trim() : ''
+            const userLabel = typeof material.source_user_label === 'string' ? material.source_user_label.trim() : ''
+
+            if (schoolLabel !== '' && userLabel !== '') {
+                return `${schoolLabel} · ${userLabel}`
+            }
+
+            return schoolLabel || userLabel || (material?.is_shared_material ? 'Geteiltes Material' : 'Hopper-Material')
+        },
+
         setContentMaterialDialogMode(mode) {
             this.contentMaterialDialogMode = mode
 
@@ -3068,6 +3154,7 @@ export default {
                 return
             }
 
+            this.resetContentMaterialWorkspaceSelection()
             this.ensureContentMaterialClassificationTree()
         },
 
@@ -3099,6 +3186,7 @@ export default {
             this.contentMaterialTarget = null
             this.contentMaterialSearch = ''
             this.contentMaterialResults = []
+            this.selectedContentMaterialSource = null
             this.selectedContentMaterialSubject = null
             this.selectedContentMaterialTopic = null
             this.selectedContentMaterialUnit = null
@@ -3125,7 +3213,11 @@ export default {
 
             try {
                 const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
-                    params: { search, per_page: 20 },
+                    params: {
+                        search,
+                        per_page: 20,
+                        shared_only: this.contentMaterialDialogMode === 'shared' ? 1 : undefined,
+                    },
                 })
                 this.contentMaterialResults = Array.isArray(res.data?.data)
                     ? res.data.data.map((card) => this.normalizeAttachedMaterial(card)).filter((card) => card.id)
@@ -3142,7 +3234,7 @@ export default {
         async ensureContentMaterialClassificationTree() {
             if (this.contentMaterialClassificationLoading) return
 
-            if (this.contentMaterialClassificationTree.length) {
+            if (this.contentMaterialClassificationTree.length || this.sharedMaterialClassificationTree.length) {
                 return
             }
 
@@ -3153,12 +3245,27 @@ export default {
                 this.contentMaterialClassificationTree = Array.isArray(res.data?.classification_tree)
                     ? res.data.classification_tree
                     : []
+                this.sharedMaterialClassificationTree = Array.isArray(res.data?.shared_classification_tree)
+                    ? res.data.shared_classification_tree
+                    : []
             } catch {
                 this.contentMaterialClassificationTree = []
-                this.contentMaterialWorkspaceError = 'Der Arbeitsbereich konnte nicht geladen werden.'
+                this.sharedMaterialClassificationTree = []
+                this.contentMaterialWorkspaceError = 'Die Filteroptionen konnten nicht geladen werden.'
             } finally {
                 this.contentMaterialClassificationLoading = false
             }
+        },
+
+        selectContentMaterialSource(source) {
+            this.selectedContentMaterialSource = source || null
+            this.selectedContentMaterialSubject = null
+            this.selectedContentMaterialTopic = null
+            this.selectedContentMaterialUnit = null
+            this.contentMaterialWorkspaceResults = []
+            this.contentMaterialWorkspaceError = null
+            this.contentMaterialPreviewCard = null
+            this.contentMaterialPreviewAttachmentId = null
         },
 
         async selectContentMaterialSubject(subject) {
@@ -3205,6 +3312,7 @@ export default {
         },
 
         resetContentMaterialWorkspaceSelection() {
+            this.selectedContentMaterialSource = null
             this.selectedContentMaterialSubject = null
             this.selectedContentMaterialTopic = null
             this.selectedContentMaterialUnit = null
@@ -3314,6 +3422,7 @@ export default {
                     topic: typeof filters.topic === 'string' ? filters.topic.trim() : '',
                     unit: typeof filters.unit === 'string' ? filters.unit.trim() : '',
                     per_page: 20,
+                    shared_only: this.contentMaterialDialogMode === 'shared' ? 1 : undefined,
                 }
                 const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
                     params,
@@ -5026,10 +5135,12 @@ export default {
         async doSearchMaterials(search) {
             this.materialsLoading = true
             try {
-                const res = await axios.get('/api/admin/materials/cards', {
+                const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
                     params: { search, per_page: 20 },
                 })
-                this.materialResults = res.data?.data || []
+                this.materialResults = Array.isArray(res.data?.data)
+                    ? res.data.data.map((card) => this.normalizeAttachedMaterial(card)).filter((card) => card.id)
+                    : []
             } catch {
                 this.materialResults = []
             } finally {
@@ -5287,6 +5398,11 @@ export default {
 
             if (subject !== '') {
                 parts.push(subject)
+            }
+
+            const sourceLabel = this.materialSourceLabel(card)
+            if (sourceLabel !== '') {
+                parts.push(sourceLabel)
             }
 
             if (attachmentCount > 0) {

@@ -16,6 +16,13 @@ class MaterialCardResource extends JsonResource
             'school_id' => $this->school_id,
             'user_id' => $this->user_id,
             'workspace_id' => $this->workspace_id,
+            'source_school_id' => $this->school_id,
+            'source_school_label' => $this->sourceSchoolLabel(),
+            'source_user_id' => $this->user_id,
+            'source_user_label' => $this->sourceUserLabel(),
+            'is_hopper_material' => $this->isHopperMaterial($request),
+            'is_shared_material' => (bool) ($this->is_shared_material ?? false),
+            'shared_rule_id' => $this->shared_rule_id !== null ? (int) $this->shared_rule_id : null,
             'title' => $this->title,
             'source_url' => $this->source_url,
             'source_text' => $this->source_text,
@@ -64,6 +71,40 @@ class MaterialCardResource extends JsonResource
         })->filter(fn ($row) => $row['subject'] !== '' || $row['topic'] !== '' || $row['unit'] !== '')
             ->values()
             ->all();
+    }
+
+    private function sourceSchoolLabel(): ?string
+    {
+        if (! $this->relationLoaded('school') || ! $this->school) {
+            return null;
+        }
+
+        $label = trim((string) ($this->school->long_name ?: $this->school->short_name));
+
+        return $label !== '' ? $label : null;
+    }
+
+    private function sourceUserLabel(): ?string
+    {
+        if (! $this->relationLoaded('user') || ! $this->user) {
+            return null;
+        }
+
+        $name = trim(((string) ($this->user->first_name ?? '')).' '.((string) ($this->user->last_name ?? '')));
+        if ($name !== '') {
+            return $name;
+        }
+
+        $email = trim((string) ($this->user->email ?? ''));
+
+        return $email !== '' ? $email : null;
+    }
+
+    private function isHopperMaterial(Request $request): bool
+    {
+        $user = $request->user();
+
+        return $user !== null && (int) $this->user_id !== (int) $user->id;
     }
 
     private function inboxImportMode(): ?string

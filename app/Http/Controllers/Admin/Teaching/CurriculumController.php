@@ -179,13 +179,14 @@ class CurriculumController extends Controller
             'workspace' => $config['workspace'] ?? null,
             'has_workspace' => (bool) ($config['has_workspace'] ?? false),
             'classification_tree' => $config['classification_tree'] ?? [],
+            'shared_classification_tree' => $config['shared_classification_tree'] ?? [],
         ]);
     }
 
     public function materialsIndex(MaterialCardIndexRequest $request, TeachingCurriculum $curriculum, MaterialService $service)
     {
         $authUser = $this->authorizeCurriculum($curriculum);
-        $cards = $service->listForUser($authUser, $request->validated());
+        $cards = $service->listForCurriculumUse($authUser, $request->validated());
 
         return response()->json([
             'data' => MaterialCardResource::collection($cards),
@@ -193,12 +194,17 @@ class CurriculumController extends Controller
         ]);
     }
 
-    public function showMaterialCard(TeachingCurriculum $curriculum, MaterialCard $material_card)
+    public function showMaterialCard(TeachingCurriculum $curriculum, MaterialCard $material_card, MaterialService $service)
     {
-        $this->authorizeCurriculumMaterialCard($curriculum, $material_card);
+        $authUser = $this->authorizeCurriculumMaterialCard($curriculum, $material_card, $service);
+        $card = $service->loadMaterialCardForCurriculumUse($authUser, (int) $material_card->id);
+
+        if (! $card) {
+            abort(404);
+        }
 
         return response()->json([
-            'data' => new MaterialCardResource($material_card->loadMissing('attachments')),
+            'data' => new MaterialCardResource($card->loadMissing('attachments', 'school', 'user')),
         ]);
     }
 
@@ -206,18 +212,23 @@ class CurriculumController extends Controller
         TeachingCurriculum $curriculum,
         MaterialCardAttachment $material_card_attachment,
         MaterialAttachmentPreviewService $previewService,
+        MaterialService $service,
         Request $request
     ) {
-        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment);
+        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment, $service);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
-            abort(404, 'Datei nicht gefunden');
+            return $previewService->missingFilePreview($material_card_attachment);
         }
 
         $downloadUrl = "/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$material_card_attachment->id}/download";
         $query = trim((string) $request->getQueryString());
         if ($query !== '') {
             $downloadUrl .= '?'.$query;
+        }
+
+        if ($this->resolveAttachmentStorageDisk((string) $material_card_attachment->file_path) === null) {
+            return $previewService->missingFilePreview($material_card_attachment);
         }
 
         return $previewService->preview(
@@ -227,9 +238,12 @@ class CurriculumController extends Controller
         );
     }
 
-    public function downloadMaterialAttachment(TeachingCurriculum $curriculum, MaterialCardAttachment $material_card_attachment)
-    {
-        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment);
+    public function downloadMaterialAttachment(
+        TeachingCurriculum $curriculum,
+        MaterialCardAttachment $material_card_attachment,
+        MaterialService $service
+    ) {
+        $this->authorizeCurriculumMaterialAttachment($curriculum, $material_card_attachment, $service);
 
         if ($material_card_attachment->attachment_type !== MaterialCardAttachment::TYPE_FILE || ! $material_card_attachment->file_path) {
             abort(404, 'Datei nicht gefunden');
@@ -307,20 +321,22 @@ class CurriculumController extends Controller
         return $auth_user;
     }
 
-    private function authorizeCurriculumMaterialCard(TeachingCurriculum $curriculum, MaterialCard $materialCard)
+    private function authorizeCurriculumMaterialCard(TeachingCurriculum $curriculum, MaterialCard $materialCard, MaterialService $service)
     {
         $authUser = $this->authorizeCurriculum($curriculum);
 
-        if ((int) $materialCard->school_id !== (int) $authUser->school_id
-            || (int) $materialCard->user_id !== (int) $authUser->id) {
+        if (! $service->canUseMaterialForCurriculum($authUser, $materialCard)) {
             abort(403, 'Sie haben keine Berechtigung');
         }
 
         return $authUser;
     }
 
-    private function authorizeCurriculumMaterialAttachment(TeachingCurriculum $curriculum, MaterialCardAttachment $attachment): void
-    {
+    private function authorizeCurriculumMaterialAttachment(
+        TeachingCurriculum $curriculum,
+        MaterialCardAttachment $attachment,
+        MaterialService $service
+    ): void {
         $attachment->loadMissing('materialCard');
 
         $card = $attachment->materialCard;
@@ -328,7 +344,7 @@ class CurriculumController extends Controller
             abort(403, 'Sie haben keine Berechtigung');
         }
 
-        $this->authorizeCurriculumMaterialCard($curriculum, $card);
+        $this->authorizeCurriculumMaterialCard($curriculum, $card, $service);
     }
 
     /**
@@ -336,11 +352,14 @@ class CurriculumController extends Controller
      */
     private function attachmentStorageDiskCandidates(): array
     {
+        $configuredDisks = array_keys((array) config('filesystems.disks', []));
+
         return array_values(array_filter(array_unique([
             (string) config('filesystems.default'),
             'local',
             'public',
-        ])));
+            ...$configuredDisks,
+        ]), static fn (string $diskName): bool => $diskName !== ''));
     }
 
     private function resolveAttachmentStorageDisk(string $relativePath): ?Filesystem
@@ -453,7 +472,7 @@ class CurriculumController extends Controller
                 },
             ],
             'topics.*.materials' => 'nullable|array',
-            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count',
+            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material',
             'topics.*.materials.*.id' => 'required|integer|min:1',
             'topics.*.materials.*.title' => 'required|string|max:255',
             'topics.*.materials.*.subject' => 'nullable|string|max:255',
@@ -462,6 +481,11 @@ class CurriculumController extends Controller
             'topics.*.materials.*.type' => 'nullable|string|max:255',
             'topics.*.materials.*.status' => 'nullable|string|max:255',
             'topics.*.materials.*.attachments_count' => 'nullable|integer|min:0',
+            'topics.*.materials.*.source_school_id' => 'nullable|integer|min:1',
+            'topics.*.materials.*.source_school_label' => 'nullable|string|max:255',
+            'topics.*.materials.*.source_user_id' => 'nullable|integer|min:1',
+            'topics.*.materials.*.source_user_label' => 'nullable|string|max:255',
+            'topics.*.materials.*.is_hopper_material' => 'sometimes|boolean',
             'topics.*.units' => 'nullable|array',
             'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,checked_week_keys,materials',
             'topics.*.units.*.id' => 'nullable|string|max:100',
@@ -504,7 +528,7 @@ class CurriculumController extends Controller
                 },
             ],
             'topics.*.units.*.materials' => 'nullable|array',
-            'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count',
+            'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material',
             'topics.*.units.*.materials.*.id' => 'required|integer|min:1',
             'topics.*.units.*.materials.*.title' => 'required|string|max:255',
             'topics.*.units.*.materials.*.subject' => 'nullable|string|max:255',
@@ -513,6 +537,11 @@ class CurriculumController extends Controller
             'topics.*.units.*.materials.*.type' => 'nullable|string|max:255',
             'topics.*.units.*.materials.*.status' => 'nullable|string|max:255',
             'topics.*.units.*.materials.*.attachments_count' => 'nullable|integer|min:0',
+            'topics.*.units.*.materials.*.source_school_id' => 'nullable|integer|min:1',
+            'topics.*.units.*.materials.*.source_school_label' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.source_user_id' => 'nullable|integer|min:1',
+            'topics.*.units.*.materials.*.source_user_label' => 'nullable|string|max:255',
+            'topics.*.units.*.materials.*.is_hopper_material' => 'sometimes|boolean',
         ]);
 
         $validated['semester_count'] = (int) ($validated['semester_count'] ?? 2);
@@ -697,6 +726,11 @@ class CurriculumController extends Controller
                     'type' => trim((string) ($material['type'] ?? '')),
                     'status' => trim((string) ($material['status'] ?? '')),
                     'attachments_count' => max(0, (int) ($material['attachments_count'] ?? 0)),
+                    'source_school_id' => (int) ($material['source_school_id'] ?? 0) > 0 ? (int) $material['source_school_id'] : null,
+                    'source_school_label' => trim((string) ($material['source_school_label'] ?? '')),
+                    'source_user_id' => (int) ($material['source_user_id'] ?? 0) > 0 ? (int) $material['source_user_id'] : null,
+                    'source_user_label' => trim((string) ($material['source_user_label'] ?? '')),
+                    'is_hopper_material' => (bool) ($material['is_hopper_material'] ?? false),
                 ];
             })
             ->filter(fn (array $material): bool => $material['id'] > 0 && $material['title'] !== '')

@@ -24,6 +24,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Services\LicenceService;
 use App\Services\SchoolUserLicenceAssignmentService;
+use App\Services\UserHopperService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -104,6 +105,7 @@ class MaterialService
         private readonly MaterialKeywordService $keywordService,
         private readonly MaterialWorkspaceService $workspaceService,
         private readonly LicenceService $licenceService,
+        private readonly UserHopperService $hopperService,
     ) {}
 
     public function config(User $user): array
@@ -134,6 +136,7 @@ class MaterialService
             'can_manage_user_settings' => $this->supportsUserMaterialsPaginationSettings(),
             'storage_capacity_bytes' => $this->storageCapacityBytesForUser($user),
             'classification_tree' => $this->classificationTreeForUser($user),
+            'shared_classification_tree' => $this->sharedClassificationTreeForUser($user),
         ];
     }
 
@@ -155,52 +158,85 @@ class MaterialService
             ->with($this->cardRelations())
             ->orderByDesc('updated_at');
 
-        $search = trim((string) ($filters['search'] ?? ''));
-        $hasClassificationTables = $this->supportsClassificationTables();
-        if ($search !== '') {
-            $query->where(function ($q) use ($search, $hasClassificationTables) {
-                $q->where('title', 'like', '%'.$search.'%')
-                    ->orWhere('notes', 'like', '%'.$search.'%')
-                    ->orWhere('source_text', 'like', '%'.$search.'%')
-                    ->orWhere('source_url', 'like', '%'.$search.'%');
-
-                if ($hasClassificationTables) {
-                    $q->orWhereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', 'like', '%'.$search.'%'))
-                        ->orWhereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', 'like', '%'.$search.'%'))
-                        ->orWhereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', 'like', '%'.$search.'%'));
-                }
-            });
-        }
-
-        $status = trim((string) ($filters['status'] ?? ''));
-        if ($status !== '') {
-            $query->where('status', $status);
-        }
-
-        $subject = trim((string) ($filters['subject'] ?? ''));
-        if ($subject !== '' && $hasClassificationTables) {
-            $query->whereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', $subject));
-        }
-
-        $topic = trim((string) ($filters['topic'] ?? ''));
-        if ($topic !== '' && $hasClassificationTables) {
-            $query->whereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', $topic));
-        }
-
-        $unit = trim((string) ($filters['unit'] ?? ''));
-        if ($unit !== '' && $hasClassificationTables) {
-            $query->whereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', $unit));
-        }
-
-        $type = trim((string) ($filters['type'] ?? ''));
-        if ($type !== '') {
-            $query->where('type', $type);
-        }
+        $this->applyCardFilters($query, $filters);
 
         $cards = $query->paginate($this->materialsPaginationNumberForUser($user));
         $this->hydrateLinkedPermissionMetadata($user, $cards->getCollection());
 
         return $cards;
+    }
+
+    public function listForCurriculumUse(User $user, array $filters): LengthAwarePaginator
+    {
+        $this->syncLinkedInboxImportsForUser($user);
+        $this->syncLinkedUnitInboxImportsForUser($user);
+        $this->syncLinkedTopicInboxImportsForUser($user);
+
+        $contexts = $this->curriculumMaterialContextsForUser($user);
+        $sharedRules = $this->curriculumSharedMaterialRulesForUser($user);
+        $sharedOnly = (bool) ($filters['shared_only'] ?? false);
+
+        if (($contexts === [] || $sharedOnly) && $sharedRules->isEmpty()) {
+            return MaterialCard::query()
+                ->whereRaw('1 = 0')
+                ->paginate($this->materialsPaginationNumberForUser($user));
+        }
+
+        $query = MaterialCard::query()
+            ->with($this->curriculumCardRelations())
+            ->orderByDesc('updated_at');
+
+        $this->applyCurriculumMaterialAccessConstraints(
+            query: $query,
+            contexts: $sharedOnly ? [] : $contexts,
+            sharedRules: $sharedRules,
+        );
+        $this->applyCardFilters($query, $filters);
+
+        $cards = $query->paginate($this->materialsPaginationNumberForUser($user));
+        $this->hydrateLinkedPermissionMetadata($user, $cards->getCollection());
+        $this->hydrateCurriculumSharedMaterialMetadata($user, $cards->getCollection(), $sharedRules);
+
+        return $cards;
+    }
+
+    public function canUseMaterialForCurriculum(User $user, MaterialCard $materialCard): bool
+    {
+        $materialUserId = (int) ($materialCard->user_id ?? 0);
+        $materialWorkspaceId = (int) ($materialCard->workspace_id ?? 0);
+        if ($materialUserId <= 0 || $materialWorkspaceId <= 0) {
+            return false;
+        }
+
+        foreach ($this->curriculumMaterialContextsForUser($user) as $context) {
+            if ($context['user_id'] === $materialUserId && $context['workspace_id'] === $materialWorkspaceId) {
+                return true;
+            }
+        }
+
+        return $this->sharedMaterialRuleForCard($user, $materialCard) instanceof MaterialShareRule;
+    }
+
+    public function loadMaterialCardForCurriculumUse(User $user, int $materialCardId): ?MaterialCard
+    {
+        $contexts = $this->curriculumMaterialContextsForUser($user);
+        $sharedRules = $this->curriculumSharedMaterialRulesForUser($user);
+        if ($contexts === [] && $sharedRules->isEmpty()) {
+            return null;
+        }
+
+        $query = MaterialCard::query()
+            ->whereKey($materialCardId)
+            ->with($this->curriculumCardRelations());
+
+        $this->applyCurriculumMaterialAccessConstraints($query, $contexts, $sharedRules);
+
+        $card = $query->first();
+        if ($card instanceof MaterialCard) {
+            $this->hydrateCurriculumSharedMaterialMetadata($user, collect([$card]), $sharedRules);
+        }
+
+        return $card;
     }
 
     public function hydrateLinkedPermissionMetadata(User $user, Collection $cards): void
@@ -3163,6 +3199,99 @@ class MaterialService
         })->values()->all();
     }
 
+    private function sharedClassificationTreeForUser(User $user): array
+    {
+        if (! $this->supportsClassificationTables()) {
+            return [];
+        }
+
+        $sharedRules = $this->curriculumSharedMaterialRulesForUser($user);
+        if ($sharedRules->isEmpty()) {
+            return [];
+        }
+
+        $workspacesByCreator = $sharedRules
+            ->filter(fn (MaterialShareRule $rule) => (int) ($rule->workspace_id ?? 0) > 0 && (int) ($rule->created_by_user_id ?? 0) > 0)
+            ->groupBy('created_by_user_id');
+
+        if ($workspacesByCreator->isEmpty()) {
+            return [];
+        }
+
+        $creatorIds = $workspacesByCreator->keys()->all();
+        $creators = User::query()
+            ->whereIn('id', $creatorIds)
+            ->with('selectedSchool:id,long_name,short_name')
+            ->get()
+            ->keyBy('id');
+
+        $allWorkspaceIds = $sharedRules
+            ->map(fn (MaterialShareRule $rule) => (int) ($rule->workspace_id ?? 0))
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        $subjectsQuery = MaterialSubject::query()
+            ->whereIn('workspace_id', $allWorkspaceIds)
+            ->with(['topics.units']);
+
+        if ($this->supportsClassificationSortOrder()) {
+            $subjectsQuery->orderBy('sort_order')->orderBy('name')->orderBy('id');
+        } else {
+            $subjectsQuery->orderBy('name')->orderBy('id');
+        }
+
+        $allSubjects = $subjectsQuery->get()->groupBy('user_id');
+
+        $sources = [];
+
+        foreach ($workspacesByCreator as $creatorId => $rules) {
+            $creator = $creators->get($creatorId);
+            if (! $creator) {
+                continue;
+            }
+
+            $creatorWorkspaceIds = $rules
+                ->map(fn (MaterialShareRule $rule) => (int) $rule->workspace_id)
+                ->unique()
+                ->all();
+
+            $subjects = ($allSubjects->get($creatorId) ?? collect())
+                ->filter(fn (MaterialSubject $subject) => in_array((int) $subject->workspace_id, $creatorWorkspaceIds, true));
+
+            if ($subjects->isEmpty()) {
+                continue;
+            }
+
+            $school = $creator->selectedSchool;
+            $schoolLabel = $school ? trim($school->long_name ?? $school->short_name ?? '') : '';
+
+            $sources[] = [
+                'user_id' => (int) $creatorId,
+                'user_name' => $creator->full_name,
+                'school_name' => $schoolLabel,
+                'label' => $creator->full_name.($schoolLabel !== '' ? ' ('.$schoolLabel.')' : ''),
+                'subjects' => $subjects->map(fn (MaterialSubject $subject) => [
+                    'id' => $subject->id,
+                    'name' => $subject->name,
+                    'topics' => $subject->topics->map(fn (MaterialTopic $topic) => [
+                        'id' => $topic->id,
+                        'name' => $topic->name,
+                        'units' => $topic->units->map(fn (MaterialUnit $unit) => [
+                            'id' => $unit->id,
+                            'name' => $unit->name,
+                        ])->values()->all(),
+                    ])->values()->all(),
+                ])->values()->all(),
+            ];
+        }
+
+        usort($sources, fn ($a, $b) => strcasecmp($a['label'], $b['label']));
+
+        return $sources;
+    }
+
     /**
      * @param  array<int,int>  $unitIds
      * @return array<int,array{is_linked:bool,linked_permission:?string,linked_permission_label:?string}>
@@ -4340,6 +4469,348 @@ class MaterialService
         $relations[] = 'classifications.unit';
 
         return $relations;
+    }
+
+    private function curriculumCardRelations(): array
+    {
+        return [
+            ...$this->cardRelations(),
+            'school:id,long_name,short_name',
+            'user:id,first_name,last_name,email',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function applyCardFilters($query, array $filters): void
+    {
+        $search = trim((string) ($filters['search'] ?? ''));
+        $hasClassificationTables = $this->supportsClassificationTables();
+        if ($search !== '') {
+            $query->where(function ($q) use ($search, $hasClassificationTables): void {
+                $q->where('title', 'like', '%'.$search.'%')
+                    ->orWhere('notes', 'like', '%'.$search.'%')
+                    ->orWhere('source_text', 'like', '%'.$search.'%')
+                    ->orWhere('source_url', 'like', '%'.$search.'%');
+
+                if ($hasClassificationTables) {
+                    $q->orWhereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', 'like', '%'.$search.'%'))
+                        ->orWhereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', 'like', '%'.$search.'%'))
+                        ->orWhereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', 'like', '%'.$search.'%'));
+                }
+            });
+        }
+
+        $status = trim((string) ($filters['status'] ?? ''));
+        if ($status !== '') {
+            $query->where('status', $status);
+        }
+
+        $subject = trim((string) ($filters['subject'] ?? ''));
+        if ($subject !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', $subject));
+        }
+
+        $topic = trim((string) ($filters['topic'] ?? ''));
+        if ($topic !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.topic', fn ($topicQuery) => $topicQuery->where('name', $topic));
+        }
+
+        $unit = trim((string) ($filters['unit'] ?? ''));
+        if ($unit !== '' && $hasClassificationTables) {
+            $query->whereHas('classifications.unit', fn ($unitQuery) => $unitQuery->where('name', $unit));
+        }
+
+        $type = trim((string) ($filters['type'] ?? ''));
+        if ($type !== '') {
+            $query->where('type', $type);
+        }
+    }
+
+    /**
+     * @return array<int, array{user_id: int, workspace_id: int}>
+     */
+    private function curriculumMaterialContextsForUser(User $user): array
+    {
+        return collect([$user])
+            ->merge($this->hopperService->linkedAccountUsers($user))
+            ->map(function (User $account): ?array {
+                $workspaceId = $this->optionalActiveWorkspaceIdForUser($account);
+                if ($workspaceId === null) {
+                    return null;
+                }
+
+                return [
+                    'user_id' => (int) $account->id,
+                    'workspace_id' => $workspaceId,
+                ];
+            })
+            ->filter()
+            ->unique(fn (array $context): string => $context['user_id'].':'.$context['workspace_id'])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array{user_id: int, workspace_id: int}>  $contexts
+     */
+    private function applyMaterialContextConstraints($query, array $contexts): void
+    {
+        $query->where(function ($query) use ($contexts): void {
+            foreach ($contexts as $context) {
+                $query->orWhere(function ($contextQuery) use ($context): void {
+                    $contextQuery
+                        ->where('user_id', $context['user_id'])
+                        ->where('workspace_id', $context['workspace_id']);
+                });
+            }
+        });
+    }
+
+    /**
+     * @param  array<int, array{user_id: int, workspace_id: int}>  $contexts
+     * @param  Collection<int, MaterialShareRule>  $sharedRules
+     */
+    private function applyCurriculumMaterialAccessConstraints($query, array $contexts, Collection $sharedRules): void
+    {
+        $query->where(function ($query) use ($contexts, $sharedRules): void {
+            foreach ($contexts as $context) {
+                $query->orWhere(function ($contextQuery) use ($context): void {
+                    $contextQuery
+                        ->where('user_id', $context['user_id'])
+                        ->where('workspace_id', $context['workspace_id']);
+                });
+            }
+
+            foreach ($sharedRules as $rule) {
+                $query->orWhere(function ($ruleQuery) use ($rule): void {
+                    $this->applySharedMaterialRuleScope($ruleQuery, $rule);
+                });
+            }
+
+            if ($contexts === [] && $sharedRules->isEmpty()) {
+                $query->whereRaw('1 = 0');
+            }
+        });
+    }
+
+    private function applySharedMaterialRuleScope($query, MaterialShareRule $rule): void
+    {
+        $scopeType = trim((string) ($rule->scope_type ?? ''));
+        $scopeId = (int) ($rule->scope_id ?? 0);
+
+        $query->where('school_id', (int) $rule->school_id);
+
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        if ($creatorUserId > 0) {
+            $query->where('user_id', $creatorUserId);
+        }
+
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        if ($workspaceId > 0) {
+            $query->where('workspace_id', $workspaceId);
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_ALL) {
+            return;
+        }
+
+        if ($scopeId <= 0) {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            $query->whereKey($scopeId);
+
+            return;
+        }
+
+        $query->whereHas('classifications', function ($classificationQuery) use ($scopeType, $scopeId): void {
+            if ($scopeType === MaterialShareRule::SCOPE_SUBJECT) {
+                $classificationQuery->where('subject_id', $scopeId);
+
+                return;
+            }
+
+            if ($scopeType === MaterialShareRule::SCOPE_TOPIC) {
+                $classificationQuery->where('topic_id', $scopeId);
+
+                return;
+            }
+
+            if ($scopeType === MaterialShareRule::SCOPE_UNIT) {
+                $classificationQuery->where('unit_id', $scopeId);
+
+                return;
+            }
+
+            $classificationQuery->whereRaw('1 = 0');
+        });
+    }
+
+    /**
+     * @return Collection<int, MaterialShareRule>
+     */
+    private function curriculumSharedMaterialRulesForUser(User $user): Collection
+    {
+        if (! Schema::hasTable('material_share_rules') || ! Schema::hasTable('material_share_targets')) {
+            return collect();
+        }
+
+        $authUserId = (int) $user->id;
+        $authSchoolId = (int) $user->school_id;
+        $memberGroupIds = array_keys($this->memberGroupSetForUser($user));
+
+        return MaterialShareRule::query()
+            ->where('is_active', true)
+            ->whereNotNull('created_by_user_id')
+            ->where('created_by_user_id', '!=', $authUserId)
+            ->where(function ($query) use ($authUserId, $authSchoolId, $memberGroupIds): void {
+                $query->whereHas('targets', function ($targetQuery) use ($authUserId): void {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_USER)
+                        ->where('user_id', $authUserId);
+                })->orWhereHas('targets', function ($targetQuery): void {
+                    $targetQuery
+                        ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                        ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_GLOBAL);
+                })->orWhere(function ($schoolWideQuery) use ($authSchoolId): void {
+                    $schoolWideQuery
+                        ->where('school_id', $authSchoolId)
+                        ->whereHas('targets', function ($targetQuery): void {
+                            $targetQuery
+                                ->where('target_type', MaterialShareTarget::TARGET_EVERYONE)
+                                ->where('audience_scope', MaterialShareTarget::AUDIENCE_SCOPE_SCHOOL);
+                        });
+                });
+
+                if ($memberGroupIds !== []) {
+                    $query->orWhereHas('targets', function ($targetQuery) use ($memberGroupIds): void {
+                        $targetQuery
+                            ->where('target_type', MaterialShareTarget::TARGET_GROUP)
+                            ->whereIn('user_group_id', $memberGroupIds);
+                    });
+                }
+            })
+            ->with([
+                'targets:id,material_share_rule_id,target_type,audience_scope,permission,user_group_id,user_id',
+            ])
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, MaterialShareRule>  $sharedRules
+     */
+    private function hydrateCurriculumSharedMaterialMetadata(User $user, Collection $cards, ?Collection $sharedRules = null): void
+    {
+        if ($cards->isEmpty()) {
+            return;
+        }
+
+        $rules = $sharedRules ?? $this->curriculumSharedMaterialRulesForUser($user);
+        if ($rules->isEmpty()) {
+            return;
+        }
+
+        $memberGroupSet = $this->memberGroupSetForUser($user);
+
+        foreach ($cards as $card) {
+            if (! $card instanceof MaterialCard) {
+                continue;
+            }
+
+            $bestRule = null;
+            $bestPermission = MaterialShareTarget::PERMISSION_READ_ONLY;
+            $bestRank = 0;
+
+            foreach ($rules as $rule) {
+                if (! $this->sharedRuleAllowsCard($rule, $card)) {
+                    continue;
+                }
+
+                $permission = $this->resolveLinkedPermissionForUser(
+                    rule: $rule,
+                    userId: (int) $user->id,
+                    schoolId: (int) $user->school_id,
+                    memberGroupSet: $memberGroupSet,
+                );
+                $rank = $this->linkedPermissionRank($permission);
+                if ($rank > $bestRank) {
+                    $bestRank = $rank;
+                    $bestPermission = $permission;
+                    $bestRule = $rule;
+                }
+            }
+
+            if (! $bestRule instanceof MaterialShareRule) {
+                continue;
+            }
+
+            $card->setAttribute('is_shared_material', true);
+            $card->setAttribute('shared_rule_id', (int) $bestRule->id);
+            $card->setAttribute('linked_permission', $bestPermission);
+            $card->setAttribute('linked_permission_label', $this->linkedPermissionLabel($bestPermission));
+        }
+    }
+
+    private function sharedMaterialRuleForCard(User $user, MaterialCard $card): ?MaterialShareRule
+    {
+        foreach ($this->curriculumSharedMaterialRulesForUser($user) as $rule) {
+            if ($this->sharedRuleAllowsCard($rule, $card)) {
+                return $rule;
+            }
+        }
+
+        return null;
+    }
+
+    private function sharedRuleAllowsCard(MaterialShareRule $rule, MaterialCard $card): bool
+    {
+        if ((int) $card->school_id !== (int) $rule->school_id) {
+            return false;
+        }
+
+        $creatorUserId = (int) ($rule->created_by_user_id ?? 0);
+        if ($creatorUserId > 0 && (int) $card->user_id !== $creatorUserId) {
+            return false;
+        }
+
+        $workspaceId = (int) ($rule->workspace_id ?? 0);
+        if ($workspaceId > 0 && (int) $card->workspace_id !== $workspaceId) {
+            return false;
+        }
+
+        $scopeType = trim((string) ($rule->scope_type ?? ''));
+        $scopeId = (int) ($rule->scope_id ?? 0);
+
+        if ($scopeType === MaterialShareRule::SCOPE_ALL) {
+            return true;
+        }
+
+        if ($scopeId <= 0) {
+            return false;
+        }
+
+        if ($scopeType === MaterialShareRule::SCOPE_MATERIAL) {
+            return (int) $card->id === $scopeId;
+        }
+
+        $matches = fn (string $field): bool => $card->relationLoaded('classifications')
+            ? $card->classifications->contains(fn (MaterialCardClassification $classification): bool => (int) $classification->{$field} === $scopeId)
+            : MaterialCardClassification::query()
+                ->where('material_card_id', (int) $card->id)
+                ->where($field, $scopeId)
+                ->exists();
+
+        return match ($scopeType) {
+            MaterialShareRule::SCOPE_SUBJECT => $matches('subject_id'),
+            MaterialShareRule::SCOPE_TOPIC => $matches('topic_id'),
+            MaterialShareRule::SCOPE_UNIT => $matches('unit_id'),
+            default => false,
+        };
     }
 
     private function syncLinkedInboxImportsForUser(User $user, array $targetCardIds = []): void

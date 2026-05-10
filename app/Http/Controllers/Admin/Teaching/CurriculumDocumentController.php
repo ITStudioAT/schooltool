@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Admin\Teaching;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\Materials\MaterialCardAttachmentResource;
-use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\TeachingCurriculum;
 use App\Models\TeachingCurriculumDocument;
+use App\Models\User;
 use App\Services\FileUploadService;
 use App\Services\Materials\MaterialAttachmentPreviewService;
+use App\Services\Materials\MaterialService;
 use Illuminate\Contracts\Filesystem\Filesystem;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -76,7 +77,7 @@ class CurriculumDocumentController extends Controller
         ], 201);
     }
 
-    public function attachMaterial(Request $request, TeachingCurriculum $curriculum)
+    public function attachMaterial(Request $request, TeachingCurriculum $curriculum, MaterialService $materialService)
     {
         $authUser = $this->authorizeCurriculum($curriculum);
 
@@ -84,10 +85,10 @@ class CurriculumDocumentController extends Controller
             'material_card_id' => 'required|integer|exists:material_cards,id',
         ]);
 
-        $materialCard = MaterialCard::query()
-            ->where('id', $validated['material_card_id'])
-            ->where('school_id', $authUser->school_id)
-            ->firstOrFail();
+        $materialCard = $materialService->loadMaterialCardForCurriculumUse($authUser, (int) $validated['material_card_id']);
+        if (! $materialCard) {
+            abort(404);
+        }
 
         $existing = $curriculum->documents()
             ->with('materialAttachment')
@@ -113,9 +114,12 @@ class CurriculumDocumentController extends Controller
         ], 201);
     }
 
-    public function materialAttachments(TeachingCurriculum $curriculum, TeachingCurriculumDocument $document)
-    {
-        $this->authorizeCurriculum($curriculum);
+    public function materialAttachments(
+        TeachingCurriculum $curriculum,
+        TeachingCurriculumDocument $document,
+        MaterialService $materialService
+    ) {
+        $authUser = $this->authorizeCurriculum($curriculum);
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
         if ($document->source_type !== 'material' || (int) ($document->material_card_id ?? 0) <= 0) {
@@ -126,6 +130,10 @@ class CurriculumDocumentController extends Controller
         $materialCard = $document->materialCard;
         if (! $materialCard) {
             abort(404);
+        }
+
+        if (! $materialService->canUseMaterialForCurriculum($authUser, $materialCard)) {
+            abort(403, 'Sie haben keine Berechtigung');
         }
 
         $attachments = $materialCard->attachments()
@@ -142,9 +150,13 @@ class CurriculumDocumentController extends Controller
         ]);
     }
 
-    public function updateMaterialAttachment(Request $request, TeachingCurriculum $curriculum, TeachingCurriculumDocument $document)
-    {
-        $this->authorizeCurriculum($curriculum);
+    public function updateMaterialAttachment(
+        Request $request,
+        TeachingCurriculum $curriculum,
+        TeachingCurriculumDocument $document,
+        MaterialService $materialService
+    ) {
+        $authUser = $this->authorizeCurriculum($curriculum);
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
         if ($document->source_type !== 'material' || (int) ($document->material_card_id ?? 0) <= 0) {
@@ -159,6 +171,10 @@ class CurriculumDocumentController extends Controller
         $materialCard = $document->materialCard;
         if (! $materialCard) {
             abort(404);
+        }
+
+        if (! $materialService->canUseMaterialForCurriculum($authUser, $materialCard)) {
+            abort(403, 'Sie haben keine Berechtigung');
         }
 
         $attachment = $materialCard->attachments()
@@ -182,9 +198,10 @@ class CurriculumDocumentController extends Controller
         TeachingCurriculum $curriculum,
         TeachingCurriculumDocument $document,
         MaterialAttachmentPreviewService $previewService,
+        MaterialService $materialService,
         Request $request
     ) {
-        $this->authorizeCurriculum($curriculum);
+        $authUser = $this->authorizeCurriculum($curriculum);
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
         if ($document->source_type === 'upload') {
@@ -196,6 +213,7 @@ class CurriculumDocumentController extends Controller
             ]);
         }
 
+        $this->authorizeDocumentMaterialAccess($authUser, $document, $materialService);
         $attachment = $this->selectedMaterialAttachment($document);
 
         $downloadUrl = $this->documentDownloadUrl($curriculum, $document);
@@ -211,9 +229,9 @@ class CurriculumDocumentController extends Controller
         );
     }
 
-    public function download(TeachingCurriculum $curriculum, TeachingCurriculumDocument $document)
+    public function download(TeachingCurriculum $curriculum, TeachingCurriculumDocument $document, MaterialService $materialService)
     {
-        $this->authorizeCurriculum($curriculum);
+        $authUser = $this->authorizeCurriculum($curriculum);
         $this->assertDocumentBelongsToCurriculum($curriculum, $document);
 
         if ($document->source_type === 'upload') {
@@ -226,6 +244,7 @@ class CurriculumDocumentController extends Controller
             );
         }
 
+        $this->authorizeDocumentMaterialAccess($authUser, $document, $materialService);
         $attachment = $this->selectedMaterialAttachment($document);
         $relativePath = trim((string) $attachment->file_path);
         $disk = $this->resolveAttachmentStorageDisk($relativePath);
@@ -381,6 +400,19 @@ class CurriculumDocumentController extends Controller
         }
 
         return $fullPath;
+    }
+
+    private function authorizeDocumentMaterialAccess(
+        User $authUser,
+        TeachingCurriculumDocument $document,
+        MaterialService $materialService
+    ): void {
+        $document->loadMissing('materialCard');
+        $materialCard = $document->materialCard;
+
+        if (! $materialCard || ! $materialService->canUseMaterialForCurriculum($authUser, $materialCard)) {
+            abort(403, 'Sie haben keine Berechtigung');
+        }
     }
 
     private function selectedMaterialAttachment(TeachingCurriculumDocument $document): MaterialCardAttachment

@@ -4,6 +4,8 @@ use App\Models\Licence;
 use App\Models\MaterialCard;
 use App\Models\MaterialCardAttachment;
 use App\Models\MaterialCardClassification;
+use App\Models\MaterialShareRule;
+use App\Models\MaterialShareTarget;
 use App\Models\MaterialSubject;
 use App\Models\MaterialTopic;
 use App\Models\MaterialUnit;
@@ -892,6 +894,235 @@ test('teacher can load a curriculum material card with attachments', function ()
         ->assertJsonPath('data.title', 'Word Handout')
         ->assertJsonPath('data.attachments.0.id', $attachment->id)
         ->assertJsonPath('data.attachments.0.name', 'Word Handout.pdf');
+});
+
+test('teacher can browse hopper account materials through curriculum endpoints', function () {
+    $this->otherSchool->forceFill([
+        'long_name' => 'Hopper Curriculum School',
+    ])->save();
+
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Musik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'Hopper Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Rhythmus Arbeitsblatt',
+        'subject' => 'Musik',
+        'area' => 'Rhythmus',
+        'unit' => 'Taktarten',
+        'type' => 'Arbeitsblatt',
+        'status' => MaterialCard::STATUS_DONE,
+    ]);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [$this->otherTeacher->id],
+    ])->save();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards?search=Rhythmus")
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $card->id)
+        ->assertJsonPath('data.0.title', 'Rhythmus Arbeitsblatt')
+        ->assertJsonPath('data.0.source_school_label', $this->otherSchool->long_name)
+        ->assertJsonPath('data.0.is_hopper_material', true);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards/{$card->id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $card->id)
+        ->assertJsonPath('data.is_hopper_material', true);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [],
+    ])->save();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards/{$card->id}")
+        ->assertForbidden();
+});
+
+test('teacher sees a preview message when a hopper material attachment file is missing', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'Hopper Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Fehlender Anhang',
+    ]);
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Fehlender Anhang.pdf',
+        'file_path' => 'materials/tests/missing-hopper-preview.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [$this->otherTeacher->id],
+    ])->save();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertSee('Die Datei wurde im Speicher nicht gefunden', false);
+});
+
+test('teacher can preview a hopper material attachment stored on a configured disk', function () {
+    Storage::fake('s3');
+
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'Hopper Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Rechnen mit Prozenten',
+    ]);
+
+    $filePath = 'materials/tests/hopper-configured-disk.txt';
+    Storage::disk('s3')->put($filePath, 'Prozentrechnung Vorschau');
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Infoblatt_Excel_Prozentrechnung.txt',
+        'file_path' => $filePath,
+        'mime_type' => 'text/plain',
+    ]);
+
+    $this->teacher->forceFill([
+        'hopper_account_ids' => [$this->otherTeacher->id],
+    ])->save();
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertSee('Prozentrechnung Vorschau', false);
+});
+
+test('teacher can use shared materials through curriculum material endpoints', function () {
+    Storage::fake('local');
+
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $workspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'Shared Workspace',
+        'is_default' => true,
+    ]);
+
+    $card = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $workspace->id,
+        'title' => 'Geteiltes Prozent Material',
+        'subject' => 'Informatik',
+        'area' => 'Excel',
+        'unit' => 'Prozentrechnungen',
+    ]);
+
+    $filePath = 'materials/tests/shared-curriculum-material.txt';
+    Storage::disk('local')->put($filePath, 'Geteilte Prozent Vorschau');
+
+    $attachment = MaterialCardAttachment::factory()->create([
+        'material_card_id' => $card->id,
+        'attachment_type' => MaterialCardAttachment::TYPE_FILE,
+        'name' => 'Geteiltes Material.txt',
+        'file_path' => $filePath,
+        'mime_type' => 'text/plain',
+    ]);
+
+    $rule = MaterialShareRule::query()->create([
+        'school_id' => $this->otherSchool->id,
+        'workspace_id' => $workspace->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'created_by_user_id' => $this->otherTeacher->id,
+        'is_active' => true,
+    ]);
+
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $rule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->teacher->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards?shared_only=1&search=Prozent")
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $card->id)
+        ->assertJsonPath('data.0.is_shared_material', true)
+        ->assertJsonPath('data.0.shared_rule_id', $rule->id)
+        ->assertJsonPath('data.0.attachments.0.id', $attachment->id);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards/{$card->id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $card->id)
+        ->assertJsonPath('data.is_shared_material', true);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->get("/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$attachment->id}/preview")
+        ->assertOk()
+        ->assertSee('Geteilte Prozent Vorschau', false);
 });
 
 test('teacher cannot update curriculum from another school', function () {
