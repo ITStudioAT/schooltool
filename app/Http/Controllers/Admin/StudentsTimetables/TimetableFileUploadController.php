@@ -10,13 +10,14 @@ use Illuminate\Http\Response;
 
 class TimetableFileUploadController extends Controller
 {
-    public function upload(FileUploadService $fileUploadService): Response
+    public function upload(FileUploadService $fileUploadService, TimetableImportService $importService): Response
     {
-        if (! $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
         $this->ensureTxt();
+        $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
         $id = $fileUploadService->upload();
 
         return response($id, 200)->header('Content-Type', 'text/plain');
@@ -32,6 +33,7 @@ class TimetableFileUploadController extends Controller
         }
 
         $this->ensureTxt();
+        $importService->ensureSemesterTwoStart($authUser, $authUser->schoolyear_id);
 
         $uploadPath = "app/private/{$authUser->school_id}/timetable-imports/{$authUser->schoolyear_id}";
 
@@ -46,7 +48,7 @@ class TimetableFileUploadController extends Controller
             return $result;
         }
 
-        $importService->createImport(
+        $importService->createQueuedImport(
             $authUser,
             $result,
             is_string($originalName) ? $originalName : 'import.txt',

@@ -4,6 +4,8 @@ use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
+use App\Models\Schoolyear;
+use App\Models\TeachingSchoolHour;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -65,6 +67,29 @@ it('returns dummy dashboard data for a licensed school', function () {
         ->assertJsonPath('data.module', 'StudentsTimetables')
         ->assertJsonPath('data.status', 'dummy')
         ->assertJsonPath('data.school.id', $user->school_id);
+});
+
+it('returns school hours for the selected schoolyear', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    TeachingSchoolHour::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'hour' => 1,
+        'from' => '08:00:00',
+        'until' => '08:45:00',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/school-hours')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.hour', 1)
+        ->assertJsonPath('data.0.from', '08:00')
+        ->assertJsonPath('data.0.until', '08:45');
 });
 
 it('denies the dummy dashboard without a school licence', function () {

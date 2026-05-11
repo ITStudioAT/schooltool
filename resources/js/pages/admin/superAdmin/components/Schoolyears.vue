@@ -59,6 +59,9 @@
                                                     {{ formatRange(item) }}
                                                 </div>
                                                 <div v-else class="person-email" style="max-width: 320px">Kein Zeitraum hinterlegt</div>
+                                                <div v-if="item.sem_2_start" class="person-email" style="max-width: 320px">
+                                                    2. Semester ab {{ item.sem_2_start }}
+                                                </div>
                                             </div>
                                         </div>
 
