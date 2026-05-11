@@ -4507,6 +4507,11 @@ class MaterialService
             $query->where('status', $status);
         }
 
+        $sourceUserId = (int) ($filters['source_user_id'] ?? 0);
+        if ($sourceUserId > 0) {
+            $query->where('user_id', $sourceUserId);
+        }
+
         $subject = trim((string) ($filters['subject'] ?? ''));
         if ($subject !== '' && $hasClassificationTables) {
             $query->whereHas('classifications.subject', fn ($subjectQuery) => $subjectQuery->where('name', $subject));

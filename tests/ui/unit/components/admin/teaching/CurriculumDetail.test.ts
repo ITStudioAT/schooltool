@@ -751,6 +751,47 @@ describe('CurriculumDetail week card view mode', () => {
         }
     })
 
+    it('passes the selected shared source when loading content material results', async () => {
+        const wrapper = mountCurriculumDetail()
+        const originalAxios = (globalThis as any).axios
+        const getMock = vi.fn().mockResolvedValue({
+            data: {
+                data: [],
+            },
+        })
+
+        ;(globalThis as any).axios = { get: getMock }
+
+        try {
+            await wrapper.setData({
+                contentMaterialDialogMode: 'shared',
+                selectedContentMaterialSource: {
+                    user_id: 42,
+                    user_name: 'Quelle',
+                },
+            })
+
+            await (wrapper.vm as any).loadContentMaterialWorkspaceResults({
+                subject: 'Mathematik',
+                topic: 'Stundenplan',
+                unit: '',
+            })
+
+            expect(getMock).toHaveBeenCalledWith('/api/admin/teaching/curricula/15/materials/cards', {
+                params: {
+                    subject: 'Mathematik',
+                    topic: 'Stundenplan',
+                    unit: '',
+                    per_page: 20,
+                    shared_only: 1,
+                    source_user_id: 42,
+                },
+            })
+        } finally {
+            ;(globalThis as any).axios = originalAxios
+        }
+    })
+
     it('downloads the curriculum export json via axios instead of navigating to the route', async () => {
         const wrapper = mountCurriculumDetail({
             title: 'Deutsch 5A',

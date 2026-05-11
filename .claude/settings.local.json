@@ -71,7 +71,10 @@
       "Bash(/tmp/play_chimes.ps1:*)",
       "Bash(/tmp/play_ring05.ps1:*)",
       "Bash(/tmp/play_ring08.ps1:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "PowerShell(*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": [],

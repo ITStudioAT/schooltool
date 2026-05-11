@@ -684,6 +684,8 @@ test('teacher can save materials on curriculum topics and units', function () {
                         'type' => 'Arbeitsblatt',
                         'status' => 'done',
                         'attachments_count' => 2,
+                        'is_shared_material' => true,
+                        'shared_rule_id' => 77,
                     ],
                 ],
                 'units' => [
@@ -701,6 +703,8 @@ test('teacher can save materials on curriculum topics and units', function () {
                                 'type' => 'Vorlage',
                                 'status' => 'in_progress',
                                 'attachments_count' => 1,
+                                'is_shared_material' => true,
+                                'shared_rule_id' => 78,
                             ],
                         ],
                     ],
@@ -724,6 +728,8 @@ test('teacher can save materials on curriculum topics and units', function () {
         'type' => 'Arbeitsblatt',
         'status' => 'done',
         'attachments_count' => 2,
+        'is_shared_material' => true,
+        'shared_rule_id' => 77,
     ])->and($curriculum->fresh()->topics[0]['units'][0]['materials'][0])->toMatchArray([
         'id' => 202,
         'title' => 'Mikroskop-Protokoll',
@@ -733,6 +739,8 @@ test('teacher can save materials on curriculum topics and units', function () {
         'type' => 'Vorlage',
         'status' => 'in_progress',
         'attachments_count' => 1,
+        'is_shared_material' => true,
+        'shared_rule_id' => 78,
     ]);
 });
 
@@ -1123,6 +1131,113 @@ test('teacher can use shared materials through curriculum material endpoints', f
         ->get("/api/admin/teaching/curricula/{$curriculum->id}/materials/attachments/{$attachment->id}/preview")
         ->assertOk()
         ->assertSee('Geteilte Prozent Vorschau', false);
+});
+
+test('teacher can filter shared curriculum materials by source user', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Mathematik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $firstWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'name' => 'First Shared Workspace',
+        'is_default' => true,
+    ]);
+
+    $firstSubject = MaterialSubject::query()->create([
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $firstWorkspace->id,
+        'name' => 'Mathematik',
+    ]);
+
+    $firstCard = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $this->otherTeacher->id,
+        'workspace_id' => $firstWorkspace->id,
+        'title' => 'Sokrates Abenddaten Stundenplan',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $firstCard->id,
+        'subject_id' => $firstSubject->id,
+    ]);
+
+    $firstRule = MaterialShareRule::query()->create([
+        'school_id' => $this->otherSchool->id,
+        'workspace_id' => $firstWorkspace->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'created_by_user_id' => $this->otherTeacher->id,
+        'is_active' => true,
+    ]);
+
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $firstRule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->teacher->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $secondTeacher = User::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'schoolyear_id' => $this->otherSchoolyear->id,
+        'email' => 'second-source@curriculum.test',
+    ]);
+    $secondTeacher->assignRole('teacher');
+
+    $secondWorkspace = MaterialWorkspace::query()->create([
+        'user_id' => $secondTeacher->id,
+        'name' => 'Second Shared Workspace',
+        'is_default' => true,
+    ]);
+
+    $secondSubject = MaterialSubject::query()->create([
+        'user_id' => $secondTeacher->id,
+        'workspace_id' => $secondWorkspace->id,
+        'name' => 'Mathematik',
+    ]);
+
+    $secondCard = MaterialCard::factory()->create([
+        'school_id' => $this->otherSchool->id,
+        'user_id' => $secondTeacher->id,
+        'workspace_id' => $secondWorkspace->id,
+        'title' => 'Sokrates Abenddaten Stundenplan Alternative',
+    ]);
+
+    MaterialCardClassification::query()->create([
+        'material_card_id' => $secondCard->id,
+        'subject_id' => $secondSubject->id,
+    ]);
+
+    $secondRule = MaterialShareRule::query()->create([
+        'school_id' => $this->otherSchool->id,
+        'workspace_id' => $secondWorkspace->id,
+        'scope_type' => MaterialShareRule::SCOPE_ALL,
+        'scope_id' => null,
+        'created_by_user_id' => $secondTeacher->id,
+        'is_active' => true,
+    ]);
+
+    MaterialShareTarget::query()->create([
+        'material_share_rule_id' => $secondRule->id,
+        'target_type' => MaterialShareTarget::TARGET_USER,
+        'user_id' => $this->teacher->id,
+        'permission' => MaterialShareTarget::PERMISSION_READ_ONLY,
+    ]);
+
+    $this->actingAs($this->teacher, 'sanctum')
+        ->getJson("/api/admin/teaching/curricula/{$curriculum->id}/materials/cards?shared_only=1&subject=Mathematik&source_user_id={$this->otherTeacher->id}")
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $firstCard->id)
+        ->assertJsonPath('data.0.source_user_id', $this->otherTeacher->id);
 });
 
 test('teacher cannot update curriculum from another school', function () {

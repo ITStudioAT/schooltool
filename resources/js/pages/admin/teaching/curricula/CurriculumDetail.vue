@@ -3423,6 +3423,9 @@ export default {
                     unit: typeof filters.unit === 'string' ? filters.unit.trim() : '',
                     per_page: 20,
                     shared_only: this.contentMaterialDialogMode === 'shared' ? 1 : undefined,
+                    source_user_id: this.contentMaterialDialogMode === 'shared'
+                        ? this.selectedContentMaterialSource?.user_id
+                        : undefined,
                 }
                 const res = await axios.get(`/api/admin/teaching/curricula/${this.curriculum.id}/materials/cards`, {
                     params,

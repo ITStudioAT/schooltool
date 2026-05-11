@@ -472,7 +472,7 @@ class CurriculumController extends Controller
                 },
             ],
             'topics.*.materials' => 'nullable|array',
-            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material',
+            'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.materials.*.id' => 'required|integer|min:1',
             'topics.*.materials.*.title' => 'required|string|max:255',
             'topics.*.materials.*.subject' => 'nullable|string|max:255',
@@ -486,6 +486,8 @@ class CurriculumController extends Controller
             'topics.*.materials.*.source_user_id' => 'nullable|integer|min:1',
             'topics.*.materials.*.source_user_label' => 'nullable|string|max:255',
             'topics.*.materials.*.is_hopper_material' => 'sometimes|boolean',
+            'topics.*.materials.*.is_shared_material' => 'sometimes|boolean',
+            'topics.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
             'topics.*.units' => 'nullable|array',
             'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,checked_week_keys,materials',
             'topics.*.units.*.id' => 'nullable|string|max:100',
@@ -528,7 +530,7 @@ class CurriculumController extends Controller
                 },
             ],
             'topics.*.units.*.materials' => 'nullable|array',
-            'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material',
+            'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.units.*.materials.*.id' => 'required|integer|min:1',
             'topics.*.units.*.materials.*.title' => 'required|string|max:255',
             'topics.*.units.*.materials.*.subject' => 'nullable|string|max:255',
@@ -542,6 +544,8 @@ class CurriculumController extends Controller
             'topics.*.units.*.materials.*.source_user_id' => 'nullable|integer|min:1',
             'topics.*.units.*.materials.*.source_user_label' => 'nullable|string|max:255',
             'topics.*.units.*.materials.*.is_hopper_material' => 'sometimes|boolean',
+            'topics.*.units.*.materials.*.is_shared_material' => 'sometimes|boolean',
+            'topics.*.units.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
         ]);
 
         $validated['semester_count'] = (int) ($validated['semester_count'] ?? 2);
@@ -731,6 +735,8 @@ class CurriculumController extends Controller
                     'source_user_id' => (int) ($material['source_user_id'] ?? 0) > 0 ? (int) $material['source_user_id'] : null,
                     'source_user_label' => trim((string) ($material['source_user_label'] ?? '')),
                     'is_hopper_material' => (bool) ($material['is_hopper_material'] ?? false),
+                    'is_shared_material' => (bool) ($material['is_shared_material'] ?? false),
+                    'shared_rule_id' => (int) ($material['shared_rule_id'] ?? 0) > 0 ? (int) $material['shared_rule_id'] : null,
                 ];
             })
             ->filter(fn (array $material): bool => $material['id'] > 0 && $material['title'] !== '')
