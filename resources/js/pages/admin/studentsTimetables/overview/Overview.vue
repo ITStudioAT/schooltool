@@ -18,9 +18,10 @@
                 <div class="semester-grid">
                     <section v-for="semester in semesters" :key="semester.value" class="semester-section">
                         <div class="semester-section__header">
-                            <div class="d-flex align-center ga-2">
+                            <div class="d-flex flex-wrap align-center ga-2">
                                 <v-icon icon="mdi-calendar-range" size="18" color="primary" />
                                 <span class="text-subtitle-2 font-weight-bold">{{ semester.label }}</span>
+                                <span class="semester-section__dates">{{ semester.dateRangeLabel }}</span>
                             </div>
                             <v-chip size="x-small" color="primary" variant="tonal">Mo-Sa</v-chip>
                         </div>
@@ -60,6 +61,7 @@
 </template>
 
 <script>
+import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
@@ -80,17 +82,30 @@ export default {
                 { key: 'fr', label: 'Fr' },
                 { key: 'sa', label: 'Sa' },
             ],
-            semesters: [
-                { value: 1, label: 'Semester 1' },
-                { value: 2, label: 'Semester 2' },
-            ],
         }
     },
 
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
+        selectedSchoolyear() {
+            return this.config?.selected_schoolyear || {}
+        },
         schoolyearName() {
-            return this.config?.selected_schoolyear?.name || ''
+            return this.selectedSchoolyear?.name || ''
+        },
+        semesters() {
+            return [
+                {
+                    value: 1,
+                    label: 'Semester 1',
+                    dateRangeLabel: this.semesterDateRange(1),
+                },
+                {
+                    value: 2,
+                    label: 'Semester 2',
+                    dateRangeLabel: this.semesterDateRange(2),
+                },
+            ]
         },
         configuredSchoolHours() {
             return Array.isArray(this.schoolHours) ? this.schoolHours : []
@@ -143,6 +158,50 @@ export default {
 
             return raw.slice(0, 5)
         },
+        semesterDateRange(semester) {
+            const from = this.normalizeDate(this.selectedSchoolyear?.from)
+            const until = this.normalizeDate(this.selectedSchoolyear?.until)
+            const semester2Start = this.normalizeDate(this.selectedSchoolyear?.sem_2_start)
+
+            if (semester === 1) {
+                const semester1Until = semester2Start ? this.previousDay(semester2Start) : null
+
+                return this.formatDateRange(from, semester1Until)
+            }
+
+            return this.formatDateRange(semester2Start, until)
+        },
+        formatDateRange(from, until) {
+            const fromLabel = this.formatDate(from)
+            const untilLabel = this.formatDate(until)
+
+            if (fromLabel && untilLabel) {
+                return `${fromLabel} - ${untilLabel}`
+            }
+
+            return 'Datum nicht vollständig gesetzt'
+        },
+        normalizeDate(value) {
+            if (!value) return null
+
+            const date = parseLocalDate(value)
+            if (Number.isNaN(date.getTime())) return null
+
+            date.setHours(0, 0, 0, 0)
+
+            return date
+        },
+        previousDay(date) {
+            const previous = new Date(date)
+            previous.setDate(previous.getDate() - 1)
+
+            return previous
+        },
+        formatDate(date) {
+            if (!date) return ''
+
+            return date.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        },
     },
 }
 </script>
@@ -169,6 +228,12 @@ export default {
     padding: 10px 12px;
     background-color: #f5f5f5;
     border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.semester-section__dates {
+    font-size: 0.75rem;
+    color: rgba(0, 0, 0, 0.6);
+    white-space: nowrap;
 }
 
 .timetable-table-wrapper {
