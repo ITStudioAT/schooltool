@@ -138,6 +138,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::middleware(['auth:sanctum', 'api-allowed:scope:students_timetables_access', 'tool-licensed:StudentsTimetables,auth,scope:students_timetables_access'])->group(function () {
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
         Route::get('/admin/students-timetables/school-hours', [StudentsTimetablesController::class, 'schoolHours']);
+        Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload']);
         Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext']);
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
