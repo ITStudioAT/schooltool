@@ -8,6 +8,20 @@
                     {{ schoolyearName }}
                 </v-chip>
                 <v-spacer />
+                <v-tooltip v-if="hasHiddenSaturdayCourses" text="Es gibt Einträge am Samstag. Sa aktivieren, um sie zu sehen.">
+                    <template #activator="{ props }">
+                        <v-btn
+                            v-bind="props"
+                            color="error"
+                            variant="flat"
+                            size="large"
+                            class="hidden-saturday-warning"
+                            aria-label="Samstag hat ausgeblendete Einträge"
+                            @click="showSaturday = true">
+                            !
+                        </v-btn>
+                    </template>
+                </v-tooltip>
                 <v-switch
                     v-model="showSaturday"
                     color="primary"
@@ -35,6 +49,61 @@
                             <v-chip size="x-small" color="primary" variant="tonal">{{ weekdayRangeLabel }}</v-chip>
                         </div>
 
+                        <div v-if="semesterCourseMenus(semester.value).length" class="semester-course-chips">
+                            <v-menu
+                                v-for="courseMenu in semesterCourseMenus(semester.value)"
+                                :key="courseMenu.key"
+                                location="bottom start"
+                                max-height="360">
+                                <template #activator="{ props }">
+                                    <v-chip
+                                        v-bind="props"
+                                        size="small"
+                                        color="primary"
+                                        variant="tonal"
+                                        append-icon="mdi-menu-down"
+                                        class="semester-course-chip">
+                                        {{ courseMenu.label }}
+                                    </v-chip>
+                                </template>
+
+                                <v-list density="compact" class="semester-course-menu-list">
+                                    <v-list-item
+                                        v-for="entry in courseMenu.entries"
+                                        :key="entry.key"
+                                        :active="isCourseMenuEntryFilterActive(entry)"
+                                        color="primary"
+                                        @click="toggleCourseMenuEntryFilter(entry)">
+                                        <template #prepend>
+                                            <v-icon
+                                                :icon="isCourseMenuEntryFilterActive(entry) ? 'mdi-check' : 'mdi-calendar-blank'"
+                                                size="18" />
+                                        </template>
+                                        <v-list-item-title class="semester-course-menu-title">
+                                            {{ entry.label }}
+                                        </v-list-item-title>
+                                        <v-list-item-subtitle v-if="entry.scheduleLabel" class="semester-course-menu-subtitle">
+                                            {{ entry.scheduleLabel }}
+                                        </v-list-item-subtitle>
+                                    </v-list-item>
+                                </v-list>
+                            </v-menu>
+                        </div>
+
+                        <div v-if="selectedCourseFilterChips(semester.value).length" class="selected-course-filter-chips">
+                            <v-chip
+                                v-for="filterChip in selectedCourseFilterChips(semester.value)"
+                                :key="filterChip.key"
+                                size="small"
+                                :color="filterChip.hasOverlap ? 'error' : 'success'"
+                                variant="tonal"
+                                closable
+                                class="selected-course-filter-chip"
+                                @click:close="toggleCourseMenuEntryFilter(filterChip.entry)">
+                                {{ filterChip.label }}
+                            </v-chip>
+                        </div>
+
                         <div class="timetable-table-wrapper">
                             <table class="timetable-grid-table">
                                 <thead>
@@ -60,7 +129,10 @@
                                             <div
                                                 v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour)"
                                                 :key="courseGroup.key"
-                                                class="timetable-course-item"
+                                                :class="[
+                                                    'timetable-course-item',
+                                                    { 'timetable-course-item--overlap': courseGroupHasOverlap(courseGroup) },
+                                                ]"
                                                 role="button"
                                                 tabindex="0"
                                                 @click="openCourseGroupDialog(courseGroup)"
@@ -122,12 +194,17 @@
 
                     <div class="course-date-list">
                         <v-chip
-                            v-for="date in selectedCourseGroupDates"
-                            :key="date"
+                            v-for="dateItem in selectedCourseGroupDateItems"
+                            :key="dateItem.key"
                             size="small"
                             variant="tonal"
-                            color="secondary">
-                            {{ formatDateValue(date) }}
+                            color="secondary"
+                            class="course-date-chip">
+                            <span>{{ dateItem.dateLabel }}</span>
+                            <span v-if="dateItem.timeRangeLabel" class="course-date-chip__separator">·</span>
+                            <span v-if="dateItem.timeRangeLabel" class="course-date-chip__time">
+                                {{ dateItem.timeRangeLabel }}
+                            </span>
                         </v-chip>
                     </div>
                 </v-card-text>
@@ -157,6 +234,7 @@ export default {
             courseGroups: [],
             courseGroupDialog: false,
             selectedCourseGroup: null,
+            activeCourseGroupFilterKeys: [],
             showSaturday: false,
             weekdays: [
                 { key: 'mo', label: 'Mo', value: 1 },
@@ -207,6 +285,13 @@ export default {
         weekdayRangeLabel() {
             return this.showSaturday ? 'Mo-Sa' : 'Mo-Fr'
         },
+        hasHiddenSaturdayCourses() {
+            return !this.showSaturday
+                && this.configuredCourseGroups.some((courseGroup) => (
+                    Number(courseGroup?.weekday) === 6
+                    && this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
+                ))
+        },
         timetableHours() {
             const courseHours = this.configuredCourseGroups
                 .map((courseGroup) => Number(courseGroup.hour))
@@ -256,6 +341,15 @@ export default {
         selectedCourseGroupDates() {
             return Array.isArray(this.selectedCourseGroup?.dates) ? this.selectedCourseGroup.dates : []
         },
+        selectedCourseGroupDateItems() {
+            const timeRangeLabel = this.courseGroupTimeRangeLabel(this.selectedCourseGroup)
+
+            return this.selectedCourseGroupDates.map((date) => ({
+                key: `${date}-${timeRangeLabel}`,
+                dateLabel: this.formatDateValue(date),
+                timeRangeLabel,
+            }))
+        },
     },
 
     watch: {
@@ -294,6 +388,9 @@ export default {
         },
         courseGroupsForCell(semester, weekday, hour) {
             return [...(this.courseGroupsByCell[this.courseCellKey(semester, weekday, hour)] || [])]
+                .filter((courseGroup) => (
+                    this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
+                ))
                 .sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
                     this.courseGroupSortLabel(right),
                     'de',
@@ -302,6 +399,326 @@ export default {
         },
         courseGroupSortLabel(courseGroup) {
             return (courseGroup?.display_label || courseGroup?.title || '').toString()
+        },
+        semesterCourseMenus(semester) {
+            const courseMenusByLabel = this.configuredCourseGroups
+                .filter((courseGroup) => Number(courseGroup?.semester) === Number(semester))
+                .reduce((courseMenus, courseGroup) => {
+                    const label = this.mainCourseLabel(courseGroup)
+                    if (!label) {
+                        return courseMenus
+                    }
+
+                    const normalizedLabel = label.toLocaleUpperCase('de-AT')
+                    if (!courseMenus.has(normalizedLabel)) {
+                        courseMenus.set(normalizedLabel, {
+                            key: `semester-${semester}-${normalizedLabel}`,
+                            label,
+                            entriesByLabel: new Map(),
+                        })
+                    }
+
+                    const courseMenu = courseMenus.get(normalizedLabel)
+                    const entryLabel = this.courseGroupMenuLabel(courseGroup)
+                    const normalizedEntryLabel = entryLabel.toLocaleUpperCase('de-AT')
+                    if (!courseMenu.entriesByLabel.has(normalizedEntryLabel)) {
+                        courseMenu.entriesByLabel.set(normalizedEntryLabel, {
+                            key: `semester-${semester}-${normalizedLabel}-${normalizedEntryLabel}`,
+                            label: entryLabel,
+                            courseGroups: [],
+                            courseGroupKeys: [],
+                        })
+                    }
+
+                    const entry = courseMenu.entriesByLabel.get(normalizedEntryLabel)
+                    entry.courseGroups.push(courseGroup)
+                    if (courseGroup?.key) {
+                        entry.courseGroupKeys.push(courseGroup.key)
+                    }
+
+                    return courseMenus
+                }, new Map())
+
+            return [...courseMenusByLabel.values()]
+                .map((courseMenu) => ({
+                    key: courseMenu.key,
+                    label: courseMenu.label,
+                    entries: [...courseMenu.entriesByLabel.values()]
+                        .map((entry) => ({
+                            ...entry,
+                            courseGroupKeys: [...new Set(entry.courseGroupKeys)],
+                            scheduleLabel: this.courseMenuEntryScheduleLabel(entry),
+                        }))
+                        .sort((left, right) => (
+                            left.label.localeCompare(right.label, 'de', { sensitivity: 'base' })
+                        )),
+                }))
+                .sort((left, right) => left.label.localeCompare(right.label, 'de', { sensitivity: 'base' }))
+        },
+        semesterCourseChips(semester) {
+            return this.semesterCourseMenus(semester).map((courseMenu) => ({
+                key: courseMenu.key,
+                label: courseMenu.label,
+            }))
+        },
+        selectedCourseFilterChips(semester) {
+            return this.semesterCourseMenus(semester)
+                .flatMap((courseMenu) => courseMenu.entries)
+                .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
+                .map((entry) => ({
+                    key: `selected-${entry.key}`,
+                    label: entry.scheduleLabel ? `${entry.label} · ${entry.scheduleLabel}` : entry.label,
+                    hasOverlap: this.courseMenuEntryHasOverlap(entry, semester),
+                    entry,
+                }))
+        },
+        selectedCourseMenuEntries(semester) {
+            return this.semesterCourseMenus(semester)
+                .flatMap((courseMenu) => courseMenu.entries)
+                .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
+        },
+        courseGroupMenuLabel(courseGroup) {
+            return (
+                courseGroup?.display_label
+                || courseGroup?.title
+                || courseGroup?.course
+                || courseGroup?.subject
+                || 'Ohne Bezeichnung'
+            ).toString()
+        },
+        courseMenuEntryScheduleLabel(entry) {
+            const schedulesByWeekday = (entry?.courseGroups || []).reduce((schedules, courseGroup) => {
+                const weekday = this.weekdayForCourseGroup(courseGroup)
+                const timeRange = this.courseGroupTimeRangeParts(courseGroup)
+                if (!weekday.label && !timeRange.label) {
+                    return schedules
+                }
+
+                const key = weekday.value ? `weekday-${weekday.value}` : `time-${timeRange.label}`
+                if (!schedules.has(key)) {
+                    schedules.set(key, {
+                        weekdayOrder: weekday.value || 99,
+                        weekdayLabel: weekday.label,
+                        from: '',
+                        until: '',
+                        fallbackLabels: new Set(),
+                    })
+                }
+
+                const schedule = schedules.get(key)
+                if (timeRange.from && timeRange.until) {
+                    schedule.from = schedule.from && schedule.from < timeRange.from ? schedule.from : timeRange.from
+                    schedule.until = schedule.until && schedule.until > timeRange.until ? schedule.until : timeRange.until
+
+                    return schedules
+                }
+
+                schedule.fallbackLabels.add([weekday.label, timeRange.label].filter(Boolean).join(' '))
+
+                return schedules
+            }, new Map())
+
+            return [...schedulesByWeekday.values()]
+                .sort((left, right) => left.weekdayOrder - right.weekdayOrder)
+                .flatMap((schedule) => {
+                    if (schedule.from && schedule.until) {
+                        return [[schedule.weekdayLabel, `${schedule.from} - ${schedule.until}`].filter(Boolean).join(' ')]
+                    }
+
+                    return [...schedule.fallbackLabels]
+                })
+                .filter(Boolean)
+                .join(', ')
+        },
+        courseGroupScheduleLabel(courseGroup) {
+            const weekdayLabel = this.weekdayForCourseGroup(courseGroup).label
+            const timeRangeLabel = this.courseGroupTimeRangeLabel(courseGroup)
+
+            return [weekdayLabel, timeRangeLabel]
+                .filter(Boolean)
+                .join(' ')
+        },
+        courseMenuEntryHasOverlap(entry, semester) {
+            return this.selectedCourseMenuEntries(semester)
+                .some((selectedEntry) => (
+                    selectedEntry.key !== entry?.key
+                    && this.courseMenuEntriesOverlap(entry, selectedEntry)
+                ))
+        },
+        courseGroupHasOverlap(courseGroup) {
+            const semester = Number(courseGroup?.semester)
+            if (!Number.isFinite(semester)) {
+                return false
+            }
+
+            const containingEntry = this.selectedCourseMenuEntries(semester)
+                .find((entry) => this.courseMenuEntryKeys(entry).includes(courseGroup?.key))
+
+            return Boolean(containingEntry && this.courseMenuEntryHasOverlap(containingEntry, semester))
+        },
+        courseMenuEntriesOverlap(leftEntry, rightEntry) {
+            return (leftEntry?.courseGroups || []).some((leftCourseGroup) => (
+                (rightEntry?.courseGroups || []).some((rightCourseGroup) => (
+                    this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                ))
+            ))
+        },
+        courseGroupsOverlap(leftCourseGroup, rightCourseGroup) {
+            if (leftCourseGroup?.key && leftCourseGroup.key === rightCourseGroup?.key) {
+                return false
+            }
+
+            if (
+                Number(leftCourseGroup?.semester) !== Number(rightCourseGroup?.semester)
+                || Number(leftCourseGroup?.weekday) !== Number(rightCourseGroup?.weekday)
+            ) {
+                return false
+            }
+
+            const leftTimeRange = this.courseGroupTimeRangeParts(leftCourseGroup)
+            const rightTimeRange = this.courseGroupTimeRangeParts(rightCourseGroup)
+            if (leftTimeRange.from && leftTimeRange.until && rightTimeRange.from && rightTimeRange.until) {
+                return leftTimeRange.from < rightTimeRange.until && rightTimeRange.from < leftTimeRange.until
+            }
+
+            return Number(leftCourseGroup?.hour) === Number(rightCourseGroup?.hour)
+        },
+        weekdayForCourseGroup(courseGroup) {
+            const weekday = (this.weekdays || [])
+                .find((configuredWeekday) => Number(configuredWeekday.value) === Number(courseGroup?.weekday))
+
+            return {
+                label: weekday?.label || '',
+                value: Number(weekday?.value) || null,
+            }
+        },
+        mainCourseLabel(courseGroup) {
+            const source = this.courseGroupCourseSource(courseGroup)
+            if (!source) return ''
+
+            const firstSegment = source.split(/\s+-\s+/u)[0]?.trim() || ''
+            if (!firstSegment || this.isTimeOnlyValue(firstSegment)) return ''
+
+            const match = firstSegment.match(/^([^\d\s-]+)\d*/u)
+
+            return (match?.[1] || firstSegment).trim()
+        },
+        courseGroupCourseSource(courseGroup) {
+            return [
+                courseGroup?.course,
+                courseGroup?.title,
+                courseGroup?.display_label,
+                courseGroup?.subject,
+            ]
+                .map((value) => (value || '').toString().trim())
+                .find((value) => value !== '' && !this.isTimeOnlyValue(value)) || ''
+        },
+        isTimeOnlyValue(value) {
+            return /^\d{1,2}:\d{2}$/.test((value || '').toString().trim())
+        },
+        courseGroupTimeRangeLabel(courseGroup) {
+            return this.courseGroupTimeRangeParts(courseGroup).label
+        },
+        courseGroupTimeRangeParts(courseGroup) {
+            const importedTimeRange = this.importedCourseGroupTimeRange(courseGroup)
+            const schoolHourTimeRange = this.schoolHourTimeRange(courseGroup)
+            const from = importedTimeRange.from || schoolHourTimeRange.from
+            const until = importedTimeRange.until || schoolHourTimeRange.until
+
+            if (from && until) {
+                return {
+                    from,
+                    until,
+                    label: `${from} - ${until}`,
+                }
+            }
+
+            return {
+                from,
+                until,
+                label: from || until || '',
+            }
+        },
+        importedCourseGroupTimeRange(courseGroup) {
+            const from = this.isTimeOnlyValue(courseGroup?.subject)
+                ? this.formatTimeValue(courseGroup.subject)
+                : ''
+            const until = this.isTimeOnlyValue(courseGroup?.teacher)
+                ? this.formatTimeValue(courseGroup.teacher)
+                : ''
+
+            return { from, until }
+        },
+        schoolHourTimeRange(courseGroup) {
+            const schoolHour = this.configuredSchoolHours.find((configuredSchoolHour) => (
+                Number(configuredSchoolHour?.hour) === Number(courseGroup?.hour)
+            ))
+
+            return {
+                from: this.formatTimeValue(schoolHour?.from),
+                until: this.formatTimeValue(schoolHour?.until),
+            }
+        },
+        toggleCourseMenuEntryFilter(entry) {
+            const courseGroupKeys = this.courseMenuEntryKeys(entry)
+            if (!courseGroupKeys.length) {
+                return
+            }
+
+            if (this.isCourseMenuEntryFilterActive(entry)) {
+                this.activeCourseGroupFilterKeys = this.activeCourseGroupFilterKeys
+                    .filter((activeKey) => !courseGroupKeys.includes(activeKey))
+
+                return
+            }
+
+            this.activeCourseGroupFilterKeys = [
+                ...new Set([
+                    ...this.activeCourseGroupFilterKeys,
+                    ...courseGroupKeys,
+                ]),
+            ]
+
+            if ((entry?.courseGroups || []).some((courseGroup) => Number(courseGroup?.weekday) === 6)) {
+                this.showSaturday = true
+            }
+        },
+        isCourseMenuEntryFilterActive(entry) {
+            const courseGroupKeys = this.courseMenuEntryKeys(entry)
+
+            return courseGroupKeys.length > 0
+                && courseGroupKeys.every((courseGroupKey) => this.activeCourseGroupFilterKeys.includes(courseGroupKey))
+        },
+        courseMenuEntryKeys(entry) {
+            if (Array.isArray(entry?.courseGroupKeys)) {
+                return entry.courseGroupKeys.filter(Boolean)
+            }
+
+            return entry?.courseGroup?.key ? [entry.courseGroup.key] : []
+        },
+        toggleCourseGroupFilter(courseGroup) {
+            const courseGroupKey = courseGroup?.key || null
+            if (!courseGroupKey) {
+                return
+            }
+
+            if (this.isCourseGroupFilterActive(courseGroup)) {
+                this.activeCourseGroupFilterKeys = this.activeCourseGroupFilterKeys
+                    .filter((activeKey) => activeKey !== courseGroupKey)
+
+                return
+            }
+
+            this.activeCourseGroupFilterKeys = [
+                ...this.activeCourseGroupFilterKeys,
+                courseGroupKey,
+            ]
+            if (Number(courseGroup?.weekday) === 6) {
+                this.showSaturday = true
+            }
+        },
+        isCourseGroupFilterActive(courseGroup) {
+            return this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
         },
         openCourseGroupDialog(courseGroup) {
             this.selectedCourseGroup = courseGroup
@@ -405,8 +822,55 @@ export default {
     white-space: nowrap;
 }
 
+.semester-course-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+}
+
+.semester-course-chip {
+    font-weight: 650;
+}
+
+.semester-course-menu-list {
+    min-width: 220px;
+}
+
+.semester-course-menu-title {
+    font-size: 0.82rem;
+    font-weight: 650;
+}
+
+.semester-course-menu-subtitle {
+    font-size: 0.72rem;
+}
+
+.selected-course-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+}
+
+.selected-course-filter-chip {
+    font-weight: 650;
+}
+
 .timetable-saturday-switch {
     flex: 0 0 auto;
+}
+
+.hidden-saturday-warning {
+    min-width: 44px;
+    height: 44px;
+    font-size: 1.7rem;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .timetable-table-wrapper {
@@ -495,11 +959,25 @@ export default {
     outline: none;
 }
 
+.timetable-course-item--overlap {
+    border-left-color: #d32f2f;
+    background-color: #ffebee;
+}
+
+.timetable-course-item--overlap:hover,
+.timetable-course-item--overlap:focus-visible {
+    background-color: #ffcdd2;
+}
+
 .timetable-course-title {
     font-weight: 700;
     font-size: 0.75rem;
     line-height: 1.15;
     color: #0d47a1;
+}
+
+.timetable-course-item--overlap .timetable-course-title {
+    color: #b71c1c;
 }
 
 .timetable-course-markers {
@@ -512,5 +990,18 @@ export default {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+}
+
+.course-date-chip {
+    gap: 6px;
+}
+
+.course-date-chip__separator {
+    margin: 0 6px;
+    opacity: 0.65;
+}
+
+.course-date-chip__time {
+    font-weight: 700;
 }
 </style>
