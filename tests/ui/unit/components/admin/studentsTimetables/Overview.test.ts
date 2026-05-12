@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import Overview from '@/pages/admin/studentsTimetables/overview/Overview.vue'
 
@@ -531,5 +532,37 @@ describe('Students timetable overview', () => {
             subject: 'GWB',
             teacher: 'ABC',
         })).toBe('08:50 - 09:40')
+    })
+
+    it('shows the date range for block course labels', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            courseGroupBlockLabel: methods.courseGroupBlockLabel,
+            courseGroupDateRangeLabel: methods.courseGroupDateRangeLabel,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            formatDateValue: methods.formatDateValue,
+            normalizeDate: methods.normalizeDate,
+            formatDate: methods.formatDate,
+        }
+
+        expect(methods.courseGroupBlockLabel.call(ctx, {
+            is_block: true,
+            block_label: 'Block',
+            first_date: '2026-09-07',
+            last_date: '2026-10-12',
+            dates: ['2026-09-07', '2026-09-14', '2026-10-12'],
+        })).toBe('07.09. - 12.10.')
+    })
+
+    it('keeps timetable weekday columns at equal widths', () => {
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/overview/Overview.vue',
+            'utf8',
+        )
+
+        expect(componentSource).toContain('class="timetable-hour-column"')
+        expect(componentSource).toContain('class="timetable-day-column"')
+        expect(componentSource).toContain('table-layout: fixed;')
+        expect(componentSource).toContain('overflow-wrap: anywhere;')
     })
 })

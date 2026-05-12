@@ -72,7 +72,8 @@
                                         v-for="entry in courseMenu.entries"
                                         :key="entry.key"
                                         :active="isCourseMenuEntryFilterActive(entry)"
-                                        color="primary"
+                                        :color="courseMenuEntryHasOverlap(entry, semester.value) ? 'error' : 'primary'"
+                                        :class="{ 'semester-course-menu-item--overlap': courseMenuEntryHasOverlap(entry, semester.value) }"
                                         @click="toggleCourseMenuEntryFilter(entry)">
                                         <template #prepend>
                                             <v-icon
@@ -106,6 +107,13 @@
 
                         <div class="timetable-table-wrapper">
                             <table class="timetable-grid-table">
+                                <colgroup>
+                                    <col class="timetable-hour-column">
+                                    <col
+                                        v-for="weekday in displayedWeekdays"
+                                        :key="`${semester.value}-${weekday.key}-column`"
+                                        class="timetable-day-column">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th class="timetable-hour-header-cell"></th>
@@ -151,7 +159,7 @@
                                                         size="x-small"
                                                         color="warning"
                                                         variant="tonal">
-                                                        {{ courseGroup.block_label }}
+                                                        {{ courseGroupBlockLabel(courseGroup) }}
                                                     </v-chip>
                                                 </span>
                                             </div>
@@ -185,7 +193,7 @@
                             {{ selectedCourseGroup.recurrence_label }}
                         </v-chip>
                         <v-chip v-if="selectedCourseGroup?.is_block" size="small" color="warning" variant="tonal">
-                            {{ selectedCourseGroup.block_label }}
+                            {{ courseGroupBlockLabel(selectedCourseGroup) }}
                         </v-chip>
                         <v-chip v-if="selectedCourseGroup?.dates_count" size="small" variant="outlined">
                             {{ selectedCourseGroup.dates_count }} Termine
@@ -619,6 +627,24 @@ export default {
         courseGroupTimeRangeLabel(courseGroup) {
             return this.courseGroupTimeRangeParts(courseGroup).label
         },
+        courseGroupBlockLabel(courseGroup) {
+            return this.courseGroupDateRangeLabel(courseGroup) || courseGroup?.block_label || 'Block'
+        },
+        courseGroupDateRangeLabel(courseGroup) {
+            const dates = Array.isArray(courseGroup?.dates)
+                ? [...courseGroup.dates].filter(Boolean).sort()
+                : []
+            const from = courseGroup?.first_date || dates[0] || null
+            const until = courseGroup?.last_date || dates[dates.length - 1] || from
+            const fromLabel = this.formatCompactDateValue(from)
+            const untilLabel = this.formatCompactDateValue(until)
+
+            if (fromLabel && untilLabel && fromLabel !== untilLabel) {
+                return `${fromLabel} - ${untilLabel}`
+            }
+
+            return fromLabel || untilLabel || ''
+        },
         courseGroupTimeRangeParts(courseGroup) {
             const importedTimeRange = this.importedCourseGroupTimeRange(courseGroup)
             const schoolHourTimeRange = this.schoolHourTimeRange(courseGroup)
@@ -788,6 +814,15 @@ export default {
 
             return this.formatDate(date)
         },
+        formatCompactDateValue(value) {
+            const date = this.normalizeDate(value)
+            if (!date) return value || ''
+
+            const day = date.getDate().toString().padStart(2, '0')
+            const month = (date.getMonth() + 1).toString().padStart(2, '0')
+
+            return `${day}.${month}.`
+        },
     },
 }
 </script>
@@ -848,6 +883,15 @@ export default {
     font-size: 0.72rem;
 }
 
+.semester-course-menu-item--overlap:not(.v-list-item--active) .semester-course-menu-title,
+.semester-course-menu-item--overlap:not(.v-list-item--active) .semester-course-menu-subtitle {
+    color: #d32f2f;
+}
+
+.semester-course-menu-item--overlap:not(.v-list-item--active) .v-icon {
+    color: #d32f2f;
+}
+
 .selected-course-filter-chips {
     display: flex;
     flex-wrap: wrap;
@@ -880,8 +924,17 @@ export default {
 .timetable-grid-table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
     min-width: 680px;
     font-size: 0.8rem;
+}
+
+.timetable-hour-column {
+    width: 58px;
+}
+
+.timetable-day-column {
+    width: auto;
 }
 
 .timetable-grid-table th,
@@ -942,6 +995,7 @@ export default {
     align-items: center;
     flex-wrap: wrap;
     gap: 4px;
+    min-width: 0;
     border-left: 3px solid #1976d2;
     background-color: #e3f2fd;
     padding: 4px 6px;
@@ -974,6 +1028,7 @@ export default {
     font-size: 0.75rem;
     line-height: 1.15;
     color: #0d47a1;
+    overflow-wrap: anywhere;
 }
 
 .timetable-course-item--overlap .timetable-course-title {
