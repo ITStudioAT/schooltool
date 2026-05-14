@@ -81,7 +81,10 @@ describe('Students timetable overview', () => {
             ],
             semesterCourseMenus: methods.semesterCourseMenus,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
             courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
             weekdayForCourseGroup: methods.weekdayForCourseGroup,
             courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
@@ -106,6 +109,56 @@ describe('Students timetable overview', () => {
             .toBe('Di 08:50 - 09:35')
         expect(methods.semesterCourseChips.call(ctx, 2).map((chip: Record<string, string>) => chip.label))
             .toEqual(['F'])
+    })
+
+    it('adds compact frequency labels to course menu schedules', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            configuredSchoolHours: [
+                { hour: 2, from: '08:50:00', until: '09:35:00' },
+                { hour: 3, from: '09:45:00', until: '10:30:00' },
+            ],
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
+            courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
+            weekdayForCourseGroup: methods.weekdayForCourseGroup,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+        }
+
+        expect(methods.courseMenuEntryScheduleLabelWithFrequency.call(ctx, {
+            courseGroups: [
+                {
+                    weekday: 2,
+                    hour: 2,
+                    recurrence_interval: 2,
+                    dates: ['2026-09-08', '2026-09-22'],
+                },
+            ],
+        })).toBe('Di 08:50 - 09:35 (2w)')
+
+        expect(methods.courseMenuEntryScheduleLabelWithFrequency.call(ctx, {
+            courseGroups: [
+                {
+                    weekday: 3,
+                    hour: 3,
+                    recurrence_interval: null,
+                    dates: ['2026-09-09', '2026-09-16', '2026-09-30'],
+                },
+            ],
+        })).toBe('Mi 09:45 - 10:30 (3x)')
     })
 
     it('builds selected course filter chips from active menu entries', () => {
@@ -148,7 +201,10 @@ describe('Students timetable overview', () => {
             semesterCourseMenus: methods.semesterCourseMenus,
             selectedCourseFilterChips: methods.selectedCourseFilterChips,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
             courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
             weekdayForCourseGroup: methods.weekdayForCourseGroup,
             courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
@@ -217,7 +273,10 @@ describe('Students timetable overview', () => {
             selectedCourseFilterChips: methods.selectedCourseFilterChips,
             selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
             courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
             weekdayForCourseGroup: methods.weekdayForCourseGroup,
             courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
@@ -319,7 +378,10 @@ describe('Students timetable overview', () => {
             configuredSchoolHours: [],
             semesterCourseMenus: methods.semesterCourseMenus,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
             courseGroupScheduleLabel: methods.courseGroupScheduleLabel,
             weekdayForCourseGroup: methods.weekdayForCourseGroup,
             courseGroupTimeRangeLabel: methods.courseGroupTimeRangeLabel,
@@ -408,6 +470,7 @@ describe('Students timetable overview', () => {
             courseCellKey: methods.courseCellKey,
             courseGroupSortLabel: methods.courseGroupSortLabel,
             courseGroupsForCell: methods.courseGroupsForCell,
+            courseGroupMatchesSelectedRecurrenceWeek: () => true,
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
         }
@@ -444,6 +507,302 @@ describe('Students timetable overview', () => {
 
         expect(ctx.activeCourseGroupFilterKeys).toEqual([])
         expect(methods.courseGroupsForCell.call(ctx, 1, 1, 1)).toEqual([])
+    })
+
+    it('shows week selectors for selected recurring courses and filters the timetable week', () => {
+        const methods = (Overview as any).methods
+        const weekOneCourseGroup = {
+            key: 'bio-week-1',
+            semester: 1,
+            weekday: 2,
+            hour: 2,
+            course: 'BIO',
+            title: 'BIO',
+            display_label: 'BIO - 1A - CD',
+            subject: 'BIO',
+            recurrence_interval: 2,
+            first_date: '2026-09-08',
+            dates: ['2026-09-08', '2026-09-22'],
+        }
+        const weekTwoCourseGroup = {
+            key: 'bio-week-2',
+            semester: 1,
+            weekday: 2,
+            hour: 2,
+            course: 'BIO',
+            title: 'BIO',
+            display_label: 'BIO - 1A - CD',
+            subject: 'BIO',
+            recurrence_interval: 2,
+            first_date: '2026-09-15',
+            dates: ['2026-09-15', '2026-09-29'],
+        }
+        const weeklyCourseGroup = {
+            key: 'inf-weekly',
+            semester: 1,
+            weekday: 4,
+            hour: 4,
+            course: 'INF',
+            title: 'INF',
+            display_label: 'INF2 - 4QS+7K - KRO',
+            subject: 'INF',
+            recurrence_interval: 1,
+            first_date: '2026-09-10',
+            dates: ['2026-09-10', '2026-09-17', '2026-09-24'],
+        }
+        const blockCourseGroup = {
+            key: 'chem-block',
+            semester: 1,
+            weekday: 3,
+            hour: 3,
+            course: 'CHEM',
+            title: 'CHEM',
+            display_label: 'CHEM - 1A - EF',
+            subject: 'CHEM',
+            recurrence_interval: null,
+            is_block: true,
+            first_date: '2026-09-30',
+            last_date: '2026-09-30',
+            dates: ['2026-09-30'],
+        }
+        const ctx = {
+            activeCourseGroupFilterKeys: ['bio-week-1', 'bio-week-2', 'inf-weekly', 'chem-block'],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+            },
+            selectedSchoolyear: {
+                from: '2026-09-07',
+                sem_2_start: '2027-02-15',
+            },
+            configuredCourseGroups: [weekOneCourseGroup, weekTwoCourseGroup, weeklyCourseGroup, blockCourseGroup],
+            configuredSchoolHours: [
+                { hour: 2, from: '08:50:00', until: '09:35:00' },
+            ],
+            courseGroupsByCell: {
+                '1-2-2': [weekOneCourseGroup, weekTwoCourseGroup],
+                '1-4-4': [weeklyCourseGroup],
+                '1-3-3': [blockCourseGroup],
+            },
+            weekdays: [
+                { label: 'Mo', value: 1 },
+                { label: 'Di', value: 2 },
+                { label: 'Mi', value: 3 },
+                { label: 'Do', value: 4 },
+                { label: 'Fr', value: 5 },
+                { label: 'Sa', value: 6 },
+            ],
+            courseCellKey: methods.courseCellKey,
+            courseGroupSortLabel: methods.courseGroupSortLabel,
+            courseGroupsForCell: methods.courseGroupsForCell,
+            courseGroupMatchesSelectedRecurrenceWeek: methods.courseGroupMatchesSelectedRecurrenceWeek,
+            recurrenceWeekOptions: methods.recurrenceWeekOptions,
+            timetableSelectorOptions: methods.timetableSelectorOptions,
+            allDatesOption: methods.allDatesOption,
+            selectedRecurrenceWeek: methods.selectedRecurrenceWeek,
+            selectedTimetableOptionValue: methods.selectedTimetableOptionValue,
+            setSelectedTimetableOptionValue: methods.setSelectedTimetableOptionValue,
+            setSelectedRecurrenceWeek: methods.setSelectedRecurrenceWeek,
+            areRecurrenceWeeksExpanded: methods.areRecurrenceWeeksExpanded,
+            toggleRecurrenceWeeks: methods.toggleRecurrenceWeeks,
+            visibleTimetableWeeks: methods.visibleTimetableWeeks,
+            extraDatesOptions: methods.extraDatesOptions,
+            shouldShowExtraDatesNotice: methods.shouldShowExtraDatesNotice,
+            showExtraDatesInSelectedWeek: methods.showExtraDatesInSelectedWeek,
+            setShowExtraDatesInSelectedWeek: methods.setShowExtraDatesInSelectedWeek,
+            shouldIncludeExtraDatesInRegularWeek: methods.shouldIncludeExtraDatesInRegularWeek,
+            courseGroupHasRegularRecurrence: methods.courseGroupHasRegularRecurrence,
+            courseGroupHasExtraDateWeek: methods.courseGroupHasExtraDateWeek,
+            courseGroupRecurrenceWeek: methods.courseGroupRecurrenceWeek,
+            semesterStartDate: methods.semesterStartDate,
+            selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            semesterCourseMenus: methods.semesterCourseMenus,
+            courseGroupMenuLabel: methods.courseGroupMenuLabel,
+            courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
+            courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
+            courseMenuEntryFrequencyLabel: methods.courseMenuEntryFrequencyLabel,
+            courseMenuEntrySingleDateCount: methods.courseMenuEntrySingleDateCount,
+            weekdayForCourseGroup: methods.weekdayForCourseGroup,
+            courseGroupTimeRangeParts: methods.courseGroupTimeRangeParts,
+            importedCourseGroupTimeRange: methods.importedCourseGroupTimeRange,
+            schoolHourTimeRange: methods.schoolHourTimeRange,
+            courseGroupCourseSource: methods.courseGroupCourseSource,
+            mainCourseLabel: methods.mainCourseLabel,
+            isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
+            courseMenuEntryKeys: methods.courseMenuEntryKeys,
+            normalizeDate: methods.normalizeDate,
+            formatCompactDateValue: methods.formatCompactDateValue,
+            isTimeOnlyValue: methods.isTimeOnlyValue,
+            formatTimeValue: methods.formatTimeValue,
+        }
+
+        expect(methods.recurrenceWeekOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Woche 1', 'Woche 2'])
+        expect(methods.timetableSelectorOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Alle Termine', 'Woche 1', 'Woche 2', 'Zusatzwochen'])
+        expect(methods.selectedTimetableOptionValue.call(ctx, 1)).toBe('all_dates')
+        expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Alle Termine'])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2)).toEqual([weekOneCourseGroup, weekTwoCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4)).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([])
+        expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, methods.visibleTimetableWeeks.call(ctx, 1)[0])).toBe(true)
+
+        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, true)
+
+        expect(methods.showExtraDatesInSelectedWeek.call(ctx, 1)).toBe(true)
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
+        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, false)
+
+        methods.setSelectedTimetableOptionValue.call(ctx, 1, 'extra_dates')
+
+        expect(methods.selectedTimetableOptionValue.call(ctx, 1)).toBe('extra_dates')
+        expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Zusatzwochen'])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3, methods.visibleTimetableWeeks.call(ctx, 1)[0]))
+            .toEqual([blockCourseGroup])
+
+        methods.setSelectedTimetableOptionValue.call(ctx, 1, 2)
+
+        expect(ctx.selectedRecurrenceWeeks[1]).toBe(2)
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2)).toEqual([weekTwoCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4)).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([])
+        expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, methods.visibleTimetableWeeks.call(ctx, 1)[0])).toBe(true)
+
+        methods.setShowExtraDatesInSelectedWeek.call(ctx, 1, true)
+
+        expect(methods.showExtraDatesInSelectedWeek.call(ctx, 1)).toBe(true)
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
+
+        methods.toggleRecurrenceWeeks.call(ctx, 1)
+
+        expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Woche 1', 'Woche 2', 'Zusatzwochen'])
+        const expandedWeeks = methods.visibleTimetableWeeks.call(ctx, 1)
+        const extraWeek = expandedWeeks[2]
+
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[0])).toEqual([weekOneCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[1])).toEqual([weekTwoCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[0])).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[1])).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3, expandedWeeks[0])).toEqual([])
+        expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, expandedWeeks[0])).toBe(false)
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3, extraWeek)).toEqual([blockCourseGroup])
+    })
+
+    it('keeps block-like recurring courses in the all dates timetable', () => {
+        const methods = (Overview as any).methods
+        const recurringBlockCourseGroup = {
+            key: 'may-recurring',
+            semester: 1,
+            weekday: 3,
+            hour: 11,
+            course: 'MAY',
+            title: 'MAY',
+            display_label: 'MAY',
+            subject: 'MAY',
+            recurrence_interval: 4,
+            is_block: true,
+            first_date: '2026-09-09',
+            dates: ['2026-09-09', '2026-10-07', '2026-11-04', '2026-12-02'],
+        }
+        const extraDateCourseGroup = {
+            key: 'may-extra',
+            semester: 1,
+            weekday: 3,
+            hour: 11,
+            course: 'MAY',
+            title: 'MAY',
+            display_label: 'MAY',
+            subject: 'MAY',
+            recurrence_interval: null,
+            is_block: true,
+            first_date: '2026-09-16',
+            dates: ['2026-09-16'],
+        }
+        const ctx = {
+            activeCourseGroupFilterKeys: ['may-recurring', 'may-extra'],
+            selectedRecurrenceWeeks: {
+                1: 'all_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+            },
+            courseGroupsByCell: {
+                '1-3-11': [recurringBlockCourseGroup, extraDateCourseGroup],
+            },
+            courseCellKey: methods.courseCellKey,
+            courseGroupSortLabel: methods.courseGroupSortLabel,
+            courseGroupsForCell: methods.courseGroupsForCell,
+            courseGroupMatchesSelectedRecurrenceWeek: methods.courseGroupMatchesSelectedRecurrenceWeek,
+            selectedTimetableOptionValue: methods.selectedTimetableOptionValue,
+            selectedRecurrenceWeek: methods.selectedRecurrenceWeek,
+            recurrenceWeekOptions: () => [
+                { value: 1, label: 'Woche 1' },
+                { value: 2, label: 'Woche 2' },
+                { value: 3, label: 'Woche 3' },
+                { value: 4, label: 'Woche 4' },
+            ],
+            extraDatesOptions: () => [{
+                key: 'semester-1-extra-dates',
+                type: 'extra_dates',
+                value: 'extra_dates',
+                label: 'Zusatzwochen',
+                showLabel: true,
+            }],
+            areRecurrenceWeeksExpanded: methods.areRecurrenceWeeksExpanded,
+            showExtraDatesInSelectedWeek: methods.showExtraDatesInSelectedWeek,
+            shouldIncludeExtraDatesInRegularWeek: methods.shouldIncludeExtraDatesInRegularWeek,
+            courseGroupHasRegularRecurrence: methods.courseGroupHasRegularRecurrence,
+            courseGroupHasExtraDateWeek: methods.courseGroupHasExtraDateWeek,
+            courseGroupRecurrenceWeek: methods.courseGroupRecurrenceWeek,
+            semesterStartDate: () => new Date('2026-09-07T00:00:00'),
+            normalizeDate: methods.normalizeDate,
+        }
+
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11)).toEqual([recurringBlockCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11, ctx.extraDatesOptions()[0])).toEqual([extraDateCourseGroup])
+
+        ctx.showExtraDatesInSelectedWeeks[1] = true
+
+        expect(methods.courseGroupsForCell.call(ctx, 1, 3, 11))
+            .toEqual([recurringBlockCourseGroup, extraDateCourseGroup])
+    })
+
+    it('builds recurrence week selector options from the largest selected interval', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            selectedCourseMenuEntries: () => [
+                {
+                    courseGroups: [
+                        { recurrence_interval: 3 },
+                    ],
+                },
+            ],
+        }
+
+        expect(methods.recurrenceWeekOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Woche 1', 'Woche 2', 'Woche 3'])
+
+        ctx.selectedCourseMenuEntries = () => [
+            {
+                courseGroups: [
+                    { recurrence_interval: 4 },
+                ],
+            },
+        ]
+
+        expect(methods.recurrenceWeekOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
+            .toEqual(['Woche 1', 'Woche 2', 'Woche 3', 'Woche 4'])
     })
 
     it('falls back to the display label when no course field is available', () => {

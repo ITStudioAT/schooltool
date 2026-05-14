@@ -105,73 +105,123 @@
                             </v-chip>
                         </div>
 
-                        <div class="timetable-table-wrapper">
-                            <table class="timetable-grid-table">
-                                <colgroup>
-                                    <col class="timetable-hour-column">
-                                    <col
-                                        v-for="weekday in displayedWeekdays"
-                                        :key="`${semester.value}-${weekday.key}-column`"
-                                        class="timetable-day-column">
-                                </colgroup>
-                                <thead>
-                                    <tr>
-                                        <th class="timetable-hour-header-cell"></th>
-                                        <th v-for="weekday in displayedWeekdays" :key="`${semester.value}-${weekday.key}`" class="timetable-day-header-cell">
-                                            <div>{{ weekday.label }}</div>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr v-for="hour in timetableHoursForSemester(semester.value)" :key="`${semester.value}-${hour.hour}`">
-                                        <td class="timetable-hour-cell">
-                                            <div class="timetable-hour-num">{{ hour.hour }}.</div>
-                                            <div v-if="hour.from || hour.until" class="timetable-hour-time">
-                                                {{ hour.from }}<br>{{ hour.until }}
-                                            </div>
-                                        </td>
-                                        <td
+                        <div v-if="recurrenceWeekOptions(semester.value).length > 1" class="recurrence-week-selector">
+                            <v-btn-toggle
+                                v-if="!areRecurrenceWeeksExpanded(semester.value)"
+                                :model-value="selectedTimetableOptionValue(semester.value)"
+                                mandatory
+                                density="compact"
+                                color="primary"
+                                variant="outlined"
+                                divided
+                                @update:model-value="setSelectedTimetableOptionValue(semester.value, $event)">
+                                <v-btn
+                                    v-for="weekOption in timetableSelectorOptions(semester.value)"
+                                    :key="weekOption.value"
+                                    :value="weekOption.value"
+                                    size="small"
+                                    class="recurrence-week-selector__btn">
+                                    {{ weekOption.label }}
+                                </v-btn>
+                            </v-btn-toggle>
+                            <v-btn
+                                size="small"
+                                color="grey-darken-1"
+                                variant="outlined"
+                                prepend-icon="mdi-table-multiple"
+                                class="recurrence-week-selector__action-btn"
+                                @click="toggleRecurrenceWeeks(semester.value)">
+                                {{ areRecurrenceWeeksExpanded(semester.value) ? 'Eine Woche anzeigen' : 'Wochen anzeigen' }}
+                            </v-btn>
+                        </div>
+
+                        <div
+                            v-for="timetableWeek in visibleTimetableWeeks(semester.value)"
+                            :key="timetableWeek.key"
+                            class="timetable-week">
+                            <div v-if="timetableWeek.showLabel" class="timetable-week__title">
+                                {{ timetableWeek.label }}
+                            </div>
+
+                            <div class="timetable-table-wrapper">
+                                <table class="timetable-grid-table">
+                                    <colgroup>
+                                        <col class="timetable-hour-column">
+                                        <col
                                             v-for="weekday in displayedWeekdays"
-                                            :key="`${semester.value}-${weekday.key}-${hour.hour}`"
-                                            class="timetable-grid-cell">
-                                            <div
-                                                v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour)"
-                                                :key="courseGroup.key"
-                                                :class="[
-                                                    'timetable-course-item',
-                                                    { 'timetable-course-item--overlap': courseGroupHasOverlap(courseGroup) },
-                                                ]"
-                                                role="button"
-                                                tabindex="0"
-                                                @click="openCourseGroupDialog(courseGroup)"
-                                                @keydown.enter="openCourseGroupDialog(courseGroup)">
-                                                <span class="timetable-course-title">{{ courseGroup.display_label || courseGroup.title }}</span>
-                                                <span v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-course-markers">
-                                                    <v-chip
-                                                        v-if="courseGroup.recurrence_label"
-                                                        size="x-small"
-                                                        color="primary"
-                                                        variant="tonal">
-                                                        {{ courseGroup.recurrence_label }}
-                                                    </v-chip>
-                                                    <v-chip
-                                                        v-if="courseGroup.is_block"
-                                                        size="x-small"
-                                                        color="warning"
-                                                        variant="tonal">
-                                                        {{ courseGroupBlockLabel(courseGroup) }}
-                                                    </v-chip>
-                                                </span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    <tr v-if="!timetableHoursForSemester(semester.value).length">
-                                        <td :colspan="displayedWeekdays.length + 1" class="timetable-empty-cell">
-                                            Keine Einträge in den sichtbaren Wochentagen.
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
+                                            :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-column`"
+                                            class="timetable-day-column">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th class="timetable-hour-header-cell"></th>
+                                            <th v-for="weekday in displayedWeekdays" :key="`${semester.value}-${timetableWeek.key}-${weekday.key}`" class="timetable-day-header-cell">
+                                                <div>{{ weekday.label }}</div>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="hour in timetableHoursForSemester(semester.value, timetableWeek)" :key="`${semester.value}-${timetableWeek.key}-${hour.hour}`">
+                                            <td class="timetable-hour-cell">
+                                                <div class="timetable-hour-num">{{ hour.hour }}.</div>
+                                                <div v-if="hour.from || hour.until" class="timetable-hour-time">
+                                                    {{ hour.from }}<br>{{ hour.until }}
+                                                </div>
+                                            </td>
+                                            <td
+                                                v-for="weekday in displayedWeekdays"
+                                                :key="`${semester.value}-${timetableWeek.key}-${weekday.key}-${hour.hour}`"
+                                                class="timetable-grid-cell">
+                                                <div
+                                                    v-for="courseGroup in courseGroupsForCell(semester.value, weekday.value, hour.hour, timetableWeek)"
+                                                    :key="courseGroup.key"
+                                                    :class="[
+                                                        'timetable-course-item',
+                                                        { 'timetable-course-item--overlap': courseGroupHasOverlap(courseGroup) },
+                                                    ]"
+                                                    role="button"
+                                                    tabindex="0"
+                                                    @click="openCourseGroupDialog(courseGroup)"
+                                                    @keydown.enter="openCourseGroupDialog(courseGroup)">
+                                                    <span class="timetable-course-title">{{ courseGroup.display_label || courseGroup.title }}</span>
+                                                    <span v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-course-markers">
+                                                        <v-chip
+                                                            v-if="courseGroup.recurrence_label"
+                                                            size="x-small"
+                                                            color="primary"
+                                                            variant="tonal">
+                                                            {{ courseGroup.recurrence_label }}
+                                                        </v-chip>
+                                                        <v-chip
+                                                            v-if="courseGroup.is_block"
+                                                            size="x-small"
+                                                            color="warning"
+                                                            variant="tonal">
+                                                            {{ courseGroupBlockLabel(courseGroup) }}
+                                                        </v-chip>
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr v-if="!timetableHoursForSemester(semester.value, timetableWeek).length">
+                                            <td :colspan="displayedWeekdays.length + 1" class="timetable-empty-cell">
+                                                Keine Einträge in den sichtbaren Wochentagen.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div v-if="shouldShowExtraDatesNotice(semester.value, timetableWeek)" class="extra-dates-notice">
+                                <span class="extra-dates-notice__text">Zusatzwochen vorhanden</span>
+                                <v-checkbox
+                                    :model-value="showExtraDatesInSelectedWeek(semester.value)"
+                                    color="primary"
+                                    density="compact"
+                                    hide-details
+                                    label="Im aktuellen Stundenplan anzeigen"
+                                    @update:model-value="setShowExtraDatesInSelectedWeek(semester.value, $event)" />
+                            </div>
                         </div>
                     </section>
                 </div>
@@ -231,6 +281,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 
 const FALLBACK_HOUR_COUNT = 10
+const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -243,6 +294,18 @@ export default {
             courseGroupDialog: false,
             selectedCourseGroup: null,
             activeCourseGroupFilterKeys: [],
+            selectedRecurrenceWeeks: {
+                1: ALL_DATES_OPTION_VALUE,
+                2: ALL_DATES_OPTION_VALUE,
+            },
+            expandedRecurrenceWeeks: {
+                1: false,
+                2: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: false,
+                2: false,
+            },
             showSaturday: false,
             weekdays: [
                 { key: 'mo', label: 'Mo', value: 1 },
@@ -394,10 +457,11 @@ export default {
 
             return raw.slice(0, 5)
         },
-        courseGroupsForCell(semester, weekday, hour) {
+        courseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
             return [...(this.courseGroupsByCell[this.courseCellKey(semester, weekday, hour)] || [])]
                 .filter((courseGroup) => (
                     this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
+                    && this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek)
                 ))
                 .sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
                     this.courseGroupSortLabel(right),
@@ -455,7 +519,7 @@ export default {
                         .map((entry) => ({
                             ...entry,
                             courseGroupKeys: [...new Set(entry.courseGroupKeys)],
-                            scheduleLabel: this.courseMenuEntryScheduleLabel(entry),
+                            scheduleLabel: this.courseMenuEntryScheduleLabelWithFrequency(entry),
                         }))
                         .sort((left, right) => (
                             left.label.localeCompare(right.label, 'de', { sensitivity: 'base' })
@@ -537,6 +601,301 @@ export default {
                 })
                 .filter(Boolean)
                 .join(', ')
+        },
+        courseMenuEntryScheduleLabelWithFrequency(entry) {
+            const scheduleLabel = this.courseMenuEntryScheduleLabel(entry)
+            const frequencyLabel = this.courseMenuEntryFrequencyLabel(entry)
+
+            return [
+                scheduleLabel,
+                frequencyLabel ? `(${frequencyLabel})` : '',
+            ]
+                .filter(Boolean)
+                .join(' ')
+        },
+        courseMenuEntryFrequencyLabel(entry) {
+            const courseGroups = Array.isArray(entry?.courseGroups) ? entry.courseGroups : []
+            const recurrenceLabels = [...new Set(courseGroups
+                .map((courseGroup) => Number(courseGroup?.recurrence_interval))
+                .filter((interval) => [1, 2, 3, 4].includes(interval))
+                .sort((left, right) => left - right)
+                .map((interval) => `${interval}w`))]
+
+            const singleDateCount = this.courseMenuEntrySingleDateCount(courseGroups)
+            const labels = singleDateCount > 0
+                ? [...recurrenceLabels, `${singleDateCount}x`]
+                : recurrenceLabels
+
+            return labels.join(', ')
+        },
+        courseMenuEntrySingleDateCount(courseGroups) {
+            const singleDateGroups = courseGroups.filter((courseGroup) => (
+                ![1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
+            ))
+
+            const dates = singleDateGroups
+                .flatMap((courseGroup) => (Array.isArray(courseGroup?.dates) ? courseGroup.dates : []))
+                .filter(Boolean)
+
+            if (dates.length) {
+                return new Set(dates).size
+            }
+
+            return singleDateGroups
+                .map((courseGroup) => Number(courseGroup?.dates_count))
+                .filter((datesCount) => Number.isFinite(datesCount) && datesCount > 0)
+                .reduce((total, datesCount) => total + datesCount, 0)
+        },
+        recurrenceWeekOptions(semester) {
+            const maxInterval = this.selectedCourseMenuEntries(semester)
+                .flatMap((entry) => entry.courseGroups || [])
+                .map((courseGroup) => Number(courseGroup?.recurrence_interval))
+                .filter((interval) => [2, 3, 4].includes(interval))
+                .reduce((highestInterval, interval) => Math.max(highestInterval, interval), 1)
+
+            return Array.from({ length: maxInterval }, (item, index) => ({
+                value: index + 1,
+                label: `Woche ${index + 1}`,
+            }))
+        },
+        timetableSelectorOptions(semester) {
+            return [
+                this.allDatesOption(semester),
+                ...this.recurrenceWeekOptions(semester),
+                ...this.extraDatesOptions(semester),
+            ]
+        },
+        allDatesOption(semester) {
+            return {
+                key: `semester-${semester}-all-dates`,
+                type: 'all_dates',
+                value: ALL_DATES_OPTION_VALUE,
+                label: 'Alle Termine',
+                showLabel: false,
+            }
+        },
+        selectedRecurrenceWeek(semester) {
+            const selectedWeek = Number(this.selectedRecurrenceWeeks?.[Number(semester)])
+            const maxWeek = this.recurrenceWeekOptions(semester).length
+
+            if (!Number.isFinite(selectedWeek) || selectedWeek < 1 || selectedWeek > maxWeek) {
+                return 1
+            }
+
+            return selectedWeek
+        },
+        selectedTimetableOptionValue(semester) {
+            const selectedValue = this.selectedRecurrenceWeeks?.[Number(semester)]
+            if (selectedValue === ALL_DATES_OPTION_VALUE) {
+                return selectedValue
+            }
+
+            if (selectedValue === 'extra_dates' && this.extraDatesOptions(semester).length) {
+                return selectedValue
+            }
+
+            if (Number.isFinite(Number(selectedValue))) {
+                return this.selectedRecurrenceWeek(semester)
+            }
+
+            return ALL_DATES_OPTION_VALUE
+        },
+        setSelectedTimetableOptionValue(semester, value) {
+            if ([ALL_DATES_OPTION_VALUE, 'extra_dates'].includes(value)) {
+                this.selectedRecurrenceWeeks = {
+                    ...this.selectedRecurrenceWeeks,
+                    [Number(semester)]: value,
+                }
+
+                return
+            }
+
+            this.setSelectedRecurrenceWeek(semester, value)
+        },
+        setSelectedRecurrenceWeek(semester, week) {
+            const selectedWeek = Number(week)
+            if (!Number.isFinite(selectedWeek)) {
+                return
+            }
+
+            this.selectedRecurrenceWeeks = {
+                ...this.selectedRecurrenceWeeks,
+                [Number(semester)]: selectedWeek,
+            }
+        },
+        areRecurrenceWeeksExpanded(semester) {
+            return Boolean(this.expandedRecurrenceWeeks?.[Number(semester)])
+        },
+        toggleRecurrenceWeeks(semester) {
+            const semesterNumber = Number(semester)
+
+            this.expandedRecurrenceWeeks = {
+                ...this.expandedRecurrenceWeeks,
+                [semesterNumber]: !this.areRecurrenceWeeksExpanded(semesterNumber),
+            }
+        },
+        visibleTimetableWeeks(semester) {
+            const options = this.recurrenceWeekOptions(semester)
+
+            if (options.length <= 1) {
+                return [{
+                    key: `semester-${semester}-single`,
+                    type: 'single',
+                    value: null,
+                    label: '',
+                    showLabel: false,
+                }]
+            }
+
+            if (this.areRecurrenceWeeksExpanded(semester)) {
+                return [
+                    ...options.map((option) => ({
+                        ...option,
+                        key: `semester-${semester}-week-${option.value}`,
+                        type: 'recurrence',
+                        showLabel: true,
+                    })),
+                    ...this.extraDatesOptions(semester),
+                ]
+            }
+
+            const selectedWeek = this.selectedRecurrenceWeek(semester)
+            const selectedOption = options.find((option) => option.value === selectedWeek) || options[0]
+            const selectedTimetableOption = this.selectedTimetableOptionValue(semester)
+
+            if (selectedTimetableOption === ALL_DATES_OPTION_VALUE) {
+                return [this.allDatesOption(semester)]
+            }
+
+            if (selectedTimetableOption === 'extra_dates') {
+                return this.extraDatesOptions(semester)
+            }
+
+            return [{
+                ...selectedOption,
+                key: `semester-${semester}-week-${selectedOption.value}`,
+                type: 'recurrence',
+                showLabel: false,
+            }]
+        },
+        extraDatesOptions(semester) {
+            const hasExtraDates = this.selectedCourseMenuEntries(semester)
+                .flatMap((entry) => entry.courseGroups || [])
+                .filter((courseGroup) => this.courseGroupHasExtraDateWeek(courseGroup))
+                .length > 0
+
+            if (!hasExtraDates) {
+                return []
+            }
+
+            return [{
+                key: `semester-${semester}-extra-dates`,
+                type: 'extra_dates',
+                value: 'extra_dates',
+                label: 'Zusatzwochen',
+                showLabel: true,
+            }]
+        },
+        shouldShowExtraDatesNotice(semester, timetableWeek) {
+            return ['all_dates', 'recurrence'].includes(timetableWeek?.type)
+                && !this.areRecurrenceWeeksExpanded(semester)
+                && this.extraDatesOptions(semester).length > 0
+        },
+        showExtraDatesInSelectedWeek(semester) {
+            return Boolean(this.showExtraDatesInSelectedWeeks?.[Number(semester)])
+        },
+        setShowExtraDatesInSelectedWeek(semester, value) {
+            this.showExtraDatesInSelectedWeeks = {
+                ...this.showExtraDatesInSelectedWeeks,
+                [Number(semester)]: Boolean(value),
+            }
+        },
+        shouldIncludeExtraDatesInRegularWeek(semester) {
+            return this.selectedTimetableOptionValue(semester) !== 'extra_dates'
+                && !this.areRecurrenceWeeksExpanded(semester)
+                && this.extraDatesOptions(semester).length > 0
+                && this.showExtraDatesInSelectedWeek(semester)
+        },
+        courseGroupHasRegularRecurrence(courseGroup) {
+            return [1, 2, 3, 4].includes(Number(courseGroup?.recurrence_interval))
+        },
+        courseGroupHasExtraDateWeek(courseGroup) {
+            return !this.courseGroupHasRegularRecurrence(courseGroup)
+        },
+        courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek = null) {
+            if (recurrenceWeek?.type === 'extra_dates') {
+                return this.courseGroupHasExtraDateWeek(courseGroup)
+            }
+
+            const selectedTimetableOption = this.selectedTimetableOptionValue(semester)
+            if (recurrenceWeek?.type === 'all_dates' || (!recurrenceWeek && selectedTimetableOption === ALL_DATES_OPTION_VALUE)) {
+                if (this.courseGroupHasExtraDateWeek(courseGroup)) {
+                    return this.shouldIncludeExtraDatesInRegularWeek(semester)
+                }
+
+                return true
+            }
+
+            const options = this.recurrenceWeekOptions(semester)
+            if (options.length <= 1) {
+                return true
+            }
+
+            const interval = Number(courseGroup?.recurrence_interval)
+            if (this.courseGroupHasRegularRecurrence(courseGroup) && interval === 1) {
+                return selectedTimetableOption !== 'extra_dates'
+                    && recurrenceWeek?.type !== 'extra_dates'
+            }
+
+            if (!this.courseGroupHasRegularRecurrence(courseGroup) || ![2, 3, 4].includes(interval)) {
+                if (recurrenceWeek?.type === 'recurrence' || Number.isFinite(Number(recurrenceWeek))) {
+                    return this.shouldIncludeExtraDatesInRegularWeek(semester)
+                }
+
+                return selectedTimetableOption === 'extra_dates'
+            }
+
+            const targetWeek = recurrenceWeek?.type === 'recurrence'
+                ? Number(recurrenceWeek.value)
+                : recurrenceWeek !== null && recurrenceWeek !== undefined && Number.isFinite(Number(recurrenceWeek))
+                    ? Number(recurrenceWeek)
+                    : this.selectedRecurrenceWeek(semester)
+
+            return this.courseGroupRecurrenceWeek(courseGroup, semester) === targetWeek
+        },
+        courseGroupRecurrenceWeek(courseGroup, semester) {
+            const interval = Number(courseGroup?.recurrence_interval)
+            if (![2, 3, 4].includes(interval)) {
+                return 1
+            }
+
+            const firstDate = this.normalizeDate(courseGroup?.first_date || courseGroup?.dates?.[0])
+            const semesterStart = this.semesterStartDate(semester)
+            if (!firstDate || !semesterStart) {
+                return 1
+            }
+
+            const dayDifference = Math.floor((firstDate.getTime() - semesterStart.getTime()) / 86400000)
+            const weekOffset = Math.floor(dayDifference / 7)
+            const normalizedOffset = ((weekOffset % interval) + interval) % interval
+
+            return normalizedOffset + 1
+        },
+        semesterStartDate(semester) {
+            const configuredStart = Number(semester) === 1
+                ? this.normalizeDate(this.selectedSchoolyear?.from)
+                : this.normalizeDate(this.selectedSchoolyear?.sem_2_start)
+
+            if (configuredStart) {
+                return configuredStart
+            }
+
+            return this.configuredCourseGroups
+                .filter((courseGroup) => Number(courseGroup?.semester) === Number(semester))
+                .flatMap((courseGroup) => [courseGroup?.first_date, ...(courseGroup?.dates || [])])
+                .map((date) => this.normalizeDate(date))
+                .filter(Boolean)
+                .sort((left, right) => left.getTime() - right.getTime())[0] || null
         },
         courseGroupScheduleLabel(courseGroup) {
             const weekdayLabel = this.weekdayForCourseGroup(courseGroup).label
@@ -754,10 +1113,10 @@ export default {
             this.courseGroupDialog = false
             this.selectedCourseGroup = null
         },
-        timetableHoursForSemester(semester) {
+        timetableHoursForSemester(semester, recurrenceWeek = null) {
             return this.timetableHours.filter((hour) => (
                 this.displayedWeekdays.some((weekday) => (
-                    this.courseGroupsForCell(semester, weekday.value, hour.hour).length > 0
+                    this.courseGroupsForCell(semester, weekday.value, hour.hour, recurrenceWeek).length > 0
                 ))
             ))
         },
@@ -903,6 +1262,52 @@ export default {
 
 .selected-course-filter-chip {
     font-weight: 650;
+}
+
+.recurrence-week-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+}
+
+.recurrence-week-selector__btn {
+    min-width: 76px;
+}
+
+.recurrence-week-selector__action-btn {
+    background: #ffffff;
+}
+
+.timetable-week + .timetable-week {
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.timetable-week__title {
+    padding: 8px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: rgba(0, 0, 0, 0.72);
+    background: #fafafa;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.extra-dates-notice {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 8px 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    background: #ffffff;
+}
+
+.extra-dates-notice__text {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: rgba(0, 0, 0, 0.68);
 }
 
 .timetable-saturday-switch {
