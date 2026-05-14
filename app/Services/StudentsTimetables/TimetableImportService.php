@@ -3,6 +3,7 @@
 namespace App\Services\StudentsTimetables;
 
 use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
+use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
@@ -36,7 +37,7 @@ class TimetableImportService
             $sections[$code] = ($sections[$code] ?? 0) + 1;
 
             if ($code === 'TT') {
-                $course = trim($parts[8] ?? '');
+                $course = $this->timetableCourseName($parts);
                 if ($course !== '') {
                     $ttCourses[$course] = true;
                 }
@@ -104,10 +105,6 @@ class TimetableImportService
         $totalLines = count($lines);
         $this->markRunning($import, $totalLines);
 
-        StudentTimetableEntry::where('school_id', $import->school_id)
-            ->where('schoolyear_id', $import->schoolyear_id)
-            ->delete();
-
         $sections = [];
         $ttCourses = [];
         $ttFirstDate = null;
@@ -125,7 +122,7 @@ class TimetableImportService
             }
 
             if ($code === 'TT') {
-                $course = trim($parts[8] ?? '');
+                $course = $this->timetableCourseName($parts);
                 if ($course !== '') {
                     $ttCourses[$course] = true;
                 }
@@ -144,7 +141,7 @@ class TimetableImportService
             }
 
             if (count($rows) >= 500) {
-                StudentTimetableEntry::insert($rows);
+                $this->updateOrCreateTimetableEntries($rows);
                 $rows = [];
             }
 
@@ -154,7 +151,7 @@ class TimetableImportService
         }
 
         if ($rows !== []) {
-            StudentTimetableEntry::insert($rows);
+            $this->updateOrCreateTimetableEntries($rows);
         }
 
         ksort($sections);
@@ -176,6 +173,68 @@ class TimetableImportService
         return $import->refresh();
     }
 
+    public function queueUnimport(TimetableImport $import): TimetableImport
+    {
+        $import->update([
+            'import_status' => 'deleting',
+            'progress_current' => 0,
+            'progress_total' => 0,
+            'import_message' => 'Import wird gelöscht. Der aktive Stundenplan wird anschließend neu aufgebaut.',
+            'import_error' => null,
+            'started_at' => now(),
+            'finished_at' => null,
+        ]);
+
+        ProcessTimetableUnimportJob::dispatch((int) $import->id);
+
+        return $import->refresh();
+    }
+
+    /**
+     * @return array{message: string, removed_import_id: int, removed_import_entries: int, replayed_imports: int, active_entries: int}
+     */
+    public function unimport(TimetableImport $import): array
+    {
+        $schoolId = (int) $import->school_id;
+        $schoolyearId = (int) $import->schoolyear_id;
+        $importId = (int) $import->id;
+        $filePath = storage_path($import->file_path);
+        $removedImportEntries = StudentTimetableEntry::where('timetable_import_id', $importId)->count();
+
+        $remainingImports = TimetableImport::where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereKeyNot($importId)
+            ->orderBy('imported_at')
+            ->orderBy('id')
+            ->get();
+
+        DB::transaction(function () use ($import, $remainingImports, $schoolId, $schoolyearId): void {
+            StudentTimetableEntry::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->delete();
+
+            $import->delete();
+
+            $remainingImports->each(function (TimetableImport $remainingImport): void {
+                $this->processImport($remainingImport);
+            });
+        });
+
+        if (is_file($filePath)) {
+            @unlink($filePath);
+        }
+
+        return [
+            'message' => 'Import wurde gelöscht und der aktive Stundenplan wurde neu aufgebaut.',
+            'removed_import_id' => $importId,
+            'removed_import_entries' => $removedImportEntries,
+            'replayed_imports' => $remainingImports->count(),
+            'active_entries' => StudentTimetableEntry::where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->count(),
+        ];
+    }
+
     public function ensureSemesterTwoStart(User $user, ?int $schoolyearId): void
     {
         $this->schoolyearWithSemesterTwoStart($user, $schoolyearId);
@@ -183,23 +242,6 @@ class TimetableImportService
 
     private function createImportRecord(User $user, string $storedFilename, string $originalFilename, string $filePath, Schoolyear $schoolyear): TimetableImport
     {
-        $existing = TimetableImport::where('school_id', $user->school_id)
-            ->where('schoolyear_id', $schoolyear->id)
-            ->first();
-
-        if ($existing) {
-            $oldFile = storage_path($existing->file_path);
-            if (is_file($oldFile)) {
-                @unlink($oldFile);
-            }
-
-            StudentTimetableEntry::where('school_id', $user->school_id)
-                ->where('schoolyear_id', $schoolyear->id)
-                ->delete();
-
-            $existing->delete();
-        }
-
         return DB::transaction(function () use ($user, $storedFilename, $originalFilename, $filePath, $schoolyear): TimetableImport {
             return TimetableImport::create([
                 'school_id' => $user->school_id,
@@ -262,7 +304,6 @@ class TimetableImportService
         int $lineNumber,
     ): array {
         $date = $this->normalizeDate($parts[2] ?? null);
-        $now = now();
 
         return [
             'school_id' => $import->school_id,
@@ -279,10 +320,57 @@ class TimetableImportService
             'class_name' => $this->nullableColumn($parts[7] ?? null),
             'course' => $this->nullableColumn($parts[8] ?? null),
             'student_group' => $this->nullableColumn($parts[9] ?? null),
-            'raw_columns' => json_encode($parts, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]',
+            'raw_columns' => $parts,
             'raw_line' => $line,
-            'created_at' => $now,
-            'updated_at' => $now,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    private function updateOrCreateTimetableEntries(array $rows): void
+    {
+        foreach ($rows as $row) {
+            StudentTimetableEntry::updateOrCreate(
+                $this->timetableEntryIdentity($row),
+                $this->timetableEntryUpdatePayload($row),
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function timetableEntryIdentity(array $row): array
+    {
+        return [
+            'school_id' => $row['school_id'],
+            'schoolyear_id' => $row['schoolyear_id'],
+            'source_identifier' => $row['source_identifier'],
+            'date' => $row['date'],
+            'period' => $row['period'],
+            'class_name' => $row['class_name'],
+            'course' => $row['course'],
+            'student_group' => $row['student_group'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    private function timetableEntryUpdatePayload(array $row): array
+    {
+        return [
+            'timetable_import_id' => $row['timetable_import_id'],
+            'line_number' => $row['line_number'],
+            'semester' => $row['semester'],
+            'subject' => $row['subject'],
+            'teacher' => $row['teacher'],
+            'room' => $row['room'],
+            'raw_columns' => $row['raw_columns'],
+            'raw_line' => $row['raw_line'],
         ];
     }
 
@@ -299,6 +387,14 @@ class TimetableImportService
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $parts
+     */
+    private function timetableCourseName(array $parts): string
+    {
+        return trim($parts[7] ?? '');
     }
 
     private function semesterForDate(string $date, string $semesterTwoStart): int

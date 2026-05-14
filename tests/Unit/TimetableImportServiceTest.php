@@ -1,9 +1,11 @@
 <?php
 
 use App\Jobs\StudentsTimetables\ProcessTimetableImportJob;
+use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\School;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
+use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,7 +54,6 @@ it('stores TT rows as semester-aware timetable entries for the selected schoolye
 
     expect($import->school_id)->toBe($this->school->id)
         ->and($import->schoolyear_id)->toBe($this->schoolyear->id)
-        ->and($import->tt_courses)->toBe(2)
         ->and($import->tt_first_date->toDateString())->toBe('2026-02-15')
         ->and($import->tt_last_date->toDateString())->toBe('2026-02-16')
         ->and($import->import_status)->toBe('completed')
@@ -85,6 +86,172 @@ it('stores TT rows as semester-aware timetable entries for the selected schoolye
     ]);
 
     expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(2);
+});
+
+it('counts distinct timetable course labels from Untis TT rows', function () {
+    $filePath = "{$this->storageDirectory}/untis-course-count.txt";
+    File::put($filePath, implode(PHP_EOL, [
+        'TT	82	20260217	11	17:50	18:35	6A	PH2-6A-ALT	PH				1		156100',
+        'TT	83	20260217	12	18:45	19:30	6A	PH2-6A-ALT	PH				1		156100',
+        'TT	445	20260217	13	19:30	20:15	2A	M2-2A-ALT	M				1		14500',
+    ]));
+
+    $analysis = $this->service->analyzeFile($filePath);
+
+    expect($analysis['sections']['TT'])->toBe(3)
+        ->and($analysis['tt_courses'])->toBe(2);
+});
+
+it('updates matching timetable rows and keeps previous unmatched entries', function () {
+    $firstFilePath = "{$this->storageDirectory}/first.txt";
+    File::put($firstFilePath, implode(PHP_EOL, [
+        'TT	100	20260215	1	MATH	AB	R101	1A	MATH-1	GRP-A',
+        'TT	200	20260216	2	BIO	CD	R102	1A	BIO-1	GRP-B',
+    ]));
+
+    $firstImport = $this->service->createImport(
+        $this->user,
+        'first.txt',
+        'first.txt',
+        'app/private/testing/student-timetables/first.txt',
+        $this->schoolyear->id,
+    );
+
+    $secondFilePath = "{$this->storageDirectory}/second.txt";
+    File::put($secondFilePath, implode(PHP_EOL, [
+        'TT	100	20260215	1	MATH	EF	R201	1A	MATH-1	GRP-A',
+        'TT	300	20260217	3	HIST	GH	R103	1A	HIST-1	GRP-C',
+    ]));
+
+    $secondImport = $this->service->createImport(
+        $this->user,
+        'second.txt',
+        'second.txt',
+        'app/private/testing/student-timetables/second.txt',
+        $this->schoolyear->id,
+    );
+
+    expect(TimetableImport::where('school_id', $this->school->id)->count())->toBe(2)
+        ->and(StudentTimetableEntry::where('school_id', $this->school->id)->count())->toBe(3);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'timetable_import_id' => $secondImport->id,
+        'source_identifier' => '100',
+        'date' => '2026-02-15',
+        'period' => '1',
+        'teacher' => 'EF',
+        'room' => 'R201',
+    ]);
+
+    expect(StudentTimetableEntry::where('source_identifier', '100')->count())->toBe(1);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'timetable_import_id' => $firstImport->id,
+        'source_identifier' => '200',
+        'course' => 'BIO-1',
+    ]);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'timetable_import_id' => $secondImport->id,
+        'source_identifier' => '300',
+        'course' => 'HIST-1',
+    ]);
+});
+
+it('unimports a run by rebuilding the active timetable from remaining imports', function () {
+    $firstFilePath = "{$this->storageDirectory}/restore-first.txt";
+    File::put($firstFilePath, implode(PHP_EOL, [
+        'TT	100	20260215	1	MATH	AB	R101	1A	MATH-1	GRP-A',
+        'TT	200	20260216	2	BIO	CD	R102	1A	BIO-1	GRP-B',
+    ]));
+
+    $firstImport = $this->service->createImport(
+        $this->user,
+        'restore-first.txt',
+        'restore-first.txt',
+        'app/private/testing/student-timetables/restore-first.txt',
+        $this->schoolyear->id,
+    );
+
+    $secondFilePath = "{$this->storageDirectory}/restore-second.txt";
+    File::put($secondFilePath, implode(PHP_EOL, [
+        'TT	100	20260215	1	MATH	EF	R201	1A	MATH-1	GRP-A',
+        'TT	300	20260217	3	HIST	GH	R103	1A	HIST-1	GRP-C',
+    ]));
+
+    $secondImport = $this->service->createImport(
+        $this->user,
+        'restore-second.txt',
+        'restore-second.txt',
+        'app/private/testing/student-timetables/restore-second.txt',
+        $this->schoolyear->id,
+    );
+
+    $result = $this->service->unimport($secondImport);
+
+    expect($result['removed_import_id'])->toBe($secondImport->id)
+        ->and($result['replayed_imports'])->toBe(1)
+        ->and($result['active_entries'])->toBe(2);
+
+    $this->assertDatabaseMissing('timetable_imports', [
+        'id' => $secondImport->id,
+    ]);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'timetable_import_id' => $firstImport->id,
+        'source_identifier' => '100',
+        'teacher' => 'AB',
+        'room' => 'R101',
+    ]);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'timetable_import_id' => $firstImport->id,
+        'source_identifier' => '200',
+        'course' => 'BIO-1',
+    ]);
+
+    $this->assertDatabaseMissing('student_timetable_entries', [
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'source_identifier' => '300',
+    ]);
+});
+
+it('queues unimporting without rebuilding immediately', function () {
+    Queue::fake();
+
+    $filePath = "{$this->storageDirectory}/queued-delete.txt";
+    File::put($filePath, 'TT	100	20260215	1	MATH	AB	R101	1A	MATH-1	GRP-A');
+
+    $import = $this->service->createImport(
+        $this->user,
+        'queued-delete.txt',
+        'queued-delete.txt',
+        'app/private/testing/student-timetables/queued-delete.txt',
+        $this->schoolyear->id,
+    );
+
+    $queuedImport = $this->service->queueUnimport($import);
+
+    expect($queuedImport->import_status)->toBe('deleting')
+        ->and($queuedImport->import_message)->toBe('Import wird gelöscht. Der aktive Stundenplan wird anschließend neu aufgebaut.');
+
+    expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(1);
+
+    Queue::assertPushed(
+        ProcessTimetableUnimportJob::class,
+        fn (ProcessTimetableUnimportJob $job): bool => $job->timetableImportId === $import->id,
+    );
 });
 
 it('requires a semester two start date before importing timetable entries', function () {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolLicence;
@@ -7,10 +8,12 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\TeachingSchoolHour;
+use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\AdminNavigationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Queue;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -91,6 +94,112 @@ it('returns school hours for the selected schoolyear', function () {
         ->assertJsonPath('data.0.hour', 1)
         ->assertJsonPath('data.0.from', '08:00')
         ->assertJsonPath('data.0.until', '08:45');
+});
+
+it('returns the requested timetable import history for the selected schoolyear', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $otherSchoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $imports = collect(range(1, 12))->map(fn (int $index): TimetableImport => TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'original_filename' => "stundenplan-{$index}.txt",
+        'imported_at' => now()->subMinutes($index),
+    ]));
+
+    TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $otherSchoolyear->id,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $imports->first()->id,
+        'date' => '2026-02-16',
+        'class_name' => 'PH2-6A-ALT',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $imports->first()->id,
+        'date' => '2026-07-11',
+        'class_name' => 'M2-2A-ALT',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $imports->first()->id,
+        'date' => '2026-07-04',
+        'class_name' => 'M2-2A-ALT',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $otherSchoolyear->id,
+        'date' => '2026-01-01',
+        'class_name' => 'OTHER',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports?per_page=20')
+        ->assertSuccessful()
+        ->assertJsonCount(12, 'data')
+        ->assertJsonPath('per_page', 20)
+        ->assertJsonPath('main_dataset.table', 'student_timetable_entries')
+        ->assertJsonPath('main_dataset.entries_count', 3)
+        ->assertJsonPath('main_dataset.courses_count', 2)
+        ->assertJsonPath('main_dataset.first_date', '2026-02-16')
+        ->assertJsonPath('main_dataset.last_date', '2026-07-11')
+        ->assertJsonPath('main_dataset.courses.0.name', 'M2-2A-ALT')
+        ->assertJsonPath('main_dataset.courses.0.entries_count', 2)
+        ->assertJsonPath('main_dataset.courses.0.first_date', '2026-07-04')
+        ->assertJsonPath('main_dataset.courses.0.last_date', '2026-07-11')
+        ->assertJsonPath('main_dataset.courses.1.name', 'PH2-6A-ALT')
+        ->assertJsonPath('main_dataset.courses.1.entries_count', 1);
+});
+
+it('unimports a timetable import run and removes its associated entries', function () {
+    Queue::fake();
+
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $import = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
+
+    $entry = StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $import->id,
+    ]);
+
+    $this->actingAs($user)
+        ->deleteJson("/api/admin/students-timetables/imports/{$import->id}")
+        ->assertAccepted()
+        ->assertJsonPath('message', 'Import-Löschung wurde in die Warteschlange gestellt.')
+        ->assertJsonPath('data.import_status', 'deleting');
+
+    $this->assertDatabaseHas('timetable_imports', [
+        'id' => $import->id,
+        'import_status' => 'deleting',
+    ]);
+    $this->assertDatabaseHas('student_timetable_entries', ['id' => $entry->id]);
+
+    Queue::assertPushed(
+        ProcessTimetableUnimportJob::class,
+        fn (ProcessTimetableUnimportJob $job): bool => $job->timetableImportId === $import->id,
+    );
 });
 
 it('returns grouped timetable courses with recurrence and block markers', function () {
