@@ -47,71 +47,10 @@
                         @click="applyFreeWeeksTemplate">
                         Freie Tage übernehmen
                     </v-btn>
-                    <div class="curriculum-detail__year-picker d-flex align-center ga-1">
-                        <v-btn
-                            icon="mdi-chevron-left"
-                            variant="tonal"
-                            color="secondary"
-                            size="x-small"
-                            :disabled="isPageActionLocked"
-                            @click="selectedYear--" />
-                        <v-chip
-                            size="small"
-                            variant="tonal"
-                            color="primary"
-                            class="font-weight-bold px-3">
-                            {{ selectedYear }}/{{ selectedYear + 1 }}
-                        </v-chip>
-                        <v-btn
-                            icon="mdi-chevron-right"
-                            variant="tonal"
-                            color="secondary"
-                            size="x-small"
-                            :disabled="isPageActionLocked"
-                            @click="selectedYear++" />
-                    </div>
                 </div>
             </div>
             <v-sheet rounded="xl" class="curriculum-detail__view-toolbar pa-3 mt-3">
                 <div class="curriculum-detail__view-toolbar-row">
-                    <div class="curriculum-detail__week-view">
-                        <div class="curriculum-detail__week-view-label">Wochenansicht</div>
-                        <v-btn-toggle
-                            v-model="weekDisplayMode"
-                            mandatory
-                            color="primary"
-                            density="compact"
-                            rounded="lg"
-                            class="curriculum-detail__week-view-toggle">
-                            <v-btn value="days" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-calendar-week</v-icon>
-                                Mit Tagen
-                            </v-btn>
-                            <v-btn value="compact" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-view-compact-outline</v-icon>
-                                Ohne Tage
-                            </v-btn>
-                        </v-btn-toggle>
-                    </div>
-                    <div class="curriculum-detail__week-view">
-                        <div class="curriculum-detail__week-view-label">Volle Monate</div>
-                        <v-btn-toggle
-                            v-model="collapseFullMonths"
-                            mandatory
-                            color="primary"
-                            density="compact"
-                            rounded="lg"
-                            class="curriculum-detail__week-view-toggle">
-                            <v-btn :value="false" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-arrow-expand-vertical</v-icon>
-                                Immer zeigen
-                            </v-btn>
-                            <v-btn :value="true" variant="outlined" class="text-none px-3 curriculum-detail__week-view-btn">
-                                <v-icon size="15" class="mr-1">mdi-arrow-collapse-vertical</v-icon>
-                                Einklappen
-                            </v-btn>
-                        </v-btn-toggle>
-                    </div>
                     <div class="curriculum-detail__week-view">
                         <div class="curriculum-detail__week-view-label">Lehrpläne</div>
                         <v-btn-toggle
@@ -162,11 +101,10 @@
 
         <div
             class="curriculum-detail__body"
-            :class="{ 'curriculum-detail__body--compact-calendar': isCompactWeekView }">
+>
             <v-sheet ref="calendarScroll" rounded="xl" class="curriculum-detail__calendar-scroll pa-2">
                 <div
                     class="curriculum-detail__calendar"
-                    :class="{ 'curriculum-detail__calendar--compact': isCompactWeekView }"
                     :style="calendarHighlightStyle">
                     <div
                         v-for="(month, idx) in visibleMonths"
@@ -176,26 +114,44 @@
                             'curriculum-detail__month--with-topics': topicsForMonth(month).length > 0,
                             'curriculum-detail__month--with-exams': monthHasExamEntries(month),
                             'curriculum-detail__month--topic-selected': isMonthAssignedToHighlightedItem(month),
-                            'curriculum-detail__month--collapsed': shouldCollapseMonth(month),
                         }"
                         :data-month-key="month.assignmentKey"
                         :style="{ '--month-hue': monthHue(idx) }">
-                        <button
-                            type="button"
-                            class="curriculum-detail__month-header"
-                            @click="toggleMonthCollapse(month)">
+                        <div class="curriculum-detail__month-header">
                             <div class="curriculum-detail__month-name">{{ month.name }}</div>
-                            <div class="curriculum-detail__month-year">{{ month.year }}</div>
-                        </button>
+                            <div class="curriculum-detail__month-week-meta">
+                                <div
+                                    class="curriculum-detail__month-week-count"
+                                    :class="{
+                                        'curriculum-detail__month-week-count--overassigned': monthTeachingWeekCountIsOverassigned(month),
+                                        'curriculum-detail__month-week-count--actionable': monthTeachingWeekCountIsOverassigned(month),
+                                    }"
+                                    :role="monthTeachingWeekCountIsOverassigned(month) ? 'button' : null"
+                                    :tabindex="monthTeachingWeekCountIsOverassigned(month) ? 0 : null"
+                                    :title="monthTeachingWeekCountIsOverassigned(month) ? 'Termine nach unten schieben' : null"
+                                    @click.stop="openOverloadedMonthShiftDialog(month)"
+                                    @keydown.enter.stop.prevent="openOverloadedMonthShiftDialog(month)"
+                                    @keydown.space.stop.prevent="openOverloadedMonthShiftDialog(month)">
+                                    <span
+                                        v-if="monthTeachingWeekCountIsOverassigned(month)"
+                                        class="curriculum-detail__month-week-warning">!</span>
+                                    {{ monthTeachingWeekCountLabel(month) }}
+                                </div>
+                            </div>
+                        </div>
                         <div v-if="monthOverviewEntries(month).length" class="curriculum-detail__month-topics">
-                            <div v-if="!shouldCollapseMonth(month)" class="curriculum-detail__month-topics-label">Themen</div>
+                            <div class="curriculum-detail__month-topics-label">Themen</div>
                             <div class="curriculum-detail__month-topics-text">
                                 <div
                                     v-for="group in monthOverviewGroups(month)"
                                     :key="group.id"
                                     class="curriculum-detail__month-topic-line">
                                     <template v-if="group.units.length">
-                                        <span class="curriculum-detail__month-topic-name">{{ `${group.topicTitle}: ` }}</span>
+                                        <span class="curriculum-detail__month-topic-name">
+                                            {{ group.topicTitle }}<span
+                                                v-if="hasWeekCount(group.weeksCount)"
+                                                class="curriculum-detail__month-topic-weeks"> ({{ weekCountLabel(group.weeksCount) }})</span>:
+                                        </span>
                                         <span class="curriculum-detail__month-topic-units">
                                             <span
                                                 v-for="(unit, unitIndex) in group.units"
@@ -209,116 +165,18 @@
                                                     mdi-clipboard-check-outline
                                                 </v-icon>
                                                 <span class="curriculum-detail__month-topic-unit">
-                                                    {{ unit.title }}<span v-if="unitIndex < group.units.length - 1">,</span>
+                                                    {{ unit.title }}<span
+                                                        v-if="hasWeekCount(unit.weeksCount)"
+                                                        class="curriculum-detail__month-topic-weeks"> ({{ weekCountLabel(unit.weeksCount) }})</span><span v-if="unitIndex < group.units.length - 1">,</span>
                                                 </span>
                                             </span>
                                         </span>
                                     </template>
-                                    <span v-else class="curriculum-detail__month-topic-name">{{ group.topicTitle }}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-if="!shouldCollapseMonth(month)" class="curriculum-detail__weeks">
-                            <div
-                                v-for="(week, wIdx) in month.weeks"
-                                :key="wIdx"
-                                class="curriculum-detail__week"
-                                :class="{
-                                    'curriculum-detail__week--current': week.isCurrent,
-                                    'curriculum-detail__week--free': isFreeWeek(week.weekKey),
-                                    'curriculum-detail__week--with-topics': topicsForWeek(week.weekKey).length > 0,
-                                    'curriculum-detail__week--with-exams': weekHasExamEntries(week.weekKey),
-                                    'curriculum-detail__week--compact': isCompactWeekView,
-                                    'curriculum-detail__week--topic-selectable': isWeekSelectableForTopic(week.weekKey),
-                                    'curriculum-detail__week--topic-selected': isWeekAssignedToHighlightedItem(week.weekKey),
-                                }"
-                                :data-week-key="week.weekKey"
-                                @click="handleWeekClick(week.weekKey)">
-                                <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-status">
-                                    <v-icon size="18" color="success" class="curriculum-detail__week-status-icon">
-                                        mdi-check-circle
-                                    </v-icon>
-                                </div>
-                                <div class="curriculum-detail__week-number">
-                                    <span class="curriculum-detail__week-kw">KW</span>
-                                    <span class="curriculum-detail__week-num">{{ week.kw }}</span>
-                                </div>
-                                <div v-if="showWeekdays" class="curriculum-detail__week-days">
-                                    <div
-                                        v-for="day in week.days"
-                                        :key="day.date"
-                                        class="curriculum-detail__day"
-                                        :class="{
-                                            'curriculum-detail__day--today': day.isToday,
-                                            'curriculum-detail__day--outside': day.outsideMonth,
-                                        }">
-                                        <span class="curriculum-detail__day-name">{{ day.dayName }}</span>
-                                        <span class="curriculum-detail__day-num">{{ day.dayNum }}</span>
-                                        </div>
-                                    </div>
-                                <div class="curriculum-detail__week-range">
-                                    <span
-                                        class="curriculum-detail__week-range-label"
-                                        :class="{ 'curriculum-detail__week-range-label--selected': isWeekAssignedToHighlightedItem(week.weekKey) }">
-                                        {{ week.rangeLabel }}
+                                    <span v-else class="curriculum-detail__month-topic-name">
+                                        {{ group.topicTitle }}<span
+                                            v-if="hasWeekCount(group.weeksCount)"
+                                            class="curriculum-detail__month-topic-weeks"> ({{ weekCountLabel(group.weeksCount) }})</span>
                                     </span>
-                                </div>
-                                <div v-if="topicsForWeek(week.weekKey).length" class="curriculum-detail__week-topics">
-                                    <span
-                                        v-for="entry in topicsForWeek(week.weekKey)"
-                                        :key="entry.id"
-                                        class="curriculum-detail__overview-entry"
-                                        :class="{ 'curriculum-detail__overview-entry--exam': entry.isExam }">
-                                        <v-icon
-                                            v-if="entry.isExam"
-                                            size="13"
-                                            class="curriculum-detail__overview-entry-icon">
-                                            mdi-clipboard-check-outline
-                                        </v-icon>
-                                        <span class="curriculum-detail__week-topic-label">
-                                            <template v-if="entry.unitTitle">
-                                                <span v-if="entry.showTopicPrefix" class="curriculum-detail__week-topic-label-topic">{{ `${entry.topicTitle}:` }}</span>
-                                                <span
-                                                    class="curriculum-detail__week-topic-label-unit"
-                                                    :class="{ 'curriculum-detail__week-topic-label-unit--no-prefix': !entry.showTopicPrefix }">
-                                                    {{ entry.unitTitle }}
-                                                </span>
-                                            </template>
-                                            <template v-else>
-                                                {{ entry.title }}
-                                            </template>
-                                        </span>
-                                    </span>
-                                </div>
-                                <div class="curriculum-detail__week-actions">
-                                    <v-btn
-                                        v-if="isWeekSelectionActive"
-                                        :icon="isWeekAssignedToActiveTopic(week.weekKey) ? 'mdi-check-circle' : 'mdi-circle-outline'"
-                                        variant="text"
-                                        color="primary"
-                                        size="x-small"
-                                        :disabled="topicSaving || isEditingTopic || isFreeWeek(week.weekKey)"
-                                        :title="isFreeWeek(week.weekKey)
-                                            ? 'Freie Wochen können keinem Thema zugeordnet werden'
-                                            : (isWeekAssignedToActiveTopic(week.weekKey) ? 'Woche vom Thema entfernen' : 'Woche dem Thema zuordnen')"
-                                        @click.stop="handleWeekClick(week.weekKey)" />
-                                    <v-chip
-                                        v-if="isFreeWeek(week.weekKey)"
-                                        size="x-small"
-                                        color="success"
-                                        variant="flat"
-                                        class="curriculum-detail__week-chip">
-                                        frei
-                                    </v-chip>
-                                    <v-btn
-                                        :icon="isFreeWeek(week.weekKey) ? 'mdi-calendar-remove-outline' : 'mdi-calendar-plus-outline'"
-                                        variant="tonal"
-                                        color="success"
-                                        size="x-small"
-                                        :disabled="isPageActionLocked"
-                                        :loading="isWeekSaving(week.weekKey)"
-                                        :title="isFreeWeek(week.weekKey) ? 'Freie Woche entfernen' : 'Woche als frei markieren'"
-                                        @click.stop="toggleFreeWeek(week.weekKey)" />
                                 </div>
                             </div>
                         </div>
@@ -383,7 +241,8 @@
                                                     :key="chip.key"
                                                     size="x-small"
                                                     :color="chip.color || 'primary'"
-                                                    variant="tonal">
+                                                    :variant="chip.variant || 'tonal'"
+                                                    :prepend-icon="chip.icon || null">
                                                     {{ chip.label }}
                                                 </v-chip>
                                             </template>
@@ -392,21 +251,12 @@
                                                     v-for="monthKey in topic.month_keys"
                                                     :key="monthKey"
                                                     size="x-small"
-                                                    color="primary"
-                                                    variant="tonal"
+                                                    :color="monthAssignmentChipColor(monthKey, topic)"
+                                                    :variant="monthAssignmentChipVariant(monthKey, topic)"
+                                                    :prepend-icon="monthAssignmentChipIcon(monthKey, topic)"
                                                     class="curriculum-detail__topic-meta-chip--interactive"
                                                     @click.stop="openTopicAssignmentEditor(topic, 'month')">
                                                     {{ monthChipLabel(monthKey) }}
-                                                </v-chip>
-                                            </template>
-                                            <template v-else-if="topic.assignment_type === 'weeks' && topic.week_keys.length">
-                                                <v-chip
-                                                    size="x-small"
-                                                    color="primary"
-                                                    variant="tonal"
-                                                    class="curriculum-detail__topic-meta-chip--interactive"
-                                                    @click.stop="openTopicAssignmentEditor(topic, 'weeks')">
-                                                    {{ weeksSummaryLabel(topic.week_keys) }}
                                                 </v-chip>
                                             </template>
                                         </div>
@@ -553,16 +403,6 @@
                                                     Monate
                                                 </v-btn>
                                                 <v-btn
-                                                    :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
-                                                    size="x-small"
-                                                    rounded="lg"
-                                                    class="text-none"
-                                                    :color="activeTopicAssignmentType === 'weeks' ? 'primary' : 'secondary'"
-                                                    :disabled="topicSaving || isEditingTopic"
-                                                    @click="activateTopicAssignmentMode(topic, 'weeks')">
-                                                    Wochen
-                                                </v-btn>
-                                                <v-btn
                                                     variant="text"
                                                     size="x-small"
                                                     color="secondary"
@@ -576,59 +416,38 @@
                                             <div
                                                 v-if="activeTopicAssignmentType === 'month'"
                                                 class="curriculum-detail__topic-assignment-months">
-                                                <v-chip
+                                                <div
                                                     v-for="month in assignableMonths"
                                                     :key="month.assignmentKey"
-                                                    size="small"
-                                                    :color="topic.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
-                                                    :variant="topic.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
-                                                    class="curriculum-detail__assignment-chip"
-                                                    @click="toggleTopicMonthAssignment(topic, month.assignmentKey)">
-                                                    {{ month.name }}
-                                                </v-chip>
-                                            </div>
-
-                                            <div
-                                                v-else-if="activeTopicAssignmentType === 'weeks'"
-                                                class="curriculum-detail__topic-assignment-weeks">
-                                                <div class="curriculum-detail__topic-assignment-hint">
-                                                    Wochen links im Kalender anklicken, um sie diesem Thema zuzuordnen.
-                                                </div>
-                                                <div
-                                                    v-if="topic.week_keys.length"
-                                                    class="curriculum-detail__assignment-week-list">
+                                                    class="curriculum-detail__assignment-month-row"
+                                                    :class="{ 'curriculum-detail__assignment-month-row--selected': topic.month_keys.includes(month.assignmentKey) }">
+                                                    <v-chip
+                                                        size="small"
+                                                        :color="topic.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
+                                                        :variant="topic.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
+                                                        class="curriculum-detail__assignment-chip"
+                                                        @click="toggleTopicMonthAssignment(topic, month.assignmentKey)">
+                                                        {{ month.name }}
+                                                    </v-chip>
                                                     <div
-                                                        v-for="weekKey in topic.week_keys"
-                                                        :key="weekKey"
-                                                        class="curriculum-detail__assignment-week-row">
+                                                        v-if="topic.month_keys.includes(month.assignmentKey)"
+                                                        class="curriculum-detail__assignment-month-week-options">
                                                         <v-chip
+                                                            v-for="weeks in monthWeekCountOptions"
+                                                            :key="`topic-${topic.id}-${month.assignmentKey}-${weeks}`"
                                                             size="x-small"
-                                                            color="primary"
-                                                            variant="flat">
-                                                            {{ weekChipLabel(weekKey) }}
+                                                            :color="monthWeekCount(topic, month.assignmentKey) === weeks ? 'primary' : 'secondary'"
+                                                            :variant="monthWeekCount(topic, month.assignmentKey) === weeks ? 'flat' : 'outlined'"
+                                                            class="curriculum-detail__assignment-month-week-chip"
+                                                            :disabled="topicSaving || isEditingTopic"
+                                                            @click="updateTopicMonthWeekCount(topic, month.assignmentKey, weeks)">
+                                                            {{ weekCountOptionLabel(weeks) }}
                                                         </v-chip>
-                                                        <div class="curriculum-detail__assignment-week-controls">
-                                                            <v-btn
-                                                                icon="mdi-arrow-up"
-                                                                variant="text"
-                                                                color="primary"
-                                                                size="x-small"
-                                                                :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
-                                                                title="Eine Woche früher verschieben"
-                                                                @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
-                                                            <v-btn
-                                                                icon="mdi-arrow-down"
-                                                                variant="text"
-                                                                color="primary"
-                                                                size="x-small"
-                                                                :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
-                                                                title="Eine Woche später verschieben"
-                                                                @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
-                                    </div>
+
+                                            </div>
 
                                     <div v-if="!isTopicCollapsed(topic.id)" class="curriculum-detail__unit-section">
                                             <div class="curriculum-detail__unit-toolbar">
@@ -684,7 +503,7 @@
                                                     </div>
                                                     <div class="curriculum-detail__topic-meta-chips">
                                                         <v-chip
-                                                            v-if="shouldShowAssignmentSummaryChip(unit) && unitInheritedWeekKeys(topic, unit).length === 0"
+                                                            v-if="shouldShowAssignmentSummaryChip(unit)"
                                                             size="x-small"
                                                             color="primary"
                                                             :variant="assignmentSummaryVariant(unit)"
@@ -697,32 +516,15 @@
                                                         </v-chip>
                                                         <template v-if="unit.assignment_type === 'month' && unit.month_keys.length">
                                                             <v-chip
-                                                                v-for="monthKey in unit.month_keys"
-                                                                :key="monthKey"
-                                                                size="x-small"
-                                                                color="primary"
-                                                                variant="tonal"
-                                                                class="curriculum-detail__topic-meta-chip--interactive"
-                                                                @click.stop="openUnitAssignmentEditor(topic, unit, 'month')">
-                                                                {{ monthChipLabel(monthKey) }}
-                                                            </v-chip>
-                                                        </template>
-                                                        <template v-else-if="unit.assignment_type === 'weeks' && unit.week_keys.length">
-                                                            <v-chip
-                                                                size="x-small"
-                                                                color="primary"
-                                                                variant="tonal"
-                                                                class="curriculum-detail__topic-meta-chip--interactive"
-                                                                @click.stop="openUnitAssignmentEditor(topic, unit, 'weeks')">
-                                                                {{ weeksSummaryLabel(unit.week_keys) }}
-                                                            </v-chip>
-                                                        </template>
-                                                        <template v-else-if="unitInheritedWeekKeys(topic, unit).length">
-                                                            <v-chip
-                                                                size="x-small"
-                                                                color="secondary"
-                                                                variant="tonal">
-                                                                {{ `Über Thema · ${weeksSummaryLabel(unitInheritedWeekKeys(topic, unit))}` }}
+                                                            v-for="monthKey in unit.month_keys"
+                                                            :key="monthKey"
+                                                            size="x-small"
+                                                            :color="monthAssignmentChipColor(monthKey, unit, topic)"
+                                                            :variant="monthAssignmentChipVariant(monthKey, unit, topic)"
+                                                            :prepend-icon="monthAssignmentChipIcon(monthKey, unit, topic)"
+                                                            class="curriculum-detail__topic-meta-chip--interactive"
+                                                            @click.stop="openUnitAssignmentEditor(topic, unit, 'month')">
+                                                            {{ monthChipLabel(monthKey) }}
                                                             </v-chip>
                                                         </template>
                                                     </div>
@@ -853,16 +655,6 @@
                                                         Monate
                                                     </v-btn>
                                                     <v-btn
-                                                        :variant="activeTopicAssignmentType === 'weeks' ? 'flat' : 'tonal'"
-                                                        size="x-small"
-                                                        rounded="lg"
-                                                        class="text-none"
-                                                        :color="activeTopicAssignmentType === 'weeks' ? 'primary' : 'secondary'"
-                                                        :disabled="topicSaving || isEditingTopic || isEditingUnit"
-                                                        @click="activateUnitAssignmentMode(topic, unit, 'weeks')">
-                                                        Wochen
-                                                    </v-btn>
-                                                    <v-btn
                                                         variant="text"
                                                         size="x-small"
                                                         color="secondary"
@@ -876,58 +668,37 @@
                                                 <div
                                                     v-if="activeTopicAssignmentType === 'month'"
                                                     class="curriculum-detail__topic-assignment-months">
-                                                    <v-chip
+                                                    <div
                                                         v-for="month in assignableMonths"
                                                         :key="month.assignmentKey"
-                                                        size="small"
-                                                        :color="unit.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
-                                                        :variant="unit.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
-                                                        class="curriculum-detail__assignment-chip"
-                                                        @click="toggleUnitMonthAssignment(topic, unit, month.assignmentKey)">
-                                                        {{ month.name }}
-                                                    </v-chip>
-                                                </div>
-
-                                                <div
-                                                    v-else-if="activeTopicAssignmentType === 'weeks'"
-                                                    class="curriculum-detail__topic-assignment-weeks">
-                                                    <div class="curriculum-detail__topic-assignment-hint">
-                                                        Wochen links im Kalender anklicken, um sie dieser Einheit zuzuordnen.
-                                                    </div>
-                                                    <div
-                                                        v-if="unit.week_keys.length"
-                                                        class="curriculum-detail__assignment-week-list">
+                                                        class="curriculum-detail__assignment-month-row"
+                                                        :class="{ 'curriculum-detail__assignment-month-row--selected': unit.month_keys.includes(month.assignmentKey) }">
+                                                        <v-chip
+                                                            size="small"
+                                                            :color="unit.month_keys.includes(month.assignmentKey) ? 'primary' : 'secondary'"
+                                                            :variant="unit.month_keys.includes(month.assignmentKey) ? 'flat' : 'outlined'"
+                                                            class="curriculum-detail__assignment-chip"
+                                                            @click="toggleUnitMonthAssignment(topic, unit, month.assignmentKey)">
+                                                            {{ month.name }}
+                                                        </v-chip>
                                                         <div
-                                                            v-for="weekKey in unit.week_keys"
-                                                            :key="weekKey"
-                                                            class="curriculum-detail__assignment-week-row">
+                                                            v-if="unit.month_keys.includes(month.assignmentKey)"
+                                                            class="curriculum-detail__assignment-month-week-options">
                                                             <v-chip
+                                                                v-for="weeks in monthWeekCountOptions"
+                                                                :key="`unit-${unit.id}-${month.assignmentKey}-${weeks}`"
                                                                 size="x-small"
-                                                                color="primary"
-                                                                variant="flat">
-                                                                {{ weekChipLabel(weekKey) }}
+                                                                :color="monthWeekCount(unit, month.assignmentKey) === weeks ? 'primary' : 'secondary'"
+                                                                :variant="monthWeekCount(unit, month.assignmentKey) === weeks ? 'flat' : 'outlined'"
+                                                                class="curriculum-detail__assignment-month-week-chip"
+                                                                :disabled="topicSaving || isEditingTopic || isEditingUnit"
+                                                                @click="updateUnitMonthWeekCount(topic, unit, month.assignmentKey, weeks)">
+                                                                {{ weekCountOptionLabel(weeks) }}
                                                             </v-chip>
-                                                            <div class="curriculum-detail__assignment-week-controls">
-                                                                <v-btn
-                                                                    icon="mdi-arrow-up"
-                                                                    variant="text"
-                                                                    color="primary"
-                                                                    size="x-small"
-                                                                    :disabled="topicSaving || !canShiftWeekSequence(weekKey, -1)"
-                                                                    title="Eine Woche früher verschieben"
-                                                                    @click="shiftWeekSequence(weekKey, -1, 'Wochensequenz konnte nicht früher verschoben werden.')" />
-                                                                <v-btn
-                                                                    icon="mdi-arrow-down"
-                                                                    variant="text"
-                                                                    color="primary"
-                                                                    size="x-small"
-                                                                    :disabled="topicSaving || !canShiftWeekSequence(weekKey, 1)"
-                                                                    title="Eine Woche später verschieben"
-                                                                    @click="shiftWeekSequence(weekKey, 1, 'Wochensequenz konnte nicht später verschoben werden.')" />
-                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
+
                                             </div>
                                         </div>
 
@@ -952,8 +723,8 @@
                                         </div>
                                         </div>
                                 </div>
+                                </div>
                             </div>
-                        </div>
                         </div>
 
                         <div v-else class="curriculum-detail__topic-empty mt-4">
@@ -976,6 +747,37 @@
                     </div>
                 </div>
             </v-sheet>
+
+            <v-dialog v-model="overloadedMonthShiftDialogOpen" max-width="460" persistent>
+                <v-card rounded="xl">
+                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2 pt-4 px-4">
+                        <v-icon color="error" size="20">mdi-alert-circle-outline</v-icon>
+                        Überladener Monat
+                    </v-card-title>
+                    <v-card-text class="px-4 pb-2">
+                        <div class="text-body-2" style="color: #475569">
+                            Wollen Sie alle Termine nach unten schieben?
+                        </div>
+                    </v-card-text>
+                    <v-card-actions class="px-4 pb-4">
+                        <v-spacer />
+                        <v-btn
+                            variant="text"
+                            color="secondary"
+                            :disabled="overloadedMonthShiftSaving"
+                            @click="closeOverloadedMonthShiftDialog">
+                            Abbrechen
+                        </v-btn>
+                        <v-btn
+                            color="error"
+                            variant="flat"
+                            :loading="overloadedMonthShiftSaving"
+                            @click="confirmOverloadedMonthShift">
+                            Ja
+                        </v-btn>
+                    </v-card-actions>
+                </v-card>
+            </v-dialog>
 
             <v-dialog v-model="contentDeleteDialogOpen" max-width="420" persistent>
                 <v-card rounded="xl">
@@ -2047,6 +1849,9 @@ export default {
             activeTopicAssignmentType: null,
             contentDeleteDialogOpen: false,
             contentToDelete: null,
+            overloadedMonthShiftDialogOpen: false,
+            overloadedMonthShiftMonthKey: null,
+            overloadedMonthShiftSaving: false,
             documentDeleteDialogOpen: false,
             documentDeleteLoading: false,
             documentToDelete: null,
@@ -2151,6 +1956,10 @@ export default {
                 assignmentKey: month.assignmentKey,
                 name: `${month.name} ${month.year}`,
             }))
+        },
+
+        monthWeekCountOptions() {
+            return [1, 2, 3, 4, 0]
         },
 
         isEditingTopic() {
@@ -2401,10 +2210,6 @@ export default {
             return Boolean(this.contentMaterialPreviewUrl) && !this.contentMaterialPreviewIsImage
         },
 
-        isWeekSelectionActive() {
-            return this.activeTopicAssignmentType === 'weeks' && this.activeAssignmentItem !== null
-        },
-
         allMonths() {
             const months = []
             const startYear = this.selectedYear
@@ -2491,6 +2296,7 @@ export default {
                     .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
                     .filter(Boolean)
             )].sort()
+            const monthWeekCounts = this.normalizeMonthWeekCounts(normalizedEntry.month_week_counts, monthKeys)
 
             return {
                 id: normalizedEntry.id || `${prefix}-${index}`,
@@ -2498,8 +2304,26 @@ export default {
                 assignment_type: assignmentType,
                 month_key: assignmentType === 'month' ? (monthKeys[0] ?? null) : null,
                 month_keys: assignmentType === 'month' ? monthKeys : [],
+                month_week_counts: assignmentType === 'month' ? monthWeekCounts : {},
                 week_keys: assignmentType === 'weeks' ? weekKeys : [],
             }
+        },
+
+        normalizeMonthWeekCounts(monthWeekCounts = {}, monthKeys = []) {
+            const selectedMonthKeys = (Array.isArray(monthKeys) ? monthKeys : [])
+                .map((monthKey) => this.normalizeMonthAssignmentKey(monthKey))
+                .filter(Boolean)
+
+            return selectedMonthKeys.reduce((normalizedMonthWeekCounts, monthKey) => {
+                const normalizedWeeks = Number.parseInt(monthWeekCounts?.[monthKey] ?? 1, 10)
+
+                return {
+                    ...normalizedMonthWeekCounts,
+                    [monthKey]: Number.isFinite(normalizedWeeks) && normalizedWeeks >= 0 && normalizedWeeks <= 4
+                        ? normalizedWeeks
+                        : 1,
+                }
+            }, {})
         },
 
         normalizeAttachedMaterial(material = null) {
@@ -2634,6 +2458,9 @@ export default {
             return {
                 assignment_type: assignmentType,
                 month_keys: assignmentType === 'month' ? [...normalizedItem.month_keys] : [],
+                month_week_counts: assignmentType === 'month'
+                    ? this.normalizeMonthWeekCounts(normalizedItem.month_week_counts, normalizedItem.month_keys)
+                    : {},
                 week_keys: assignmentType === 'weeks' ? [...normalizedItem.week_keys] : [],
             }
         },
@@ -2644,6 +2471,7 @@ export default {
                 assignment_type: 'none',
                 month_key: null,
                 month_keys: [],
+                month_week_counts: {},
                 week_keys: [],
             }
         },
@@ -2656,83 +2484,540 @@ export default {
                 assignment_type: 'month',
                 month_key: nextMonthKeys[0] ?? null,
                 month_keys: nextMonthKeys,
+                month_week_counts: this.normalizeMonthWeekCounts(item?.month_week_counts, nextMonthKeys),
                 week_keys: [],
             }
         },
 
         applyWeekAssignment(item = null, weekKeys = []) {
-            const nextWeekKeys = [...new Set((Array.isArray(weekKeys) ? weekKeys : []).filter(Boolean).map((weekKey) => String(weekKey).trim()))].sort()
+            const nextWeekKeys = [...new Set(
+                (Array.isArray(weekKeys) ? weekKeys : [])
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean),
+            )].sort()
 
             return {
                 ...(item && typeof item === 'object' ? item : {}),
                 assignment_type: 'weeks',
                 month_key: null,
                 month_keys: [],
+                month_week_counts: {},
                 week_keys: nextWeekKeys,
             }
         },
 
-        buildTopicUnitDistribution(topic) {
-            if (!topic || !Array.isArray(topic.units) || topic.units.length === 0) {
-                return {
-                    units: [],
-                    assignedCount: 0,
+        monthWeekCount(item = null, monthKey = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+            const normalizedItem = item && typeof item === 'object' ? item : {}
+            const monthWeekCounts = this.normalizeMonthWeekCounts(
+                normalizedItem.month_week_counts,
+                Array.isArray(normalizedItem.month_keys) ? normalizedItem.month_keys : [],
+            )
+
+            return normalizedMonthKey ? (monthWeekCounts[normalizedMonthKey] ?? null) : null
+        },
+
+        weekCountLabel(weeks = null) {
+            const normalizedWeeks = Number.parseInt(weeks, 10)
+
+            if (normalizedWeeks === 0) {
+                return 'Ganzer Monat'
+            }
+
+            if (!Number.isFinite(normalizedWeeks) || normalizedWeeks < 1) {
+                return ''
+            }
+
+            return normalizedWeeks === 1 ? '1 Woche' : `${normalizedWeeks} Wochen`
+        },
+
+        monthTeachingWeekCount(month = null) {
+            return this.monthTeachingWeeks(month).length
+        },
+
+        monthTeachingWeekCountLabel(month = null) {
+            const weekCount = this.monthTeachingWeekCount(month)
+            const assignedWeekCount = this.monthAssignedTeachingWeekCount(month)
+
+            return weekCount === 1 ? `${assignedWeekCount}/1 Woche` : `${assignedWeekCount}/${weekCount} Wochen`
+        },
+
+        monthTeachingWeekCountIsOverassigned(month = null) {
+            return this.monthAssignedTeachingWeekCount(month) > this.monthTeachingWeekCount(month)
+        },
+
+        monthTeachingWeeks(month = null) {
+            if (!Array.isArray(month?.weeks)) {
+                return []
+            }
+
+            return month.weeks.filter((week) => (
+                week?.weekKey
+                && !this.isFreeTeachingWeek(week)
+                && this.weekBelongsToMonth(week, month)
+            ))
+        },
+
+        monthAssignedTeachingWeekCount(month = null) {
+            const monthKey = this.normalizeMonthAssignmentKey(month?.assignmentKey)
+            const teachingWeekKeys = this.monthTeachingWeeks(month)
+                .map((week) => String(week?.weekKey || '').trim())
+                .filter(Boolean)
+            const teachingWeekKeySet = new Set(teachingWeekKeys)
+            const topics = Array.isArray(this.curriculumTopics) ? this.curriculumTopics : []
+            const assignedWeekKeys = new Set()
+            let assignedWeekCount = 0
+
+            if (!monthKey || teachingWeekKeys.length === 0) {
+                return 0
+            }
+
+            const addAssignmentUsage = (entry = null, parentTopic = null) => {
+                if (!entry?.title) {
+                    return
+                }
+
+                if (entry.assignment_type === 'weeks') {
+                    const weekKeys = parentTopic
+                        ? this.effectiveUnitWeekKeys(parentTopic, entry)
+                        : (Array.isArray(entry.week_keys) ? entry.week_keys : [])
+                            .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                            .filter(Boolean)
+
+                    weekKeys.forEach((weekKey) => {
+                        if (teachingWeekKeySet.has(weekKey)) {
+                            assignedWeekKeys.add(weekKey)
+                        }
+                    })
+
+                    return
+                }
+
+                assignedWeekCount += this.assignmentWeekUsageForMonth(entry, monthKey, teachingWeekKeys.length)
+            }
+
+            topics.forEach((topic) => {
+                const units = Array.isArray(topic.units) ? topic.units : []
+
+                if (!this.topicHasUnitAssignmentUsageForMonth(topic, monthKey, teachingWeekKeySet, teachingWeekKeys.length)) {
+                    addAssignmentUsage(topic)
+                }
+
+                units.forEach((unit) => {
+                    addAssignmentUsage(unit, topic)
+                })
+            })
+
+            return assignedWeekCount + assignedWeekKeys.size
+        },
+
+        assignmentWeekUsageForMonth(entry = null, monthKey = null, totalWeekCount = 0) {
+            const assignmentType = String(entry?.assignment_type || 'none')
+
+            if (assignmentType === 'all_weeks') {
+                return 0
+            }
+
+            const monthKeys = Array.isArray(entry?.month_keys) ? entry.month_keys : []
+
+            if (assignmentType !== 'month' || !monthKeys.includes(monthKey)) {
+                return 0
+            }
+
+            const monthWeekCount = this.monthWeekCount(entry, monthKey)
+
+            if (monthWeekCount === 0) {
+                return totalWeekCount
+            }
+
+            const assignedWeekCount = Number.parseInt(monthWeekCount, 10)
+
+            return Number.isFinite(assignedWeekCount) && assignedWeekCount > 0
+                ? Math.min(assignedWeekCount, totalWeekCount)
+                : 1
+        },
+
+        topicHasUnitAssignmentUsageForMonth(topic = null, monthKey = null, teachingWeekKeySet = new Set(), totalWeekCount = 0) {
+            return (Array.isArray(topic?.units) ? topic.units : []).some((unit) => (
+                this.assignmentHasUsageForMonth(unit, monthKey, teachingWeekKeySet, totalWeekCount, topic)
+            ))
+        },
+
+        assignmentHasUsageForMonth(
+            entry = null,
+            monthKey = null,
+            teachingWeekKeySet = new Set(),
+            totalWeekCount = 0,
+            parentTopic = null,
+        ) {
+            if (!entry?.title) {
+                return false
+            }
+
+            if (entry.assignment_type === 'weeks') {
+                const weekKeys = parentTopic
+                    ? this.effectiveUnitWeekKeys(parentTopic, entry)
+                    : (Array.isArray(entry.week_keys) ? entry.week_keys : [])
+                        .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                        .filter(Boolean)
+
+                return weekKeys.some((weekKey) => teachingWeekKeySet.has(weekKey))
+            }
+
+            return this.assignmentWeekUsageForMonth(entry, monthKey, totalWeekCount) > 0
+        },
+
+        openOverloadedMonthShiftDialog(month = null) {
+            if (!this.monthTeachingWeekCountIsOverassigned(month) || this.isPageActionLocked || this.topicSaving) {
+                return
+            }
+
+            this.overloadedMonthShiftMonthKey = this.normalizeMonthAssignmentKey(month?.assignmentKey)
+            this.overloadedMonthShiftDialogOpen = Boolean(this.overloadedMonthShiftMonthKey)
+        },
+
+        closeOverloadedMonthShiftDialog(force = false) {
+            if (this.overloadedMonthShiftSaving && !force) {
+                return
+            }
+
+            this.overloadedMonthShiftDialogOpen = false
+            this.overloadedMonthShiftMonthKey = null
+        },
+
+        async confirmOverloadedMonthShift() {
+            if (this.overloadedMonthShiftSaving || !this.overloadedMonthShiftMonthKey) {
+                return
+            }
+
+            const month = this.visibleMonths.find((entry) => entry.assignmentKey === this.overloadedMonthShiftMonthKey)
+            const topics = this.shiftOverloadedMonthAssignments(month)
+
+            if (!topics) {
+                this.closeOverloadedMonthShiftDialog()
+                return
+            }
+
+            this.overloadedMonthShiftSaving = true
+            this.topicSaving = true
+
+            try {
+                const updatedCurriculum = await this.persistCurriculum({
+                    topics,
+                }, 'Termine konnten nicht nach unten geschoben werden.')
+
+                if (updatedCurriculum) {
+                    this.closeOverloadedMonthShiftDialog(true)
+                }
+            } finally {
+                this.topicSaving = false
+                this.overloadedMonthShiftSaving = false
+            }
+        },
+
+        shiftOverloadedMonthAssignments(month = null) {
+            const monthKey = this.normalizeMonthAssignmentKey(month?.assignmentKey)
+
+            if (!monthKey || !this.monthTeachingWeekCountIsOverassigned(month)) {
+                return null
+            }
+
+            const shiftMonths = this.visibleMonthsFrom(monthKey)
+            const shiftMonthKeys = shiftMonths.map((entry) => entry.assignmentKey)
+            const shiftMonthKeySet = new Set(shiftMonthKeys)
+            const topics = this.curriculumTopics.map((topic) => this.buildTopicPayload(topic))
+            const chunks = this.monthAssignmentShiftChunks(topics, shiftMonths)
+
+            if (chunks.length === 0) {
+                return null
+            }
+
+            chunks.forEach((chunk) => {
+                this.updateMonthAssignmentAtPath(topics, chunk, (item) => (
+                    this.removeMonthAssignment(item, chunk.monthKey)
+                ))
+            })
+
+            let monthIndex = 0
+            let remainingMonthCapacity = this.monthTeachingWeekCount(shiftMonths[monthIndex])
+
+            for (const chunk of chunks) {
+                let remainingWeeks = chunk.weekCount
+
+                while (remainingWeeks > 0) {
+                    while (remainingMonthCapacity <= 0 && monthIndex < shiftMonths.length - 1) {
+                        monthIndex++
+                        remainingMonthCapacity = this.monthTeachingWeekCount(shiftMonths[monthIndex])
+                    }
+
+                    if (remainingMonthCapacity <= 0 || monthIndex >= shiftMonths.length) {
+                        return null
+                    }
+
+                    const assignedWeeks = Math.min(remainingWeeks, remainingMonthCapacity)
+                    const targetMonthKey = shiftMonths[monthIndex].assignmentKey
+
+                    this.updateMonthAssignmentAtPath(topics, chunk, (item) => (
+                        this.addMonthAssignment(item, targetMonthKey, assignedWeeks)
+                    ))
+
+                    remainingWeeks -= assignedWeeks
+                    remainingMonthCapacity -= assignedWeeks
                 }
             }
 
-            const visibleWeekKeys = this.visibleWeekKeys()
-            const weekIndexMap = new Map(visibleWeekKeys.map((weekKey, index) => [weekKey, index]))
-            const unavailableWeekKeys = new Set([
-                ...this.freeWeekKeys,
-                ...visibleWeekKeys.filter((weekKey) => this.topicsForWeek(weekKey).length > 0),
-            ])
-            let nextWeekIndex = -1
-            let assignedCount = 0
+            return shiftMonthKeySet.size ? topics.map((topic) => this.buildTopicPayload(topic)) : null
+        },
 
-            const units = topic.units.map((unit) => {
-                const nextUnit = this.buildUnitPayload(unit)
+        visibleMonthsFrom(monthKey = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+            const startIndex = this.visibleMonths.findIndex((month) => month.assignmentKey === normalizedMonthKey)
 
-                if (nextUnit.assignment_type === 'weeks') {
-                    const assignedIndexes = nextUnit.week_keys
-                        .map((weekKey) => weekIndexMap.get(weekKey))
-                        .filter((weekIndex) => Number.isInteger(weekIndex))
+            return startIndex >= 0 ? this.visibleMonths.slice(startIndex) : []
+        },
 
-                    if (assignedIndexes.length > 0) {
-                        nextWeekIndex = Math.max(nextWeekIndex, ...assignedIndexes)
+        monthAssignmentShiftChunks(topics = [], months = []) {
+            return months.flatMap((month) => {
+                const monthKey = this.normalizeMonthAssignmentKey(month?.assignmentKey)
+                const teachingWeekKeys = this.monthTeachingWeeks(month)
+                    .map((week) => String(week?.weekKey || '').trim())
+                    .filter(Boolean)
+                const teachingWeekKeySet = new Set(teachingWeekKeys)
+                const totalWeekCount = teachingWeekKeys.length
+
+                if (!monthKey || totalWeekCount === 0) {
+                    return []
+                }
+
+                return topics.flatMap((topic, topicIndex) => {
+                    const chunks = []
+                    const units = Array.isArray(topic.units) ? topic.units : []
+
+                    if (
+                        topic.title
+                        && !this.topicHasUnitAssignmentUsageForMonth(topic, monthKey, teachingWeekKeySet, totalWeekCount)
+                    ) {
+                        const weekCount = this.assignmentWeekUsageForMonth(topic, monthKey, totalWeekCount)
+
+                        if (weekCount > 0) {
+                            chunks.push({
+                                topicIndex,
+                                unitIndex: null,
+                                monthKey,
+                                weekCount,
+                            })
+                        }
                     }
 
-                    return nextUnit
-                }
+                    units.forEach((unit, unitIndex) => {
+                        const weekCount = this.assignmentWeekUsageForMonth(unit, monthKey, totalWeekCount)
 
-                if (nextUnit.assignment_type !== 'none') {
-                    return nextUnit
-                }
+                        if (unit.title && weekCount > 0) {
+                            chunks.push({
+                                topicIndex,
+                                unitIndex,
+                                monthKey,
+                                weekCount,
+                            })
+                        }
+                    })
 
-                let candidateIndex = nextWeekIndex + 1
-
-                while (
-                    candidateIndex < visibleWeekKeys.length
-                    && unavailableWeekKeys.has(visibleWeekKeys[candidateIndex])
-                ) {
-                    candidateIndex += 1
-                }
-
-                if (candidateIndex >= visibleWeekKeys.length) {
-                    return nextUnit
-                }
-
-                const assignedWeekKey = visibleWeekKeys[candidateIndex]
-
-                unavailableWeekKeys.add(assignedWeekKey)
-                nextWeekIndex = candidateIndex
-                assignedCount += 1
-
-                return this.applyWeekAssignment(nextUnit, [assignedWeekKey])
+                    return chunks
+                })
             })
+        },
+
+        updateMonthAssignmentAtPath(topics = [], chunk = null, updater = null) {
+            if (!chunk || typeof updater !== 'function' || !topics[chunk.topicIndex]) {
+                return
+            }
+
+            if (chunk.unitIndex === null) {
+                topics[chunk.topicIndex] = updater(topics[chunk.topicIndex])
+                return
+            }
+
+            const topic = topics[chunk.topicIndex]
+            const units = Array.isArray(topic.units) ? [...topic.units] : []
+
+            if (!units[chunk.unitIndex]) {
+                return
+            }
+
+            units[chunk.unitIndex] = updater(units[chunk.unitIndex])
+            topics[chunk.topicIndex] = {
+                ...topic,
+                units,
+            }
+        },
+
+        removeMonthAssignment(item = null, monthKey = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+
+            if (item?.assignment_type !== 'month' || !normalizedMonthKey) {
+                return item
+            }
+
+            const nextMonthKeys = (Array.isArray(item.month_keys) ? item.month_keys : [])
+                .filter((entry) => entry !== normalizedMonthKey)
+            const nextMonthWeekCounts = { ...(item.month_week_counts || {}) }
+            delete nextMonthWeekCounts[normalizedMonthKey]
+
+            if (nextMonthKeys.length === 0) {
+                return this.clearAssignment(item)
+            }
 
             return {
-                units,
-                assignedCount,
+                ...item,
+                month_key: nextMonthKeys[0] ?? null,
+                month_keys: nextMonthKeys,
+                month_week_counts: this.normalizeMonthWeekCounts(nextMonthWeekCounts, nextMonthKeys),
+            }
+        },
+
+        addMonthAssignment(item = null, monthKey = null, weekCount = 1) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+            const normalizedWeekCount = Number.parseInt(weekCount, 10)
+
+            if (!normalizedMonthKey || !Number.isFinite(normalizedWeekCount) || normalizedWeekCount <= 0) {
+                return item
+            }
+
+            const existingMonthKeys = item?.assignment_type === 'month' && Array.isArray(item.month_keys)
+                ? item.month_keys
+                : []
+            const monthKeys = [...new Set([...existingMonthKeys, normalizedMonthKey])].sort()
+            const monthWeekCounts = this.normalizeMonthWeekCounts(item?.month_week_counts, monthKeys)
+            const existingWeekCount = Object.prototype.hasOwnProperty.call(item?.month_week_counts || {}, normalizedMonthKey)
+                ? Number.parseInt(monthWeekCounts[normalizedMonthKey] ?? 0, 10)
+                : 0
+            monthWeekCounts[normalizedMonthKey] = Math.min(4, Math.max(1, existingWeekCount + normalizedWeekCount))
+
+            return {
+                ...(item && typeof item === 'object' ? item : {}),
+                assignment_type: 'month',
+                month_key: monthKeys[0] ?? null,
+                month_keys: monthKeys,
+                month_week_counts: this.normalizeMonthWeekCounts(monthWeekCounts, monthKeys),
+                week_keys: [],
+            }
+        },
+
+        weekHasAssignmentsForMonth(week = null, month = null) {
+            const weekKey = String(week?.weekKey || '').trim()
+            const monthKey = String(month?.assignmentKey || '').trim()
+
+            if (!weekKey || !monthKey) {
+                return false
+            }
+
+            return this.curriculumTopics.some((topic) => {
+                if (!topic.title) {
+                    return false
+                }
+
+                if (
+                    topic.assignment_type === 'all_weeks'
+                    || (topic.assignment_type === 'month' && topic.month_keys.includes(monthKey))
+                    || (topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey))
+                ) {
+                    return true
+                }
+
+                return topic.units.some((unit) => (
+                    Boolean(unit.title)
+                    && (
+                        unit.assignment_type === 'all_weeks'
+                        || (unit.assignment_type === 'month' && unit.month_keys.includes(monthKey))
+                        || this.effectiveUnitWeekKeys(topic, unit).includes(weekKey)
+                    )
+                ))
+            })
+        },
+
+        isFreeTeachingWeek(week = null) {
+            return this.weekdayKeysForWeek(week).some((weekDayKey) => this.isFreeWeek(weekDayKey))
+        },
+
+        weekdayKeysForWeek(week = null) {
+            const weekStart = new Date(`${String(week?.weekKey || '').trim()}T00:00:00`)
+
+            if (Number.isNaN(weekStart.getTime())) {
+                return []
+            }
+
+            return Array.from({ length: 5 }, (_, dayOffset) => {
+                const date = new Date(weekStart)
+                date.setDate(date.getDate() + dayOffset)
+
+                return this.formatDateKey(date)
+            })
+        },
+
+        weekBelongsToMonth(week = null, month = null) {
+            const monthIndex = Number.parseInt(month?.month, 10)
+            const year = Number.parseInt(month?.year, 10)
+            const weekStart = new Date(`${String(week?.weekKey || '').trim()}T00:00:00`)
+
+            if (!Number.isInteger(monthIndex) || !Number.isInteger(year) || Number.isNaN(weekStart.getTime())) {
+                return false
+            }
+
+            let matchingWeekdays = 0
+
+            for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
+                const date = new Date(weekStart)
+                date.setDate(date.getDate() + dayOffset)
+
+                if (date.getMonth() === monthIndex && date.getFullYear() === year) {
+                    matchingWeekdays++
+                }
+            }
+
+            return matchingWeekdays >= 3
+        },
+
+        hasWeekCount(weeks = null) {
+            const normalizedWeeks = Number.parseInt(weeks, 10)
+
+            return Number.isFinite(normalizedWeeks) && normalizedWeeks >= 0 && normalizedWeeks <= 4
+        },
+
+        weekCountOptionLabel(weeks = null) {
+            const normalizedWeeks = Number.parseInt(weeks, 10)
+
+            return normalizedWeeks === 0 ? 'Ganzer Monat' : String(normalizedWeeks)
+        },
+
+        applyMonthWeekCount(item = null, monthKey = null, weeks = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+            const normalizedItem = item && typeof item === 'object' ? item : {}
+            const monthKeys = Array.isArray(normalizedItem.month_keys) ? normalizedItem.month_keys : []
+            const monthWeekCounts = this.normalizeMonthWeekCounts(normalizedItem.month_week_counts, monthKeys)
+            const normalizedWeeks = Number.parseInt(weeks, 10)
+
+            if (!normalizedMonthKey || !monthKeys.includes(normalizedMonthKey)) {
+                return {
+                    ...normalizedItem,
+                    month_week_counts: monthWeekCounts,
+                }
+            }
+
+            monthWeekCounts[normalizedMonthKey] = Number.isFinite(normalizedWeeks) && normalizedWeeks >= 0 && normalizedWeeks <= 4
+                ? normalizedWeeks
+                : 1
+
+            return {
+                ...normalizedItem,
+                month_week_counts: this.normalizeMonthWeekCounts(monthWeekCounts, monthKeys),
+            }
+        },
+
+        buildTopicUnitDistribution() {
+            return {
+                units: [],
+                assignedCount: 0,
             }
         },
 
@@ -2844,15 +3129,7 @@ export default {
                 return first.month_keys.some((monthKey) => second.month_keys.includes(monthKey))
             }
 
-            if (first.assignment_type === 'month' && second.assignment_type === 'weeks') {
-                return second.week_keys.some((weekKey) => first.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
-            }
-
-            if (first.assignment_type === 'weeks' && second.assignment_type === 'month') {
-                return first.week_keys.some((weekKey) => second.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
-            }
-
-            return first.week_keys.some((weekKey) => second.week_keys.includes(weekKey))
+            return false
         },
 
         assignmentSequenceEntries() {
@@ -2873,173 +3150,6 @@ export default {
             })
         },
 
-        buildShiftedTopicsForWeekSequence(sourceWeekKey, delta) {
-            const validWeekKeys = new Set(this.visibleWeekKeys())
-            const freeWeekKeys = new Set(this.freeWeekKeys)
-            const sequenceEntries = this.assignmentSequenceEntries()
-            const sourceTopicId = this.activeTopicAssignmentId
-            const sourceUnitId = this.activeTopicAssignmentUnitId ?? null
-            const sourceSequenceIndex = sequenceEntries.findIndex((entry) => (
-                entry.topicId === sourceTopicId && entry.unitId === sourceUnitId
-            ))
-            const { effectiveDelta, errorMessage: deltaErrorMessage } = this.resolveWeekSequenceDelta(
-                sourceWeekKey,
-                delta,
-                validWeekKeys,
-                freeWeekKeys,
-            )
-            let hasShiftedWeeks = false
-            let errorMessage = deltaErrorMessage
-
-            if (sourceSequenceIndex === -1) {
-                return {
-                    topics: null,
-                    errorMessage: 'Die aktive Datumszuordnung konnte nicht gefunden werden.',
-                }
-            }
-
-            const shiftWeekKeys = (weekKeys, mode = 'all') => {
-                const nextWeekKeys = [...new Set((Array.isArray(weekKeys) ? weekKeys : []).filter(Boolean))]
-                    .map((weekKey) => {
-                        if (
-                            errorMessage
-                            || mode === 'none'
-                            || (mode === 'tail' && weekKey < sourceWeekKey)
-                        ) {
-                            return weekKey
-                        }
-
-                        hasShiftedWeeks = true
-
-                        const shiftedWeek = this.resolveShiftedWeekKey(
-                            weekKey,
-                            effectiveDelta,
-                            validWeekKeys,
-                            freeWeekKeys,
-                        )
-
-                        if (shiftedWeek.errorMessage || !shiftedWeek.weekKey) {
-                            errorMessage = shiftedWeek.errorMessage
-                            return weekKey
-                        }
-
-                        return shiftedWeek.weekKey
-                    })
-                    .sort()
-
-                if (!errorMessage && new Set(nextWeekKeys).size !== nextWeekKeys.length) {
-                    errorMessage = 'Durch das Verschieben würden Wochen doppelt belegt.'
-                }
-
-                return nextWeekKeys
-            }
-
-            const nextTopics = this.curriculumTopics.map((topic) => {
-                const topicSequenceIndex = sequenceEntries.findIndex((entry) => (
-                    entry.topicId === topic.id && entry.unitId === null
-                ))
-                let nextTopic = this.buildTopicPayload(topic)
-
-                if (nextTopic.assignment_type === 'weeks') {
-                    const topicShiftMode = topicSequenceIndex < sourceSequenceIndex
-                        ? 'none'
-                        : topicSequenceIndex === sourceSequenceIndex
-                            ? 'tail'
-                            : 'all'
-
-                    nextTopic = this.buildTopicPayload(nextTopic, {
-                        week_keys: shiftWeekKeys(nextTopic.week_keys, topicShiftMode),
-                    })
-                }
-
-                const nextUnits = nextTopic.units.map((unit) => {
-                    if (unit.assignment_type !== 'weeks') {
-                        return this.buildUnitPayload(unit)
-                    }
-
-                    const unitSequenceIndex = sequenceEntries.findIndex((entry) => (
-                        entry.topicId === topic.id && entry.unitId === unit.id
-                    ))
-                    const unitShiftMode = unitSequenceIndex < sourceSequenceIndex
-                        ? 'none'
-                        : unitSequenceIndex === sourceSequenceIndex
-                            ? 'tail'
-                            : 'all'
-
-                    return this.buildUnitPayload(unit, {
-                        week_keys: shiftWeekKeys(unit.week_keys, unitShiftMode),
-                    })
-                })
-
-                nextTopic = this.buildTopicPayload(nextTopic, { units: nextUnits })
-
-                if (!errorMessage) {
-                    const topicState = this.assignmentState(nextTopic)
-
-                    nextUnits.forEach((unit) => {
-                        if (errorMessage) {
-                            return
-                        }
-
-                        if (this.assignmentStatesOverlap(topicState, this.assignmentState(unit))) {
-                            errorMessage = 'Durch das Verschieben würden sich Datumszuordnungen innerhalb eines Themas überschneiden.'
-                        }
-                    })
-                }
-
-                return nextTopic
-            })
-
-            if (!errorMessage && !hasShiftedWeeks) {
-                errorMessage = 'Für diese Woche gibt es keine nachfolgenden Zuordnungen zum Verschieben.'
-            }
-
-            return {
-                topics: errorMessage ? null : nextTopics,
-                errorMessage,
-            }
-        },
-
-        canShiftWeekSequence(weekKey, delta) {
-            if (
-                this.topicSaving
-                || !this.isWeekSelectionActive
-                || !weekKey
-                || !Number.isInteger(delta)
-            ) {
-                return false
-            }
-
-            return !this.buildShiftedTopicsForWeekSequence(weekKey, delta).errorMessage
-        },
-
-        async shiftWeekSequence(weekKey, delta, fallbackMessage) {
-            if (this.topicSaving || !this.isWeekSelectionActive) {
-                return
-            }
-
-            const { topics, errorMessage } = this.buildShiftedTopicsForWeekSequence(weekKey, delta)
-
-            if (errorMessage || !topics) {
-                useNotificationStore().notify({
-                    message: errorMessage || fallbackMessage,
-                    type: 'error',
-                    timeout: 3000,
-                })
-                return
-            }
-
-            this.topicSaving = true
-
-            try {
-                await this.persistCurriculum({
-                    topics,
-                }, fallbackMessage)
-            } finally {
-                this.topicSaving = false
-            }
-        },
-
         removeAssignmentOverlap(target, blocking) {
             const targetState = this.assignmentState(target)
             const blockingState = this.assignmentState(blocking)
@@ -3052,24 +3162,15 @@ export default {
                 return this.clearAssignment(target)
             }
 
-            if (targetState.assignment_type === 'month') {
-                const blockingMonths = blockingState.assignment_type === 'month'
-                    ? blockingState.month_keys
-                    : [...new Set(blockingState.week_keys.map((weekKey) => this.monthKeyFromWeekKey(weekKey)))]
-                const remainingMonthKeys = targetState.month_keys.filter((monthKey) => !blockingMonths.includes(monthKey))
+            if (targetState.assignment_type === 'month' && blockingState.assignment_type === 'month') {
+                const remainingMonthKeys = targetState.month_keys.filter((monthKey) => !blockingState.month_keys.includes(monthKey))
 
                 return remainingMonthKeys.length
                     ? this.applyMonthAssignment(target, remainingMonthKeys)
                     : this.clearAssignment(target)
             }
 
-            const remainingWeekKeys = blockingState.assignment_type === 'month'
-                ? targetState.week_keys.filter((weekKey) => !blockingState.month_keys.includes(this.monthKeyFromWeekKey(weekKey)))
-                : targetState.week_keys.filter((weekKey) => !blockingState.week_keys.includes(weekKey))
-
-            return remainingWeekKeys.length
-                ? this.applyWeekAssignment(target, remainingWeekKeys)
-                : this.clearAssignment(target)
+            return target
         },
 
         reconcileTopicUnitAssignments(topic, winner = null) {
@@ -3618,7 +3719,7 @@ export default {
                 return 'all_weeks'
             }
 
-            if (assignmentType === 'none' || assignmentType === 'weeks') {
+            if (assignmentType === 'none') {
                 return 'none'
             }
 
@@ -3717,52 +3818,101 @@ export default {
             return `${monthName} ${year}`
         },
 
-        weekChipLabel(weekKey) {
-            const weekStart = new Date(`${weekKey}T00:00:00`)
-            if (Number.isNaN(weekStart.getTime())) return weekKey
+        monthByAssignmentKey(monthKey = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
 
-            const friday = new Date(weekStart)
-            friday.setDate(friday.getDate() + 4)
-
-            return `KW ${this.getISOWeek(weekStart)} · ${weekStart.getDate()}.${weekStart.getMonth() + 1}.–${friday.getDate()}.${friday.getMonth() + 1}.`
+            return this.visibleMonths.find((month) => month.assignmentKey === normalizedMonthKey) ?? null
         },
 
-        weeksSummaryLabel(weekKeys) {
-            if (!weekKeys || !weekKeys.length) return ''
+        isMonthKeyOverassigned(monthKey = null) {
+            const month = this.monthByAssignmentKey(monthKey)
 
-            const weeks = weekKeys.map((key) => {
-                const d = new Date(`${key}T00:00:00`)
-                return { date: d, kw: this.getISOWeek(d), month: d.getMonth() }
-            }).sort((a, b) => a.date - b.date)
+            return month ? this.monthTeachingWeekCountIsOverassigned(month) : false
+        },
 
-            const groups = []
-            let current = { months: new Set([weeks[0].month]), kwStart: weeks[0].kw, kwEnd: weeks[0].kw, lastDate: weeks[0].date }
+        monthAssignmentChipColor(monthKey = null, item = null, parentTopic = null) {
+            return this.isMonthAssignmentChipOverassigned(monthKey, item, parentTopic) ? 'error' : 'primary'
+        },
 
-            for (let i = 1; i < weeks.length; i++) {
-                const daysDiff = Math.round((weeks[i].date - current.lastDate) / 86400000)
-                if (daysDiff <= 8) {
-                    current.kwEnd = weeks[i].kw
-                    current.months.add(weeks[i].month)
-                    current.lastDate = weeks[i].date
-                } else {
-                    groups.push(current)
-                    current = { months: new Set([weeks[i].month]), kwStart: weeks[i].kw, kwEnd: weeks[i].kw, lastDate: weeks[i].date }
-                }
+        monthAssignmentChipVariant(monthKey = null, item = null, parentTopic = null) {
+            return this.isMonthAssignmentChipOverassigned(monthKey, item, parentTopic) ? 'flat' : 'tonal'
+        },
+
+        monthAssignmentChipIcon(monthKey = null, item = null, parentTopic = null) {
+            return this.isMonthAssignmentChipOverassigned(monthKey, item, parentTopic) ? 'mdi-alert-circle-outline' : null
+        },
+
+        isMonthAssignmentChipOverassigned(monthKey = null, item = null, parentTopic = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+
+            if (!item) {
+                return this.isMonthKeyOverassigned(normalizedMonthKey)
             }
-            groups.push(current)
 
-            const schoolYearMonth = (m) => m >= 8 ? m - 8 : m + 4
+            return this.monthAssignmentOverflowChunks(normalizedMonthKey)
+                .some((chunk) => (
+                    chunk.isOverassigned
+                    && this.monthAssignmentChunkMatchesItem(chunk, item, parentTopic)
+                ))
+        },
 
-            return groups.map((g) => {
-                const monthNames = [...g.months].sort((a, b) => schoolYearMonth(a) - schoolYearMonth(b)).map((m) => MONTH_NAMES[m])
-                const monthPart = monthNames.length > 1
-                    ? `${monthNames[0]} – ${monthNames[monthNames.length - 1]}`
-                    : monthNames[0]
-                const kwPart = g.kwStart === g.kwEnd
-                    ? `KW ${g.kwStart}`
-                    : `KW ${g.kwStart}–${g.kwEnd}`
-                return `${monthPart} (${kwPart})`
-            }).join(', ')
+        monthAssignmentOverflowChunks(monthKey = null) {
+            const month = this.monthByAssignmentKey(monthKey)
+
+            if (!month) {
+                return []
+            }
+
+            const topics = this.curriculumTopics
+            const capacity = this.monthTeachingWeekCount(month)
+            let assignedWeeks = 0
+
+            return this.monthAssignmentShiftChunks(topics, [month]).map((chunk) => {
+                assignedWeeks += chunk.weekCount
+
+                return {
+                    ...chunk,
+                    isOverassigned: assignedWeeks > capacity,
+                }
+            })
+        },
+
+        monthAssignmentChunkMatchesItem(chunk = null, item = null, parentTopic = null) {
+            const topics = this.curriculumTopics
+            const topic = topics[chunk?.topicIndex]
+
+            if (!chunk || !item || !topic) {
+                return false
+            }
+
+            if (chunk.unitIndex === null) {
+                return this.assignmentItemsMatch(topic, item)
+            }
+
+            const unit = Array.isArray(topic.units) ? topic.units[chunk.unitIndex] : null
+
+            if (parentTopic && !this.assignmentItemsMatch(topic, parentTopic)) {
+                return false
+            }
+
+            return this.assignmentItemsMatch(unit, item)
+        },
+
+        assignmentItemsMatch(first = null, second = null) {
+            if (!first || !second) {
+                return false
+            }
+
+            if (first === second) {
+                return true
+            }
+
+            return Boolean(first.id && second.id && first.id === second.id)
+        },
+
+        isInheritedMonthChipOverassigned(topic = null, monthKey = null) {
+            return (Array.isArray(topic?.units) ? topic.units : [])
+                .some((unit) => this.isMonthAssignmentChipOverassigned(monthKey, unit, topic))
         },
 
         topicAssignmentSummary(topic) {
@@ -3778,10 +3928,6 @@ export default {
                 return `${topic.month_keys.length} Monate`
             }
 
-            if (topic.assignment_type === 'weeks') {
-                return this.weeksSummaryLabel(topic.week_keys)
-            }
-
             return this.curriculumScopeLabel
         },
 
@@ -3789,37 +3935,6 @@ export default {
             return 'tonal'
         },
 
-        overlappingWeekAssignmentKeys() {
-            const counts = new Map()
-
-            this.curriculumTopics.forEach((topic) => {
-                if (topic.assignment_type === 'weeks') {
-                    topic.week_keys.forEach((weekKey) => {
-                        counts.set(weekKey, (counts.get(weekKey) || 0) + 1)
-                    })
-                }
-
-                topic.units.forEach((unit) => {
-                    if (unit.assignment_type !== 'weeks') {
-                        return
-                    }
-
-                    unit.week_keys.forEach((weekKey) => {
-                        counts.set(weekKey, (counts.get(weekKey) || 0) + 1)
-                    })
-                })
-            })
-
-            return new Set(
-                [...counts.entries()]
-                    .filter(([, count]) => count > 1)
-                    .map(([weekKey]) => weekKey),
-            )
-        },
-
-        weekAssignmentChipColor(weekKey) {
-            return this.overlappingWeekAssignmentKeys().has(weekKey) ? 'warning' : 'primary'
-        },
 
         topicInheritedAssignmentChips(topic) {
             if (!topic || topic.assignment_type !== 'none' || !Array.isArray(topic.units)) {
@@ -3827,7 +3942,6 @@ export default {
             }
 
             const monthKeys = new Set()
-            const weekKeys = new Set()
             let hasAllWeeksAssignment = false
 
             topic.units.forEach((unit) => {
@@ -3840,11 +3954,6 @@ export default {
 
                 if (assignment.assignment_type === 'month') {
                     assignment.month_keys.forEach((monthKey) => monthKeys.add(monthKey))
-                    return
-                }
-
-                if (assignment.assignment_type === 'weeks') {
-                    assignment.week_keys.forEach((weekKey) => weekKeys.add(weekKey))
                 }
             })
 
@@ -3861,15 +3970,11 @@ export default {
                 chips.push({
                     key: `month-${monthKey}`,
                     label: this.monthChipLabel(monthKey),
+                    color: this.isInheritedMonthChipOverassigned(topic, monthKey) ? 'error' : 'primary',
+                    variant: this.isInheritedMonthChipOverassigned(topic, monthKey) ? 'flat' : 'tonal',
+                    icon: this.isInheritedMonthChipOverassigned(topic, monthKey) ? 'mdi-alert-circle-outline' : null,
                 })
             })
-
-            if (weekKeys.size) {
-                chips.push({
-                    key: 'weeks-summary',
-                    label: this.weeksSummaryLabel([...weekKeys].sort()),
-                })
-            }
 
             return chips
         },
@@ -3930,6 +4035,7 @@ export default {
                         topicTitle: topic.title,
                         title: topic.title,
                         isExam: false,
+                        weeksCount: null,
                     })
                 } else if (topic.assignment_type === 'month' && topic.month_keys.includes(monthKey)) {
                     entries.push({
@@ -3938,6 +4044,19 @@ export default {
                         topicTitle: topic.title,
                         title: topic.title,
                         isExam: false,
+                        weeksCount: this.monthWeekCount(topic, monthKey),
+                    })
+                } else if (
+                    topic.assignment_type === 'weeks'
+                    && topic.week_keys.some((weekKey) => this.monthKeyFromWeekKey(weekKey) === monthKey)
+                ) {
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        title: topic.title,
+                        isExam: false,
+                        weeksCount: null,
                     })
                 }
 
@@ -3954,6 +4073,7 @@ export default {
                             unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
+                            weeksCount: null,
                         })
                         return
                     }
@@ -3966,6 +4086,23 @@ export default {
                             unitTitle: unit.title,
                             title: this.overviewUnitTitle(topic, unit),
                             isExam: Boolean(unit.is_exam),
+                            weeksCount: this.monthWeekCount(unit, monthKey),
+                        })
+                        return
+                    }
+
+                    if (
+                        this.effectiveUnitWeekKeys(topic, unit)
+                            .some((weekKey) => this.monthKeyFromWeekKey(weekKey) === monthKey)
+                    ) {
+                        entries.push({
+                            id: `${topic.id}-${unit.id}`,
+                            topicId: topic.id,
+                            topicTitle: topic.title,
+                            unitTitle: unit.title,
+                            title: this.overviewUnitTitle(topic, unit),
+                            isExam: Boolean(unit.is_exam),
+                            weeksCount: null,
                         })
                     }
                 })
@@ -3983,14 +4120,41 @@ export default {
                 return []
             }
 
+            const weekMonthKey = this.monthKeyFromWeekKey(weekKey)
+
             return this.curriculumTopics.flatMap((topic) => {
-                const hasTopicWeekEntry = Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)
+                const entries = []
+
+                if (!topic.title) {
+                    return entries
+                }
+
+                const hasTopicWeekEntry = topic.assignment_type === 'weeks' && topic.week_keys.includes(weekKey)
+                const topicMatchesWeek = topic.assignment_type === 'all_weeks'
+                    || (topic.assignment_type === 'month' && topic.month_keys.includes(weekMonthKey))
+
+                if (topicMatchesWeek) {
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        title: topic.title,
+                        isExam: false,
+                    })
+                }
+
                 const unitEntries = []
 
                 topic.units.forEach((unit) => {
-                    const effectiveWeekKeys = this.effectiveUnitWeekKeys(topic, unit)
+                    if (!unit.title) {
+                        return
+                    }
 
-                    if (Boolean(unit.title) && effectiveWeekKeys.includes(weekKey)) {
+                    const unitMatchesWeek = unit.assignment_type === 'all_weeks'
+                        || (unit.assignment_type === 'month' && unit.month_keys.includes(weekMonthKey))
+                        || this.effectiveUnitWeekKeys(topic, unit).includes(weekKey)
+
+                    if (unitMatchesWeek) {
                         unitEntries.push({
                             id: `${topic.id}-${unit.id}`,
                             topicId: topic.id,
@@ -4006,33 +4170,35 @@ export default {
 
                 if (hasTopicWeekEntry) {
                     if (unitEntries.length === 0) {
-                        return [
-                            {
-                                id: topic.id,
-                                topicId: topic.id,
-                                topicTitle: topic.title,
-                                title: topic.title,
-                                isExam: false,
-                            },
-                        ]
+                        entries.push({
+                            id: topic.id,
+                            topicId: topic.id,
+                            topicTitle: topic.title,
+                            title: topic.title,
+                            isExam: false,
+                        })
+
+                        return entries
                     }
 
                     const mergedUnitTitle = unitEntries.map((entry) => entry.unitTitle).join(', ')
 
-                    return [
-                        {
-                            id: topic.id,
-                            topicId: topic.id,
-                            topicTitle: topic.title,
-                            unitTitle: mergedUnitTitle,
-                            showTopicPrefix: true,
-                            title: `${topic.title}: ${mergedUnitTitle}`,
-                            isExam: unitEntries.some((entry) => entry.isExam),
-                        },
-                    ]
+                    entries.push({
+                        id: topic.id,
+                        topicId: topic.id,
+                        topicTitle: topic.title,
+                        unitTitle: mergedUnitTitle,
+                        showTopicPrefix: true,
+                        title: `${topic.title}: ${mergedUnitTitle}`,
+                        isExam: unitEntries.some((entry) => entry.isExam),
+                    })
+
+                    return entries
                 }
 
-                return unitEntries
+                entries.push(...unitEntries)
+
+                return entries
             })
         },
 
@@ -4084,14 +4250,27 @@ export default {
                     return true
                 }
 
+                const weekMonthKey = this.monthKeyFromWeekKey(week.weekKey)
+
                 return topics.some((topic) => {
-                    if (Boolean(topic.title) && topic.assignment_type === 'weeks' && topic.week_keys.includes(week.weekKey)) {
+                    if (
+                        Boolean(topic.title)
+                        && (
+                            topic.assignment_type === 'all_weeks'
+                            || (topic.assignment_type === 'month' && topic.month_keys.includes(weekMonthKey))
+                            || (topic.assignment_type === 'weeks' && topic.week_keys.includes(week.weekKey))
+                        )
+                    ) {
                         return true
                     }
 
                     return topic.units.some((unit) => (
                         Boolean(unit.title)
-                        && this.effectiveUnitWeekKeys(topic, unit).includes(week.weekKey)
+                        && (
+                            unit.assignment_type === 'all_weeks'
+                            || (unit.assignment_type === 'month' && unit.month_keys.includes(weekMonthKey))
+                            || this.effectiveUnitWeekKeys(topic, unit).includes(week.weekKey)
+                        )
                     ))
                 })
             })
@@ -4152,21 +4331,7 @@ export default {
         },
 
         monthOverviewEntries(month) {
-            const monthEntries = this.topicsForMonth(month)
-
-            if (!this.shouldCollapseMonth(month)) {
-                return monthEntries
-            }
-
-            const entryMap = new Map(monthEntries.map((entry) => [entry.id, entry]))
-
-            this.weekEntriesForMonth(month).forEach((entry) => {
-                if (!entryMap.has(entry.id)) {
-                    entryMap.set(entry.id, entry)
-                }
-            })
-
-            return [...entryMap.values()]
+            return this.topicsForMonth(month)
         },
 
         monthOverviewGroups(month) {
@@ -4178,6 +4343,7 @@ export default {
                 const currentGroup = groups.get(groupId) ?? {
                     id: groupId,
                     topicTitle,
+                    weeksCount: null,
                     units: [],
                 }
 
@@ -4187,8 +4353,11 @@ export default {
                             id: entry.id,
                             title: entry.unitTitle,
                             isExam: entry.isExam,
+                            weeksCount: entry.weeksCount,
                         })
                     }
+                } else {
+                    currentGroup.weeksCount = entry.weeksCount
                 }
 
                 groups.set(groupId, currentGroup)
@@ -4216,10 +4385,6 @@ export default {
             return `${topicTitle}: ${unitTitle}`
         },
 
-        isWeekAssignedToActiveTopic(weekKey) {
-            return this.activeAssignmentItem?.week_keys?.includes(weekKey) ?? false
-        },
-
         isMonthAssignedToHighlightedItem(month) {
             const monthKey = month?.assignmentKey
             const assignmentItems = this.highlightedAssignmentItems
@@ -4239,10 +4404,6 @@ export default {
 
                 if (assignmentItem.assignment_type === 'month') {
                     return assignmentItem.month_keys.includes(monthKey)
-                }
-
-                if (assignmentItem.assignment_type === 'weeks') {
-                    return assignmentItem.week_keys.some((weekKey) => this.monthKeyFromWeekKey(weekKey) === monthKey)
                 }
 
                 return false
@@ -4265,10 +4426,6 @@ export default {
                     return true
                 }
 
-                if (assignmentItem.assignment_type === 'weeks') {
-                    return assignmentItem.week_keys.includes(weekKey)
-                }
-
                 if (assignmentItem.assignment_type === 'month') {
                     return assignmentItem.month_keys.includes(this.monthKeyFromWeekKey(weekKey))
                 }
@@ -4280,10 +4437,6 @@ export default {
         shouldSuppressActiveAssignmentCalendarHighlight() {
             return this.activeTopicAssignmentId !== null
                 && this.activeTopicAssignmentType === 'all_weeks'
-        },
-
-        isWeekSelectableForTopic(weekKey) {
-            return this.isWeekSelectionActive && !this.isFreeWeek(weekKey)
         },
 
         buildWeeks(year, month, today) {
@@ -4768,6 +4921,21 @@ export default {
             }, 'Monatszuordnung konnte nicht gespeichert werden.')
         },
 
+        async updateTopicMonthWeekCount(topic, monthKey, weeks) {
+            if (this.isEditingTopic || this.isEditingUnit) return
+            if (this.topicSaving) return
+            if (topic.assignment_type !== 'month') return
+
+            const updatedTopic = this.applyMonthWeekCount(topic, monthKey, weeks)
+
+            await this.persistTopicAssignment(topic.id, {
+                assignment_type: 'month',
+                month_keys: updatedTopic.month_keys,
+                month_week_counts: updatedTopic.month_week_counts,
+                week_keys: [],
+            }, 'Wochenanzahl konnte nicht gespeichert werden.')
+        },
+
         async toggleUnitMonthAssignment(topic, unit, monthKey) {
             if (this.isEditingTopic || this.isEditingUnit) return
             if (this.topicSaving) return
@@ -4791,38 +4959,19 @@ export default {
             }, 'Monatszuordnung der Einheit konnte nicht gespeichert werden.')
         },
 
-        async handleWeekClick(weekKey) {
+        async updateUnitMonthWeekCount(topic, unit, monthKey, weeks) {
             if (this.isEditingTopic || this.isEditingUnit) return
-            if (!this.isWeekSelectionActive || !this.activeTopicAssignmentTopic || !this.activeAssignmentItem || this.topicSaving) return
-            if (this.isFreeWeek(weekKey)) return
+            if (this.topicSaving) return
+            if (unit.assignment_type !== 'month') return
 
-            const weekKeys = this.activeAssignmentItem.assignment_type === 'weeks'
-                ? [...this.activeAssignmentItem.week_keys]
-                : []
+            const updatedUnit = this.applyMonthWeekCount(unit, monthKey, weeks)
 
-            const nextWeekKeys = weekKeys.includes(weekKey)
-                ? (weekKeys.length === 1 ? weekKeys : weekKeys.filter((value) => value !== weekKey))
-                : [...weekKeys, weekKey].sort()
-
-            if (this.activeTopicAssignmentUnitId) {
-                const updatedCurriculum = await this.persistUnitAssignment(this.activeTopicAssignmentTopic.id, this.activeTopicAssignmentUnitId, {
-                    assignment_type: 'weeks',
-                    month_keys: [],
-                    week_keys: nextWeekKeys,
-                }, 'Wochenauswahl der Einheit konnte nicht gespeichert werden.')
-
-                this.closeAssignmentEditorForCompletedMonth(weekKey, updatedCurriculum)
-
-                return
-            }
-
-            const updatedCurriculum = await this.persistTopicAssignment(this.activeTopicAssignmentTopic.id, {
-                assignment_type: 'weeks',
-                month_keys: [],
-                week_keys: nextWeekKeys,
-            }, 'Wochenauswahl konnte nicht gespeichert werden.')
-
-            this.closeAssignmentEditorForCompletedMonth(weekKey, updatedCurriculum)
+            await this.persistUnitAssignment(topic.id, unit.id, {
+                assignment_type: 'month',
+                month_keys: updatedUnit.month_keys,
+                month_week_counts: updatedUnit.month_week_counts,
+                week_keys: [],
+            }, 'Wochenanzahl der Einheit konnte nicht gespeichert werden.')
         },
 
         async saveTopic() {
@@ -5560,6 +5709,7 @@ export default {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    gap: 12px;
     width: 100%;
     padding: 14px 20px 8px;
     background:
@@ -5578,10 +5728,44 @@ export default {
     letter-spacing: 0.02em;
 }
 
-.curriculum-detail__month-year {
-    font-size: 0.76rem;
-    font-weight: 600;
+.curriculum-detail__month-week-meta {
+    flex: 0 0 auto;
+    margin-left: auto;
+    max-width: min(58%, 240px);
+    text-align: right;
+}
+
+.curriculum-detail__month-week-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    padding: 0.16rem 0.48rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
     color: #475569;
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.curriculum-detail__month-week-count--overassigned {
+    background: rgba(254, 226, 226, 0.92);
+    color: #b91c1c;
+}
+
+.curriculum-detail__month-week-warning {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .curriculum-detail__month--with-topics {
@@ -5652,6 +5836,11 @@ export default {
 
 .curriculum-detail__month-topic-unit {
     font-weight: 500;
+}
+
+.curriculum-detail__month-topic-weeks {
+    font-weight: 600;
+    opacity: 0.82;
 }
 
 
@@ -6854,6 +7043,28 @@ export default {
 .curriculum-detail__topic-assignment-weeks {
     flex-direction: column;
     align-items: flex-start;
+}
+
+.curriculum-detail__assignment-month-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    flex-wrap: wrap;
+}
+
+.curriculum-detail__assignment-month-row--selected {
+    flex: 1 0 100%;
+}
+
+.curriculum-detail__assignment-month-week-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.curriculum-detail__assignment-month-week-chip {
+    cursor: pointer;
 }
 
 .curriculum-detail__assignment-week-list {

@@ -398,15 +398,6 @@ CSS;
             return $this->monthRangeLabel($monthKeys);
         }
 
-        if ($type === 'weeks') {
-            $weekKeys = is_array($item['week_keys'] ?? null) ? $item['week_keys'] : [];
-            if (! $weekKeys) {
-                return null;
-            }
-
-            return $this->weekKeysToLabel($weekKeys);
-        }
-
         return null;
     }
 
@@ -417,12 +408,8 @@ CSS;
             return null;
         }
 
-        $allWeekKeys = [];
         $allMonthNames = [];
 
-        if (($topic['assignment_type'] ?? 'none') === 'weeks' && is_array($topic['week_keys'] ?? null)) {
-            $allWeekKeys = array_merge($allWeekKeys, $topic['week_keys']);
-        }
         if (($topic['assignment_type'] ?? 'none') === 'month' && is_array($topic['month_keys'] ?? null)) {
             foreach ($topic['month_keys'] as $mk) {
                 $allMonthNames[] = $this->monthKeyToName($mk);
@@ -430,23 +417,10 @@ CSS;
         }
 
         foreach ($units as $unit) {
-            if (($unit['assignment_type'] ?? 'none') === 'weeks' && is_array($unit['week_keys'] ?? null)) {
-                $allWeekKeys = array_merge($allWeekKeys, $unit['week_keys']);
-            }
             if (($unit['assignment_type'] ?? 'none') === 'month' && is_array($unit['month_keys'] ?? null)) {
                 foreach ($unit['month_keys'] as $mk) {
                     $allMonthNames[] = $this->monthKeyToName($mk);
                 }
-            }
-        }
-
-        $allWeekKeys = array_unique($allWeekKeys);
-        sort($allWeekKeys);
-
-        foreach ($allWeekKeys as $weekKey) {
-            $date = date_create($weekKey);
-            if ($date) {
-                $allMonthNames[] = $this->monthNameFromDate($date);
             }
         }
 
@@ -460,18 +434,6 @@ CSS;
             } else {
                 $parts[] = $allMonthNames[0].' – '.end($allMonthNames);
             }
-        }
-
-        if ($allWeekKeys) {
-            $kws = array_map(function ($wk) {
-                $date = date_create($wk);
-
-                return $date ? (int) $date->format('W') : 0;
-            }, $allWeekKeys);
-            sort($kws);
-            $first = $kws[0];
-            $last = end($kws);
-            $parts[] = $first === $last ? "KW {$first}" : "KW {$first}–{$last}";
         }
 
         return $parts ? implode(' · ', $parts) : null;

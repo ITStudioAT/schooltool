@@ -575,6 +575,63 @@ test('curriculum topics normalize multiple month assignments', function () {
         ->and($curriculum->fresh()->topics[0]['month_keys'])->toBe(['2025-09', '2025-11']);
 });
 
+test('curriculum month assignments preserve week counts for selected months', function () {
+    $curriculum = TeachingCurriculum::query()->create([
+        'school_id' => $this->school->id,
+        'schoolyear_id' => $this->schoolyear->id,
+        'user_id' => $this->teacher->id,
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'free_weeks' => [],
+        'topics' => [],
+    ]);
+
+    $response = $this->actingAs($this->teacher, 'sanctum')->putJson("/api/admin/teaching/curricula/{$curriculum->id}", [
+        'title' => 'Informatik',
+        'description' => null,
+        'semester_count' => 2,
+        'topics' => [
+            [
+                'id' => 'topic-basics',
+                'title' => 'Grundlagen',
+                'assignment_type' => 'month',
+                'month_keys' => ['2025-09', '2025-11'],
+                'month_week_counts' => [
+                    '2025-10' => 3,
+                    '2025-11' => 0,
+                ],
+                'units' => [
+                    [
+                        'id' => 'unit-login',
+                        'title' => 'Am System anmelden',
+                        'assignment_type' => 'month',
+                        'month_keys' => ['2025-12'],
+                        'month_week_counts' => [
+                            '2025-12' => 4,
+                            '2025-10' => 3,
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $response->assertSuccessful();
+
+    expect($response->json('data.topics.0.month_week_counts'))->toBe([
+        '2025-09' => 1,
+        '2025-11' => 0,
+    ])->and($response->json('data.topics.0.units.0.month_week_counts'))->toBe([
+        '2025-12' => 4,
+    ])->and($curriculum->fresh()->topics[0]['month_week_counts'])->toBe([
+        '2025-09' => 1,
+        '2025-11' => 0,
+    ])->and($curriculum->fresh()->topics[0]['units'][0]['month_week_counts'])->toBe([
+        '2025-12' => 4,
+    ]);
+});
+
 test('curriculum topics can be saved without a date assignment', function () {
     $curriculum = TeachingCurriculum::query()->create([
         'school_id' => $this->school->id,

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Curricula from '@/pages/admin/teaching/curricula/Curricula.vue'
+import CurriculumDetail from '@/pages/admin/teaching/curricula/CurriculumDetail.vue'
 import CurriculaOverview from '@/pages/admin/teaching/curricula/CurriculaOverview.vue'
 import CurriculaSettings from '@/pages/admin/teaching/curricula/CurriculaSettings.vue'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
@@ -539,6 +540,7 @@ describe('Teaching curricula route sync', () => {
         expect(curriculaSource).toContain("@updated=\"updateCurriculum\"")
         expect(settingsSource).toContain('class="curricula-settings pa-6"')
         expect(settingsSource).toContain("v-if=\"curriculum\"")
+        expect(settingsSource).toContain('curricula-settings__curriculum-title')
         expect(settingsSource).toContain('<v-spacer />')
         expect(settingsSource).toContain('icon="mdi-close"')
         expect(settingsSource).toContain('variant="text"')
@@ -551,16 +553,21 @@ describe('Teaching curricula route sync', () => {
         expect(settingsSource).toContain("@click=\"openPanel('free-weeks')\"")
         expect(settingsSource).toContain('<v-col cols="12" md="8">')
         expect(settingsSource).toContain('@click="closePanel"')
+        expect(settingsSource).toContain('curricula-settings__back-btn text-none')
+        expect(settingsSource).toContain('Zurück zum Menü')
         expect(settingsSource).toContain('Freie Wochen')
         expect(settingsSource).toContain('Titel für freie Zeiträume')
         expect(settingsSource).toContain('Direkt aufeinanderfolgende freie Wochen werden zu einem Zeitraum zusammengefasst.')
+        expect(settingsSource).toContain('Vorlage: {{ templateFreeWeeksLabel }}')
+        expect(settingsSource).toContain('Curriculum: {{ curriculumFreeWeeksLabel }}')
+        expect(settingsSource).toContain('curriculumFreeWeekKeys()')
         expect(settingsSource).toContain('Template speichern')
         expect(settingsSource).toContain('Auf Curriculum übernehmen')
-        expect(settingsSource).toContain('icon="mdi-chevron-left"')
-        expect(settingsSource).toContain('icon="mdi-chevron-right"')
-        expect(settingsSource).toContain('@click="selectedYear--"')
-        expect(settingsSource).toContain('@click="selectedYear++"')
-        expect(settingsSource).toContain('{{ selectedYear }}/{{ selectedYear + 1 }}')
+        expect(settingsSource).not.toContain('curricula-settings__year-picker')
+        expect(settingsSource).not.toContain('curricula-settings__month-year')
+        expect(settingsSource).not.toContain('@click="selectedYear--"')
+        expect(settingsSource).not.toContain('@click="selectedYear++"')
+        expect(settingsSource).not.toContain('{{ selectedYear }}/{{ selectedYear + 1 }}')
         expect(settingsSource).toContain('@click="toggleTemplateWeek(week.weekKey)"')
         expect(settingsSource).toContain("weekTitleLookup[week.weekKey]")
         expect(settingsSource).toContain('curricula-settings__week-title')
@@ -581,12 +588,601 @@ describe('Teaching curricula route sync', () => {
         expect(settingsSource).toContain('@click="openRangeEditor(group.key)"')
         expect(settingsSource).toContain('@click="closeRangeEditor"')
         expect(settingsSource).toContain('curricula-settings__month-grid--compact')
+        expect(settingsSource).toContain('curricula-settings__month-week-count')
+        expect(settingsSource).toContain('{{ monthTeachingWeekCountLabel(month) }}')
         expect(settingsSource).toContain('curricula-settings__week--compact')
         expect(settingsSource).toContain('groupSummaryLabel(group)')
         expect(settingsSource).not.toContain('Darstellung')
         expect(settingsSource).not.toContain('Weitere Vorlagen')
         expect(settingsSource).not.toContain('Demnächst')
         expect(settingsSource).toContain('.curricula-settings__week--selected {')
+    })
+
+    it('does not render year controls in the curriculum calendar header', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue', 'utf8')
+        )
+
+        expect(source).not.toContain('curriculum-detail__year-picker')
+        expect(source).not.toContain('curriculum-detail__month-year')
+        expect(source).not.toContain('@click="selectedYear--"')
+        expect(source).not.toContain('@click="selectedYear++"')
+        expect(source).not.toContain('{{ selectedYear }}/{{ selectedYear + 1 }}')
+    })
+
+    it('shows the month teaching week count without free weeks', async () => {
+        const [detailSource, settingsSource] = await Promise.all([
+            import('node:fs/promises').then((fs) =>
+                fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculumDetail.vue', 'utf8')
+            ),
+            import('node:fs/promises').then((fs) =>
+                fs.readFile('resources/js/pages/admin/teaching/curricula/CurriculaSettings.vue', 'utf8')
+            ),
+        ])
+        const detailContext = {
+            selectedYear: 2025,
+            freeWeekKeys: ['2025-09-08', '2025-10-29'],
+            curriculumTopics: [
+                {
+                    title: 'Schreibübungen',
+                    assignment_type: 'all_weeks',
+                    week_keys: [],
+                    month_keys: [],
+                    units: [
+                        {
+                            title: 'Einleitung/Überblick',
+                            assignment_type: 'month',
+                            week_keys: [],
+                            month_keys: ['2025-09'],
+                            month_week_counts: {
+                                '2025-09': 1,
+                            },
+                        },
+                    ],
+                },
+                {
+                    title: 'Satzbau',
+                    assignment_type: 'month',
+                    week_keys: [],
+                    month_keys: ['2025-10'],
+                    month_week_counts: {
+                        '2025-10': 0,
+                    },
+                    units: [],
+                },
+            ],
+            isFreeWeek(weekKey: string) {
+                return (CurriculumDetail as any).methods.isFreeWeek.call(this, weekKey)
+            },
+            monthTeachingWeekCount(month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.monthTeachingWeekCount.call(this, month)
+            },
+            monthAssignedTeachingWeekCount(month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.monthAssignedTeachingWeekCount.call(this, month)
+            },
+            monthTeachingWeekCountIsOverassigned(month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.monthTeachingWeekCountIsOverassigned.call(this, month)
+            },
+            monthByAssignmentKey(monthKey: string) {
+                return (CurriculumDetail as any).methods.monthByAssignmentKey.call(this, monthKey)
+            },
+            isMonthKeyOverassigned(monthKey: string) {
+                return (CurriculumDetail as any).methods.isMonthKeyOverassigned.call(this, monthKey)
+            },
+            monthAssignmentChipColor(
+                monthKey: string,
+                item: Record<string, unknown> | null = null,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.monthAssignmentChipColor.call(this, monthKey, item, parentTopic)
+            },
+            monthAssignmentChipVariant(
+                monthKey: string,
+                item: Record<string, unknown> | null = null,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.monthAssignmentChipVariant.call(this, monthKey, item, parentTopic)
+            },
+            monthAssignmentChipIcon(
+                monthKey: string,
+                item: Record<string, unknown> | null = null,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.monthAssignmentChipIcon.call(this, monthKey, item, parentTopic)
+            },
+            isMonthAssignmentChipOverassigned(
+                monthKey: string,
+                item: Record<string, unknown> | null = null,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.isMonthAssignmentChipOverassigned.call(
+                    this,
+                    monthKey,
+                    item,
+                    parentTopic,
+                )
+            },
+            monthAssignmentOverflowChunks(monthKey: string) {
+                return (CurriculumDetail as any).methods.monthAssignmentOverflowChunks.call(this, monthKey)
+            },
+            monthAssignmentChunkMatchesItem(
+                chunk: Record<string, unknown>,
+                item: Record<string, unknown>,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.monthAssignmentChunkMatchesItem.call(
+                    this,
+                    chunk,
+                    item,
+                    parentTopic,
+                )
+            },
+            assignmentItemsMatch(first: Record<string, unknown>, second: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.assignmentItemsMatch.call(this, first, second)
+            },
+            assignmentWeekUsageForMonth(
+                entry: Record<string, unknown>,
+                monthKey: string,
+                totalWeekCount: number,
+            ) {
+                return (CurriculumDetail as any).methods.assignmentWeekUsageForMonth.call(
+                    this,
+                    entry,
+                    monthKey,
+                    totalWeekCount,
+                )
+            },
+            topicHasUnitAssignmentUsageForMonth(
+                topic: Record<string, unknown>,
+                monthKey: string,
+                teachingWeekKeySet: Set<string>,
+                totalWeekCount: number,
+            ) {
+                return (CurriculumDetail as any).methods.topicHasUnitAssignmentUsageForMonth.call(
+                    this,
+                    topic,
+                    monthKey,
+                    teachingWeekKeySet,
+                    totalWeekCount,
+                )
+            },
+            assignmentHasUsageForMonth(
+                entry: Record<string, unknown>,
+                monthKey: string,
+                teachingWeekKeySet: Set<string>,
+                totalWeekCount: number,
+                parentTopic: Record<string, unknown> | null = null,
+            ) {
+                return (CurriculumDetail as any).methods.assignmentHasUsageForMonth.call(
+                    this,
+                    entry,
+                    monthKey,
+                    teachingWeekKeySet,
+                    totalWeekCount,
+                    parentTopic,
+                )
+            },
+            shiftOverloadedMonthAssignments(month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.shiftOverloadedMonthAssignments.call(this, month)
+            },
+            visibleMonthsFrom(monthKey: string) {
+                return (CurriculumDetail as any).methods.visibleMonthsFrom.call(this, monthKey)
+            },
+            monthAssignmentShiftChunks(topics: Record<string, unknown>[], months: Record<string, unknown>[]) {
+                return (CurriculumDetail as any).methods.monthAssignmentShiftChunks.call(this, topics, months)
+            },
+            updateMonthAssignmentAtPath(
+                topics: Record<string, unknown>[],
+                chunk: Record<string, unknown>,
+                updater: (item: Record<string, unknown>) => Record<string, unknown>,
+            ) {
+                return (CurriculumDetail as any).methods.updateMonthAssignmentAtPath.call(this, topics, chunk, updater)
+            },
+            removeMonthAssignment(item: Record<string, unknown>, monthKey: string) {
+                return (CurriculumDetail as any).methods.removeMonthAssignment.call(this, item, monthKey)
+            },
+            addMonthAssignment(item: Record<string, unknown>, monthKey: string, weekCount: number) {
+                return (CurriculumDetail as any).methods.addMonthAssignment.call(this, item, monthKey, weekCount)
+            },
+            clearAssignment(item: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.clearAssignment.call(this, item)
+            },
+            buildTopicPayload(topic: Record<string, unknown>) {
+                return JSON.parse(JSON.stringify(topic))
+            },
+            monthTeachingWeeks(month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.monthTeachingWeeks.call(this, month)
+            },
+            monthWeekCount(item: Record<string, unknown>, monthKey: string) {
+                return (CurriculumDetail as any).methods.monthWeekCount.call(this, item, monthKey)
+            },
+            normalizeMonthWeekCounts(monthWeekCounts: Record<string, unknown>, monthKeys: string[]) {
+                return (CurriculumDetail as any).methods.normalizeMonthWeekCounts.call(this, monthWeekCounts, monthKeys)
+            },
+            normalizeMonthAssignmentKey(monthKey: string) {
+                return (CurriculumDetail as any).methods.normalizeMonthAssignmentKey.call(this, monthKey)
+            },
+            monthKeyForSelectedYear(monthNumber: string) {
+                return (CurriculumDetail as any).methods.monthKeyForSelectedYear.call(this, monthNumber)
+            },
+            normalizeWeekAssignmentKey(weekKey: string) {
+                return (CurriculumDetail as any).methods.normalizeWeekAssignmentKey.call(this, weekKey)
+            },
+            weekKeyForSelectedYear(isoWeek: number) {
+                return (CurriculumDetail as any).methods.weekKeyForSelectedYear.call(this, isoWeek)
+            },
+            getISOWeek(date: Date) {
+                return (CurriculumDetail as any).methods.getISOWeek.call(this, date)
+            },
+            weekHasAssignmentsForMonth(week: Record<string, unknown>, month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.weekHasAssignmentsForMonth.call(this, week, month)
+            },
+            isFreeTeachingWeek(week: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.isFreeTeachingWeek.call(this, week)
+            },
+            weekdayKeysForWeek(week: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.weekdayKeysForWeek.call(this, week)
+            },
+            weekBelongsToMonth(week: Record<string, unknown>, month: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.weekBelongsToMonth.call(this, week, month)
+            },
+            formatDateKey(date: Date) {
+                return (CurriculumDetail as any).methods.formatDateKey.call(this, date)
+            },
+            effectiveUnitWeekKeys(topic: Record<string, unknown>, unit: Record<string, unknown>) {
+                return (CurriculumDetail as any).methods.effectiveUnitWeekKeys.call(this, topic, unit)
+            },
+            get allMonths() {
+                return [
+                    {
+                        weeks: [
+                            { kw: 36, weekKey: '2025-09-01' },
+                            { kw: 37, weekKey: '2025-09-08' },
+                            { kw: 38, weekKey: '2025-09-15' },
+                            { kw: 40, weekKey: '2025-09-29' },
+                            { kw: 41, weekKey: '2025-10-06' },
+                            { kw: 42, weekKey: '2025-10-13' },
+                            { kw: 43, weekKey: '2025-10-20' },
+                            { kw: 44, weekKey: '2025-10-27' },
+                        ],
+                    },
+                ]
+            },
+        }
+        const settingsContext = {
+            selectedYear: 2025,
+            templateWeekKeys: ['2025-09-08'],
+            curriculum: {
+                free_weeks: ['2025-10-29'],
+                topics: [
+                    {
+                        title: 'Schreibübungen',
+                        assignment_type: 'all_weeks',
+                        week_keys: [],
+                        month_keys: [],
+                        units: [
+                            {
+                                title: 'Einleitung/Überblick',
+                                assignment_type: 'month',
+                                week_keys: [],
+                                month_keys: ['2025-09'],
+                                month_week_counts: {
+                                    '2025-09': 1,
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        title: 'Satzbau',
+                        assignment_type: 'month',
+                        week_keys: [],
+                        month_keys: ['2025-10'],
+                        month_week_counts: {
+                            '2025-10': 0,
+                        },
+                        units: [],
+                    },
+                ],
+            },
+            isTemplateWeek(weekKey: string) {
+                return (CurriculaSettings as any).methods.isTemplateWeek.call(this, weekKey)
+            },
+            monthTeachingWeekCount(month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.monthTeachingWeekCount.call(this, month)
+            },
+            monthAssignedTeachingWeekCount(month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.monthAssignedTeachingWeekCount.call(this, month)
+            },
+            monthTeachingWeekCountIsOverassigned(month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.monthTeachingWeekCountIsOverassigned.call(this, month)
+            },
+            assignmentEntryWeekUsageForMonth(
+                entry: Record<string, unknown>,
+                monthKey: string,
+                totalWeekCount: number,
+            ) {
+                return (CurriculaSettings as any).methods.assignmentEntryWeekUsageForMonth.call(
+                    this,
+                    entry,
+                    monthKey,
+                    totalWeekCount,
+                )
+            },
+            assignmentEntryMonthWeekCount(entry: Record<string, unknown>, monthKey: string) {
+                return (CurriculaSettings as any).methods.assignmentEntryMonthWeekCount.call(this, entry, monthKey)
+            },
+            topicHasUnitAssignmentUsageForMonth(
+                topic: Record<string, unknown>,
+                monthKey: string,
+                teachingWeekKeySet: Set<string>,
+                totalWeekCount: number,
+            ) {
+                return (CurriculaSettings as any).methods.topicHasUnitAssignmentUsageForMonth.call(
+                    this,
+                    topic,
+                    monthKey,
+                    teachingWeekKeySet,
+                    totalWeekCount,
+                )
+            },
+            assignmentEntryHasUsageForMonth(
+                entry: Record<string, unknown>,
+                monthKey: string,
+                teachingWeekKeySet: Set<string>,
+                totalWeekCount: number,
+            ) {
+                return (CurriculaSettings as any).methods.assignmentEntryHasUsageForMonth.call(
+                    this,
+                    entry,
+                    monthKey,
+                    teachingWeekKeySet,
+                    totalWeekCount,
+                )
+            },
+            monthTeachingWeeks(month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.monthTeachingWeeks.call(this, month)
+            },
+            weekHasCurriculumAssignmentsForMonth(week: Record<string, unknown>, month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.weekHasCurriculumAssignmentsForMonth.call(this, week, month)
+            },
+            assignmentEntryMatchesWeek(entry: Record<string, unknown>, weekKey: string, monthKey: string) {
+                return (CurriculaSettings as any).methods.assignmentEntryMatchesWeek.call(this, entry, weekKey, monthKey)
+            },
+            assignmentEntryMonthKeys(entry: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.assignmentEntryMonthKeys.call(this, entry)
+            },
+            assignmentEntryWeekKeys(entry: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.assignmentEntryWeekKeys.call(this, entry)
+            },
+            assignmentEntryHasTitle(entry: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.assignmentEntryHasTitle.call(this, entry)
+            },
+            isTemplateFreeTeachingWeek(week: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.isTemplateFreeTeachingWeek.call(this, week)
+            },
+            isMonthCountFreeWeek(weekKey: string) {
+                return (CurriculaSettings as any).methods.isMonthCountFreeWeek.call(this, weekKey)
+            },
+            monthCountFreeWeekKeys() {
+                return (CurriculaSettings as any).methods.monthCountFreeWeekKeys.call(this)
+            },
+            weekdayKeysForWeek(week: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.weekdayKeysForWeek.call(this, week)
+            },
+            weekBelongsToMonth(week: Record<string, unknown>, month: Record<string, unknown>) {
+                return (CurriculaSettings as any).methods.weekBelongsToMonth.call(this, week, month)
+            },
+            parseWeekKey(weekKey: string) {
+                return (CurriculaSettings as any).methods.parseWeekKey.call(this, weekKey)
+            },
+            formatDateKey(date: Date) {
+                return (CurriculaSettings as any).methods.formatDateKey.call(this, date)
+            },
+            normalizeWeekAssignmentKey(weekKey: string) {
+                return (CurriculaSettings as any).methods.normalizeWeekAssignmentKey.call(this, weekKey)
+            },
+            normalizeMonthAssignmentKey(monthKey: string) {
+                return (CurriculaSettings as any).methods.normalizeMonthAssignmentKey.call(this, monthKey)
+            },
+            weekKeyForSelectedYear(isoWeek: number) {
+                return (CurriculaSettings as any).methods.weekKeyForSelectedYear.call(this, isoWeek)
+            },
+            getISOWeek(date: Date) {
+                return (CurriculaSettings as any).methods.getISOWeek.call(this, date)
+            },
+            get allMonths() {
+                return [
+                    {
+                        weeks: [
+                            { kw: 36, weekKey: '2025-09-01' },
+                            { kw: 37, weekKey: '2025-09-08' },
+                            { kw: 38, weekKey: '2025-09-15' },
+                            { kw: 40, weekKey: '2025-09-29' },
+                            { kw: 41, weekKey: '2025-10-06' },
+                            { kw: 42, weekKey: '2025-10-13' },
+                            { kw: 43, weekKey: '2025-10-20' },
+                            { kw: 44, weekKey: '2025-10-27' },
+                        ],
+                    },
+                ]
+            },
+        }
+        const september = {
+            assignmentKey: '2025-09',
+            month: 8,
+            year: 2025,
+            weeks: [
+                { weekKey: '2025-09-01', rangeLabel: '1.9. – 5.9.' },
+                { weekKey: '2025-09-08', rangeLabel: '8.9. – 12.9.' },
+                { weekKey: '2025-09-15', rangeLabel: '15.9. – 19.9.' },
+                { weekKey: '2025-09-29', rangeLabel: '29.9. – 3.10.' },
+            ],
+        }
+        const october = {
+            assignmentKey: '2025-10',
+            month: 9,
+            year: 2025,
+            weeks: [
+                { weekKey: '2025-09-29', rangeLabel: '29.9. – 3.10.' },
+                { weekKey: '2025-10-06', rangeLabel: '6.10. – 10.10.' },
+                { weekKey: '2025-10-13', rangeLabel: '13.10. – 17.10.' },
+                { weekKey: '2025-10-20', rangeLabel: '20.10. – 24.10.' },
+                { weekKey: '2025-10-27', rangeLabel: '27.10. – 31.10.' },
+            ],
+        }
+        const overassignedUnits = [
+            'Am System anmelden, Kennwörter',
+            'Schooltool',
+            'Office 365',
+            'E-Mails',
+        ].map((title) => ({
+            title,
+            assignment_type: 'month',
+            week_keys: [],
+            month_keys: ['2025-09'],
+            month_week_counts: {
+                '2025-09': 1,
+            },
+        }))
+        const overassignedDetailContext = {
+            ...detailContext,
+            freeWeekKeys: [],
+            visibleMonths: [september, october],
+            curriculumTopics: [
+                {
+                    title: 'Grundlagen',
+                    assignment_type: 'all_weeks',
+                    week_keys: [],
+                    month_keys: [],
+                    units: overassignedUnits,
+                },
+            ],
+        }
+        const overassignedSettingsContext = {
+            ...settingsContext,
+            templateWeekKeys: [],
+            curriculum: {
+                ...settingsContext.curriculum,
+                free_weeks: [],
+                topics: [
+                    {
+                        title: 'Grundlagen',
+                        assignment_type: 'all_weeks',
+                        week_keys: [],
+                        month_keys: [],
+                        units: overassignedUnits,
+                    },
+                ],
+            },
+        }
+
+        expect(detailSource).toContain('curriculum-detail__month-week-count')
+        expect(detailSource).toContain('{{ monthTeachingWeekCountLabel(month) }}')
+        expect(detailSource).toContain('curriculum-detail__month-week-count--overassigned')
+        expect(detailSource).toContain('curriculum-detail__month-week-warning">!</span>')
+        expect(detailSource).toContain('v-dialog v-model="overloadedMonthShiftDialogOpen"')
+        expect(detailSource).toContain('Wollen Sie alle Termine nach unten schieben?')
+        expect(detailSource).toContain('@click.stop="openOverloadedMonthShiftDialog(month)"')
+        expect(detailSource).toContain(':color="monthAssignmentChipColor(monthKey, topic)"')
+        expect(detailSource).toContain(':color="monthAssignmentChipColor(monthKey, unit, topic)"')
+        expect(detailSource).toContain(':variant="monthAssignmentChipVariant(monthKey, unit, topic)"')
+        expect(detailSource).toContain(':prepend-icon="monthAssignmentChipIcon(monthKey, unit, topic)"')
+        expect(detailSource).not.toContain('curriculum-detail__month-week-ranges')
+        expect(detailSource).not.toContain('{{ monthTeachingWeekRangeLabel(month) }}')
+        expect(settingsSource).toContain('curricula-settings__month-week-count')
+        expect(settingsSource).toContain('{{ monthTeachingWeekCountLabel(month) }}')
+        expect(settingsSource).toContain('curricula-settings__month-week-count--overassigned')
+        expect(settingsSource).toContain('curricula-settings__month-week-warning">!</span>')
+        expect(settingsSource).not.toContain('curricula-settings__month-week-ranges')
+        expect(settingsSource).not.toContain('{{ monthTeachingWeekRangeLabel(month) }}')
+        expect((CurriculumDetail as any).methods.assignmentWeekUsageForMonth.call(
+            detailContext,
+            detailContext.curriculumTopics[0],
+            '2025-09',
+            3,
+        )).toBe(0)
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCount.call(detailContext, september)).toBe(2)
+        expect((CurriculumDetail as any).methods.monthAssignedTeachingWeekCount.call(detailContext, september)).toBe(1)
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCountLabel.call(detailContext, september)).toBe('1/2 Wochen')
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCount.call(detailContext, october)).toBe(4)
+        expect((CurriculumDetail as any).methods.monthAssignedTeachingWeekCount.call(detailContext, october)).toBe(4)
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCountLabel.call(detailContext, october)).toBe('4/4 Wochen')
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCount.call(overassignedDetailContext, september)).toBe(3)
+        expect((CurriculumDetail as any).methods.monthAssignedTeachingWeekCount.call(overassignedDetailContext, september)).toBe(4)
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCountLabel.call(overassignedDetailContext, september)).toBe('4/3 Wochen')
+        expect((CurriculumDetail as any).methods.monthTeachingWeekCountIsOverassigned.call(overassignedDetailContext, september)).toBe(true)
+        expect((CurriculumDetail as any).methods.isMonthKeyOverassigned.call(overassignedDetailContext, '2025-09')).toBe(true)
+        expect((CurriculumDetail as any).methods.monthAssignmentChipColor.call(
+            overassignedDetailContext,
+            '2025-09',
+            overassignedDetailContext.curriculumTopics[0].units[0],
+            overassignedDetailContext.curriculumTopics[0],
+        )).toBe('primary')
+        expect((CurriculumDetail as any).methods.monthAssignmentChipColor.call(
+            overassignedDetailContext,
+            '2025-09',
+            overassignedDetailContext.curriculumTopics[0].units[2],
+            overassignedDetailContext.curriculumTopics[0],
+        )).toBe('primary')
+        expect((CurriculumDetail as any).methods.monthAssignmentChipColor.call(
+            overassignedDetailContext,
+            '2025-09',
+            overassignedDetailContext.curriculumTopics[0].units[3],
+            overassignedDetailContext.curriculumTopics[0],
+        )).toBe('error')
+        expect((CurriculumDetail as any).methods.monthAssignmentChipVariant.call(
+            overassignedDetailContext,
+            '2025-09',
+            overassignedDetailContext.curriculumTopics[0].units[3],
+            overassignedDetailContext.curriculumTopics[0],
+        )).toBe('flat')
+        expect((CurriculumDetail as any).methods.monthAssignmentChipIcon.call(
+            overassignedDetailContext,
+            '2025-09',
+            overassignedDetailContext.curriculumTopics[0].units[3],
+            overassignedDetailContext.curriculumTopics[0],
+        )).toBe('mdi-alert-circle-outline')
+        const shiftedTopics = (CurriculumDetail as any).methods.shiftOverloadedMonthAssignments.call(
+            overassignedDetailContext,
+            september,
+        )
+        expect(shiftedTopics[0].units.map((unit: Record<string, unknown>) => unit.month_keys)).toEqual([
+            ['2025-09'],
+            ['2025-09'],
+            ['2025-09'],
+            ['2025-10'],
+        ])
+        expect(shiftedTopics[0].units[3].month_week_counts).toEqual({
+            '2025-10': 1,
+        })
+        expect((CurriculaSettings as any).methods.assignmentEntryWeekUsageForMonth.call(
+            settingsContext,
+            settingsContext.curriculum.topics[0],
+            '2025-09',
+            3,
+        )).toBe(0)
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCount.call(settingsContext, september)).toBe(2)
+        expect((CurriculaSettings as any).methods.monthAssignedTeachingWeekCount.call(settingsContext, september)).toBe(1)
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCountLabel.call(settingsContext, september)).toBe('1/2 Wochen')
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCount.call(settingsContext, october)).toBe(4)
+        expect((CurriculaSettings as any).methods.monthAssignedTeachingWeekCount.call(settingsContext, october)).toBe(4)
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCountLabel.call(settingsContext, october)).toBe('4/4 Wochen')
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCount.call(overassignedSettingsContext, september)).toBe(3)
+        expect((CurriculaSettings as any).methods.monthAssignedTeachingWeekCount.call(overassignedSettingsContext, september)).toBe(4)
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCountLabel.call(overassignedSettingsContext, september)).toBe('4/3 Wochen')
+        expect((CurriculaSettings as any).methods.monthTeachingWeekCountIsOverassigned.call(overassignedSettingsContext, september)).toBe(true)
+        expect((CurriculumDetail as any).methods.monthTeachingWeeks.call(detailContext, october).map((week: Record<string, unknown>) => week.weekKey)).toEqual([
+            '2025-09-29',
+            '2025-10-06',
+            '2025-10-13',
+            '2025-10-20',
+        ])
+        expect((CurriculaSettings as any).methods.monthTeachingWeeks.call(settingsContext, october).map((week: Record<string, unknown>) => week.weekKey)).toEqual([
+            '2025-09-29',
+            '2025-10-06',
+            '2025-10-13',
+            '2025-10-20',
+        ])
     })
 
     it('builds visible weeks for months that only touch the month on a weekend', () => {

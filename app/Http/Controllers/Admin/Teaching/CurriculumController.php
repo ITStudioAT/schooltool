@@ -391,6 +391,7 @@ class CurriculumController extends Controller
      *         assignment_type: string,
      *         month_key: ?string,
      *         month_keys: array<int, string>,
+     *         month_week_counts: array<string, int>,
      *         week_keys: array<int, string>,
      *         materials: array<int, array{
      *             id: int,
@@ -409,6 +410,7 @@ class CurriculumController extends Controller
      *             assignment_type: string,
      *             month_key: ?string,
      *             month_keys: array<int, string>,
+     *             month_week_counts: array<string, int>,
      *             week_keys: array<int, string>,
      *             checked_week_keys: array<int, string>,
      *             materials: array<int, array{
@@ -448,29 +450,17 @@ class CurriculumController extends Controller
                 },
             ],
             'topics' => 'nullable|array',
-            'topics.*' => 'array:id,title,assignment_type,month_key,month_keys,week_keys,materials,units',
+            'topics.*' => 'array:id,title,assignment_type,month_key,month_keys,month_week_counts,week_keys,materials,units',
             'topics.*.id' => 'nullable|string|max:100',
             'topics.*.title' => 'required|string|max:255',
             'topics.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
             'topics.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
             'topics.*.month_keys' => 'nullable|array',
             'topics.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
+            'topics.*.month_week_counts' => 'nullable|array',
+            'topics.*.month_week_counts.*' => 'integer|min:0|max:4',
             'topics.*.week_keys' => 'nullable|array',
-            'topics.*.week_keys.*' => [
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Themen-Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
+            'topics.*.week_keys.*' => $this->weekKeyValidationRules(),
             'topics.*.materials' => 'nullable|array',
             'topics.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.materials.*.id' => 'required|integer|min:1',
@@ -489,7 +479,7 @@ class CurriculumController extends Controller
             'topics.*.materials.*.is_shared_material' => 'sometimes|boolean',
             'topics.*.materials.*.shared_rule_id' => 'nullable|integer|min:1',
             'topics.*.units' => 'nullable|array',
-            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,checked_week_keys,materials',
+            'topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,month_week_counts,week_keys,checked_week_keys,materials',
             'topics.*.units.*.id' => 'nullable|string|max:100',
             'topics.*.units.*.title' => 'required|string|max:255',
             'topics.*.units.*.is_exam' => 'sometimes|boolean',
@@ -497,38 +487,12 @@ class CurriculumController extends Controller
             'topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
             'topics.*.units.*.month_keys' => 'nullable|array',
             'topics.*.units.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
+            'topics.*.units.*.month_week_counts' => 'nullable|array',
+            'topics.*.units.*.month_week_counts.*' => 'integer|min:0|max:4',
             'topics.*.units.*.week_keys' => 'nullable|array',
-            'topics.*.units.*.week_keys.*' => [
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Einheiten-Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
+            'topics.*.units.*.week_keys.*' => $this->weekKeyValidationRules(),
             'topics.*.units.*.checked_week_keys' => 'nullable|array',
-            'topics.*.units.*.checked_week_keys.*' => [
-                'string',
-                'date_format:Y-m-d',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    try {
-                        $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
-                    } catch (\Throwable) {
-                        return;
-                    }
-
-                    if (! $weekStart->isMonday()) {
-                        $fail('Abgehakte Einheiten-Wochen müssen mit einem Montag gespeichert werden.');
-                    }
-                },
-            ],
+            'topics.*.units.*.checked_week_keys.*' => $this->weekKeyValidationRules(),
             'topics.*.units.*.materials' => 'nullable|array',
             'topics.*.units.*.materials.*' => 'array:id,title,subject,topic,unit,type,status,attachments_count,source_school_id,source_school_label,source_user_id,source_user_label,is_hopper_material,is_shared_material,shared_rule_id',
             'topics.*.units.*.materials.*.id' => 'required|integer|min:1',
@@ -557,6 +521,28 @@ class CurriculumController extends Controller
             : collect($curriculum?->topics ?? [])->values()->all();
 
         return $validated;
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private function weekKeyValidationRules(): array
+    {
+        return [
+            'string',
+            'date_format:Y-m-d',
+            function (string $attribute, mixed $value, \Closure $fail): void {
+                try {
+                    $weekStart = CarbonImmutable::createFromFormat('Y-m-d', (string) $value)->startOfDay();
+                } catch (\Throwable) {
+                    return;
+                }
+
+                if (! $weekStart->isMonday()) {
+                    $fail('Wochenzuordnungen müssen mit einem Montag gespeichert werden.');
+                }
+            },
+        ];
     }
 
     /**
@@ -695,7 +681,11 @@ class CurriculumController extends Controller
                     'Bitte einen gültigen Einheitentitel angeben.'
                 ),
                 'is_exam' => (bool) ($normalizedUnit['is_exam'] ?? false),
-                'checked_week_keys' => $this->normalizeWeekKeys(is_array($normalizedUnit['checked_week_keys'] ?? null) ? $normalizedUnit['checked_week_keys'] : []),
+                'checked_week_keys' => $this->normalizeWeekKeys(
+                    is_array($normalizedUnit['checked_week_keys'] ?? null)
+                        ? $normalizedUnit['checked_week_keys']
+                        : []
+                ),
                 'materials' => $this->normalizeMaterials(is_array($normalizedUnit['materials'] ?? null) ? $normalizedUnit['materials'] : []),
             ];
         })->all();
@@ -753,6 +743,7 @@ class CurriculumController extends Controller
      *     assignment_type: string,
      *     month_key: ?string,
      *     month_keys: array<int, string>,
+     *     month_week_counts: array<string, int>,
      *     week_keys: array<int, string>
      * }
      */
@@ -766,6 +757,10 @@ class CurriculumController extends Controller
                 : [($item['month_key'] ?? null)]
         );
         $weekKeys = $this->normalizeWeekKeys(is_array($item['week_keys'] ?? null) ? $item['week_keys'] : []);
+        $monthWeekCounts = $this->normalizeMonthWeekCounts(
+            is_array($item['month_week_counts'] ?? null) ? $item['month_week_counts'] : [],
+            $monthKeys,
+        );
 
         if ($title === '') {
             throw ValidationException::withMessages([
@@ -793,8 +788,33 @@ class CurriculumController extends Controller
             'assignment_type' => $assignmentType,
             'month_key' => $assignmentType === 'month' ? $monthKeys[0] : null,
             'month_keys' => $assignmentType === 'month' ? $monthKeys : [],
+            'month_week_counts' => $assignmentType === 'month' ? $monthWeekCounts : [],
             'week_keys' => $assignmentType === 'weeks' ? $weekKeys : [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $monthWeekCounts
+     * @param  array<int, string>  $monthKeys
+     * @return array<string, int>
+     */
+    private function normalizeMonthWeekCounts(array $monthWeekCounts, array $monthKeys): array
+    {
+        $normalizedMonthWeekCounts = [];
+
+        foreach ($monthKeys as $monthKey) {
+            $weeks = (int) ($monthWeekCounts[$monthKey] ?? 1);
+
+            if ($weeks < 0 || $weeks > 4) {
+                $weeks = 1;
+            }
+
+            $normalizedMonthWeekCounts[$monthKey] = $weeks;
+        }
+
+        ksort($normalizedMonthWeekCounts);
+
+        return $normalizedMonthWeekCounts;
     }
 
     /**
@@ -859,11 +879,14 @@ class CurriculumController extends Controller
     private function syncUnitCheckedWeekKeys(array $topic, array $units): array
     {
         return collect($units)->map(function (array $unit) use ($topic): array {
-            $effectiveWeekKeys = $this->effectiveUnitWeekKeys($topic, $unit);
+            $effectiveWeekKeys = array_fill_keys($this->effectiveUnitWeekKeys($topic, $unit), true);
 
             return [
                 ...$unit,
-                'checked_week_keys' => array_values(array_intersect($unit['checked_week_keys'] ?? [], $effectiveWeekKeys)),
+                'checked_week_keys' => collect($unit['checked_week_keys'] ?? [])
+                    ->filter(fn (string $weekKey): bool => isset($effectiveWeekKeys[$weekKey]))
+                    ->values()
+                    ->all(),
             ];
         })->all();
     }
@@ -946,13 +969,11 @@ class CurriculumController extends Controller
     private function effectiveUnitWeekKeys(array $topic, array $unit): array
     {
         $unitState = $this->assignmentState($unit);
-
         if ($unitState['assignment_type'] === 'weeks') {
             return $unitState['week_keys'];
         }
 
         $topicState = $this->assignmentState($topic);
-
         if ($unitState['assignment_type'] === 'none' && $topicState['assignment_type'] === 'weeks') {
             return $topicState['week_keys'];
         }
@@ -982,32 +1003,47 @@ class CurriculumController extends Controller
             return $this->clearAssignment($target);
         }
 
-        if ($targetState['assignment_type'] === 'month') {
-            $blockingMonths = $blockingState['assignment_type'] === 'month'
-                ? $blockingState['month_keys']
-                : collect($blockingState['week_keys'])->map(fn (string $weekKey): string => $this->monthKeyFromWeekKey($weekKey))->unique()->values()->all();
-
-            $remainingMonthKeys = array_values(array_diff($targetState['month_keys'], $blockingMonths));
+        if ($targetState['assignment_type'] === 'month' && $blockingState['assignment_type'] === 'month') {
+            $remainingMonthKeys = array_values(array_diff($targetState['month_keys'], $blockingState['month_keys']));
 
             return $remainingMonthKeys === []
                 ? $this->clearAssignment($target)
                 : $this->applyMonthAssignment($target, $remainingMonthKeys);
         }
 
-        $remainingWeekKeys = $targetState['week_keys'];
+        if ($targetState['assignment_type'] === 'month' && $blockingState['assignment_type'] === 'weeks') {
+            $blockingMonthKeys = collect($blockingState['week_keys'])
+                ->map(fn (string $weekKey): string => $this->monthKeyFromWeekKey($weekKey))
+                ->unique()
+                ->values()
+                ->all();
+            $remainingMonthKeys = array_values(array_diff($targetState['month_keys'], $blockingMonthKeys));
 
-        if ($blockingState['assignment_type'] === 'month') {
-            $remainingWeekKeys = collect($remainingWeekKeys)
+            return $remainingMonthKeys === []
+                ? $this->clearAssignment($target)
+                : $this->applyMonthAssignment($target, $remainingMonthKeys);
+        }
+
+        if ($targetState['assignment_type'] === 'weeks' && $blockingState['assignment_type'] === 'month') {
+            $remainingWeekKeys = collect($targetState['week_keys'])
                 ->reject(fn (string $weekKey): bool => in_array($this->monthKeyFromWeekKey($weekKey), $blockingState['month_keys'], true))
                 ->values()
                 ->all();
-        } else {
-            $remainingWeekKeys = array_values(array_diff($remainingWeekKeys, $blockingState['week_keys']));
+
+            return $remainingWeekKeys === []
+                ? $this->clearAssignment($target)
+                : $this->applyWeekAssignment($target, $remainingWeekKeys);
         }
 
-        return $remainingWeekKeys === []
-            ? $this->clearAssignment($target)
-            : $this->applyWeekAssignment($target, $remainingWeekKeys);
+        if ($targetState['assignment_type'] === 'weeks' && $blockingState['assignment_type'] === 'weeks') {
+            $remainingWeekKeys = array_values(array_diff($targetState['week_keys'], $blockingState['week_keys']));
+
+            return $remainingWeekKeys === []
+                ? $this->clearAssignment($target)
+                : $this->applyWeekAssignment($target, $remainingWeekKeys);
+        }
+
+        return $target;
     }
 
     /**
@@ -1021,7 +1057,9 @@ class CurriculumController extends Controller
             'assignment_type' => 'none',
             'month_key' => null,
             'month_keys' => [],
+            'month_week_counts' => [],
             'week_keys' => [],
+            'checked_week_keys' => [],
         ];
     }
 
@@ -1039,6 +1077,10 @@ class CurriculumController extends Controller
             'assignment_type' => 'month',
             'month_key' => $monthKeys[0] ?? null,
             'month_keys' => $monthKeys,
+            'month_week_counts' => $this->normalizeMonthWeekCounts(
+                is_array($item['month_week_counts'] ?? null) ? $item['month_week_counts'] : [],
+                $monthKeys,
+            ),
             'week_keys' => [],
         ];
     }
@@ -1057,6 +1099,7 @@ class CurriculumController extends Controller
             'assignment_type' => 'weeks',
             'month_key' => null,
             'month_keys' => [],
+            'month_week_counts' => [],
             'week_keys' => $weekKeys,
         ];
     }

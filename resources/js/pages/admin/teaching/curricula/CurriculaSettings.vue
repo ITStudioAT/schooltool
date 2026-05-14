@@ -16,7 +16,7 @@
         <p class="curricula-settings__subtitle mb-4">
             Lege Vorlagen für freie Wochen fest
             <template v-if="curriculum">
-                für <strong>{{ curriculum.title }}</strong>
+                für <span class="curricula-settings__curriculum-title">{{ curriculum.title }}</span>
             </template>:
         </p>
 
@@ -40,7 +40,15 @@
                             </p>
                             <div class="curricula-settings__entry-stats">
                                 <v-chip size="small" color="success" variant="tonal" class="font-weight-bold">
-                                    {{ templateWeekKeys.length }} freie Wochen
+                                    Vorlage: {{ templateFreeWeeksLabel }}
+                                </v-chip>
+                                <v-chip
+                                    v-if="curriculum"
+                                    size="small"
+                                    color="primary"
+                                    variant="tonal"
+                                    class="font-weight-bold">
+                                    Curriculum: {{ curriculumFreeWeeksLabel }}
                                 </v-chip>
                                 <v-chip size="small" color="secondary" variant="tonal">
                                     {{ namedRangeCount }} Titel
@@ -55,11 +63,15 @@
         <template v-else-if="selectedPanel === 'free-weeks'">
             <div class="curricula-settings__detail-toolbar d-flex align-center ga-3 mb-4">
                 <v-btn
-                    icon="mdi-arrow-left"
-                    variant="text"
-                    rounded="lg"
+                    color="primary"
+                    variant="flat"
+                    rounded="xl"
+                    prepend-icon="mdi-arrow-left"
+                    class="curricula-settings__back-btn text-none"
                     density="comfortable"
-                    @click="closePanel" />
+                    @click="closePanel">
+                    Zurück zum Menü
+                </v-btn>
                 <div>
                     <div class="curricula-settings__detail-title">Freie Wochen</div>
                     <div class="curricula-settings__detail-subtitle">
@@ -67,27 +79,6 @@
                     </div>
                 </div>
                 <v-spacer />
-                <div class="curricula-settings__year-picker d-flex align-center ga-1">
-                    <v-btn
-                        icon="mdi-chevron-left"
-                        variant="tonal"
-                        color="secondary"
-                        size="x-small"
-                        @click="selectedYear--" />
-                    <v-chip
-                        size="small"
-                        variant="tonal"
-                        color="primary"
-                        class="font-weight-bold px-3">
-                        {{ selectedYear }}/{{ selectedYear + 1 }}
-                    </v-chip>
-                    <v-btn
-                        icon="mdi-chevron-right"
-                        variant="tonal"
-                        color="secondary"
-                        size="x-small"
-                        @click="selectedYear++" />
-                </div>
                 <v-btn
                     color="primary"
                     variant="flat"
@@ -117,7 +108,15 @@
             <template v-else>
                 <div class="curricula-settings__detail-summary">
                     <v-chip size="small" color="success" variant="tonal" class="font-weight-bold">
-                        {{ templateWeekKeys.length }} freie Wochen
+                        Vorlage: {{ templateFreeWeeksLabel }}
+                    </v-chip>
+                    <v-chip
+                        v-if="curriculum"
+                        size="small"
+                        color="primary"
+                        variant="tonal"
+                        class="font-weight-bold">
+                        Curriculum: {{ curriculumFreeWeeksLabel }}
                     </v-chip>
                     <v-chip size="small" color="secondary" variant="tonal">
                         {{ selectedWeekGroups.length }} Zeiträume
@@ -131,7 +130,16 @@
                         class="curricula-settings__month curricula-settings__month--compact">
                         <div class="curricula-settings__month-header">
                             <div class="curricula-settings__month-title">{{ month.name }}</div>
-                            <div class="curricula-settings__month-year">{{ month.year }}</div>
+                            <div class="curricula-settings__month-week-meta">
+                                <div
+                                    class="curricula-settings__month-week-count"
+                                    :class="{ 'curricula-settings__month-week-count--overassigned': monthTeachingWeekCountIsOverassigned(month) }">
+                                    <span
+                                        v-if="monthTeachingWeekCountIsOverassigned(month)"
+                                        class="curricula-settings__month-week-warning">!</span>
+                                    {{ monthTeachingWeekCountLabel(month) }}
+                                </div>
+                            </div>
                         </div>
 
                         <button
@@ -310,6 +318,7 @@ export default {
                 key: `${entry.year}-${entry.month}`,
                 name: MONTH_NAMES[entry.month],
                 year: entry.year,
+                month: entry.month,
                 weeks: this.buildWeeks(entry.year, entry.month, today),
             }))
         },
@@ -364,6 +373,20 @@ export default {
         },
         namedRangeCount() {
             return this.selectedWeekGroups.filter((group) => String(this.rangeTitleDrafts[group.key] || '').trim() !== '').length
+        },
+        templateFreeWeeksLabel() {
+            return this.freeWeeksLabel(this.templateWeekKeys.length)
+        },
+        curriculumFreeWeekKeys() {
+            return [...new Set(
+                (Array.isArray(this.curriculum?.free_weeks) ? this.curriculum.free_weeks : [])
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
+            )].sort()
+        },
+        curriculumFreeWeeksLabel() {
+            return this.freeWeeksLabel(this.curriculumFreeWeekKeys.length)
         },
         weekTitleLookup() {
             return Object.fromEntries(
@@ -521,6 +544,228 @@ export default {
         isTemplateWeek(weekKey) {
             return this.templateWeekKeys.includes(weekKey)
         },
+        monthTeachingWeekCount(month = null) {
+            return this.monthTeachingWeeks(month).length
+        },
+        monthTeachingWeekCountLabel(month = null) {
+            const weekCount = this.monthTeachingWeekCount(month)
+
+            if (this.curriculum) {
+                const assignedWeekCount = this.monthAssignedTeachingWeekCount(month)
+
+                return weekCount === 1 ? `${assignedWeekCount}/1 Woche` : `${assignedWeekCount}/${weekCount} Wochen`
+            }
+
+            return weekCount === 1 ? '1 Woche' : `${weekCount} Wochen`
+        },
+        monthTeachingWeekCountIsOverassigned(month = null) {
+            return Boolean(this.curriculum) && this.monthAssignedTeachingWeekCount(month) > this.monthTeachingWeekCount(month)
+        },
+        monthTeachingWeeks(month = null) {
+            if (!Array.isArray(month?.weeks)) {
+                return []
+            }
+
+            return month.weeks.filter((week) => (
+                week?.weekKey
+                && !this.isTemplateFreeTeachingWeek(week)
+                && this.weekBelongsToMonth(week, month)
+            ))
+        },
+        monthAssignedTeachingWeekCount(month = null) {
+            const monthKey = this.normalizeMonthAssignmentKey(month?.assignmentKey)
+            const teachingWeekKeys = this.monthTeachingWeeks(month)
+                .map((week) => String(week?.weekKey || '').trim())
+                .filter(Boolean)
+            const teachingWeekKeySet = new Set(teachingWeekKeys)
+            const topics = Array.isArray(this.curriculum?.topics) ? this.curriculum.topics : []
+            const assignedWeekKeys = new Set()
+            let assignedWeekCount = 0
+
+            if (!monthKey || teachingWeekKeys.length === 0) {
+                return 0
+            }
+
+            const addAssignmentUsage = (entry = null) => {
+                if (!this.assignmentEntryHasTitle(entry)) {
+                    return
+                }
+
+                if (entry.assignment_type === 'weeks') {
+                    this.assignmentEntryWeekKeys(entry).forEach((weekKey) => {
+                        if (teachingWeekKeySet.has(weekKey)) {
+                            assignedWeekKeys.add(weekKey)
+                        }
+                    })
+
+                    return
+                }
+
+                assignedWeekCount += this.assignmentEntryWeekUsageForMonth(entry, monthKey, teachingWeekKeys.length)
+            }
+
+            topics.forEach((topic) => {
+                const units = Array.isArray(topic?.units) ? topic.units : []
+
+                if (!this.topicHasUnitAssignmentUsageForMonth(topic, monthKey, teachingWeekKeySet, teachingWeekKeys.length)) {
+                    addAssignmentUsage(topic)
+                }
+
+                units.forEach((unit) => {
+                    addAssignmentUsage(unit)
+                })
+            })
+
+            return assignedWeekCount + assignedWeekKeys.size
+        },
+        assignmentEntryWeekUsageForMonth(entry = null, monthKey = null, totalWeekCount = 0) {
+            const assignmentType = String(entry?.assignment_type || 'none')
+
+            if (assignmentType === 'all_weeks') {
+                return 0
+            }
+
+            if (assignmentType !== 'month' || !this.assignmentEntryMonthKeys(entry).includes(monthKey)) {
+                return 0
+            }
+
+            const monthWeekCount = this.assignmentEntryMonthWeekCount(entry, monthKey)
+
+            if (monthWeekCount === 0) {
+                return totalWeekCount
+            }
+
+            return Math.min(monthWeekCount, totalWeekCount)
+        },
+        assignmentEntryMonthWeekCount(entry = null, monthKey = null) {
+            const normalizedMonthKey = this.normalizeMonthAssignmentKey(monthKey)
+            const monthWeekCounts = entry?.month_week_counts && typeof entry.month_week_counts === 'object'
+                ? entry.month_week_counts
+                : {}
+            const assignedWeekCount = Number.parseInt(monthWeekCounts[normalizedMonthKey] ?? 1, 10)
+
+            return Number.isFinite(assignedWeekCount) && assignedWeekCount >= 0 && assignedWeekCount <= 4
+                ? assignedWeekCount
+                : 1
+        },
+        topicHasUnitAssignmentUsageForMonth(topic = null, monthKey = null, teachingWeekKeySet = new Set(), totalWeekCount = 0) {
+            return (Array.isArray(topic?.units) ? topic.units : []).some((unit) => (
+                this.assignmentEntryHasUsageForMonth(unit, monthKey, teachingWeekKeySet, totalWeekCount)
+            ))
+        },
+        assignmentEntryHasUsageForMonth(entry = null, monthKey = null, teachingWeekKeySet = new Set(), totalWeekCount = 0) {
+            if (!this.assignmentEntryHasTitle(entry)) {
+                return false
+            }
+
+            if (entry.assignment_type === 'weeks') {
+                return this.assignmentEntryWeekKeys(entry).some((weekKey) => teachingWeekKeySet.has(weekKey))
+            }
+
+            return this.assignmentEntryWeekUsageForMonth(entry, monthKey, totalWeekCount) > 0
+        },
+        weekHasCurriculumAssignmentsForMonth(week = null, month = null) {
+            const weekKey = String(week?.weekKey || '').trim()
+            const monthKey = String(month?.assignmentKey || '').trim()
+            const topics = Array.isArray(this.curriculum?.topics) ? this.curriculum.topics : []
+
+            if (!weekKey || !monthKey) {
+                return false
+            }
+
+            return topics.some((topic) => {
+                if (!this.assignmentEntryHasTitle(topic)) {
+                    return false
+                }
+
+                if (this.assignmentEntryMatchesWeek(topic, weekKey, monthKey)) {
+                    return true
+                }
+
+                return (Array.isArray(topic?.units) ? topic.units : [])
+                    .some((unit) => this.assignmentEntryHasTitle(unit) && this.assignmentEntryMatchesWeek(unit, weekKey, monthKey))
+            })
+        },
+        assignmentEntryMatchesWeek(entry = null, weekKey = null, monthKey = null) {
+            const assignmentType = String(entry?.assignment_type || 'none')
+
+            return assignmentType === 'all_weeks'
+                || (assignmentType === 'month' && this.assignmentEntryMonthKeys(entry).includes(monthKey))
+                || (assignmentType === 'weeks' && this.assignmentEntryWeekKeys(entry).includes(weekKey))
+        },
+        assignmentEntryMonthKeys(entry = null) {
+            return [...new Set(
+                (Array.isArray(entry?.month_keys) ? entry.month_keys : [entry?.month_key])
+                    .filter(Boolean)
+                    .map((monthKey) => this.normalizeMonthAssignmentKey(monthKey))
+                    .filter(Boolean)
+            )].sort()
+        },
+        assignmentEntryWeekKeys(entry = null) {
+            return [...new Set(
+                (Array.isArray(entry?.week_keys) ? entry.week_keys : [])
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
+            )].sort()
+        },
+        assignmentEntryHasTitle(entry = null) {
+            return String(entry?.title || '').trim() !== ''
+        },
+        isTemplateFreeTeachingWeek(week = null) {
+            return this.weekdayKeysForWeek(week).some((weekDayKey) => this.isMonthCountFreeWeek(weekDayKey))
+        },
+        isMonthCountFreeWeek(weekKey) {
+            return this.monthCountFreeWeekKeys().includes(weekKey)
+        },
+        monthCountFreeWeekKeys() {
+            const curriculumWeekKeys = Array.isArray(this.curriculum?.free_weeks)
+                ? this.curriculum.free_weeks
+                : []
+
+            return [...new Set(
+                [...this.templateWeekKeys, ...curriculumWeekKeys]
+                    .filter(Boolean)
+                    .map((weekKey) => this.normalizeWeekAssignmentKey(weekKey))
+                    .filter(Boolean)
+            )].sort()
+        },
+        weekdayKeysForWeek(week = null) {
+            const weekStart = this.parseWeekKey(week?.weekKey)
+
+            if (!weekStart) {
+                return []
+            }
+
+            return Array.from({ length: 5 }, (_, dayOffset) => {
+                const date = new Date(weekStart)
+                date.setDate(date.getDate() + dayOffset)
+
+                return this.formatDateKey(date)
+            })
+        },
+        weekBelongsToMonth(week = null, month = null) {
+            const monthIndex = Number.parseInt(month?.month, 10)
+            const year = Number.parseInt(month?.year, 10)
+            const weekStart = this.parseWeekKey(week?.weekKey)
+
+            if (!Number.isInteger(monthIndex) || !Number.isInteger(year) || !weekStart) {
+                return false
+            }
+
+            let matchingWeekdays = 0
+
+            for (let dayOffset = 0; dayOffset < 5; dayOffset++) {
+                const date = new Date(weekStart)
+                date.setDate(date.getDate() + dayOffset)
+
+                if (date.getMonth() === monthIndex && date.getFullYear() === year) {
+                    matchingWeekdays++
+                }
+            }
+
+            return matchingWeekdays >= 3
+        },
         updateRangeTitle(groupKey, value) {
             this.rangeTitleDrafts = {
                 ...this.rangeTitleDrafts,
@@ -571,6 +816,11 @@ export default {
 
             return `KW ${this.getISOWeek(weekStart)} · ${weekStart.getDate()}.${weekStart.getMonth() + 1}.–${friday.getDate()}.${friday.getMonth() + 1}.`
         },
+        freeWeeksLabel(weekCount = 0) {
+            const normalizedWeekCount = Number.parseInt(weekCount, 10)
+
+            return normalizedWeekCount === 1 ? '1 freie Woche' : `${normalizedWeekCount} freie Wochen`
+        },
         weekKeyForSelectedYear(isoWeek) {
             const normalizedWeek = Number.parseInt(String(isoWeek), 10)
 
@@ -597,6 +847,24 @@ export default {
             }
 
             return this.weekKeyForSelectedYear(this.getISOWeek(weekStart)) ?? rawWeekKey
+        },
+        normalizeMonthAssignmentKey(monthKey) {
+            const rawMonthKey = String(monthKey).trim()
+            const match = rawMonthKey.match(/^(?:\d{4}-)?(\d{2})$/)
+
+            if (!match) {
+                return rawMonthKey
+            }
+
+            const normalizedMonth = Number.parseInt(match[1], 10)
+
+            if (!Number.isInteger(normalizedMonth) || normalizedMonth < 1 || normalizedMonth > 12) {
+                return rawMonthKey
+            }
+
+            const year = normalizedMonth >= 9 ? this.selectedYear : this.selectedYear + 1
+
+            return `${year}-${String(normalizedMonth).padStart(2, '0')}`
         },
         buildWeeks(year, monthIndex, today) {
             const firstDayOfMonth = new Date(year, monthIndex, 1)
@@ -677,8 +945,18 @@ export default {
     font-size: 0.95rem;
 }
 
-.curricula-settings__subtitle strong {
-    color: #1e293b;
+.curricula-settings__curriculum-title {
+    display: inline-flex;
+    max-width: 100%;
+    padding: 0.16rem 0.48rem;
+    border: 1px solid rgba(37, 99, 235, 0.24);
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.78);
+    color: #1d4ed8;
+    font-weight: 800;
+    line-height: 1.25;
+    vertical-align: baseline;
+    overflow-wrap: anywhere;
 }
 
 .curricula-settings__option,
@@ -784,6 +1062,14 @@ export default {
     font-size: 1rem;
 }
 
+.curricula-settings__detail-toolbar {
+    flex-wrap: wrap;
+}
+
+.curricula-settings__back-btn {
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
 .curricula-settings__detail-subtitle {
     color: #64748b;
     font-size: 0.82rem;
@@ -794,10 +1080,6 @@ export default {
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-bottom: 1rem;
-}
-
-.curricula-settings__year-picker {
-    flex: 0 0 auto;
 }
 
 .curricula-settings__loading,
@@ -842,10 +1124,44 @@ export default {
     font-size: 0.88rem;
 }
 
-.curricula-settings__month-year {
-    color: #64748b;
-    font-size: 0.75rem;
-    font-weight: 600;
+.curricula-settings__month-week-meta {
+    flex: 0 0 auto;
+    margin-left: auto;
+    max-width: 58%;
+    text-align: right;
+}
+
+.curricula-settings__month-week-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.12rem 0.42rem;
+    border-radius: 999px;
+    background: rgba(219, 234, 254, 0.74);
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.curricula-settings__month-week-count--overassigned {
+    background: rgba(254, 226, 226, 0.92);
+    color: #b91c1c;
+}
+
+.curricula-settings__month-week-warning {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 999px;
+    background: #dc2626;
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .curricula-settings__week {

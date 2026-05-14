@@ -128,28 +128,22 @@ class ImportedCurriculumService
             'curriculum.free_weeks' => 'nullable|array',
             'curriculum.free_weeks.*' => ['string', 'date_format:Y-m-d', $this->mondayWeekRule()],
             'curriculum.topics' => 'nullable|array',
-            'curriculum.topics.*' => 'array:id,title,assignment_type,month_key,month_keys,week_keys,units',
+            'curriculum.topics.*' => 'array:id,title,assignment_type,month_key,month_keys,units',
             'curriculum.topics.*.id' => 'nullable|string|max:100',
             'curriculum.topics.*.title' => 'required|string|max:255',
-            'curriculum.topics.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
+            'curriculum.topics.*.assignment_type' => 'required|string|in:none,all_weeks,month',
             'curriculum.topics.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
             'curriculum.topics.*.month_keys' => 'nullable|array',
             'curriculum.topics.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
-            'curriculum.topics.*.week_keys' => 'nullable|array',
-            'curriculum.topics.*.week_keys.*' => ['string', 'date_format:Y-m-d', $this->mondayWeekRule()],
             'curriculum.topics.*.units' => 'nullable|array',
-            'curriculum.topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys,week_keys,checked_week_keys',
+            'curriculum.topics.*.units.*' => 'array:id,title,is_exam,assignment_type,month_key,month_keys',
             'curriculum.topics.*.units.*.id' => 'nullable|string|max:100',
             'curriculum.topics.*.units.*.title' => 'required|string|max:255',
             'curriculum.topics.*.units.*.is_exam' => 'sometimes|boolean',
-            'curriculum.topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month,weeks',
+            'curriculum.topics.*.units.*.assignment_type' => 'required|string|in:none,all_weeks,month',
             'curriculum.topics.*.units.*.month_key' => 'nullable|string|regex:/^\d{4}-\d{2}$/',
             'curriculum.topics.*.units.*.month_keys' => 'nullable|array',
             'curriculum.topics.*.units.*.month_keys.*' => 'string|regex:/^\d{4}-\d{2}$/',
-            'curriculum.topics.*.units.*.week_keys' => 'nullable|array',
-            'curriculum.topics.*.units.*.week_keys.*' => ['string', 'date_format:Y-m-d', $this->mondayWeekRule()],
-            'curriculum.topics.*.units.*.checked_week_keys' => 'nullable|array',
-            'curriculum.topics.*.units.*.checked_week_keys.*' => ['string', 'date_format:Y-m-d', $this->mondayWeekRule()],
         ]);
 
         return [
@@ -251,7 +245,7 @@ class ImportedCurriculumService
                         'Bitte einen gültigen Einheitentitel angeben.'
                     ),
                     'is_exam' => (bool) ($unit['is_exam'] ?? false),
-                    'checked_week_keys' => $this->normalizeWeekKeys(is_array($unit['checked_week_keys'] ?? null) ? $unit['checked_week_keys'] : []),
+                    'checked_week_keys' => [],
                 ];
             })
             ->all();
@@ -277,7 +271,6 @@ class ImportedCurriculumService
                 ? $item['month_keys']
                 : [($item['month_key'] ?? null)]
         );
-        $weekKeys = $this->normalizeWeekKeys(is_array($item['week_keys'] ?? null) ? $item['week_keys'] : []);
 
         if ($title === '') {
             throw ValidationException::withMessages([
@@ -291,12 +284,6 @@ class ImportedCurriculumService
             ]);
         }
 
-        if ($assignmentType === 'weeks' && $weekKeys === []) {
-            throw ValidationException::withMessages([
-                "{$path}.week_keys" => 'Bitte mindestens eine Woche auswählen.',
-            ]);
-        }
-
         return [
             'id' => trim((string) ($item['id'] ?? '')) !== ''
                 ? trim((string) $item['id'])
@@ -305,7 +292,7 @@ class ImportedCurriculumService
             'assignment_type' => $assignmentType,
             'month_key' => $assignmentType === 'month' ? ($monthKeys[0] ?? null) : null,
             'month_keys' => $assignmentType === 'month' ? $monthKeys : [],
-            'week_keys' => $assignmentType === 'weeks' ? $weekKeys : [],
+            'week_keys' => [],
         ];
     }
 
@@ -378,7 +365,7 @@ class ImportedCurriculumService
                     ...$topic,
                     'month_key' => $this->mapMonthKeyToSchoolyear(filled($topic['month_key'] ?? null) ? (string) $topic['month_key'] : null, $schoolyear),
                     'month_keys' => $this->mapMonthKeysToSchoolyear(is_array($topic['month_keys'] ?? null) ? $topic['month_keys'] : [], $schoolyear),
-                    'week_keys' => $this->mapWeekKeysToSchoolyear(is_array($topic['week_keys'] ?? null) ? $topic['week_keys'] : [], $schoolyear),
+                    'week_keys' => [],
                 ];
 
                 $mappedTopic['units'] = collect(is_array($topic['units'] ?? null) ? $topic['units'] : [])
@@ -388,8 +375,8 @@ class ImportedCurriculumService
                             ...$unit,
                             'month_key' => $this->mapMonthKeyToSchoolyear(filled($unit['month_key'] ?? null) ? (string) $unit['month_key'] : null, $schoolyear),
                             'month_keys' => $this->mapMonthKeysToSchoolyear(is_array($unit['month_keys'] ?? null) ? $unit['month_keys'] : [], $schoolyear),
-                            'week_keys' => $this->mapWeekKeysToSchoolyear(is_array($unit['week_keys'] ?? null) ? $unit['week_keys'] : [], $schoolyear),
-                            'checked_week_keys' => $this->mapWeekKeysToSchoolyear(is_array($unit['checked_week_keys'] ?? null) ? $unit['checked_week_keys'] : [], $schoolyear),
+                            'week_keys' => [],
+                            'checked_week_keys' => [],
                         ];
                     })
                     ->values()
