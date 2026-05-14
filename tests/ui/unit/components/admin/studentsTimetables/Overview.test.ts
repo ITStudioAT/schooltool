@@ -1,8 +1,53 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Overview from '@/pages/admin/studentsTimetables/overview/Overview.vue'
 
 describe('Students timetable overview', () => {
+    it('shows a pending state while queued timetable updates run', () => {
+        vi.useFakeTimers()
+        const methods = (Overview as any).methods
+        const originalRequestAnimationFrame = window.requestAnimationFrame
+        let frameCallback: FrameRequestCallback | null = null
+
+        window.requestAnimationFrame = ((callback: FrameRequestCallback): number => {
+            frameCallback = callback
+
+            return 1
+        }) as typeof window.requestAnimationFrame
+
+        const ctx = {
+            timetableUpdatePending: false,
+            updated: false,
+            $nextTick(callback: () => void) {
+                callback()
+            },
+        }
+
+        methods.runTimetableUpdate.call(ctx, () => {
+            ctx.updated = true
+        })
+
+        expect(ctx.timetableUpdatePending).toBe(true)
+        expect(ctx.updated).toBe(false)
+
+        frameCallback?.(0)
+
+        expect(ctx.updated).toBe(false)
+        expect(ctx.timetableUpdatePending).toBe(true)
+
+        vi.advanceTimersByTime(0)
+
+        expect(ctx.updated).toBe(true)
+        expect(ctx.timetableUpdatePending).toBe(true)
+
+        vi.advanceTimersByTime(150)
+
+        expect(ctx.timetableUpdatePending).toBe(false)
+
+        window.requestAnimationFrame = originalRequestAnimationFrame
+        vi.useRealTimers()
+    })
+
     it('builds semester course menus from main course labels', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -246,6 +291,17 @@ describe('Students timetable overview', () => {
             subject: '20:25',
             teacher: '21:10',
         }
+        const mathRelatedCourseGroup = {
+            key: 'math-related',
+            semester: 1,
+            weekday: 4,
+            hour: 3,
+            course: 'MATH',
+            title: 'MATH',
+            display_label: 'MATH - 4A - KOW',
+            subject: '10:40',
+            teacher: '11:25',
+        }
         const bioCourseGroup = {
             key: 'bio',
             semester: 1,
@@ -258,8 +314,8 @@ describe('Students timetable overview', () => {
             teacher: '21:30',
         }
         const ctx = {
-            activeCourseGroupFilterKeys: ['math', 'bio'],
-            configuredCourseGroups: [mathCourseGroup, bioCourseGroup],
+            activeCourseGroupFilterKeys: ['math', 'math-related', 'bio'],
+            configuredCourseGroups: [mathCourseGroup, mathRelatedCourseGroup, bioCourseGroup],
             configuredSchoolHours: [],
             weekdays: [
                 { label: 'Mo', value: 1 },
@@ -290,6 +346,9 @@ describe('Students timetable overview', () => {
             isCourseMenuEntryFilterActive: methods.isCourseMenuEntryFilterActive,
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
+            courseGroupHasOverlap: methods.courseGroupHasOverlap,
+            courseGroupHasRelatedOverlap: methods.courseGroupHasRelatedOverlap,
+            courseGroupRelatedOverlapMarker: methods.courseGroupRelatedOverlapMarker,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
         }
@@ -297,7 +356,14 @@ describe('Students timetable overview', () => {
         expect(methods.selectedCourseFilterChips.call(ctx, 1).map((filterChip: Record<string, boolean>) => filterChip.hasOverlap))
             .toEqual([true, true])
         expect(methods.courseGroupHasOverlap.call(ctx, mathCourseGroup)).toBe(true)
+        expect(methods.courseGroupHasRelatedOverlap.call(ctx, mathCourseGroup)).toBe(false)
+        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, mathCourseGroup)).toBe('')
+        expect(methods.courseGroupHasOverlap.call(ctx, mathRelatedCourseGroup)).toBe(false)
+        expect(methods.courseGroupHasRelatedOverlap.call(ctx, mathRelatedCourseGroup)).toBe(true)
+        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, mathRelatedCourseGroup)).toBe('⚠ Mitbetroffen')
         expect(methods.courseGroupHasOverlap.call(ctx, bioCourseGroup)).toBe(true)
+        expect(methods.courseGroupHasRelatedOverlap.call(ctx, bioCourseGroup)).toBe(false)
+        expect(methods.courseGroupRelatedOverlapMarker.call(ctx, bioCourseGroup)).toBe('')
     })
 
     it('connects menu schedule times per weekday into one time area', () => {
@@ -550,6 +616,19 @@ describe('Students timetable overview', () => {
             first_date: '2026-09-10',
             dates: ['2026-09-10', '2026-09-17', '2026-09-24'],
         }
+        const fourWeekCourseGroup = {
+            key: 'art-week-1',
+            semester: 1,
+            weekday: 1,
+            hour: 1,
+            course: 'ART',
+            title: 'ART',
+            display_label: 'ART - 1A - GH',
+            subject: 'ART',
+            recurrence_interval: 4,
+            first_date: '2026-09-09',
+            dates: ['2026-09-09', '2026-10-07'],
+        }
         const blockCourseGroup = {
             key: 'chem-block',
             semester: 1,
@@ -566,7 +645,7 @@ describe('Students timetable overview', () => {
             dates: ['2026-09-30'],
         }
         const ctx = {
-            activeCourseGroupFilterKeys: ['bio-week-1', 'bio-week-2', 'inf-weekly', 'chem-block'],
+            activeCourseGroupFilterKeys: ['bio-week-1', 'bio-week-2', 'inf-weekly', 'art-week-1', 'chem-block'],
             selectedRecurrenceWeeks: {
                 1: 'all_dates',
             },
@@ -580,13 +659,20 @@ describe('Students timetable overview', () => {
                 from: '2026-09-07',
                 sem_2_start: '2027-02-15',
             },
-            configuredCourseGroups: [weekOneCourseGroup, weekTwoCourseGroup, weeklyCourseGroup, blockCourseGroup],
+            configuredCourseGroups: [
+                weekOneCourseGroup,
+                weekTwoCourseGroup,
+                weeklyCourseGroup,
+                fourWeekCourseGroup,
+                blockCourseGroup,
+            ],
             configuredSchoolHours: [
                 { hour: 2, from: '08:50:00', until: '09:35:00' },
             ],
             courseGroupsByCell: {
                 '1-2-2': [weekOneCourseGroup, weekTwoCourseGroup],
                 '1-4-4': [weeklyCourseGroup],
+                '1-1-1': [fourWeekCourseGroup],
                 '1-3-3': [blockCourseGroup],
             },
             weekdays: [
@@ -642,9 +728,9 @@ describe('Students timetable overview', () => {
         }
 
         expect(methods.recurrenceWeekOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
-            .toEqual(['Woche 1', 'Woche 2'])
+            .toEqual(['Woche 1', 'Woche 2', 'Woche 3', 'Woche 4'])
         expect(methods.timetableSelectorOptions.call(ctx, 1).map((option: Record<string, string>) => option.label))
-            .toEqual(['Alle Termine', 'Woche 1', 'Woche 2', 'Zusatzwochen'])
+            .toEqual(['Alle Termine', 'Woche 1', 'Woche 2', 'Woche 3', 'Woche 4', 'Zusatzwochen'])
         expect(methods.selectedTimetableOptionValue.call(ctx, 1)).toBe('all_dates')
         expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
             .toEqual(['Alle Termine'])
@@ -680,17 +766,22 @@ describe('Students timetable overview', () => {
         expect(methods.showExtraDatesInSelectedWeek.call(ctx, 1)).toBe(true)
         expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3)).toEqual([blockCourseGroup])
 
+        methods.setSelectedTimetableOptionValue.call(ctx, 1, 'extra_dates')
         methods.toggleRecurrenceWeeks.call(ctx, 1)
 
         expect(methods.visibleTimetableWeeks.call(ctx, 1).map((option: Record<string, string>) => option.label))
-            .toEqual(['Woche 1', 'Woche 2', 'Zusatzwochen'])
+            .toEqual(['Woche 1', 'Woche 2', 'Woche 3', 'Woche 4', 'Zusatzwochen'])
         const expandedWeeks = methods.visibleTimetableWeeks.call(ctx, 1)
-        const extraWeek = expandedWeeks[2]
+        const extraWeek = expandedWeeks[4]
 
         expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[0])).toEqual([weekOneCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[1])).toEqual([weekTwoCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[2])).toEqual([weekOneCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 2, 2, expandedWeeks[3])).toEqual([weekTwoCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[0])).toEqual([weeklyCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[1])).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[2])).toEqual([weeklyCourseGroup])
+        expect(methods.courseGroupsForCell.call(ctx, 1, 4, 4, expandedWeeks[3])).toEqual([weeklyCourseGroup])
         expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3, expandedWeeks[0])).toEqual([])
         expect(methods.shouldShowExtraDatesNotice.call(ctx, 1, expandedWeeks[0])).toBe(false)
         expect(methods.courseGroupsForCell.call(ctx, 1, 3, 3, extraWeek)).toEqual([blockCourseGroup])

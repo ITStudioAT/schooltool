@@ -17,7 +17,7 @@
                             size="large"
                             class="hidden-saturday-warning"
                             aria-label="Samstag hat ausgeblendete Einträge"
-                            @click="showSaturday = true">
+                            @click="handleShowSaturdayClick">
                             !
                         </v-btn>
                     </template>
@@ -31,7 +31,7 @@
                     label="Sa"
                     class="timetable-saturday-switch" />
             </v-card-title>
-            <v-card-text>
+            <v-card-text class="timetable-card-body">
                 <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3" />
 
                 <v-alert v-if="!loading && !configuredSchoolHours.length" type="info" variant="tonal" class="mb-3">
@@ -74,7 +74,7 @@
                                         :active="isCourseMenuEntryFilterActive(entry)"
                                         :color="courseMenuEntryHasOverlap(entry, semester.value) ? 'error' : 'primary'"
                                         :class="{ 'semester-course-menu-item--overlap': courseMenuEntryHasOverlap(entry, semester.value) }"
-                                        @click="toggleCourseMenuEntryFilter(entry)">
+                                        @click="handleCourseMenuEntryFilterClick(entry)">
                                         <template #prepend>
                                             <v-icon
                                                 :icon="isCourseMenuEntryFilterActive(entry) ? 'mdi-check' : 'mdi-calendar-blank'"
@@ -100,7 +100,7 @@
                                 variant="tonal"
                                 closable
                                 class="selected-course-filter-chip"
-                                @click:close="toggleCourseMenuEntryFilter(filterChip.entry)">
+                                @click:close="handleCourseMenuEntryFilterClick(filterChip.entry)">
                                 {{ filterChip.label }}
                             </v-chip>
                         </div>
@@ -114,7 +114,7 @@
                                 color="primary"
                                 variant="outlined"
                                 divided
-                                @update:model-value="setSelectedTimetableOptionValue(semester.value, $event)">
+                                @update:model-value="handleSelectedTimetableOptionValueUpdate(semester.value, $event)">
                                 <v-btn
                                     v-for="weekOption in timetableSelectorOptions(semester.value)"
                                     :key="weekOption.value"
@@ -130,7 +130,7 @@
                                 variant="outlined"
                                 prepend-icon="mdi-table-multiple"
                                 class="recurrence-week-selector__action-btn"
-                                @click="toggleRecurrenceWeeks(semester.value)">
+                                @click="handleToggleRecurrenceWeeksClick(semester.value)">
                                 {{ areRecurrenceWeeksExpanded(semester.value) ? 'Eine Woche anzeigen' : 'Wochen anzeigen' }}
                             </v-btn>
                         </div>
@@ -178,12 +178,16 @@
                                                     :class="[
                                                         'timetable-course-item',
                                                         { 'timetable-course-item--overlap': courseGroupHasOverlap(courseGroup) },
+                                                        { 'timetable-course-item--related-overlap': courseGroupHasRelatedOverlap(courseGroup) },
                                                     ]"
                                                     role="button"
                                                     tabindex="0"
                                                     @click="openCourseGroupDialog(courseGroup)"
                                                     @keydown.enter="openCourseGroupDialog(courseGroup)">
                                                     <span class="timetable-course-title">{{ courseGroup.display_label || courseGroup.title }}</span>
+                                                    <span v-if="courseGroupRelatedOverlapMarker(courseGroup)" class="timetable-course-related-marker">
+                                                        {{ courseGroupRelatedOverlapMarker(courseGroup) }}
+                                                    </span>
                                                     <span v-if="courseGroup.recurrence_label || courseGroup.is_block" class="timetable-course-markers">
                                                         <v-chip
                                                             v-if="courseGroup.recurrence_label"
@@ -220,11 +224,19 @@
                                     density="compact"
                                     hide-details
                                     label="Im aktuellen Stundenplan anzeigen"
-                                    @update:model-value="setShowExtraDatesInSelectedWeek(semester.value, $event)" />
+                                    @update:model-value="handleShowExtraDatesUpdate(semester.value, $event)" />
                             </div>
                         </div>
                     </section>
                 </div>
+
+                <template v-if="timetableUpdatePending">
+                    <div class="timetable-update-blocker" aria-hidden="true"></div>
+                    <div class="timetable-update-indicator" role="status" aria-live="polite">
+                        <LoadingAnimation class="timetable-update-indicator__dots" />
+                        <span>Stundenplan wird aktualisiert...</span>
+                    </div>
+                </template>
             </v-card-text>
         </v-card>
 
@@ -279,12 +291,16 @@
 import { parseLocalDate } from '@/helpers/date'
 import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
+import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 
 const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
 
 export default {
     name: 'StudentsTimetablesOverview',
+    components: {
+        LoadingAnimation,
+    },
 
     data() {
         return {
@@ -293,6 +309,7 @@ export default {
             courseGroups: [],
             courseGroupDialog: false,
             selectedCourseGroup: null,
+            timetableUpdatePending: false,
             activeCourseGroupFilterKeys: [],
             selectedRecurrenceWeeks: {
                 1: ALL_DATES_OPTION_VALUE,
@@ -456,6 +473,63 @@ export default {
             if (!raw) return ''
 
             return raw.slice(0, 5)
+        },
+        runTimetableUpdate(action) {
+            if (this.timetableUpdatePending) {
+                return
+            }
+
+            this.timetableUpdatePending = true
+
+            const updateWindow = typeof window !== 'undefined' ? window : null
+            const timerTarget = updateWindow || globalThis
+            const runAction = () => {
+                action()
+
+                this.$nextTick(() => {
+                    timerTarget.setTimeout(() => {
+                        this.timetableUpdatePending = false
+                    }, 150)
+                })
+            }
+            const scheduleActionAfterPaint = () => {
+                if (updateWindow && typeof updateWindow.requestAnimationFrame === 'function') {
+                    updateWindow.requestAnimationFrame(() => {
+                        timerTarget.setTimeout(runAction, 0)
+                    })
+
+                    return
+                }
+
+                timerTarget.setTimeout(runAction, 0)
+            }
+
+            this.$nextTick(scheduleActionAfterPaint)
+        },
+        handleShowSaturdayClick() {
+            this.runTimetableUpdate(() => {
+                this.showSaturday = true
+            })
+        },
+        handleCourseMenuEntryFilterClick(entry) {
+            this.runTimetableUpdate(() => {
+                this.toggleCourseMenuEntryFilter(entry)
+            })
+        },
+        handleSelectedTimetableOptionValueUpdate(semester, value) {
+            this.runTimetableUpdate(() => {
+                this.setSelectedTimetableOptionValue(semester, value)
+            })
+        },
+        handleToggleRecurrenceWeeksClick(semester) {
+            this.runTimetableUpdate(() => {
+                this.toggleRecurrenceWeeks(semester)
+            })
+        },
+        handleShowExtraDatesUpdate(semester, value) {
+            this.runTimetableUpdate(() => {
+                this.setShowExtraDatesInSelectedWeek(semester, value)
+            })
         },
         courseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
             return [...(this.courseGroupsByCell[this.courseCellKey(semester, weekday, hour)] || [])]
@@ -843,8 +917,11 @@ export default {
 
             const interval = Number(courseGroup?.recurrence_interval)
             if (this.courseGroupHasRegularRecurrence(courseGroup) && interval === 1) {
+                if (recurrenceWeek?.type === 'recurrence' || Number.isFinite(Number(recurrenceWeek))) {
+                    return true
+                }
+
                 return selectedTimetableOption !== 'extra_dates'
-                    && recurrenceWeek?.type !== 'extra_dates'
             }
 
             if (!this.courseGroupHasRegularRecurrence(courseGroup) || ![2, 3, 4].includes(interval)) {
@@ -861,7 +938,10 @@ export default {
                     ? Number(recurrenceWeek)
                     : this.selectedRecurrenceWeek(semester)
 
-            return this.courseGroupRecurrenceWeek(courseGroup, semester) === targetWeek
+            const startWeek = this.courseGroupRecurrenceWeek(courseGroup, semester)
+            const weekOffset = ((targetWeek - startWeek) % interval + interval) % interval
+
+            return weekOffset === 0
         },
         courseGroupRecurrenceWeek(courseGroup, semester) {
             const interval = Number(courseGroup?.recurrence_interval)
@@ -921,7 +1001,35 @@ export default {
             const containingEntry = this.selectedCourseMenuEntries(semester)
                 .find((entry) => this.courseMenuEntryKeys(entry).includes(courseGroup?.key))
 
+            if (!containingEntry) {
+                return false
+            }
+
+            return this.selectedCourseMenuEntries(semester)
+                .filter((selectedEntry) => selectedEntry.key !== containingEntry.key)
+                .some((selectedEntry) => (
+                    (selectedEntry?.courseGroups || []).some((selectedCourseGroup) => (
+                        this.courseGroupsOverlap(courseGroup, selectedCourseGroup)
+                    ))
+                ))
+        },
+        courseGroupHasRelatedOverlap(courseGroup) {
+            if (this.courseGroupHasOverlap(courseGroup)) {
+                return false
+            }
+
+            const semester = Number(courseGroup?.semester)
+            if (!Number.isFinite(semester)) {
+                return false
+            }
+
+            const containingEntry = this.selectedCourseMenuEntries(semester)
+                .find((entry) => this.courseMenuEntryKeys(entry).includes(courseGroup?.key))
+
             return Boolean(containingEntry && this.courseMenuEntryHasOverlap(containingEntry, semester))
+        },
+        courseGroupRelatedOverlapMarker(courseGroup) {
+            return this.courseGroupHasRelatedOverlap(courseGroup) ? '⚠ Mitbetroffen' : ''
         },
         courseMenuEntriesOverlap(leftEntry, rightEntry) {
             return (leftEntry?.courseGroups || []).some((leftCourseGroup) => (
@@ -1187,6 +1295,58 @@ export default {
 </script>
 
 <style scoped>
+.timetable-card-body {
+    position: relative;
+}
+
+.timetable-update-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: rgba(255, 255, 255, 0.28);
+    cursor: progress;
+}
+
+.timetable-update-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-width: 220px;
+    padding: 18px 22px;
+    transform: translate(-50%, -50%);
+    border: 1px solid rgba(25, 118, 210, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+    color: #0d47a1;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: center;
+}
+
+.timetable-update-indicator__dots {
+    padding: 0;
+}
+
+.timetable-update-indicator__dots :deep(.loading-animation) {
+    padding: 0;
+}
+
+.timetable-update-indicator__dots :deep(.loading-dots) {
+    gap: 6px;
+}
+
+.timetable-update-indicator__dots :deep(.dot) {
+    width: 8px;
+    height: 8px;
+}
+
 .semester-grid {
     display: grid;
     grid-template-columns: 1fr;
@@ -1428,6 +1588,16 @@ export default {
     background-color: #ffcdd2;
 }
 
+.timetable-course-item--related-overlap {
+    border-left-color: #fb8c00;
+    background-color: #fff3e0;
+}
+
+.timetable-course-item--related-overlap:hover,
+.timetable-course-item--related-overlap:focus-visible {
+    background-color: #ffe0b2;
+}
+
 .timetable-course-title {
     font-weight: 700;
     font-size: 0.75rem;
@@ -1438,6 +1608,19 @@ export default {
 
 .timetable-course-item--overlap .timetable-course-title {
     color: #b71c1c;
+}
+
+.timetable-course-item--related-overlap .timetable-course-title {
+    color: #e65100;
+}
+
+.timetable-course-related-marker {
+    flex: 0 0 auto;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 1.1;
+    color: #e65100;
+    white-space: nowrap;
 }
 
 .timetable-course-markers {
