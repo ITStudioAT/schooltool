@@ -145,6 +145,7 @@ class AdminController extends Controller
             'materials_moderator',
             'teacher',
             'lunch_admin',
+            'studentstimetables_admin',
         ]);
     }
 

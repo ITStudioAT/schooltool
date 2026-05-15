@@ -599,6 +599,12 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/materials/file-settings', [MaterialFileSettingsController::class, 'update']);
     });
 
+    /* SANCTUM - schoolyear selectors */
+    Route::middleware(['auth:sanctum', 'api-allowed:scope:schoolyear_access'])->group(function () {
+        Route::apiResource('/admin/schoolyears', SchoolyearController::class)->only(['index']);
+        Route::post('/admin/schoolyears/set_active', [SchoolyearController::class, 'setActiveSchoolyear']);
+    });
+
     /* SANCTUM - admin, register_admin, tutoring_admin, teaching_admin, materials_admin, materials_moderator, teacher */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:staff_admin_access'])->group(function () {
 
@@ -642,8 +648,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/schools/delete_admin', [SchoolController::class, 'deleteAdmin']);
 
         // schoolyears
-        Route::apiResource('/admin/schoolyears', SchoolyearController::class);
-        Route::post('/admin/schoolyears/set_active', [SchoolyearController::class, 'setActiveSchoolyear']);
+        Route::apiResource('/admin/schoolyears', SchoolyearController::class)->except(['index']);
         Route::get('/admin/schoolyears_paginate', [SchoolyearController::class, 'indexPaginate']);
 
         // registers

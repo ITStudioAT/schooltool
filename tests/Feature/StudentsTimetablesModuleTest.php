@@ -62,6 +62,71 @@ it('allows the studentstimetables admin role to use the dummy module', function 
         ->assertJsonPath('data.status', 'dummy');
 });
 
+it('allows the studentstimetables admin role to load admin home school infos', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+
+    collect([
+        'admin',
+        'register_admin',
+        'super_admin',
+        'tutoring_admin',
+        'teaching_admin',
+        'materials_admin',
+        'teacher',
+    ])->each(fn (string $roleName): Role => Role::firstOrCreate([
+        'name' => $roleName,
+        'guard_name' => 'web',
+    ]));
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/config?include_school_infos=1')
+        ->assertSuccessful()
+        ->assertJsonPath('is_auth', true)
+        ->assertJsonStructure([
+            'school_infos' => [
+                'licences',
+                'admins',
+                'teachers',
+            ],
+        ]);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/schools/load_school_infos', [
+            'school_id' => $user->school_id,
+        ])
+        ->assertSuccessful()
+        ->assertJsonStructure([
+            'licences',
+            'admins',
+            'teachers',
+        ]);
+});
+
+it('allows the studentstimetables admin role to list and select schoolyears', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'name' => '2026/2027',
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/schoolyears')
+        ->assertSuccessful()
+        ->assertJsonFragment([
+            'id' => $schoolyear->id,
+            'name' => '2026/2027',
+        ]);
+
+    $this->actingAs($user)
+        ->postJson('/api/admin/schoolyears/set_active', [
+            'schoolyear_id' => $schoolyear->id,
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('id', $schoolyear->id);
+
+    expect($user->refresh()->schoolyear_id)->toBe($schoolyear->id);
+});
+
 it('returns dummy dashboard data for a licensed school', function () {
     $user = createStudentsTimetablesUserWithLicence();
 
