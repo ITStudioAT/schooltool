@@ -1438,6 +1438,8 @@ export default {
 <style scoped>
 .student-row {
     min-width: 0;
+    min-height: 64px;
+    padding: 8px 0;
 }
 
 .student-name--canceled {

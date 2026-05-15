@@ -486,6 +486,20 @@ export default {
                 if (this._urlRestored || !courses.length) return
                 const courseId = Number(this.$route.query.course)
                 if (!courseId) {
+                    const gradesParam = this.$route.query.grades
+                    if (gradesParam) {
+                        this._urlRestored = true
+                        const gradeValues = String(gradesParam).split(',').map(v => v.trim())
+                        this.courseStore.infos_show_grade_sem1 = gradeValues.includes('sem1')
+                        this.courseStore.infos_show_grade_sem2 = gradeValues.includes('sem2')
+                        this.courseStore.infos_show_grade_year = gradeValues.includes('year')
+                        const firstCourse = courses[0]
+                        if (firstCourse) {
+                            this.courseStore.selected_course = firstCourse
+                            this.courseStore.selected_course_id = firstCourse.id
+                        }
+                        return
+                    }
                     this._urlRestored = true
                     return
                 }

@@ -42,7 +42,7 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="selected_course && (show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" md="6" lg="7" xl="4" v-if="!isGradesMode && selected_course && (show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_students">
             <v-col>
                 <CourseDates compact-student-view />
@@ -375,6 +375,9 @@ export default {
             'selected_course_student',
             'show_performances_plus',
         ]),
+        isGradesMode() {
+            return !!this.$route?.query?.grades
+        },
         isControlLocked() {
             return this.action != '' || this.isStudentDetailActive
         },
@@ -614,6 +617,7 @@ export default {
             this.curriculumEditMode = false
             if (!this._urlPanelRestored) {
                 const urlPanel = this.$route?.query?.panel
+                const urlGrades = this.$route?.query?.grades
                 const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']
                 this._urlPanelRestored = true
                 this._lastCourseId = newCourse.id
@@ -627,6 +631,18 @@ export default {
                     this.show_attendance = urlPanel === 'attendance'
                     this.show_performances = urlPanel === 'performances'
                     this.show_performances_plus = urlPanel === 'performances_plus'
+                    return
+                }
+                if (urlGrades) {
+                    this.show_students = true
+                    this.show_infos = false
+                    this.show_works = false
+                    this.show_print = false
+                    this.show_dates = false
+                    this.show_curriculum = false
+                    this.show_attendance = false
+                    this.show_performances = false
+                    this.show_performances_plus = false
                     return
                 }
             }
