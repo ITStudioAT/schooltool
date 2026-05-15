@@ -423,6 +423,37 @@ export default {
                 return groups
             }, {})
         },
+        activeCourseGroupFilterKeySet() {
+            return new Set(this.activeCourseGroupFilterKeys.filter(Boolean))
+        },
+        semesterCourseMenusBySemester() {
+            return {
+                1: this.buildSemesterCourseMenus(1),
+                2: this.buildSemesterCourseMenus(2),
+            }
+        },
+        selectedCourseMenuEntriesBySemester() {
+            return {
+                1: this.semesterCourseMenus(1)
+                    .flatMap((courseMenu) => courseMenu.entries)
+                    .filter((entry) => this.isCourseMenuEntryFilterActive(entry)),
+                2: this.semesterCourseMenus(2)
+                    .flatMap((courseMenu) => courseMenu.entries)
+                    .filter((entry) => this.isCourseMenuEntryFilterActive(entry)),
+            }
+        },
+        recurrenceWeekOptionsBySemester() {
+            return {
+                1: this.buildRecurrenceWeekOptions(1),
+                2: this.buildRecurrenceWeekOptions(2),
+            }
+        },
+        extraDatesOptionsBySemester() {
+            return {
+                1: this.buildExtraDatesOptions(1),
+                2: this.buildExtraDatesOptions(2),
+            }
+        },
         selectedCourseGroupLabel() {
             return this.selectedCourseGroup?.display_label || this.selectedCourseGroup?.title || 'Termine'
         },
@@ -489,7 +520,7 @@ export default {
                 this.$nextTick(() => {
                     timerTarget.setTimeout(() => {
                         this.timetableUpdatePending = false
-                    }, 150)
+                    }, 0)
                 })
             }
             const scheduleActionAfterPaint = () => {
@@ -532,9 +563,13 @@ export default {
             })
         },
         courseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
+
             return [...(this.courseGroupsByCell[this.courseCellKey(semester, weekday, hour)] || [])]
                 .filter((courseGroup) => (
-                    this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
+                    activeCourseGroupFilterKeySet.has(courseGroup?.key)
                     && this.courseGroupMatchesSelectedRecurrenceWeek(courseGroup, semester, recurrenceWeek)
                 ))
                 .sort((left, right) => this.courseGroupSortLabel(left).localeCompare(
@@ -547,6 +582,13 @@ export default {
             return (courseGroup?.display_label || courseGroup?.title || '').toString()
         },
         semesterCourseMenus(semester) {
+            if (this.semesterCourseMenusBySemester) {
+                return this.semesterCourseMenusBySemester[Number(semester)] || []
+            }
+
+            return this.buildSemesterCourseMenus(semester)
+        },
+        buildSemesterCourseMenus(semester) {
             const courseMenusByLabel = this.configuredCourseGroups
                 .filter((courseGroup) => Number(courseGroup?.semester) === Number(semester))
                 .reduce((courseMenus, courseGroup) => {
@@ -619,6 +661,13 @@ export default {
                 }))
         },
         selectedCourseMenuEntries(semester) {
+            if (this.selectedCourseMenuEntriesBySemester) {
+                return this.selectedCourseMenuEntriesBySemester[Number(semester)] || []
+            }
+
+            return this.buildSelectedCourseMenuEntries(semester)
+        },
+        buildSelectedCourseMenuEntries(semester) {
             return this.semesterCourseMenus(semester)
                 .flatMap((courseMenu) => courseMenu.entries)
                 .filter((entry) => this.isCourseMenuEntryFilterActive(entry))
@@ -721,6 +770,13 @@ export default {
                 .reduce((total, datesCount) => total + datesCount, 0)
         },
         recurrenceWeekOptions(semester) {
+            if (this.recurrenceWeekOptionsBySemester) {
+                return this.recurrenceWeekOptionsBySemester[Number(semester)] || []
+            }
+
+            return this.buildRecurrenceWeekOptions(semester)
+        },
+        buildRecurrenceWeekOptions(semester) {
             const maxInterval = this.selectedCourseMenuEntries(semester)
                 .flatMap((entry) => entry.courseGroups || [])
                 .map((courseGroup) => Number(courseGroup?.recurrence_interval))
@@ -853,6 +909,13 @@ export default {
             }]
         },
         extraDatesOptions(semester) {
+            if (this.extraDatesOptionsBySemester) {
+                return this.extraDatesOptionsBySemester[Number(semester)] || []
+            }
+
+            return this.buildExtraDatesOptions(semester)
+        },
+        buildExtraDatesOptions(semester) {
             const hasExtraDates = this.selectedCourseMenuEntries(semester)
                 .flatMap((entry) => entry.courseGroups || [])
                 .filter((courseGroup) => this.courseGroupHasExtraDateWeek(courseGroup))
@@ -1178,9 +1241,12 @@ export default {
         },
         isCourseMenuEntryFilterActive(entry) {
             const courseGroupKeys = this.courseMenuEntryKeys(entry)
+            const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
+                ? this.activeCourseGroupFilterKeySet
+                : new Set(this.activeCourseGroupFilterKeys || [])
 
             return courseGroupKeys.length > 0
-                && courseGroupKeys.every((courseGroupKey) => this.activeCourseGroupFilterKeys.includes(courseGroupKey))
+                && courseGroupKeys.every((courseGroupKey) => activeCourseGroupFilterKeySet.has(courseGroupKey))
         },
         courseMenuEntryKeys(entry) {
             if (Array.isArray(entry?.courseGroupKeys)) {

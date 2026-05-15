@@ -4,16 +4,19 @@ namespace App\Services\StudentsTimetables;
 
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
-use App\Models\StudentTimetableEntry;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
 class StudentTimetableOverviewService
 {
     private const BLOCK_EDGE_TOLERANCE_DAYS = 14;
+
+    private const CACHE_TTL_MINUTES = 30;
 
     /**
      * @return list<array<string, mixed>>
@@ -25,8 +28,30 @@ class StudentTimetableOverviewService
             ->where('school_id', $authUser->school_id)
             ->findOrFail($schoolyearId);
 
-        return StudentTimetableEntry::query()
-            ->where('school_id', $authUser->school_id)
+        return Cache::remember(
+            self::cacheKey((int) $authUser->school_id, $schoolyearId),
+            now()->addMinutes(self::CACHE_TTL_MINUTES),
+            fn (): array => $this->buildCourseGroups((int) $authUser->school_id, $schoolyearId, $schoolyear),
+        );
+    }
+
+    public static function forgetCacheFor(int $schoolId, int $schoolyearId): void
+    {
+        Cache::forget(self::cacheKey($schoolId, $schoolyearId));
+    }
+
+    private static function cacheKey(int $schoolId, int $schoolyearId): string
+    {
+        return "students-timetables:overview:course-groups:{$schoolId}:{$schoolyearId}";
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildCourseGroups(int $schoolId, int $schoolyearId, Schoolyear $schoolyear): array
+    {
+        return DB::table('student_timetable_entries')
+            ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
             ->whereNotNull('date')
             ->whereIn('semester', [1, 2])
@@ -44,7 +69,7 @@ class StudentTimetableOverviewService
                 'course',
                 'student_group',
             ])
-            ->map(fn (StudentTimetableEntry $entry): ?array => $this->entryPayload($entry))
+            ->map(fn (object $entry): ?array => $this->entryPayload($entry))
             ->filter()
             ->reject(fn (array $entry): bool => $this->isHiddenCourse($entry))
             ->groupBy(fn (array $entry): string => $this->groupKey($entry))
@@ -63,7 +88,7 @@ class StudentTimetableOverviewService
     /**
      * @return array<string, mixed>|null
      */
-    private function entryPayload(StudentTimetableEntry $entry): ?array
+    private function entryPayload(object $entry): ?array
     {
         $date = $this->dateFromValue($entry->date);
         $hour = $this->hourFromPeriod($entry->period);

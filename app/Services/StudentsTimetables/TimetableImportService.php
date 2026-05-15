@@ -13,6 +13,10 @@ use Illuminate\Validation\ValidationException;
 
 class TimetableImportService
 {
+    private const IDENTITY_SEPARATOR = "\x1F";
+
+    private const IDENTITY_NULL_VALUE = "\x00";
+
     /**
      * @return array{sections: array<string, int>, total_lines: int, tt_courses: int, tt_first_date: ?string, tt_last_date: ?string}
      */
@@ -170,6 +174,8 @@ class TimetableImportService
             'finished_at' => now(),
         ]);
 
+        StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
+
         return $import->refresh();
     }
 
@@ -219,6 +225,8 @@ class TimetableImportService
                 $this->processImport($remainingImport);
             });
         });
+
+        StudentTimetableOverviewService::forgetCacheFor($schoolId, $schoolyearId);
 
         if (is_file($filePath)) {
             @unlink($filePath);
@@ -305,7 +313,7 @@ class TimetableImportService
     ): array {
         $date = $this->normalizeDate($parts[2] ?? null);
 
-        return [
+        $row = [
             'school_id' => $import->school_id,
             'schoolyear_id' => $schoolyear->id,
             'timetable_import_id' => $import->id,
@@ -323,6 +331,10 @@ class TimetableImportService
             'raw_columns' => $parts,
             'raw_line' => $line,
         ];
+
+        $row['identity_hash'] = $this->timetableEntryIdentityHash($row);
+
+        return $row;
     }
 
     /**
@@ -330,48 +342,70 @@ class TimetableImportService
      */
     private function updateOrCreateTimetableEntries(array $rows): void
     {
-        foreach ($rows as $row) {
-            StudentTimetableEntry::updateOrCreate(
-                $this->timetableEntryIdentity($row),
-                $this->timetableEntryUpdatePayload($row),
-            );
+        $rows = collect($rows)
+            ->keyBy(fn (array $row): string => $row['identity_hash'])
+            ->values();
+
+        if ($rows->isEmpty()) {
+            return;
         }
+
+        $schoolId = (int) $rows->first()['school_id'];
+        $schoolyearId = (int) $rows->first()['schoolyear_id'];
+        $identityHashes = $rows->pluck('identity_hash')->all();
+        $now = now();
+
+        DB::transaction(function () use ($rows, $schoolId, $schoolyearId, $identityHashes, $now): void {
+            StudentTimetableEntry::query()
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->whereIn('identity_hash', $identityHashes)
+                ->delete();
+
+            DB::table('student_timetable_entries')->insert(
+                $rows
+                    ->map(fn (array $row): array => [
+                        'school_id' => $row['school_id'],
+                        'schoolyear_id' => $row['schoolyear_id'],
+                        'timetable_import_id' => $row['timetable_import_id'],
+                        'line_number' => $row['line_number'],
+                        'date' => $row['date'],
+                        'semester' => $row['semester'],
+                        'source_identifier' => $row['source_identifier'],
+                        'period' => $row['period'],
+                        'subject' => $row['subject'],
+                        'teacher' => $row['teacher'],
+                        'room' => $row['room'],
+                        'class_name' => $row['class_name'],
+                        'course' => $row['course'],
+                        'student_group' => $row['student_group'],
+                        'identity_hash' => $row['identity_hash'],
+                        'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                        'raw_line' => $row['raw_line'],
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ])
+                    ->all()
+            );
+        });
     }
 
     /**
      * @param  array<string, mixed>  $row
      * @return array<string, mixed>
      */
-    private function timetableEntryIdentity(array $row): array
+    private function timetableEntryIdentityHash(array $row): string
     {
-        return [
+        return hash('sha256', implode(self::IDENTITY_SEPARATOR, [
             'school_id' => $row['school_id'],
             'schoolyear_id' => $row['schoolyear_id'],
-            'source_identifier' => $row['source_identifier'],
-            'date' => $row['date'],
-            'period' => $row['period'],
-            'class_name' => $row['class_name'],
-            'course' => $row['course'],
-            'student_group' => $row['student_group'],
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
-     */
-    private function timetableEntryUpdatePayload(array $row): array
-    {
-        return [
-            'timetable_import_id' => $row['timetable_import_id'],
-            'line_number' => $row['line_number'],
-            'semester' => $row['semester'],
-            'subject' => $row['subject'],
-            'teacher' => $row['teacher'],
-            'room' => $row['room'],
-            'raw_columns' => $row['raw_columns'],
-            'raw_line' => $row['raw_line'],
-        ];
+            'source_identifier' => $row['source_identifier'] ?? self::IDENTITY_NULL_VALUE,
+            'date' => $row['date'] ?? self::IDENTITY_NULL_VALUE,
+            'period' => $row['period'] ?? self::IDENTITY_NULL_VALUE,
+            'class_name' => $row['class_name'] ?? self::IDENTITY_NULL_VALUE,
+            'course' => $row['course'] ?? self::IDENTITY_NULL_VALUE,
+            'student_group' => $row['student_group'] ?? self::IDENTITY_NULL_VALUE,
+        ]));
     }
 
     private function normalizeDate(?string $rawDate): ?string

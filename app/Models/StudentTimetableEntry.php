@@ -27,6 +27,7 @@ class StudentTimetableEntry extends Model
         'class_name',
         'course',
         'student_group',
+        'identity_hash',
         'raw_columns',
         'raw_line',
     ];

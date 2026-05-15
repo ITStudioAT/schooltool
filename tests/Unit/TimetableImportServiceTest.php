@@ -7,6 +7,7 @@ use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
+use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -325,5 +326,41 @@ it('normalizes non UTF-8 timetable files before storing raw columns', function (
     expect($entry)->not->toBeNull()
         ->and($entry->subject)->toBe('MÄTH')
         ->and($entry->raw_columns[4])->toBe('MÄTH')
+        ->and($entry->identity_hash)->not->toBeNull()
         ->and($import->import_status)->toBe('completed');
+});
+
+it('refreshes cached course groups after importing timetable entries', function () {
+    $firstFilePath = "{$this->storageDirectory}/cached-first.txt";
+    File::put($firstFilePath, 'TT	100	20260216	1	MATH	AB	R101	1A	MATH-1	GRP-A');
+
+    $this->service->createImport(
+        $this->user,
+        'cached-first.txt',
+        'cached-first.txt',
+        'app/private/testing/student-timetables/cached-first.txt',
+        $this->schoolyear->id,
+    );
+
+    $overviewService = app(StudentTimetableOverviewService::class);
+
+    expect(collect($overviewService->courseGroupsForUser($this->user))->pluck('title')->all())
+        ->toBe(['MATH-1']);
+
+    $secondFilePath = "{$this->storageDirectory}/cached-second.txt";
+    File::put($secondFilePath, implode(PHP_EOL, [
+        'TT	100	20260216	1	MATH	AB	R101	1A	MATH-1	GRP-A',
+        'TT	200	20260217	2	BIO	CD	R102	1A	BIO-1	GRP-B',
+    ]));
+
+    $this->service->createImport(
+        $this->user,
+        'cached-second.txt',
+        'cached-second.txt',
+        'app/private/testing/student-timetables/cached-second.txt',
+        $this->schoolyear->id,
+    );
+
+    expect(collect($overviewService->courseGroupsForUser($this->user))->pluck('title')->all())
+        ->toBe(['MATH-1', 'BIO-1']);
 });

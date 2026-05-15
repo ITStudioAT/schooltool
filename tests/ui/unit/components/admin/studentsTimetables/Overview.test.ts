@@ -40,7 +40,7 @@ describe('Students timetable overview', () => {
         expect(ctx.updated).toBe(true)
         expect(ctx.timetableUpdatePending).toBe(true)
 
-        vi.advanceTimersByTime(150)
+        vi.advanceTimersByTime(1)
 
         expect(ctx.timetableUpdatePending).toBe(false)
 
@@ -125,6 +125,7 @@ describe('Students timetable overview', () => {
                 { value: 5 },
             ],
             semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
             courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
@@ -244,6 +245,7 @@ describe('Students timetable overview', () => {
                 { label: 'Sa', value: 6 },
             ],
             semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
             selectedCourseFilterChips: methods.selectedCourseFilterChips,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
             courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
@@ -264,6 +266,7 @@ describe('Students timetable overview', () => {
             courseMenuEntryKeys: methods.courseMenuEntryKeys,
             courseMenuEntryHasOverlap: methods.courseMenuEntryHasOverlap,
             selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
             courseMenuEntriesOverlap: methods.courseMenuEntriesOverlap,
             courseGroupsOverlap: methods.courseGroupsOverlap,
         }
@@ -326,8 +329,10 @@ describe('Students timetable overview', () => {
                 { label: 'Sa', value: 6 },
             ],
             semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
             selectedCourseFilterChips: methods.selectedCourseFilterChips,
             selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
             courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
@@ -443,6 +448,7 @@ describe('Students timetable overview', () => {
             ],
             configuredSchoolHours: [],
             semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
             courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
@@ -688,6 +694,7 @@ describe('Students timetable overview', () => {
             courseGroupsForCell: methods.courseGroupsForCell,
             courseGroupMatchesSelectedRecurrenceWeek: methods.courseGroupMatchesSelectedRecurrenceWeek,
             recurrenceWeekOptions: methods.recurrenceWeekOptions,
+            buildRecurrenceWeekOptions: methods.buildRecurrenceWeekOptions,
             timetableSelectorOptions: methods.timetableSelectorOptions,
             allDatesOption: methods.allDatesOption,
             selectedRecurrenceWeek: methods.selectedRecurrenceWeek,
@@ -698,6 +705,7 @@ describe('Students timetable overview', () => {
             toggleRecurrenceWeeks: methods.toggleRecurrenceWeeks,
             visibleTimetableWeeks: methods.visibleTimetableWeeks,
             extraDatesOptions: methods.extraDatesOptions,
+            buildExtraDatesOptions: methods.buildExtraDatesOptions,
             shouldShowExtraDatesNotice: methods.shouldShowExtraDatesNotice,
             showExtraDatesInSelectedWeek: methods.showExtraDatesInSelectedWeek,
             setShowExtraDatesInSelectedWeek: methods.setShowExtraDatesInSelectedWeek,
@@ -707,7 +715,9 @@ describe('Students timetable overview', () => {
             courseGroupRecurrenceWeek: methods.courseGroupRecurrenceWeek,
             semesterStartDate: methods.semesterStartDate,
             selectedCourseMenuEntries: methods.selectedCourseMenuEntries,
+            buildSelectedCourseMenuEntries: methods.buildSelectedCourseMenuEntries,
             semesterCourseMenus: methods.semesterCourseMenus,
+            buildSemesterCourseMenus: methods.buildSemesterCourseMenus,
             courseGroupMenuLabel: methods.courseGroupMenuLabel,
             courseMenuEntryScheduleLabelWithFrequency: methods.courseMenuEntryScheduleLabelWithFrequency,
             courseMenuEntryScheduleLabel: methods.courseMenuEntryScheduleLabel,
@@ -872,6 +882,7 @@ describe('Students timetable overview', () => {
     it('builds recurrence week selector options from the largest selected interval', () => {
         const methods = (Overview as any).methods
         const ctx = {
+            buildRecurrenceWeekOptions: methods.buildRecurrenceWeekOptions,
             selectedCourseMenuEntries: () => [
                 {
                     courseGroups: [
