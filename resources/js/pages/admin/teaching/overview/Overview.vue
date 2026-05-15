@@ -42,7 +42,7 @@
     </v-col>
 
 
-    <v-col cols="12" md="6" lg="7" xl="4" v-if="selected_course && ((!isGradesMode && show_students) || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+    <v-col cols="12" :md="isGradesMode ? 8 : 6" :lg="isGradesMode ? 7 : 7" :xl="isGradesMode ? 6 : 4" v-if="selected_course && ((!isGradesMode && show_students) || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
         <v-row v-if="show_students">
             <v-col>
                 <CourseDates compact-student-view />

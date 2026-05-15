@@ -60,46 +60,44 @@
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
-                <v-list density="compact">
+                <v-list density="compact" class="course-dates-grid">
                     <template v-for="(courseDate, cdIdx) in displayedCourseDates" :key="courseDate.id">
-                    <v-divider v-if="cdIdx > 0" class="course-date-divider" />
                     <v-list-item
+                        :ref="highlightedDateId === courseDate.id ? 'highlightedDateItem' : undefined"
                         :disabled="(isEditingContent && editing_content_id !== courseDate.id) || isSavingContent"
                         :class="courseDateRowClass(courseDate)"
                         :style="courseDateHighlightStyle(courseDate, cdIdx)">
-                        <div class="d-flex flex-column ga-2 w-100 cursor-pointer" @click="selectCourseDate(courseDate)">
-                            <div class="course-date-row d-flex align-center ga-2 w-100">
-                                <v-chip
-                                    v-if="highlightedDateId === courseDate.id"
-                                    size="x-small"
-                                    :color="isDateToday(courseDate) ? 'success' : 'primary'"
-                                    variant="flat"
-                                    class="course-date-icon font-weight-bold px-2">
-                                    {{ isDateToday(courseDate) ? 'Heute' : 'Nächster' }}
-                                </v-chip>
-                                <v-chip
-                                    size="x-small"
-                                    variant="tonal"
-                                    :color="selected_courseDate?.id === courseDate.id ? 'primary' : (highlightedDateId === courseDate.id ? 'success' : 'primary')"
-                                    class="course-date-chip cursor-pointer"
-                                    @click.stop="selectCourseDate(courseDate)">
-                                    {{ getWeekday(courseDate.date) }}
-                                </v-chip>
-                                <v-chip
-                                    size="x-small"
-                                    :variant="selected_courseDate?.id === courseDate.id ? 'flat' : (highlightedDateId === courseDate.id ? 'flat' : 'outlined')"
-                                    :color="selected_courseDate?.id === courseDate.id ? 'primary' : (highlightedDateId === courseDate.id ? 'success' : undefined)"
-                                    class="course-date-chip cursor-pointer"
-                                    @click.stop="selectCourseDate(courseDate)">
-                                    {{ formatDate(courseDate.date) }}
-                                </v-chip>
-                                <div class="course-date-hours text-body-2 flex-grow-1">
-                                    <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
-                                    <v-chip v-if="hasStatus(courseDate, 'free') && courseDate.free_reason" size="x-small" color="success" variant="outlined">
-                                        {{ courseDate.free_reason }}
-                                    </v-chip>
+                        <div class="d-flex flex-column ga-2 w-100 h-100 cursor-pointer" @click="selectCourseDate(courseDate)">
+                            <div class="course-date-header d-flex align-start ga-2 w-100">
+                                <div class="course-date-left d-flex flex-column">
+                                    <div class="d-flex align-center ga-2">
+                                        <div class="course-date-title">
+                                            {{ getWeekday(courseDate.date) }}, {{ formatDate(courseDate.date) }}
+                                        </div>
+                                        <v-chip
+                                            v-if="highlightedDateId === courseDate.id"
+                                            size="x-small"
+                                            :color="isDateToday(courseDate) ? 'success' : 'primary'"
+                                            variant="flat"
+                                            class="course-date-icon font-weight-bold px-2">
+                                            {{ isDateToday(courseDate) ? 'Heute' : 'Nächster' }}
+                                        </v-chip>
+                                    </div>
+                                    <div class="course-date-hours text-caption text-medium-emphasis d-flex align-center ga-1 mt-1">
+                                        <v-chip v-for="h in courseDate.hours" :key="h" size="x-small" variant="tonal" class="mr-1">{{ h }}. Std</v-chip>
+                                        <v-chip v-if="hasStatus(courseDate, 'free') && courseDate.free_reason" size="x-small" color="success" variant="outlined">
+                                            {{ courseDate.free_reason }}
+                                        </v-chip>
+                                    </div>
                                 </div>
-                                <div class="course-date-actions d-flex align-center ga-1" @click.stop>
+                                <div class="course-date-actions d-flex align-center ga-1 ml-auto flex-shrink-0" @click.stop>
+                                    <v-btn
+                                        icon="mdi-account-group"
+                                        size="x-small"
+                                        color="indigo"
+                                        variant="tonal"
+                                        title="Schülerliste anzeigen"
+                                        @click="switchToStudents(courseDate)" />
                                     <v-icon
                                         v-if="isAttendanceChecked(courseDate)"
                                         size="18"
@@ -167,16 +165,14 @@
                                         :disabled="isBusyDateUi"
                                         :loading="isDateMutationPending('delete-date', courseDate.id)"
                                         @click="deleteDate(courseDate)" />
+                                    </div>
                                 </div>
-                            </div>
                             <div
-                                v-if="courseDateInlineContent(courseDate) || courseDateAdoptedMaterials(courseDate).length || curriculumEntriesForCourseDate(courseDate).length"
+                                v-if="courseDateHasContent(courseDate) || courseDateAdoptedMaterials(courseDate).length"
                                 class="course-date-curriculum-inline pl-1 pr-2"
                                 @click.stop>
                                 <div class="course-date-curriculum-stack">
-                                    <div v-if="courseDateInlineContent(courseDate)" class="course-date-curriculum-stack__content">
-                                        {{ courseDateInlineContent(courseDate) }}
-                                    </div>
+                                    <div v-if="courseDateHasContent(courseDate)" class="course-date-curriculum-stack__content" v-html="courseDateDisplayHtml(courseDate)"></div>
                                     <div
                                         v-for="group in courseDateAdoptedMaterialGroups(courseDate)"
                                         :key="`${courseDate.id}-adopted-group-${group.key}`"
@@ -252,9 +248,16 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div v-if="curriculumEntriesForCourseDate(courseDate).length" class="course-date-curriculum-divider">
-                                        <span class="course-date-curriculum-divider__label">CURRICULUM</span>
-                                    </div>
+                                </div>
+                            </div>
+                            <div
+                                v-if="curriculumEntriesForCourseDate(courseDate).length"
+                                class="course-date-curriculum-bottom pl-1 pr-2 mt-auto"
+                                @click.stop>
+                                <div class="course-date-curriculum-divider">
+                                    <span class="course-date-curriculum-divider__label">CURRICULUM</span>
+                                </div>
+                                <div class="course-date-curriculum-stack">
                                     <div
                                         v-for="(entry, entryIndex) in curriculumEntriesForCourseDate(courseDate)"
                                         :key="`${courseDate.id}-inline-${entryIndex}`"
@@ -610,6 +613,10 @@ export default {
         this.activeSemester = this.config?.user?.teaching_active_semester || 1
     },
 
+    mounted() {
+        this.scrollToHighlightedDate()
+    },
+
     unmounted() {
         this.courseDateStore.clearDates()
     },
@@ -662,7 +669,7 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'show_dates']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'show_dates', 'show_students']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
         selectedCourseClasses() {
             const classes = this.selected_course?.classes
@@ -831,6 +838,9 @@ export default {
     },
 
     watch: {
+        show_dates(visible) {
+            if (visible) this.scrollToHighlightedDate()
+        },
         selected_course: {
             immediate: true,
             async handler(course) {
@@ -880,6 +890,15 @@ export default {
     },
 
     methods: {
+        scrollToHighlightedDate() {
+            this.$nextTick(() => {
+                setTimeout(() => {
+                    const ref = this.$refs.highlightedDateItem
+                    const el = Array.isArray(ref) ? ref[0]?.$el : ref?.$el
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }, 150)
+            })
+        },
         async loadSelectedCourseCurriculumDetail() {
             const curriculumId = this.selectedCourseCurriculumId
             if (!curriculumId || !this.curriculumStore) {
@@ -1120,6 +1139,17 @@ export default {
                 .map((line) => `<p>${line || '<br>'}</p>`)
                 .join('')
         },
+        courseDateHasContent(courseDate) {
+            return !!String(courseDate?.content || '').trim()
+        },
+        courseDateDisplayHtml(courseDate) {
+            const content = String(courseDate?.content || '').trim()
+            if (!content) return ''
+            const allowedTags = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'code', 'a', 'span', 'div', 'sub', 'sup']
+            const tagPattern = allowedTags.map(t => `${t}(\\s[^>]*)?`).join('|')
+            const regex = new RegExp(`<(?!\\/?(${tagPattern})\\s*\\/?>)[^>]+>`, 'gi')
+            return content.replace(regex, '')
+        },
         courseDateInlineContent(courseDate) {
             const content = String(courseDate?.content || '').trim()
             if (!content) {
@@ -1131,7 +1161,8 @@ export default {
                 .replace(/<\/p>/gi, '\n')
                 .replace(/<[^>]+>/g, ' ')
                 .replace(/&nbsp;/gi, ' ')
-                .replace(/\s+/g, ' ')
+                .replace(/[^\S\n]+/g, ' ')
+                .replace(/\n /g, '\n')
                 .trim()
         },
         toDateString(date) {
@@ -1199,10 +1230,14 @@ export default {
             return courseDate.date === this.toDateString(today)
         },
         courseDateRowClass(courseDate) {
-            if (this.hasStatus(courseDate, 'pruefung')) return 'course-date-row--exam'
-            if (this.hasStatus(courseDate, 'free')) return 'course-date-row--free'
-            if (this.hasStatus(courseDate, 'entfaellt')) return 'course-date-row--entfaellt'
-            return ''
+            const classes = []
+            if (this.hasStatus(courseDate, 'pruefung')) classes.push('course-date-row--exam')
+            if (this.hasStatus(courseDate, 'free')) classes.push('course-date-row--free')
+            if (this.hasStatus(courseDate, 'entfaellt')) classes.push('course-date-row--entfaellt')
+            if (this.highlightedDateId === courseDate.id) {
+                classes.push(this.isDateToday(courseDate) ? 'course-date-row--today' : 'course-date-row--next')
+            }
+            return classes
         },
         courseDateHighlightStyle(courseDate, index) {
             if (this.selected_courseDate?.id === courseDate.id) {
@@ -1218,6 +1253,13 @@ export default {
                 return { backgroundColor: '#f5f5f5' }
             }
             return {}
+        },
+        switchToStudents(courseDate) {
+            this.selected_courseDate = courseDate
+            this.show_students = true
+            this.show_dates = false
+            const query = { ...this.$route.query, date: String(courseDate.id), panel: 'students' }
+            this.$router.replace({ query }).catch(() => {})
         },
         selectCourseDate(courseDate) {
             if (this.isBusyDateUi) return
@@ -1726,14 +1768,36 @@ export default {
 </script>
 
 <style scoped>
-.v-list-item {
-    border: 2px solid transparent;
-    border-radius: 8px;
+.course-dates-grid {
+    padding: 8px;
+    gap: 20px;
 }
 
-.course-date-divider {
-    border-color: #1565c0 !important;
-    opacity: 1;
+@media (min-width: 900px) {
+    .course-dates-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-items: stretch;
+    }
+}
+
+.v-list-item {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 12px;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    align-items: flex-start;
+}
+
+.v-list-item :deep(.v-list-item__content) {
+    width: 100%;
+    height: 100%;
+}
+
+.v-list-item:hover {
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
 .content-readonly :deep(textarea),
@@ -1755,16 +1819,25 @@ export default {
     align-items: flex-start;
 }
 
+.course-date-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #1e293b;
+}
+
+@media (min-width: 600px) {
+    .course-date-title {
+        font-size: 1rem;
+    }
+}
+
 .course-date-icon {
     flex: 0 0 auto;
 }
 
-.course-date-chip {
-    flex: 0 0 auto;
-}
-
 .course-date-hours {
-    min-width: 120px;
+    min-width: 0;
 }
 
 .course-date-actions {
@@ -1823,10 +1896,35 @@ export default {
 }
 
 .course-date-curriculum-stack__content {
-    color: rgba(var(--v-theme-on-surface), 0.78);
-    font-size: 0.78rem;
-    line-height: 1.3;
+    color: rgba(var(--v-theme-on-surface), 0.85);
+    font-size: 0.88rem;
+    line-height: 1.4;
     overflow-wrap: anywhere;
+}
+
+.course-date-curriculum-stack__content :deep(p) {
+    margin: 0 0 0.25em;
+}
+
+.course-date-curriculum-stack__content :deep(ul),
+.course-date-curriculum-stack__content :deep(ol) {
+    margin: 0 0 0.25em;
+    padding-left: 1.5em;
+}
+
+.course-date-curriculum-stack__content :deep(h1),
+.course-date-curriculum-stack__content :deep(h2),
+.course-date-curriculum-stack__content :deep(h3),
+.course-date-curriculum-stack__content :deep(h4) {
+    font-size: 0.92rem;
+    font-weight: 700;
+    margin: 0 0 0.2em;
+}
+
+.course-date-curriculum-stack__content :deep(blockquote) {
+    border-left: 3px solid rgba(var(--v-theme-primary), 0.3);
+    padding-left: 8px;
+    margin: 0.25em 0;
 }
 
 .course-date-curriculum-stack__adopted-group {
@@ -1870,16 +1968,14 @@ export default {
     padding-left: 8px;
 }
 
-@media (max-width: 700px) {
-    .course-date-hours {
-        flex-basis: 100%;
-        min-width: 100%;
-        margin-top: 2px;
-        order: 2;
+@media (max-width: 599px) {
+    .course-date-header {
+        flex-wrap: wrap;
     }
 
     .course-date-actions {
-        order: 1;
+        flex-basis: 100%;
+        margin-left: 0;
     }
 
     .course-date-curriculum-chip {
@@ -1889,28 +1985,30 @@ export default {
 }
 
 .course-date-row--exam {
-    background-color: #ffebee !important;
-    border-left: 4px solid #ff5722;
+    background: linear-gradient(180deg, #fff3e0 0%, #ffe0b2 100%) !important;
+    border-left: 4px solid #ff9800;
 }
 
 .course-date-row--free {
-    background-color: #c8e6c9 !important;
+    background: linear-gradient(180deg, #e8f5e9 0%, #c8e6c9 100%) !important;
     border-left: 4px solid #4caf50;
 }
 
 .course-date-row--entfaellt {
-    background-color: #c8e6c9 !important;
+    background: linear-gradient(180deg, #e8f5e9 0%, #c8e6c9 100%) !important;
     border-left: 4px solid #4caf50;
 }
 
 .course-date-row--today {
-    background-color: #c8e6c9 !important;
-    border-left: 5px solid #2e7d32;
+    background: linear-gradient(180deg, #bbdefb 0%, #90caf9 100%) !important;
+    border: 2px solid #1565c0 !important;
+    box-shadow: 0 0 12px rgba(21, 101, 192, 0.35);
 }
 
 .course-date-row--next {
-    background-color: #e3f2fd !important;
-    border-left: 5px solid #1565c0;
+    background: linear-gradient(180deg, #c5cae9 0%, #9fa8da 100%) !important;
+    border: 2px solid #3f51b5 !important;
+    box-shadow: 0 0 12px rgba(63, 81, 181, 0.35);
 }
 
 .course-date-material-icon {
