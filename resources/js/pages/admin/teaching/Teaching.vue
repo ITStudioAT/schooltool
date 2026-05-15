@@ -596,13 +596,17 @@ export default {
             this.selected_courseDate = null
             this.selected_course = course
             this.selected_course_id = course.id
-            this.$router.replace({ query: { course: String(course.id) } }).catch(() => {})
+            const query = { course: String(course.id) }
+            if (this.$route.query.grades) query.grades = this.$route.query.grades
+            this.$router.replace({ query }).catch(() => {})
         },
         handleCourseClear() {
             this.selected_course = null
             this.selected_course_id = null
             this.selected_courseDate = null
-            this.$router.replace({ query: {} }).catch(() => {})
+            const query = {}
+            if (this.$route.query.grades) query.grades = this.$route.query.grades
+            this.$router.replace({ query }).catch(() => {})
         },
         async handleDeleteCourse() {
             if (!this.selected_course) {

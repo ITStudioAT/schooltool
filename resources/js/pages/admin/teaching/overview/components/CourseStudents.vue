@@ -134,7 +134,7 @@
                     </v-card-text>
                     <v-divider />
                     <v-card-text class="pa-0" v-if="!isDayOverviewMode">
-                        <v-list density="compact">
+                        <v-list density="compact" class="students-grid">
                             <v-list-item
                                 v-for="student in sortedSelectedStudents"
                                 :key="student.id"
@@ -167,23 +167,22 @@
                                         class="student-name"
                                         :class="[show_bulk_entry ? '' : 'cursor-pointer', studentNameClass(student)]"
                                         @click="show_bulk_entry ? null : openStudent(student)">
-                                        <div class="text-body-2">
+                                        <div class="student-name-text">
                                             {{ student.last_name }}, {{ student.first_name }}
                                         </div>
-                                        <div v-if="studentEmailText(student) || studentLastLoginText(student)" class="student-meta text-caption text-medium-emphasis">
-                                            <span v-if="studentEmailText(student)" class="d-inline-flex align-center ga-1">
-                                                {{ studentEmailText(student) }}
-                                                <v-icon
-                                                    size="13"
-                                                    class="cursor-pointer"
-                                                    :color="copiedEmailId === student.id ? 'success' : undefined"
-                                                    :title="copiedEmailId === student.id ? 'Kopiert!' : 'E-Mail kopieren'"
-                                                    @click.stop="copyEmail(student)">
-                                                    {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
-                                                </v-icon>
-                                            </span>
-                                            <span v-if="studentEmailText(student) && studentLastLoginText(student)" class="student-meta-separator">•</span>
-                                            <span v-if="studentLastLoginText(student)">{{ studentLastLoginText(student) }}</span>
+                                        <div v-if="studentEmailText(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
+                                            {{ studentEmailText(student) }}
+                                            <v-icon
+                                                size="13"
+                                                class="cursor-pointer"
+                                                :color="copiedEmailId === student.id ? 'success' : undefined"
+                                                :title="copiedEmailId === student.id ? 'Kopiert!' : 'E-Mail kopieren'"
+                                                @click.stop="copyEmail(student)">
+                                                {{ copiedEmailId === student.id ? 'mdi-check' : 'mdi-content-copy' }}
+                                            </v-icon>
+                                        </div>
+                                        <div v-if="studentLastLoginText(student)" class="student-meta-line text-caption text-medium-emphasis">
+                                            {{ studentLastLoginText(student) }}
                                         </div>
                                     </div>
                                     <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
@@ -1436,10 +1435,36 @@ export default {
 </script>
 
 <style scoped>
+.students-grid {
+    padding: 8px;
+    gap: 8px;
+}
+
+@media (min-width: 900px) {
+    .students-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
 .student-row {
     min-width: 0;
     min-height: 64px;
-    padding: 8px 0;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 12px;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.student-row:hover {
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.student-row--canceled {
+    background: linear-gradient(180deg, #fefce8 0%, #fef9c3 100%);
+    border-color: rgba(234, 179, 8, 0.2);
 }
 
 .student-name--canceled {
@@ -1465,6 +1490,13 @@ export default {
     overflow-wrap: anywhere;
 }
 
+.student-name-text {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #1e293b;
+}
+
 .student-name {
     min-width: 0;
     flex: 0 1 auto;
@@ -1472,15 +1504,8 @@ export default {
     word-break: break-word;
 }
 
-.student-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-}
-
-.student-meta-separator {
-    opacity: 0.7;
+.student-meta-line {
+    line-height: 1.4;
 }
 
 .student-metrics {
