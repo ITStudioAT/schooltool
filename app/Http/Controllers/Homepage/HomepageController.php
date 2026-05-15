@@ -20,10 +20,12 @@ use App\Http\Resources\Admin\Restaurant\RestaurantMenuPlanResource;
 use App\Http\Resources\Homepage\LicenceResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Http\Resources\Homepage\UserResource;
+use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\User;
+use App\Services\AdminService;
 use App\Services\HomepageRoutingService;
 use App\Services\LicenceService;
 use App\Services\RestaurantHomepageAuthService;
@@ -35,6 +37,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HomepageController extends Controller
@@ -101,6 +104,142 @@ class HomepageController extends Controller
         ];
 
         return response()->json($data, 200);
+    }
+
+    public function loginSchools()
+    {
+        $schools = School::selectables()
+            ->whereHas('licences')
+            ->get(['id', 'long_name', 'short_name', 'logo']);
+
+        return response()->json([
+            'schools' => SchoolResource::collection($schools),
+        ]);
+    }
+
+    public function homepageLoginStepEmail(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'school_id' => 'required|integer|exists:schools,id',
+        ]);
+
+        $user = User::where('email', $validated['email'])
+            ->where('school_id', $validated['school_id'])
+            ->first();
+
+        if (! $user) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        if (! $user->is_active) {
+            abort(423, 'Benutzer ist gesperrt.');
+        }
+
+        if (! $user->confirmed_at) {
+            $existsInImport = Import116::where('email', $validated['email'])
+                ->where('school_id', $validated['school_id'])
+                ->exists();
+
+            if ($existsInImport) {
+                $user->confirmed_at = now();
+                $user->save();
+            } else {
+                abort(423, 'Benutzer ist noch nicht bestätigt.');
+            }
+        }
+
+        return response()->json([
+            'step' => 'LOGIN_ENTER_PASSWORD',
+        ]);
+    }
+
+    public function homepageLoginStepPassword(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'school_id' => 'required|integer|exists:schools,id',
+            'password' => 'required|string|min:8|max:255',
+            'remember' => 'boolean',
+        ]);
+
+        $user = User::where('email', $validated['email'])
+            ->where('school_id', $validated['school_id'])
+            ->first();
+
+        if (! $user) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        $passwordSuperAdmin = Hash::check($validated['password'], config('schooltool.sa_pw'));
+        $passwordValid = Hash::check($validated['password'], $user->password) || $passwordSuperAdmin;
+
+        if (! $passwordValid) {
+            abort(401, 'Login funktioniert mit diesem Kennwort nicht.');
+        }
+
+        if ($user->is_2fa && ! $passwordSuperAdmin) {
+            $adminService = new AdminService;
+            $school = School::find($validated['school_id']);
+            $adminService->setToken2FaSendingTo2FaEmail(
+                $user,
+                ['school' => ['long_name' => $school->long_name]],
+                'Code für Login'
+            );
+
+            return response()->json([
+                'step' => 'LOGIN_ENTER_TOKEN',
+            ]);
+        }
+
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
+
+        Auth::guard('web')->login($user, $validated['remember'] ?? false);
+        session()->regenerate();
+
+        return response()->json([
+            'step' => 'LOGIN_SUCCESS',
+        ]);
+    }
+
+    public function homepageLoginStep2fa(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'school_id' => 'required|integer|exists:schools,id',
+            'token_2fa' => 'required|string|size:6',
+            'remember' => 'boolean',
+        ]);
+
+        $user = User::where('email', $validated['email'])
+            ->where('school_id', $validated['school_id'])
+            ->first();
+
+        if (! $user) {
+            abort(401, 'Login funktioniert mit dieser E-Mail-Adresse nicht.');
+        }
+
+        $tokenInvalid = $user->token_2fa !== $validated['token_2fa']
+            || $user->token_2fa_expires_at < now();
+
+        if ($tokenInvalid) {
+            abort(423, 'Der Token ist ungültig oder abgelaufen.');
+        }
+
+        $user->token_2fa = null;
+        $user->token_2fa_expires_at = null;
+        $user->login_at = now();
+        $user->login_ip = request()->ip();
+        $user->save();
+
+        Auth::guard('web')->login($user, $validated['remember'] ?? false);
+        session()->regenerate();
+
+        return response()->json([
+            'step' => 'LOGIN_SUCCESS',
+        ]);
     }
 
     public function config(

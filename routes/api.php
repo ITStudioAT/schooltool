@@ -94,6 +94,10 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     Route::post('/admin/execute_logout', [AdminController::class, 'executeLogout']);
 
     /***** HOMEPAGE ROUTES *****/
+    Route::get('/homepage/login_schools', [HomepageController::class, 'loginSchools']);
+    Route::post('/homepage/login_step_email', [HomepageController::class, 'homepageLoginStepEmail']);
+    Route::post('/homepage/login_step_password', [HomepageController::class, 'homepageLoginStepPassword']);
+    Route::post('/homepage/login_step_2fa', [HomepageController::class, 'homepageLoginStep2fa']);
     Route::get('/homepage/config', [HomepageController::class, 'config']);
     Route::get('/homepage/load_schools_for_tool', [HomepageController::class, 'loadSchoolsForTool']);
     Route::get('/homepage/restaurant/menu-plans', [HomepageController::class, 'restaurantMenuPlans']);

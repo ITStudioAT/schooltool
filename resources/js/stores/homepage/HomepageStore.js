@@ -28,6 +28,85 @@ export const useHomepageStore = defineStore('HomepageStore', {
     },
 
     actions: {
+        async loadLoginSchools() {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                const response = await axios.get('/api/homepage/login_schools')
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async homepageLoginStepEmail(email, school_id) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                const response = await axios.post('/api/homepage/login_step_email', { email, school_id })
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async homepageLoginStepPassword(email, school_id, password, remember) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                const response = await axios.post('/api/homepage/login_step_password', { email, school_id, password, remember })
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
+        async homepageLoginStep2fa(email, school_id, token_2fa, remember) {
+            const notification = useNotificationStore()
+            this.is_loading++
+            try {
+                await axios.get('/sanctum/csrf-cookie')
+                const response = await axios.post('/api/homepage/login_step_2fa', { email, school_id, token_2fa, remember })
+                return response.data
+            } catch (error) {
+                notification.notify({
+                    status: error.response?.status || 500,
+                    message: error.response?.data?.message || 'Fehler passiert.',
+                    type: 'error',
+                    timeout: 3000,
+                })
+                return false
+            } finally {
+                this.is_loading--
+            }
+        },
+
         async loadConfig(school = null, app = null) {
             const notification = useNotificationStore()
             this.is_loading++

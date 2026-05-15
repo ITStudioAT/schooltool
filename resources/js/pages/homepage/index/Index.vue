@@ -5,13 +5,13 @@
             <div class="hero-bg-image st-cloudflare-bg-image"></div>
         </div>
 
-        <!-- Hero Section -->
-        <section class="hero-section" v-if="step === ''">
+        <!-- Step: Select School -->
+        <section class="hero-section" v-if="step === 'selectSchool'">
             <div class="hero-content st-shell-1440">
                 <header class="cloud-header">
                     <div class="cloud-header-left">
                         <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
-                        <nav class="cloud-header-nav" aria-label="Dummy Navigation">
+                        <nav class="cloud-header-nav" aria-label="Navigation">
                             <a href="/documentation" target="_blank" rel="noopener noreferrer" class="cloud-nav-item">Dokumentation</a>
                         </nav>
                     </div>
@@ -31,16 +31,113 @@
                     </p>
                 </div>
 
-                <!-- Feature Cards -->
                 <div class="tools-container">
-                    <h2 class="section-title">Wählen Sie Ihr Werkzeug</h2>
+                    <h2 class="section-title">Wählen Sie Ihre Schule</h2>
+
+                    <!-- Cards mode (up to 6 schools) -->
+                    <div class="tools-grid" v-if="login_schools.length <= 6">
+                        <div
+                            v-for="school in login_schools"
+                            :key="school.id"
+                            class="tool-card"
+                            @click="selectLoginSchool(school)"
+                            tabindex="0"
+                            @keydown.enter="selectLoginSchool(school)"
+                        >
+                            <div class="card-glow"></div>
+                            <div class="card-content">
+                                <div class="card-icon school-select-icon" :class="[school.logo ? 'school-select-icon--has-logo' : 'school-select-icon--no-logo', schoolLogoDarkFlags[school.id] ? 'school-select-icon--dark-logo' : '']">
+                                    <img v-if="school.logo" :src="'/storage/images/' + school.logo" :alt="school.long_name" class="school-select-logo-img" crossorigin="anonymous" @load="analyzeSchoolCardLogo($event, school.id)" />
+                                    <v-icon v-else size="40">mdi-school</v-icon>
+                                </div>
+                                <h3 class="card-title school-card-title">{{ school.long_name }}</h3>
+                                <p class="card-description school-card-short">{{ school.short_name || '&nbsp;' }}</p>
+                                <div class="card-action">
+                                    <span class="action-text">Auswählen</span>
+                                    <v-icon size="20">mdi-arrow-right</v-icon>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search mode (more than 6 schools) -->
+                    <div v-else class="school-search-wrap">
+                        <v-autocomplete
+                            v-model="selected_login_school_id"
+                            :items="login_schools"
+                            item-title="long_name"
+                            item-value="id"
+                            label="Schule suchen …"
+                            variant="outlined"
+                            density="comfortable"
+                            prepend-inner-icon="mdi-magnify"
+                            auto-select-first
+                            bg-color="white"
+                            class="school-search-field"
+                        />
+                        <v-btn
+                            color="success"
+                            flat
+                            size="large"
+                            :disabled="!selected_login_school_id"
+                            @click="selectLoginSchoolById(selected_login_school_id)"
+                        >Weiter</v-btn>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step: School Selected — show licensed tools -->
+        <section class="hero-section" v-if="step === 'schoolSelected'">
+            <div class="hero-content st-shell-1440">
+                <header class="cloud-header">
+                    <div class="cloud-header-left">
+                        <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
+                        <nav class="cloud-header-nav" aria-label="Navigation">
+                            <a href="/documentation" target="_blank" rel="noopener noreferrer" class="cloud-nav-item">Dokumentation</a>
+                        </nav>
+                    </div>
+                </header>
+
+                <div class="cloud-hero-copy">
+                    <h2 class="cloud-hero-title">
+                        <div>Schulalltag?
+                            <span class="text-white">Organisiert!</span>
+                        </div>
+                    </h2>
+                    <p class="cloud-hero-description mt-8">
+                        Wir machen Schulprozesse schneller, einfacher und übersichtlicher. Unsere modulare Plattform bringt Ordnung in den Schulalltag, und SchoolTool ist der beste
+                        Ort, um Schule digital zu organisieren.
+                    </p>
+                </div>
+
+                <div class="school-logo-banner" v-if="selected_login_school?.logo">
+                    <div class="school-logo-box" :class="{ 'school-logo-box--dark': logoNeedsDarkBg }">
+                        <img
+                            :src="'/storage/images/' + selected_login_school.logo"
+                            :alt="selected_login_school.long_name"
+                            class="school-logo-img"
+                            crossorigin="anonymous"
+                            @load="analyzeLogoBrightness"
+                        />
+                    </div>
+                </div>
+
+                <div class="tools-container">
+                    <div class="tools-header">
+                        <v-btn variant="text" size="small" class="back-to-schools" @click="backToSchoolSelection">
+                            <v-icon start size="18">mdi-arrow-left</v-icon>
+                            Andere Schule
+                        </v-btn>
+                        <h2 class="section-title mb-0">{{ selected_login_school?.long_name }}</h2>
+                    </div>
 
                     <div class="tools-grid">
                         <!-- Anmeldetool Card -->
                         <div
                             class="tool-card card-register"
                             :class="{ 'card-disabled': isRegisterDisabled }"
-                            @click="handleToolCardClick('Anmeldetool')"
+                            @click="openToolForSchool('Anmeldetool')"
                             v-if="canShowRegister">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -64,7 +161,7 @@
                         <div
                             class="tool-card card-tutoring"
                             :class="{ 'card-disabled': isTutoringDisabled }"
-                            @click="handleToolCardClick('Nachhilfetool')"
+                            @click="openToolForSchool('Nachhilfetool')"
                             v-if="canShowTutoring">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -85,7 +182,7 @@
                         </div>
 
                         <!-- Unterricht Card -->
-                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': isTeachingDisabled }" @click="openUnterricht()" v-if="canShowTeaching">
+                        <div class="tool-card card-lernportal" :class="{ 'card-disabled': isTeachingDisabled }" @click="openToolForSchool('Lehrertool')" v-if="canShowTeaching">
                             <div class="card-glow"></div>
                             <div class="card-content">
                                 <div class="card-icon">
@@ -104,11 +201,11 @@
                             </div>
                         </div>
 
-                        <!-- Mittagsmenüs Card -->
+                        <!-- Restaurant Card -->
                         <div
                             class="tool-card card-lunch"
                             :class="{ 'card-disabled': isRestaurantDisabled }"
-                            @click="openRestaurant()"
+                            @click="openToolForSchool('Restaurant')"
                             v-if="canShowRestaurant">
                             <div class="card-glow"></div>
                             <div class="card-content">
@@ -127,105 +224,101 @@
                                 </div>
                             </div>
                         </div>
-                        <a v-if="false" href="/homepage/restaurant" class="tool-card card-lunch">
-                            <div class="card-glow"></div>
-                            <div class="card-content">
-                                <div class="card-icon">
-                                    <v-icon size="40">mdi-food</v-icon>
-                                </div>
-                                <h3 class="card-title">Mittagsmenüs</h3>
-                                <p class="card-description">Online-Bestellung für das Schulbuffet. Schnell und unkompliziert.</p>
-                                <div class="card-action">
-                                    <span class="action-text">Zum Buffet</span>
-                                    <v-icon size="20">mdi-open-in-new</v-icon>
-                                </div>
-                            </div>
-                        </a>
                     </div>
-                </div>
 
-                <!-- Documentation Link 
-                <div class="docs-section">
-                    <a href="/documentation" class="docs-link">
-                        <v-icon size="24">mdi-book-open-page-variant</v-icon>
-                        <span>Handbuch & Dokumentation</span>
-                    </a>
                 </div>
-                -->
             </div>
         </section>
 
-        <!-- School Selection Step (temporarily hidden) -->
-        <section class="selection-section" v-if="step === 'selectSchool'">
-            <div class="selection-container">
-                <v-card class="selection-card" elevation="12">
-                    <div class="selection-header" :class="licence?.name === 'Anmeldetool' ? 'header-green' : 'header-orange'">
-                        <v-btn icon variant="text" class="back-btn" @click="abort('')">
-                            <v-icon>mdi-arrow-left</v-icon>
-                        </v-btn>
-                        <div class="header-content">
-                            <v-icon size="32" class="header-icon">
-                                {{ licence?.name === 'Anmeldetool' ? 'mdi-calendar-check' : 'mdi-account-group' }}
-                            </v-icon>
-                            <h2 class="header-title">{{ licence?.name }}</h2>
-                            <p class="header-subtitle">{{ licence?.long_name }}</p>
+        <!-- Step: Login -->
+        <section class="hero-section" v-if="step === 'login'">
+            <div class="hero-content st-shell-1440">
+                <header class="cloud-header">
+                    <div class="cloud-header-left">
+                        <img src="/storage/images/schooltool/schooltool-wordmark.svg" alt="SchoolTool" class="st-header-logo" />
+                    </div>
+                </header>
+
+                <div class="login-hero-header">
+                    <v-icon :size="64" class="login-hero-icon">{{ loginToolIcon }}</v-icon>
+                    <h1 class="login-hero-tool">{{ loginToolLabel }}</h1>
+                    <p class="login-hero-school">{{ selected_login_school?.long_name }}</p>
+                </div>
+
+                <div class="login-center">
+                    <div class="login-card">
+                        <div class="login-card-logo">
+                            <img src="/storage/images/schooltool/schooltool-mark.svg" alt="SchoolTool" class="login-mark" />
+                        </div>
+
+                        <!-- Sub-step: Enter Email -->
+                        <div class="login-card-body" v-if="loginStep === 'EMAIL'">
+                            <h2 class="login-step-title">Anmelden</h2>
+                            <p class="login-step-hint">Bitte die E-Mail-Adresse eingeben</p>
+                            <v-form ref="loginForm" v-model="loginFormValid" @submit.prevent="doLoginStepEmail()">
+                                <v-text-field
+                                    autofocus
+                                    v-model="loginData.email"
+                                    label="E-Mail"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    :rules="[required(), mail()]"
+                                />
+                            </v-form>
+                            <v-btn block color="success" flat size="large" @click="doLoginStepEmail()" class="mb-3">Weiter</v-btn>
+                            <v-btn block variant="text" color="warning" @click="backToTools">Zurück</v-btn>
+                        </div>
+
+                        <!-- Sub-step: Enter Password -->
+                        <div class="login-card-body" v-if="loginStep === 'PASSWORD'">
+                            <h2 class="login-step-title">Kennwort eingeben</h2>
+                            <v-form ref="loginForm" v-model="loginFormValid" @submit.prevent="doLoginStepPassword()">
+                                <v-text-field
+                                    autofocus
+                                    v-model="loginData.password"
+                                    label="Kennwort"
+                                    variant="outlined"
+                                    density="comfortable"
+                                    :append-icon="loginPasswordVisible ? 'mdi-eye' : 'mdi-eye-off'"
+                                    :type="loginPasswordVisible ? 'text' : 'password'"
+                                    @click:append="loginPasswordVisible = !loginPasswordVisible"
+                                    :rules="[required(), minLength(8), maxLength(255)]"
+                                />
+                                <v-checkbox
+                                    v-model="loginData.remember"
+                                    label="Angemeldet bleiben"
+                                    color="primary"
+                                    density="comfortable"
+                                    hide-details
+                                    class="mt-1"
+                                />
+                            </v-form>
+                            <v-btn block color="success" flat size="large" @click="doLoginStepPassword()" class="mb-3">Anmelden</v-btn>
+                            <v-btn block variant="text" color="warning" @click="loginStep = 'EMAIL'">Zurück</v-btn>
+                        </div>
+
+                        <!-- Sub-step: Enter 2FA Token -->
+                        <div class="login-card-body" v-if="loginStep === 'TOKEN'">
+                            <h2 class="login-step-title">Zwei-Faktor-Code</h2>
+                            <v-alert closable color="success" type="info" density="compact" text="Bitte prüfen Sie Ihre E-Mails" class="mb-3" />
+                            <p class="login-step-hint">Bitte den Code laut E-Mail eingeben</p>
+                            <v-form ref="loginForm" v-model="loginFormValid" @submit.prevent="doLoginStep2fa()">
+                                <v-otp-input autofocus v-model="loginData.token_2fa" class="mb-3" />
+                            </v-form>
+                            <v-btn block color="success" flat size="large" @click="doLoginStep2fa()" class="mb-3">Anmelden</v-btn>
+                            <v-btn block variant="text" color="warning" @click="loginStep = 'EMAIL'">Zurück</v-btn>
+                        </div>
+
+                        <!-- Sub-step: Processing -->
+                        <div class="login-card-body" v-if="loginStep === 'PROCESSING'">
+                            <div class="login-processing">
+                                <v-progress-circular indeterminate color="success" size="48" width="4" class="mb-5" />
+                                <h2 class="login-step-title text-center">Login wird durchgeführt</h2>
+                                <p class="login-step-hint text-center mb-0">Bitte einen Moment Geduld …</p>
+                            </div>
                         </div>
                     </div>
-
-                    <v-card-text class="selection-body">
-                        <!-- School not yet selected -->
-                        <div v-if="!selected_school" class="school-picker">
-                            <div class="picker-icon">
-                                <v-icon size="64" color="grey-lighten-1">mdi-domain</v-icon>
-                            </div>
-                            <h3 class="picker-title">Wählen Sie Ihre Schule</h3>
-
-                            <v-autocomplete
-                                v-if="schools.length > 0"
-                                v-model="selected_school_id"
-                                :items="schools"
-                                item-title="long_name"
-                                item-value="id"
-                                label="Schule auswählen"
-                                variant="outlined"
-                                prepend-inner-icon="mdi-magnify"
-                                class="school-autocomplete"
-                                hide-details />
-
-                            <div v-else class="no-schools">
-                                <v-icon size="48" color="warning">mdi-alert-circle-outline</v-icon>
-                                <p>Keine Schulen verfügbar</p>
-                            </div>
-                        </div>
-
-                        <!-- School selected - confirmation -->
-                        <div v-else class="school-confirmation">
-                            <div class="school-info">
-                                <div class="school-logo" v-if="selected_school.logo">
-                                    <img :src="'/storage/images/' + selected_school.logo" alt="Schullogo" />
-                                </div>
-                                <div class="school-icon" v-else>
-                                    <v-icon size="64" color="primary">mdi-school</v-icon>
-                                </div>
-                                <h3 class="school-name">{{ selected_school.long_name }}</h3>
-                                <p class="school-short">{{ selected_school.short_name }}</p>
-                            </div>
-
-                            <div>
-                                <v-form class="confirmation-actions" @submit.prevent="moveTo(licence, selected_school)">
-                                    <v-btn variant="outlined" color="grey" size="large" @click="abort('selectSchool')">
-                                        <v-icon start>mdi-pencil</v-icon>
-                                        Andere Schule
-                                    </v-btn>
-                                    <v-btn ref="submitBtn" variant="flat" :color="licence?.name === 'Anmeldetool' ? 'success' : 'warning'" size="large" type="submit">
-                                        Weiter
-                                        <v-icon end>mdi-arrow-right</v-icon>
-                                    </v-btn>
-                                </v-form>
-                            </div>
-                        </div>
-                    </v-card-text>
-                </v-card>
+                </div>
             </div>
         </section>
 
@@ -238,22 +331,40 @@
 
 <script>
 import { nextTick } from 'vue'
+import { useValidationRulesSetup } from '@/helpers/rules'
 import { mapWritableState } from 'pinia'
 import { useHomepageStore } from '@/stores/homepage/HomepageStore'
 import { useNotificationStore } from '@/stores/spa/NotificationStore'
 
 export default {
+    setup() {
+        return useValidationRulesSetup()
+    },
+
     components: {},
 
     async beforeMount() {
         this.homepageStore = useHomepageStore()
         this.school_name = this.$route.query.school
         this.app_name = this.$route.query.app
+        const toolFromUrl = this.$route.query.tool
         if (!this.school) {
             await this.homepageStore.loadConfig(this.school_name, this.app_name)
         }
         this.selected_school = null
         this.selected_school_id = null
+
+        await this.loadLoginSchools()
+
+        if (this.school_name && this.login_schools.length > 0) {
+            const match = this.login_schools.find((s) => s.short_name === this.school_name)
+            if (match) {
+                await this.selectLoginSchool(match)
+                if (toolFromUrl) {
+                    this.openToolForSchool(toolFromUrl)
+                }
+            }
+        }
     },
 
     mounted() {},
@@ -263,7 +374,22 @@ export default {
     data() {
         return {
             homepageStore: null,
-            step: '',
+            step: 'selectSchool',
+            login_schools: [],
+            selected_login_school: null,
+            selected_login_school_id: null,
+            selected_tool: null,
+            logoNeedsDarkBg: false,
+            schoolLogoDarkFlags: {},
+            loginStep: 'EMAIL',
+            loginFormValid: false,
+            loginPasswordVisible: false,
+            loginData: {
+                email: '',
+                password: '',
+                remember: true,
+                token_2fa: '',
+            },
         }
     },
 
@@ -302,17 +428,38 @@ export default {
         hasRestaurantHomepageAccess() {
             return this.config?.auth_check === true || this.moduleAllowsAccess(this.restaurantModuleStatus)
         },
+        schoolLicenceNames() {
+            return (this.config?.schoolLicences || []).map((l) => l.name)
+        },
+        loginToolLabel() {
+            const labels = {
+                Anmeldetool: 'Anmeldetool',
+                Nachhilfetool: this.tutoringDisplayName,
+                Lehrertool: 'Unterricht',
+                Restaurant: 'Restaurant',
+            }
+            return labels[this.selected_tool] || this.selected_tool || ''
+        },
+        loginToolIcon() {
+            const icons = {
+                Anmeldetool: 'mdi-calendar-check',
+                Nachhilfetool: 'mdi-account-group',
+                Lehrertool: 'mdi-rocket-launch-outline',
+                Restaurant: 'mdi-food',
+            }
+            return icons[this.selected_tool] || 'mdi-tools'
+        },
         canShowRegister() {
-            return this.isModuleVisible(this.registerModuleStatus)
+            return this.isModuleVisible(this.registerModuleStatus) && this.schoolLicenceNames.includes('Anmeldetool')
         },
         canShowTutoring() {
-            return this.isModuleVisible(this.tutoringModuleStatus)
+            return this.isModuleVisible(this.tutoringModuleStatus) && this.schoolLicenceNames.includes('Nachhilfetool')
         },
         canShowTeaching() {
-            return this.isModuleVisible(this.teachingModuleStatus)
+            return this.isModuleVisible(this.teachingModuleStatus) && this.schoolLicenceNames.includes('Lehrertool')
         },
         canShowRestaurant() {
-            return this.isModuleVisible(this.restaurantModuleStatus)
+            return this.isModuleVisible(this.restaurantModuleStatus) && this.schoolLicenceNames.includes('Restaurant')
         },
         isRegisterDisabled() {
             return this.registerStatus !== 'active' || !this.moduleAllowsAccess(this.registerModuleStatus)
@@ -350,6 +497,148 @@ export default {
     },
 
     methods: {
+        async loadLoginSchools() {
+            const result = await this.homepageStore.loadLoginSchools()
+            if (result) {
+                this.login_schools = result.schools || []
+            }
+            this.step = 'selectSchool'
+        },
+
+        async selectLoginSchool(school) {
+            this.selected_login_school = school
+            this.logoNeedsDarkBg = false
+            await this.homepageStore.loadConfig(school.short_name)
+            const currentQuery = this.$route.query.school
+            if (currentQuery !== school.short_name) {
+                this.$router.replace({ query: { school: school.short_name } })
+            }
+            this.step = 'schoolSelected'
+        },
+
+        selectLoginSchoolById(id) {
+            const school = this.login_schools.find((s) => s.id === id)
+            if (school) this.selectLoginSchool(school)
+        },
+
+        backToSchoolSelection() {
+            this.selected_login_school = null
+            this.selected_login_school_id = null
+            this.$router.replace({ query: {} })
+            this.step = 'selectSchool'
+        },
+
+        openToolForSchool(tool) {
+            const school = this.selected_login_school
+            if (!school) return
+
+            const status = this.toolStatuses?.[tool] || 'missing'
+            const moduleStatus = {
+                Anmeldetool: this.registerModuleStatus,
+                Nachhilfetool: this.tutoringModuleStatus,
+                Lehrertool: this.teachingModuleStatus,
+                Restaurant: this.restaurantModuleStatus,
+            }[tool] || 'inactive'
+
+            if (tool !== 'Restaurant' && (!this.moduleAllowsAccess(moduleStatus) || status !== 'active')) {
+                this.notifyToolUnavailable(tool, status, moduleStatus)
+                return
+            }
+
+            if (tool === 'Restaurant' && !this.hasRestaurantHomepageAccess) {
+                this.notifyToolUnavailable('Restaurant', 'active', this.restaurantModuleStatus)
+                return
+            }
+
+            if (tool === 'Restaurant') {
+                this.$router.push('/homepage/restaurant?school=' + school.short_name)
+                return
+            }
+
+            this.selected_tool = tool
+            this.loginStep = 'EMAIL'
+            this.loginData = { email: '', password: '', remember: true, token_2fa: '' }
+            this.loginPasswordVisible = false
+            this.$router.replace({ query: { ...this.$route.query, tool } })
+            this.step = 'login'
+        },
+
+        navigateToTool() {
+            const school = this.selected_login_school
+            const toolRoutes = {
+                Anmeldetool: '/homepage/register',
+                Nachhilfetool: '/homepage/tutoring_overview/',
+                Lehrertool: '/homepage/student',
+                Restaurant: '/homepage/restaurant',
+            }
+            const path = toolRoutes[this.selected_tool]
+            if (path && school) {
+                this.$router.push(path + '?school=' + school.short_name)
+            }
+        },
+
+        async doLoginStepEmail() {
+            this.loginFormValid = false
+            await this.$refs.loginForm.validate()
+            if (!this.loginFormValid) return
+
+            const result = await this.homepageStore.homepageLoginStepEmail(
+                this.loginData.email,
+                this.selected_login_school.id
+            )
+            if (!result) return
+            this.loginStep = result.step === 'LOGIN_ENTER_PASSWORD' ? 'PASSWORD' : 'EMAIL'
+        },
+
+        async doLoginStepPassword() {
+            this.loginFormValid = false
+            await this.$refs.loginForm.validate()
+            if (!this.loginFormValid) return
+
+            this.loginStep = 'PROCESSING'
+
+            const result = await this.homepageStore.homepageLoginStepPassword(
+                this.loginData.email,
+                this.selected_login_school.id,
+                this.loginData.password,
+                this.loginData.remember
+            )
+            if (!result) {
+                this.loginStep = 'PASSWORD'
+                return
+            }
+            if (result.step === 'LOGIN_ENTER_TOKEN') {
+                this.loginStep = 'TOKEN'
+                return
+            }
+            this.navigateToTool()
+        },
+
+        async doLoginStep2fa() {
+            if (!this.loginData.token_2fa || this.loginData.token_2fa.length !== 6) return
+            this.loginStep = 'PROCESSING'
+
+            const result = await this.homepageStore.homepageLoginStep2fa(
+                this.loginData.email,
+                this.selected_login_school.id,
+                this.loginData.token_2fa,
+                this.loginData.remember
+            )
+            if (!result) {
+                this.loginStep = 'TOKEN'
+                return
+            }
+            this.navigateToTool()
+        },
+
+        backToTools() {
+            this.selected_tool = null
+            this.loginData = { email: '', password: '', remember: true, token_2fa: '' }
+            const { tool, ...query } = this.$route.query
+            this.$router.replace({ query })
+            this.step = 'schoolSelected'
+        },
+
         doAlert() {
             alert('1')
         },
@@ -458,6 +747,60 @@ export default {
             const ok = await this.homepageStore.loadSchoolsForTool(tool)
             if (ok === false) return
             this.step = 'selectSchool'
+        },
+
+        isLogoBright(img, includeTransparentBrightDetails = false) {
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+            canvas.width = img.naturalWidth
+            canvas.height = img.naturalHeight
+            ctx.drawImage(img, 0, 0)
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+            let opaquePixels = 0
+            let brightPixels = 0
+            let veryBrightPixels = 0
+            let transparentPixels = 0
+            for (let i = 0; i < data.length; i += 16) {
+                const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3]
+                if (a < 30) {
+                    transparentPixels++
+
+                    continue
+                }
+
+                opaquePixels++
+                const luminance = 0.299 * r + 0.587 * g + 0.114 * b
+                if (luminance > 180) brightPixels++
+                if (luminance > 225) veryBrightPixels++
+            }
+
+            if (!opaquePixels) {
+                return true
+            }
+
+            const brightRatio = brightPixels / opaquePixels
+            const veryBrightRatio = veryBrightPixels / opaquePixels
+            const transparentRatio = transparentPixels / (transparentPixels + opaquePixels)
+
+            return brightRatio > 0.45
+                || (includeTransparentBrightDetails && transparentRatio > 0.2 && veryBrightRatio > 0.04)
+                || (includeTransparentBrightDetails && transparentRatio > 0.35 && brightRatio > 0.14)
+        },
+
+        analyzeLogoBrightness(event) {
+            try {
+                this.logoNeedsDarkBg = this.isLogoBright(event.target)
+            } catch {
+                this.logoNeedsDarkBg = true
+            }
+        },
+
+        analyzeSchoolCardLogo(event, schoolId) {
+            try {
+                this.schoolLogoDarkFlags[schoolId] = this.isLogoBright(event.target, true)
+            } catch {
+                this.schoolLogoDarkFlags[schoolId] = true
+            }
         },
 
         getParticleStyle(n) {
@@ -798,11 +1141,107 @@ export default {
     font-weight: 400;
 }
 
+/* School Selection */
+.school-select-icon {
+    color: #f39200 !important;
+}
+
+.school-select-icon--no-logo {
+    background: linear-gradient(135deg, rgba(243, 146, 0, 0.12), rgba(243, 146, 0, 0.04)) !important;
+}
+
+.school-select-icon--has-logo {
+    border-radius: 14px;
+    padding: 8px;
+}
+
+.school-select-icon--dark-logo {
+    background: #2d4a5e !important;
+}
+
+.school-select-logo-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.school-card-title {
+    min-height: 3.4em;
+    display: flex;
+    align-items: flex-start;
+}
+
+.school-card-short {
+    margin-bottom: 8px !important;
+}
+
+.school-search-wrap {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    max-width: 560px;
+}
+
+.school-search-field {
+    flex: 1;
+}
+
 /* Tools Section */
 .tools-container {
     animation: fadeInUp 0.8s ease-out 0.2s both;
     margin-top: 34px;
     width: 100%;
+}
+
+.tools-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+}
+
+.school-logo-banner {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 12px;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.school-logo-box {
+    width: 120px;
+    height: 120px;
+    border-radius: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.school-logo-box--dark {
+    background: #2d4a5e;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);
+}
+
+.school-logo-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.back-to-schools {
+    color: rgba(255, 255, 255, 0.85) !important;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    text-transform: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease;
+}
+
+.back-to-schools:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+    color: #fff !important;
 }
 
 @keyframes fadeInUp {
@@ -822,6 +1261,12 @@ export default {
     font-weight: 600;
     color: #37474f;
     margin-bottom: 32px;
+}
+
+.tools-header .section-title {
+    color: #10263a;
+    font-size: 1.35rem;
+    font-weight: 700;
 }
 
 .tools-grid {
@@ -2018,6 +2463,110 @@ export default {
     .card-description {
         font-size: 0.9rem;
     }
+}
+
+/* Login Hero Header */
+.login-hero-header {
+    text-align: center;
+    margin-top: clamp(10px, 3vw, 24px);
+    margin-bottom: clamp(40px, 6vw, 72px);
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.login-hero-icon {
+    color: rgba(255, 255, 255, 0.85);
+    margin-bottom: 16px;
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
+}
+
+.login-hero-tool {
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-weight: 800;
+    color: #fff;
+    margin: 0;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    text-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.login-hero-school {
+    font-size: clamp(1rem, 2vw, 1.4rem);
+    font-weight: 500;
+    color: rgba(16, 38, 58, 0.85);
+    margin: 12px 0 0;
+    line-height: 1.3;
+}
+
+/* Login Card */
+.login-center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: -40px;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 460px;
+    background: white;
+    border-radius: 24px;
+    box-shadow:
+        0 24px 60px rgba(68, 33, 4, 0.2),
+        0 4px 16px rgba(68, 33, 4, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    overflow: hidden;
+    animation: scaleIn 0.4s ease-out;
+}
+
+@keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.login-card-logo {
+    padding: 24px 28px 0;
+    display: flex;
+    align-items: center;
+}
+
+.login-mark {
+    width: 48px;
+    height: 48px;
+}
+
+.login-card-body {
+    padding: 24px 28px 28px;
+}
+
+.login-step-title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: #10263a;
+    margin: 0 0 6px 0;
+    line-height: 1.2;
+}
+
+.login-step-school {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #10263a;
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+}
+
+.login-step-hint {
+    font-size: 0.92rem;
+    color: rgba(16, 38, 58, 0.65);
+    margin: 0 0 16px 0;
+    line-height: 1.4;
+}
+
+.login-processing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 0 16px;
 }
 
 /* Accessibility - Reduced Motion */
