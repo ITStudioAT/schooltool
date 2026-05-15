@@ -10,8 +10,99 @@ use Illuminate\Support\Facades\DB;
 
 class LegacyRestaurantImportService
 {
+    /**
+     * @return array{
+     *     foods_to_create:int,
+     *     foods_to_update:int,
+     *     menus_to_create:int,
+     *     menus_to_update:int,
+     *     missing_menu_food_references:int,
+     *     legacy_foods_seen:int,
+     *     legacy_menus_seen:int
+     * }
+     */
+    public function previewChanges(int $schoolId, iterable $legacyFoods, iterable $legacyMenus): array
+    {
+        if ($schoolId <= 0) {
+            throw new \InvalidArgumentException('The target school id must be positive.');
+        }
+
+        $foods = collect($legacyFoods)
+            ->map(fn (mixed $row): array => $this->normalizeFoodRow($row))
+            ->values();
+
+        $menus = collect($legacyMenus)
+            ->map(fn (mixed $row): array => $this->normalizeMenuRow($row))
+            ->values();
+
+        $localFoodsByLegacyId = RestaurantFood::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('legacy_food_id')
+            ->with('category')
+            ->get()
+            ->keyBy(fn (RestaurantFood $food): int => (int) $food->legacy_food_id);
+
+        $localMenusByLegacyId = RestaurantMenu::query()
+            ->where('school_id', $schoolId)
+            ->whereNotNull('legacy_menu_id')
+            ->with('foods')
+            ->get()
+            ->keyBy(fn (RestaurantMenu $menu): int => (int) $menu->legacy_menu_id);
+
+        $summary = [
+            'foods_to_create' => 0,
+            'foods_to_update' => 0,
+            'menus_to_create' => 0,
+            'menus_to_update' => 0,
+            'missing_menu_food_references' => $this->countMissingMenuFoodReferences($foods, $menus),
+            'legacy_foods_seen' => $foods->count(),
+            'legacy_menus_seen' => $menus->count(),
+        ];
+
+        $foods->each(function (array $legacyFood) use ($localFoodsByLegacyId, &$summary): void {
+            $localFood = $localFoodsByLegacyId->get($legacyFood['legacy_food_id']);
+
+            if (! $localFood) {
+                $summary['foods_to_create']++;
+
+                return;
+            }
+
+            if ($this->foodNeedsUpdate($localFood, $legacyFood)) {
+                $summary['foods_to_update']++;
+            }
+        });
+
+        $menus->each(function (array $legacyMenu) use ($localMenusByLegacyId, &$summary): void {
+            $localMenu = $localMenusByLegacyId->get($legacyMenu['legacy_menu_id']);
+
+            if (! $localMenu) {
+                $summary['menus_to_create']++;
+
+                return;
+            }
+
+            if ($this->menuNeedsUpdate($localMenu, $legacyMenu)) {
+                $summary['menus_to_update']++;
+            }
+        });
+
+        return $summary;
+    }
+
     public function import(int $schoolId, iterable $legacyFoods, iterable $legacyMenus, bool $dryRun = false): array
     {
+        return $this->importSelected($schoolId, $legacyFoods, $legacyMenus, true, true, $dryRun);
+    }
+
+    public function importSelected(
+        int $schoolId,
+        iterable $legacyFoods,
+        iterable $legacyMenus,
+        bool $importFoods,
+        bool $importMenus,
+        bool $dryRun = false
+    ): array {
         if ($schoolId <= 0) {
             throw new \InvalidArgumentException('The target school id must be positive.');
         }
@@ -38,7 +129,7 @@ class LegacyRestaurantImportService
             ];
         }
 
-        return DB::transaction(function () use ($schoolId, $foods, $menus): array {
+        return DB::transaction(function () use ($schoolId, $foods, $menus, $importFoods, $importMenus): array {
             $summary = [
                 'categories_created' => 0,
                 'foods_created' => 0,
@@ -53,57 +144,69 @@ class LegacyRestaurantImportService
 
             $categorySortOrder = 10;
             $categoryIdsByTitle = [];
-            $foodIdsByLegacyId = [];
-            $foods->each(function (array $legacyFood) use ($schoolId, &$summary, &$categorySortOrder, &$categoryIdsByTitle, &$foodIdsByLegacyId): void {
-                $categoryId = null;
-                $categoryTitle = $legacyFood['category_title'];
+            $foodIdsByLegacyId = RestaurantFood::query()
+                ->where('school_id', $schoolId)
+                ->whereNotNull('legacy_food_id')
+                ->pluck('id', 'legacy_food_id')
+                ->mapWithKeys(fn (mixed $id, mixed $legacyFoodId): array => [(int) $legacyFoodId => (int) $id])
+                ->all();
 
-                if ($categoryTitle !== null) {
-                    if (! array_key_exists($categoryTitle, $categoryIdsByTitle)) {
-                        $category = RestaurantCategory::query()->firstOrCreate(
-                            [
-                                'school_id' => $schoolId,
-                                'title' => $categoryTitle,
-                            ],
-                            [
-                                'sort_order' => $categorySortOrder,
-                            ]
-                        );
+            if ($importFoods) {
+                $foods->each(function (array $legacyFood) use ($schoolId, &$summary, &$categorySortOrder, &$categoryIdsByTitle, &$foodIdsByLegacyId): void {
+                    $categoryId = null;
+                    $categoryTitle = $legacyFood['category_title'];
 
-                        if ($category->wasRecentlyCreated) {
-                            $summary['categories_created']++;
+                    if ($categoryTitle !== null) {
+                        if (! array_key_exists($categoryTitle, $categoryIdsByTitle)) {
+                            $category = RestaurantCategory::query()->firstOrCreate(
+                                [
+                                    'school_id' => $schoolId,
+                                    'title' => $categoryTitle,
+                                ],
+                                [
+                                    'sort_order' => $categorySortOrder,
+                                ]
+                            );
+
+                            if ($category->wasRecentlyCreated) {
+                                $summary['categories_created']++;
+                            }
+
+                            $categoryIdsByTitle[$categoryTitle] = (int) $category->id;
+                            $categorySortOrder += 10;
                         }
 
-                        $categoryIdsByTitle[$categoryTitle] = (int) $category->id;
-                        $categorySortOrder += 10;
+                        $categoryId = $categoryIdsByTitle[$categoryTitle];
                     }
 
-                    $categoryId = $categoryIdsByTitle[$categoryTitle];
-                }
+                    $food = RestaurantFood::query()->updateOrCreate(
+                        [
+                            'school_id' => $schoolId,
+                            'legacy_food_id' => $legacyFood['legacy_food_id'],
+                        ],
+                        [
+                            'restaurant_category_id' => $categoryId,
+                            'title' => $legacyFood['title'],
+                            'description' => $legacyFood['description'],
+                            'allergens' => $legacyFood['allergens'],
+                            'price' => $legacyFood['price'],
+                            'food_image_path' => null,
+                        ]
+                    );
 
-                $food = RestaurantFood::query()->updateOrCreate(
-                    [
-                        'school_id' => $schoolId,
-                        'legacy_food_id' => $legacyFood['legacy_food_id'],
-                    ],
-                    [
-                        'restaurant_category_id' => $categoryId,
-                        'title' => $legacyFood['title'],
-                        'description' => $legacyFood['description'],
-                        'allergens' => $legacyFood['allergens'],
-                        'price' => $legacyFood['price'],
-                        'food_image_path' => null,
-                    ]
-                );
+                    if ($food->wasRecentlyCreated) {
+                        $summary['foods_created']++;
+                    } else {
+                        $summary['foods_updated']++;
+                    }
 
-                if ($food->wasRecentlyCreated) {
-                    $summary['foods_created']++;
-                } else {
-                    $summary['foods_updated']++;
-                }
+                    $foodIdsByLegacyId[$legacyFood['legacy_food_id']] = (int) $food->id;
+                });
+            }
 
-                $foodIdsByLegacyId[$legacyFood['legacy_food_id']] = (int) $food->id;
-            });
+            if (! $importMenus) {
+                return $summary;
+            }
 
             $menus->each(function (array $legacyMenu) use ($schoolId, $foodIdsByLegacyId, &$summary): void {
                 $menu = RestaurantMenu::query()->updateOrCreate(
@@ -257,6 +360,20 @@ class LegacyRestaurantImportService
             ->all();
     }
 
+    private function normalizeAllergenArray(mixed $value): array
+    {
+        $allergens = is_array($value) ? $value : explode(',', (string) $value);
+        $allowedAllergens = $this->configuredAllergenCharacters();
+
+        return collect($allergens)
+            ->map(fn (mixed $entry): string => strtoupper(trim((string) $entry)))
+            ->filter(fn (string $entry): bool => $entry !== '')
+            ->filter(fn (string $entry): bool => in_array($entry, $allowedAllergens, true))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function configuredAllergenCharacters(): array
     {
         return collect(config('schooltool.eu_allergens', []))
@@ -307,6 +424,59 @@ class LegacyRestaurantImportService
         return [
             'text' => trim((string) preg_replace('/\s{2,}/u', ' ', $text)),
         ];
+    }
+
+    /**
+     * @param  array{legacy_food_id:int,title:string,description:?string,category_title:?string,allergens:array<int, string>,price:?string}  $legacyFood
+     */
+    private function foodNeedsUpdate(RestaurantFood $localFood, array $legacyFood): bool
+    {
+        if ($localFood->title !== $legacyFood['title']) {
+            return true;
+        }
+
+        if ($this->normalizeNullableString($localFood->description) !== $legacyFood['description']) {
+            return true;
+        }
+
+        if ($this->normalizeNullableString($localFood->category?->title) !== $legacyFood['category_title']) {
+            return true;
+        }
+
+        if ($this->normalizeAllergenArray($localFood->allergens ?? []) !== $legacyFood['allergens']) {
+            return true;
+        }
+
+        return $this->normalizeNullableDecimal($localFood->price) !== $legacyFood['price'];
+    }
+
+    /**
+     * @param  array{legacy_menu_id:int,title:string,price:?string,legacy_food_ids:array<int, int|null>}  $legacyMenu
+     */
+    private function menuNeedsUpdate(RestaurantMenu $localMenu, array $legacyMenu): bool
+    {
+        if ($localMenu->title !== $legacyMenu['title']) {
+            return true;
+        }
+
+        if ($this->normalizeNullableDecimal($localMenu->price) !== $legacyMenu['price']) {
+            return true;
+        }
+
+        $localLegacyFoodIds = $localMenu->foods
+            ->sortBy(fn (RestaurantFood $food): int => (int) $food->pivot->course_number)
+            ->pluck('legacy_food_id')
+            ->map(fn (mixed $legacyFoodId): ?int => $this->normalizeNullableInt($legacyFoodId))
+            ->filter(fn (?int $legacyFoodId): bool => $legacyFoodId !== null)
+            ->values()
+            ->all();
+
+        $legacyFoodIds = collect($legacyMenu['legacy_food_ids'])
+            ->filter(fn (?int $legacyFoodId): bool => $legacyFoodId !== null)
+            ->values()
+            ->all();
+
+        return $localLegacyFoodIds !== $legacyFoodIds;
     }
 
     private function countMissingMenuFoodReferences(Collection $foods, Collection $menus): int

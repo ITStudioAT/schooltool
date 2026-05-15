@@ -53,6 +53,7 @@
                 <Reports v-if="main_action === 'reports'" />
                 <Users v-if="main_action === 'users'" />
                 <RestaurantSepa v-if="main_action === 'sepa'" />
+                <CdgymLegacy v-if="main_action === 'cdgym' && isCdgymSchool" />
                 <Settings v-if="main_action === 'settings'" />
             </v-row>
         </div>
@@ -74,9 +75,10 @@ import Reports from './components/Reports.vue'
 import RestaurantSepa from './components/RestaurantSepa.vue'
 import Users from './components/Users.vue'
 import Settings from './components/Settings.vue'
+import CdgymLegacy from './components/CdgymLegacy.vue'
 
 export default {
-    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings },
+    components: { AdminSectionHero, Overview, Foods, Menus, MenuPlans, Reports, RestaurantSepa, Users, Settings, CdgymLegacy },
 
     async beforeMount() {
         this.adminStore = useAdminStore()
@@ -86,6 +88,7 @@ export default {
         this.action = ''
         this.action_2 = ''
         await this.loadPageData()
+        this.ensureAllowedSection()
     },
 
     data() {
@@ -106,6 +109,9 @@ export default {
         },
         selectedSchoolLabel() {
             return this.config?.selected_school?.long_name || this.config?.selected_school?.name || 'Keine Schule gew\u00e4hlt'
+        },
+        isCdgymSchool() {
+            return this.config?.selected_school?.long_name === 'Christian-Doppler-Gymnasium Salzburg'
         },
         headerChips() {
             return [
@@ -172,12 +178,17 @@ export default {
                     icon: 'mdi-cog-outline',
                     note: '',
                 },
+                cdgym: {
+                    label: 'Alte Version, Cdgym',
+                    icon: 'mdi-open-in-new',
+                    note: 'cdgym.info',
+                },
             }
 
             return sections[this.main_action] || sections.overview
         },
         visibleNavigationItems() {
-            return [
+            const items = [
                 {
                     key: 'overview',
                     label: '\u00dcberblick',
@@ -221,12 +232,27 @@ export default {
                     icon: 'mdi-bank-transfer',
                 },
             ]
+
+            if (this.isCdgymSchool) {
+                items.push({
+                    key: 'cdgym',
+                    label: 'Alte Version, Cdgym',
+                    meta: 'cdgym.info',
+                    icon: 'mdi-open-in-new',
+                })
+            }
+
+            return items
+        },
+        allowedSectionKeys() {
+            return [...this.visibleNavigationItems.map((item) => item.key), 'settings']
         },
     },
 
     watch: {
         '$route.params.section'(section) {
             this.main_action = section || 'overview'
+            this.ensureAllowedSection()
         },
     },
 
@@ -258,6 +284,13 @@ export default {
             }
 
             this.navigateTo(target)
+        },
+        ensureAllowedSection() {
+            if (this.allowedSectionKeys.includes(this.main_action)) {
+                return
+            }
+
+            this.navigateTo('overview')
         },
         navigateTo(section) {
             this.main_action = section

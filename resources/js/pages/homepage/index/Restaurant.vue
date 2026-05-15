@@ -3214,9 +3214,9 @@ export default {
 .restaurant-page {
     min-height: 100vh;
     background:
-        radial-gradient(ellipse at 30% 0%, rgba(234, 88, 12, 0.1), transparent 50%),
-        radial-gradient(ellipse at 70% 100%, rgba(180, 83, 9, 0.06), transparent 50%),
-        linear-gradient(180deg, #292524 0%, #352f2e 40%, #292524 100%);
+        radial-gradient(ellipse at 30% 0%, rgba(234, 88, 12, 0.13), transparent 50%),
+        radial-gradient(ellipse at 70% 100%, rgba(180, 83, 9, 0.08), transparent 50%),
+        linear-gradient(180deg, #3a3532 0%, #4a4340 40%, #3a3532 100%);
     color: #f5f5f4;
 }
 
@@ -3251,9 +3251,9 @@ export default {
     gap: 22px;
     padding: 28px;
     border-radius: 28px;
-    background: rgba(41, 37, 36, 0.85);
-    border: 1px solid rgba(251, 146, 60, 0.2);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 253, 250, 0.96);
+    border: 1px solid rgba(214, 211, 209, 0.5);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.12);
     backdrop-filter: blur(10px);
 }
 
@@ -3262,8 +3262,8 @@ export default {
     align-items: center;
     padding: 6px 12px;
     border-radius: 999px;
-    background: rgba(251, 146, 60, 0.15);
-    color: #fb923c;
+    background: rgba(234, 88, 12, 0.1);
+    color: #c2410c;
     font-size: 0.78rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -3275,14 +3275,14 @@ export default {
     font-size: clamp(2.4rem, 4vw, 4rem);
     line-height: 0.94;
     font-weight: 900;
-    color: #fafaf9;
+    color: #292524;
 }
 
 .restaurant-lead {
     max-width: 62ch;
     font-size: 1.02rem;
     line-height: 1.7;
-    color: #a8a29e;
+    color: #57534e;
 }
 
 .restaurant-lead--richtext :deep(p) {
@@ -3317,9 +3317,9 @@ export default {
 }
 
 .restaurant-action--secondary {
-    background: rgba(251, 146, 60, 0.1);
-    color: #fb923c;
-    border: 1px solid rgba(251, 146, 60, 0.3);
+    background: rgba(234, 88, 12, 0.08);
+    color: #c2410c;
+    border: 1px solid rgba(234, 88, 12, 0.25);
 }
 
 .restaurant-action-text {
@@ -3346,7 +3346,7 @@ export default {
     display: block;
     font-size: 0.85rem;
     font-weight: 700;
-    color: #fb923c;
+    color: #c2410c;
     margin-bottom: 6px;
 }
 
@@ -3362,13 +3362,13 @@ export default {
     text-align: center;
     padding: 48px 24px;
     border-radius: 22px;
-    background: rgba(41, 37, 36, 0.75);
-    border: 2px dashed rgba(251, 146, 60, 0.4);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 253, 250, 0.96);
+    border: 2px dashed rgba(234, 88, 12, 0.3);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
 }
 
 .restaurant-no-school-card__icon {
-    color: #fdba74;
+    color: #ea580c;
     margin-bottom: 16px;
 }
 
@@ -3376,14 +3376,14 @@ export default {
     margin: 0 0 8px;
     font-size: 1.3rem;
     font-weight: 800;
-    color: #fb923c;
+    color: #292524;
 }
 
 .restaurant-no-school-card__text {
     margin: 0 auto 28px;
     font-size: 1rem;
     line-height: 1.6;
-    color: #a8a29e;
+    color: #57534e;
     max-width: 48ch;
 }
 
@@ -3406,25 +3406,25 @@ export default {
     gap: 12px;
     padding: 14px 18px;
     border-radius: 14px;
-    background: rgba(68, 64, 60, 0.5);
-    border: 1px solid rgba(251, 146, 60, 0.18);
+    background: rgba(245, 243, 240, 0.8);
+    border: 1px solid rgba(214, 211, 209, 0.5);
     cursor: pointer;
     transition: all 0.15s ease;
     text-align: left;
     font-family: inherit;
     font-size: 0.95rem;
-    color: #e7e5e4;
+    color: #44403c;
 }
 
 .restaurant-school-item:hover {
-    background: rgba(251, 146, 60, 0.15);
-    border-color: rgba(251, 146, 60, 0.4);
+    background: rgba(255, 237, 213, 0.7);
+    border-color: rgba(234, 88, 12, 0.3);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .restaurant-school-item__icon {
-    color: #fdba74;
+    color: #ea580c;
     flex-shrink: 0;
 }
 
@@ -3438,19 +3438,19 @@ export default {
 }
 
 .restaurant-school-item__arrow {
-    color: #78716c;
+    color: #a8a29e;
     flex-shrink: 0;
     transition: color 0.15s ease;
 }
 
 .restaurant-school-item:hover .restaurant-school-item__arrow {
-    color: #fdba74;
+    color: #ea580c;
 }
 
 .restaurant-school-list__empty {
     grid-column: 1 / -1;
     text-align: center;
-    color: #78716c;
+    color: #a8a29e;
     font-size: 0.9rem;
     padding: 12px 0;
     margin: 0;
@@ -3471,9 +3471,9 @@ export default {
     gap: 18px;
     padding: 20px 26px;
     border-radius: 22px;
-    background: rgba(41, 37, 36, 0.75);
-    border: 1px solid rgba(251, 146, 60, 0.18);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    background: rgba(255, 253, 250, 0.96);
+    border: 1px solid rgba(214, 211, 209, 0.5);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
 }
 
 .restaurant-auth-card__icon {
@@ -3483,8 +3483,8 @@ export default {
     width: 52px;
     height: 52px;
     border-radius: 16px;
-    background: rgba(251, 146, 60, 0.12);
-    color: #fdba74;
+    background: rgba(234, 88, 12, 0.1);
+    color: #ea580c;
     flex-shrink: 0;
 }
 
@@ -3497,21 +3497,21 @@ export default {
     margin: 0 0 4px;
     font-size: 1.1rem;
     font-weight: 800;
-    color: #fafaf9;
+    color: #292524;
 }
 
 .restaurant-auth-card__text {
     margin: 0;
     font-size: 0.9rem;
     line-height: 1.5;
-    color: #a8a29e;
+    color: #57534e;
 }
 
 .restaurant-auth-card__meta {
     margin: 0 0 4px;
     font-size: 0.86rem;
     font-weight: 700;
-    color: #fb923c;
+    color: #c2410c;
     word-break: break-word;
 }
 
@@ -3528,9 +3528,9 @@ export default {
     gap: 8px;
     padding: 10px 12px;
     border-radius: 14px;
-    background: rgba(41, 37, 36, 0.7);
-    border: 1px solid rgba(251, 146, 60, 0.16);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    background: rgba(255, 253, 250, 0.96);
+    border: 1px solid rgba(214, 211, 209, 0.5);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 .restaurant-auth-bookings__header {
@@ -3545,22 +3545,22 @@ export default {
     font-weight: 800;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: #fb923c;
+    color: #c2410c;
 }
 
 .restaurant-auth-bookings__title {
     margin: 2px 0 0;
     font-size: 0.86rem;
     font-weight: 800;
-    color: #fafaf9;
+    color: #292524;
 }
 
 .restaurant-auth-bookings__count {
     flex-shrink: 0;
     padding: 4px 8px;
     border-radius: 999px;
-    background: rgba(68, 64, 60, 0.6);
-    color: #fb923c;
+    background: rgba(234, 88, 12, 0.1);
+    color: #c2410c;
     font-size: 0.7rem;
     font-weight: 800;
 }
@@ -3575,8 +3575,8 @@ export default {
     gap: 6px;
     padding: 8px 10px;
     border-radius: 12px;
-    background: rgba(68, 64, 60, 0.55);
-    border: 1px solid rgba(251, 146, 60, 0.18);
+    background: #f5f3f0;
+    border: 1px solid rgba(214, 211, 209, 0.6);
 }
 
 .restaurant-auth-bookings__item--today {
@@ -3607,7 +3607,7 @@ export default {
     gap: 8px;
     padding: 6px 8px;
     border-radius: 10px;
-    background: rgba(68, 64, 60, 0.4);
+    background: rgba(245, 243, 240, 0.6);
 }
 
 .restaurant-auth-bookings__copy {
@@ -3621,7 +3621,7 @@ export default {
     gap: 6px;
     font-size: 0.8rem;
     font-weight: 800;
-    color: #e7e5e4;
+    color: #292524;
 }
 
 .restaurant-auth-bookings__today-badge {
@@ -3629,8 +3629,8 @@ export default {
     align-items: center;
     padding: 2px 7px;
     border-radius: 999px;
-    background: rgba(234, 88, 12, 0.14);
-    color: #fb923c;
+    background: rgba(234, 88, 12, 0.12);
+    color: #c2410c;
     font-size: 0.64rem;
     font-weight: 800;
     letter-spacing: 0.04em;
@@ -3640,13 +3640,13 @@ export default {
 .restaurant-auth-bookings__entry-title {
     font-size: 0.78rem;
     font-weight: 800;
-    color: #e7e5e4;
+    color: #292524;
 }
 
 .restaurant-auth-bookings__item-meta {
     margin-top: 1px;
     font-size: 0.75rem;
-    color: #a8a29e;
+    color: #78716c;
     line-height: 1.4;
 }
 
@@ -3659,7 +3659,7 @@ export default {
 }
 
 .restaurant-auth-bookings__item-meta-part {
-    color: #fafaf9;
+    color: #292524;
     font-weight: 800;
     white-space: nowrap;
 }
@@ -3739,7 +3739,7 @@ export default {
     gap: 2px;
     padding: 10px 12px;
     border-radius: 12px;
-    background: rgba(68, 64, 60, 0.5);
+    background: rgba(82, 76, 72, 0.5);
     border: 1px solid rgba(251, 146, 60, 0.16);
     color: #a8a29e;
     font-size: 0.85rem;
@@ -3752,7 +3752,7 @@ export default {
 
 .restaurant-login-state__match--selected {
     border-color: rgba(234, 88, 12, 0.45);
-    background: rgba(68, 64, 60, 0.65);
+    background: rgba(82, 76, 72, 0.6);
 }
 
 .restaurant-login-state__actions {
@@ -3816,21 +3816,21 @@ export default {
 }
 
 .rp-section-header__icon {
-    color: #fdba74;
+    color: #fb923c;
 }
 
 .rp-section-header__title {
     font-size: 1.3rem;
     font-weight: 800;
-    color: #e7e5e4;
+    color: #fafaf9;
     margin: 0;
 }
 
 .rp-plan {
     border-radius: 22px;
-    background: rgba(41, 37, 36, 0.78);
-    border: 1px solid rgba(251, 146, 60, 0.18);
-    box-shadow: 0 16px 40px rgba(120, 53, 15, 0.08);
+    background: rgba(255, 253, 250, 0.96);
+    border: 1px solid rgba(214, 211, 209, 0.5);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.06);
     overflow: hidden;
 }
 
@@ -3839,8 +3839,8 @@ export default {
 }
 
 .rp-plan--orderable {
-    border-color: rgba(34, 197, 94, 0.3);
-    box-shadow: 0 16px 40px rgba(34, 197, 94, 0.1);
+    border-color: rgba(34, 197, 94, 0.35);
+    box-shadow: 0 16px 40px rgba(34, 197, 94, 0.08);
 }
 
 .rp-plan__header {
@@ -3917,8 +3917,8 @@ export default {
 }
 
 .rp-day {
-    border-bottom: 1px solid rgba(251, 146, 60, 0.12);
-    border-right: 1px solid rgba(251, 146, 60, 0.12);
+    border-bottom: 1px solid rgba(214, 211, 209, 0.5);
+    border-right: 1px solid rgba(214, 211, 209, 0.5);
 }
 
 .rp-day__header {
@@ -3926,19 +3926,19 @@ export default {
     align-items: baseline;
     gap: 8px;
     padding: 14px 18px 8px;
-    background: rgba(68, 64, 60, 0.35);
-    border-bottom: 1px solid rgba(251, 146, 60, 0.1);
+    background: rgba(245, 243, 240, 0.6);
+    border-bottom: 1px solid rgba(214, 211, 209, 0.4);
 }
 
 .rp-day__weekday {
     font-size: 1.05rem;
     font-weight: 800;
-    color: #fb923c;
+    color: #c2410c;
 }
 
 .rp-day__date {
     font-size: 0.82rem;
-    color: #a8a29e;
+    color: #78716c;
 }
 
 .rp-day__menus {
@@ -3950,8 +3950,8 @@ export default {
 .rp-menu {
     padding: 10px 14px;
     border-radius: 12px;
-    background: rgba(68, 64, 60, 0.4);
-    border: 1px solid rgba(251, 146, 60, 0.12);
+    background: #f5f3f0;
+    border: 1px solid rgba(214, 211, 209, 0.5);
 }
 
 .rp-menu__top {
@@ -3964,13 +3964,13 @@ export default {
 .rp-menu__title {
     font-size: 0.95rem;
     font-weight: 700;
-    color: #e7e5e4;
+    color: #292524;
 }
 
 .rp-menu__price {
     font-size: 0.88rem;
     font-weight: 800;
-    color: #fdba74;
+    color: #c2410c;
     white-space: nowrap;
 }
 
@@ -3989,14 +3989,14 @@ export default {
 .rp-menu__food {
     font-size: 0.82rem;
     font-weight: 700;
-    color: #e7e5e4;
+    color: #44403c;
     line-height: 1.5;
 }
 
 .rp-menu__food-description {
     margin-top: 1px;
     font-size: 0.78rem;
-    color: #a8a29e;
+    color: #78716c;
     line-height: 1.45;
 }
 
@@ -4024,7 +4024,7 @@ export default {
 
 .rp-menu__allergens {
     font-size: 0.75rem;
-    color: #78716c;
+    color: #a8a29e;
 }
 
 .rp-menu__times {
@@ -4034,17 +4034,17 @@ export default {
     gap: 4px;
     margin-top: 6px;
     font-size: 0.78rem;
-    color: #a8a29e;
+    color: #78716c;
 }
 
 .rp-menu__times-icon {
-    color: #78716c;
+    color: #a8a29e;
 }
 
 .rp-menu__comments {
     margin-top: 6px;
     font-size: 0.8rem;
-    color: #a8a29e;
+    color: #78716c;
     font-style: italic;
     line-height: 1.5;
 }
@@ -4129,7 +4129,7 @@ export default {
 
 .booking-time-picker__option {
     border: 1px solid rgba(251, 146, 60, 0.28);
-    background: rgba(68, 64, 60, 0.6);
+    background: rgba(82, 76, 72, 0.55);
     color: #fb923c;
     border-radius: 999px;
     padding: 10px 16px;
@@ -4178,7 +4178,7 @@ export default {
 
 .booking-quantity-picker__option {
     border: 1px solid rgba(251, 146, 60, 0.28);
-    background: rgba(68, 64, 60, 0.6);
+    background: rgba(82, 76, 72, 0.55);
     color: #fb923c;
     border-radius: 999px;
     padding: 10px 18px;
@@ -4209,7 +4209,7 @@ export default {
 
 .booking-quantity-picker__more {
     border: 1px dashed rgba(251, 146, 60, 0.42);
-    background: rgba(68, 64, 60, 0.45);
+    background: rgba(82, 76, 72, 0.42);
     color: #fb923c;
     border-radius: 999px;
     padding: 10px 18px;
@@ -4282,7 +4282,7 @@ export default {
 
 .booking-child-picker__option {
     border: 1px solid rgba(251, 146, 60, 0.28);
-    background: rgba(68, 64, 60, 0.6);
+    background: rgba(82, 76, 72, 0.55);
     color: #fb923c;
     border-radius: 999px;
     padding: 8px 14px;
@@ -4314,7 +4314,7 @@ export default {
 .restaurant-sepa-panel {
     border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 18px;
-    background: rgba(68, 64, 60, 0.5);
+    background: rgba(82, 76, 72, 0.48);
     padding: 1rem 1.1rem;
 }
 
@@ -4376,7 +4376,7 @@ export default {
 .restaurant-sepa-signature-box {
     border: 1px solid rgba(15, 23, 42, 0.12);
     border-radius: 16px;
-    background: rgba(41, 37, 36, 0.8);
+    background: rgba(58, 53, 50, 0.8);
     padding: 0.9rem 1rem;
 }
 
@@ -4423,7 +4423,7 @@ export default {
 .booking-recipient-field {
     width: 100%;
     border: 1px solid rgba(251, 146, 60, 0.28);
-    background: rgba(68, 64, 60, 0.6);
+    background: rgba(82, 76, 72, 0.55);
     color: #e7e5e4;
     border-radius: 14px;
     padding: 11px 14px;
@@ -4435,7 +4435,7 @@ export default {
     outline: none;
     border-color: rgba(234, 88, 12, 0.55);
     box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.16);
-    background: #3a3533;
+    background: #4a4543;
 }
 
 .booking-recipient-field__hint {
@@ -4447,8 +4447,8 @@ export default {
     text-align: center;
     padding: 48px 24px;
     border-radius: 22px;
-    background: rgba(41, 37, 36, 0.75);
-    border: 1px solid rgba(251, 146, 60, 0.12);
+    background: rgba(255, 253, 250, 0.96);
+    border: 1px solid rgba(214, 211, 209, 0.5);
 }
 
 .rp-empty__icon {
@@ -4460,7 +4460,7 @@ export default {
 .rp-empty__text {
     margin: 0;
     font-size: 1rem;
-    color: #a8a29e;
+    color: #78716c;
 }
 
 @media (max-width: 960px) {

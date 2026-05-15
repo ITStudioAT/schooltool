@@ -41,6 +41,7 @@ describe('Restaurant page navigation', () => {
         vi.mocked(useRestaurantStore).mockReturnValue(restaurantStoreMock as never)
 
         const ctx: Record<string, unknown> = {
+            ensureAllowedSection: vi.fn(),
             loadPageData() {
                 return (Restaurant as any).methods.loadPageData.call(this)
             },
@@ -57,6 +58,22 @@ describe('Restaurant page navigation', () => {
         const items = (Restaurant as any).computed.visibleNavigationItems.call({})
 
         expect(items.map((item: { key: string }) => item.key)).toEqual(['overview', 'foods', 'menus', 'menu-plans', 'reports', 'users', 'sepa'])
+    })
+
+    it('adds the old CDGYM version item only for the Christian-Doppler-Gymnasium school', () => {
+        const cdgymItems = (Restaurant as any).computed.visibleNavigationItems.call({
+            isCdgymSchool: true,
+        })
+        const otherSchoolItems = (Restaurant as any).computed.visibleNavigationItems.call({
+            isCdgymSchool: false,
+        })
+
+        expect(cdgymItems.map((item: { key: string }) => item.key)).toContain('cdgym')
+        expect(cdgymItems.find((item: { key: string }) => item.key === 'cdgym')).toMatchObject({
+            label: 'Alte Version, Cdgym',
+            meta: 'cdgym.info',
+        })
+        expect(otherSchoolItems.map((item: { key: string }) => item.key)).not.toContain('cdgym')
     })
 
     it('builds hero chips from selected school and role context', () => {
@@ -177,6 +194,23 @@ describe('Restaurant page navigation', () => {
 
         expect(ctx.main_action).toBe('sepa')
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/sepa' })
+    })
+
+    it('switches to the cdgym section when unlocked', () => {
+        const routerReplace = vi.fn()
+        const ctx = {
+            isNavigationLocked: false,
+            main_action: 'overview',
+            $router: { replace: routerReplace },
+            navigateTo(section: string) {
+                return (Restaurant as any).methods.navigateTo.call(this, section)
+            },
+        }
+
+        ;(Restaurant as any).methods.handleNavigation.call(ctx, 'cdgym')
+
+        expect(ctx.main_action).toBe('cdgym')
+        expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/restaurant/cdgym' })
     })
 
     it('does not switch sections when locked', () => {

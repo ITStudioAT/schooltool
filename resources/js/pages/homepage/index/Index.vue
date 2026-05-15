@@ -363,8 +363,10 @@ export default {
                 if (toolFromUrl) {
                     this.openToolForSchool(toolFromUrl)
                 }
+                return
             }
         }
+        this.step = 'selectSchool'
     },
 
     mounted() {},
@@ -374,7 +376,7 @@ export default {
     data() {
         return {
             homepageStore: null,
-            step: 'selectSchool',
+            step: null,
             login_schools: [],
             selected_login_school: null,
             selected_login_school_id: null,

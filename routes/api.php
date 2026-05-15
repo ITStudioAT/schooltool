@@ -28,6 +28,8 @@ use App\Http\Controllers\Admin\RegisterPrintController;
 use App\Http\Controllers\Admin\RegisterUserController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantBillingController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantCategoryController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantCdgymLegacyImportController;
+use App\Http\Controllers\Admin\Restaurant\RestaurantCdgymLegacyStatsController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantEatingTimeController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFoodController;
 use App\Http\Controllers\Admin\Restaurant\RestaurantFreeDayController;
@@ -295,6 +297,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
     /* SANCTUM - admin, lunch_admin */
     Route::middleware(['auth:sanctum', 'api-allowed:scope:restaurant_access'])->group(function () {
         Route::get('/admin/restaurant/settings', [RestaurantSettingsController::class, 'index']);
+        Route::get('/admin/restaurant/cdgym/legacy-stats', RestaurantCdgymLegacyStatsController::class);
+        Route::post('/admin/restaurant/cdgym/legacy-import', RestaurantCdgymLegacyImportController::class);
         Route::get('/admin/restaurant/users', [RestaurantUserController::class, 'index']);
         Route::get('/admin/restaurant/sepa-users', [RestaurantUserController::class, 'sepaUsers']);
         Route::get('/admin/restaurant/sepa-users/{flowUuid}/print', [RestaurantUserController::class, 'printSepaMandate']);
