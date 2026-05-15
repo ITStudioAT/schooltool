@@ -10,7 +10,7 @@
         </template>
         <div class="students-action-bar d-flex align-center ga-2 mx-3 mt-2 flex-wrap">
             <v-btn
-                v-if="selectedCourseDateForCourse"
+                v-if="selectedCourseDateForCourse && !isDayOverviewMode && !show_bulk_entry"
                 size="small"
                 class="students-attendance-check-btn"
                 :variant="'flat'"
@@ -22,14 +22,14 @@
                 {{ attendanceCheckedForSelectedDate && !hasUnsavedAttendanceChanges ? 'Anwesenheit geprüft' : 'Anwesenheit prüfen' }}
             </v-btn>
             <v-btn
-                v-if="selectedCourseDateForCourse"
+                v-if="selectedCourseDateForCourse && !show_bulk_entry"
                 size="small"
                 class="students-overview-toggle-btn"
                 :variant="isDayOverviewMode ? 'flat' : 'outlined'"
-                :color="isDayOverviewMode ? 'secondary' : 'primary'"
+                :color="isDayOverviewMode ? 'warning' : 'primary'"
                 @click="toggleStudentsViewMode">
-                <v-icon start>{{ isDayOverviewMode ? 'mdi-account-group' : 'mdi-view-list' }}</v-icon>
-                {{ isDayOverviewMode ? 'Schülerliste' : 'Heute' }}
+                <v-icon start>{{ isDayOverviewMode ? 'mdi-close' : 'mdi-view-list' }}</v-icon>
+                {{ isDayOverviewMode ? 'Heute schließen' : 'Heute' }}
             </v-btn>
             <v-btn
                 v-if="!isDayOverviewMode"
@@ -38,6 +38,7 @@
                 :variant="show_bulk_entry ? 'flat' : 'outlined'"
                 :color="show_bulk_entry ? 'warning' : 'primary'"
                 @click="toggleBulkEntry">
+                <v-icon v-if="show_bulk_entry" start>mdi-close</v-icon>
                 {{ show_bulk_entry ? 'Sammelaktion schließen' : 'Sammelaktion' }}
             </v-btn>
             <v-spacer />
