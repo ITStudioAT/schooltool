@@ -23,9 +23,9 @@
 
     <v-col
         cols="12"
-        :md="isGradesMode ? 8 : 6"
-        :lg="7"
-        :xl="isGradesMode ? 6 : 4"
+        md="8"
+        lg="7"
+        xl="6"
         class="teaching-overview-card-col"
         v-if="show_students || !selected_course">
         <v-row v-if="!selected_course && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
@@ -50,9 +50,9 @@
 
     <v-col
         cols="12"
-        :md="isGradesMode ? 8 : 6"
-        :lg="7"
-        :xl="isGradesMode ? 6 : 4"
+        md="8"
+        lg="7"
+        xl="6"
         class="teaching-overview-card-col"
         v-if="selected_course && secondaryOverviewPanelSelection && action != 'teaching_course_new_or_edit'"
         :style="contentLockStyle">
@@ -382,9 +382,6 @@ export default {
             'selected_course_student',
             'show_performances_plus',
         ]),
-        isGradesMode() {
-            return !!this.$route?.query?.grades
-        },
         isControlLocked() {
             return this.action != '' || this.isStudentDetailActive
         },

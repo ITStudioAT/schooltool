@@ -458,9 +458,10 @@ describe('Teaching page navigation', () => {
         )
 
         expect(source.match(/class="teaching-overview-card-col"/g)).toHaveLength(2)
-        expect(source).toContain(':md="isGradesMode ? 8 : 6"')
-        expect(source).toContain(':lg="7"')
-        expect(source).toContain(':xl="isGradesMode ? 6 : 4"')
+        expect(source).toContain('md="8"')
+        expect(source).toContain('lg="7"')
+        expect(source).toContain('xl="6"')
+        expect(source).not.toContain('isGradesMode')
         expect(source).toContain('.teaching-overview-card-col {')
         expect(source).toContain('flex-grow: 0;')
     })
