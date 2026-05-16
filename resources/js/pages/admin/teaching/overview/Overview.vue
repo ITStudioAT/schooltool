@@ -42,32 +42,26 @@
     </v-col>
 
 
-    <v-col cols="12" :md="isGradesMode ? 8 : 6" :lg="isGradesMode ? 7 : 7" :xl="isGradesMode ? 6 : 4" v-if="selected_course && ((!isGradesMode && show_students) || show_infos || show_dates || show_curriculum || show_works || show_print) && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
-        <v-row v-if="show_students">
-            <v-col>
-                <CourseDates compact-student-view />
-            </v-col>
-        </v-row>
-
-        <v-row v-if="show_infos">
+    <v-col cols="12" :md="isGradesMode ? 8 : 6" :lg="isGradesMode ? 7 : 7" :xl="isGradesMode ? 6 : 4" v-if="selected_course && secondaryOverviewPanelSelection && action != 'teaching_course_new_or_edit'" :style="contentLockStyle">
+        <v-row v-if="secondaryOverviewPanelSelection === 'infos'">
             <v-col>
                 <CourseInfos />
             </v-col>
         </v-row>
 
-        <v-row v-if="show_works" class="mt-n6">
+        <v-row v-if="secondaryOverviewPanelSelection === 'works'" class="mt-n6">
             <v-col>
                 <CourseWorks />
             </v-col>
         </v-row>
 
-        <v-row v-if="show_dates" class="mt-n6">
+        <v-row v-if="secondaryOverviewPanelSelection === 'dates'" class="mt-n6">
             <v-col>
                 <CourseDates />
             </v-col>
         </v-row>
 
-        <v-row v-if="show_curriculum" class="mt-n6">
+        <v-row v-if="secondaryOverviewPanelSelection === 'curriculum'" class="mt-n6">
             <v-col>
                 <v-card variant="outlined" data-testid="teaching-curriculum-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
@@ -250,7 +244,7 @@
             </v-col>
         </v-row>
 
-        <v-row v-if="show_print" class="mt-n6">
+        <v-row v-if="secondaryOverviewPanelSelection === 'print'" class="mt-n6">
             <v-col>
                 <CoursePrint />
             </v-col>
@@ -386,6 +380,12 @@ export default {
         },
         isStudentDetailActive() {
             return this.action_2 === 'course_student_view' || !!this.selected_course_student
+        },
+        secondaryOverviewPanelSelection() {
+            const secondaryPanels = ['infos', 'dates', 'works', 'print', 'curriculum']
+            const selectedPanel = this.functionalPanelSelection
+
+            return secondaryPanels.includes(selectedPanel) ? selectedPanel : null
         },
         teachingSchemas() {
             return this.config?.user?.teaching_schemas || this.teachingStore?.settings?.teaching_schemas || []

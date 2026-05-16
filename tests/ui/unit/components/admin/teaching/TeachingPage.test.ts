@@ -353,8 +353,8 @@ describe('Teaching page navigation', () => {
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
         expect(source).toContain("const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
-        expect(source).toContain('v-if="selected_course && ((!isGradesMode && show_students) || show_infos || show_dates || show_curriculum || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
-        expect(source).toContain('v-if="show_curriculum" class="mt-n6"')
+        expect(source).toContain('v-if="selected_course && secondaryOverviewPanelSelection && action != \'teaching_course_new_or_edit\'"')
+        expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'curriculum\'" class="mt-n6"')
         expect(source).toContain('data-testid="teaching-curriculum-card"')
     })
 

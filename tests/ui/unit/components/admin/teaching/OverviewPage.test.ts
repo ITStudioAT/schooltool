@@ -111,6 +111,38 @@ describe('Teaching overview controls', () => {
         expect(ctx.show_performances_plus).toBe(false)
     })
 
+    it('does not render dates as a secondary panel while students is active', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/Overview.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const computed = (Overview as any).computed
+        const ctx: Record<string, unknown> = {
+            selected_course: { id: 20 },
+            show_students: true,
+            show_infos: false,
+            show_works: false,
+            show_print: false,
+            show_dates: true,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+            isGradesMode: false,
+        }
+
+        ctx.functionalPanelSelection = computed.functionalPanelSelection.get.call(ctx)
+        ctx.secondaryOverviewPanelSelection = computed.secondaryOverviewPanelSelection.call(ctx)
+
+        expect(ctx.functionalPanelSelection).toBe('students')
+        expect(ctx.secondaryOverviewPanelSelection).toBeNull()
+        expect(source).not.toContain('<CourseDates compact-student-view />')
+        expect(source).not.toContain('<v-row v-if="show_students">')
+        expect(source).toContain(':md="isGradesMode ? 8 : 6"')
+        expect(source).toContain('v-if="secondaryOverviewPanelSelection === \'dates\'" class="mt-n6"')
+    })
+
     it('aligns course dates and curriculum assignments by week', () => {
         const computed = (Overview as any).computed
         const methods = (Overview as any).methods

@@ -168,8 +168,14 @@
                                         class="student-name"
                                         :class="[show_bulk_entry ? '' : 'cursor-pointer', studentNameClass(student)]"
                                         @click="show_bulk_entry ? null : openStudent(student)">
-                                        <div class="student-name-text">
-                                            {{ student.last_name }}, {{ student.first_name }}
+                                        <div class="student-name-line">
+                                            <span class="student-name-text">
+                                                {{ student.last_name }}, {{ student.first_name }}
+                                            </span>
+                                            <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2" class="student-stars-chip">
+                                                <v-icon start size="14">mdi-star</v-icon>
+                                                {{ (student.stars || []).length }}
+                                            </v-chip>
                                         </div>
                                         <div v-if="studentEmailText(student)" class="student-meta-line text-caption text-medium-emphasis d-flex align-center ga-1">
                                             {{ studentEmailText(student) }}
@@ -188,10 +194,6 @@
                                     </div>
                                     <v-chip v-if="isStudentCanceled(student)" size="x-small" variant="tonal" color="warning">
                                         Storniert{{ student.canceled_at ? `: ${formatCanceledAt(student.canceled_at)}` : '' }}
-                                    </v-chip>
-                                    <v-chip v-if="(student.stars || []).length" size="x-small" variant="tonal" color="amber-darken-2">
-                                        <v-icon start size="14">mdi-star</v-icon>
-                                        {{ (student.stars || []).length }}
                                     </v-chip>
                                     <div class="student-metrics d-flex flex-wrap align-center ga-2 ml-auto">
                                         <template v-for="(count, type) in (studentBehaviourCounts[student.id] || {})" :key="`beh-${student.id}-${type}`">
@@ -1487,11 +1489,23 @@ export default {
     overflow-wrap: anywhere;
 }
 
+.student-name-line {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
 .student-name-text {
     font-size: 1rem;
     font-weight: 700;
     line-height: 1.3;
     color: #1e293b;
+}
+
+.student-stars-chip {
+    flex: 0 0 auto;
 }
 
 .student-name {

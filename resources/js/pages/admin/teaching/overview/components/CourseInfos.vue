@@ -9,7 +9,6 @@
         :disabled="isInfoLocked">
         <template #header-actions>
             <v-btn v-if="action !== 'edit_description'" icon="mdi-pencil" size="small" variant="tonal" :disabled="isSavingInfo" @click="editDescription" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" :disabled="isSavingInfo" @click="show_infos = false" />
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="isSavingInfo">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
@@ -60,10 +59,9 @@
                                 <div class="text-caption text-medium-emphasis">Benotungsschema</div>
                                 <div class="text-body-2">{{ schemaName }}</div>
                             </div>
-                            <div class="course-info-block course-info-block--description">
+                            <div v-if="selected_course.description" class="course-info-block course-info-block--description">
                                 <div class="text-caption text-medium-emphasis mb-1">Fachinfos</div>
-                                <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
-                                <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
+                                <div class="text-body-2 course-description" v-html="descriptionHtml"></div>
                             </div>
                         </v-card-text>
                     </v-card>
@@ -420,7 +418,7 @@ export default {
         },
         schemaName() {
             const schema = this.selectedCourseSchema
-            return schema ? `Schema: ${schema.name}` : 'Kein Schema zugewiesen'
+            return schema ? schema.name : 'Kein Schema zugewiesen'
         },
         selectedCourseClasses() {
             if (!this.selected_course?.classes?.length) return ''

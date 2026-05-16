@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import CourseWorks from '@/pages/admin/teaching/overview/components/CourseWorks.vue'
 
 describe('CourseWorks defaults', () => {
@@ -18,6 +18,14 @@ describe('CourseWorks defaults', () => {
         })
 
         expect(data.is_applying_bulk_action).toBe(false)
+    })
+
+    it('does not start in a group-work mode transition', () => {
+        const data = (CourseWorks as any).data.call({
+            emptyWorkForm: () => ({}),
+        })
+
+        expect(data.is_changing_group_work_mode).toBe(false)
     })
 })
 
@@ -52,6 +60,91 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('v-for="item in workGradeDistribution(work)"')
         expect(source).toContain('{{ item.grade }}: {{ item.count }}')
         expect(source).toContain('class="work-actions d-flex align-center ga-1"')
+    })
+
+    it('opens a specific work from the route query after jumping from dates', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseWorks as any).methods
+        const editWork = vi.fn()
+        const ctx: Record<string, any> = {
+            courseWorks: [
+                { id: 11, teaching_course_id: 20, title: 'Andere Arbeit' },
+                { id: 23, teaching_course_id: 20, title: 'Excel' },
+            ],
+            selected_course: { id: 20 },
+            selected_courseWork: null,
+            editWork,
+            $route: { query: { work: '23' } },
+        }
+
+        const opened = methods.openWorkFromRouteQuery.call(ctx)
+
+        expect(source).toContain('this.openWorkFromRouteQuery()')
+        expect(source).toContain("'$route.query.work'()")
+        expect(opened).toBe(true)
+        expect(ctx.selected_courseWork).toEqual({ id: 23, teaching_course_id: 20, title: 'Excel' })
+        expect(editWork).toHaveBeenCalledWith({ id: 23, teaching_course_id: 20, title: 'Excel' })
+    })
+
+    it('returns to the dates panel after cancelling a work opened from dates', () => {
+        const methods = (CourseWorks as any).methods
+        const replace = vi.fn(() => Promise.resolve())
+        const ctx: Record<string, any> = {
+            action: 'edit_course_work',
+            selected_courseWork: { id: 23, title: 'Excel' },
+            work_form: { id: 23 },
+            pending_group_work: true,
+            pending_random_groups: true,
+            show_bulk_action: true,
+            bulk_grade: '1',
+            bulk_comment: 'Kommentar',
+            selected_student_ids: [1, 2],
+            show_points_grading_view: true,
+            closeCommentDialog: vi.fn(),
+            details_editable: true,
+            details_snapshot: { id: 23 },
+            show_dates: false,
+            show_works: true,
+            courseStore: {
+                previous_selected_student: null,
+                previous_show_infos: null,
+                previous_show_dates: null,
+            },
+            shouldReturnToDatesPanel: methods.shouldReturnToDatesPanel,
+            returnToDatesPanel: methods.returnToDatesPanel,
+            emptyWorkForm: () => ({ groups: [] }),
+            $route: {
+                query: {
+                    course: '20',
+                    date: '370',
+                    grades: 'sem1,sem2,year',
+                    panel: 'works',
+                    work: '23',
+                    return_panel: 'dates',
+                },
+            },
+            $router: { replace },
+        }
+
+        methods.abortEdit.call(ctx)
+
+        expect(ctx.action).toBe('')
+        expect(ctx.selected_courseWork).toBeNull()
+        expect(ctx.work_form).toEqual({ groups: [] })
+        expect(ctx.show_dates).toBe(true)
+        expect(ctx.show_works).toBe(false)
+        expect(replace).toHaveBeenCalledWith({
+            query: {
+                course: '20',
+                date: '370',
+                grades: 'sem1,sem2,year',
+                panel: 'dates',
+            },
+        })
     })
 
     it('adds vertical spacing between work list items', () => {
@@ -145,6 +238,194 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('overflow-wrap: anywhere;')
     })
 
+    it('keeps the full new work form editable from the beginning', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseWorks as any).methods
+        const state = {
+            emptyWorkForm: methods.emptyWorkForm,
+            buildIndividualGroups: () => [],
+            selected_course: { id: 20 },
+            closeCommentDialog: vi.fn(),
+            $nextTick: vi.fn(),
+        }
+
+        methods.newWork.call(state)
+
+        expect(source).toContain(':disabled="is_saving || isEditingExistingDetails"')
+        expect(source).toContain(':style="isEditingExistingDetails ? \'pointer-events:none; opacity:0.45\' : \'\'"')
+        expect(source).toContain('<template v-if="action === \'new_course_work\' || details_editable">')
+        expect(source).toContain('isEditingExistingDetails()')
+        expect(state.details_editable).toBe(false)
+        expect(state.action).toBe('new_course_work')
+    })
+
+    it('prevents saving work without a selected type', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const computed = (CourseWorks as any).computed
+
+        expect(source).not.toContain('v-if="!hasSelectedWorkType"')
+        expect(source).toContain(':disabled="!canSaveWork"')
+        expect(source).toContain('if (!this.hasSelectedWorkType) {')
+        expect(source).toContain('useNotificationStore().notify({')
+        expect(source).toContain("type: 'warning'")
+        expect(computed.hasSelectedWorkType.call({ selectedTypeWork: null })).toBe(false)
+        expect(computed.canSaveWork.call({
+            is_saving: false,
+            isEditingExistingDetails: false,
+            hasSelectedWorkType: false,
+        })).toBe(false)
+    })
+
+    it('keeps group size available immediately for group work', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('label="Gruppengröße"')
+        expect(source).toContain('v-model.number="work_form.group_size"')
+        expect(source).not.toContain('<v-text-field\n                                            v-if="work_form.is_random_groups"')
+        expect(source).not.toContain('v-if="work_form.is_random_groups && hasUnassignedStudents"')
+        expect(source).toContain("{{ work_form.groups?.length ? 'Neu erstellen' : 'Erstellen' }}")
+    })
+
+    it('can regenerate random groups when all students are already assigned', () => {
+        const methods = (CourseWorks as any).methods
+        const state = {
+            activeCourseStudents: [
+                { id: 1 },
+                { id: 2 },
+                { id: 3 },
+                { id: 4 },
+            ],
+            work_form: {
+                date_for_all_groups: '2026-05-16',
+                group_size: 2,
+                groups: [
+                    { student_ids: [1, 2] },
+                    { student_ids: [3, 4] },
+                ],
+            },
+        }
+
+        methods.generateRandomGroups.call(state)
+
+        expect(state.work_form.groups).toHaveLength(2)
+        expect(state.work_form.groups.flatMap((group) => group.student_ids).sort()).toEqual(['1', '2', '3', '4'])
+    })
+
+    it('locks the group-work switch once a work exists', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const computed = (CourseWorks as any).computed
+
+        expect(source).toContain('v-if="!canChangeGroupWorkMode"')
+        expect(source).toContain('<v-switch\n                                    v-else')
+        expect(source).toContain('if (!this.canChangeGroupWorkMode) return')
+        expect(computed.canChangeGroupWorkMode.call({
+            action: 'new_course_work',
+            work_form: { id: null },
+        })).toBe(true)
+        expect(computed.canChangeGroupWorkMode.call({
+            action: 'edit_course_work',
+            work_form: { id: 10 },
+        })).toBe(false)
+        expect(computed.canChangeGroupWorkMode.call({
+            action: 'new_course_work',
+            work_form: { id: 10 },
+        })).toBe(false)
+    })
+
+    it('ignores group-work switch changes for saved works', () => {
+        const methods = (CourseWorks as any).methods
+        const state = {
+            work_form: {
+                id: 10,
+                is_group_work: false,
+                is_random_groups: false,
+                group_size: null,
+                groups: [],
+            },
+            canChangeGroupWorkMode: false,
+            pending_group_work: null,
+            group_work_switch_key: 0,
+            toBoolean: methods.toBoolean,
+        }
+
+        methods.setGroupWork.call(state, true)
+
+        expect(state.work_form.is_group_work).toBe(false)
+        expect(state.pending_group_work).toBeNull()
+        expect(state.group_work_switch_key).toBe(0)
+    })
+
+    it('allows group-work switch changes while creating a new work', () => {
+        const methods = (CourseWorks as any).methods
+        const state = {
+            work_form: {
+                id: null,
+                is_group_work: false,
+                is_random_groups: false,
+                group_size: null,
+                groups: [],
+            },
+            canChangeGroupWorkMode: true,
+            pending_group_work: null,
+            group_work_switch_key: 0,
+            is_changing_group_work_mode: false,
+            toBoolean: methods.toBoolean,
+            hasIndividualEntries: methods.hasIndividualEntries,
+            hasGroupEntries: methods.hasGroupEntries,
+            applyGroupWorkMode: methods.applyGroupWorkMode,
+            syncGroupWorkModeState: methods.syncGroupWorkModeState,
+            buildIndividualGroups: vi.fn(() => []),
+            generateRandomGroups: vi.fn(),
+        }
+
+        methods.setGroupWork.call(state, true)
+
+        expect(state.pending_group_work).toBeNull()
+        expect(state.work_form.is_group_work).toBe(true)
+        expect(state.work_form.group_size).toBe(2)
+        expect(state.work_form.groups).toEqual([])
+    })
+
+    it('shows the current work mode clearly in the edit form', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const computed = (CourseWorks as any).computed
+
+        expect(source).toContain('class="work-mode-chip"')
+        expect(source).toContain('v-if="!canChangeGroupWorkMode"')
+        expect(source).toContain('{{ workModeLabel }}')
+        expect(computed.workModeLabel.call({ work_form: { is_group_work: true } })).toBe('Gruppenarbeit')
+        expect(computed.workModeLabel.call({ work_form: { is_group_work: false } })).toBe('Einzelarbeit')
+        expect(computed.workModeIcon.call({ work_form: { is_group_work: true } })).toBe('mdi-account-group')
+        expect(computed.workModeIcon.call({ work_form: { is_group_work: false } })).toBe('mdi-account')
+    })
+
+    it('does not treat empty serialized student rows as filled entries', () => {
+        const methods = (CourseWorks as any).methods
+
+        expect(methods.hasFilledStudentValues([{ student_id: 1, grade: '' }], 'grade')).toBe(false)
+        expect(methods.hasFilledStudentValues([{ student_id: 1, grade: '3' }], 'grade')).toBe(true)
+    })
+
     it('renders whether each work list item is group work in the type row', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -159,6 +440,38 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('justify-content: space-between;')
         expect(source).not.toContain('class="work-mode-chip ml-1"')
         expect(source).not.toContain('<span> - {{ work.is_group_work ? \'Gruppenarbeit\' : \'Einzelarbeit\' }}</span>')
+    })
+
+    it('shows an exclamation marker for group works with unassigned students', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseWorks as any).methods
+        const ctx = {
+            activeCourseStudents: [
+                { id: 1 },
+                { id: 2 },
+                { id: 3 },
+            ],
+        }
+
+        expect(source).toContain('v-if="workHasUnassignedStudents(work)"')
+        expect(source).toContain('class="work-unassigned-chip"')
+        expect(source).toContain('Nicht alle Schüler:innen sind einer Gruppe zugeordnet')
+        expect(methods.workHasUnassignedStudents.call(ctx, {
+            is_group_work: true,
+            groups: [{ student_ids: [1, 2] }],
+        })).toBe(true)
+        expect(methods.workHasUnassignedStudents.call(ctx, {
+            is_group_work: true,
+            groups: [{ student_ids: [1, 2, 3] }],
+        })).toBe(false)
+        expect(methods.workHasUnassignedStudents.call(ctx, {
+            is_group_work: false,
+            groups: [{ student_ids: [1] }],
+        })).toBe(false)
     })
 
     it('renders grade summaries in the group-work group list', () => {
@@ -338,6 +651,33 @@ describe('CourseWorks points mode', () => {
         expect(source).toContain('@click="addStudentToGroup(group_dialog_index, student.value)"')
         expect(source).toContain('@click:close="removeStudentFromGroup(group_dialog_index, studentId)"')
         expect(source).not.toContain('<v-menu>')
+    })
+
+    it('opens the new group dialog with the student picker expanded', () => {
+        const methods = (CourseWorks as any).methods
+        const ctx: Record<string, any> = {
+            work_form: {
+                date_for_all_groups: '2026-05-16',
+                groups: [
+                    { student_ids: [1, 2] },
+                ],
+            },
+            group_dialog_index: null,
+            group_dialog_open: false,
+            group_dialog_add_students_open: false,
+        }
+
+        methods.addGroup.call(ctx)
+
+        expect(ctx.work_form.groups).toHaveLength(2)
+        expect(ctx.group_dialog_index).toBe(1)
+        expect(ctx.group_dialog_open).toBe(true)
+        expect(ctx.group_dialog_add_students_open).toBe(true)
+        expect(ctx.work_form.groups[1]).toMatchObject({
+            student_ids: [],
+            date: '2026-05-16',
+            use_individual_grades: false,
+        })
     })
 
     it('updates the shared group grade when a chip is selected', () => {

@@ -444,8 +444,25 @@ describe('CourseStudent entry title rendering', () => {
         const emptyTypeClass = methods.entryTypeBackgroundClass.call({}, { type: '' })
 
         expect(firstTypeClass).toBe(sameTypeClass)
-        expect(firstTypeClass).toMatch(/^entry-list-row--type-[1-6]$/)
+        expect(firstTypeClass).toMatch(/^entry-list-row--type-[1-8]$/)
         expect(emptyTypeClass).toBe('entry-list-row--type-empty')
+    })
+
+    it('uses a wider work-type background palette for easier visual separation', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseStudent as any).methods
+
+        expect(methods.entryTypeBackgroundClass.call({}, { type: 'MA' })).not.toBe(
+            methods.entryTypeBackgroundClass.call({}, { type: 'AK' }),
+        )
+        expect(source).toContain('const entryTypeBackgroundClassCount = 8')
+        expect(source).toContain('.entry-list-row--type-8 {')
+        expect(source).toContain('background-color: #fef3c7 !important;')
+        expect(source).toContain('background-color: #ede9fe !important;')
     })
 
     it('uses a colored background class for stars without a stored type', () => {
@@ -455,7 +472,7 @@ describe('CourseStudent entry title rendering', () => {
             { id: 1 },
         )
 
-        expect(starTypeClass).toMatch(/^entry-list-row--type-[1-6]$/)
+        expect(starTypeClass).toMatch(/^entry-list-row--type-[1-8]$/)
     })
 })
 

@@ -11,8 +11,8 @@
         </template>
         <template #header-actions>
             <v-btn v-if="action !== 'new_course_work' && action !== 'edit_course_work'" icon="mdi-plus" size="small" variant="tonal" @click="newWork" :disabled="!hasStudents" />
-            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || details_editable" />
-            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="is_saving || details_editable" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-close" size="small" color="warning" variant="tonal" @click="abortEdit" :disabled="is_saving || isEditingExistingDetails" />
+            <v-btn v-if="action === 'new_course_work' || action === 'edit_course_work'" icon="mdi-content-save" size="small" color="success" variant="tonal" @click="saveWork(false)" :disabled="!canSaveWork" />
         </template>
         <v-card
             tile
@@ -52,10 +52,21 @@
                                 <div class="text-caption text-medium-emphasis work-type-first-line">
                                     {{ workTypeModeLabel(work) }}
                                 </div>
-                                <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
-                                    {{ formatDate(workListDate(work)) }}
-                                </v-chip>
-                                <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                                <div class="work-meta-actions">
+                                    <v-chip
+                                        v-if="workHasUnassignedStudents(work)"
+                                        size="x-small"
+                                        variant="flat"
+                                        color="warning"
+                                        class="work-unassigned-chip"
+                                        title="Nicht alle Schüler:innen sind einer Gruppe zugeordnet">
+                                        !
+                                    </v-chip>
+                                    <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
+                                        {{ formatDate(workListDate(work)) }}
+                                    </v-chip>
+                                    <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                                </div>
                             </div>
                             <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
                                 {{ work.title || '—' }}
@@ -102,11 +113,31 @@
             <v-form ref="form" v-model="is_valid" @submit.prevent class="mb-4">
                 <v-card-text class="pt-2">
                     <v-card variant="outlined" class="pa-3 mb-4">
-                        <div :style="details_editable ? 'pointer-events:none; opacity:0.45' : ''">
-                            <div class="d-flex align-center ga-2 mb-1">
-                                <div class="text-caption text-medium-emphasis">Typ</div>
+                        <div :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
+                            <div class="d-flex align-center ga-2 mb-1 flex-wrap">
+                                <div class="d-flex flex-wrap ga-1">
+                                    <v-btn
+                                        v-for="item in workTypeItems"
+                                        :key="item.value"
+                                        :variant="work_form.type === item.value ? 'flat' : 'tonal'"
+                                        :color="work_form.type === item.value ? 'primary' : 'default'"
+                                        size="small"
+                                        @click="work_form.type = work_form.type === item.value ? null : item.value">
+                                        {{ item.value }}
+                                    </v-btn>
+                                </div>
                                 <v-spacer />
+                                <v-chip
+                                    v-if="!canChangeGroupWorkMode"
+                                    size="small"
+                                    variant="flat"
+                                    :color="workModeColor"
+                                    :prepend-icon="workModeIcon"
+                                    class="work-mode-chip">
+                                    {{ workModeLabel }}
+                                </v-chip>
                                 <v-switch
+                                    v-else
                                     :key="group_work_switch_key"
                                     :model-value="work_form.is_group_work"
                                     :color="work_form.is_group_work ? 'success' : ''"
@@ -117,17 +148,6 @@
                                     class="group-work-switch ma-0"
                                     @update:model-value="setGroupWork" />
                             </div>
-                            <div class="d-flex flex-wrap ga-1 mb-1">
-                                <v-btn
-                                    v-for="item in workTypeItems"
-                                    :key="item.value"
-                                    :variant="work_form.type === item.value ? 'flat' : 'tonal'"
-                                    :color="work_form.type === item.value ? 'primary' : 'default'"
-                                    size="small"
-                                    @click="work_form.type = work_form.type === item.value ? null : item.value">
-                                    {{ item.value }}
-                                </v-btn>
-                            </div>
                             <div class="text-caption text-primary mb-4" style="min-height: 1.2em;">
                                 {{ workTypeItems.find(i => i.value === work_form.type)?.title ?? '' }}
                             </div>
@@ -135,7 +155,7 @@
                         <div class="d-flex align-center ga-2 mt-3 mb-2">
                             <div class="text-caption text-medium-emphasis text-uppercase">Details</div>
                             <v-spacer />
-                            <template v-if="details_editable">
+                            <template v-if="action === 'edit_course_work' && details_editable">
                                 <v-btn
                                     icon="mdi-close"
                                     size="x-small"
@@ -152,7 +172,7 @@
                                     @click="applyDetailsEdit" />
                             </template>
                             <v-btn
-                                v-else
+                                v-else-if="action === 'edit_course_work'"
                                 icon="mdi-pencil"
                                 size="x-small"
                                 variant="tonal"
@@ -161,7 +181,7 @@
                                 @click="startDetailsEdit" />
                         </div>
 
-                        <template v-if="details_editable">
+                        <template v-if="action === 'new_course_work' || details_editable">
                             <v-text-field v-model="work_form.title" label="Titel" />
                             <v-date-input v-model="work_form.date_for_all_groups" label="Datum (für alle Gruppen)" />
                             <div class="d-flex flex-wrap ga-1 mt-1" v-if="nextDates.length">
@@ -195,7 +215,7 @@
                         </div>
                     </v-card>
 
-                    <div :style="details_editable ? 'pointer-events:none; opacity:0.45' : ''">
+                    <div :style="isEditingExistingDetails ? 'pointer-events:none; opacity:0.45' : ''">
 
                     <div v-if="pending_group_work !== null" class="d-flex align-center ga-2 mt-2">
                         <div class="text-body-2">
@@ -218,7 +238,6 @@
                                 <div class="d-flex flex-column ga-2">
                                     <div class="d-flex align-center ga-3 flex-wrap">
                                         <v-switch
-                                            v-if="hasUnassignedStudents"
                                             v-model="work_form.is_random_groups"
                                             :color="work_form.is_random_groups ? 'success' : ''"
                                             label="Gruppen zufällig erstellen"
@@ -227,7 +246,6 @@
                                             hide-details
                                             class="ma-0 flex-grow-0 random-groups-switch" />
                                         <v-text-field
-                                            v-if="work_form.is_random_groups && hasUnassignedStudents"
                                             v-model.number="work_form.group_size"
                                             type="number"
                                             min="2"
@@ -237,13 +255,13 @@
                                             style="max-width: 160px" />
                                         <v-spacer />
                                         <v-btn
-                                            v-if="work_form.is_random_groups && !pending_random_groups && hasUnassignedStudents"
+                                            v-if="work_form.is_random_groups && !pending_random_groups"
                                             color="primary"
                                             variant="tonal"
                                             size="small"
                                             :disabled="!work_form.group_size || work_form.group_size < 2"
                                             @click="requestRandomGroups">
-                                            Erstellen
+                                            {{ work_form.groups?.length ? 'Neu erstellen' : 'Erstellen' }}
                                         </v-btn>
                                         <v-btn
                                             v-if="(!work_form.is_random_groups || !hasUnassignedStudents) && work_form.groups?.length"
@@ -266,12 +284,12 @@
                                 </div>
                             </v-card>
 
-                            <div class="d-flex flex-column ga-2 mt-3">
+                            <div class="group-card-grid mt-3">
                                 <v-card
                                     v-for="(group, index) in work_form.groups"
                                     :key="`group-${index}`"
                                     variant="outlined"
-                                    class="pa-2">
+                                    class="group-card-block pa-2">
                                     <v-alert
                                         v-if="groupSizeHint(group)"
                                         density="compact"
@@ -718,8 +736,8 @@
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
                             <v-btn color="warning" flat tile @click="abortEdit" :disabled="is_saving">Abbruch</v-btn>
                             <div class="d-flex ga-2">
-                                <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="is_saving" :loading="is_saving">Speichern</v-btn>
-                                <v-btn color="success" flat tile @click="saveWork(false)" :disabled="is_saving" prepend-icon="mdi-content-save">Ende</v-btn>
+                                <v-btn color="primary" flat tile @click="saveWork(true)" :disabled="!canSaveWork" :loading="is_saving">Speichern</v-btn>
+                                <v-btn color="success" flat tile @click="saveWork(false)" :disabled="!canSaveWork" prepend-icon="mdi-content-save">Ende</v-btn>
                             </div>
                         </div>
                     </div>
@@ -766,6 +784,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
+import { useNotificationStore } from '@/stores/spa/NotificationStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 
 export default {
@@ -781,6 +800,7 @@ export default {
         }
         this.activeSemester = this.config?.user?.teaching_active_semester || 1
         await this.refreshWorks()
+        this.openWorkFromRouteQuery()
     },
 
     unmounted() {
@@ -820,6 +840,7 @@ export default {
             comment_dialog_student_id: null,
             comment_dialog_value: '',
             is_saving: false,
+            is_changing_group_work_mode: false,
         }
     },
 
@@ -901,6 +922,24 @@ export default {
         selectedTypeWork() {
             return this.workConfigForType(this.work_form.type)
         },
+        hasSelectedWorkType() {
+            return !!this.selectedTypeWork
+        },
+        canSaveWork() {
+            return !this.is_saving && !this.isEditingExistingDetails && this.hasSelectedWorkType
+        },
+        canChangeGroupWorkMode() {
+            return this.action === 'new_course_work' && !this.work_form.id
+        },
+        workModeLabel() {
+            return this.work_form.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'
+        },
+        workModeIcon() {
+            return this.work_form.is_group_work ? 'mdi-account-group' : 'mdi-account'
+        },
+        workModeColor() {
+            return this.work_form.is_group_work ? 'success' : 'primary'
+        },
         selectedTypeSupportsPoints() {
             if (this.work_form.is_group_work) return false
             return this.workSupportsPoints(this.selectedTypeWork)
@@ -931,6 +970,9 @@ export default {
                 .filter((d) => !isNaN(d._dateObj.getTime()) && d._dateObj >= today)
                 .sort((a, b) => a._dateObj - b._dateObj)
                 .slice(0, 3)
+        },
+        isEditingExistingDetails() {
+            return this.action === 'edit_course_work' && this.details_editable
         },
         chipViewRows() {
             if (this.work_form.is_group_work) return []
@@ -1021,8 +1063,9 @@ export default {
             if (val) this.activeSemester = val
         },
         selected_course: {
-            handler() {
-                this.refreshWorks()
+            async handler() {
+                await this.refreshWorks()
+                this.openWorkFromRouteQuery()
             },
             deep: true,
         },
@@ -1030,9 +1073,13 @@ export default {
             handler(work) {
                 if (!work?.id) return
                 if (this.selected_course?.id && work.teaching_course_id !== this.selected_course.id) return
+                if (this.action === 'edit_course_work' && this.work_form?.id === work.id) return
                 this.editWork(work)
             },
             deep: false,
+        },
+        '$route.query.work'() {
+            this.openWorkFromRouteQuery()
         },
         'work_form.date_for_all_groups'(val) {
             if (val && val instanceof Date) {
@@ -1049,23 +1096,8 @@ export default {
             }
         },
         'work_form.is_group_work'(val, oldVal) {
-            if (this.is_initializing_form) return
-            if (!val) {
-                this.work_form.is_random_groups = false
-                this.work_form.group_size = null
-                this.work_form.groups = this.buildIndividualGroups()
-                return
-            }
-            if (val && !oldVal) {
-                if (!this.work_form.group_size || this.work_form.group_size < 2) {
-                    this.work_form.group_size = 2
-                }
-                if (this.work_form.is_random_groups) {
-                    this.generateRandomGroups()
-                } else {
-                    this.work_form.groups = []
-                }
-            }
+            if (this.is_initializing_form || this.is_changing_group_work_mode) return
+            this.syncGroupWorkModeState(this.toBoolean(val), this.toBoolean(oldVal))
         },
         'work_form.type'() {
             if (!this.selectedTypeSupportsPoints) {
@@ -1163,6 +1195,13 @@ export default {
             if (!work) return false
 
             return Boolean(work.points_note_enabled)
+        },
+        toBoolean(value) {
+            if (typeof value === 'string') {
+                return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+            }
+
+            return Boolean(value)
         },
         gradeFromPointsForWork(work, points) {
             if (!this.workSupportsPoints(work) || points == null) return ''
@@ -1297,33 +1336,78 @@ export default {
             this.show_points_grading_view = !this.show_points_grading_view
         },
         setGroupWork(value) {
-            const nextVal = !!value
-            const current = !!this.work_form.is_group_work
+            if (!this.canChangeGroupWorkMode) return
+
+            const nextVal = this.toBoolean(value)
+            const current = this.toBoolean(this.work_form.is_group_work)
+            if (nextVal === current) return
+
             // Switching to group work: check for individual entries
             if (nextVal && !current && this.hasIndividualEntries()) {
                 this.pending_group_work = nextVal
+                this.group_work_switch_key++
                 return
             }
             // Switching to individual work: check for group entries
             if (!nextVal && current && this.hasGroupEntries()) {
                 this.pending_group_work = nextVal
+                this.group_work_switch_key++
                 return
             }
-            this.work_form.is_group_work = nextVal
+            this.applyGroupWorkMode(nextVal, current)
         },
         confirmGroupWorkChange() {
             if (this.pending_group_work === null) return
-            this.work_form.is_group_work = this.pending_group_work
+            const nextVal = this.toBoolean(this.pending_group_work)
+            const current = this.toBoolean(this.work_form.is_group_work)
             this.pending_group_work = null
+            this.applyGroupWorkMode(nextVal, current)
             this.group_work_switch_key++
         },
         cancelGroupWorkChange() {
-            // Restore the opposite of pending (i.e., keep the current value)
-            this.work_form.is_group_work = !this.pending_group_work
             this.pending_group_work = null
             this.group_work_switch_key++
         },
+        applyGroupWorkMode(value, oldValue = this.work_form.is_group_work) {
+            const nextVal = this.toBoolean(value)
+            const previousVal = this.toBoolean(oldValue)
+
+            this.is_changing_group_work_mode = true
+            this.work_form.is_group_work = nextVal
+            this.syncGroupWorkModeState(nextVal, previousVal)
+            const resetChangingFlag = () => {
+                this.is_changing_group_work_mode = false
+            }
+            if (typeof this.$nextTick === 'function') {
+                this.$nextTick(resetChangingFlag)
+                return
+            }
+            resetChangingFlag()
+        },
+        syncGroupWorkModeState(isGroupWork, wasGroupWork) {
+            if (!isGroupWork) {
+                this.work_form.is_random_groups = false
+                this.work_form.group_size = null
+                this.work_form.groups = this.buildIndividualGroups()
+                return
+            }
+
+            if (!wasGroupWork) {
+                if (!this.work_form.group_size || this.work_form.group_size < 2) {
+                    this.work_form.group_size = 2
+                }
+                if (this.work_form.is_random_groups) {
+                    this.generateRandomGroups()
+                    return
+                }
+                this.work_form.groups = []
+            }
+        },
         requestRandomGroups() {
+            if (this.work_form.groups?.length) {
+                this.pending_random_groups = true
+                return
+            }
             this.generateRandomGroups()
         },
         confirmRandomGroups() {
@@ -1338,12 +1422,9 @@ export default {
             if (!groups.length) return false
             return groups.some((group) => {
                 const hasStudents = Array.isArray(group?.student_ids) && group.student_ids.length > 0
-                const gradeVals = group?.grades ? Object.values(group.grades) : []
-                const commentVals = group?.comments ? Object.values(group.comments) : []
-                const pointsVals = group?.points ? Object.values(group.points) : []
-                const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
-                const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
-                const hasPoints = pointsVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasGrade = this.hasFilledStudentValues(group?.grades, 'grade')
+                const hasComment = this.hasFilledStudentValues(group?.comments, 'comment')
+                const hasPoints = this.hasFilledStudentValues(group?.points, 'points')
                 const groupGrade = (group?.grade ?? '').toString().trim() !== ''
                 const groupComment = (group?.comment ?? '').toString().trim() !== ''
                 return hasStudents || hasGrade || hasComment || hasPoints || groupGrade || groupComment
@@ -1352,16 +1433,26 @@ export default {
         hasIndividualEntries() {
             const groups = this.work_form.groups || []
             return groups.some((group) => {
-                const gradeVals = group?.grades ? Object.values(group.grades) : []
-                const commentVals = group?.comments ? Object.values(group.comments) : []
-                const pointsVals = group?.points ? Object.values(group.points) : []
-                const hasGrade = gradeVals.some((v) => (v ?? '').toString().trim() !== '')
-                const hasComment = commentVals.some((v) => (v ?? '').toString().trim() !== '')
-                const hasPoints = pointsVals.some((v) => (v ?? '').toString().trim() !== '')
+                const hasGrade = this.hasFilledStudentValues(group?.grades, 'grade')
+                const hasComment = this.hasFilledStudentValues(group?.comments, 'comment')
+                const hasPoints = this.hasFilledStudentValues(group?.points, 'points')
                 const groupGrade = (group?.grade ?? '').toString().trim() !== ''
                 const groupComment = (group?.comment ?? '').toString().trim() !== ''
                 return hasGrade || hasComment || hasPoints || groupGrade || groupComment
             })
+        },
+        hasFilledStudentValues(values, key) {
+            if (!values) return false
+
+            if (Array.isArray(values)) {
+                return values.some((item) => (item?.[key] ?? '').toString().trim() !== '')
+            }
+
+            if (typeof values === 'object') {
+                return Object.values(values).some((value) => (value ?? '').toString().trim() !== '')
+            }
+
+            return false
         },
         emptyWorkForm() {
             return {
@@ -1385,11 +1476,25 @@ export default {
             }
             await this.courseWorkStore.index(this.selected_course.id)
         },
+        openWorkFromRouteQuery() {
+            const workId = this.$route?.query?.work
+            if (!workId) return false
+
+            const work = (this.courseWorks || []).find((courseWork) => String(courseWork.id) === String(workId))
+            if (!work) return false
+            if (this.selected_course?.id && work.teaching_course_id !== this.selected_course.id) return false
+
+            this.selected_courseWork = work
+            this.editWork(work)
+
+            return true
+        },
         newWork() {
             this.is_initializing_form = true
             this.work_form = this.emptyWorkForm()
             this.work_form.teaching_course_id = this.selected_course?.id || null
             this.work_form.groups = this.buildIndividualGroups()
+            this.pending_group_work = null
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
@@ -1397,7 +1502,8 @@ export default {
             this.selected_student_ids = []
             this.show_points_grading_view = false
             this.closeCommentDialog()
-            this.details_editable = true
+            this.details_editable = false
+            this.details_snapshot = null
             this.action = 'new_course_work'
             this.$nextTick(() => {
                 this.is_initializing_form = false
@@ -1410,6 +1516,8 @@ export default {
                 ...this.emptyWorkForm(),
                 ...work,
             }
+            this.work_form.is_group_work = this.toBoolean(this.work_form.is_group_work)
+            this.work_form.is_random_groups = this.toBoolean(this.work_form.is_random_groups)
             // Clear the type if it is no longer a valid short_name in the current schema
             // (e.g. orphaned UUID from a deleted schema). Forces the user to pick a valid type.
             if (this.work_form.type && !this.teachingWorks.some((w) => w.short_name === this.work_form.type)) {
@@ -1466,6 +1574,7 @@ export default {
                 // Sort groups by student class, then last_name for non-group works
                 this.work_form.groups = this.sortGroupsByStudent(this.work_form.groups)
             }
+            this.pending_group_work = null
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
@@ -1498,9 +1607,12 @@ export default {
             }
         },
         abortEdit() {
+            const shouldReturnToDatesPanel = this.shouldReturnToDatesPanel()
+
             this.action = ''
             this.selected_courseWork = null
             this.work_form = this.emptyWorkForm()
+            this.pending_group_work = null
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
@@ -1508,6 +1620,15 @@ export default {
             this.selected_student_ids = []
             this.show_points_grading_view = false
             this.closeCommentDialog()
+            this.details_editable = false
+            this.details_snapshot = null
+
+            if (shouldReturnToDatesPanel) {
+                this.returnToDatesPanel()
+                return
+            }
+
+            this.clearWorkRouteQuery()
 
             // If we came from student detail, return to it
             if (this.courseStore.previous_selected_student) {
@@ -1530,7 +1651,41 @@ export default {
                 this.courseStore.previous_show_dates = null
             }
         },
+        shouldReturnToDatesPanel() {
+            return this.$route?.query?.return_panel === 'dates'
+        },
+        returnToDatesPanel() {
+            this.show_dates = true
+            this.show_works = false
+
+            if (!this.$router) return
+
+            const query = {
+                ...this.$route.query,
+                panel: 'dates',
+            }
+            delete query.work
+            delete query.return_panel
+
+            this.$router.replace({ query }).catch(() => {})
+        },
+        clearWorkRouteQuery() {
+            if ((!this.$route?.query?.work && !this.$route?.query?.return_panel) || !this.$router) return
+
+            const query = { ...this.$route.query }
+            delete query.work
+            delete query.return_panel
+            this.$router.replace({ query }).catch(() => {})
+        },
         async saveWork(stayOnPage = false) {
+            if (!this.hasSelectedWorkType) {
+                useNotificationStore().notify({
+                    message: 'Bitte zuerst einen Typ auswählen.',
+                    type: 'warning',
+                })
+                return
+            }
+
             // Prevent multiple saves while one is in progress
             if (this.is_saving) return
             this.is_saving = true
@@ -1633,6 +1788,7 @@ export default {
         },
         addGroup() {
             if (!Array.isArray(this.work_form.groups)) this.work_form.groups = []
+            const groupIndex = this.work_form.groups.length
             this.work_form.groups.push({
                 student_ids: [],
                 date: this.work_form.date_for_all_groups || '',
@@ -1643,6 +1799,9 @@ export default {
                 points: {},
                 use_individual_grades: false,
             })
+            this.group_dialog_index = groupIndex
+            this.group_dialog_add_students_open = true
+            this.group_dialog_open = true
         },
         requestRemoveGroup(index) {
             this.pending_delete_group_index = index
@@ -1677,17 +1836,17 @@ export default {
             const allIds = this.activeCourseStudents.map((s) => String(s.id))
             if (!allIds.length) return
 
+            const size = parseInt(this.work_form.group_size, 10)
+            if (!size || size < 2) return
+
             const assigned = new Set()
             ;(this.work_form.groups || []).forEach((group) => {
                 ;(group.student_ids || []).forEach((id) => assigned.add(String(id)))
             })
             const unassigned = allIds.filter((id) => !assigned.has(id))
-            if (!unassigned.length) return
+            const studentIds = unassigned.length ? unassigned : allIds
 
-            const size = parseInt(this.work_form.group_size, 10)
-            if (!size || size < 2) return
-
-            const shuffled = [...unassigned]
+            const shuffled = [...studentIds]
             for (let i = shuffled.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1))
                 ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
@@ -1711,7 +1870,7 @@ export default {
                 }
             }
 
-            if (!Array.isArray(this.work_form.groups)) this.work_form.groups = []
+            if (!Array.isArray(this.work_form.groups) || !unassigned.length) this.work_form.groups = []
             newGroups.forEach((ids) => {
                 this.work_form.groups.push({
                     student_ids: ids,
@@ -2058,6 +2217,26 @@ export default {
             if (this.workHasAllGrades(work)) return 'primary'
             return this.workDateColor(date)
         },
+        workHasUnassignedStudents(work) {
+            if (!work?.is_group_work) return false
+
+            const activeStudentIds = new Set(this.activeCourseStudents.map((student) => String(student.id)))
+            if (!activeStudentIds.size) return false
+
+            const assignedStudentIds = new Set()
+            const groups = Array.isArray(work?.groups) ? work.groups : []
+            groups.forEach((group) => {
+                const studentIds = Array.isArray(group?.student_ids) ? group.student_ids : []
+                studentIds.forEach((studentId) => {
+                    const key = String(studentId)
+                    if (activeStudentIds.has(key)) {
+                        assignedStudentIds.add(key)
+                    }
+                })
+            })
+
+            return Array.from(activeStudentIds).some((studentId) => !assignedStudentIds.has(studentId))
+        },
         workTypeLabel(type) {
             if (!type) return ''
             const found = this.teachingWorks.find((w) => w.short_name === type)
@@ -2237,6 +2416,26 @@ export default {
     flex: 0 0 auto;
 }
 
+.work-meta-actions {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+}
+
+.work-unassigned-chip {
+    align-items: center;
+    display: inline-flex;
+    font-weight: 800;
+    justify-content: center;
+    min-width: 22px;
+}
+
+.work-unassigned-chip :deep(.v-chip__content) {
+    justify-content: center;
+    width: 100%;
+}
+
 .work-meta-row {
     align-items: flex-start;
     display: flex;
@@ -2312,6 +2511,11 @@ export default {
     font-size: 0.8rem;
 }
 
+.work-mode-chip {
+    flex: 0 0 auto;
+    font-weight: 700;
+}
+
 .random-groups-switch {
     flex: 0 0 auto;
     transform: scale(0.85);
@@ -2370,6 +2574,19 @@ export default {
     border-radius: 10px;
     border: 1px dashed rgba(99, 102, 241, 0.35);
     background: rgba(99, 102, 241, 0.05);
+}
+
+.group-card-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.group-card-block {
+    background-color: #eef6ff !important;
+    border-color: transparent !important;
+    border-radius: 8px !important;
+    min-width: 0;
+    border-color: rgba(37, 99, 235, 0.16) !important;
 }
 
 .group-grade-overview {
@@ -2458,6 +2675,10 @@ export default {
 }
 
 @media (min-width: 900px) {
+    .group-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .student-card-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }

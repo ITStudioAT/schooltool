@@ -113,4 +113,21 @@ describe('MyTimetable time range labels', () => {
         expect(source).toContain('.timetable-item--exam.timetable-item--free')
         expect(source).toContain('.timetable-grid-item.timetable-item--exam.timetable-item--free')
     })
+
+    it('opens timetable courses on the students panel without selecting a date', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/MyTimetable.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("'show_students'")
+        expect(source).toContain("'show_dates'")
+        expect(source).toContain('this.selected_courseDate = null')
+        expect(source).toContain('this.show_students = true')
+        expect(source).toContain('this.show_dates = false')
+        expect(source).toContain("panel: 'students'")
+        expect(source).toContain('delete query.date')
+        expect(source).not.toContain('if (date?.id) query.date = String(date.id)')
+    })
 })

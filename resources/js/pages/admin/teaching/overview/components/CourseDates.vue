@@ -89,6 +89,20 @@
                                             {{ courseDate.free_reason }}
                                         </v-chip>
                                     </div>
+                                    <div v-if="courseWorksForDate(courseDate).length" class="course-date-works d-flex align-center flex-wrap ga-1 mt-2">
+                                        <v-chip
+                                            v-for="work in courseWorksForDate(courseDate)"
+                                            :key="`course-date-${courseDate.id}-work-${work.key}`"
+                                            size="x-small"
+                                            variant="tonal"
+                                            :color="work.isGroupWork ? 'success' : 'primary'"
+                                            prepend-icon="mdi-clipboard-text"
+                                            class="course-date-work-chip cursor-pointer"
+                                            :title="work.title"
+                                            @click.stop="openCourseWork(work)">
+                                            {{ work.label }}
+                                        </v-chip>
+                                    </div>
                                 </div>
                                 <div class="course-date-actions d-flex align-center ga-1 ml-auto flex-shrink-0" @click.stop>
                                     <v-btn
@@ -580,6 +594,7 @@ import { mapWritableState } from 'pinia'
 import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useCourseStore } from '@/stores/admin/teaching/CourseStore'
 import { useCourseDateStore } from '@/stores/admin/teaching/CourseDateStore'
+import { useCourseWorkStore } from '@/stores/admin/teaching/CourseWorkStore'
 import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import { useCurriculumStore } from '@/stores/admin/teaching/CurriculumStore'
 import axios from 'axios'
@@ -604,12 +619,14 @@ export default {
         this.adminStore = useAdminStore()
         this.courseStore = useCourseStore()
         this.courseDateStore = useCourseDateStore()
+        this.courseWorkStore = useCourseWorkStore()
         this.teachingStore = useTeachingStore()
         this.curriculumStore = useCurriculumStore()
         if (!this.teachingStore.settings) {
             await this.teachingStore.loadSettings()
         }
         await this.loadSelectedCourseCurriculumDetail()
+        await this.loadCourseWorks()
         this.activeSemester = this.config?.user?.teaching_active_semester || 1
     },
 
@@ -626,6 +643,7 @@ export default {
             adminStore: null,
             courseStore: null,
             courseDateStore: null,
+            courseWorkStore: null,
             teachingStore: null,
             curriculumStore: null,
             selectedCourseCurriculumDetail: null,
@@ -669,8 +687,9 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'config']),
-        ...mapWritableState(useCourseStore, ['selected_course', 'show_dates', 'show_students']),
+        ...mapWritableState(useCourseStore, ['selected_course', 'show_dates', 'show_students', 'show_works']),
         ...mapWritableState(useCourseDateStore, ['courseDates', 'selected_courseDate']),
+        ...mapWritableState(useCourseWorkStore, ['courseWorks', 'selected_courseWork']),
         selectedCourseClasses() {
             const classes = this.selected_course?.classes
             if (!classes?.length) return ''
@@ -740,40 +759,7 @@ export default {
         },
         displayedCourseDates() {
             const dates = this.filteredCourseDates || []
-            if (!dates.length) return []
-
-            if (!this.compactStudentView) return dates
-
-            const activeCourseDateId = this.highlightedDateId || this.selected_courseDate?.id
-            let activeIndex = activeCourseDateId
-                ? dates.findIndex((courseDate) => String(courseDate.id) === String(activeCourseDateId))
-                : -1
-
-            if (activeIndex < 0 && !this.highlightedDateId && this.selected_courseDate?.date) {
-                activeIndex = dates.findIndex((courseDate) => courseDate.date === this.selected_courseDate.date)
-            }
-
-            if (activeIndex < 0) {
-                activeIndex = 0
-            }
-
-            const selectedRanges = Array.isArray(this.dateRangeSelection) && this.dateRangeSelection.length ? this.dateRangeSelection : ['today']
-            const includeBefore = selectedRanges.includes('before')
-            const includeAfter = selectedRanges.includes('after')
-            const adjacentDateCount = 2
-            const visibleDates = []
-
-            if (includeBefore) {
-                visibleDates.push(...dates.slice(0, Math.max(0, activeIndex - adjacentDateCount)))
-            }
-            visibleDates.push(...dates.slice(Math.max(0, activeIndex - adjacentDateCount), activeIndex))
-            if (dates[activeIndex]) visibleDates.push(dates[activeIndex])
-            visibleDates.push(...dates.slice(activeIndex + 1, activeIndex + 1 + adjacentDateCount))
-            if (includeAfter) {
-                visibleDates.push(...dates.slice(activeIndex + 1 + adjacentDateCount))
-            }
-
-            return visibleDates.filter((courseDate, index, array) => array.findIndex((item) => String(item.id) === String(courseDate.id)) === index)
+            return dates
         },
         displayedCourseDatesCount() {
             return this.displayedCourseDates.length
@@ -799,26 +785,27 @@ export default {
 
             return dates
         },
-        highlightedDateId() {
-            const dates = this.selected_course?.course_dates || []
+        highlightedCourseDate() {
+            const dates = [...(this.displayedCourseDates || [])]
+                .filter((date) => date?.date)
+                .sort((first, second) => String(first.date).localeCompare(String(second.date)))
             if (!dates.length) return null
 
             const today = new Date()
             today.setHours(0, 0, 0, 0)
             const todayStr = this.toDateString(today)
 
-            // Check if today exists
-            const todayDate = dates.find((d) => d.date === todayStr)
-            if (todayDate) return todayDate.id
+            const todayDate = dates.find((date) => this.normalizeDateString(date.date) === todayStr)
+            if (todayDate) return todayDate
 
-            // Find next upcoming date (first date >= today)
-            const upcomingDate = dates.find((d) => {
-                const dateObj = parseLocalDate(d.date)
+            return dates.find((date) => {
+                const dateObj = parseLocalDate(date.date)
                 dateObj.setHours(0, 0, 0, 0)
                 return dateObj >= today
-            })
-
-            return upcomingDate?.id || null
+            }) || null
+        },
+        highlightedDateId() {
+            return this.highlightedCourseDate?.id || null
         },
         isEditingContent() {
             return this.action === 'edit_course_date_content'
@@ -851,6 +838,8 @@ export default {
                 }
 
                 await this.loadSelectedCourseCurriculumDetail()
+                await this.loadCourseWorks()
+                this.scrollToHighlightedDate()
                 if (this.selected_courseDate) return
                 if (this.$route.query.date) return
                 const highlightedId = this.highlightedDateId
@@ -869,6 +858,7 @@ export default {
             if (val !== this.config?.user?.teaching_active_semester) {
                 this.teachingStore.saveActiveSemester(val)
             }
+            this.scrollToHighlightedDate()
         },
         'config.user.teaching_active_semester'(val) {
             if (val) this.activeSemester = val
@@ -894,10 +884,16 @@ export default {
             this.$nextTick(() => {
                 setTimeout(() => {
                     const ref = this.$refs.highlightedDateItem
-                    const el = Array.isArray(ref) ? ref[0]?.$el : ref?.$el
-                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    const el = this.scrollElementFromRef(ref)
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
                 }, 150)
             })
+        },
+        scrollElementFromRef(ref) {
+            const target = Array.isArray(ref) ? ref[0] : ref
+            if (!target) return null
+
+            return target.$el || target
         },
         async loadSelectedCourseCurriculumDetail() {
             const curriculumId = this.selectedCourseCurriculumId
@@ -1131,6 +1127,12 @@ export default {
             if (isNaN(d.getTime())) return ''
             return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
+        async loadCourseWorks() {
+            const courseId = this.selected_course?.id
+            if (!courseId || !this.courseWorkStore?.index) return
+
+            await this.courseWorkStore.index(courseId)
+        },
         contentHtml(text) {
             if (!text) return ''
             if (text.includes('<p>') || text.includes('<br')) return text
@@ -1171,6 +1173,103 @@ export default {
             const month = String(d.getMonth() + 1).padStart(2, '0')
             const day = String(d.getDate()).padStart(2, '0')
             return `${year}-${month}-${day}`
+        },
+        normalizeDateString(date) {
+            if (!date) return ''
+
+            if (date instanceof Date) {
+                return this.toDateString(date)
+            }
+
+            const value = String(date)
+            const datePart = value.includes('T') ? value.split('T')[0] : value.slice(0, 10)
+            if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+                return datePart
+            }
+
+            const parsedDate = parseLocalDate(value)
+            if (isNaN(parsedDate.getTime())) return ''
+
+            return this.toDateString(parsedDate)
+        },
+        courseWorksForDate(courseDate) {
+            const date = this.normalizeDateString(courseDate?.date)
+            if (!date) return []
+
+            return (this.courseWorks || [])
+                .map((work) => this.courseWorkAssignmentForDate(work, date))
+                .filter(Boolean)
+        },
+        courseWorkAssignmentForDate(work, date) {
+            if (!work?.id || !date) return null
+
+            if (work.is_group_work) {
+                return this.groupWorkAssignmentForDate(work, date)
+            }
+
+            const groupDates = (Array.isArray(work.groups) ? work.groups : [])
+                .map((group) => this.normalizeDateString(group?.date))
+                .filter(Boolean)
+
+            if (this.normalizeDateString(work.date_for_all_groups) !== date && !groupDates.includes(date)) {
+                return null
+            }
+
+            return this.courseWorkAssignmentPayload(work, 'Einzelarbeit')
+        },
+        groupWorkAssignmentForDate(work, date) {
+            const groups = Array.isArray(work.groups) ? work.groups : []
+            const matchingGroupIndexes = []
+            const fallbackDate = this.normalizeDateString(work.date_for_all_groups)
+            const hasExplicitGroupDates = groups.some((group) => this.normalizeDateString(group?.date))
+
+            groups.forEach((group, index) => {
+                const groupDate = this.normalizeDateString(group?.date) || fallbackDate
+                if (groupDate === date) {
+                    matchingGroupIndexes.push(index + 1)
+                }
+            })
+
+            if (!matchingGroupIndexes.length && (hasExplicitGroupDates || fallbackDate !== date)) {
+                return null
+            }
+
+            const totalGroups = groups.length
+            const suffix = matchingGroupIndexes.length && matchingGroupIndexes.length < totalGroups
+                ? `Gr. ${matchingGroupIndexes.join(', ')}`
+                : 'alle Gruppen'
+
+            return this.courseWorkAssignmentPayload(work, suffix, true)
+        },
+        courseWorkAssignmentPayload(work, suffix, isGroupWork = false) {
+            const type = String(work.type || 'Arbeit').trim()
+            const title = String(work.title || '').trim()
+            const baseLabel = title ? `${type}: ${title}` : type
+            const label = suffix ? `${baseLabel} (${suffix})` : baseLabel
+
+            return {
+                id: work.id,
+                key: `${work.id}-${suffix || 'work'}`,
+                label,
+                title: label,
+                isGroupWork,
+            }
+        },
+        openCourseWork(workAssignment) {
+            const work = (this.courseWorks || []).find((courseWork) => String(courseWork.id) === String(workAssignment?.id))
+            if (!work) return
+
+            this.selected_courseWork = work
+            this.show_works = true
+            this.show_dates = false
+
+            const query = {
+                ...this.$route.query,
+                panel: 'works',
+                work: String(work.id),
+                return_panel: 'dates',
+            }
+            this.$router.replace({ query }).catch(() => {})
         },
         setFromDate(dateStr) {
             if (!dateStr) return
@@ -1776,7 +1875,7 @@ export default {
 @media (min-width: 900px) {
     .course-dates-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         align-items: stretch;
     }
 }
@@ -1788,6 +1887,8 @@ export default {
     transition: box-shadow 0.15s ease, border-color 0.15s ease;
     display: flex;
     align-items: flex-start;
+    min-width: 0;
+    width: 100%;
 }
 
 .v-list-item :deep(.v-list-item__content) {
@@ -1836,12 +1937,46 @@ export default {
     flex: 0 0 auto;
 }
 
+.course-date-header {
+    min-width: 0;
+}
+
+.course-date-left {
+    flex: 1 1 auto;
+    max-width: 100%;
+    min-width: 0;
+}
+
 .course-date-hours {
     min-width: 0;
 }
 
+.course-date-works {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.course-date-work-chip {
+    flex: 0 1 auto;
+    font-weight: 600;
+    height: auto;
+    max-width: 100%;
+    min-height: 22px;
+    min-width: 0;
+}
+
+.course-date-work-chip :deep(.v-chip__content) {
+    line-height: 1.25;
+    overflow: hidden;
+    padding-bottom: 1px;
+    padding-top: 1px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .course-date-actions {
     margin-left: auto;
+    align-self: flex-start;
     flex: 0 0 auto;
 }
 

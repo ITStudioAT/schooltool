@@ -860,6 +860,8 @@ import { useTeachingStore } from '@/stores/admin/teaching/TeachingStore'
 import ItsGridBox from '@/pages/components/ItsGridBox.vue'
 import ItsRichTextEditor from '@/components/ItsRichTextEditor.vue'
 
+const entryTypeBackgroundClassCount = 8
+
 export default {
     components: { ItsGridBox, ItsRichTextEditor },
 
@@ -2295,7 +2297,7 @@ export default {
 
             let hash = 0
             for (const character of type) {
-                hash = (hash + character.charCodeAt(0)) % 6
+                hash = (hash * 31 + character.charCodeAt(0)) % entryTypeBackgroundClassCount
             }
 
             return `entry-list-row--type-${hash + 1}`
@@ -3095,33 +3097,43 @@ export default {
 }
 
 .entry-list-row--type-1 {
-    background-color: #eef6ff !important;
-    border-color: rgba(37, 99, 235, 0.14);
+    background-color: #dbeafe !important;
+    border-color: rgba(37, 99, 235, 0.24);
 }
 
 .entry-list-row--type-2 {
-    background-color: #f0fdf4 !important;
-    border-color: rgba(22, 163, 74, 0.14);
+    background-color: #dcfce7 !important;
+    border-color: rgba(22, 163, 74, 0.24);
 }
 
 .entry-list-row--type-3 {
-    background-color: #fff7ed !important;
-    border-color: rgba(234, 88, 12, 0.14);
+    background-color: #fef3c7 !important;
+    border-color: rgba(217, 119, 6, 0.32);
 }
 
 .entry-list-row--type-4 {
-    background-color: #f5f3ff !important;
-    border-color: rgba(124, 58, 237, 0.14);
+    background-color: #ffe4e6 !important;
+    border-color: rgba(225, 29, 72, 0.24);
 }
 
 .entry-list-row--type-5 {
-    background-color: #fef2f2 !important;
-    border-color: rgba(220, 38, 38, 0.12);
+    background-color: #ede9fe !important;
+    border-color: rgba(124, 58, 237, 0.28);
 }
 
 .entry-list-row--type-6 {
-    background-color: #ecfeff !important;
-    border-color: rgba(8, 145, 178, 0.14);
+    background-color: #cffafe !important;
+    border-color: rgba(8, 145, 178, 0.28);
+}
+
+.entry-list-row--type-7 {
+    background-color: #ecfccb !important;
+    border-color: rgba(101, 163, 13, 0.3);
+}
+
+.entry-list-row--type-8 {
+    background-color: #fed7aa !important;
+    border-color: rgba(234, 88, 12, 0.28);
 }
 
 .entry-row > .v-chip {

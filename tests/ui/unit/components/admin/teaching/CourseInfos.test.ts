@@ -154,6 +154,18 @@ describe('CourseInfos representative countdowns', () => {
         expect(source).toContain('grid-template-columns: minmax(0, 1fr);')
     })
 
+    it('does not render a hide eye button in the infos header', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).not.toContain('mdi-eye-off-outline')
+        expect(source).not.toContain('title="Ausblenden"')
+        expect(source).not.toContain('@click="show_infos = false"')
+    })
+
     it('renders open notifications as colored blocks', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -223,10 +235,21 @@ describe('CourseInfos course-specific definitions', () => {
         ctx.selectedCourseSchema = computed.selectedCourseSchema.call(ctx)
 
         expect((ctx.selectedCourseSchema as any)).toMatchObject({ id: 'schema-teacher', name: 'Lehrkraft-Schema' })
-        expect(computed.schemaName.call(ctx)).toBe('Schema: Lehrkraft-Schema')
+        expect(computed.schemaName.call(ctx)).toBe('Lehrkraft-Schema')
 
         const notificationTypes = computed.notificationTypesByShort.call(ctx)
         expect(notificationTypes.get('INF')).toBe('Info Lehrkraft')
+    })
+
+    it('hides empty Fachinfos instead of rendering a placeholder', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<div v-if="selected_course.description" class="course-info-block course-info-block--description">')
+        expect(source).not.toContain('Keine Fachinfos vorhanden.')
     })
 
     it('restores visible grade columns from the route query', () => {

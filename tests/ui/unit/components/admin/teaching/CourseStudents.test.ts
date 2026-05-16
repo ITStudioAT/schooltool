@@ -96,6 +96,17 @@ describe('CourseStudents sorting', () => {
         expect(source).toContain('studentLastLoginText(student)')
     })
 
+    it('renders the stars directly in the student name line', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/components/CourseStudents.vue', 'utf8')
+        )
+
+        expect(source).toContain('class="student-name-line"')
+        expect(source).toContain('class="student-stars-chip"')
+        expect(source.indexOf('class="student-stars-chip"')).toBeGreaterThan(source.indexOf('class="student-name-line"'))
+        expect(source.indexOf('class="student-stars-chip"')).toBeLessThan(source.indexOf('studentEmailText(student)'))
+    })
+
     it('shows the bulk entry button loading state before saving entries', async () => {
         const methods = (CourseStudents as any).methods
         let continueNextTick: (() => void) | null = null

@@ -75,6 +75,24 @@ describe('CourseDates course-specific schema', () => {
         expect(source).not.toContain('!compactStudentView && semesterCount === 2')
     })
 
+    it('keeps both desktop date columns the same width', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);')
+        expect(source).toContain('min-width: 0;')
+        expect(source).toContain('width: 100%;')
+    })
+
+    it('keeps date action buttons visible beside long assigned work labels', () => {
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+
+        expect(source).toContain('.course-date-left {')
+        expect(source).toContain('flex: 1 1 auto;')
+        expect(source).toContain('.course-date-work-chip {')
+        expect(source).toContain('flex: 0 1 auto;')
+        expect(source).toContain('align-self: flex-start;')
+    })
+
     it('does not show a curriculum label when none is assigned', () => {
         const computed = (CourseDates as any).computed
         const ctx: Record<string, unknown> = {
@@ -108,7 +126,174 @@ describe('CourseDates course-specific schema', () => {
         expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
     })
 
-    it('keeps the compact visible dates anchored to the highlighted date when selecting another date', () => {
+    it('does not limit displayed dates to a compact window', () => {
+        const computed = (CourseDates as any).computed
+        const dates = [
+            { id: 1, date: '2026-01-01' },
+            { id: 2, date: '2026-01-08' },
+            { id: 3, date: '2026-01-15' },
+            { id: 4, date: '2026-01-22' },
+            { id: 5, date: '2026-01-29' },
+            { id: 6, date: '2026-02-05' },
+            { id: 7, date: '2026-02-12' },
+        ]
+        const ctx: Record<string, unknown> = {
+            filteredCourseDates: dates,
+            selected_courseDate: { id: 4, date: '2026-01-22' },
+            highlightedDateId: 4,
+            dateRangeSelection: ['today'],
+            compactStudentView: true,
+        }
+
+        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    })
+
+    it('targets today or the next visible date for highlighting even when dates are unsorted', () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-05-16T10:00:00'))
+
+        try {
+            const computed = (CourseDates as any).computed
+            const methods = (CourseDates as any).methods
+            const ctx: Record<string, unknown> = {
+                displayedCourseDates: [
+                    { id: 3, date: '2026-05-20' },
+                    { id: 1, date: '2026-05-13' },
+                    { id: 2, date: '2026-05-16' },
+                ],
+                toDateString: methods.toDateString,
+                normalizeDateString: methods.normalizeDateString,
+            }
+
+            ctx.highlightedCourseDate = computed.highlightedCourseDate.call(ctx)
+
+            expect(ctx.highlightedCourseDate).toEqual({ id: 2, date: '2026-05-16' })
+            expect(computed.highlightedDateId.call(ctx)).toBe(2)
+
+            ctx.displayedCourseDates = [
+                { id: 5, date: '2026-05-23' },
+                { id: 4, date: '2026-05-20' },
+                { id: 1, date: '2026-05-13' },
+            ]
+
+            expect(computed.highlightedCourseDate.call(ctx)).toEqual({ id: 4, date: '2026-05-20' })
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('scrolls the highlighted date into the vertical middle of the screen', () => {
+        vi.useFakeTimers()
+
+        try {
+            const methods = (CourseDates as any).methods
+            const scrollIntoView = vi.fn()
+            const ctx = {
+                $refs: {
+                    highlightedDateItem: [{ $el: { scrollIntoView } }],
+                },
+                $nextTick: vi.fn((callback) => callback()),
+                scrollElementFromRef: methods.scrollElementFromRef,
+            }
+
+            methods.scrollToHighlightedDate.call(ctx)
+            vi.advanceTimersByTime(150)
+
+            expect(scrollIntoView).toHaveBeenCalledWith({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'nearest',
+            })
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('shows works assigned to course dates and respects group-specific work dates', () => {
+        const methods = (CourseDates as any).methods
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const ctx: Record<string, any> = {
+            courseWorks: [
+                {
+                    id: 1,
+                    type: 'GA',
+                    title: 'Projekt',
+                    is_group_work: true,
+                    date_for_all_groups: '2026-05-10',
+                    groups: [
+                        { date: '2026-05-16', student_ids: [1, 2] },
+                        { date: '2026-05-17', student_ids: [3, 4] },
+                        { date: '2026-05-16T00:00:00.000000Z', student_ids: [5, 6] },
+                    ],
+                },
+                {
+                    id: 2,
+                    type: 'SA',
+                    title: 'Schularbeit',
+                    is_group_work: false,
+                    date_for_all_groups: '2026-05-16',
+                    groups: [],
+                },
+                {
+                    id: 3,
+                    type: 'GA',
+                    title: 'Praesentation',
+                    is_group_work: true,
+                    date_for_all_groups: '2026-05-16',
+                    groups: [
+                        { student_ids: [1, 2] },
+                        { student_ids: [3, 4] },
+                    ],
+                },
+            ],
+        }
+        Object.assign(ctx, methods)
+
+        const assignments = methods.courseWorksForDate.call(ctx, { date: '2026-05-16' })
+        const globalOnlyAssignments = methods.courseWorksForDate.call(ctx, { date: '2026-05-10' })
+
+        expect(source).toContain('courseWorksForDate(courseDate)')
+        expect(source).toContain('class="course-date-work-chip cursor-pointer"')
+        expect(source).toContain('@click.stop="openCourseWork(work)"')
+        expect(source).toContain('prepend-icon="mdi-clipboard-text"')
+        expect(assignments.map((assignment: Record<string, any>) => assignment.label)).toEqual([
+            'GA: Projekt (Gr. 1, 3)',
+            'SA: Schularbeit (Einzelarbeit)',
+            'GA: Praesentation (alle Gruppen)',
+        ])
+        expect(assignments.map((assignment: Record<string, any>) => assignment.id)).toEqual([1, 2, 3])
+        expect(assignments.map((assignment: Record<string, any>) => assignment.isGroupWork)).toEqual([true, false, true])
+        expect(globalOnlyAssignments).toEqual([])
+    })
+
+    it('jumps from a date work chip to the works panel and selects that work', () => {
+        const methods = (CourseDates as any).methods
+        const source = readFileSync(resolve('resources/js/pages/admin/teaching/overview/components/CourseDates.vue'), 'utf8')
+        const replace = vi.fn(() => Promise.resolve())
+        const ctx: Record<string, any> = {
+            courseWorks: [
+                { id: 10, title: 'Andere Arbeit' },
+                { id: 23, title: 'Excel' },
+            ],
+            selected_courseWork: null,
+            show_dates: true,
+            show_works: false,
+            $route: { query: { course: '20', grades: 'sem1,sem2,year', panel: 'dates' } },
+            $router: { replace },
+        }
+
+        methods.openCourseWork.call(ctx, { id: 23 })
+
+        expect(source).toContain("['selected_course', 'show_dates', 'show_students', 'show_works']")
+        expect(ctx.selected_courseWork).toEqual({ id: 23, title: 'Excel' })
+        expect(ctx.show_dates).toBe(false)
+        expect(ctx.show_works).toBe(true)
+        expect(replace).toHaveBeenCalledWith({
+            query: { course: '20', grades: 'sem1,sem2,year', panel: 'works', work: '23', return_panel: 'dates' },
+        })
+    })
+
+    it('keeps all selected dates visible when selecting another date', () => {
         const computed = (CourseDates as any).computed
         const dates = [
             { id: 1, date: '2026-01-01' },
@@ -127,10 +312,10 @@ describe('CourseDates course-specific schema', () => {
             compactStudentView: true,
         }
 
-        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([2, 3, 4, 5, 6])
+        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
     })
 
-    it('falls back to the selected date as compact visible anchor when no highlighted date exists', () => {
+    it('keeps all selected dates visible when no highlighted date exists', () => {
         const computed = (CourseDates as any).computed
         const dates = [
             { id: 1, date: '2026-01-01' },
@@ -149,7 +334,7 @@ describe('CourseDates course-specific schema', () => {
             compactStudentView: true,
         }
 
-        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([2, 3, 4, 5, 6])
+        expect(computed.displayedCourseDates.call(ctx).map((courseDate: Record<string, unknown>) => courseDate.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
     })
 
     it('resolves matching curriculum entries for a course date and prioritizes free weeks', () => {

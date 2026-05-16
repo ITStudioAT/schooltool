@@ -179,7 +179,22 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['action', 'action_2', 'config']),
-        ...mapWritableState(useCourseStore, ['courses', 'selected_course', 'selected_course_id', 'selected_course_student', 'show_infos', 'timetable_view_mode']),
+        ...mapWritableState(useCourseStore, [
+            'courses',
+            'selected_course',
+            'selected_course_id',
+            'selected_course_student',
+            'show_students',
+            'show_infos',
+            'show_works',
+            'show_print',
+            'show_dates',
+            'show_curriculum',
+            'show_attendance',
+            'show_performances',
+            'show_performances_plus',
+            'timetable_view_mode',
+        ]),
         ...mapWritableState(useCourseDateStore, ['selected_courseDate']),
         ...mapWritableState(useSchoolHourStore, ['school_hours']),
         schoolHoursByHour() {
@@ -513,14 +528,24 @@ export default {
             this.selected_course_id = course.id
             this.selected_course_student = null
             this.action_2 = ''
-            this.show_infos = true
+            this.selected_courseDate = null
+            this.show_students = true
+            this.show_infos = false
+            this.show_works = false
+            this.show_print = false
+            this.show_dates = false
+            this.show_curriculum = false
+            this.show_attendance = false
+            this.show_performances = false
+            this.show_performances_plus = false
 
-            const dateId = item?.courseDateId
-            const date = dateId ? (course?.course_dates || []).find((d) => d?.id === dateId) || null : null
-            this.selected_courseDate = date
-
-            const query = { course: String(course.id) }
-            if (date?.id) query.date = String(date.id)
+            const query = {
+                ...this.$route.query,
+                course: String(course.id),
+                panel: 'students',
+            }
+            delete query.date
+            delete query.work
             this.$router.replace({ query }).catch(() => {})
         },
         normalizeDateToString(date) {
