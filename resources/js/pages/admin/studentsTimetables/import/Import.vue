@@ -168,8 +168,12 @@
                                         <strong>{{ importItem.total_lines || 0 }}</strong>
                                     </div>
                                     <div class="import-meta-item">
-                                        <span>Stundenplan-Einträge</span>
-                                        <strong>{{ importItem.sections?.TT || 0 }}</strong>
+                                        <span>Importierte TT-Einträge</span>
+                                        <strong>{{ importedTtCount(importItem) }}</strong>
+                                    </div>
+                                    <div class="import-meta-item">
+                                        <span>Nicht importierte TT-Einträge</span>
+                                        <strong>{{ importItem.tt_skipped_invalid || 0 }}</strong>
                                     </div>
                                     <div class="import-meta-item">
                                         <span>Verschiedene Kurse</span>
@@ -218,6 +222,18 @@
                                                 <td></td>
                                                 <td class="text-caption pl-6">davon verschiedene Kurse</td>
                                                 <td class="text-right font-weight-medium text-caption">{{ importItem.tt_courses }}</td>
+                                            </tr>
+                                            <tr v-if="code === 'TT'" class="tt-sub-row">
+                                                <td></td>
+                                                <td class="text-caption pl-6">davon importiert</td>
+                                                <td class="text-right font-weight-medium text-caption">{{ importedTtCount(importItem) }}</td>
+                                            </tr>
+                                            <tr v-if="code === 'TT' && importItem.tt_skipped_invalid" class="tt-sub-row">
+                                                <td></td>
+                                                <td class="text-caption pl-6">
+                                                    nicht importiert: 2. Spalte = 0 oder 8. Spalte ohne Kurs
+                                                </td>
+                                                <td class="text-right font-weight-medium text-caption">{{ importItem.tt_skipped_invalid }}</td>
                                             </tr>
                                             <tr v-if="code === 'TT' && importItem.tt_first_date" class="tt-sub-row">
                                                 <td></td>
@@ -492,6 +508,12 @@ export default {
         },
         sectionLabel(code) {
             return SECTION_LABELS[code] || code
+        },
+        importedTtCount(importItem) {
+            const timetableRecords = Number(importItem?.sections?.TT || 0)
+            const skippedRecords = Number(importItem?.tt_skipped_invalid || 0)
+
+            return Math.max(0, timetableRecords - skippedRecords)
         },
         dateRangeLabel(importItem) {
             if (!importItem?.tt_first_date) return 'Kein Zeitraum'

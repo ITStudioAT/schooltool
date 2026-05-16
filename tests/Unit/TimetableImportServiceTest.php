@@ -103,6 +103,53 @@ it('counts distinct timetable course labels from Untis TT rows', function () {
         ->and($analysis['tt_courses'])->toBe(2);
 });
 
+it('skips TT rows without an importable source id and course assignment', function () {
+    $filePath = "{$this->storageDirectory}/missing-course-assignment.txt";
+    File::put($filePath, implode(PHP_EOL, [
+        'TT	0	20260427	8	15:30	16:15	M			MAL	2	 	-1',
+        'TT	0	20260427	9	16:15	17:00	6A	PH2-6A-ALT	PH				1		156100',
+        'TT	82	20260428	11	17:50	18:35	6A	PH2-6A-ALT	PH				1		156100',
+    ]));
+
+    $analysis = $this->service->analyzeFile($filePath);
+
+    expect($analysis['sections']['TT'])->toBe(3)
+        ->and($analysis['tt_courses'])->toBe(1)
+        ->and($analysis['tt_skipped_invalid'])->toBe(2)
+        ->and($analysis['tt_first_date'])->toBe('2026-04-28')
+        ->and($analysis['tt_last_date'])->toBe('2026-04-28');
+
+    $import = $this->service->createImport(
+        $this->user,
+        'missing-course-assignment.txt',
+        'missing-course-assignment.txt',
+        'app/private/testing/student-timetables/missing-course-assignment.txt',
+        $this->schoolyear->id,
+    );
+
+    expect(StudentTimetableEntry::where('timetable_import_id', $import->id)->count())->toBe(1);
+    expect($import->tt_skipped_invalid)->toBe(2);
+
+    $this->assertDatabaseMissing('student_timetable_entries', [
+        'timetable_import_id' => $import->id,
+        'source_identifier' => '0',
+        'date' => '2026-04-27',
+    ]);
+
+    $this->assertDatabaseMissing('student_timetable_entries', [
+        'timetable_import_id' => $import->id,
+        'source_identifier' => '0',
+        'class_name' => 'PH2-6A-ALT',
+    ]);
+
+    $this->assertDatabaseHas('student_timetable_entries', [
+        'timetable_import_id' => $import->id,
+        'source_identifier' => '82',
+        'date' => '2026-04-28',
+        'class_name' => 'PH2-6A-ALT',
+    ]);
+});
+
 it('updates matching timetable rows and keeps previous unmatched entries', function () {
     $firstFilePath = "{$this->storageDirectory}/first.txt";
     File::put($firstFilePath, implode(PHP_EOL, [

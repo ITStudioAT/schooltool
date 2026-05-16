@@ -35,6 +35,7 @@ class TimetableImportFactory extends Factory
             'sections' => ['TT' => 1],
             'total_lines' => 1,
             'tt_courses' => 1,
+            'tt_skipped_invalid' => 0,
             'tt_first_date' => '2026-02-01',
             'tt_last_date' => '2026-02-01',
             'import_status' => 'completed',

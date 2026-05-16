@@ -9,6 +9,7 @@ use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class TimetableImportService
@@ -18,17 +19,25 @@ class TimetableImportService
     private const IDENTITY_NULL_VALUE = "\x00";
 
     /**
-     * @return array{sections: array<string, int>, total_lines: int, tt_courses: int, tt_first_date: ?string, tt_last_date: ?string}
+     * @return array{sections: array<string, int>, total_lines: int, tt_courses: int, tt_skipped_invalid: int, tt_first_date: ?string, tt_last_date: ?string}
      */
     public function analyzeFile(string $filePath): array
     {
         $lines = $this->readNormalizedLines($filePath);
         if ($lines === null) {
-            return ['sections' => [], 'total_lines' => 0, 'tt_courses' => 0, 'tt_first_date' => null, 'tt_last_date' => null];
+            return [
+                'sections' => [],
+                'total_lines' => 0,
+                'tt_courses' => 0,
+                'tt_skipped_invalid' => 0,
+                'tt_first_date' => null,
+                'tt_last_date' => null,
+            ];
         }
 
         $sections = [];
         $ttCourses = [];
+        $ttSkippedInvalid = 0;
         $ttFirstDate = null;
         $ttLastDate = null;
 
@@ -41,6 +50,12 @@ class TimetableImportService
             $sections[$code] = ($sections[$code] ?? 0) + 1;
 
             if ($code === 'TT') {
+                if (! $this->isImportableTimetableRecord($parts)) {
+                    $ttSkippedInvalid++;
+
+                    continue;
+                }
+
                 $course = $this->timetableCourseName($parts);
                 if ($course !== '') {
                     $ttCourses[$course] = true;
@@ -65,6 +80,7 @@ class TimetableImportService
             'sections' => $sections,
             'total_lines' => count($lines),
             'tt_courses' => count($ttCourses),
+            'tt_skipped_invalid' => $ttSkippedInvalid,
             'tt_first_date' => $ttFirstDate,
             'tt_last_date' => $ttLastDate,
         ];
@@ -111,6 +127,7 @@ class TimetableImportService
 
         $sections = [];
         $ttCourses = [];
+        $ttSkippedInvalid = 0;
         $ttFirstDate = null;
         $ttLastDate = null;
         $rows = [];
@@ -126,6 +143,12 @@ class TimetableImportService
             }
 
             if ($code === 'TT') {
+                if (! $this->isImportableTimetableRecord($parts)) {
+                    $ttSkippedInvalid++;
+
+                    continue;
+                }
+
                 $course = $this->timetableCourseName($parts);
                 if ($course !== '') {
                     $ttCourses[$course] = true;
@@ -160,10 +183,11 @@ class TimetableImportService
 
         ksort($sections);
 
-        $import->update([
+        $import->update($this->importCompletionPayload([
             'sections' => $sections,
             'total_lines' => $totalLines,
             'tt_courses' => count($ttCourses),
+            'tt_skipped_invalid' => $ttSkippedInvalid,
             'tt_first_date' => $ttFirstDate,
             'tt_last_date' => $ttLastDate,
             'import_status' => 'completed',
@@ -172,7 +196,7 @@ class TimetableImportService
             'import_message' => 'Import abgeschlossen.',
             'import_error' => null,
             'finished_at' => now(),
-        ]);
+        ]));
 
         StudentTimetableOverviewService::forgetCacheFor((int) $import->school_id, (int) $import->schoolyear_id);
 
@@ -251,7 +275,7 @@ class TimetableImportService
     private function createImportRecord(User $user, string $storedFilename, string $originalFilename, string $filePath, Schoolyear $schoolyear): TimetableImport
     {
         return DB::transaction(function () use ($user, $storedFilename, $originalFilename, $filePath, $schoolyear): TimetableImport {
-            return TimetableImport::create([
+            return TimetableImport::create($this->importCreationPayload([
                 'school_id' => $user->school_id,
                 'schoolyear_id' => $schoolyear->id,
                 'user_id' => $user->id,
@@ -261,6 +285,7 @@ class TimetableImportService
                 'sections' => [],
                 'total_lines' => 0,
                 'tt_courses' => 0,
+                'tt_skipped_invalid' => 0,
                 'tt_first_date' => null,
                 'tt_last_date' => null,
                 'import_status' => 'pending',
@@ -271,7 +296,7 @@ class TimetableImportService
                 'imported_at' => now(),
                 'started_at' => null,
                 'finished_at' => null,
-            ]);
+            ]));
         });
     }
 
@@ -429,6 +454,50 @@ class TimetableImportService
     private function timetableCourseName(array $parts): string
     {
         return trim($parts[7] ?? '');
+    }
+
+    /**
+     * @param  list<string>  $parts
+     */
+    private function isImportableTimetableRecord(array $parts): bool
+    {
+        return trim($parts[1] ?? '') !== '0'
+            && $this->timetableCourseName($parts) !== '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function importCreationPayload(array $payload): array
+    {
+        if ($this->hasSkippedInvalidColumn()) {
+            return $payload;
+        }
+
+        unset($payload['tt_skipped_invalid']);
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function importCompletionPayload(array $payload): array
+    {
+        if ($this->hasSkippedInvalidColumn()) {
+            return $payload;
+        }
+
+        unset($payload['tt_skipped_invalid']);
+
+        return $payload;
+    }
+
+    private function hasSkippedInvalidColumn(): bool
+    {
+        return Schema::hasColumn('timetable_imports', 'tt_skipped_invalid');
     }
 
     private function semesterForDate(string $date, string $semesterTwoStart): int

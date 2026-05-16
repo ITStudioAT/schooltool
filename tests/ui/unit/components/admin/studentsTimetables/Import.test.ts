@@ -25,10 +25,27 @@ describe('Students timetable import', () => {
         expect(componentSource).toContain('activeDatasetCourses')
         expect(componentSource).toContain('Importverlauf')
         expect(componentSource).toContain('<v-expansion-panels')
+        expect(componentSource).toContain('Nicht importierte TT-Einträge')
+        expect(componentSource).toContain('nicht importiert: 2. Spalte = 0 oder 8. Spalte ohne Kurs')
+        expect(componentSource).toContain('importedTtCount(importItem)')
         expect(componentSource).toContain('Löschen')
         expect(componentSource).not.toContain('Unimportieren')
         expect(componentSource).toContain('@click.stop="openDeleteDialog(importItem)"')
         expect(componentSource).toContain('per_page: 100')
+    })
+
+    it('calculates imported TT records after skipped invalid records', () => {
+        const methods = (Import as any).methods
+
+        expect(methods.importedTtCount({
+            sections: { TT: 9 },
+            tt_skipped_invalid: 2,
+        })).toBe(7)
+
+        expect(methods.importedTtCount({
+            sections: { TT: 1 },
+            tt_skipped_invalid: 3,
+        })).toBe(0)
     })
 
     it('formats import date ranges', () => {
