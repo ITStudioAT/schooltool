@@ -52,7 +52,10 @@
                             <td v-for="column in typeColumns" :key="`performance-cell-${row.student_id}-${column.key}`">
                                 <div v-if="row.byType[column.type]?.length" class="performance-items">
                                     <div v-for="(item, index) in row.byType[column.type]" :key="`item-${row.student_id}-${column.type}-${index}`" class="performance-item">
-                                        {{ item }}
+                                        <div class="performance-item-label">{{ item.label }}</div>
+                                        <div v-if="item.detail" class="performance-item-detail">
+                                            {{ item.detail }}
+                                        </div>
                                     </div>
                                 </div>
                                 <div v-if="categoryEvaluationCategoriesForType(column.type).length" class="performance-category-evaluations">
@@ -294,20 +297,13 @@ export default {
                 })
             }
 
-            if (!columns.length) {
-                columns.push({
-                    type: '__none__',
-                    label: 'Leistungen',
-                    key: 'type-__none__',
+            return columns
+                .filter((column) => this.typeColumnHasValues(column.type))
+                .map((column) => ({
+                    ...column,
+                    key: column.key || `type-${column.type}`,
                     kind: 'type',
-                })
-            }
-
-            return columns.map((column) => ({
-                ...column,
-                key: column.key || `type-${column.type}`,
-                kind: 'type',
-            }))
+                }))
         },
         courseWorksById() {
             const works = Array.isArray(this.courseWorkStore?.courseWorks) ? this.courseWorkStore.courseWorks : []
@@ -350,7 +346,7 @@ export default {
                 }
 
                 grouped[studentId][type].push({
-                    text: this.entryItemLabel(entry),
+                    item: this.entryItem(entry),
                     sortDate: this.normalizeDateKey(entry.date),
                 })
             })
@@ -359,7 +355,7 @@ export default {
                 Object.keys(byType).forEach((type) => {
                     byType[type] = byType[type]
                         .sort((a, b) => String(b.sortDate || '').localeCompare(String(a.sortDate || '')))
-                        .map((item) => item.text)
+                        .map((item) => item.item)
                 })
             })
 
@@ -462,6 +458,19 @@ export default {
                 })
             })
         },
+        typeColumnHasValues(type) {
+            const normalizedType = String(type || '').trim() || '__none__'
+            if (this.categoryEvaluationCategoriesForType(normalizedType).length) {
+                return true
+            }
+
+            const hasEntry = this.filteredEntries.some((entry) => {
+                const entryType = String(entry?.type || '').trim() || '__none__'
+                return entryType === normalizedType
+            })
+
+            return hasEntry
+        },
         normalizeDateKey(date) {
             if (!date) {
                 return ''
@@ -504,6 +513,105 @@ export default {
             const className = String(student?.schoolclass || student?.class || '').trim()
             const name = `${lastName}, ${firstName}`.replace(/^,\s*/, '').trim() || '–'
             return className ? `${name} (${className})` : name
+        },
+        entryItem(entry) {
+            return {
+                label: this.entryItemLabel(entry),
+                detail: this.entryItemDetail(entry),
+            }
+        },
+        entryItemDetail(entry) {
+            return this.entryStudentComment(entry)
+        },
+        entryStudentComment(entry) {
+            const individualWorkComment = this.entryWorkIndividualComment(entry)
+            if (individualWorkComment) {
+                return individualWorkComment
+            }
+
+            const description = String(entry?.description || '').trim()
+            if (!description) {
+                return ''
+            }
+
+            const workDescription = this.entryWorkDescription(entry)
+            const groupComment = this.entryWorkGroupComment(entry)
+            if (description === workDescription || description === groupComment) {
+                return ''
+            }
+
+            return description
+        },
+        entryWorkDescription(entry) {
+            const workId = entry?.teaching_course_work_id ? String(entry.teaching_course_work_id) : ''
+            if (!workId) {
+                return ''
+            }
+
+            return String(this.courseWorksById[workId]?.description || '').trim()
+        },
+        entryWork(entry) {
+            const workId = entry?.teaching_course_work_id ? String(entry.teaching_course_work_id) : ''
+            if (!workId) {
+                return null
+            }
+
+            return this.courseWorksById[workId] || null
+        },
+        entryWorkGroup(entry) {
+            const userId = entry?.user_id
+            if (!userId) {
+                return null
+            }
+
+            const work = this.entryWork(entry)
+            if (!work || !Array.isArray(work.groups)) {
+                return null
+            }
+
+            return work.groups.find((group) => (
+                Array.isArray(group?.student_ids)
+                && group.student_ids.some((studentId) => this.sameId(studentId, userId))
+            )) || null
+        },
+        entryWorkIndividualComment(entry) {
+            const userId = entry?.user_id
+            if (!userId) {
+                return ''
+            }
+
+            const group = this.entryWorkGroup(entry)
+            if (!group) {
+                return ''
+            }
+
+            if (Array.isArray(group.comments)) {
+                const comment = group.comments.find((item) => this.sameId(item?.student_id, userId))
+                if (comment?.comment) {
+                    return String(comment.comment).trim()
+                }
+            }
+
+            if (group.comments && typeof group.comments === 'object') {
+                return String(group.comments[userId] ?? group.comments[String(userId)] ?? '').trim()
+            }
+
+            return ''
+        },
+        entryWorkGroupComment(entry) {
+            const group = this.entryWorkGroup(entry)
+            if (!group) {
+                return ''
+            }
+
+            return String(group.comment || '').trim()
+        },
+        sameId(left, right) {
+            if (left == null || right == null) {
+                return false
+            }
+
+            return String(left) === String(right)
         },
         entryItemLabel(entry) {
             const workId = entry?.teaching_course_work_id ? String(entry.teaching_course_work_id) : ''
@@ -677,6 +785,14 @@ export default {
 .performance-item {
     white-space: normal;
     word-break: break-word;
+}
+
+.performance-item-detail {
+    color: rgba(16, 38, 58, 0.68);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    margin-top: 1px;
+    white-space: pre-line;
 }
 
 .performance-category-evaluations {

@@ -513,7 +513,7 @@ describe('dashboardMenu', function () {
         expect($teachingItem)
             ->not->toBeNull()
             ->and($teachingItem['is_active'])->toBeTrue()
-            ->and($teachingItem['to'])->toBe('/admin/teaching/search')
+            ->and($teachingItem['to'])->toBe('/admin/teaching')
             ->and($teachingItem['active_paths'])->toBe(['/admin/teaching']);
     });
 
@@ -1236,7 +1236,7 @@ describe('routeCapabilities', function () {
 
         $capabilities = $this->service->routeCapabilities($user, [
             ['title' => 'Materialien', 'to' => '/admin/materials', 'is_active' => true],
-            ['title' => 'Unterricht', 'to' => '/admin/teaching/search', 'active_paths' => ['/admin/teaching'], 'is_active' => true],
+            ['title' => 'Unterricht', 'to' => '/admin/teaching', 'active_paths' => ['/admin/teaching'], 'is_active' => true],
         ]);
 
         expect($capabilities['materials'])->toBeFalse()

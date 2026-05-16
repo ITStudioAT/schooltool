@@ -45,8 +45,9 @@ describe('PerformancesDummy type columns', () => {
         ])
     })
 
-    it('shows only schema columns when schema works are configured', () => {
-        const columns = (PerformancesDummy as any).computed.typeColumns.call({
+    it('shows only schema columns with values when schema works are configured', () => {
+        const methods = (PerformancesDummy as any).methods
+        const ctx = {
             workColumnsFromSchema: [
                 { type: 'Q', label: 'Q - Quiz' },
                 { type: 'S', label: 'S - Schularbeit' },
@@ -57,18 +58,27 @@ describe('PerformancesDummy type columns', () => {
                 { type: 'MA' },
                 { type: 'Q' },
             ],
+            students: [],
+            localCategoryEvaluationValues: {},
+            categoryEvaluationCategoriesForType: methods.categoryEvaluationCategoriesForType,
+            categoryEvaluationKey: methods.categoryEvaluationKey,
+            storedCategoryEvaluationValue: () => '',
+            activeEvaluationSemester: () => 1,
+            enabledCategoryEvaluationCategories: [],
             typeLabel: (type: string) => `${type} - Label`,
-        })
+        }
+        ctx.typeColumnHasValues = methods.typeColumnHasValues
+
+        const columns = (PerformancesDummy as any).computed.typeColumns.call(ctx)
 
         expect(columns).toEqual([
             { type: 'Q', label: 'Q - Quiz', key: 'type-Q', kind: 'type' },
-            { type: 'S', label: 'S - Schularbeit', key: 'type-S', kind: 'type' },
-            { type: 'K', label: 'K - Kontrolle', key: 'type-K', kind: 'type' },
         ])
     })
 
     it('falls back to entry types when schema has no work columns', () => {
-        const columns = (PerformancesDummy as any).computed.typeColumns.call({
+        const methods = (PerformancesDummy as any).methods
+        const ctx = {
             workColumnsFromSchema: [],
             hasSchemaWorkColumns: false,
             filteredEntries: [
@@ -76,13 +86,130 @@ describe('PerformancesDummy type columns', () => {
                 { type: 'K' },
                 { type: 'MA' },
             ],
+            students: [],
+            localCategoryEvaluationValues: {},
+            categoryEvaluationCategoriesForType: methods.categoryEvaluationCategoriesForType,
+            categoryEvaluationKey: methods.categoryEvaluationKey,
+            storedCategoryEvaluationValue: () => '',
+            activeEvaluationSemester: () => 1,
+            enabledCategoryEvaluationCategories: [],
             typeLabel: (type: string) => `${type} - Label`,
-        })
+        }
+        ctx.typeColumnHasValues = methods.typeColumnHasValues
+
+        const columns = (PerformancesDummy as any).computed.typeColumns.call(ctx)
 
         expect(columns).toEqual([
             { type: 'MA', label: 'MA - Label', key: 'type-MA', kind: 'type' },
             { type: 'K', label: 'K - Label', key: 'type-K', kind: 'type' },
         ])
+    })
+
+    it('keeps a category-evaluation column because its cells show editable values', () => {
+        const methods = (PerformancesDummy as any).methods
+        const ctx = {
+            workColumnsFromSchema: [
+                { type: 'FU', label: 'FU - Fernunterricht' },
+                { type: 'MA', label: 'MA - Mitarbeit' },
+            ],
+            hasSchemaWorkColumns: true,
+            filteredEntries: [],
+            enabledCategoryEvaluationCategories: [
+                { name: 'Fernunterricht', works: ['FU'] },
+                { name: 'Mitarbeit', works: ['MA'] },
+            ],
+            typeLabel: (type: string) => `${type} - Label`,
+        }
+        ctx.typeColumnHasValues = methods.typeColumnHasValues
+        ctx.categoryEvaluationCategoriesForType = methods.categoryEvaluationCategoriesForType
+        ctx.categoryEvaluationKey = methods.categoryEvaluationKey
+
+        const columns = (PerformancesDummy as any).computed.typeColumns.call(ctx)
+
+        expect(columns).toEqual([
+            { type: 'FU', label: 'FU - Fernunterricht', key: 'type-FU', kind: 'type' },
+            { type: 'MA', label: 'MA - Mitarbeit', key: 'type-MA', kind: 'type' },
+        ])
+    })
+
+    it('shows student-specific work comments as a smaller line below the performance item label', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/more/components/PerformancesDummy.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (PerformancesDummy as any).methods
+        const ctx = {
+            courseWorksById: {
+                12: {
+                    title: 'Podcast',
+                    description: 'Erstellung und Abgabe',
+                    groups: [
+                        {
+                            student_ids: [44],
+                            comment: 'Gruppenkommentar',
+                            comments: [{ student_id: 44, comment: 'Individueller Kommentar' }],
+                        },
+                    ],
+                },
+            },
+            typeLabel: () => 'PÜ - Praktische Übung',
+            entryDateLabel: () => '16.05.2026',
+            entryItemLabel: methods.entryItemLabel,
+            entryItemDetail: methods.entryItemDetail,
+            entryStudentComment: methods.entryStudentComment,
+            entryWorkDescription: methods.entryWorkDescription,
+            entryWork: methods.entryWork,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryWorkIndividualComment: methods.entryWorkIndividualComment,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            sameId: methods.sameId,
+        }
+
+        const item = methods.entryItem.call(ctx, {
+            teaching_course_work_id: 12,
+            user_id: 44,
+            type: 'PÜ',
+            grade: '2',
+            date: '2026-05-16',
+            description: 'Erstellung und Abgabe',
+        })
+
+        expect(source).toContain('class="performance-item-label"')
+        expect(source).toContain('class="performance-item-detail"')
+        expect(source).toContain('font-size: 0.72rem;')
+        expect(item).toEqual({
+            label: '16.05.2026 - Podcast: 2',
+            detail: 'Individueller Kommentar',
+        })
+    })
+
+    it('does not use the general work description as a performance item detail', () => {
+        const methods = (PerformancesDummy as any).methods
+        const ctx = {
+            courseWorksById: {
+                12: {
+                    title: 'Podcast',
+                    description: 'Erstellung und Abgabe',
+                    groups: [],
+                },
+            },
+            entryStudentComment: methods.entryStudentComment,
+            entryWorkDescription: methods.entryWorkDescription,
+            entryWork: methods.entryWork,
+            entryWorkGroup: methods.entryWorkGroup,
+            entryWorkIndividualComment: methods.entryWorkIndividualComment,
+            entryWorkGroupComment: methods.entryWorkGroupComment,
+            sameId: methods.sameId,
+        }
+
+        const detail = methods.entryItemDetail.call(ctx, {
+            teaching_course_work_id: 12,
+            user_id: 44,
+            description: 'Erstellung und Abgabe',
+        })
+
+        expect(detail).toBe('')
     })
 
     it('maps enabled category evaluations into the existing type cells', () => {

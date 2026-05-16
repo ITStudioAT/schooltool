@@ -236,7 +236,6 @@ class TeachingStudentPerformancePdfService
                 'class' => trim((string) ($student->user?->schoolclass ?? $student->import116?->class ?? '')),
                 'sem_1_grade' => $student->sem_1_grade,
                 'sem_2_grade' => $student->sem_2_grade,
-                'sem_grade' => $student->sem_grade,
             ])
             ->all();
 

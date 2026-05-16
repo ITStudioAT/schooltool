@@ -59,7 +59,9 @@ describe('Teaching page navigation', () => {
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
         vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
 
-        const ctx: Record<string, unknown> = {}
+        const ctx: Record<string, unknown> = {
+            ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
+        }
         await (Teaching as any).beforeMount.call(ctx)
 
         expect(ctx.adminStore).toBe(adminStoreMock)
@@ -94,7 +96,9 @@ describe('Teaching page navigation', () => {
         vi.mocked(useSchoolHourStore).mockReturnValue(schoolHourStoreMock as never)
         vi.mocked(useTeachingStore).mockReturnValue(teachingStoreMock as never)
 
-        const ctx: Record<string, unknown> = {}
+        const ctx: Record<string, unknown> = {
+            ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
+        }
         await (Teaching as any).beforeMount.call(ctx)
 
         expect(ctx.adminStore).toBe(adminStoreMock)
@@ -218,6 +222,85 @@ describe('Teaching page navigation', () => {
         expect(ctx.main_action).toBe('search')
         expect(ctx.settings_view_key).toBe(0)
         expect(routerReplace).toHaveBeenCalledWith({ path: '/admin/teaching/search', query: {} })
+    })
+
+    it('opens the clean teaching route on the overview instead of a previously selected course', () => {
+        const courseStore = {
+            selected_course: { id: 9, title: 'Mathematik' },
+            selected_course_id: 9,
+            selected_course_student: { id: 17 },
+            show_students: false,
+            show_infos: false,
+            show_works: true,
+            show_print: false,
+            show_dates: false,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+        }
+        const ctx = {
+            _urlRestored: false,
+            courseStore,
+            selected_courseDate: { id: 44 },
+            action_2: 'course_student_view',
+            $route: { query: {} },
+            ensureCourseStore() {
+                return courseStore
+            },
+            resetTeachingOverviewSelection: (Teaching as any).methods.resetTeachingOverviewSelection,
+        }
+
+        ;(Teaching as any).watch.courses.handler.call(ctx, [{ id: 9, title: 'Mathematik' }])
+
+        expect(ctx._urlRestored).toBe(true)
+        expect(courseStore.selected_course).toBeNull()
+        expect(courseStore.selected_course_id).toBeNull()
+        expect(courseStore.selected_course_student).toBeNull()
+        expect(courseStore.show_students).toBe(true)
+        expect(courseStore.show_works).toBe(false)
+        expect(ctx.selected_courseDate).toBeNull()
+        expect(ctx.action_2).toBe('')
+    })
+
+    it('opens the clean teaching route during client navigation when courses are already cached', () => {
+        const courseStore = {
+            selected_course: { id: 9, title: 'Mathematik' },
+            selected_course_id: 9,
+            selected_course_student: { id: 17 },
+            show_students: false,
+            show_infos: false,
+            show_works: true,
+            show_print: false,
+            show_dates: false,
+            show_curriculum: false,
+            show_attendance: false,
+            show_performances: false,
+            show_performances_plus: false,
+        }
+        const ctx: Record<string, any> = {
+            _urlRestored: false,
+            courseStore: null,
+            selected_courseDate: { id: 44 },
+            action_2: 'course_student_view',
+            $route: { query: {} },
+            ensureCourseStore: (Teaching as any).methods.ensureCourseStore,
+            resetTeachingOverviewSelection: (Teaching as any).methods.resetTeachingOverviewSelection,
+        }
+
+        vi.mocked(useCourseStore).mockReturnValue(courseStore as never)
+
+        ;(Teaching as any).watch.courses.handler.call(ctx, [{ id: 9, title: 'Mathematik' }])
+
+        expect(ctx.courseStore).toBe(courseStore)
+        expect(ctx._urlRestored).toBe(true)
+        expect(courseStore.selected_course).toBeNull()
+        expect(courseStore.selected_course_id).toBeNull()
+        expect(courseStore.selected_course_student).toBeNull()
+        expect(courseStore.show_students).toBe(true)
+        expect(courseStore.show_works).toBe(false)
+        expect(ctx.selected_courseDate).toBeNull()
+        expect(ctx.action_2).toBe('')
     })
 
     it('opens the datensicherung page from navigation', () => {
@@ -367,6 +450,19 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('.teaching-overview-toolbar-width {\n    width: 100%;\n}')
         expect(source).not.toContain('toolbarWidthClass')
         expect(source).not.toContain('toolbar-width-xl-')
+    })
+
+    it('uses the same overview card column width for students and secondary panels', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
+        )
+
+        expect(source.match(/class="teaching-overview-card-col"/g)).toHaveLength(2)
+        expect(source).toContain(':md="isGradesMode ? 8 : 6"')
+        expect(source).toContain(':lg="7"')
+        expect(source).toContain(':xl="isGradesMode ? 6 : 4"')
+        expect(source).toContain('.teaching-overview-card-col {')
+        expect(source).toContain('flex-grow: 0;')
     })
 
     it('renders course date contents in normal font weight', async () => {

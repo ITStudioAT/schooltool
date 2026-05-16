@@ -87,7 +87,6 @@
                     @if (in_array(2, $semesters))
                         <th class="text-center" style="width: 10%;">Note Sem. 2</th>
                     @endif
-                    <th class="text-center" style="width: 10%;">Gesamtnote</th>
                 </tr>
             </thead>
             <tbody>
@@ -103,7 +102,6 @@
                         @if (in_array(2, $semesters))
                             <td class="text-center">{{ $student['sem_2_grade'] ?? '-' }}</td>
                         @endif
-                        <td class="text-center">{{ $student['sem_grade'] ?? '-' }}</td>
                     </tr>
                 @endforeach
             </tbody>

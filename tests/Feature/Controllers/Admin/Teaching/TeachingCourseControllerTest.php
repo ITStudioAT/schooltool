@@ -738,6 +738,34 @@ describe('student performances pdf', function () {
         Pdf::assertRespondedWithPdf(fn () => true);
     });
 
+    test('grades pdf view prints semester grades without the overall grade', function () {
+        $view = $this->view('pdfs.teachingGrades', [
+            'course_title' => 'Mathematik',
+            'school_name' => 'Course Test School',
+            'schoolyear_name' => '2025/26',
+            'semesters' => [1, 2],
+            'generated_at' => '16.05.2026 15:30',
+            'students' => [
+                [
+                    'name' => 'Mustermann, Anna',
+                    'email' => 'anna@example.test',
+                    'class' => '2B',
+                    'sem_1_grade' => '2',
+                    'sem_2_grade' => '1',
+                    'sem_grade' => 'J',
+                ],
+            ],
+        ]);
+
+        $view
+            ->assertSee('Note Sem. 1', false)
+            ->assertSee('Note Sem. 2', false)
+            ->assertSee('>2<', false)
+            ->assertSee('>1<', false)
+            ->assertDontSee('Gesamtnote', false)
+            ->assertDontSee('>J<', false);
+    });
+
     test('formats performance dates in the pdf data without the year', function () {
         $student = User::factory()->create([
             'school_id' => $this->school->id,

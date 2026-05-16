@@ -31,10 +31,9 @@
                                     :title="child.title"
                                     :subtitle="child.subtitle"
                                     :prepend-icon="child.icon"
-                                    :to="child.to"
                                     v-bind="routeItemBindings(child)"
                                     :disabled="isMenuInteractionDisabled || !child.is_active"
-                                    @click="startNavigationLock(child.to)">
+                                    @click="navigateMenuRoute(child.to)">
                                     <template v-if="child.status_icon" #append>
                                         <v-icon :icon="child.status_icon" :color="child.status_color || 'warning'" :title="child.status_title || ''" size="small" />
                                     </template>
@@ -63,10 +62,9 @@
                         :exact="false"
                         :title="item.title"
                         :prepend-icon="item.icon"
-                        :to="item.to"
                         v-bind="routeItemBindings(item)"
                         :disabled="isMenuInteractionDisabled || !item.is_active"
-                        @click="startNavigationLock(item.to)">
+                        @click="navigateMenuRoute(item.to)">
                         <template v-if="item.status_icon" #append>
                             <v-icon :icon="item.status_icon" :color="item.status_color || 'warning'" :title="item.status_title || ''" size="small" />
                         </template>
@@ -146,6 +144,9 @@ export default {
             schoolStore: null,
             admins: ['super_admin', 'admin', 'register_admin', 'tutoring_admin', 'teaching_admin', 'materials_admin', 'materials_moderator', 'teacher', 'lunch_admin', 'aba_teacher', 'studentstimetables_admin'],
             is_route_navigation_pending: false,
+            routeNavigationLockFallbackTimer: null,
+            routeLoadingCount: 0,
+            routeLoadingFallbackTimer: null,
             removeRouteBeforeEachHook: null,
             removeRouteAfterEachHook: null,
             removeRouteErrorHook: null,
@@ -183,7 +184,7 @@ export default {
             return `/storage/images/${normalizedLogo}`
         },
         isMenuInteractionDisabled() {
-            return this.is_navigation_locked || this.is_loading > 0 || this.is_route_navigation_pending || this.is_struktur_modus
+            return this.is_navigation_locked || this.is_route_navigation_pending || this.is_struktur_modus
         },
         isImpersonating() {
             return !!this.config?.impersonation?.is_impersonating
@@ -216,9 +217,9 @@ export default {
     },
 
     async beforeMount() {
-        this.registerRouteNavigationHooks()
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
+        this.registerRouteNavigationHooks()
         this.adminStore.is_loading++
         this.adminStore.initialize(this.$router)
         if (!this.adminStore.config) {
@@ -227,6 +228,8 @@ export default {
         this.adminStore.is_loading--
     },
     unmounted() {
+        this.clearNavigationLockTimers()
+        this.clearRouteLoadingFallbackTimer()
         if (typeof this.removeRouteBeforeEachHook === 'function') this.removeRouteBeforeEachHook()
         if (typeof this.removeRouteAfterEachHook === 'function') this.removeRouteAfterEachHook()
         if (typeof this.removeRouteErrorHook === 'function') this.removeRouteErrorHook()
@@ -241,29 +244,89 @@ export default {
             if (!this.$router) return
             this.removeRouteBeforeEachHook = this.$router.beforeEach((to, from, next) => {
                 if (to.fullPath !== from.fullPath) {
-                    this.adminStore.is_loading++
+                    this.beginRouteLoading()
                 }
                 next()
             })
             this.removeRouteAfterEachHook = this.$router.afterEach(() => {
-                this.is_route_navigation_pending = false
+                this.clearNavigationLock()
                 this.$nextTick(() => {
-                    this.adminStore.is_loading--
+                    this.finishRouteLoading()
                 })
             })
             this.removeRouteErrorHook = this.$router.onError(() => {
-                this.is_route_navigation_pending = false
+                this.clearNavigationLock()
                 this.$nextTick(() => {
-                    this.adminStore.is_loading--
+                    this.finishRouteLoading()
                 })
             })
         },
-        startNavigationLock(target) {
+        async navigateMenuRoute(target) {
             if (this.isMenuInteractionDisabled) return
+            if (!this.$router) return
+
             const resolvedTarget = this.$router?.resolve(target)?.fullPath || ''
             const currentRoute = this.$route?.fullPath || ''
             if (!resolvedTarget || resolvedTarget === currentRoute) return
+
+            this.startNavigationLock()
+
+            try {
+                await this.$router.push(target)
+            } catch (error) {
+                console.error('dashboard menu navigation failed:', error)
+            } finally {
+                this.clearNavigationLock()
+            }
+        },
+        startNavigationLock() {
+            this.clearNavigationLockTimers()
             this.is_route_navigation_pending = true
+            this.routeNavigationLockFallbackTimer = window.setTimeout(() => {
+                this.clearNavigationLock()
+            }, 8000)
+        },
+        clearNavigationLock() {
+            this.clearNavigationLockTimers()
+            this.is_route_navigation_pending = false
+        },
+        clearNavigationLockTimers() {
+            if (this.routeNavigationLockFallbackTimer !== null) {
+                window.clearTimeout(this.routeNavigationLockFallbackTimer)
+                this.routeNavigationLockFallbackTimer = null
+            }
+        },
+        beginRouteLoading() {
+            if (!this.adminStore) return
+
+            this.routeLoadingCount++
+            this.adminStore.is_loading++
+            this.clearRouteLoadingFallbackTimer()
+            this.routeLoadingFallbackTimer = window.setTimeout(() => {
+                this.finishAllRouteLoading()
+            }, 15000)
+        },
+        finishRouteLoading() {
+            this.clearRouteLoadingFallbackTimer()
+            if (this.routeLoadingCount <= 0 || !this.adminStore) return
+
+            this.routeLoadingCount--
+            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - 1)
+        },
+        finishAllRouteLoading() {
+            const count = this.routeLoadingCount
+            this.routeLoadingCount = 0
+            this.clearRouteLoadingFallbackTimer()
+            this.clearNavigationLock()
+            if (!this.adminStore || count <= 0) return
+
+            this.adminStore.is_loading = Math.max(0, Number(this.adminStore.is_loading || 0) - count)
+        },
+        clearRouteLoadingFallbackTimer() {
+            if (this.routeLoadingFallbackTimer !== null) {
+                window.clearTimeout(this.routeLoadingFallbackTimer)
+                this.routeLoadingFallbackTimer = null
+            }
         },
         routeItemBindings(item) {
             return Array.isArray(item?.active_paths) && item.active_paths.length > 0

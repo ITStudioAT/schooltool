@@ -179,7 +179,7 @@ export default {
     async beforeMount() {
         this.adminStore = useAdminStore()
         this.schoolStore = useSchoolStore()
-        this.courseStore = useCourseStore()
+        this.courseStore = this.ensureCourseStore()
         this.schoolHourStore = useSchoolHourStore()
         const teachingStore = useTeachingStore()
         await this.schoolStore.loadHopperAccounts()
@@ -483,32 +483,37 @@ export default {
         courses: {
             immediate: true,
             handler(courses) {
-                if (this._urlRestored || !courses.length) return
-                const courseId = Number(this.$route.query.course)
+                const courseList = Array.isArray(courses) ? courses : []
+                if (this._urlRestored || !courseList.length) return
+
+                const courseStore = this.ensureCourseStore()
+                const query = this.$route?.query || {}
+                const courseId = Number(query.course)
                 if (!courseId) {
-                    const gradesParam = this.$route.query.grades
+                    const gradesParam = query.grades
                     if (gradesParam) {
                         this._urlRestored = true
                         const gradeValues = String(gradesParam).split(',').map(v => v.trim())
-                        this.courseStore.infos_show_grade_sem1 = gradeValues.includes('sem1')
-                        this.courseStore.infos_show_grade_sem2 = gradeValues.includes('sem2')
-                        this.courseStore.infos_show_grade_year = gradeValues.includes('year')
-                        const firstCourse = courses[0]
+                        courseStore.infos_show_grade_sem1 = gradeValues.includes('sem1')
+                        courseStore.infos_show_grade_sem2 = gradeValues.includes('sem2')
+                        courseStore.infos_show_grade_year = gradeValues.includes('year')
+                        const firstCourse = courseList[0]
                         if (firstCourse) {
-                            this.courseStore.selected_course = firstCourse
-                            this.courseStore.selected_course_id = firstCourse.id
+                            courseStore.selected_course = firstCourse
+                            courseStore.selected_course_id = firstCourse.id
                         }
                         return
                     }
+                    this.resetTeachingOverviewSelection()
                     this._urlRestored = true
                     return
                 }
-                const course = courses.find((c) => c.id === courseId)
+                const course = courseList.find((c) => c.id === courseId)
                 if (!course) return
                 this._urlRestored = true
-                this.courseStore.selected_course = course
-                this.courseStore.selected_course_id = course.id
-                const dateId = Number(this.$route.query.date)
+                courseStore.selected_course = course
+                courseStore.selected_course_id = course.id
+                const dateId = Number(query.date)
                 if (dateId) {
                     const courseDateStore = useCourseDateStore()
                     const date = (course.course_dates || []).find((d) => d.id === dateId) || null
@@ -519,6 +524,13 @@ export default {
     },
 
     methods: {
+        ensureCourseStore() {
+            if (!this.courseStore) {
+                this.courseStore = useCourseStore()
+            }
+
+            return this.courseStore
+        },
         hasAnyRole(requiredRoles) {
             const roles = Array.isArray(this.config?.roles) ? this.config.roles : []
             return roles.some((role) => requiredRoles.includes(role))
@@ -541,6 +553,24 @@ export default {
         openSettings() {
             this.settings_view_key++
             this.navigateTo('settings')
+        },
+        resetTeachingOverviewSelection() {
+            const courseStore = this.ensureCourseStore()
+
+            courseStore.selected_course = null
+            courseStore.selected_course_id = null
+            courseStore.selected_course_student = null
+            courseStore.show_students = true
+            courseStore.show_infos = false
+            courseStore.show_works = false
+            courseStore.show_print = false
+            courseStore.show_dates = false
+            courseStore.show_curriculum = false
+            courseStore.show_attendance = false
+            courseStore.show_performances = false
+            courseStore.show_performances_plus = false
+            this.selected_courseDate = null
+            this.action_2 = ''
         },
         lessonStartFromHour(dateStr, hour) {
             const schoolHour = this.schoolHoursByHour[Number(hour)]
