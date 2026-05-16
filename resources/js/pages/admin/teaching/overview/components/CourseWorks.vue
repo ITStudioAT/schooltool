@@ -484,7 +484,8 @@
                                                 v-for="studentId in sortedGroupStudentIds(work_form.groups[group_dialog_index])"
                                                 :key="`dlg-chip-${group_dialog_index}-${studentId}`"
                                                 variant="outlined"
-                                                class="pa-2">
+                                                class="pa-2 student-card-block"
+                                                :class="studentBlockBackgroundClass(studentId)">
                                                 <div class="d-flex align-center ga-2 flex-wrap">
                                                     <v-chip
                                                         v-if="studentObjectById(studentId) && studentClassValue(studentObjectById(studentId))"
@@ -522,8 +523,8 @@
                                                         {{ grade.value }}
                                                     </v-chip>
                                                 </div>
-                                                <div v-if="getGroupStudentComment(work_form.groups[group_dialog_index], studentId)" class="text-caption text-medium-emphasis mt-1">
-                                                    {{ getGroupStudentComment(work_form.groups[group_dialog_index], studentId).toString().trim().slice(0, 120) }}
+                                                <div v-if="getGroupStudentComment(work_form.groups[group_dialog_index], studentId)" class="text-caption text-medium-emphasis mt-1 student-comment-preview">
+                                                    {{ getGroupStudentComment(work_form.groups[group_dialog_index], studentId).toString().trim() }}
                                                 </div>
                                             </v-card>
                                         </div>
@@ -556,14 +557,6 @@
                                         {{ show_bulk_action ? 'Sammelaktion schließen' : 'Sammelaktion' }}
                                     </v-btn>
                                     <v-btn
-                                        v-if="!show_bulk_action"
-                                        size="x-small"
-                                        :variant="show_chip_grading_view ? 'flat' : 'outlined'"
-                                        :color="show_chip_grading_view ? 'secondary' : 'primary'"
-                                        @click="toggleChipGradingView">
-                                        {{ show_chip_grading_view ? 'Chip-Ansicht schließen' : 'Chip-Ansicht' }}
-                                    </v-btn>
-                                    <v-btn
                                         v-if="selectedTypeSupportsPoints"
                                         size="x-small"
                                         :variant="show_points_grading_view ? 'flat' : 'outlined'"
@@ -572,14 +565,6 @@
                                         {{ show_points_grading_view ? 'Punkte schließen' : 'Punkte' }}
                                     </v-btn>
                                 </div>
-                                <v-btn
-                                    v-if="!show_chip_grading_view"
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    @click="toggleAllSinglePanels">
-                                    {{ allSinglePanelsOpen ? 'Alle schließen' : 'Alle öffnen' }}
-                                </v-btn>
                             </div>
                             <!-- Bulk action panel -->
                             <v-card v-if="show_bulk_action" variant="outlined" class="mt-3 pa-3">
@@ -631,12 +616,13 @@
                                     </div>
                                 </div>
                             </v-card>
-                            <div v-if="show_points_grading_view" class="mt-3 d-flex flex-column ga-2">
+                            <div v-if="show_points_grading_view" class="mt-3 student-card-grid">
                                 <v-card
                                     v-for="row in pointsViewRows"
                                     :key="`points-${row.groupIndex}-${row.studentId}`"
                                     variant="outlined"
-                                    class="pa-3">
+                                    class="pa-3 student-card-block"
+                                    :class="studentBlockBackgroundClass(row.studentId)">
                                     <div class="d-flex align-center ga-2 flex-wrap">
                                         <v-chip v-if="row.classLabel" size="x-small" variant="tonal" color="primary">
                                             {{ row.classLabel }}
@@ -675,12 +661,13 @@
                                 </v-card>
                             </div>
                             <!-- Chip grading view -->
-                            <div v-else-if="show_chip_grading_view" class="mt-3 d-flex flex-column ga-2">
+                            <div v-else class="mt-3 student-card-grid">
                                 <v-card
                                     v-for="row in chipViewRows"
                                     :key="`chip-${row.groupIndex}-${row.studentId}`"
                                     variant="outlined"
-                                    class="pa-2">
+                                    class="pa-2 student-card-block"
+                                    :class="studentBlockBackgroundClass(row.studentId)">
                                     <div class="d-flex align-center ga-2 flex-wrap">
                                         <v-checkbox
                                             v-if="show_bulk_action"
@@ -721,93 +708,11 @@
                                             {{ grade.value }}
                                         </v-chip>
                                     </div>
-                                    <div v-if="row.commentPreview" class="text-caption text-medium-emphasis mt-1">
+                                    <div v-if="row.commentPreview" class="text-caption text-medium-emphasis mt-1 student-comment-preview">
                                         {{ row.commentPreview }}
                                     </div>
                                 </v-card>
                             </div>
-                            <!-- Compact view when all open -->
-                            <div v-else-if="allSinglePanelsOpen" class="mt-3 d-flex flex-column ga-2">
-                                <v-card
-                                    v-for="(group, index) in work_form.groups"
-                                    :key="`compact-${index}`"
-                                    variant="outlined"
-                                    class="pa-2">
-                                    <div v-for="studentId in sortedGroupStudentIds(group)" :key="`compact-grade-${index}-${studentId}`" class="d-flex flex-column ga-1">
-                                        <div class="d-flex align-center ga-2">
-                                            <v-checkbox
-                                                v-if="show_bulk_action"
-                                                v-model="selected_student_ids"
-                                                :value="studentId"
-                                                density="compact"
-                                                hide-details
-                                                class="flex-grow-0" />
-                                            <div class="text-body-2 font-weight-medium" style="min-width: 180px">
-                                                {{ studentNameById(studentId) }}
-                                            </div>
-                                            <v-select
-                                                v-model="group.grades[studentId]"
-                                                :items="gradeItemsForType"
-                                                item-title="title"
-                                                item-value="value"
-                                                label="Note"
-                                                density="compact"
-                                                hide-details
-                                                clearable
-                                                style="width: 200px; flex: 0 0 200px" />
-                                        </div>
-                                        <v-textarea
-                                            v-model="group.comments[studentId]"
-                                            label="Kommentar"
-                                            density="compact"
-                                            hide-details
-                                            rows="1"
-                                            auto-grow
-                                            :maxlength="1024" />
-                                    </div>
-                                </v-card>
-                            </div>
-                            <!-- Expansion panels view when collapsed -->
-                            <v-expansion-panels v-else v-model="singlePanels" multiple class="mt-3">
-                                <v-expansion-panel v-for="(group, index) in work_form.groups" :key="`single-${index}`">
-                                    <v-expansion-panel-title>
-                                        <div class="d-flex align-center flex-wrap ga-2 w-100">
-                                            <div class="text-caption text-medium-emphasis">Schüler:in</div>
-                                            <v-chip
-                                                v-for="studentId in sortedGroupStudentIds(group)"
-                                                :key="`single-chip-${index}-${studentId}`"
-                                                size="x-small"
-                                                variant="tonal">
-                                                {{ studentNameById(studentId) }}
-                                            </v-chip>
-                                        </div>
-                                    </v-expansion-panel-title>
-                                    <v-expansion-panel-text>
-                                        <div v-for="studentId in sortedGroupStudentIds(group)" :key="`single-grade-${index}-${studentId}`" class="d-flex flex-column ga-2">
-                                            <div class="text-caption text-medium-emphasis">
-                                                {{ studentNameById(studentId) }}
-                                            </div>
-                                            <div class="d-flex align-center flex-wrap ga-2">
-                                                <v-select
-                                                    v-model="group.grades[studentId]"
-                                                    :items="gradeItemsForType"
-                                                    item-title="title"
-                                                    item-value="value"
-                                                    label="Note"
-                                                    clearable
-                                                    style="min-width: 140px" />
-                                                <v-textarea
-                                                    v-model="group.comments[studentId]"
-                                                    label="Kommentar"
-                                                    rows="2"
-                                                    :counter="1024"
-                                                    :maxlength="1024"
-                                                    style="min-width: 240px; flex: 1 1 240px" />
-                                            </div>
-                                        </div>
-                                    </v-expansion-panel-text>
-                                </v-expansion-panel>
-                            </v-expansion-panels>
                         </div>
 
                         <div class="d-flex flex-row align-center justify-space-between mt-4">
@@ -893,7 +798,6 @@ export default {
             delete_work_id: null,
             work_form: this.emptyWorkForm(),
             is_initializing_form: false,
-            singlePanels: [],
             pending_group_work: null,
             group_work_switch_key: 0,
             pending_random_groups: false,
@@ -910,7 +814,6 @@ export default {
             group_dialog_open: false,
             group_dialog_index: null,
             group_dialog_add_students_open: false,
-            show_chip_grading_view: true,
             show_points_grading_view: false,
             comment_dialog_open: false,
             comment_dialog_group_index: null,
@@ -1029,9 +932,6 @@ export default {
                 .sort((a, b) => a._dateObj - b._dateObj)
                 .slice(0, 3)
         },
-        allSinglePanelsOpen() {
-            return this.singlePanels.length === this.work_form.groups.length && this.work_form.groups.length > 0
-        },
         chipViewRows() {
             if (this.work_form.is_group_work) return []
             const byId = new Map(this.activeCourseStudents.map((student) => [String(student.id), student]))
@@ -1043,7 +943,7 @@ export default {
                     if (!student) return
                     const gradeValue = this.getGroupStudentGrade(group, studentId)
                     const commentValue = this.getGroupStudentComment(group, studentId)
-                    const commentPreview = (commentValue || '').toString().trim().slice(0, 120)
+                    const commentPreview = (commentValue || '').toString().trim()
                     rows.push({
                         groupIndex,
                         studentId,
@@ -1389,20 +1289,12 @@ export default {
                 })
                 .filter(Boolean)
         },
-        toggleChipGradingView() {
-            this.show_points_grading_view = false
-            this.show_chip_grading_view = !this.show_chip_grading_view
-        },
         togglePointsGradingView() {
             if (!this.selectedTypeSupportsPoints) return
 
             this.show_bulk_action = false
             this.selected_student_ids = []
-            this.show_chip_grading_view = false
             this.show_points_grading_view = !this.show_points_grading_view
-            if (!this.show_points_grading_view) {
-                this.show_chip_grading_view = true
-            }
         },
         setGroupWork(value) {
             const nextVal = !!value
@@ -1498,7 +1390,6 @@ export default {
             this.work_form = this.emptyWorkForm()
             this.work_form.teaching_course_id = this.selected_course?.id || null
             this.work_form.groups = this.buildIndividualGroups()
-            this.singlePanels = []
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
@@ -1575,7 +1466,6 @@ export default {
                 // Sort groups by student class, then last_name for non-group works
                 this.work_form.groups = this.sortGroupsByStudent(this.work_form.groups)
             }
-            this.singlePanels = []
             this.pending_random_groups = false
             this.show_bulk_action = false
             this.bulk_grade = null
@@ -1616,7 +1506,6 @@ export default {
             this.bulk_grade = null
             this.bulk_comment = ''
             this.selected_student_ids = []
-            this.show_chip_grading_view = true
             this.show_points_grading_view = false
             this.closeCommentDialog()
 
@@ -1907,24 +1796,13 @@ export default {
                 (group.student_ids || []).filter((id) => String(id) !== String(studentId)),
             )
         },
-        toggleAllSinglePanels() {
-            if (this.allSinglePanelsOpen) {
-                this.singlePanels = []
-                this.show_bulk_action = false
-                this.selected_student_ids = []
-                return
-            }
-            this.singlePanels = this.work_form.groups.map((_, idx) => idx)
-        },
         toggleBulkAction() {
             if (this.show_bulk_action) {
                 this.show_bulk_action = false
                 this.selected_student_ids = []
-                this.show_chip_grading_view = true
                 return
             }
             this.show_points_grading_view = false
-            this.show_chip_grading_view = true
             this.show_bulk_action = true
         },
         studentNameById(studentId) {
@@ -1934,6 +1812,14 @@ export default {
         },
         studentObjectById(studentId) {
             return this.activeCourseStudents.find((s) => String(s.id) === String(studentId)) || null
+        },
+        studentBlockBackgroundClass(studentId) {
+            const value = String(studentId || '').trim()
+            if (value === '') {
+                return 'student-card-block--type-empty'
+            }
+
+            return 'student-card-block--student'
         },
         sharedGroupGradeValue(group) {
             return this.effectiveGradeForType(this.work_form.type, group?.grade)
@@ -2513,5 +2399,67 @@ export default {
     margin-top: 2px;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+.student-card-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.student-card-block {
+    border-color: transparent !important;
+    border-radius: 8px !important;
+    min-width: 0;
+}
+
+.student-comment-preview {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.student-card-block--type-empty {
+    background-color: #ffffff !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+.student-card-block--student {
+    background-color: #eef6ff !important;
+    border-color: rgba(37, 99, 235, 0.16) !important;
+}
+
+.student-card-block--type-1 {
+    background-color: #eef6ff !important;
+    border-color: rgba(37, 99, 235, 0.16) !important;
+}
+
+.student-card-block--type-2 {
+    background-color: #f0fdf4 !important;
+    border-color: rgba(22, 163, 74, 0.16) !important;
+}
+
+.student-card-block--type-3 {
+    background-color: #fff7ed !important;
+    border-color: rgba(234, 88, 12, 0.16) !important;
+}
+
+.student-card-block--type-4 {
+    background-color: #f5f3ff !important;
+    border-color: rgba(124, 58, 237, 0.16) !important;
+}
+
+.student-card-block--type-5 {
+    background-color: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, 0.14) !important;
+}
+
+.student-card-block--type-6 {
+    background-color: #ecfeff !important;
+    border-color: rgba(8, 145, 178, 0.16) !important;
+}
+
+@media (min-width: 900px) {
+    .student-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 </style>

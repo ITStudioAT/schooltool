@@ -103,6 +103,48 @@ describe('CourseWorks title rendering', () => {
         expect(emptyTypeClass).toBe('work-row--type-empty')
     })
 
+    it('renders work detail students as two-column colored blocks', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseWorks as any).methods
+        const firstStudentClass = methods.studentBlockBackgroundClass.call({}, 11)
+        const otherStudentClass = methods.studentBlockBackgroundClass.call({}, 12)
+        const emptyStudentClass = methods.studentBlockBackgroundClass.call({}, null)
+
+        expect(source).toContain('class="mt-3 student-card-grid"')
+        expect(source).toContain('class="pa-3 student-card-block"')
+        expect(source).toContain('class="pa-2 student-card-block"')
+        expect(source).toContain(':class="studentBlockBackgroundClass(row.studentId)"')
+        expect(source).toContain('<div v-else class="mt-3 student-card-grid">')
+        expect(source).not.toContain('toggleChipGradingView')
+        expect(source).not.toContain('Chip-Ansicht')
+        expect(source).not.toContain('student-panel-grid')
+        expect(source).not.toContain('v-expansion-panels v-else')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.student-card-block--student {')
+        expect(firstStudentClass).toBe(otherStudentClass)
+        expect(firstStudentClass).toBe('student-card-block--student')
+        expect(emptyStudentClass).toBe('student-card-block--type-empty')
+    })
+
+    it('preserves line breaks in student comment previews', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="text-caption text-medium-emphasis mt-1 student-comment-preview"')
+        expect(source).toContain('const commentPreview = (commentValue || \'\').toString().trim()')
+        expect(source).not.toContain(".trim().slice(0, 120)")
+        expect(source).toContain('.student-comment-preview {')
+        expect(source).toContain('white-space: pre-wrap;')
+        expect(source).toContain('overflow-wrap: anywhere;')
+    })
+
     it('renders whether each work list item is group work in the type row', () => {
         const componentPath = resolve(
             process.cwd(),
