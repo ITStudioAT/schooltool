@@ -353,7 +353,7 @@ describe('Teaching page navigation', () => {
             .toBeLessThan(source.indexOf("panels.push({ id: 'print', label: 'Druck', icon: 'mdi-printer-outline' })"))
         expect(source).toContain("<CoursePrint />")
         expect(source).toContain("const validPanels = ['students', 'dates', 'infos', 'works', 'print', 'curriculum', 'attendance', 'performances', 'performances_plus']")
-        expect(source).toContain('v-if="selected_course && (show_students || show_infos || show_dates || show_curriculum || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
+        expect(source).toContain('v-if="selected_course && ((!isGradesMode && show_students) || show_infos || show_dates || show_curriculum || show_works || show_print) && action != \'teaching_course_new_or_edit\'"')
         expect(source).toContain('v-if="show_curriculum" class="mt-n6"')
         expect(source).toContain('data-testid="teaching-curriculum-card"')
     })
@@ -409,6 +409,24 @@ describe('Teaching page navigation', () => {
         expect(source).toContain('title="Neues Fach anlegen"')
     })
 
+    it('stacks subnav actions below a two-column course grid on small screens', async () => {
+        const source = await import('node:fs/promises').then((fs) =>
+            fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
+        )
+
+        expect(source).toContain('@media (max-width: 960px)')
+        expect(source).toContain('.teaching-subnav__inner {')
+        expect(source).toContain('flex-direction: column;')
+        expect(source).toContain('.teaching-subnav__courses {')
+        expect(source).toContain('display: grid;')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.teaching-subnav__course-btn--overview {')
+        expect(source).toContain('grid-column: 1 / -1;')
+        expect(source).toContain('.teaching-subnav__actions {')
+        expect(source).toContain('margin-left: 0 !important;')
+        expect(source).toContain('width: 100%;')
+    })
+
     it('uses higher-contrast classes for teaching navigation buttons', async () => {
         const source = await import('node:fs/promises').then((fs) =>
             fs.readFile('resources/js/pages/admin/teaching/Teaching.vue', 'utf8')
@@ -424,7 +442,14 @@ describe('Teaching page navigation', () => {
             fs.readFile('resources/js/pages/admin/teaching/overview/Overview.vue', 'utf8')
         )
 
+        expect(source).toContain('.teaching-overview-panel-switcher {')
+        expect(source).toContain('flex-wrap: wrap;')
+        expect(source).toContain('@media (max-width: 700px)')
+        expect(source).toContain('display: grid !important;')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
         expect(source).toContain('.teaching-overview-toolbar-btn {')
+        expect(source).toContain('width: 100%;')
+        expect(source).toContain('.teaching-overview-toolbar-btn :deep(.v-btn__content)')
         expect(source).toContain('.teaching-overview-toolbar-btn.v-btn--selected {')
         expect(source).toContain('.teaching-overview-toolbar-btn:hover {')
     })

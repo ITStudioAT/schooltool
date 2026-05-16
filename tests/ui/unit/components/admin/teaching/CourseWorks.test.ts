@@ -30,7 +30,12 @@ describe('CourseWorks title rendering', () => {
         const source = readFileSync(componentPath, 'utf8')
 
         expect(source).toContain('class="text-caption text-medium-emphasis work-type-first-line"')
+        expect(source).toContain('class="work-meta-row"')
         expect(source).toContain('class="text-body-2 work-title-second-line"')
+        expect(source).toContain('v-if="work.description" class="text-caption work-description-line"')
+        expect(source).toContain('{{ work.title || \'—\' }}')
+        expect(source).toContain('{{ work.description }}')
+        expect(source).not.toContain('{{ work.description || \'—\' }}')
         expect(source).not.toContain('class="text-caption text-medium-emphasis work-title-second-line"')
         expect(source).not.toContain('<span v-if="work.title || work.description">– {{ work.title || work.description }}</span>')
     })
@@ -42,9 +47,11 @@ describe('CourseWorks title rendering', () => {
         )
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('class="work-grade-distribution d-flex flex-wrap ga-1 mt-1"')
+        expect(source).toContain('class="work-bottom-row"')
+        expect(source).toContain('class="work-grade-distribution d-flex flex-wrap ga-1"')
         expect(source).toContain('v-for="item in workGradeDistribution(work)"')
         expect(source).toContain('{{ item.grade }}: {{ item.count }}')
+        expect(source).toContain('class="work-actions d-flex align-center ga-1"')
     })
 
     it('adds vertical spacing between work list items', () => {
@@ -59,17 +66,56 @@ describe('CourseWorks title rendering', () => {
         expect(source).toContain('.work-list-item:last-child {\n    margin-bottom: 0;\n}')
     })
 
-    it('renders whether each work list item is group work as a chip beside the work type', () => {
+    it('renders the Arbeiten list as a responsive two-column grid', () => {
         const componentPath = resolve(
             process.cwd(),
             'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
         )
         const source = readFileSync(componentPath, 'utf8')
 
-        expect(source).toContain('class="work-mode-chip ml-1"')
-        expect(source).toContain(":color=\"work.is_group_work ? 'primary' : 'default'\"")
-        expect(source).toContain("{{ work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit' }}")
-        expect(source.indexOf('workTypeLabel(work.type)')).toBeLessThan(source.indexOf("work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'"))
+        expect(source).toContain('<v-list density="compact" class="work-list-grid">')
+        expect(source).toContain('.work-list-grid {')
+        expect(source).toContain('display: grid;')
+        expect(source).toContain('@media (min-width: 900px)')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.work-list-grid .work-list-item {')
+        expect(source).toContain('align-self: stretch;')
+        expect(source).toContain('.work-list-grid .work-list-item :deep(.v-list-item__content)')
+    })
+
+    it('renders work entries with type-based background colors', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseWorks as any).methods
+        const firstTypeClass = methods.workEntryBackgroundClass.call({}, { type: 'SA' })
+        const sameTypeClass = methods.workEntryBackgroundClass.call({}, { type: 'SA' })
+        const emptyTypeClass = methods.workEntryBackgroundClass.call({}, { type: '' })
+
+        expect(source).toContain('class="work-row w-100" :class="workEntryBackgroundClass(work)"')
+        expect(source).toContain('.work-row--type-1 {')
+        expect(source).toContain('border-radius: 8px;')
+        expect(source).toContain('padding: 8px;')
+        expect(firstTypeClass).toBe(sameTypeClass)
+        expect(firstTypeClass).toMatch(/^work-row--type-[1-6]$/)
+        expect(emptyTypeClass).toBe('work-row--type-empty')
+    })
+
+    it('renders whether each work list item is group work in the type row', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseWorks.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('{{ workTypeModeLabel(work) }}')
+        expect(source).toContain('workTypeModeLabel(work) {')
+        expect(source).toContain("const modeLabel = work?.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'")
+        expect(source).toContain('.work-meta-row {')
+        expect(source).toContain('justify-content: space-between;')
+        expect(source).not.toContain('class="work-mode-chip ml-1"')
         expect(source).not.toContain('<span> - {{ work.is_group_work ? \'Gruppenarbeit\' : \'Einzelarbeit\' }}</span>')
     })
 

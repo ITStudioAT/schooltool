@@ -112,7 +112,7 @@ class AdminNavigationService
                 $menu[] = [
                     'title' => 'Unterricht',
                     'icon' => 'mdi-school',
-                    'to' => '/admin/teaching',
+                    'to' => '/admin/teaching/search',
                     'active_paths' => ['/admin/teaching'],
                     'is_active' => ($teachingLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($teachingLicenceStatus, $teachingModuleStatus, 'Unterricht');
@@ -204,9 +204,7 @@ class AdminNavigationService
             return $capabilities;
         }
 
-        $menuByPath = collect($menu)
-            ->filter(fn (array $item) => isset($item['to']) && is_string($item['to']))
-            ->keyBy('to');
+        $menuByPath = $this->dashboardMenuByPath($menu);
 
         $capabilities['home'] = $user->hasAdminShellAccess();
         $capabilities['settings'] = $user->hasAdminShellAccess();
@@ -342,5 +340,22 @@ class AdminNavigationService
         }
 
         return $user->hasAnyRole($allowedRoles);
+    }
+
+    private function dashboardMenuByPath(array $menu): Collection
+    {
+        return collect($menu)
+            ->filter(fn (array $item) => isset($item['to']) && is_string($item['to']))
+            ->flatMap(function (array $item): array {
+                $activePaths = data_get($item, 'active_paths', []);
+                if (! is_array($activePaths)) {
+                    $activePaths = [];
+                }
+
+                return collect(array_merge([$item['to']], $activePaths))
+                    ->filter(fn (mixed $path) => is_string($path) && $path !== '')
+                    ->mapWithKeys(fn (string $path): array => [$path => $item])
+                    ->all();
+            });
     }
 }

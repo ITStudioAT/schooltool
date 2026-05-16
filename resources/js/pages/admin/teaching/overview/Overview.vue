@@ -1134,6 +1134,29 @@ export default {
     width: 100%;
 }
 
+@media (max-width: 700px) {
+    .teaching-overview-panel-switcher {
+        display: grid !important;
+        gap: 6px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .teaching-overview-toolbar-btn {
+        justify-content: center;
+        min-width: 0 !important;
+        width: 100%;
+    }
+
+    .teaching-overview-toolbar-btn :deep(.v-btn__content) {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
 .curriculum-sync-card {
     border: 1px solid rgba(37, 99, 235, 0.16);
     overflow: hidden;

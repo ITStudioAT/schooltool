@@ -851,6 +851,46 @@ export default {
     color: #1e40af !important;
 }
 
+@media (max-width: 960px) {
+    .teaching-subnav__inner {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .teaching-subnav__courses {
+        display: grid;
+        flex: none;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        width: 100%;
+    }
+
+    .teaching-subnav__course-btn {
+        justify-content: center;
+        min-width: 0 !important;
+        width: 100%;
+    }
+
+    .teaching-subnav__course-btn :deep(.v-btn__content) {
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .teaching-subnav__course-btn--overview {
+        grid-column: 1 / -1;
+        justify-self: start;
+        width: auto;
+    }
+
+    .teaching-subnav__actions {
+        justify-content: center;
+        margin-left: 0 !important;
+        width: 100%;
+    }
+}
+
 .teaching-content {
     margin-top: 2px;
 }

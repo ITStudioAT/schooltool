@@ -520,13 +520,9 @@ export default {
         },
         sortedSelectedStudents() {
             const list = this.selected_course?.students_info || []
-            return [...list].sort((a, b) => {
-                const canceledA = this.isStudentCanceled(a) ? 1 : 0
-                const canceledB = this.isStudentCanceled(b) ? 1 : 0
-                if (canceledA !== canceledB) return canceledA - canceledB
-
-                return this.compareStudentsBySelectedSort(a, b)
-            })
+            return [...list]
+                .filter((student) => !this.isStudentCanceled(student))
+                .sort((a, b) => this.compareStudentsBySelectedSort(a, b))
         },
         activeStudentsCount() {
             const list = this.selected_course?.students_info || []

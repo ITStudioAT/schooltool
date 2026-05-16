@@ -303,43 +303,46 @@
 
 
                 <v-card v-if="!show_auswertung" variant="outlined" class="mt-4">
-                    <v-card-title class="text-subtitle-1 d-flex align-center ga-2">
-                        <v-icon size="18">mdi-clipboard-text</v-icon>
-                        Bewertungen
-                        <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
-                            {{ filteredEntries.length }}
-                        </v-chip>
-                        <v-spacer />
-                        <v-btn
-                            size="small"
-                            :color="show_auswertung ? 'success' : 'primary'"
-                            :variant="show_auswertung ? 'flat' : 'tonal'"
-                            :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
-                            :aria-pressed="show_auswertung ? 'true' : 'false'"
-                            :disabled="!hasAuswertungContent"
-                            @click="show_auswertung = !show_auswertung">
-                            Auswerten
-                        </v-btn>
-                        <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
-                            {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
-                        </v-btn>
+                    <v-card-title class="text-subtitle-1 course-student-card-title">
+                        <div class="course-student-card-title__heading">
+                            <v-icon size="18">mdi-clipboard-text</v-icon>
+                            <span>Bewertungen</span>
+                            <v-chip v-if="filteredEntries?.length" size="x-small" color="primary" variant="tonal">
+                                {{ filteredEntries.length }}
+                            </v-chip>
+                        </div>
+                        <div class="course-student-card-title__actions">
+                            <v-btn
+                                size="small"
+                                :color="show_auswertung ? 'success' : 'primary'"
+                                :variant="show_auswertung ? 'flat' : 'tonal'"
+                                :prepend-icon="show_auswertung ? 'mdi-eye-off' : 'mdi-eye'"
+                                :aria-pressed="show_auswertung ? 'true' : 'false'"
+                                :disabled="!hasAuswertungContent"
+                                @click="show_auswertung = !show_auswertung">
+                                Auswerten
+                            </v-btn>
+                            <v-btn size="small" variant="tonal" color="primary" @click="toggleSortByType">
+                                {{ sort_by_type ? 'Sort: Typ' : 'Sort: Datum' }}
+                            </v-btn>
+                        </div>
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
-                        <v-list density="compact">
+                        <v-list density="compact" class="course-student-entry-grid">
                             <template v-for="item in sortedEntriesGrouped" :key="item.key">
-                                <v-list-item v-if="item.kind === 'header'">
+                                <v-list-item v-if="item.kind === 'header'" class="course-student-entry-grid__full">
                                     <div class="d-flex align-center ga-2 w-100">
                                         <v-divider />
                                         <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
                                         <v-divider />
                                     </div>
                                 </v-list-item>
-                                <v-list-item v-else-if="item.kind === 'type-header'" class="type-group-header">
+                                <v-list-item v-else-if="item.kind === 'type-header'" class="type-group-header course-student-entry-grid__full">
                                     <div class="text-caption font-weight-bold text-medium-emphasis mt-2">{{ item.label }}</div>
                                 </v-list-item>
-                                <v-list-item v-else class="cursor-pointer" @click="onEntryRowClick(item.entry)">
-                                    <div class="w-100 entry-list-row" :class="item.stripe % 2 === 1 ? 'entry-list-row--alt' : 'entry-list-row--base'">
+                                <v-list-item v-else class="cursor-pointer course-student-entry-grid__item" @click="onEntryRowClick(item.entry)">
+                                    <div class="w-100 entry-list-row" :class="entryTypeBackgroundClass(item.entry)">
                                         <div class="entry-row d-flex align-center ga-2 w-100">
                                             <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                                 {{ formatDate(item.entry.date) }}
@@ -373,7 +376,7 @@
                                     </div>
                                 </v-list-item>
                             </template>
-                            <v-list-item v-if="!filteredEntries?.length">
+                            <v-list-item v-if="!filteredEntries?.length" class="course-student-entry-grid__full">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Einträge vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -391,17 +394,17 @@
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
-                        <v-list density="compact">
+                        <v-list density="compact" class="course-student-entry-grid">
                             <template v-for="item in filteredBehaviourEntriesGrouped" :key="item.key">
-                                <v-list-item v-if="item.kind === 'header'">
+                                <v-list-item v-if="item.kind === 'header'" class="course-student-entry-grid__full">
                                     <div class="d-flex align-center ga-2 w-100">
                                         <v-divider />
                                         <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
                                         <v-divider />
                                     </div>
                                 </v-list-item>
-                                <v-list-item v-else>
-                                    <div class="behaviour-row d-flex align-center ga-2 w-100">
+                                <v-list-item v-else class="course-student-entry-grid__item">
+                                    <div class="behaviour-row entry-list-row d-flex align-center ga-2 w-100" :class="entryTypeBackgroundClass(item.entry)">
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
@@ -438,7 +441,7 @@
                                     </div>
                                 </v-list-item>
                             </template>
-                            <v-list-item v-if="!filteredBehaviourEntries?.length">
+                            <v-list-item v-if="!filteredBehaviourEntries?.length" class="course-student-entry-grid__full">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Verhaltens-Einträge vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -453,9 +456,9 @@
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <v-list-item v-for="star in studentStars" :key="star.id">
-                                <div class="star-row d-flex align-center ga-2 w-100">
+                        <v-list density="compact" class="course-student-entry-grid">
+                            <v-list-item v-for="star in studentStars" :key="star.id" class="course-student-entry-grid__item">
+                                <div class="star-row entry-list-row d-flex align-center ga-2 w-100" :class="starEntryBackgroundClass(star)">
                                     <v-chip size="x-small" color="amber-darken-2" variant="tonal">
                                         <v-icon start size="14">mdi-star</v-icon>1
                                     </v-chip>
@@ -469,7 +472,7 @@
                                     </div>
                                 </div>
                             </v-list-item>
-                            <v-list-item v-if="!studentStars.length">
+                            <v-list-item v-if="!studentStars.length" class="course-student-entry-grid__full">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Noch keine Sterne vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -486,17 +489,17 @@
                     </v-card-title>
                     <v-divider />
                     <v-card-text class="pa-0">
-                        <v-list density="compact">
+                        <v-list density="compact" class="course-student-entry-grid">
                             <template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">
-                                <v-list-item v-if="item.kind === 'header'">
+                                <v-list-item v-if="item.kind === 'header'" class="course-student-entry-grid__full">
                                     <div class="entry-row d-flex align-center ga-2 w-100">
                                         <v-divider />
                                         <span class="text-caption text-medium-emphasis text-no-wrap font-weight-bold">{{ item.label }}</span>
                                         <v-divider />
                                     </div>
                                 </v-list-item>
-                                <v-list-item v-else>
-                                    <div class="entry-row d-flex align-center ga-2 w-100">
+                                <v-list-item v-else class="course-student-entry-grid__item">
+                                    <div class="entry-row entry-list-row d-flex align-center ga-2 w-100" :class="entryTypeBackgroundClass(item.entry)">
                                         <v-chip v-if="item.entry.date" size="x-small" variant="tonal" color="primary">
                                             {{ formatDate(item.entry.date) }}
                                         </v-chip>
@@ -509,7 +512,7 @@
                                         <v-chip v-if="item.entry.done_date" size="x-small" variant="tonal" color="success">
                                             Erledigt {{ formatDate(item.entry.done_date) }}
                                         </v-chip>
-                                        <div class="text-caption flex-grow-1">
+                                        <div class="notification-description text-caption flex-grow-1">
                                             {{ item.entry.description || '' }}
                                         </div>
                                         <v-btn
@@ -540,7 +543,7 @@
                                     </div>
                                 </v-list-item>
                             </template>
-                            <v-list-item v-if="!filteredNotificationEntries?.length">
+                            <v-list-item v-if="!filteredNotificationEntries?.length" class="course-student-entry-grid__full">
                                 <v-list-item-title class="text-caption text-medium-emphasis">Keine Verständigungen vorhanden.</v-list-item-title>
                             </v-list-item>
                         </v-list>
@@ -710,7 +713,7 @@
                                 </div>
                                 <div v-if="work_entry_dialog.groupComment">
                                     <div class="text-caption text-medium-emphasis">Kommentar (Gruppe)</div>
-                                    <div class="text-body-2">{{ work_entry_dialog.groupComment }}</div>
+                                    <div class="text-body-2 work-entry-dialog-comment">{{ work_entry_dialog.groupComment }}</div>
                                 </div>
                             </template>
                             <v-divider />
@@ -733,7 +736,7 @@
                                             Kommentar
                                             <span v-if="work_entry_dialog.isGroupWork && !work_entry_dialog.useIndividualGrades" class="text-info">(Gruppe)</span>
                                         </div>
-                                        <div class="text-body-2">{{ work_entry_dialog.comment }}</div>
+                                        <div class="text-body-2 work-entry-dialog-comment">{{ work_entry_dialog.comment }}</div>
                                     </div>
                                 </div>
                             </template>
@@ -2284,6 +2287,22 @@ export default {
         entryDisplayGrade(entry) {
             return this.effectiveGradeKeyForEntry(entry) || 'offen'
         },
+        entryTypeBackgroundClass(entry) {
+            const type = String(entry?.type || '').trim()
+            if (type === '') {
+                return 'entry-list-row--type-empty'
+            }
+
+            let hash = 0
+            for (const character of type) {
+                hash = (hash + character.charCodeAt(0)) % 6
+            }
+
+            return `entry-list-row--type-${hash + 1}`
+        },
+        starEntryBackgroundClass(star) {
+            return this.entryTypeBackgroundClass({ type: star?.type || 'star' })
+        },
         isGradedEntry(entry, workOverride = null) {
             return this.effectiveGradeKeyForEntry(entry, workOverride) !== ''
         },
@@ -2798,6 +2817,45 @@ export default {
     color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
 }
 
+.course-student-card-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-student-card-title__heading,
+.course-student-card-title__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.course-student-card-title__heading {
+    min-width: 0;
+}
+
+.course-student-card-title__actions {
+    margin-left: auto;
+}
+
+@media (max-width: 600px) {
+    .course-student-card-title {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .course-student-card-title__actions {
+        align-items: stretch;
+        flex-direction: column;
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .course-student-card-title__actions :deep(.v-btn) {
+        width: 100%;
+    }
+}
+
 .auswertung-section-header {
     display: inline-flex;
     align-items: center;
@@ -2937,6 +2995,44 @@ export default {
     line-height: 1.35;
 }
 
+.course-student-entry-grid {
+    gap: 8px;
+    padding: 8px;
+}
+
+.course-student-entry-grid__item,
+.course-student-entry-grid__full {
+    min-width: 0;
+}
+
+.course-student-entry-grid__item {
+    align-self: stretch;
+    display: flex;
+    height: 100%;
+}
+
+.course-student-entry-grid__item :deep(.v-list-item__content),
+.course-student-entry-grid__full :deep(.v-list-item__content) {
+    width: 100%;
+}
+
+.course-student-entry-grid__item :deep(.v-list-item__content) {
+    display: flex;
+    height: 100%;
+}
+
+@media (min-width: 900px) {
+    .course-student-entry-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        align-items: stretch;
+    }
+
+    .course-student-entry-grid__full {
+        grid-column: 1 / -1;
+    }
+}
+
 .entry-work-comment-line {
     padding-left: 4px;
     line-height: 1.35;
@@ -2949,6 +3045,10 @@ export default {
     line-height: 1.35;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+.work-entry-dialog-comment {
+    white-space: pre-line;
 }
 
 .auswertung-entry-title {
@@ -2981,18 +3081,47 @@ export default {
     align-items: flex-start;
 }
 
-.entry-list-row--base {
-    background-color: #ffffff !important;
-    border-radius: 8px;
-}
-
-.entry-list-row--alt {
-    background-color: #e9edf5 !important;
-    border-radius: 8px;
-}
-
 .entry-list-row {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-sizing: border-box;
+    height: 100%;
     padding: 6px 8px;
+}
+
+.entry-list-row--type-empty {
+    background-color: #ffffff !important;
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+.entry-list-row--type-1 {
+    background-color: #eef6ff !important;
+    border-color: rgba(37, 99, 235, 0.14);
+}
+
+.entry-list-row--type-2 {
+    background-color: #f0fdf4 !important;
+    border-color: rgba(22, 163, 74, 0.14);
+}
+
+.entry-list-row--type-3 {
+    background-color: #fff7ed !important;
+    border-color: rgba(234, 88, 12, 0.14);
+}
+
+.entry-list-row--type-4 {
+    background-color: #f5f3ff !important;
+    border-color: rgba(124, 58, 237, 0.14);
+}
+
+.entry-list-row--type-5 {
+    background-color: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, 0.12);
+}
+
+.entry-list-row--type-6 {
+    background-color: #ecfeff !important;
+    border-color: rgba(8, 145, 178, 0.14);
 }
 
 .entry-row > .v-chip {
@@ -3010,12 +3139,18 @@ export default {
 }
 
 .star-description {
+    flex-basis: 100%;
     min-width: 120px;
+    margin-top: 2px;
+    order: 2;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .star-actions {
     margin-left: auto;
     flex: 0 0 auto;
+    order: 1;
 }
 
 .behaviour-row {
@@ -3029,12 +3164,23 @@ export default {
 }
 
 .behaviour-description {
+    flex-basis: 100%;
     min-width: 120px;
+    margin-top: 2px;
+    order: 2;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .behaviour-actions {
     margin-left: auto;
     flex: 0 0 auto;
+    order: 1;
+}
+
+.notification-description {
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .entry-description {
@@ -3048,25 +3194,11 @@ export default {
 
 @media (max-width: 700px) {
     .star-description {
-        flex-basis: 100%;
         min-width: 100%;
-        margin-top: 2px;
-        order: 2;
-    }
-
-    .star-actions {
-        order: 1;
     }
 
     .behaviour-description {
-        flex-basis: 100%;
         min-width: 100%;
-        margin-top: 2px;
-        order: 2;
-    }
-
-    .behaviour-actions {
-        order: 1;
     }
 
     .entry-description {

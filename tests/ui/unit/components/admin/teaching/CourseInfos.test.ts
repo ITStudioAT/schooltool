@@ -129,6 +129,80 @@ describe('CourseInfos representative countdowns', () => {
         expect(source).toContain('{{ representativeCountdownLabel }}')
         expect(source).toContain('{{ representativeCountdownValue }}')
     })
+
+    it('renders non-grade info blocks in a two-column grid', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<div class="course-infos-grid mt-2">')
+        expect(source).toContain('class="course-info-card"')
+        expect(source).toContain('class="course-info-card course-info-summary-card"')
+        expect(source).toContain('class="course-info-summary-card__content"')
+        expect(source).toContain('class="course-info-block course-info-block--countdown"')
+        expect(source).toContain('class="course-info-block course-info-block--schema"')
+        expect(source).toContain('class="course-info-block course-info-block--description"')
+        expect(source).toContain('class="mt-3 course-infos-grades-card"')
+        expect(source).toContain('.course-infos-grid {')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.course-info-block--countdown {')
+        expect(source).toContain('.course-info-block--schema {')
+        expect(source).toContain('.course-info-block--description {')
+        expect(source).toContain('@media (max-width: 700px)')
+        expect(source).toContain('grid-template-columns: minmax(0, 1fr);')
+    })
+
+    it('renders open notifications as colored blocks', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const methods = (CourseInfos as any).methods
+        const firstTypeClass = methods.notificationEntryBackgroundClass.call({}, { type: 'INF' })
+        const sameTypeClass = methods.notificationEntryBackgroundClass.call({}, { type: 'INF' })
+        const emptyTypeClass = methods.notificationEntryBackgroundClass.call({}, { type: '' })
+
+        expect(source).toContain('class="open-notifications-list"')
+        expect(source).toContain('class="open-notification-item"')
+        expect(source).toContain('class="notification-row open-notification-block d-flex flex-wrap align-start ga-2 w-100" :class="notificationEntryBackgroundClass(entry)"')
+        expect(source).toContain('class="open-notification-student-name"')
+        expect(source).not.toContain('<v-chip size="x-small" variant="outlined" class="chip-truncate">{{ studentLabel(entry.user_id) }}</v-chip>')
+        expect(source).toContain('.open-notification-block {')
+        expect(source).toContain('border-radius: 8px;')
+        expect(source).toContain('.open-notification-student-name {')
+        expect(source).toContain('flex-basis: 100%;')
+        expect(source).toContain('font-weight: 750;')
+        expect(source).toContain('.open-notification-block--type-1 {')
+        expect(firstTypeClass).toBe(sameTypeClass)
+        expect(firstTypeClass).toMatch(/^open-notification-block--type-[1-6]$/)
+        expect(emptyTypeClass).toBe('open-notification-block--type-empty')
+    })
+
+    it('preserves line breaks in open notification descriptions', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('.notification-description {')
+        expect(source).toContain('white-space: pre-wrap;')
+        expect(source).toContain('overflow-wrap: anywhere;')
+    })
+
+    it('uses zebra striping for calculated grade student rows', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseInfos.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('.grades-table tbody tr:nth-child(even) td {')
+        expect(source).toContain('background-color: rgba(37, 99, 235, 0.045);')
+    })
 })
 
 describe('CourseInfos course-specific definitions', () => {

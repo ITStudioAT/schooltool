@@ -347,6 +347,116 @@ describe('CourseStudent entry title rendering', () => {
         expect(source).not.toContain('class="entry-work-title"')
         expect(source).not.toContain('v-chip\n                                                v-if="entryWorkTitle(item.entry)"')
     })
+
+    it('renders the entries list as a responsive two-column grid', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="course-student-entry-grid"')
+        expect(source).toContain('class="cursor-pointer course-student-entry-grid__item"')
+        expect(source).toContain('class="course-student-entry-grid__full"')
+        expect(source).toContain('.course-student-entry-grid {')
+        expect(source).toContain('grid-template-columns: 1fr 1fr;')
+        expect(source).toContain('grid-column: 1 / -1;')
+        expect(source).toContain('align-self: stretch;')
+        expect(source).toContain('display: flex;')
+        expect(source).toContain('height: 100%;')
+        expect(source).toContain('.course-student-entry-grid__item :deep(.v-list-item__content)')
+        expect(source).toContain('box-sizing: border-box;')
+    })
+
+    it('renders behaviour entries with the same two-column type-colored layout', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<v-list density="compact" class="course-student-entry-grid">')
+        expect(source).toContain('<v-list-item v-if="item.kind === \'header\'" class="course-student-entry-grid__full">')
+        expect(source).toContain('<v-list-item v-else class="course-student-entry-grid__item">')
+        expect(source).toContain('class="behaviour-row entry-list-row d-flex align-center ga-2 w-100" :class="entryTypeBackgroundClass(item.entry)"')
+    })
+
+    it('renders star entries with the same two-column colored layout', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<v-list-item v-for="star in studentStars" :key="star.id" class="course-student-entry-grid__item">')
+        expect(source).toContain('class="star-row entry-list-row d-flex align-center ga-2 w-100" :class="starEntryBackgroundClass(star)"')
+        expect(source).toContain('<v-list-item v-if="!studentStars.length" class="course-student-entry-grid__full">')
+    })
+
+    it('renders notification entries with the same two-column type-colored layout', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('<template v-for="item in filteredNotificationEntriesGrouped" :key="item.key">')
+        expect(source).toContain('<v-list-item v-if="item.kind === \'header\'" class="course-student-entry-grid__full">')
+        expect(source).toContain('<v-list-item v-else class="course-student-entry-grid__item">')
+        expect(source).toContain('class="entry-row entry-list-row d-flex align-center ga-2 w-100" :class="entryTypeBackgroundClass(item.entry)"')
+        expect(source).toContain('<v-list-item v-if="!filteredNotificationEntries?.length" class="course-student-entry-grid__full">')
+    })
+
+    it('renders behaviour and star comments on their own row with preserved line breaks', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="behaviour-description text-caption flex-grow-1"')
+        expect(source).toContain('class="star-description text-caption flex-grow-1"')
+        expect(source).toContain('.behaviour-description {')
+        expect(source).toContain('.star-description {')
+        expect(source).toContain('flex-basis: 100%;')
+        expect(source).toContain('order: 2;')
+        expect(source).toContain('white-space: pre-wrap;')
+        expect(source).toContain('overflow-wrap: anywhere;')
+    })
+
+    it('preserves line breaks in notification descriptions', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="notification-description text-caption flex-grow-1"')
+        expect(source).toContain('.notification-description {')
+        expect(source).toContain('white-space: pre-wrap;')
+        expect(source).toContain('overflow-wrap: anywhere;')
+    })
+
+    it('assigns the same background class to entries with the same type', () => {
+        const methods = (CourseStudent as any).methods
+        const firstTypeClass = methods.entryTypeBackgroundClass.call({}, { type: 'MA' })
+        const sameTypeClass = methods.entryTypeBackgroundClass.call({}, { type: 'MA' })
+        const emptyTypeClass = methods.entryTypeBackgroundClass.call({}, { type: '' })
+
+        expect(firstTypeClass).toBe(sameTypeClass)
+        expect(firstTypeClass).toMatch(/^entry-list-row--type-[1-6]$/)
+        expect(emptyTypeClass).toBe('entry-list-row--type-empty')
+    })
+
+    it('uses a colored background class for stars without a stored type', () => {
+        const methods = (CourseStudent as any).methods
+        const starTypeClass = methods.starEntryBackgroundClass.call(
+            { entryTypeBackgroundClass: methods.entryTypeBackgroundClass },
+            { id: 1 },
+        )
+
+        expect(starTypeClass).toMatch(/^entry-list-row--type-[1-6]$/)
+    })
 })
 
 describe('CourseStudent remarks field', () => {
@@ -644,6 +754,19 @@ describe('CourseStudent work entry comments', () => {
         expect(source).toContain('Kommentar (Gruppe)')
         expect(source).toContain('work_entry_dialog.groupComment')
     })
+
+    it('preserves line breaks in work entry dialog comments', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="text-body-2 work-entry-dialog-comment">{{ work_entry_dialog.groupComment }}</div>')
+        expect(source).toContain('class="text-body-2 work-entry-dialog-comment">{{ work_entry_dialog.comment }}</div>')
+        expect(source).toContain('.work-entry-dialog-comment {')
+        expect(source).toContain('white-space: pre-line;')
+    })
 })
 
 describe('CourseStudent auswertung category colors', () => {
@@ -735,6 +858,12 @@ describe('CourseStudent auswertung trigger placement', () => {
         expect(source).toContain(":aria-pressed=\"show_auswertung ? 'true' : 'false'\"")
         expect(source).toContain('@click="show_auswertung = !show_auswertung"')
         expect(source).toContain('Auswerten')
+        expect(source).toContain('class="text-subtitle-1 course-student-card-title"')
+        expect(source).toContain('class="course-student-card-title__heading"')
+        expect(source).toContain('class="course-student-card-title__actions"')
+        expect(source).toContain('@media (max-width: 600px)')
+        expect(source).toContain('flex-direction: column;')
+        expect(source).toContain('.course-student-card-title__actions :deep(.v-btn)')
         expect(source).toContain('<v-card v-if="hasAuswertungContent && show_auswertung" variant="outlined">')
         expect(source).toContain('<v-card v-if="!show_auswertung" variant="outlined" class="mt-4">')
         expect(source).not.toContain('v-card-text v-if="hasAuswertungContent && show_auswertung" class="py-2"')

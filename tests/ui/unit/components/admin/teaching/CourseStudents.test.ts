@@ -18,7 +18,7 @@ describe('CourseStudents sorting', () => {
         expect(data.bulk_entry_saving).toBe(false)
     })
 
-    it('places canceled students at the bottom of the list', () => {
+    it('does not include canceled students in the overview list', () => {
         const ctx = {
             selected_course: {
                 students_info: [
@@ -40,10 +40,8 @@ describe('CourseStudents sorting', () => {
 
         const sorted = (CourseStudents as any).computed.sortedSelectedStudents.call(ctx)
 
-        expect(sorted.map((s: { id: number }) => s.id)).toEqual([2, 3, 1, 4])
-
-        const canceledFlags = sorted.map((s: { canceled_at?: string | null }) => !!s.canceled_at)
-        expect(canceledFlags).toEqual([false, false, true, true])
+        expect(sorted.map((s: { id: number }) => s.id)).toEqual([2, 3])
+        expect(sorted.every((s: { canceled_at?: string | null }) => !s.canceled_at)).toBe(true)
     })
 
     it('counts only non-canceled students in activeStudentsCount', () => {

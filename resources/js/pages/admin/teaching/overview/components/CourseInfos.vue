@@ -13,57 +13,63 @@
         </template>
         <v-card tile flat color="transparent" class="w-100" :disabled="isSavingInfo">
             <v-card-text class="text-body-1 d-flex flex-column ga-2" v-if="action != 'edit_description'">
-                <v-card variant="outlined" class="mt-2" v-if="openNotifications.length">
-                    <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
-                        <v-icon size="18">mdi-bell-alert</v-icon>
-                        Offene Verständigungen
-                        <v-chip size="x-small" color="warning" variant="flat">{{ openNotifications.length }}</v-chip>
-                    </v-card-title>
-                    <v-divider />
-                    <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <v-list-item v-for="entry in openNotifications" :key="entry.id">
-                                <div class="notification-row d-flex flex-wrap align-start ga-2 w-100">
-                                    <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
-                                    <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
-                                    <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
-                                    <v-chip size="x-small" variant="outlined" class="chip-truncate">{{ studentLabel(entry.user_id) }}</v-chip>
-                                    <v-btn
-                                        icon="mdi-check"
-                                        size="x-small"
-                                        color="success"
-                                        variant="tonal"
-                                        :disabled="isSavingInfo"
-                                        :loading="saving_notification_id === entry.id"
-                                        class="notification-action"
-                                        @click.stop="completeNotification(entry)" />
-                                    <div v-if="entry.description" class="notification-description text-caption w-100">{{ entry.description }}</div>
-                                </div>
-                            </v-list-item>
-                            <v-list-item v-if="!openNotifications.length">
-                                <v-list-item-title class="text-caption text-medium-emphasis">Keine offenen Verständigungen.</v-list-item-title>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                </v-card>
+                <div class="course-infos-grid mt-2">
+                    <v-card variant="outlined" v-if="openNotifications.length" class="course-info-card">
+                        <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
+                            <v-icon size="18">mdi-bell-alert</v-icon>
+                            Offene Verständigungen
+                            <v-chip size="x-small" color="warning" variant="flat">{{ openNotifications.length }}</v-chip>
+                        </v-card-title>
+                        <v-divider />
+                        <v-card-text class="pa-0">
+                            <v-list density="compact" class="open-notifications-list">
+                                <v-list-item v-for="entry in openNotifications" :key="entry.id" class="open-notification-item">
+                                    <div class="notification-row open-notification-block d-flex flex-wrap align-start ga-2 w-100" :class="notificationEntryBackgroundClass(entry)">
+                                        <div class="open-notification-student-name">
+                                            {{ studentLabel(entry.user_id) }}
+                                        </div>
+                                        <v-chip v-if="entry.date" size="x-small" variant="tonal" color="primary">{{ formatDate(entry.date) }}</v-chip>
+                                        <v-chip v-if="entry.due_date" size="x-small" variant="tonal" :color="dueDateColor(entry.due_date)">Fällig bis {{ formatDate(entry.due_date) }}</v-chip>
+                                        <v-chip v-if="entry.type" size="x-small" variant="outlined" color="secondary" class="chip-truncate">{{ notificationTypeLabel(entry.type) }}</v-chip>
+                                        <v-btn
+                                            icon="mdi-check"
+                                            size="x-small"
+                                            color="success"
+                                            variant="tonal"
+                                            :disabled="isSavingInfo"
+                                            :loading="saving_notification_id === entry.id"
+                                            class="notification-action"
+                                            @click.stop="completeNotification(entry)" />
+                                        <div v-if="entry.description" class="notification-description text-caption w-100">{{ entry.description }}</div>
+                                    </div>
+                                </v-list-item>
+                                <v-list-item v-if="!openNotifications.length">
+                                    <v-list-item-title class="text-caption text-medium-emphasis">Keine offenen Verständigungen.</v-list-item-title>
+                                </v-list-item>
+                            </v-list>
+                        </v-card-text>
+                    </v-card>
 
-                <v-card variant="outlined" class="mt-2">
-                    <v-card-text class="pa-0">
-                        <v-list density="compact">
-                            <v-list-item>
-                                <div class="d-flex align-center justify-space-between ga-2 w-100">
-                                    <div class="text-caption text-medium-emphasis">{{ representativeCountdownLabel }}</div>
-                                    <div :class="representativeCountdownValueClass">{{ representativeCountdownValue }}</div>
-                                </div>
-                            </v-list-item>
-                        </v-list>
-                    </v-card-text>
-                </v-card>
-                <div class="text-caption text-medium-emphasis">{{ schemaName }}</div>
-                <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
-                <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
+                    <v-card variant="outlined" class="course-info-card course-info-summary-card">
+                        <v-card-text class="course-info-summary-card__content">
+                            <div class="course-info-block course-info-block--countdown">
+                                <div class="text-caption text-medium-emphasis">{{ representativeCountdownLabel }}</div>
+                                <div :class="representativeCountdownValueClass">{{ representativeCountdownValue }}</div>
+                            </div>
+                            <div class="course-info-block course-info-block--schema">
+                                <div class="text-caption text-medium-emphasis">Benotungsschema</div>
+                                <div class="text-body-2">{{ schemaName }}</div>
+                            </div>
+                            <div class="course-info-block course-info-block--description">
+                                <div class="text-caption text-medium-emphasis mb-1">Fachinfos</div>
+                                <div class="text-body-2 course-description" v-if="selected_course.description" v-html="descriptionHtml"></div>
+                                <div class="text-body-2" v-else>Keine Fachinfos vorhanden.</div>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </div>
 
-                <v-card variant="outlined" class="mt-3">
+                <v-card variant="outlined" class="mt-3 course-infos-grades-card">
                     <v-card-title class="text-subtitle-2 d-flex align-center ga-2 flex-wrap">
                         <v-icon size="18">mdi-calculator</v-icon>
                         Berechnete Noten
@@ -849,6 +855,19 @@ export default {
             const name = this.notificationTypesByShort.get(type)
             return name ? `${type} - ${name}` : type
         },
+        notificationEntryBackgroundClass(entry) {
+            const type = String(entry?.type || '').trim()
+            if (type === '') {
+                return 'open-notification-block--type-empty'
+            }
+
+            let hash = 0
+            for (const character of type) {
+                hash = (hash + character.charCodeAt(0)) % 6
+            }
+
+            return `open-notification-block--type-${hash + 1}`
+        },
         studentLabel(userId) {
             const student = (this.selected_course?.students_info || []).find((s) => s.id === userId)
             if (!student) return 'Schüler:in'
@@ -947,6 +966,66 @@ export default {
     min-width: 0;
 }
 
+.open-notification-item {
+    align-items: stretch;
+}
+
+.open-notification-item :deep(.v-list-item__content) {
+    width: 100%;
+}
+
+.open-notification-block {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-sizing: border-box;
+    min-height: 100%;
+    padding: 8px;
+}
+
+.open-notification-student-name {
+    color: #0f172a;
+    flex-basis: 100%;
+    font-size: 0.9rem;
+    font-weight: 750;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+}
+
+.open-notification-block--type-empty {
+    background-color: #ffffff !important;
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+.open-notification-block--type-1 {
+    background-color: #eef6ff !important;
+    border-color: rgba(37, 99, 235, 0.16);
+}
+
+.open-notification-block--type-2 {
+    background-color: #f0fdf4 !important;
+    border-color: rgba(22, 163, 74, 0.16);
+}
+
+.open-notification-block--type-3 {
+    background-color: #fff7ed !important;
+    border-color: rgba(234, 88, 12, 0.16);
+}
+
+.open-notification-block--type-4 {
+    background-color: #f5f3ff !important;
+    border-color: rgba(124, 58, 237, 0.16);
+}
+
+.open-notification-block--type-5 {
+    background-color: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, 0.14);
+}
+
+.open-notification-block--type-6 {
+    background-color: #ecfeff !important;
+    border-color: rgba(8, 145, 178, 0.16);
+}
+
 .chip-truncate {
     max-width: 100%;
 }
@@ -958,11 +1037,51 @@ export default {
 }
 
 .notification-description {
-    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .notification-action {
     margin-left: auto;
+}
+
+.course-infos-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.course-info-card {
+    min-width: 0;
+}
+
+.course-info-summary-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+}
+
+.course-info-block {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+}
+
+.course-info-block--countdown {
+    background-color: #eef6ff;
+    border-color: rgba(37, 99, 235, 0.16);
+}
+
+.course-info-block--schema {
+    background-color: #f0fdf4;
+    border-color: rgba(22, 163, 74, 0.16);
+}
+
+.course-info-block--description {
+    background-color: #fff7ed;
+    border-color: rgba(234, 88, 12, 0.16);
 }
 
 .grade-checkbox {
@@ -996,6 +1115,10 @@ export default {
     font-weight: 600;
     white-space: nowrap;
     text-align: center;
+}
+
+.grades-table tbody tr:nth-child(even) td {
+    background-color: rgba(37, 99, 235, 0.045);
 }
 
 .grades-student-col {
@@ -1040,5 +1163,11 @@ export default {
 
 .grade--empty {
     color: rgba(16, 38, 58, 0.35);
+}
+
+@media (max-width: 700px) {
+    .course-infos-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 </style>

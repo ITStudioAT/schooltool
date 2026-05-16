@@ -1,26 +1,28 @@
 <template>
     <ItsGridBox variant="overview" color="primary" title="Meine Fächer" icon="mdi-invoice-list" class="w-100" :disabled="action != '' || isSavingCourse">
         <template #header-actions>
-            <v-btn v-if="action !== 'teaching_course_new_or_edit'" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" />
-            <v-btn
-                v-if="action !== 'teaching_course_new_or_edit'"
-                :icon="courses_view_variant === 'v1' ? 'mdi-view-grid-outline' : 'mdi-format-list-bulleted'"
-                size="small"
-                variant="tonal"
-                :disabled="isSavingCourse"
-                :title="courses_view_variant === 'v1' ? 'Neue Kartenansicht aktivieren' : 'Klassische Chip-Ansicht aktivieren'"
-                @click="toggleCoursesViewVariant" />
-            <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" :disabled="isSavingCourse" @click="show_my_courses = false" />
+            <div class="my-courses-header-actions">
+                <v-btn v-if="action !== 'teaching_course_new_or_edit'" class="my-courses-header-action--new" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" />
+                <v-btn
+                    v-if="action !== 'teaching_course_new_or_edit'"
+                    :icon="courses_view_variant === 'v1' ? 'mdi-view-grid-outline' : 'mdi-format-list-bulleted'"
+                    size="small"
+                    variant="tonal"
+                    :disabled="isSavingCourse"
+                    :title="courses_view_variant === 'v1' ? 'Neue Kartenansicht aktivieren' : 'Klassische Chip-Ansicht aktivieren'"
+                    @click="toggleCoursesViewVariant" />
+                <v-btn icon="mdi-eye-off-outline" size="small" variant="tonal" title="Ausblenden" :disabled="isSavingCourse" @click="show_my_courses = false" />
+            </div>
         </template>
         <!-- ALLE KURSE ANZEIGEN -->
         <v-card tile flat color="transparent" class="w-100">
             <v-card-text class="text-body-1 d-flex flex-column ga-2">
                 <v-card tile flat color="transparent" class="w-100">
                     <div
-                        class="d-flex flex-row flex-wrap ga-2 align-center w-100"
+                        class="d-flex flex-row flex-wrap ga-2 align-center w-100 my-courses-v1-wrap"
                         :class="{ 'my-courses-v1-group--disabled': isStudentDetailActive }"
                         v-if="courses_view_variant === 'v1'">
-                        <v-chip-group v-model="selected_course_id" column>
+                        <v-chip-group v-model="selected_course_id" column class="my-courses-v1-chip-group">
                             <v-chip
                                 v-for="course in courses"
                                 :key="course.id"
@@ -31,6 +33,19 @@
                                 {{ course.title }} ({{ courseClassesText(course) }})
                             </v-chip>
                         </v-chip-group>
+                        <div class="my-courses-v1-mobile-grid">
+                            <v-btn
+                                v-for="course in courses"
+                                :key="`mobile-course-${course.id}`"
+                                class="my-courses-v1-mobile-button"
+                                size="small"
+                                :color="selected_course?.id === course.id ? 'primary' : 'secondary'"
+                                :variant="selected_course?.id === course.id ? 'flat' : 'tonal'"
+                                :disabled="isStudentDetailActive"
+                                @click="selectCourse(course)">
+                                {{ course.title }} ({{ courseClassesText(course) }})
+                            </v-btn>
+                        </div>
                     </div>
 
                     <div v-else class="my-courses-v2-grid" :class="{ 'my-courses-v2-grid--disabled': isStudentDetailActive }">
@@ -63,13 +78,16 @@
                     </div>
                 </v-card>
 
-                <div class="w-100 d-flex flex-row justify-end" v-if="selected_course">
-                    <div class="d-flex flex-row align-center ga-2">
-                        <v-btn flat tile size="small" color="warning" icon="mdi-delete" :disabled="isSavingCourse" @click="delete_level++" v-if="delete_level == 0" />
-                        <v-btn flat tile size="small" color="success" icon="mdi-delete-off" :disabled="isSavingCourse" @click="delete_level = 0" v-if="delete_level == 1" />
-                        <v-btn flat tile size="small" color="error" icon="mdi-delete" :loading="isDeletingCourse" :disabled="isSavingCourse" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
-                        <v-btn flat tile size="small" color="primary" icon="mdi-pencil" :disabled="isSavingCourse" @click="editCourse(selected_course)" v-if="delete_level == 0" />
-                        <v-btn size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" :disabled="isSavingCourse" @click="clearSelectedCourse" />
+                <div class="w-100 d-flex flex-row justify-end my-courses-course-actions" v-if="action !== 'teaching_course_new_or_edit' || selected_course">
+                    <div class="d-flex flex-row align-center ga-2 my-courses-course-actions__buttons">
+                        <template v-if="selected_course">
+                            <v-btn flat tile size="small" color="primary" icon="mdi-pencil" :disabled="isSavingCourse" @click="editCourse(selected_course)" v-if="delete_level == 0" />
+                            <v-btn flat tile size="small" color="warning" icon="mdi-delete" :disabled="isSavingCourse" @click="delete_level++" v-if="delete_level == 0" />
+                            <v-btn flat tile size="small" color="success" icon="mdi-delete-off" :disabled="isSavingCourse" @click="delete_level = 0" v-if="delete_level == 1" />
+                            <v-btn flat tile size="small" color="error" icon="mdi-delete" :loading="isDeletingCourse" :disabled="isSavingCourse" @click="deleteCourse(selected_course)" v-if="delete_level == 1" />
+                        </template>
+                        <v-btn class="my-courses-course-actions__new" icon="mdi-plus" size="small" variant="tonal" title="Fach anlegen" :disabled="isSavingCourse" @click="newCourse" v-if="action !== 'teaching_course_new_or_edit'" />
+                        <v-btn v-if="selected_course" size="small" variant="outlined" color="white" icon="mdi-close" title="Auswahl aufheben" :disabled="isSavingCourse" @click="clearSelectedCourse" />
                     </div>
                 </div>
             </v-card-text>
@@ -938,6 +956,51 @@ export default {
     opacity: 0.75;
 }
 
+.my-courses-header-actions,
+.my-courses-course-actions__buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.my-courses-course-actions__new {
+    display: inline-flex;
+}
+
+.my-courses-v1-chip-group {
+    display: none;
+}
+
+.my-courses-v1-mobile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+}
+
+.my-courses-v1-mobile-button {
+    min-width: 0 !important;
+    width: 100%;
+}
+
+.my-courses-v1-mobile-button :deep(.v-btn__content) {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.my-courses-course-actions {
+    justify-content: center !important;
+    padding-top: 4px;
+}
+
+.my-courses-course-actions__buttons {
+    justify-content: center;
+    width: 100%;
+}
+
 .my-courses-v2-grid {
     width: 100%;
     display: grid;
@@ -1050,6 +1113,21 @@ export default {
 
     .course-edit-students-sort-toggle-btn {
         flex: 1 1 0;
+    }
+}
+
+@media (max-width: 700px) {
+    .my-courses-header-action--new {
+        display: none;
+    }
+
+    .my-courses-v1-wrap,
+    .my-courses-v1-chip-group {
+        width: 100%;
+    }
+
+    .my-courses-v2-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 </style>

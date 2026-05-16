@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import MyCourses from '@/pages/admin/teaching/overview/components/MyCourses.vue'
 
 describe('MyCourses counts', () => {
@@ -100,5 +102,44 @@ describe('MyCourses counts', () => {
         ;(MyCourses as any).watch['courseStore.pending_new_course_token'].call(ctx, 4)
 
         expect(ctx.newCourseCalled).toBe(1)
+    })
+
+    it('uses a two-column course button layout on small screens', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/MyCourses.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('class="my-courses-v1-chip-group"')
+        expect(source).toContain('class="my-courses-v1-mobile-grid"')
+        expect(source).toContain('class="my-courses-v1-mobile-button"')
+        expect(source).toContain('.my-courses-v1-chip-group {')
+        expect(source).toContain('display: none;')
+        expect(source).toContain('.my-courses-v1-mobile-grid {')
+        expect(source).toContain('display: grid;')
+        expect(source).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+        expect(source).toContain('.my-courses-v2-grid')
+    })
+
+    it('moves course actions into a dedicated small-screen row', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/MyCourses.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+        const editButtonIndex = source.indexOf('icon="mdi-pencil"')
+        const deleteButtonIndex = source.indexOf('icon="mdi-delete"')
+        const mobilePlusButtonIndex = source.indexOf('class="my-courses-course-actions__new"')
+
+        expect(source).toContain('class="w-100 d-flex flex-row justify-end my-courses-course-actions"')
+        expect(source).toContain('class="d-flex flex-row align-center ga-2 my-courses-course-actions__buttons"')
+        expect(source).toContain('class="my-courses-header-action--new"')
+        expect(source).toContain('.my-courses-header-action--new')
+        expect(source).toContain('display: none;')
+        expect(source).toContain('.my-courses-course-actions__new')
+        expect(source).toContain('display: inline-flex;')
+        expect(editButtonIndex).toBeLessThan(deleteButtonIndex)
+        expect(deleteButtonIndex).toBeLessThan(mobilePlusButtonIndex)
     })
 })

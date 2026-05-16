@@ -45,29 +45,26 @@
             </v-card-title>
             <v-divider />
             <v-card-text class="pa-0">
-                <v-list density="compact">
+                <v-list density="compact" class="work-list-grid">
                     <v-list-item v-for="work in filteredCourseWorks" :key="work.id" class="work-list-item cursor-pointer" @click="editWork(work)">
-                        <div class="work-row d-flex align-center ga-2 w-100">
-                            <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
-                                {{ formatDate(workListDate(work)) }}
-                            </v-chip>
-                            <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
-                            <div class="work-title flex-grow-1">
+                        <div class="work-row w-100" :class="workEntryBackgroundClass(work)">
+                            <div class="work-meta-row">
                                 <div class="text-caption text-medium-emphasis work-type-first-line">
-                                    <strong v-if="work.type">{{ workTypeLabel(work.type) }}</strong>
-                                    <span v-else class="text-medium-emphasis">eine Arbeit</span>
-                                    <v-chip
-                                        size="x-small"
-                                        :color="work.is_group_work ? 'primary' : 'default'"
-                                        variant="tonal"
-                                        class="work-mode-chip ml-1">
-                                        {{ work.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit' }}
-                                    </v-chip>
+                                    {{ workTypeModeLabel(work) }}
                                 </div>
-                                <div v-if="work.title || work.description" class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
-                                    {{ work.title || work.description }}
-                                </div>
-                                <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1 mt-1">
+                                <v-chip v-if="workListDate(work)" size="x-small" variant="tonal" :color="workListDateColor(work)" class="work-date-chip">
+                                    {{ formatDate(workListDate(work)) }}
+                                </v-chip>
+                                <v-chip v-else size="x-small" variant="outlined" class="work-date-chip">ohne Datum</v-chip>
+                            </div>
+                            <div class="text-body-2 work-title-second-line" :class="workHasAllGrades(work) ? 'text-success' : ''">
+                                {{ work.title || '—' }}
+                            </div>
+                            <div v-if="work.description" class="text-caption work-description-line">
+                                {{ work.description }}
+                            </div>
+                            <div class="work-bottom-row">
+                                <div v-if="workGradeDistribution(work).length" class="work-grade-distribution d-flex flex-wrap ga-1">
                                     <v-chip
                                         v-for="item in workGradeDistribution(work)"
                                         :key="`${work.id}-grade-${item.grade}`"
@@ -78,11 +75,12 @@
                                         {{ item.grade }}: {{ item.count }}
                                     </v-chip>
                                 </div>
-                            </div>
-                            <div class="work-actions d-flex align-center ga-1">
-                                <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
-                                <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
-                                <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
+                                <div v-else class="work-grade-distribution-placeholder"></div>
+                                <div class="work-actions d-flex align-center ga-1">
+                                    <v-btn v-if="delete_work_id !== work.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click.stop="delete_work_id = work.id" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click.stop="delete_work_id = null" />
+                                    <v-btn v-if="delete_work_id === work.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click.stop="deleteWork(work)" />
+                                </div>
                             </div>
                         </div>
                     </v-list-item>
@@ -2180,6 +2178,25 @@ export default {
             if (!found) return 'Unbekannter Typ'
             return `${found.short_name} - ${found.name}`
         },
+        workTypeModeLabel(work) {
+            const typeLabel = work?.type ? this.workTypeLabel(work.type) : 'eine Arbeit'
+            const modeLabel = work?.is_group_work ? 'Gruppenarbeit' : 'Einzelarbeit'
+
+            return `${typeLabel} - ${modeLabel}`
+        },
+        workEntryBackgroundClass(work) {
+            const type = String(work?.type || '').trim()
+            if (type === '') {
+                return 'work-row--type-empty'
+            }
+
+            let hash = 0
+            for (const character of type) {
+                hash = (hash + character.charCodeAt(0)) % 6
+            }
+
+            return `work-row--type-${hash + 1}`
+        },
         toDateString(date) {
             const d = parseLocalDate(date)
             const year = d.getFullYear()
@@ -2259,9 +2276,49 @@ export default {
 
 <style scoped>
 .work-row {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    box-sizing: border-box;
     display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+    height: 100%;
+    padding: 8px;
+}
+
+.work-row--type-empty {
+    background-color: #ffffff !important;
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+.work-row--type-1 {
+    background-color: #eef6ff !important;
+    border-color: rgba(37, 99, 235, 0.16);
+}
+
+.work-row--type-2 {
+    background-color: #f0fdf4 !important;
+    border-color: rgba(22, 163, 74, 0.16);
+}
+
+.work-row--type-3 {
+    background-color: #fff7ed !important;
+    border-color: rgba(234, 88, 12, 0.16);
+}
+
+.work-row--type-4 {
+    background-color: #f5f3ff !important;
+    border-color: rgba(124, 58, 237, 0.16);
+}
+
+.work-row--type-5 {
+    background-color: #fef2f2 !important;
+    border-color: rgba(220, 38, 38, 0.14);
+}
+
+.work-row--type-6 {
+    background-color: #ecfeff !important;
+    border-color: rgba(8, 145, 178, 0.16);
 }
 
 .work-list-item {
@@ -2272,8 +2329,33 @@ export default {
     margin-bottom: 0;
 }
 
+.work-list-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.work-list-grid .work-list-item {
+    align-self: stretch;
+    display: flex;
+    height: 100%;
+    margin-bottom: 0;
+}
+
+.work-list-grid .work-list-item :deep(.v-list-item__content) {
+    display: flex;
+    height: 100%;
+    width: 100%;
+}
+
 .work-date-chip {
     flex: 0 0 auto;
+}
+
+.work-meta-row {
+    align-items: flex-start;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
 }
 
 .work-title {
@@ -2281,17 +2363,44 @@ export default {
 }
 
 .work-type-first-line {
+    min-width: 0;
     padding-left: 1px;
     line-height: 1.35;
 }
 
 .work-title-second-line {
     line-height: 1.35;
+    font-weight: 650;
+}
+
+.work-description-line {
+    line-height: 1.35;
+    min-height: 1.35em;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.work-bottom-row {
+    align-items: flex-end;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    margin-top: auto;
+}
+
+.work-grade-distribution-placeholder {
+    min-height: 24px;
 }
 
 .work-actions {
-    margin-left: auto;
     flex: 0 0 auto;
+    margin-left: auto;
+}
+
+@media (min-width: 900px) {
+    .work-list-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 700px) {
