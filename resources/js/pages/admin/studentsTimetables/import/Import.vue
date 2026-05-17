@@ -1,6 +1,20 @@
 <template>
     <v-col cols="12" md="6" lg="7" xl="4">
-        <v-card rounded="lg" border class="mb-4">
+        <v-sheet rounded="lg" class="import-subnav mb-4">
+            <v-btn
+                v-for="item in importNavigationItems"
+                :key="item.key"
+                size="small"
+                :color="import_action === item.key ? 'primary' : 'secondary'"
+                :variant="import_action === item.key ? 'flat' : 'tonal'"
+                :prepend-icon="item.icon"
+                class="import-subnav__button"
+                @click="handleImportNavigation(item.key)">
+                {{ item.label }}
+            </v-btn>
+        </v-sheet>
+
+        <v-card v-if="import_action === 'import'" rounded="lg" border class="mb-4">
             <v-card-title class="d-flex align-center ga-2">
                 <v-icon icon="mdi-upload" />
                 TXT-Datei importieren
@@ -30,7 +44,7 @@
             </v-card-text>
         </v-card>
 
-        <v-card rounded="lg" border>
+        <v-card v-if="import_action === 'overview'" rounded="lg" border>
             <v-card-title class="d-flex align-center ga-2">
                 <v-icon icon="mdi-file-document-multiple-outline" />
                 Stundenplan-Importe
@@ -96,6 +110,7 @@
                                         <thead>
                                             <tr>
                                                 <th>Kurs</th>
+                                                <th class="text-right">Wochenstd.</th>
                                                 <th class="text-right">Einträge</th>
                                                 <th>Zeitraum</th>
                                             </tr>
@@ -103,6 +118,7 @@
                                         <tbody>
                                             <tr v-for="courseItem in activeDatasetCourses" :key="courseItem.name">
                                                 <td class="font-weight-medium">{{ courseItem.name }}</td>
+                                                <td class="text-right">{{ datasetCourseWeeklyHoursLabel(courseItem) }}</td>
                                                 <td class="text-right">{{ courseItem.entries_count }}</td>
                                                 <td>{{ datasetCourseDateRangeLabel(courseItem) }}</td>
                                             </tr>
@@ -368,6 +384,7 @@ export default {
             mainDataset: null,
             deleteTargetImport: null,
             loading: false,
+            import_action: this.normalizedImportAction(this.$route.params.subsection),
             deleteDialog: false,
             deleting: false,
             schoolyearDialog: false,
@@ -401,10 +418,27 @@ export default {
             const d = new Date(date)
             return d.toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' })
         },
+        importNavigationItems() {
+            return [
+                {
+                    key: 'overview',
+                    label: 'Überblick',
+                    icon: 'mdi-view-dashboard-outline',
+                },
+                {
+                    key: 'import',
+                    label: 'Import',
+                    icon: 'mdi-upload',
+                },
+            ]
+        },
     },
     watch: {
         'config.selected_schoolyear.id'() {
             this.loadImport()
+        },
+        '$route.params.subsection'(subsection) {
+            this.import_action = this.normalizedImportAction(subsection)
         },
     },
     mounted() {
@@ -414,6 +448,15 @@ export default {
         this.clearPolling()
     },
     methods: {
+        normalizedImportAction(subsection) {
+            const allowedActions = ['overview', 'import']
+
+            return allowedActions.includes(subsection) ? subsection : 'overview'
+        },
+        handleImportNavigation(key) {
+            this.import_action = this.normalizedImportAction(key)
+            this.$router.replace({ path: `/admin/students-timetables/import/${this.import_action}` })
+        },
         async loadImport() {
             this.loading = true
             this.uploadError = ''
@@ -542,6 +585,11 @@ export default {
 
             return `${courseItem.first_date} - ${courseItem.last_date}`
         },
+        datasetCourseWeeklyHoursLabel(courseItem) {
+            const weeklyHours = Number(courseItem?.weekly_hours || 0)
+
+            return weeklyHours > 0 ? `${weeklyHours}` : '-'
+        },
         importIsProcessing(importItem) {
             return ['pending', 'running', 'deleting'].includes(importItem?.import_status)
         },
@@ -587,6 +635,29 @@ export default {
 </script>
 
 <style scoped>
+.import-subnav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.import-subnav__button {
+    background: #dbeafe !important;
+    border: 1px solid rgba(37, 99, 235, 0.22) !important;
+    color: #1e3a8a !important;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.import-subnav__button.v-btn--variant-flat {
+    background: rgb(var(--v-theme-primary)) !important;
+    border-color: rgba(30, 64, 175, 0.52) !important;
+    color: rgb(var(--v-theme-on-primary)) !important;
+}
+
 .tt-sub-row td {
     border-top: none !important;
     padding-top: 0 !important;

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
 use App\Services\StudentsTimetables\TimetableImportService;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -86,10 +87,12 @@ class TimetableImportController extends Controller
     }
 
     /**
-     * @return list<array{name: string, entries_count: int, first_date: ?string, last_date: ?string}>
+     * @return list<array{name: string, entries_count: int, first_date: ?string, last_date: ?string, weekly_hours: ?int}>
      */
     private function mainDatasetCourses(int $schoolId, int $schoolyearId): array
     {
+        $weeklyHoursByCourse = $this->weeklyHoursByCourse($schoolId, $schoolyearId);
+
         return StudentTimetableEntry::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
@@ -103,8 +106,61 @@ class TimetableImportController extends Controller
                 'entries_count' => (int) $entry->getAttribute('entries_count'),
                 'first_date' => $entry->getAttribute('first_date'),
                 'last_date' => $entry->getAttribute('last_date'),
+                'weekly_hours' => $weeklyHoursByCourse[(string) $entry->getAttribute('name')] ?? null,
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function weeklyHoursByCourse(int $schoolId, int $schoolyearId): array
+    {
+        return StudentTimetableEntry::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotNull('class_name')
+            ->whereNotNull('date')
+            ->get(['class_name', 'date', 'period', 'starts_at'])
+            ->groupBy('class_name')
+            ->map(fn ($entries): ?int => $this->typicalWeeklyHours($entries))
+            ->filter(fn (?int $weeklyHours): bool => $weeklyHours !== null)
+            ->all();
+    }
+
+    private function typicalWeeklyHours($entries): ?int
+    {
+        $weeklyCounts = collect($entries)
+            ->groupBy(fn (StudentTimetableEntry $entry): string => $this->weekKey($entry))
+            ->map(fn ($weekEntries): int => collect($weekEntries)
+                ->map(fn (StudentTimetableEntry $entry): string => implode('|', [
+                    $entry->date?->toDateString() ?? '',
+                    $entry->period ?? '',
+                    $entry->starts_at ?? '',
+                ]))
+                ->unique()
+                ->count())
+            ->filter(fn (int $count): bool => $count > 0)
+            ->values();
+
+        if ($weeklyCounts->isEmpty()) {
+            return null;
+        }
+
+        return (int) $weeklyCounts
+            ->countBy()
+            ->sortKeysDesc()
+            ->sortDesc()
+            ->keys()
+            ->first();
+    }
+
+    private function weekKey(StudentTimetableEntry $entry): string
+    {
+        /** @var CarbonInterface $date */
+        $date = $entry->date;
+
+        return "{$date->isoWeekYear()}-{$date->isoWeek()}";
     }
 }

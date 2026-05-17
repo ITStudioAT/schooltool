@@ -337,6 +337,8 @@ class TimetableImportService
         int $lineNumber,
     ): array {
         $date = $this->normalizeDate($parts[2] ?? null);
+        $usesUntisTimeColumns = $this->usesUntisTimeColumns($parts);
+        $className = $this->nullableColumn($parts[7] ?? null);
 
         $row = [
             'school_id' => $import->school_id,
@@ -347,12 +349,15 @@ class TimetableImportService
             'semester' => $date ? $this->semesterForDate($date, $schoolyear->sem_2_start) : null,
             'source_identifier' => $this->nullableColumn($parts[1] ?? null),
             'period' => $this->nullableColumn($parts[3] ?? null),
-            'subject' => $this->nullableColumn($parts[4] ?? null),
-            'teacher' => $this->nullableColumn($parts[5] ?? null),
-            'room' => $this->nullableColumn($parts[6] ?? null),
-            'class_name' => $this->nullableColumn($parts[7] ?? null),
+            'starts_at' => $usesUntisTimeColumns ? $this->nullableColumn($parts[4] ?? null) : null,
+            'ends_at' => $usesUntisTimeColumns ? $this->nullableColumn($parts[5] ?? null) : null,
+            'subject' => $usesUntisTimeColumns ? $this->nullableColumn($parts[8] ?? null) : $this->nullableColumn($parts[4] ?? null),
+            'teacher' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[5] ?? null),
+            'room' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[6] ?? null),
+            'class_name' => $className,
             'course' => $this->nullableColumn($parts[8] ?? null),
-            'student_group' => $this->nullableColumn($parts[9] ?? null),
+            'module_code' => $this->moduleCodeFromClassName($className),
+            'student_group' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[9] ?? null),
             'raw_columns' => $parts,
             'raw_line' => $line,
         ];
@@ -398,11 +403,14 @@ class TimetableImportService
                         'semester' => $row['semester'],
                         'source_identifier' => $row['source_identifier'],
                         'period' => $row['period'],
+                        'starts_at' => $row['starts_at'],
+                        'ends_at' => $row['ends_at'],
                         'subject' => $row['subject'],
                         'teacher' => $row['teacher'],
                         'room' => $row['room'],
                         'class_name' => $row['class_name'],
                         'course' => $row['course'],
+                        'module_code' => $row['module_code'],
                         'student_group' => $row['student_group'],
                         'identity_hash' => $row['identity_hash'],
                         'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
@@ -446,6 +454,33 @@ class TimetableImportService
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<string>  $parts
+     */
+    private function usesUntisTimeColumns(array $parts): bool
+    {
+        return $this->isTimeColumn($parts[4] ?? null)
+            && $this->isTimeColumn($parts[5] ?? null);
+    }
+
+    private function isTimeColumn(?string $value): bool
+    {
+        return preg_match('/^\d{1,2}:\d{2}$/', trim((string) $value)) === 1;
+    }
+
+    private function moduleCodeFromClassName(?string $className): ?string
+    {
+        if (! $className) {
+            return null;
+        }
+
+        if (preg_match('/^\s*([A-Za-zÄÖÜäöüß]+[0-9]+)(?=$|[-\s])/u', $className, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches[1];
     }
 
     /**

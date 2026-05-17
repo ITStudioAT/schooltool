@@ -56,6 +56,8 @@
         <v-row class="w-100" dense>
             <Overview v-if="main_action === 'overview'" />
             <Import v-if="main_action === 'import'" />
+            <RobotTimetable v-if="main_action === 'robot'" />
+            <SubjectsOverview v-if="main_action === 'subjects-overview'" />
         </v-row>
     </v-container>
 </template>
@@ -69,12 +71,16 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
+const RobotTimetable = defineAsyncComponent(() => import('./robot/RobotTimetable.vue'))
+const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
 export default {
     components: {
         AdminSectionHero,
         Overview,
         Import,
+        RobotTimetable,
+        SubjectsOverview,
     },
     data() {
         return {
@@ -110,9 +116,23 @@ export default {
                 },
                 {
                     key: 'import',
-                    label: 'Import',
-                    meta: 'Daten importieren',
+                    label: 'Stundenplan',
+                    meta: 'Import',
                     icon: 'mdi-upload',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                },
+                {
+                    key: 'subjects-overview',
+                    label: 'Fächer',
+                    meta: 'Überblick',
+                    icon: 'mdi-book-open-page-variant-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                },
+                {
+                    key: 'robot',
+                    label: 'Roboter',
+                    meta: 'Stundenplan',
+                    icon: 'mdi-robot-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
             ]
@@ -125,9 +145,19 @@ export default {
                     note: 'Stundenplan-Übersicht.',
                 },
                 import: {
-                    label: 'Import',
+                    label: 'Stundenplan',
                     icon: 'mdi-upload',
-                    note: 'Stundenpläne und Daten importieren.',
+                    note: 'Stundenplan importieren.',
+                },
+                robot: {
+                    label: 'Roboter',
+                    icon: 'mdi-robot-outline',
+                    note: 'Stundenplan-Auswahl.',
+                },
+                'subjects-overview': {
+                    label: 'Fächer',
+                    icon: 'mdi-book-open-page-variant-outline',
+                    note: 'Fächer, Import und Zuordnung.',
                 },
             }
             return sections[this.main_action] || sections.overview
@@ -141,10 +171,28 @@ export default {
             this.main_action = section
         }
     },
+    watch: {
+        '$route.params.section'(section) {
+            if (section && this.navigationItems.some((item) => item.key === section)) {
+                this.main_action = section
+
+                return
+            }
+
+            this.main_action = 'overview'
+        },
+    },
     methods: {
         handleNavigation(key) {
             this.main_action = key
-            this.$router.replace({ path: `/admin/students-timetables/${key}` })
+            const paths = {
+                import: '/admin/students-timetables/import/overview',
+                robot: '/admin/students-timetables/robot',
+                'subjects-overview': '/admin/students-timetables/subjects-overview/overview',
+            }
+            const path = paths[key] || `/admin/students-timetables/${key}`
+
+            this.$router.replace({ path })
         },
         async switchSchoolyear(id) {
             await this.schoolyearStore.setActiveSchoolyear(id)

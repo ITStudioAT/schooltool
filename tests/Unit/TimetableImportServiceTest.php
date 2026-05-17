@@ -103,6 +103,55 @@ it('counts distinct timetable course labels from Untis TT rows', function () {
         ->and($analysis['tt_courses'])->toBe(2);
 });
 
+it('stores real Untis TT rows without putting lesson times into subject and teacher fields', function () {
+    $filePath = "{$this->storageDirectory}/untis-real-format.txt";
+    File::put($filePath, 'TT	82	20260217	11	17:50	18:35	6A	PH2-6A-ALT	PH				1		156100');
+
+    $import = $this->service->createImport(
+        $this->user,
+        'untis-real-format.txt',
+        'untis-real-format.txt',
+        'app/private/testing/student-timetables/untis-real-format.txt',
+        $this->schoolyear->id,
+    );
+
+    $entry = StudentTimetableEntry::where('timetable_import_id', $import->id)->first();
+
+    expect($entry)->not->toBeNull()
+        ->and($entry->starts_at)->toBe('17:50')
+        ->and($entry->ends_at)->toBe('18:35')
+        ->and($entry->subject)->toBe('PH')
+        ->and($entry->teacher)->toBeNull()
+        ->and($entry->room)->toBeNull()
+        ->and($entry->class_name)->toBe('PH2-6A-ALT')
+        ->and($entry->course)->toBe('PH')
+        ->and($entry->module_code)->toBe('PH2');
+});
+
+it('extracts module codes from real Untis class names for matching subject overview modules', function () {
+    $filePath = "{$this->storageDirectory}/untis-module-codes.txt";
+    File::put($filePath, implode(PHP_EOL, [
+        'TT	201	20260217	11	17:50	18:35	7C	INF2-7C-STRA	INF				1		156100',
+        'TT	202	20260218	12	18:45	19:30	8AB	INF3-8AB-MAY	INF				1		156101',
+        'TT	203	20260220	13	19:30	20:15	Grp1	INF1-Grp1-KRO	INF				1		156102',
+    ]));
+
+    $import = $this->service->createImport(
+        $this->user,
+        'untis-module-codes.txt',
+        'untis-module-codes.txt',
+        'app/private/testing/student-timetables/untis-module-codes.txt',
+        $this->schoolyear->id,
+    );
+
+    $moduleCodes = StudentTimetableEntry::where('timetable_import_id', $import->id)
+        ->orderBy('source_identifier')
+        ->pluck('module_code')
+        ->all();
+
+    expect($moduleCodes)->toBe(['INF2', 'INF3', 'INF1']);
+});
+
 it('skips TT rows without an importable source id and course assignment', function () {
     $filePath = "{$this->storageDirectory}/missing-course-assignment.txt";
     File::put($filePath, implode(PHP_EOL, [
