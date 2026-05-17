@@ -98,10 +98,22 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-generated-grid')
         expect(componentSource).toContain('robot-generated-cell__details')
         expect(componentSource).toContain('generatedSlotDetails(slot)')
+        expect(componentSource).toContain('robot-generated-cell--conflict')
+        expect(componentSource).toContain('robot-generated-cell__conflicts')
+        expect(componentSource).toContain('generatedSlotConflicts(slot)')
         expect(componentSource).toContain('robot-generated-cell--occasional')
         expect(componentSource).toContain('generatedSlotDateLabel(slot)')
         expect(componentSource).toContain('timetableWithOccasionalSlots')
         expect(componentSource).toContain('robot-problems')
+        expect(componentSource).toContain('courseGroupDateTimeLabel(courseGroup)')
+        expect(componentSource).toContain('courseGroupDateTimeLabels(courseGroup)')
+        expect(componentSource).toContain('courseGroupDateTimeEntries(courseGroup)')
+        expect(componentSource).toContain('formatDateWithWeekdayLabel(value)')
+        expect(componentSource).toContain('weekdayLabelForDate(value)')
+        expect(componentSource).toContain('trackOccasionalCourseConflict(conflicts, course, courseGroup, existingSlot)')
+        expect(componentSource).toContain('problemSummary(problem)')
+        expect(componentSource).toContain('problemDetails(problem)')
+        expect(componentSource).toContain('robot-problems__details')
         expect(componentSource).toContain('candidateSetConflictProblemMessage')
         expect(componentSource).toContain('subjectMatchesSelectedBranch(subject)')
         expect(componentSource).toContain('subjectMatchesSelectedChoices(subject)')
@@ -218,6 +230,9 @@ describe('Students timetable robot page', () => {
                     dates: ['2026-09-30'],
                 },
             ],
+            schoolHours: [
+                { hour: 10, from: '17:05:00', until: '17:50:00' },
+            ],
             constraints: {
                 availableWeekdays: [1, 2, 3, 4, 5, 6],
                 excludedWeekdayTimes: [],
@@ -233,6 +248,90 @@ describe('Students timetable robot page', () => {
         expect(ctx.generatedTimetables[0].slots['4-10'].isOccasional).toBe(true)
         expect(methods.generatedSlotDateLabel.call(ctx, ctx.generatedTimetables[0].slots['4-10'])).toBe('30.09.2026')
         expect(ctx.generatedTimetables[0].problems[0]).toContain('orange im Stundenplan markiert')
+        expect(ctx.generatedTimetables[0].problems[0]).toContain('Mi, 30.09.2026 17:05-17:50')
+    })
+
+    it('keeps one-off overlap problems grouped while showing time ranges', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            schoolHours: [
+                { hour: 14, from: '20:25:00', until: '21:10:00' },
+                { hour: 15, from: '21:10:00', until: '21:55:00' },
+            ],
+        }
+
+        const result = methods.timetableWithOccasionalSlots.call(ctx, {
+            slots: {
+                '2-14': { code: 'D1', name: 'Deutsch 1' },
+                '2-15': { code: 'D1', name: 'Deutsch 1' },
+            },
+            problems: [],
+        }, [
+            {
+                course: { code: 'LPT', name: 'LPT' },
+                occasionalOptions: [
+                    {
+                        courseGroups: [
+                            { weekday: 2, hour: 14, dates: ['2026-02-17'] },
+                            { weekday: 2, hour: 15, dates: ['2026-02-17'] },
+                        ],
+                    },
+                ],
+            },
+        ])
+
+        expect(result.problems).toEqual([
+            'LPT - LPT: Einzeltermin Di, 17.02.2026 20:25-21:10 <-> D1 - Deutsch 1 Di, 17.02.2026 20:25-21:10, Di, 17.02.2026 21:10-21:55 <-> D1 - Deutsch 1 Di, 17.02.2026 21:10-21:55 überschneidet sich mit D1 - Deutsch 1.',
+        ])
+        expect(result.slots['2-14'].conflicts).toEqual([
+            { label: 'LPT - LPT Di, 17.02.2026 20:25-21:10', sortValue: '2026-02-17-14-LPT - LPT' },
+        ])
+        expect(result.slots['2-15'].conflicts).toEqual([
+            { label: 'LPT - LPT Di, 17.02.2026 21:10-21:55', sortValue: '2026-02-17-15-LPT - LPT' },
+        ])
+        expect(methods.generatedSlotConflicts.call(ctx, result.slots['2-14'])).toEqual([
+            'LPT - LPT Di, 17.02.2026 20:25-21:10',
+        ])
+    })
+
+    it('sorts generated slot conflicts by date', () => {
+        const methods = (RobotTimetable as any).methods
+
+        expect(methods.generatedSlotConflicts.call({}, {
+            conflicts: [
+                { label: 'GW1 - Geografie 1 Fr, 13.03.2026 14:45-15:30', sortValue: '2026-03-13-7-GW1' },
+                { label: 'LPT - LPT Fr, 20.02.2026 14:45-15:30', sortValue: '2026-02-20-7-LPT' },
+            ],
+        })).toEqual([
+            'LPT - LPT Fr, 20.02.2026 14:45-15:30',
+            'GW1 - Geografie 1 Fr, 13.03.2026 14:45-15:30',
+        ])
+    })
+
+    it('formats one-off appointments as indented problem details', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+
+        const onlyOccasionalProblem = 'LPT - LPT: nur Einzeltermine (Di, 17.02.2026 20:25-21:10, Mi, 18.02.2026 17:05-17:50), orange im Stundenplan markiert.'
+        const conflictProblem = 'LPT - LPT: Einzeltermin Di, 17.02.2026 20:25-21:10 <-> D1 - Deutsch 1 Di, 17.02.2026 20:25-21:10, Di, 17.02.2026 21:10-21:55 <-> D1 - Deutsch 1 Di, 17.02.2026 21:10-21:55 überschneidet sich mit D1 - Deutsch 1.'
+
+        expect(methods.problemSummary.call(ctx, onlyOccasionalProblem)).toBe(
+            'LPT - LPT: nur Einzeltermine, orange im Stundenplan markiert.',
+        )
+        expect(methods.problemDetails.call(ctx, onlyOccasionalProblem)).toEqual([
+            'Di, 17.02.2026 20:25-21:10',
+            'Mi, 18.02.2026 17:05-17:50',
+        ])
+        expect(methods.problemSummary.call(ctx, conflictProblem)).toBe(
+            'LPT - LPT: Einzeltermin überschneidet sich mit D1 - Deutsch 1.',
+        )
+        expect(methods.problemDetails.call(ctx, conflictProblem)).toEqual([
+            'Di, 17.02.2026 20:25-21:10 <-> D1 - Deutsch 1 Di, 17.02.2026 20:25-21:10',
+            'Di, 17.02.2026 21:10-21:55 <-> D1 - Deutsch 1 Di, 17.02.2026 21:10-21:55',
+        ])
     })
 
     it('can select and deselect courses for timetable generation', () => {

@@ -235,7 +235,14 @@
                         <div class="robot-problems__title">Probleme</div>
                         <ul class="robot-problems">
                             <li v-for="problem in generationProblems" :key="problem">
-                                {{ problem }}
+                                <div>{{ problemSummary(problem) }}</div>
+                                <ul v-if="problemDetails(problem).length" class="robot-problems__details">
+                                    <li
+                                        v-for="detail in problemDetails(problem)"
+                                        :key="`${problem}-${detail}`">
+                                        {{ detail }}
+                                    </li>
+                                </ul>
                             </li>
                         </ul>
                     </v-alert>
@@ -272,7 +279,14 @@
                                 class="robot-generated-timetable__problems">
                                 <ul class="robot-problems">
                                     <li v-for="problem in timetable.problems" :key="`${timetable.key}-${problem}`">
-                                        {{ problem }}
+                                        <div>{{ problemSummary(problem) }}</div>
+                                        <ul v-if="problemDetails(problem).length" class="robot-problems__details">
+                                            <li
+                                                v-for="detail in problemDetails(problem)"
+                                                :key="`${timetable.key}-${problem}-${detail}`">
+                                                {{ detail }}
+                                            </li>
+                                        </ul>
                                     </li>
                                 </ul>
                             </v-alert>
@@ -300,6 +314,7 @@
                                         :class="{
                                             'robot-generated-cell--filled': timetable.slots[slotKey(weekday.value, time.value)],
                                             'robot-generated-cell--occasional': timetable.slots[slotKey(weekday.value, time.value)]?.isOccasional,
+                                            'robot-generated-cell--conflict': generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)]).length,
                                         }">
                                         <template v-if="timetable.slots[slotKey(weekday.value, time.value)]">
                                             <div class="robot-generated-cell__code">
@@ -314,6 +329,15 @@
                                                 v-if="generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)])"
                                                 class="robot-generated-cell__details">
                                                 {{ generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)]) }}
+                                            </div>
+                                            <div
+                                                v-if="generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)]).length"
+                                                class="robot-generated-cell__conflicts">
+                                                <div
+                                                    v-for="conflict in generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)])"
+                                                    :key="`${timetable.key}-${weekday.value}-${time.value}-${conflict}`">
+                                                    Konflikt: {{ conflict }}
+                                                </div>
                                             </div>
                                         </template>
                                     </div>
@@ -711,6 +735,16 @@ export default {
                 .filter(Boolean)
                 .filter((value, index, values) => values.indexOf(value) === index)
                 .join(' · ')
+        },
+        generatedSlotConflicts(slot) {
+            return Array.isArray(slot?.conflicts)
+                ? slot.conflicts
+                    .toSorted((firstConflict, secondConflict) =>
+                        String(firstConflict.sortValue || '').localeCompare(String(secondConflict.sortValue || '')),
+                    )
+                    .map(conflict => conflict.label)
+                    .filter(Boolean)
+                : []
         },
         courseGroupRoomsLabel(courseGroup) {
             if (Array.isArray(courseGroup?.rooms)) {
@@ -1112,6 +1146,7 @@ export default {
         timetableWithOccasionalSlots(combination, candidateSets) {
             const slots = { ...combination.slots }
             const problems = [...combination.problems]
+            const conflicts = {}
 
             candidateSets.forEach(candidateSet => {
                 candidateSet.occasionalOptions.forEach(option => {
@@ -1120,7 +1155,7 @@ export default {
                         const existingSlot = slots[key]
 
                         if (existingSlot) {
-                            problems.push(this.occasionalCourseConflictProblemMessage(candidateSet.course, courseGroup, existingSlot))
+                            this.trackOccasionalCourseConflict(conflicts, candidateSet.course, courseGroup, existingSlot)
 
                             return
                         }
@@ -1137,7 +1172,11 @@ export default {
 
             return {
                 slots,
-                problems: this.uniqueProblems(problems),
+                problems: this.uniqueProblems([
+                    ...problems,
+                    ...Object.values(conflicts)
+                        .map(conflict => this.occasionalCourseConflictProblemMessage(conflict)),
+                ]),
             }
         },
         candidateSetProblemMessage(candidateSet) {
@@ -1160,16 +1199,70 @@ export default {
             return `${courseLabel}: konnte nicht eingeplant werden.`
         },
         candidateSetOccasionalDatesLabel(candidateSet) {
-            return this.uniqueProblems((candidateSet.occasionalCourseGroups || [])
-                .flatMap(courseGroup => this.courseGroupDates(courseGroup))
-                .sort())
-                .map(date => this.formatDateLabel(date))
+            return (candidateSet.occasionalCourseGroups || [])
+                .flatMap(courseGroup => this.courseGroupDateTimeEntries(courseGroup))
+                .sort((firstEntry, secondEntry) => firstEntry.sortValue.localeCompare(secondEntry.sortValue))
+                .map(entry => entry.label)
+                .filter((label, index, labels) => labels.indexOf(label) === index)
                 .join(', ')
         },
-        occasionalCourseConflictProblemMessage(course, courseGroup, existingSlot) {
-            const courseLabel = this.courseProblemLabel(course)
+        trackOccasionalCourseConflict(conflicts, course, courseGroup, existingSlot) {
+            const datesLabel = this.courseGroupDatesLabel(courseGroup)
+            const key = [
+                this.courseProblemLabel(course),
+                datesLabel,
+                this.courseProblemLabel(existingSlot),
+            ].join('|')
+
+            conflicts[key] ??= {
+                course,
+                existingSlot,
+                dateTimeLabels: [],
+            }
+
+            const dateTimeEntries = this.courseGroupDateTimeEntries(courseGroup)
+            const entries = dateTimeEntries.length
+                ? dateTimeEntries
+                : [{ label: this.courseGroupTimeRangeLabel(courseGroup), date: null }]
             const existingLabel = this.courseProblemLabel(existingSlot)
-            const dateLabel = this.courseGroupDatesLabel(courseGroup)
+
+            entries
+                .filter(entry => entry.label)
+                .forEach(entry => {
+                    this.trackGeneratedSlotConflict(existingSlot, course, courseGroup, entry.date)
+
+                    const existingDateTimeLabel = this.courseGroupDateTimeLabelForDate(
+                        existingSlot?.courseGroup || courseGroup,
+                        entry.date,
+                    )
+                    const conflictLabel = [existingLabel, existingDateTimeLabel].filter(Boolean).join(' ')
+                    const detailLabel = conflictLabel ? `${entry.label} <-> ${conflictLabel}` : entry.label
+
+                    if (!conflicts[key].dateTimeLabels.includes(detailLabel)) {
+                        conflicts[key].dateTimeLabels.push(detailLabel)
+                    }
+                })
+        },
+        trackGeneratedSlotConflict(slot, course, courseGroup, date) {
+            slot.conflicts ??= []
+
+            const courseLabel = this.courseProblemLabel(course)
+            const dateTimeLabel = this.courseGroupDateTimeLabelForDate(courseGroup, date)
+            const label = [courseLabel, dateTimeLabel].filter(Boolean).join(' ')
+
+            if (!label || slot.conflicts.some(conflict => conflict.label === label)) {
+                return
+            }
+
+            slot.conflicts.push({
+                label,
+                sortValue: `${date || ''}-${String(courseGroup?.hour || '').padStart(2, '0')}-${courseLabel}`,
+            })
+        },
+        occasionalCourseConflictProblemMessage(conflict) {
+            const courseLabel = this.courseProblemLabel(conflict.course)
+            const existingLabel = this.courseProblemLabel(conflict.existingSlot)
+            const dateLabel = conflict.dateTimeLabels.join(', ')
 
             return `${courseLabel}: Einzeltermin${dateLabel ? ` ${dateLabel}` : ''} überschneidet sich mit ${existingLabel}.`
         },
@@ -1230,6 +1323,57 @@ export default {
                 .map(date => this.formatDateLabel(date))
                 .join(', ')
         },
+        courseGroupDateTimeLabel(courseGroup) {
+            const dateTimeLabels = this.courseGroupDateTimeLabels(courseGroup)
+
+            if (dateTimeLabels.length) return dateTimeLabels.join(', ')
+
+            return this.courseGroupTimeRangeLabel(courseGroup)
+        },
+        courseGroupDateTimeLabels(courseGroup) {
+            return this.courseGroupDateTimeEntries(courseGroup)
+                .map(entry => entry.label)
+        },
+        courseGroupDateTimeEntries(courseGroup) {
+            return this.courseGroupDates(courseGroup)
+                .map(date => ({
+                    label: this.courseGroupDateTimeLabelForDate(courseGroup, date),
+                    sortValue: `${date}-${String(courseGroup?.hour || '').padStart(2, '0')}`,
+                    date,
+                }))
+        },
+        courseGroupDateTimeLabelForDate(courseGroup, date) {
+            const dateLabel = date ? this.formatDateWithWeekdayLabel(date) : ''
+            const timeRange = this.courseGroupTimeRangeLabel(courseGroup)
+
+            return [dateLabel, timeRange].filter(Boolean).join(' ')
+        },
+        formatDateWithWeekdayLabel(value) {
+            const weekdayLabel = this.weekdayLabelForDate(value)
+            const dateLabel = this.formatDateLabel(value)
+
+            return [weekdayLabel, dateLabel].filter(Boolean).join(', ')
+        },
+        weekdayLabelForDate(value) {
+            const dateValue = String(value || '').trim()
+            const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+
+            if (!match) return ''
+
+            const [, year, month, day] = match
+            const weekday = new Date(Number(year), Number(month) - 1, Number(day)).getDay()
+            const isoWeekday = weekday === 0 ? 7 : weekday
+            const weekdayOptions = this.weekdayOptions || [
+                { shortTitle: 'Mo', value: 1 },
+                { shortTitle: 'Di', value: 2 },
+                { shortTitle: 'Mi', value: 3 },
+                { shortTitle: 'Do', value: 4 },
+                { shortTitle: 'Fr', value: 5 },
+                { shortTitle: 'Sa', value: 6 },
+            ]
+
+            return weekdayOptions.find(option => Number(option.value) === isoWeekday)?.shortTitle || ''
+        },
         formatDateLabel(value) {
             const dateValue = String(value || '').trim()
             const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/u)
@@ -1285,6 +1429,39 @@ export default {
             if (!rawValue) return ''
 
             return rawValue.slice(0, 5)
+        },
+        problemSummary(problem) {
+            const problemText = String(problem || '')
+            const onlyOccasionalMatch = problemText.match(/^(.*?): nur Einzeltermine \((.*?)\)(, orange im Stundenplan markiert\.)$/u)
+
+            if (onlyOccasionalMatch) {
+                return `${onlyOccasionalMatch[1]}: nur Einzeltermine${onlyOccasionalMatch[3]}`
+            }
+
+            const conflictMatch = problemText.match(/^(.*?): Einzeltermin (.*?) überschneidet sich mit (.*?)\.$/u)
+
+            if (conflictMatch) {
+                return `${conflictMatch[1]}: Einzeltermin überschneidet sich mit ${conflictMatch[3]}.`
+            }
+
+            return problemText
+        },
+        problemDetails(problem) {
+            const problemText = String(problem || '')
+            const onlyOccasionalMatch = problemText.match(/: nur Einzeltermine \((.*?)\), orange im Stundenplan markiert\.$/u)
+            const conflictMatch = problemText.match(/: Einzeltermin (.*?) überschneidet sich mit .*?\.$/u)
+            const details = onlyOccasionalMatch?.[1] || conflictMatch?.[1] || ''
+
+            if (!details) return []
+
+            const appointmentLabels = details.match(/(?:Mo|Di|Mi|Do|Fr|Sa|So),? \d{2}\.\d{2}\.\d{4}(?: \d{2}:\d{2}-\d{2}:\d{2})?(?: <-> (?:(?!, (?:Mo|Di|Mi|Do|Fr|Sa|So),? \d{2}\.\d{2}\.\d{4}).)+)?/gu)
+
+            if (appointmentLabels?.length) return appointmentLabels
+
+            return details
+                .split(', ')
+                .map(detail => detail.trim())
+                .filter(Boolean)
         },
         syncAvailableTimes() {
             const availableTimeValues = this.timeOptions.map(time => time.value)
@@ -1534,6 +1711,16 @@ export default {
     line-height: 1.35;
 }
 
+.robot-problems__details {
+    margin: 2px 0 4px;
+    padding-left: 18px;
+    color: #475569;
+}
+
+.robot-problems__details li {
+    white-space: nowrap;
+}
+
 .robot-problems__title {
     margin-bottom: 4px;
     font-size: 0.82rem;
@@ -1574,6 +1761,11 @@ export default {
     color: #7c2d12;
 }
 
+.robot-generated-cell--conflict {
+    background: #fecaca;
+    color: #7f1d1d;
+}
+
 .robot-generated-cell__code {
     font-weight: 750;
 }
@@ -1591,6 +1783,14 @@ export default {
     font-weight: 400;
     line-height: 1.12;
     opacity: 0.78;
+    overflow-wrap: anywhere;
+}
+
+.robot-generated-cell__conflicts {
+    margin-top: 3px;
+    font-size: 0.64rem;
+    font-weight: 650;
+    line-height: 1.12;
     overflow-wrap: anywhere;
 }
 
