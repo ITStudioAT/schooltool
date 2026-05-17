@@ -34,7 +34,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subjectNavigationItems()')
         expect(componentSource).toContain("label: 'Übersicht'")
         expect(componentSource).toContain("key: 'subject-plan'")
-        expect(componentSource).toContain("label: 'Fächerübersicht'")
+        expect(componentSource).toContain("label: 'Grafik'")
         expect(componentSource).toContain("label: 'Import'")
         expect(componentSource).toContain("label: 'Fächer'")
         expect(componentSource).toContain("label: 'Zuordnung'")

@@ -31,6 +31,14 @@ describe('Students timetable import', () => {
         expect(componentSource).toContain('activeDatasetCourses')
         expect(componentSource).toContain('Wochenstd.')
         expect(componentSource).toContain('datasetCourseWeeklyHoursLabel(courseItem)')
+        expect(componentSource).toContain('Einzeltermine')
+        expect(componentSource).toContain('activeDatasetSingleDateCourses')
+        expect(componentSource).toContain('singleDateAppointmentTimeLabel(appointment)')
+        expect(componentSource).toContain('label="Aktiv"')
+        expect(componentSource).toContain('/api/admin/students-timetables/imports/single-date-appointments')
+        expect(componentSource).toContain('single-date-appointment-row--inactive')
+        expect(componentSource).toContain('LoadingAnimation')
+        expect(componentSource).toContain('single-date-saving-dots')
         expect(componentSource).toContain('Importverlauf')
         expect(componentSource).toContain('<v-expansion-panels')
         expect(componentSource).toContain('Nicht importierte TT-Einträge')
@@ -110,5 +118,68 @@ describe('Students timetable import', () => {
         expect(methods.datasetCourseWeeklyHoursLabel({ weekly_hours: 4 })).toBe('4')
         expect(methods.datasetCourseWeeklyHoursLabel({ weekly_hours: null })).toBe('-')
         expect(methods.datasetCourseWeeklyHoursLabel({})).toBe('-')
+    })
+
+    it('formats single-date appointment labels', () => {
+        const methods = (Import as any).methods
+
+        expect(methods.formatDateWithWeekdayLabel('2026-02-17')).toBe('Di, 17.02.2026')
+        expect(methods.singleDateAppointmentTimeLabel({
+            period: '14',
+            starts_at: '20:25',
+            ends_at: '21:10',
+        })).toBe('14. Std. 20:25-21:10')
+        expect(methods.singleDateAppointmentTimeLabel({
+            period: '2',
+        })).toBe('2. Std.')
+    })
+
+    it('syncs and serializes single-date appointment activation', () => {
+        const methods = (Import as any).methods
+        const appointments = [
+            {
+                date: '2026-02-17',
+                period: '14',
+                starts_at: '20:25',
+                subject: 'LPT',
+                teacher: 'AB',
+                entry_ids: [1],
+                active: true,
+            },
+            {
+                date: '2026-02-18',
+                period: '10',
+                starts_at: '17:05',
+                subject: 'LPT',
+                teacher: 'AB',
+                entry_ids: [2],
+                active: false,
+            },
+        ]
+        const courseItem = { name: 'LPT-ALT', appointments }
+        const firstKey = methods.singleDateAppointmentKey(courseItem, appointments[0])
+        const secondKey = methods.singleDateAppointmentKey(courseItem, appointments[1])
+        const ctx = {
+            activeDatasetSingleDateCourses: [courseItem],
+            activeSingleDateAppointmentKeys: [],
+            singleDateActivationDatasetSignature: '',
+            singleDateAppointmentKey: methods.singleDateAppointmentKey,
+            singleDateActivationDatasetStateSignature: `${firstKey}:active|${secondKey}:inactive`,
+        }
+
+        methods.syncSingleDateAppointmentActivation.call(ctx)
+
+        expect(ctx.activeSingleDateAppointmentKeys).toEqual([firstKey])
+
+        const payloadCtx = {
+            activeDatasetSingleDateCourses: [courseItem],
+            activeSingleDateAppointmentKeySet: new Set([firstKey]),
+            singleDateAppointmentKey: methods.singleDateAppointmentKey,
+        }
+
+        expect(methods.singleDateActivationPayload.call(payloadCtx)).toEqual([
+            { entry_ids: [1], active: true },
+            { entry_ids: [2], active: false },
+        ])
     })
 })

@@ -7,6 +7,7 @@ use App\Models\SchoolLicence;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
+use App\Models\StudentTimetableOverviewSelection;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\TeachingSchoolHour;
@@ -610,6 +611,10 @@ it('returns the requested timetable import history for the selected schoolyear',
         'date' => '2026-02-16',
         'period' => '1',
         'starts_at' => '08:00',
+        'ends_at' => '08:45',
+        'subject' => 'PH',
+        'teacher' => 'AB',
+        'room' => '101',
         'class_name' => 'PH2-6A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -619,6 +624,10 @@ it('returns the requested timetable import history for the selected schoolyear',
         'date' => '2026-02-16',
         'period' => '2',
         'starts_at' => '08:50',
+        'ends_at' => '09:35',
+        'subject' => 'PH',
+        'teacher' => 'AB',
+        'room' => '101',
         'class_name' => 'PH2-6A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -627,6 +636,8 @@ it('returns the requested timetable import history for the selected schoolyear',
         'timetable_import_id' => $imports->first()->id,
         'date' => '2026-07-11',
         'period' => '1',
+        'subject' => 'M',
+        'teacher' => 'CD',
         'class_name' => 'M2-2A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -635,6 +646,8 @@ it('returns the requested timetable import history for the selected schoolyear',
         'timetable_import_id' => $imports->first()->id,
         'date' => '2026-07-04',
         'period' => '1',
+        'subject' => 'M',
+        'teacher' => 'CD',
         'class_name' => 'M2-2A-ALT',
     ]);
     StudentTimetableEntry::factory()->create([
@@ -661,7 +674,171 @@ it('returns the requested timetable import history for the selected schoolyear',
         ->assertJsonPath('main_dataset.courses.0.last_date', '2026-07-11')
         ->assertJsonPath('main_dataset.courses.1.name', 'PH2-6A-ALT')
         ->assertJsonPath('main_dataset.courses.1.entries_count', 2)
-        ->assertJsonPath('main_dataset.courses.1.weekly_hours', 2);
+        ->assertJsonPath('main_dataset.courses.1.weekly_hours', 2)
+        ->assertJsonPath('main_dataset.single_date_courses.0.name', 'M2-2A-ALT')
+        ->assertJsonPath('main_dataset.single_date_courses.0.appointments_count', 2)
+        ->assertJsonPath('main_dataset.single_date_courses.0.appointments.0.date', '2026-07-04')
+        ->assertJsonPath('main_dataset.single_date_courses.0.appointments.1.date', '2026-07-11')
+        ->assertJsonPath('main_dataset.single_date_courses.1.name', 'PH2-6A-ALT')
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments_count', 2)
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.date', '2026-02-16')
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.period', '1')
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.starts_at', '08:00')
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.ends_at', '08:45')
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.active', true)
+        ->assertJsonPath('main_dataset.single_date_courses.1.appointments.1.period', '2');
+});
+
+it('saves active states for single-date timetable appointments', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $import = TimetableImport::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+    ]);
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $import->id,
+        'date' => '2026-02-17',
+        'semester' => 2,
+        'period' => '14',
+        'starts_at' => '20:25',
+        'ends_at' => '21:10',
+        'subject' => 'LPT',
+        'teacher' => 'AB',
+        'class_name' => 'LPT-ALT',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'timetable_import_id' => $import->id,
+        'date' => '2026-02-18',
+        'semester' => 2,
+        'period' => '10',
+        'starts_at' => '17:05',
+        'ends_at' => '17:50',
+        'subject' => 'LPT',
+        'teacher' => 'AB',
+        'class_name' => 'LPT-ALT',
+    ]);
+
+    $appointments = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports')
+        ->assertSuccessful()
+        ->json('main_dataset.single_date_courses.0.appointments');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/imports/single-date-appointments', [
+            'appointments' => collect($appointments)
+                ->map(fn (array $appointment): array => [
+                    'entry_ids' => $appointment['entry_ids'],
+                    'active' => false,
+                ])
+                ->all(),
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Einzeltermine wurden gespeichert.')
+        ->assertJsonPath('main_dataset.entries_count', 0)
+        ->assertJsonPath('main_dataset.single_date_courses.0.appointments.0.active', false)
+        ->assertJsonPath('main_dataset.single_date_courses.0.appointments.1.active', false);
+
+    expect(StudentTimetableEntry::where('schoolyear_id', $schoolyear->id)->where('is_active', true)->count())
+        ->toBe(0);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'data');
+});
+
+it('saves selected timetable overview courses in the database', function () {
+    $user = createStudentsTimetablesUserWithLicence();
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+        'from' => '2026-09-07',
+        'sem_2_start' => '2027-02-15',
+        'until' => '2027-07-04',
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2026-09-08',
+        'semester' => 1,
+        'period' => '11',
+        'course' => 'ETH',
+        'subject' => 'ETH',
+        'teacher' => null,
+        'room' => null,
+        'class_name' => 'ETH1-1CK-PLÖ',
+    ]);
+    StudentTimetableEntry::factory()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'date' => '2026-09-11',
+        'semester' => 1,
+        'period' => '7',
+        'course' => 'ETH',
+        'subject' => 'ETH',
+        'teacher' => null,
+        'room' => null,
+        'class_name' => 'ETH1-1RU-PLÖC',
+    ]);
+
+    $courseGroups = collect($this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/course-groups')
+        ->assertSuccessful()
+        ->json('data'));
+
+    $selectedCourseGroupKey = $courseGroups->firstWhere('display_label', 'ETH1 - 1CK - PLÖ')['key'];
+    $ignoredCourseGroupKey = $courseGroups->firstWhere('display_label', 'ETH1 - 1RU - PLÖC')['key'];
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/overview-selections', [
+            'course_group_keys' => [
+                $selectedCourseGroupKey,
+                $selectedCourseGroupKey,
+                'unknown-course-group',
+            ],
+        ])
+        ->assertSuccessful()
+        ->assertJsonPath('message', 'Kursauswahl wurde gespeichert.')
+        ->assertJsonPath('data.course_group_keys.0', $selectedCourseGroupKey)
+        ->assertJsonCount(1, 'data.course_group_keys')
+        ->assertJsonPath('data.courses.0.course_label', 'ETH1 - 1CK - PLÖ');
+
+    $this->assertDatabaseHas('student_timetable_overview_selections', [
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'course_group_key' => $selectedCourseGroupKey,
+        'course_label' => 'ETH1 - 1CK - PLÖ',
+    ]);
+    $this->assertDatabaseMissing('student_timetable_overview_selections', [
+        'course_group_key' => $ignoredCourseGroupKey,
+    ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/overview-selections')
+        ->assertSuccessful()
+        ->assertJsonPath('data.course_group_keys.0', $selectedCourseGroupKey)
+        ->assertJsonPath('data.courses.0.course_title', 'ETH');
+
+    $this->actingAs($user)
+        ->putJson('/api/admin/students-timetables/overview-selections', [
+            'course_group_keys' => [],
+        ])
+        ->assertSuccessful()
+        ->assertJsonCount(0, 'data.course_group_keys');
+
+    expect(StudentTimetableOverviewSelection::query()->count())->toBe(0);
 });
 
 it('unimports a timetable import run and removes its associated entries', function () {

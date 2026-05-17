@@ -43,6 +43,7 @@ class StudentTimetableEntryFactory extends Factory
             'course' => $this->faker->word(),
             'module_code' => null,
             'student_group' => null,
+            'is_active' => true,
             'raw_columns' => ['TT'],
             'raw_line' => 'TT',
         ];

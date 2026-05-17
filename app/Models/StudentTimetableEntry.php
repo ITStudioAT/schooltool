@@ -30,6 +30,7 @@ class StudentTimetableEntry extends Model
         'course',
         'module_code',
         'student_group',
+        'is_active',
         'identity_hash',
         'raw_columns',
         'raw_line',
@@ -41,6 +42,7 @@ class StudentTimetableEntry extends Model
             'date' => 'date:Y-m-d',
             'semester' => 'integer',
             'line_number' => 'integer',
+            'is_active' => 'boolean',
             'raw_columns' => 'array',
         ];
     }

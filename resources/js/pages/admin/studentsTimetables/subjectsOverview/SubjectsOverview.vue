@@ -658,7 +658,7 @@ export default {
                 },
                 {
                     key: 'subject-plan',
-                    label: 'Fächerübersicht',
+                    label: 'Grafik',
                     icon: 'mdi-table-large',
                 },
                 {

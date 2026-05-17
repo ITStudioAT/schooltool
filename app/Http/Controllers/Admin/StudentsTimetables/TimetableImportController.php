@@ -5,13 +5,18 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 use App\Http\Controllers\Controller;
 use App\Models\StudentTimetableEntry;
 use App\Models\TimetableImport;
+use App\Services\StudentsTimetables\StudentTimetableOverviewService;
 use App\Services\StudentsTimetables\TimetableImportService;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class TimetableImportController extends Controller
 {
+    private const SINGLE_DATE_MAXIMUM_DATES = 2;
+
     public function index(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
@@ -68,10 +73,57 @@ class TimetableImportController extends Controller
         ], 202);
     }
 
+    public function updateSingleDateAppointments(Request $request): JsonResponse
+    {
+        if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
+            abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        $validated = $request->validate([
+            'appointments' => ['array'],
+            'appointments.*.entry_ids' => ['required', 'array'],
+            'appointments.*.entry_ids.*' => ['integer'],
+            'appointments.*.active' => ['required', 'boolean'],
+        ]);
+
+        $schoolId = (int) $authUser->school_id;
+        $schoolyearId = (int) $authUser->schoolyear_id;
+        $allowedEntryIds = $this->singleDateEntryIds($schoolId, $schoolyearId);
+        $requestedAppointments = collect($validated['appointments'] ?? []);
+
+        foreach ([true, false] as $isActive) {
+            $entryIds = $requestedAppointments
+                ->filter(fn (array $appointment): bool => (bool) $appointment['active'] === $isActive)
+                ->flatMap(fn (array $appointment): array => $appointment['entry_ids'])
+                ->map(fn (int|string $entryId): int => (int) $entryId)
+                ->filter(fn (int $entryId): bool => in_array($entryId, $allowedEntryIds, true))
+                ->unique()
+                ->values();
+
+            if ($entryIds->isEmpty()) {
+                continue;
+            }
+
+            StudentTimetableEntry::query()
+                ->where('school_id', $schoolId)
+                ->where('schoolyear_id', $schoolyearId)
+                ->whereIn('id', $entryIds)
+                ->update(['is_active' => $isActive]);
+        }
+
+        StudentTimetableOverviewService::forgetCacheFor($schoolId, $schoolyearId);
+
+        return response()->json([
+            'message' => 'Einzeltermine wurden gespeichert.',
+            'main_dataset' => $this->mainDatasetMetadata($schoolId, $schoolyearId),
+        ]);
+    }
+
     private function mainDatasetMetadata(int $schoolId, int $schoolyearId): array
     {
         $baseQuery = StudentTimetableEntry::where('school_id', $schoolId)
-            ->where('schoolyear_id', $schoolyearId);
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true);
         $courses = $this->mainDatasetCourses($schoolId, $schoolyearId);
 
         return [
@@ -83,6 +135,7 @@ class TimetableImportController extends Controller
             'last_date' => (clone $baseQuery)->max('date'),
             'updated_at' => (clone $baseQuery)->max('updated_at'),
             'courses' => $courses,
+            'single_date_courses' => $this->mainDatasetSingleDateCourses($schoolId, $schoolyearId),
         ];
     }
 
@@ -96,6 +149,7 @@ class TimetableImportController extends Controller
         return StudentTimetableEntry::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
             ->whereNotNull('class_name')
             ->selectRaw('class_name as name, COUNT(*) as entries_count, MIN(date) as first_date, MAX(date) as last_date')
             ->groupBy('class_name')
@@ -120,12 +174,164 @@ class TimetableImportController extends Controller
         return StudentTimetableEntry::query()
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
             ->whereNotNull('class_name')
             ->whereNotNull('date')
             ->get(['class_name', 'date', 'period', 'starts_at'])
             ->groupBy('class_name')
             ->map(fn ($entries): ?int => $this->typicalWeeklyHours($entries))
             ->filter(fn (?int $weeklyHours): bool => $weeklyHours !== null)
+            ->all();
+    }
+
+    /**
+     * @return list<array{
+     *     name: string,
+     *     appointments_count: int,
+     *     appointments: list<array{
+     *         date: string,
+     *         weekday: int,
+     *         period: ?string,
+     *         starts_at: ?string,
+     *         ends_at: ?string,
+     *         subject: ?string,
+     *         teacher: ?string,
+     *         room: ?string,
+     *         course: ?string,
+     *         student_group: ?string,
+     *         active: bool,
+     *         entry_ids: list<int>
+     *     }>
+     * }>
+     */
+    private function mainDatasetSingleDateCourses(int $schoolId, int $schoolyearId): array
+    {
+        return StudentTimetableEntry::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->whereNotNull('class_name')
+            ->whereNotNull('date')
+            ->get([
+                'date',
+                'id',
+                'semester',
+                'period',
+                'starts_at',
+                'ends_at',
+                'subject',
+                'teacher',
+                'room',
+                'class_name',
+                'course',
+                'student_group',
+                'is_active',
+            ])
+            ->groupBy(fn (StudentTimetableEntry $entry): string => $this->singleDateGroupKey($entry))
+            ->map(fn (Collection $entries): ?array => $this->singleDateGroupPayload($entries))
+            ->filter()
+            ->groupBy('course_name')
+            ->map(fn (Collection $groups, string $courseName): array => [
+                'name' => $courseName,
+                'appointments_count' => $groups->sum(fn (array $group): int => count($group['appointments'])),
+                'appointments' => $groups
+                    ->flatMap(fn (array $group): array => $group['appointments'])
+                    ->sortBy([
+                        ['date', 'asc'],
+                        ['period_sort', 'asc'],
+                        ['starts_at', 'asc'],
+                    ])
+                    ->map(fn (array $appointment): array => collect($appointment)
+                        ->except('period_sort')
+                        ->all())
+                    ->values()
+                    ->all(),
+            ])
+            ->filter(fn (array $course): bool => $course['appointments_count'] > 0)
+            ->sortBy('name')
+            ->values()
+            ->all();
+    }
+
+    private function singleDateGroupKey(StudentTimetableEntry $entry): string
+    {
+        $date = $entry->date instanceof CarbonInterface
+            ? CarbonImmutable::instance($entry->date)
+            : CarbonImmutable::parse($entry->date);
+
+        return implode('|', [
+            $entry->semester ?? '',
+            $date->dayOfWeekIso,
+            $this->hourFromPeriod($entry->period) ?? '',
+            mb_strtolower((string) $entry->class_name),
+            mb_strtolower((string) $entry->course),
+            mb_strtolower((string) $entry->subject),
+            mb_strtolower((string) $entry->teacher),
+            mb_strtolower((string) $entry->student_group),
+        ]);
+    }
+
+    /**
+     * @param  Collection<int, StudentTimetableEntry>  $entries
+     * @return array<string, mixed>|null
+     */
+    private function singleDateGroupPayload(Collection $entries): ?array
+    {
+        $firstEntry = $entries->first();
+        if (! $firstEntry instanceof StudentTimetableEntry) {
+            return null;
+        }
+
+        $dates = $entries
+            ->map(fn (StudentTimetableEntry $entry): ?string => $entry->date?->toDateString())
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values();
+
+        if ($dates->isEmpty() || $dates->count() > self::SINGLE_DATE_MAXIMUM_DATES) {
+            return null;
+        }
+
+        return [
+            'course_name' => (string) $firstEntry->class_name,
+            'appointments' => $dates
+                ->map(fn (string $date): array => [
+                    'date' => $date,
+                    'weekday' => CarbonImmutable::parse($date)->dayOfWeekIso,
+                    'period' => $firstEntry->period,
+                    'period_sort' => $this->hourFromPeriod($firstEntry->period) ?? 0,
+                    'starts_at' => $this->shortTime($firstEntry->starts_at),
+                    'ends_at' => $this->shortTime($firstEntry->ends_at),
+                    'subject' => $firstEntry->subject,
+                    'teacher' => $firstEntry->teacher,
+                    'room' => $firstEntry->room,
+                    'course' => $firstEntry->course,
+                    'student_group' => $firstEntry->student_group,
+                    'active' => $entries
+                        ->filter(fn (StudentTimetableEntry $entry): bool => $entry->date?->toDateString() === $date)
+                        ->every(fn (StudentTimetableEntry $entry): bool => (bool) $entry->is_active),
+                    'entry_ids' => $entries
+                        ->filter(fn (StudentTimetableEntry $entry): bool => $entry->date?->toDateString() === $date)
+                        ->pluck('id')
+                        ->map(fn (int|string $entryId): int => (int) $entryId)
+                        ->values()
+                        ->all(),
+                ])
+                ->all(),
+        ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function singleDateEntryIds(int $schoolId, int $schoolyearId): array
+    {
+        return collect($this->mainDatasetSingleDateCourses($schoolId, $schoolyearId))
+            ->flatMap(fn (array $course): array => $course['appointments'])
+            ->flatMap(fn (array $appointment): array => $appointment['entry_ids'])
+            ->map(fn (int|string $entryId): int => (int) $entryId)
+            ->unique()
+            ->values()
             ->all();
     }
 
@@ -154,6 +360,24 @@ class TimetableImportController extends Controller
             ->sortDesc()
             ->keys()
             ->first();
+    }
+
+    private function hourFromPeriod(?string $period): ?int
+    {
+        if (! preg_match('/\d+/', (string) $period, $match)) {
+            return null;
+        }
+
+        return (int) $match[0];
+    }
+
+    private function shortTime(?string $time): ?string
+    {
+        $time = trim((string) $time);
+
+        return $time !== ''
+            ? substr($time, 0, 5)
+            : null;
     }
 
     private function weekKey(StudentTimetableEntry $entry): string

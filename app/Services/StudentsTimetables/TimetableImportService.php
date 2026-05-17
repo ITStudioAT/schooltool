@@ -358,6 +358,7 @@ class TimetableImportService
             'course' => $this->nullableColumn($parts[8] ?? null),
             'module_code' => $this->moduleCodeFromClassName($className),
             'student_group' => $usesUntisTimeColumns ? null : $this->nullableColumn($parts[9] ?? null),
+            'is_active' => true,
             'raw_columns' => $parts,
             'raw_line' => $line,
         ];
@@ -412,6 +413,7 @@ class TimetableImportService
                         'course' => $row['course'],
                         'module_code' => $row['module_code'],
                         'student_group' => $row['student_group'],
+                        'is_active' => $row['is_active'],
                         'identity_hash' => $row['identity_hash'],
                         'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
                         'raw_line' => $row['raw_line'],

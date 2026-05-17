@@ -4,6 +4,7 @@ namespace App\Services\StudentsTimetables;
 
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\StudentTimetableOverviewSelection;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -40,6 +41,94 @@ class StudentTimetableOverviewService
         Cache::forget(self::cacheKey($schoolId, $schoolyearId));
     }
 
+    /**
+     * @return array{course_group_keys: list<string>, courses: list<array<string, ?string>>}
+     */
+    public function selectedCourseGroupsForUser(User $authUser): array
+    {
+        $schoolyearId = $this->resolveSchoolyearIdForUser($authUser);
+        $courseGroupsByKey = collect($this->courseGroupsForUser($authUser))->keyBy('key');
+
+        $selections = StudentTimetableOverviewSelection::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $schoolyearId)
+            ->where('user_id', $authUser->id)
+            ->orderBy('course_label')
+            ->get()
+            ->filter(fn (StudentTimetableOverviewSelection $selection): bool => $courseGroupsByKey->has($selection->course_group_key))
+            ->values();
+
+        return [
+            'course_group_keys' => $selections
+                ->pluck('course_group_key')
+                ->values()
+                ->all(),
+            'courses' => $selections
+                ->map(fn (StudentTimetableOverviewSelection $selection): array => [
+                    'course_group_key' => $selection->course_group_key,
+                    'course_label' => $selection->course_label,
+                    'course_title' => $selection->course_title,
+                ])
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  list<string>  $courseGroupKeys
+     * @return array{course_group_keys: list<string>, courses: list<array<string, ?string>>}
+     */
+    public function updateSelectedCourseGroupsForUser(User $authUser, array $courseGroupKeys): array
+    {
+        $schoolyearId = $this->resolveSchoolyearIdForUser($authUser);
+        $courseGroupsByKey = collect($this->courseGroupsForUser($authUser))->keyBy('key');
+        $selectedCourseGroups = collect($courseGroupKeys)
+            ->filter()
+            ->unique()
+            ->map(fn (string $courseGroupKey): ?array => $courseGroupsByKey->get($courseGroupKey))
+            ->filter()
+            ->values();
+
+        DB::transaction(function () use ($authUser, $schoolyearId, $selectedCourseGroups): void {
+            $query = StudentTimetableOverviewSelection::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('schoolyear_id', $schoolyearId)
+                ->where('user_id', $authUser->id);
+
+            $selectedCourseGroupKeys = $selectedCourseGroups
+                ->pluck('key')
+                ->filter()
+                ->values()
+                ->all();
+
+            if ($selectedCourseGroupKeys === []) {
+                $query->delete();
+
+                return;
+            }
+
+            $query
+                ->whereNotIn('course_group_key', $selectedCourseGroupKeys)
+                ->delete();
+
+            $selectedCourseGroups->each(function (array $courseGroup) use ($authUser, $schoolyearId): void {
+                StudentTimetableOverviewSelection::query()->updateOrCreate(
+                    [
+                        'school_id' => $authUser->school_id,
+                        'schoolyear_id' => $schoolyearId,
+                        'user_id' => $authUser->id,
+                        'course_group_key' => $courseGroup['key'],
+                    ],
+                    [
+                        'course_label' => $courseGroup['display_label'] ?? $courseGroup['title'] ?? null,
+                        'course_title' => $courseGroup['title'] ?? null,
+                    ],
+                );
+            });
+        });
+
+        return $this->selectedCourseGroupsForUser($authUser);
+    }
+
     private static function cacheKey(int $schoolId, int $schoolyearId): string
     {
         return "students-timetables:overview:course-groups:{$schoolId}:{$schoolyearId}";
@@ -53,6 +142,7 @@ class StudentTimetableOverviewService
         return DB::table('student_timetable_entries')
             ->where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
+            ->where('is_active', true)
             ->whereNotNull('date')
             ->whereIn('semester', [1, 2])
             ->orderBy('date')

@@ -146,6 +146,8 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
         Route::get('/admin/students-timetables/school-hours', [StudentsTimetablesController::class, 'schoolHours']);
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
+        Route::get('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'overviewSelections']);
+        Route::put('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'updateOverviewSelections']);
         Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);
         Route::post('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'upload']);
         Route::patch('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'uploadNext']);
@@ -155,6 +157,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload']);
         Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext']);
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
+        Route::put('/admin/students-timetables/imports/single-date-appointments', [TimetableImportController::class, 'updateSingleDateAppointments']);
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);
         Route::delete('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'destroy']);
     });

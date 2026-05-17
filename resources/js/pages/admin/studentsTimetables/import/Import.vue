@@ -92,8 +92,9 @@
                         </div>
 
                         <v-expansion-panels
-                            v-if="activeDatasetCourses.length"
+                            v-if="activeDatasetCourses.length || activeDatasetSingleDateCourses.length"
                             variant="accordion"
+                            multiple
                             class="main-dataset-course-panels mt-3">
                             <v-expansion-panel elevation="0" class="main-dataset-course-panel">
                                 <v-expansion-panel-title>
@@ -106,6 +107,9 @@
                                     </div>
                                 </v-expansion-panel-title>
                                 <v-expansion-panel-text>
+                                    <v-alert v-if="singleDateActivationError" type="error" variant="tonal" class="mb-3">
+                                        {{ singleDateActivationError }}
+                                    </v-alert>
                                     <v-table density="compact">
                                         <thead>
                                             <tr>
@@ -122,6 +126,98 @@
                                                 <td class="text-right">{{ courseItem.entries_count }}</td>
                                                 <td>{{ datasetCourseDateRangeLabel(courseItem) }}</td>
                                             </tr>
+                                        </tbody>
+                                    </v-table>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                            <v-expansion-panel
+                                v-if="activeDatasetSingleDateCourses.length"
+                                elevation="0"
+                                class="main-dataset-course-panel">
+                                <v-expansion-panel-title>
+                                    <div class="main-dataset-course-title">
+                                        <v-icon icon="mdi-calendar-star-outline" color="warning" size="18" />
+                                        <span class="font-weight-medium">Einzeltermine</span>
+                                        <v-chip size="x-small" color="warning" variant="tonal">
+                                            {{ activeDatasetSingleDateAppointmentsCount }}
+                                        </v-chip>
+                                        <LoadingAnimation
+                                            v-if="savingSingleDateActivation"
+                                            class="single-date-saving-dots" />
+                                    </div>
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <v-table density="compact">
+                                        <thead>
+                                            <tr>
+                                                <th class="single-date-select-col">
+                                                    <v-checkbox
+                                                        :model-value="allSingleDateAppointmentsActive"
+                                                        :indeterminate="partlyActiveSingleDateAppointments"
+                                                        label="Aktiv"
+                                                        density="compact"
+                                                        hide-details
+                                                        color="warning"
+                                                        :disabled="savingSingleDateActivation"
+                                                        @update:model-value="setAllSingleDateAppointmentsActive"
+                                                        @click.stop />
+                                                </th>
+                                                <th>Kurs</th>
+                                                <th>Termin</th>
+                                                <th>Stunde</th>
+                                                <th>Fach</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template
+                                                v-for="courseItem in activeDatasetSingleDateCourses"
+                                                :key="courseItem.name">
+                                                <tr
+                                                    class="single-date-course-row"
+                                                    :class="{
+                                                        'single-date-course-row--inactive': !courseSingleDateAppointmentsActive(courseItem)
+                                                            && !courseSingleDateAppointmentsIndeterminate(courseItem),
+                                                    }">
+                                                    <td class="single-date-select-col">
+                                                        <v-checkbox
+                                                            :model-value="courseSingleDateAppointmentsActive(courseItem)"
+                                                            :indeterminate="courseSingleDateAppointmentsIndeterminate(courseItem)"
+                                                            density="compact"
+                                                            hide-details
+                                                            color="warning"
+                                                            :disabled="savingSingleDateActivation"
+                                                            @update:model-value="setCourseSingleDateAppointmentsActive(courseItem, $event)"
+                                                            @click.stop />
+                                                    </td>
+                                                    <td colspan="4" class="font-weight-bold">
+                                                        {{ courseItem.name }}
+                                                        <v-chip size="x-small" color="warning" variant="tonal" class="ml-1">
+                                                            {{ courseItem.appointments_count }}
+                                                        </v-chip>
+                                                    </td>
+                                                </tr>
+                                                <tr
+                                                    v-for="appointment in courseItem.appointments"
+                                                    :key="singleDateAppointmentKey(courseItem, appointment)"
+                                                    :class="{
+                                                        'single-date-appointment-row--inactive': !singleDateAppointmentActive(courseItem, appointment),
+                                                    }">
+                                                    <td class="single-date-select-col">
+                                                        <v-checkbox
+                                                            :model-value="singleDateAppointmentActive(courseItem, appointment)"
+                                                            density="compact"
+                                                            hide-details
+                                                            color="warning"
+                                                            :disabled="savingSingleDateActivation"
+                                                            @update:model-value="setSingleDateAppointmentActive(courseItem, appointment, $event)"
+                                                            @click.stop />
+                                                    </td>
+                                                    <td></td>
+                                                    <td>{{ formatDateWithWeekdayLabel(appointment.date) }}</td>
+                                                    <td>{{ singleDateAppointmentTimeLabel(appointment) }}</td>
+                                                    <td>{{ appointment.subject || '-' }}</td>
+                                                </tr>
+                                            </template>
                                         </tbody>
                                     </v-table>
                                 </v-expansion-panel-text>
@@ -360,6 +456,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',
@@ -377,7 +474,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload },
+    components: { FileUpload, LoadingAnimation },
     data() {
         return {
             imports: [],
@@ -393,6 +490,10 @@ export default {
             savingSchoolyear: false,
             uploadError: '',
             pollingInterval: null,
+            savingSingleDateActivation: false,
+            singleDateActivationError: '',
+            activeSingleDateAppointmentKeys: [],
+            singleDateActivationDatasetSignature: '',
         }
     },
     computed: {
@@ -408,6 +509,36 @@ export default {
         },
         activeDatasetCourses() {
             return Array.isArray(this.mainDataset?.courses) ? this.mainDataset.courses : []
+        },
+        activeDatasetSingleDateCourses() {
+            return Array.isArray(this.mainDataset?.single_date_courses) ? this.mainDataset.single_date_courses : []
+        },
+        activeDatasetSingleDateAppointmentsCount() {
+            return this.activeDatasetSingleDateCourses
+                .reduce((total, courseItem) => total + Number(courseItem.appointments_count || 0), 0)
+        },
+        allSingleDateAppointmentKeys() {
+            return this.activeDatasetSingleDateCourses.flatMap(courseItem =>
+                (courseItem.appointments || []).map(appointment => this.singleDateAppointmentKey(courseItem, appointment)),
+            )
+        },
+        singleDateActivationDatasetStateSignature() {
+            return this.activeDatasetSingleDateCourses
+                .flatMap(courseItem => (courseItem.appointments || []).map(appointment => [
+                    this.singleDateAppointmentKey(courseItem, appointment),
+                    appointment.active === false ? 'inactive' : 'active',
+                ].join(':')))
+                .join('|')
+        },
+        activeSingleDateAppointmentKeySet() {
+            return new Set(this.activeSingleDateAppointmentKeys)
+        },
+        allSingleDateAppointmentsActive() {
+            return this.allSingleDateAppointmentKeys.length > 0
+                && this.activeSingleDateAppointmentKeys.length === this.allSingleDateAppointmentKeys.length
+        },
+        partlyActiveSingleDateAppointments() {
+            return this.activeSingleDateAppointmentKeys.length > 0 && !this.allSingleDateAppointmentsActive
         },
         semester2StartRaw() {
             return this.config?.selected_schoolyear?.sem_2_start || ''
@@ -466,10 +597,13 @@ export default {
                 })
                 this.imports = response.data.data || []
                 this.mainDataset = response.data.main_dataset || null
+                this.syncSingleDateAppointmentActivation()
                 this.updatePolling()
             } catch {
                 this.imports = []
                 this.mainDataset = null
+                this.activeSingleDateAppointmentKeys = []
+                this.singleDateActivationDatasetSignature = ''
                 this.clearPolling()
             } finally {
                 this.loading = false
@@ -589,6 +723,145 @@ export default {
             const weeklyHours = Number(courseItem?.weekly_hours || 0)
 
             return weeklyHours > 0 ? `${weeklyHours}` : '-'
+        },
+        syncSingleDateAppointmentActivation() {
+            const appointmentKeys = this.allSingleDateAppointmentKeys
+            const datasetSignature = this.singleDateActivationDatasetStateSignature
+
+            if (datasetSignature !== this.singleDateActivationDatasetSignature) {
+                this.activeSingleDateAppointmentKeys = this.activeDatasetSingleDateCourses
+                    .flatMap(courseItem => (courseItem.appointments || [])
+                        .filter(appointment => appointment.active !== false)
+                        .map(appointment => this.singleDateAppointmentKey(courseItem, appointment)))
+                this.singleDateActivationDatasetSignature = datasetSignature
+
+                return
+            }
+
+            const appointmentKeySet = new Set(appointmentKeys)
+            this.activeSingleDateAppointmentKeys = this.activeSingleDateAppointmentKeys
+                .filter(appointmentKey => appointmentKeySet.has(appointmentKey))
+        },
+        setAllSingleDateAppointmentsActive(active) {
+            this.activeSingleDateAppointmentKeys = active ? [...this.allSingleDateAppointmentKeys] : []
+            this.saveSingleDateAppointmentActivation()
+        },
+        courseSingleDateAppointmentKeys(courseItem) {
+            return (courseItem?.appointments || []).map(appointment => this.singleDateAppointmentKey(courseItem, appointment))
+        },
+        courseSingleDateAppointmentsActive(courseItem) {
+            const appointmentKeys = this.courseSingleDateAppointmentKeys(courseItem)
+
+            return appointmentKeys.length > 0
+                && appointmentKeys.every(appointmentKey => this.activeSingleDateAppointmentKeySet.has(appointmentKey))
+        },
+        courseSingleDateAppointmentsIndeterminate(courseItem) {
+            const appointmentKeys = this.courseSingleDateAppointmentKeys(courseItem)
+            const activeCount = appointmentKeys
+                .filter(appointmentKey => this.activeSingleDateAppointmentKeySet.has(appointmentKey))
+                .length
+
+            return activeCount > 0 && activeCount < appointmentKeys.length
+        },
+        setCourseSingleDateAppointmentsActive(courseItem, active) {
+            const activeKeys = new Set(this.activeSingleDateAppointmentKeys)
+
+            this.courseSingleDateAppointmentKeys(courseItem).forEach(appointmentKey => {
+                if (active) {
+                    activeKeys.add(appointmentKey)
+
+                    return
+                }
+
+                activeKeys.delete(appointmentKey)
+            })
+
+            this.activeSingleDateAppointmentKeys = [...activeKeys]
+            this.saveSingleDateAppointmentActivation()
+        },
+        singleDateAppointmentActive(courseItem, appointment) {
+            return this.activeSingleDateAppointmentKeySet.has(this.singleDateAppointmentKey(courseItem, appointment))
+        },
+        setSingleDateAppointmentActive(courseItem, appointment, active) {
+            const appointmentKey = this.singleDateAppointmentKey(courseItem, appointment)
+            const activeKeys = new Set(this.activeSingleDateAppointmentKeys)
+
+            if (active) {
+                activeKeys.add(appointmentKey)
+            } else {
+                activeKeys.delete(appointmentKey)
+            }
+
+            this.activeSingleDateAppointmentKeys = [...activeKeys]
+            this.saveSingleDateAppointmentActivation()
+        },
+        singleDateActivationPayload() {
+            const activeKeys = this.activeSingleDateAppointmentKeySet
+
+            return this.activeDatasetSingleDateCourses
+                .flatMap(courseItem => (courseItem.appointments || []).map(appointment => ({
+                    entry_ids: Array.isArray(appointment.entry_ids) ? appointment.entry_ids : [],
+                    active: activeKeys.has(this.singleDateAppointmentKey(courseItem, appointment)),
+                })))
+                .filter(appointment => appointment.entry_ids.length > 0)
+        },
+        async saveSingleDateAppointmentActivation() {
+            this.savingSingleDateActivation = true
+            this.singleDateActivationError = ''
+
+            try {
+                const response = await axios.put('/api/admin/students-timetables/imports/single-date-appointments', {
+                    appointments: this.singleDateActivationPayload(),
+                })
+                this.mainDataset = response.data.main_dataset || this.mainDataset
+                this.syncSingleDateAppointmentActivation()
+            } catch {
+                this.singleDateActivationError = 'Die Aktivierung der Einzeltermine konnte nicht gespeichert werden.'
+            } finally {
+                this.savingSingleDateActivation = false
+            }
+        },
+        singleDateAppointmentKey(courseItem, appointment) {
+            return [
+                courseItem?.name || '',
+                appointment?.date || '',
+                appointment?.period || '',
+                appointment?.starts_at || '',
+                appointment?.subject || '',
+                appointment?.teacher || '',
+            ].join('|')
+        },
+        singleDateAppointmentTimeLabel(appointment) {
+            const period = appointment?.period ? `${appointment.period}. Std.` : ''
+            const timeRange = [appointment?.starts_at, appointment?.ends_at].filter(Boolean).join('-')
+
+            return [period, timeRange].filter(Boolean).join(' ')
+        },
+        formatDateWithWeekdayLabel(value) {
+            const weekdayLabel = this.weekdayLabelForDate(value)
+            const dateLabel = this.formatDateLabel(value)
+
+            return [weekdayLabel, dateLabel].filter(Boolean).join(', ')
+        },
+        weekdayLabelForDate(value) {
+            const dateValue = String(value || '').trim()
+            const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+
+            if (!match) return ''
+
+            const [, year, month, day] = match
+            const weekday = new Date(Number(year), Number(month) - 1, Number(day)).getDay()
+            const weekdays = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+
+            return weekdays[weekday] || 'So'
+        },
+        formatDateLabel(value) {
+            const dateValue = String(value || '').trim()
+            const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/u)
+
+            if (match) return `${match[3]}.${match[2]}.${match[1]}`
+
+            return dateValue
         },
         importIsProcessing(importItem) {
             return ['pending', 'running', 'deleting'].includes(importItem?.import_status)
@@ -731,5 +1004,39 @@ export default {
     gap: 8px;
     width: 100%;
     min-width: 0;
+}
+
+.single-date-saving-dots {
+    padding: 0;
+}
+
+.single-date-saving-dots :deep(.loading-animation) {
+    padding: 0;
+}
+
+.single-date-saving-dots :deep(.loading-dots) {
+    gap: 5px;
+}
+
+.single-date-saving-dots :deep(.dot) {
+    width: 7px;
+    height: 7px;
+}
+
+.single-date-course-row td {
+    background: rgba(251, 140, 0, 0.08);
+    border-top: 1px solid rgba(251, 140, 0, 0.18);
+}
+
+.single-date-select-col {
+    width: 116px;
+    min-width: 116px;
+    white-space: nowrap;
+}
+
+.single-date-course-row--inactive td,
+.single-date-appointment-row--inactive td {
+    color: rgba(0, 0, 0, 0.46);
+    text-decoration: line-through;
 }
 </style>

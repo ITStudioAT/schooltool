@@ -180,71 +180,58 @@
                         Keine Kurse ausgewählt.
                     </v-alert>
 
-                    <v-table v-if="availableCourses.length" density="compact" class="robot-course-table">
-                        <thead>
-                            <tr>
-                                <th class="robot-course-table__select">Aktiv</th>
-                                <th>Code</th>
-                                <th>Bezeichnung</th>
-                                <th>Zweig</th>
-                                <th class="text-right">Std.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="course in availableCourses"
-                                :key="course.key"
-                                :class="{ 'robot-course-table__row--disabled': !courseSelected(course) }">
-                                <td class="robot-course-table__select">
-                                    <v-checkbox
-                                        :model-value="courseSelected(course)"
-                                        :aria-label="`${course.code} auswählen`"
-                                        density="compact"
-                                        color="primary"
-                                        hide-details
-                                        @update:model-value="setCourseSelected(course, $event)" />
-                                </td>
-                                <td class="font-weight-bold">{{ course.code }}</td>
-                                <td>{{ course.name }}</td>
-                                <td>{{ course.branch }}</td>
-                                <td class="text-right">{{ formatHours(course.hours) }}</td>
-                            </tr>
-                        </tbody>
-                    </v-table>
+                    <div v-if="availableCourses.length" class="robot-course-columns">
+                        <v-table
+                            v-for="(courseColumn, columnIndex) in availableCourseColumns"
+                            :key="`course-column-${columnIndex}`"
+                            density="compact"
+                            class="robot-course-table">
+                            <thead>
+                                <tr>
+                                    <th class="robot-course-table__select">Aktiv</th>
+                                    <th>Code</th>
+                                    <th>Bezeichnung</th>
+                                    <th>Zweig</th>
+                                    <th class="text-right">Std.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="course in courseColumn"
+                                    :key="course.key"
+                                    :class="{ 'robot-course-table__row--disabled': !courseSelected(course) }">
+                                    <td class="robot-course-table__select">
+                                        <v-checkbox
+                                            :model-value="courseSelected(course)"
+                                            :aria-label="`${course.code} auswählen`"
+                                            density="compact"
+                                            color="primary"
+                                            hide-details
+                                            @update:model-value="setCourseSelected(course, $event)" />
+                                    </td>
+                                    <td class="font-weight-bold">{{ course.code }}</td>
+                                    <td>{{ course.name }}</td>
+                                    <td>{{ course.branch }}</td>
+                                    <td class="text-right">{{ formatHours(course.hours) }}</td>
+                                </tr>
+                            </tbody>
+                        </v-table>
+                    </div>
                 </div>
 
                 <div class="robot-generator">
-                    <v-btn
-                        color="primary"
-                        prepend-icon="mdi-calendar-clock"
-                        :disabled="loading || !selectedCourses.length"
-                        @click="generateTimetables">
-                        Stundenpläne erstellen
-                    </v-btn>
+                    <div class="robot-generator__actions">
+                        <v-btn
+                            color="primary"
+                            prepend-icon="mdi-calendar-clock"
+                            :disabled="loading || !selectedCourses.length"
+                            @click="generateTimetables">
+                            Stundenpläne erstellen
+                        </v-btn>
+                    </div>
 
                     <v-alert v-if="generationError" type="error" variant="tonal" class="mt-3 mb-0">
                         {{ generationError }}
-                    </v-alert>
-
-                    <v-alert
-                        v-if="generationProblems.length"
-                        type="warning"
-                        variant="tonal"
-                        density="compact"
-                        class="mt-3 mb-0">
-                        <div class="robot-problems__title">Probleme</div>
-                        <ul class="robot-problems">
-                            <li v-for="problem in generationProblems" :key="problem">
-                                <div>{{ problemSummary(problem) }}</div>
-                                <ul v-if="problemDetails(problem).length" class="robot-problems__details">
-                                    <li
-                                        v-for="detail in problemDetails(problem)"
-                                        :key="`${problem}-${detail}`">
-                                        {{ detail }}
-                                    </li>
-                                </ul>
-                            </li>
-                        </ul>
                     </v-alert>
 
                     <div v-if="generatedTimetables.length" class="robot-generated">
@@ -314,31 +301,45 @@
                                         :class="{
                                             'robot-generated-cell--filled': timetable.slots[slotKey(weekday.value, time.value)],
                                             'robot-generated-cell--occasional': timetable.slots[slotKey(weekday.value, time.value)]?.isOccasional,
+                                            'robot-generated-cell--affected': timetable.slots[slotKey(weekday.value, time.value)]?.isConflictPreview,
                                             'robot-generated-cell--conflict': generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)]).length,
                                         }">
                                         <template v-if="timetable.slots[slotKey(weekday.value, time.value)]">
-                                            <div class="robot-generated-cell__code">
-                                                {{ timetable.slots[slotKey(weekday.value, time.value)].code }}
-                                            </div>
-                                            <div
-                                                v-if="generatedSlotDateLabel(timetable.slots[slotKey(weekday.value, time.value)])"
-                                                class="robot-generated-cell__date">
-                                                {{ generatedSlotDateLabel(timetable.slots[slotKey(weekday.value, time.value)]) }}
-                                            </div>
-                                            <div
-                                                v-if="generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)])"
-                                                class="robot-generated-cell__details">
-                                                {{ generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)]) }}
-                                            </div>
-                                            <div
-                                                v-if="generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)]).length"
-                                                class="robot-generated-cell__conflicts">
+                                            <template v-if="generatedSlotConflictBlocks(timetable.slots[slotKey(weekday.value, time.value)]).length">
                                                 <div
-                                                    v-for="conflict in generatedSlotConflicts(timetable.slots[slotKey(weekday.value, time.value)])"
-                                                    :key="`${timetable.key}-${weekday.value}-${time.value}-${conflict}`">
-                                                    Konflikt: {{ conflict }}
+                                                    v-for="block in generatedSlotConflictBlocks(timetable.slots[slotKey(weekday.value, time.value)])"
+                                                    :key="`${timetable.key}-${weekday.value}-${time.value}-${block.key}`"
+                                                    class="robot-generated-cell__conflict-block">
+                                                    <div class="robot-generated-cell__code">
+                                                        {{ block.code }}
+                                                    </div>
+                                                    <div
+                                                        v-if="generatedSlotDateLabel(block)"
+                                                        class="robot-generated-cell__date">
+                                                        {{ generatedSlotDateLabel(block) }}
+                                                    </div>
+                                                    <div
+                                                        v-if="generatedSlotDetails(block)"
+                                                        class="robot-generated-cell__details">
+                                                        {{ generatedSlotDetails(block) }}
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            </template>
+                                            <template v-else>
+                                                <div class="robot-generated-cell__code">
+                                                    {{ timetable.slots[slotKey(weekday.value, time.value)].code }}
+                                                </div>
+                                                <div
+                                                    v-if="generatedSlotDateLabel(timetable.slots[slotKey(weekday.value, time.value)])"
+                                                    class="robot-generated-cell__date">
+                                                    {{ generatedSlotDateLabel(timetable.slots[slotKey(weekday.value, time.value)]) }}
+                                                </div>
+                                                <div
+                                                    v-if="generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)])"
+                                                    class="robot-generated-cell__details">
+                                                    {{ generatedSlotDetails(timetable.slots[slotKey(weekday.value, time.value)]) }}
+                                                </div>
+                                            </template>
                                         </template>
                                     </div>
                                 </template>
@@ -388,7 +389,7 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config']),
         semesterOptions() {
-            return Array.from({ length: 9 }, (value, index) => ({
+            return Array.from({ length: 8 }, (value, index) => ({
                 title: `Semester ${index + 1}`,
                 value: index + 1,
             }))
@@ -487,8 +488,16 @@ export default {
                 .filter(subject => Number(subject.semester) === Number(this.selection.semester))
                 .filter(subject => this.subjectMatchesSelectedBranch(subject))
                 .filter(subject => this.subjectMatchesSelectedChoices(subject))
-                .map(subject => this.selectedCourseFromSubject(subject))
+                .flatMap(subject => this.selectedCoursesFromSubject(subject))
                 .sort((firstCourse, secondCourse) => this.compareCourses(firstCourse, secondCourse))
+        },
+        availableCourseColumns() {
+            const splitIndex = Math.ceil(this.availableCourses.length / 2)
+
+            return [
+                this.availableCourses.slice(0, splitIndex),
+                this.availableCourses.slice(splitIndex),
+            ].filter(courseColumn => courseColumn.length)
         },
         selectedCourses() {
             return this.availableCourses.filter(course => this.courseSelected(course))
@@ -527,15 +536,9 @@ export default {
                 })
         },
         generatedWeekdays() {
-            const hasGeneratedSlots = this.generatedTimetables.some(timetable => Object.keys(timetable.slots).length > 0)
-            if (this.generatedTimetables.length && !hasGeneratedSlots) {
-                return this.weekdayOptions.filter(weekday => this.constraintSelected('availableWeekdays', weekday.value))
-            }
-
             return this.weekdayOptions.filter(weekday =>
-                this.generatedTimetables.some(timetable =>
-                    this.generatedTimes.some(time => timetable.slots[this.slotKey(weekday.value, time.value)]),
-                ),
+                Number(weekday.value) <= 5
+                    || (Number(weekday.value) === 6 && this.constraintSelected('availableWeekdays', weekday.value)),
             )
         },
         generatedTimes() {
@@ -707,13 +710,19 @@ export default {
                 })
             }
 
-            const rankedCombinations = this.rankTimetableCombinations(combinations)
+            const rankedCombinations = this.visibleTimetableCombinations(this.rankTimetableCombinations(combinations))
+            if (!rankedCombinations.length) {
+                this.generationError = 'Es gibt keinen Stundenplan ohne fehlende Kurse.'
+
+                return
+            }
+
             const bestCombinations = rankedCombinations.filter(combination =>
                 combination.scheduledCourseCount === rankedCombinations[0].scheduledCourseCount
                     && combination.scheduledSlotCount === rankedCombinations[0].scheduledSlotCount,
             )
 
-            this.generatedTimetables = bestCombinations.slice(0, 10).map((combination, index) => ({
+            this.generatedTimetables = bestCombinations.map((combination, index) => ({
                 key: `generated-${index + 1}`,
                 number: index + 1,
                 ...this.timetableWithOccasionalSlots(combination, candidateSets),
@@ -727,6 +736,12 @@ export default {
         },
         generatedSlotDetails(slot) {
             const courseGroup = slot?.courseGroup || {}
+            const alternativeLabels = this.generatedSlotAlternativeLabels(slot)
+
+            if (alternativeLabels.length > 1) {
+                return alternativeLabels.join('\noder\n')
+            }
+
             const label = String(slot?.sourceLabel || this.courseGroupOptionLabel(courseGroup) || '').trim()
             const teacher = String(courseGroup?.teacher || '').trim()
             const rooms = this.courseGroupRoomsLabel(courseGroup)
@@ -735,6 +750,14 @@ export default {
                 .filter(Boolean)
                 .filter((value, index, values) => values.indexOf(value) === index)
                 .join(' · ')
+        },
+        generatedSlotAlternativeLabels(slot) {
+            return Array.isArray(slot?.alternativeLabels)
+                ? slot.alternativeLabels
+                    .map(label => String(label || '').trim())
+                    .filter(Boolean)
+                    .filter((label, index, labels) => labels.indexOf(label) === index)
+                : []
         },
         generatedSlotConflicts(slot) {
             return Array.isArray(slot?.conflicts)
@@ -745,6 +768,41 @@ export default {
                     .map(conflict => conflict.label)
                     .filter(Boolean)
                 : []
+        },
+        generatedSlotConflictBlocks(slot) {
+            if (!Array.isArray(slot?.conflicts) || !slot.conflicts.length) return []
+
+            const conflictBlocks = slot.conflicts
+                .toSorted((firstConflict, secondConflict) =>
+                    String(firstConflict.sortValue || '').localeCompare(String(secondConflict.sortValue || '')),
+                )
+                .map(conflict => this.generatedSlotConflictBlock(conflict))
+                .filter(block => block.code || this.generatedSlotDetails(block))
+
+            return [
+                ...conflictBlocks,
+                this.generatedSlotConflictBlock({
+                    ...slot,
+                    sortValue: `zz-${slot?.code || ''}`,
+                }),
+            ]
+                .filter(block => block.code || this.generatedSlotDetails(block))
+        },
+        generatedSlotConflictBlock(source) {
+            return {
+                key: source?.key || source?.label || [
+                    source?.code,
+                    source?.sourceLabel,
+                    source?.courseGroup?.weekday,
+                    source?.courseGroup?.hour,
+                ].filter(Boolean).join('|'),
+                code: source?.code || '',
+                name: source?.name || '',
+                sourceLabel: source?.sourceLabel || this.courseGroupSourceLabel(source?.courseGroup),
+                alternativeLabels: source?.alternativeLabels || [],
+                courseGroup: source?.courseGroup || {},
+                isOccasional: Boolean(source?.isOccasional),
+            }
         },
         courseGroupRoomsLabel(courseGroup) {
             if (Array.isArray(courseGroup?.rooms)) {
@@ -838,9 +896,9 @@ export default {
                 ))
                 .sort((firstOption, secondOption) => this.compareTimetableOptions(firstOption, secondOption))
 
-            if (!completeOptions) return entries
+            if (!completeOptions) return this.mergeTimetableOptionsBySlots(entries)
 
-            return this.completeTimetableOptionsForCourse(course, entries)
+            return this.mergeTimetableOptionsBySlots(this.completeTimetableOptionsForCourse(course, entries))
         },
         isOccasionalCourseGroup(courseGroup) {
             const datesCount = this.courseGroupDatesCount(courseGroup)
@@ -870,13 +928,15 @@ export default {
                 )
             }
 
+            if (this.entriesContainAlternativeGroupChoices(entries)) {
+                return entries
+            }
+
             return entries
                 .filter(entry => entry.courseGroups.length >= requiredSlotCount)
                 .sort((firstOption, secondOption) => this.compareTimetableOptions(firstOption, secondOption))
         },
         buildCourseEntryCombinations(course, entries, requiredSlotCount, entryIndex, selectedEntries, combinations) {
-            if (combinations.length >= 30) return
-
             const selectedSlotCount = selectedEntries
                 .reduce((total, entry) => total + entry.courseGroups.length, 0)
 
@@ -890,7 +950,7 @@ export default {
 
             for (let index = entryIndex; index < entries.length; index++) {
                 const entry = entries[index]
-                if (this.courseEntriesOverlap(selectedEntries, entry)) {
+                if (this.courseEntriesOverlap(selectedEntries, entry) || this.courseEntriesAreAlternatives(selectedEntries, entry)) {
                     continue
                 }
 
@@ -905,12 +965,68 @@ export default {
             }
         },
         combinedCourseOption(course, entries) {
+            const label = entries.map(entry => entry.label).join(' + ')
+
             return {
                 key: entries.map(entry => entry.key).join('|'),
-                label: entries.map(entry => entry.label).join(' + '),
+                label,
+                alternativeLabels: [label],
+                slotAlternativeLabels: this.combinedCourseOptionSlotAlternativeLabels(entries),
                 course,
                 courseGroups: entries.flatMap(entry => entry.courseGroups),
             }
+        },
+        combinedCourseOptionSlotAlternativeLabels(entries) {
+            return entries.reduce((slotLabels, entry) => ({
+                ...slotLabels,
+                ...this.optionSlotAlternativeLabels(entry),
+            }), {})
+        },
+        mergeTimetableOptionsBySlots(options) {
+            const optionsBySlotSignature = options.reduce((mergedOptions, option) => {
+                const signature = this.timetableOptionSlotSignature(option)
+
+                mergedOptions[signature] ??= {
+                    ...option,
+                    alternativeLabels: [],
+                    slotAlternativeLabels: {},
+                }
+
+                mergedOptions[signature].alternativeLabels = this.uniqueProblems([
+                    ...mergedOptions[signature].alternativeLabels,
+                    ...(option.alternativeLabels || [option.label]),
+                ])
+                Object.entries(this.optionSlotAlternativeLabels(option)).forEach(([slotKey, labels]) => {
+                    mergedOptions[signature].slotAlternativeLabels[slotKey] = this.uniqueProblems([
+                        ...(mergedOptions[signature].slotAlternativeLabels[slotKey] || []),
+                        ...labels,
+                    ])
+                })
+
+                return mergedOptions
+            }, {})
+
+            return Object.values(optionsBySlotSignature)
+                .map(option => ({
+                    ...option,
+                    label: option.alternativeLabels[0] || option.label,
+                }))
+                .sort((firstOption, secondOption) => this.compareTimetableOptions(firstOption, secondOption))
+        },
+        optionSlotAlternativeLabels(option) {
+            if (option.slotAlternativeLabels) return option.slotAlternativeLabels
+
+            return option.courseGroups.reduce((labelsBySlot, courseGroup) => {
+                labelsBySlot[this.slotKey(courseGroup.weekday, courseGroup.hour)] = option.alternativeLabels || [option.label]
+
+                return labelsBySlot
+            }, {})
+        },
+        timetableOptionSlotSignature(option) {
+            return option.courseGroups
+                .map(courseGroup => this.slotKey(courseGroup.weekday, courseGroup.hour))
+                .sort()
+                .join('|')
         },
         courseEntriesOverlap(selectedEntries, nextEntry) {
             const usedSlotKeys = new Set(selectedEntries.flatMap(entry =>
@@ -921,22 +1037,136 @@ export default {
                 usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)),
             )
         },
+        courseEntriesAreAlternatives(selectedEntries, nextEntry) {
+            const nextAlternativeKey = this.courseEntryAlternativeKey(nextEntry)
+            if (!nextAlternativeKey) return false
+
+            return selectedEntries.some(entry => this.courseEntryAlternativeKey(entry) === nextAlternativeKey)
+        },
+        entriesContainAlternativeGroupChoices(entries) {
+            const alternativeKeys = entries
+                .map(entry => this.courseEntryAlternativeKey(entry))
+                .filter(Boolean)
+
+            return alternativeKeys.some((alternativeKey, index) => alternativeKeys.indexOf(alternativeKey) !== index)
+        },
+        courseEntryAlternativeKey(entry) {
+            const label = String(entry?.label || '')
+                .trim()
+                .toLocaleUpperCase('de-AT')
+
+            const normalizedLabel = label.replace(/\s+/gu, '')
+
+            if (/(^|-)GRP\d+(?=-|$)/u.test(normalizedLabel)) {
+                return normalizedLabel
+                    .replace(/(^|-)GRP\d+(?=-|$)/u, '$1')
+                    .replace(/-+/gu, '-')
+                    .replace(/^-|-$/gu, '')
+            }
+
+            const leadingCourseCode = normalizedLabel.match(/^([A-ZÄÖÜ]+[0-9]+)(?=-)/u)?.[1] || ''
+
+            return leadingCourseCode
+        },
         courseGroupMatchesCourse(courseGroup, course) {
             const courseAliases = this.courseCodeAliases(course)
             if (!courseAliases.length) return false
 
             const courseGroupCodes = this.courseGroupCodes(courseGroup)
 
-            return courseAliases.some(courseAlias => courseGroupCodes.includes(courseAlias))
+            if (!courseAliases.some(courseAlias => courseGroupCodes.includes(courseAlias))) {
+                return false
+            }
+
+            const leadingCourseCodes = this.courseGroupLeadingCodes(courseGroup)
+
+            if (this.courseGroupHasConflictingModuleCode(leadingCourseCodes, courseAliases)) {
+                return false
+            }
+
+            return true
+        },
+        courseGroupHasConflictingModuleCode(leadingCourseCodes, courseAliases) {
+            const aliasesWithModule = courseAliases
+                .map(alias => this.courseCodeModuleParts(alias))
+                .filter(parts => parts.module)
+
+            if (!aliasesWithModule.length) return false
+
+            return leadingCourseCodes
+                .map(code => this.courseCodeModuleParts(code))
+                .filter(parts => parts.module)
+                .some(parts => {
+                    const aliasesWithSameBase = aliasesWithModule.filter(aliasParts => aliasParts.base === parts.base)
+
+                    return aliasesWithSameBase.length
+                        && !aliasesWithSameBase.some(aliasParts => aliasParts.module === parts.module)
+                })
+        },
+        courseCodeModuleParts(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const match = normalizedValue.match(/^([A-ZÄÖÜ]+)(\d+)$/u)
+
+            if (!match) {
+                return {
+                    base: this.normalizedCourseModuleBase(normalizedValue),
+                    module: '',
+                }
+            }
+
+            return {
+                base: this.normalizedCourseModuleBase(match[1]),
+                module: match[2],
+            }
+        },
+        normalizedCourseModuleBase(value) {
+            const normalizedValue = this.normalizedCourseCode(value)
+            const mapping = this.activeSubjectMappings().find(subjectMapping =>
+                [
+                    subjectMapping?.json_subject,
+                    subjectMapping?.tt_subject,
+                ]
+                    .map(subject => this.normalizedCourseCode(subject))
+                    .includes(normalizedValue),
+            )
+
+            return this.normalizedCourseCode(mapping?.json_subject) || normalizedValue
+        },
+        courseGroupLeadingCodes(courseGroup) {
+            return [
+                courseGroup?.class_name,
+                courseGroup?.display_label,
+                courseGroup?.title,
+            ]
+                .flatMap(value => this.leadingCourseCodesFromValue(value))
+                .map(value => this.normalizedCourseCode(value))
+                .filter(Boolean)
+                .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        courseGroupCodes(courseGroup) {
+            return [
+                ...this.courseGroupLeadingCodes(courseGroup),
+                ...[
+                    courseGroup?.course,
+                    courseGroup?.subject,
+                ].flatMap(value => this.courseCodeTokensFromValue(value)),
+            ]
+                .map(value => this.normalizedCourseCode(value))
+                .filter(Boolean)
+                .filter((value, index, values) => values.indexOf(value) === index)
         },
         courseCodeAliases(course) {
             return [
-                course?.code,
                 course?.ttCode,
                 ...(Array.isArray(course?.ttCodes) ? course.ttCodes : []),
+                course?.code,
                 this.defaultTimetableCodeAlias(course?.code),
             ]
                 .flatMap(value => this.courseCodeAliasParts(value))
+                .flatMap(value => [
+                    value,
+                    this.defaultTimetableCodeAlias(value),
+                ])
                 .map(value => this.normalizedCourseCode(value))
                 .filter(Boolean)
                 .filter((value, index, values) => values.indexOf(value) === index)
@@ -950,7 +1180,6 @@ export default {
                 GS: 'GPB',
                 GW: 'GWB',
                 ME: 'MU',
-                ÖKO: 'OKON',
                 LPT: 'LET',
             }
             const mappedBase = aliases[match[1]]
@@ -965,22 +1194,6 @@ export default {
                 .split('/')
                 .map(part => part.trim())
                 .filter(Boolean)
-        },
-        courseGroupCodes(courseGroup) {
-            return [
-                ...[
-                    courseGroup?.class_name,
-                    courseGroup?.display_label,
-                    courseGroup?.title,
-                ].flatMap(value => this.leadingCourseCodesFromValue(value)),
-                ...[
-                    courseGroup?.course,
-                    courseGroup?.subject,
-                ].flatMap(value => this.courseCodeTokensFromValue(value)),
-            ]
-                .map(value => this.normalizedCourseCode(value))
-                .filter(Boolean)
-                .filter((value, index, values) => values.indexOf(value) === index)
         },
         leadingCourseCodesFromValue(value) {
             const firstSegment = String(value || '')
@@ -1010,6 +1223,14 @@ export default {
                 || courseGroup?.subject
                 || 'Ohne Bezeichnung',
             )
+        },
+        courseGroupSourceLabel(courseGroup) {
+            return String(
+                courseGroup?.class_name
+                || courseGroup?.display_label
+                || courseGroup?.title
+                || '',
+            ).trim()
         },
         uniqueCourseGroupsBySlot(courseGroups) {
             return Object.values(courseGroups.reduce((groups, courseGroup) => {
@@ -1052,14 +1273,14 @@ export default {
             scheduledCourseKeys,
             combinations,
         ) {
-            if (combinations.length >= 120) return
-
             if (candidateSetIndex >= candidateSets.length) {
                 combinations.push({
                     slots: { ...assignedSlots },
                     problems: this.uniqueProblems(problems),
                     scheduledCourseCount: scheduledCourseKeys.size,
-                    scheduledSlotCount: Object.keys(assignedSlots).length,
+                    scheduledSlotCount: Object.values(assignedSlots)
+                        .filter(slot => !slot?.isConflictPreview)
+                        .length,
                 })
 
                 return
@@ -1083,7 +1304,7 @@ export default {
             let placedOption = false
 
             candidateSet.options.forEach(option => {
-                if (combinations.length >= 120 || this.optionHasUsedSlot(option, usedSlotKeys)) {
+                if (this.optionHasUsedSlot(option, usedSlotKeys)) {
                     return
                 }
 
@@ -1099,6 +1320,7 @@ export default {
                     nextAssignedSlots[key] = {
                         ...option.course,
                         sourceLabel: option.label,
+                        alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
                         courseGroup,
                     }
                     nextUsedSlotKeys.add(key)
@@ -1115,10 +1337,16 @@ export default {
                 )
             })
 
+            const assignedSlotsWithConflicts = this.assignedSlotsWithCourseConflicts(
+                candidateSet,
+                assignedSlots,
+                usedSlotKeys,
+            )
+
             this.buildTimetableCombinations(
                 candidateSets,
                 candidateSetIndex + 1,
-                assignedSlots,
+                assignedSlotsWithConflicts,
                 usedSlotKeys,
                 [...problems, this.candidateSetConflictProblemMessage(candidateSet, assignedSlots, usedSlotKeys, placedOption)],
                 scheduledCourseKeys,
@@ -1143,6 +1371,16 @@ export default {
                     return firstCombination.problems.length - secondCombination.problems.length
                 })
         },
+        visibleTimetableCombinations(combinations) {
+            return combinations.filter(combination => !this.timetableCombinationHasMissingCourse(combination))
+        },
+        timetableCombinationHasMissingCourse(combination) {
+            return this.uniqueProblems(combination?.problems || [])
+                .some(problem => this.isMissingCourseVariantProblem(problem))
+        },
+        isMissingCourseVariantProblem(problem) {
+            return String(problem || '').includes(': in dieser Variante nicht eingeplant, damit andere Kurse Platz haben.')
+        },
         timetableWithOccasionalSlots(combination, candidateSets) {
             const slots = { ...combination.slots }
             const problems = [...combination.problems]
@@ -1163,6 +1401,7 @@ export default {
                         slots[key] = {
                             ...candidateSet.course,
                             sourceLabel: option.label,
+                            alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
                             courseGroup,
                             isOccasional: true,
                         }
@@ -1257,7 +1496,87 @@ export default {
             slot.conflicts.push({
                 label,
                 sortValue: `${date || ''}-${String(courseGroup?.hour || '').padStart(2, '0')}-${courseLabel}`,
+                code: course?.code || '',
+                name: course?.name || '',
+                sourceLabel: this.courseGroupSourceLabel(courseGroup),
+                courseGroup,
             })
+        },
+        assignedSlotsWithCourseConflicts(candidateSet, assignedSlots, usedSlotKeys) {
+            const nextAssignedSlots = { ...assignedSlots }
+
+            candidateSet.options.forEach(option => {
+                if (!this.optionHasUsedSlot(option, usedSlotKeys)) {
+                    return
+                }
+
+                const conflictEntries = this.optionCourseConflictEntries(option, assignedSlots, usedSlotKeys)
+                if (!conflictEntries.length) {
+                    return
+                }
+
+                option.courseGroups.forEach(courseGroup => {
+                    const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
+
+                    if (usedSlotKeys.has(key)) {
+                        if (!this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup)) return
+
+                        const existingSlot = nextAssignedSlots[key]
+                        nextAssignedSlots[key] = {
+                            ...existingSlot,
+                            conflicts: [...(existingSlot.conflicts || [])],
+                        }
+                        this.trackGeneratedSlotConflict(nextAssignedSlots[key], candidateSet.course, courseGroup)
+
+                        return
+                    }
+
+                    const existingSlot = nextAssignedSlots[key]
+                    if (existingSlot && !existingSlot.isConflictPreview) {
+                        return
+                    }
+
+                    nextAssignedSlots[key] = {
+                        ...option.course,
+                        sourceLabel: option.label,
+                        alternativeLabels: this.optionAlternativeLabelsForSlot(option, key),
+                        courseGroup,
+                        isConflictPreview: true,
+                        conflicts: [],
+                    }
+                })
+            })
+
+            return nextAssignedSlots
+        },
+        optionCourseConflictEntries(option, assignedSlots, usedSlotKeys) {
+            return option.courseGroups
+                .filter(courseGroup => usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)))
+                .filter(courseGroup => this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup))
+                .map(courseGroup => {
+                    const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
+                    const assignedSlot = assignedSlots[key]
+                    const label = [
+                        this.courseProblemLabel(assignedSlot),
+                        this.courseGroupTimeRangeLabel(assignedSlot?.courseGroup || courseGroup),
+                    ]
+                        .filter(Boolean)
+                        .join(' ')
+
+                    return {
+                        label,
+                        sortValue: `${String(courseGroup?.weekday || '').padStart(2, '0')}-${String(courseGroup?.hour || '').padStart(2, '0')}-${label}`,
+                        code: assignedSlot?.code || '',
+                        name: assignedSlot?.name || '',
+                        sourceLabel: assignedSlot?.sourceLabel || this.courseGroupSourceLabel(assignedSlot?.courseGroup),
+                        alternativeLabels: assignedSlot?.alternativeLabels || [],
+                        courseGroup: assignedSlot?.courseGroup,
+                    }
+                })
+                .filter(conflict => conflict.label)
+                .filter((conflict, index, conflicts) =>
+                    conflicts.findIndex(existingConflict => existingConflict.label === conflict.label) === index,
+                )
         },
         occasionalCourseConflictProblemMessage(conflict) {
             const courseLabel = this.courseProblemLabel(conflict.course)
@@ -1284,6 +1603,7 @@ export default {
             return this.uniqueProblems(candidateSet.options.flatMap(option =>
                 option.courseGroups
                     .filter(courseGroup => usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)))
+                    .filter(courseGroup => this.assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup))
                     .map(courseGroup => {
                         const key = this.slotKey(courseGroup.weekday, courseGroup.hour)
                         const assignedSlot = assignedSlots[key]
@@ -1387,12 +1707,34 @@ export default {
                 usedSlotKeys.has(this.slotKey(courseGroup.weekday, courseGroup.hour)),
             )
         },
+        assignedSlotConfrontsCourseGroup(assignedSlots, courseGroup) {
+            const assignedSlot = assignedSlots[this.slotKey(courseGroup.weekday, courseGroup.hour)]
+            if (!assignedSlot) return false
+
+            return this.courseGroupsConfront(assignedSlot.courseGroup, courseGroup)
+        },
+        optionAlternativeLabelsForSlot(option, slotKey) {
+            return option.slotAlternativeLabels?.[slotKey] || option.alternativeLabels || [option.label]
+        },
         courseGroupsOverlap(leftCourseGroup, rightCourseGroup) {
             return Number(leftCourseGroup?.weekday) === Number(rightCourseGroup?.weekday)
                 && Number(leftCourseGroup?.hour) === Number(rightCourseGroup?.hour)
         },
+        courseGroupsConfront(leftCourseGroup, rightCourseGroup) {
+            return this.courseGroupsOverlap(leftCourseGroup, rightCourseGroup)
+                && this.courseGroupDatesOverlap(leftCourseGroup, rightCourseGroup)
+        },
+        courseGroupDatesOverlap(leftCourseGroup, rightCourseGroup) {
+            const leftDates = this.courseGroupDates(leftCourseGroup)
+            const rightDates = this.courseGroupDates(rightCourseGroup)
+
+            if (!leftDates.length || !rightDates.length) return true
+
+            return leftDates.some(date => rightDates.includes(date))
+        },
         courseGroupTimeRangeLabel(courseGroup) {
-            const schoolHour = this.schoolHours.find(configuredSchoolHour =>
+            const schoolHours = Array.isArray(this.schoolHours) ? this.schoolHours : []
+            const schoolHour = schoolHours.find(configuredSchoolHour =>
                 Number(configuredSchoolHour?.hour) === Number(courseGroup?.hour),
             )
 
@@ -1489,6 +1831,7 @@ export default {
             return true
         },
         selectedCourseFromSubject(subject) {
+            const selectedCourseCode = this.selectedCourseCode(subject)
             const timetableCodes = this.selectedCourseTimetableCodes(subject)
 
             return {
@@ -1499,14 +1842,35 @@ export default {
                     subject.json_code || '',
                     subject.json_subject || '',
                     subject.name || '',
+                    selectedCourseCode,
                 ].join('|'),
-                code: this.selectedCourseCode(subject),
+                code: selectedCourseCode,
                 ttCode: timetableCodes[0] || '',
                 ttCodes: timetableCodes,
                 name: this.selectedCourseName(subject),
                 branch: this.selectedCourseBranch(subject),
                 hours: Number(subject.hours_per_week || 0),
             }
+        },
+        selectedCoursesFromSubject(subject) {
+            return this.subjectCourseVariants(subject)
+                .map(courseSubject => this.selectedCourseFromSubject(courseSubject))
+        },
+        subjectCourseVariants(subject) {
+            if (this.isReligionSubject(subject) || this.isLanguageSubject(subject)) {
+                return [subject]
+            }
+
+            const courseCodes = this.courseCodeAliasParts(subject.json_code)
+            if (courseCodes.length <= 1) return [subject]
+
+            const splitHours = Number(subject.hours_per_week || 0) / courseCodes.length
+
+            return courseCodes.map(courseCode => ({
+                ...subject,
+                json_code: courseCode,
+                hours_per_week: Number.isFinite(splitHours) ? splitHours : subject.hours_per_week,
+            }))
         },
         selectedCourseCode(subject) {
             if (this.isReligionSubject(subject)) return `${this.selection.religion}${this.subjectModuleNumber(subject)}`
@@ -1519,15 +1883,60 @@ export default {
             const jsonSubjectAliases = this.subjectMappingJsonAliases(subject)
             const mappingCodes = this.activeSubjectMappings()
                 .filter(mapping => jsonSubjectAliases.includes(this.normalizedCourseCode(mapping.json_subject)))
-                .map(mapping => this.timetableCodeWithModule(mapping.tt_subject, moduleNumber))
+                .flatMap(mapping => this.timetableCodesForSubjectMapping(mapping, subject, moduleNumber))
 
             return [
                 ...mappingCodes,
-                this.timetableCodeWithModule(subject.tt_subject, moduleNumber),
+                ...this.timetableCodesForMappedSubject(subject.tt_subject, moduleNumber),
             ]
                 .map(value => this.normalizedCourseCode(value))
                 .filter(Boolean)
                 .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        timetableCodesForSubjectMapping(mapping, subject, fallbackModuleNumber) {
+            const moduleNumbers = this.selectedSubjectMappedModuleNumbers(subject, mapping.json_subject)
+            const mappedModuleNumbers = moduleNumbers.length ? moduleNumbers : [fallbackModuleNumber]
+
+            return mappedModuleNumbers.flatMap(moduleNumber =>
+                this.timetableCodesForMappedSubject(mapping.tt_subject, moduleNumber),
+            )
+        },
+        selectedSubjectMappedModuleNumbers(subject, jsonSubject) {
+            const normalizedJsonSubject = this.normalizedCourseModuleBase(jsonSubject)
+
+            return this.selectedCourseCodeParts(subject)
+                .map(code => this.courseCodeModuleParts(code))
+                .filter(parts => parts.module && this.normalizedCourseModuleBase(parts.base) === normalizedJsonSubject)
+                .map(parts => parts.module)
+                .filter((moduleNumber, index, moduleNumbers) => moduleNumbers.indexOf(moduleNumber) === index)
+        },
+        selectedCourseCodeParts(subject) {
+            return [
+                subject.json_code,
+                this.selectedCourseCode(subject),
+            ]
+                .flatMap(value => this.courseCodeAliasParts(value))
+                .map(value => this.normalizedCourseCode(value))
+                .filter(Boolean)
+                .filter((value, index, values) => values.indexOf(value) === index)
+        },
+        timetableCodesForMappedSubject(value, moduleNumber) {
+            const exactCode = this.normalizedCourseCode(value)
+            const moduleCode = this.normalizedCourseCode(this.timetableCodeWithModule(value, moduleNumber))
+            if (!exactCode) return []
+
+            return [
+                moduleCode,
+                exactCode !== moduleCode && this.timetableCourseCodeExists(exactCode) ? exactCode : '',
+            ]
+        },
+        timetableCourseCodeExists(code) {
+            const normalizedCode = this.normalizedCourseCode(code)
+            if (!normalizedCode) return false
+
+            const courseGroups = Array.isArray(this.configuredCourseGroups) ? this.configuredCourseGroups : []
+
+            return courseGroups.some(courseGroup => this.courseGroupCodes(courseGroup).includes(normalizedCode))
         },
         subjectMappingJsonAliases(subject) {
             return [
@@ -1680,6 +2089,11 @@ export default {
     border-top: 1px solid rgba(15, 23, 42, 0.1);
 }
 
+.robot-generator__actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
 .robot-generated {
     margin-top: 14px;
 }
@@ -1761,6 +2175,11 @@ export default {
     color: #7c2d12;
 }
 
+.robot-generated-cell--affected {
+    background: #fed7aa;
+    color: #7c2d12;
+}
+
 .robot-generated-cell--conflict {
     background: #fecaca;
     color: #7f1d1d;
@@ -1784,6 +2203,7 @@ export default {
     line-height: 1.12;
     opacity: 0.78;
     overflow-wrap: anywhere;
+    white-space: pre-line;
 }
 
 .robot-generated-cell__conflicts {
@@ -1792,6 +2212,12 @@ export default {
     font-weight: 650;
     line-height: 1.12;
     overflow-wrap: anywhere;
+}
+
+.robot-generated-cell__conflict-block + .robot-generated-cell__conflict-block {
+    margin-top: 6px;
+    padding-top: 5px;
+    border-top: 1px solid rgba(127, 29, 29, 0.24);
 }
 
 .robot-constraints {
@@ -1852,6 +2278,13 @@ export default {
     font-weight: 750;
 }
 
+.robot-course-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: start;
+}
+
 .robot-course-table {
     border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 8px;
@@ -1879,6 +2312,10 @@ export default {
 
 @media (max-width: 700px) {
     .robot-timetable-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .robot-course-columns {
         grid-template-columns: minmax(0, 1fr);
     }
 }

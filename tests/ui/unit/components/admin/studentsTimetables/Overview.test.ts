@@ -995,6 +995,94 @@ describe('Students timetable overview', () => {
         })).toBe('08:50 - 09:40')
     })
 
+    it('persists and resets the last timetable view state per schoolyear', () => {
+        const methods = (Overview as any).methods
+        const ctx = {
+            selectedSchoolyear: {
+                id: 42,
+            },
+            activeCourseGroupFilterKeys: ['bio-1', 'bio-1', 'inf-1'],
+            selectedRecurrenceWeeks: {
+                1: 2,
+                2: 'extra_dates',
+            },
+            expandedRecurrenceWeeks: {
+                1: true,
+                2: false,
+            },
+            showExtraDatesInSelectedWeeks: {
+                1: true,
+                2: false,
+            },
+            showSaturday: true,
+            defaultTimetableState: methods.defaultTimetableState,
+            currentTimetableState: methods.currentTimetableState,
+            applyTimetableState: methods.applyTimetableState,
+            timetableStorageKey: methods.timetableStorageKey,
+            timetableStorage: methods.timetableStorage,
+            saveLastTimetableState: methods.saveLastTimetableState,
+            restoreLastTimetableState: methods.restoreLastTimetableState,
+            removeSavedTimetableState: methods.removeSavedTimetableState,
+            runTimetableUpdate(action: () => void) {
+                action()
+            },
+        }
+
+        window.localStorage.clear()
+
+        methods.saveLastTimetableState.call(ctx)
+
+        ctx.activeCourseGroupFilterKeys = []
+        ctx.selectedRecurrenceWeeks = {
+            1: 'all_dates',
+            2: 'all_dates',
+        }
+        ctx.expandedRecurrenceWeeks = {
+            1: false,
+            2: false,
+        }
+        ctx.showExtraDatesInSelectedWeeks = {
+            1: false,
+            2: false,
+        }
+        ctx.showSaturday = false
+
+        methods.restoreLastTimetableState.call(ctx)
+
+        expect(ctx.activeCourseGroupFilterKeys).toEqual(['bio-1', 'inf-1'])
+        expect(ctx.selectedRecurrenceWeeks).toEqual({
+            1: 2,
+            2: 'extra_dates',
+        })
+        expect(ctx.expandedRecurrenceWeeks).toEqual({
+            1: true,
+            2: false,
+        })
+        expect(ctx.showExtraDatesInSelectedWeeks).toEqual({
+            1: true,
+            2: false,
+        })
+        expect(ctx.showSaturday).toBe(true)
+
+        methods.resetSavedTimetable.call(ctx)
+
+        expect(window.localStorage.getItem(methods.timetableStorageKey.call(ctx))).toBeNull()
+        expect(ctx.activeCourseGroupFilterKeys).toEqual([])
+        expect(ctx.selectedRecurrenceWeeks).toEqual({
+            1: 'all_dates',
+            2: 'all_dates',
+        })
+        expect(ctx.expandedRecurrenceWeeks).toEqual({
+            1: false,
+            2: false,
+        })
+        expect(ctx.showExtraDatesInSelectedWeeks).toEqual({
+            1: false,
+            2: false,
+        })
+        expect(ctx.showSaturday).toBe(false)
+    })
+
     it('shows the date range for block course labels', () => {
         const methods = (Overview as any).methods
         const ctx = {
@@ -1025,5 +1113,7 @@ describe('Students timetable overview', () => {
         expect(componentSource).toContain('class="timetable-day-column"')
         expect(componentSource).toContain('table-layout: fixed;')
         expect(componentSource).toContain('overflow-wrap: anywhere;')
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/overview-selections')")
+        expect(componentSource).toContain("axios.put('/api/admin/students-timetables/overview-selections'")
     })
 })

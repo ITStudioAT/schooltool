@@ -22,14 +22,24 @@
                         </v-btn>
                     </template>
                 </v-tooltip>
+                <v-btn
+                    color="grey-darken-1"
+                    variant="outlined"
+                    size="small"
+                    prepend-icon="mdi-restore"
+                    :disabled="loading || timetableUpdatePending"
+                    @click="resetSavedTimetable">
+                    Zurücksetzen
+                </v-btn>
                 <v-switch
-                    v-model="showSaturday"
+                    :model-value="showSaturday"
                     color="primary"
                     density="compact"
                     hide-details
                     inset
                     label="Sa"
-                    class="timetable-saturday-switch" />
+                    class="timetable-saturday-switch"
+                    @update:model-value="handleShowSaturdayUpdate" />
             </v-card-title>
             <v-card-text class="timetable-card-body">
                 <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-3" />
@@ -295,6 +305,7 @@ import LoadingAnimation from '@/pages/components/LoadingAnimation.vue'
 
 const FALLBACK_HOUR_COUNT = 10
 const ALL_DATES_OPTION_VALUE = 'all_dates'
+const TIMETABLE_STORAGE_KEY_PREFIX = 'students-timetables:overview:last-timetable'
 
 export default {
     name: 'StudentsTimetablesOverview',
@@ -310,6 +321,7 @@ export default {
             courseGroupDialog: false,
             selectedCourseGroup: null,
             timetableUpdatePending: false,
+            selectionSaveSequence: 0,
             activeCourseGroupFilterKeys: [],
             selectedRecurrenceWeeks: {
                 1: ALL_DATES_OPTION_VALUE,
@@ -473,11 +485,13 @@ export default {
 
     watch: {
         'config.selected_schoolyear.id'() {
+            this.restoreLastTimetableState()
             this.loadData()
         },
     },
 
     mounted() {
+        this.restoreLastTimetableState()
         this.loadData()
     },
 
@@ -485,16 +499,19 @@ export default {
         async loadData() {
             this.loading = true
             try {
-                const [schoolHoursResponse, courseGroupsResponse] = await Promise.all([
+                const [schoolHoursResponse, courseGroupsResponse, selectionsResponse] = await Promise.all([
                     axios.get('/api/admin/students-timetables/school-hours'),
                     axios.get('/api/admin/students-timetables/course-groups'),
+                    axios.get('/api/admin/students-timetables/overview-selections'),
                 ])
 
                 this.schoolHours = schoolHoursResponse.data?.data || []
                 this.courseGroups = courseGroupsResponse.data?.data || []
+                this.applySavedCourseGroupSelection(selectionsResponse.data?.data?.course_group_keys)
             } catch {
                 this.schoolHours = []
                 this.courseGroups = []
+                this.activeCourseGroupFilterKeys = []
             } finally {
                 this.loading = false
             }
@@ -540,6 +557,13 @@ export default {
         handleShowSaturdayClick() {
             this.runTimetableUpdate(() => {
                 this.showSaturday = true
+                this.saveLastTimetableState()
+            })
+        },
+        handleShowSaturdayUpdate(value) {
+            this.runTimetableUpdate(() => {
+                this.showSaturday = Boolean(value)
+                this.saveLastTimetableState()
             })
         },
         handleCourseMenuEntryFilterClick(entry) {
@@ -561,6 +585,139 @@ export default {
             this.runTimetableUpdate(() => {
                 this.setShowExtraDatesInSelectedWeek(semester, value)
             })
+        },
+        resetSavedTimetable() {
+            this.runTimetableUpdate(() => {
+                this.removeSavedTimetableState()
+                this.applyTimetableState(this.defaultTimetableState())
+                this.saveSelectedCourseGroupSelections?.()
+            })
+        },
+        defaultTimetableState() {
+            return {
+                activeCourseGroupFilterKeys: [],
+                selectedRecurrenceWeeks: {
+                    1: ALL_DATES_OPTION_VALUE,
+                    2: ALL_DATES_OPTION_VALUE,
+                },
+                expandedRecurrenceWeeks: {
+                    1: false,
+                    2: false,
+                },
+                showExtraDatesInSelectedWeeks: {
+                    1: false,
+                    2: false,
+                },
+                showSaturday: false,
+            }
+        },
+        currentTimetableState() {
+            const defaults = this.defaultTimetableState()
+
+            return {
+                activeCourseGroupFilterKeys: [...new Set(this.activeCourseGroupFilterKeys || [])],
+                selectedRecurrenceWeeks: {
+                    ...defaults.selectedRecurrenceWeeks,
+                    ...(this.selectedRecurrenceWeeks || {}),
+                },
+                expandedRecurrenceWeeks: {
+                    ...defaults.expandedRecurrenceWeeks,
+                    ...(this.expandedRecurrenceWeeks || {}),
+                },
+                showExtraDatesInSelectedWeeks: {
+                    ...defaults.showExtraDatesInSelectedWeeks,
+                    ...(this.showExtraDatesInSelectedWeeks || {}),
+                },
+                showSaturday: Boolean(this.showSaturday),
+            }
+        },
+        applyTimetableState(state) {
+            const defaults = this.defaultTimetableState()
+
+            this.activeCourseGroupFilterKeys = Array.isArray(state?.activeCourseGroupFilterKeys)
+                ? [...new Set(state.activeCourseGroupFilterKeys.filter(Boolean))]
+                : defaults.activeCourseGroupFilterKeys
+            this.selectedRecurrenceWeeks = {
+                ...defaults.selectedRecurrenceWeeks,
+                ...(state?.selectedRecurrenceWeeks || {}),
+            }
+            this.expandedRecurrenceWeeks = {
+                ...defaults.expandedRecurrenceWeeks,
+                ...(state?.expandedRecurrenceWeeks || {}),
+            }
+            this.showExtraDatesInSelectedWeeks = {
+                ...defaults.showExtraDatesInSelectedWeeks,
+                ...(state?.showExtraDatesInSelectedWeeks || {}),
+            }
+            this.showSaturday = Boolean(state?.showSaturday ?? defaults.showSaturday)
+        },
+        timetableStorageKey() {
+            return `${TIMETABLE_STORAGE_KEY_PREFIX}:${this.selectedSchoolyear?.id || 'default'}`
+        },
+        timetableStorage() {
+            if (typeof window === 'undefined' || !window.localStorage) {
+                return null
+            }
+
+            return window.localStorage
+        },
+        saveLastTimetableState() {
+            try {
+                this.timetableStorage()?.setItem(
+                    this.timetableStorageKey(),
+                    JSON.stringify(this.currentTimetableState()),
+                )
+            } catch {
+                // Ignore unavailable or full browser storage.
+            }
+        },
+        restoreLastTimetableState() {
+            try {
+                const storedState = this.timetableStorage()?.getItem(this.timetableStorageKey())
+                if (!storedState) {
+                    this.applyTimetableState(this.defaultTimetableState())
+
+                    return
+                }
+
+                this.applyTimetableState(JSON.parse(storedState))
+            } catch {
+                this.applyTimetableState(this.defaultTimetableState())
+            }
+        },
+        removeSavedTimetableState() {
+            try {
+                this.timetableStorage()?.removeItem(this.timetableStorageKey())
+            } catch {
+                // Ignore unavailable browser storage.
+            }
+        },
+        persistTimetableState() {
+            this.saveLastTimetableState()
+            this.saveSelectedCourseGroupSelections()
+        },
+        async saveSelectedCourseGroupSelections() {
+            const saveSequence = this.selectionSaveSequence + 1
+            this.selectionSaveSequence = saveSequence
+
+            try {
+                const response = await axios.put('/api/admin/students-timetables/overview-selections', {
+                    course_group_keys: [...new Set(this.activeCourseGroupFilterKeys || [])],
+                })
+                if (saveSequence !== this.selectionSaveSequence) {
+                    return
+                }
+
+                this.applySavedCourseGroupSelection(response.data?.data?.course_group_keys)
+                this.saveLastTimetableState()
+            } catch {
+                // Keep the local selection visible; a later click or reload can sync it again.
+            }
+        },
+        applySavedCourseGroupSelection(courseGroupKeys) {
+            this.activeCourseGroupFilterKeys = Array.isArray(courseGroupKeys)
+                ? [...new Set(courseGroupKeys.filter(Boolean))]
+                : []
         },
         courseGroupsForCell(semester, weekday, hour, recurrenceWeek = null) {
             const activeCourseGroupFilterKeySet = this.activeCourseGroupFilterKeySet instanceof Set
@@ -836,6 +993,7 @@ export default {
                     ...this.selectedRecurrenceWeeks,
                     [Number(semester)]: value,
                 }
+                this.saveLastTimetableState?.()
 
                 return
             }
@@ -852,6 +1010,7 @@ export default {
                 ...this.selectedRecurrenceWeeks,
                 [Number(semester)]: selectedWeek,
             }
+            this.saveLastTimetableState?.()
         },
         areRecurrenceWeeksExpanded(semester) {
             return Boolean(this.expandedRecurrenceWeeks?.[Number(semester)])
@@ -863,6 +1022,7 @@ export default {
                 ...this.expandedRecurrenceWeeks,
                 [semesterNumber]: !this.areRecurrenceWeeksExpanded(semesterNumber),
             }
+            this.saveLastTimetableState?.()
         },
         visibleTimetableWeeks(semester) {
             const options = this.recurrenceWeekOptions(semester)
@@ -946,6 +1106,7 @@ export default {
                 ...this.showExtraDatesInSelectedWeeks,
                 [Number(semester)]: Boolean(value),
             }
+            this.saveLastTimetableState?.()
         },
         shouldIncludeExtraDatesInRegularWeek(semester) {
             return this.selectedTimetableOptionValue(semester) !== 'extra_dates'
@@ -1224,6 +1385,7 @@ export default {
             if (this.isCourseMenuEntryFilterActive(entry)) {
                 this.activeCourseGroupFilterKeys = this.activeCourseGroupFilterKeys
                     .filter((activeKey) => !courseGroupKeys.includes(activeKey))
+                this.persistTimetableState?.()
 
                 return
             }
@@ -1238,6 +1400,7 @@ export default {
             if ((entry?.courseGroups || []).some((courseGroup) => Number(courseGroup?.weekday) === 6)) {
                 this.showSaturday = true
             }
+            this.persistTimetableState?.()
         },
         isCourseMenuEntryFilterActive(entry) {
             const courseGroupKeys = this.courseMenuEntryKeys(entry)
@@ -1264,6 +1427,7 @@ export default {
             if (this.isCourseGroupFilterActive(courseGroup)) {
                 this.activeCourseGroupFilterKeys = this.activeCourseGroupFilterKeys
                     .filter((activeKey) => activeKey !== courseGroupKey)
+                this.persistTimetableState?.()
 
                 return
             }
@@ -1275,6 +1439,7 @@ export default {
             if (Number(courseGroup?.weekday) === 6) {
                 this.showSaturday = true
             }
+            this.persistTimetableState?.()
         },
         isCourseGroupFilterActive(courseGroup) {
             return this.activeCourseGroupFilterKeys.includes(courseGroup?.key)
