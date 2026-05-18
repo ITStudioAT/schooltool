@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'healthcheck' => [
+        'scheduler_ping_url' => env('HEALTHCHECK_SCHEDULER_PING_URL'),
+        'worker_ping_url' => env('HEALTHCHECK_WORKER_PING_URL'),
+    ],
+
 ];

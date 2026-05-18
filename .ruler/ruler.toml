@@ -3,9 +3,15 @@
 # List of agents to configure
 default_agents = ["copilot", "claude", "trae"]
 
-[mcp_servers.vuetify]
+[mcp_servers.vue-docs-mcp]
+url = "https://mcp.vue-mcp.org/mcp"
+
+[mcp_servers.vue-app-mcp]
+url = "http://localhost:5173/__mcp/sse"
+
+[mcp_servers.vuetify-mcp]
 url = "https://mcp.vuetifyjs.com/mcp"
 
 # https://github.com/vuetifyjs/mcp#authentication
-# [mcp_servers.vuetify.headers]
+# [mcp_servers.vuetify-mcp.headers]
 # Authorization = "Bearer <YOUR_API_KEY>"

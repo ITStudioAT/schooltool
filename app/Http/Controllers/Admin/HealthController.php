@@ -4,26 +4,45 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\QueueTest;
-use App\Models\SchoolTool;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 
 class HealthController extends Controller
 {
+    public function status(): JsonResponse
+    {
+        $schedulerAt = Cache::get('health:scheduler');
+        $workerAt = Cache::get('health:worker');
+
+        $schedulerHealthy = $schedulerAt && Carbon::parse($schedulerAt)->greaterThan(now()->subMinutes(2));
+        $workerHealthy = $workerAt && Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
+
+        return response()->json([
+            'scheduler' => [
+                'is_healthy' => $schedulerHealthy,
+                'last_heartbeat' => $schedulerAt,
+            ],
+            'worker' => [
+                'is_healthy' => $workerHealthy,
+                'last_heartbeat' => $workerAt,
+            ],
+            'is_healthy' => $schedulerHealthy && $workerHealthy,
+        ]);
+    }
+
     public function testQueue(): JsonResponse
     {
         $user = Auth::user();
 
-        // Create test record
         $queueTest = QueueTest::create([
             'user_id' => $user->id,
             'status' => 'dispatched',
             'dispatched_at' => now(),
         ]);
 
-        // Dispatch job
         dispatch(function () use ($queueTest) {
             $queueTest->update([
                 'status' => 'completed',
@@ -31,21 +50,14 @@ class HealthController extends Controller
             ]);
         });
 
-        // Return variables
-        $testId = $queueTest->id;
-        $status = 'dispatched';
-        $dispatchedAt = $queueTest->dispatched_at;
-
         return response()->json([
             'success' => true,
-            'testId' => $testId,
-            'status' => $status,
-            'dispatched_at' => $dispatchedAt,
-            'message' => 'Queue test initiated',
+            'test_id' => $queueTest->id,
+            'dispatched_at' => $queueTest->dispatched_at,
         ]);
     }
 
-    public function checkQueueStatus(Request $request): JsonResponse
+    public function checkQueueTest(Request $request): JsonResponse
     {
         $queueTest = $this->resolveQueueTestForStatusCheck($request);
 
@@ -56,40 +68,22 @@ class HealthController extends Controller
             ], 404);
         }
 
-        // Variables with results
-        $status = $queueTest->status;
-        $dispatchedAt = $queueTest->dispatched_at;
-        $processedAt = $queueTest->processed_at;
-        $isCompleted = $status === 'completed';
+        $isCompleted = $queueTest->status === 'completed';
         $duration = null;
 
-        if ($isCompleted && $processedAt) {
-            $duration = $dispatchedAt->diffInSeconds($processedAt);
+        if ($isCompleted && $queueTest->processed_at) {
+            $duration = $queueTest->dispatched_at->diffInSeconds($queueTest->processed_at);
         }
 
         return response()->json([
             'success' => true,
             'test_id' => $queueTest->id,
-            'status' => $status,
+            'status' => $queueTest->status,
             'is_completed' => $isCompleted,
-            'dispatched_at' => $dispatchedAt,
-            'processed_at' => $processedAt,
+            'dispatched_at' => $queueTest->dispatched_at,
+            'processed_at' => $queueTest->processed_at,
             'duration_seconds' => $duration,
         ]);
-    }
-
-    public function testCron(): JsonResponse
-    {
-        $schooltool = SchoolTool::findOrFail(1);
-        $healthy = Carbon::parse($schooltool->health_at)
-            ->greaterThan(Carbon::now()->subMinutes(2));
-
-        $data = [
-            'is_healthy' => $healthy,
-            'health_at' => Carbon::parse($schooltool->health_at)->format('Y-m-d H:i:s'),
-        ];
-
-        return response()->json($data, 200);
     }
 
     private function resolveQueueTestForStatusCheck(Request $request): ?QueueTest

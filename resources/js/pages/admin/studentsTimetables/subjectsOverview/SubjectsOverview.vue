@@ -95,12 +95,13 @@
                                         v-for="cell in subjectOverviewCellsForColumns(row, columnGroup.columns)"
                                         :key="`subject-plan-cell-${layout.key}-${columnGroup.key}-${row.semester}-${cell.column.key}`"
                                         class="subject-plan-cell"
-                                        :class="subjectOverviewCellClass(cell)">
+                                        :class="[subjectOverviewCellClass(cell), { 'subject-plan-cell--multi': cell.subjects.length > 1 }]">
                                         <div
                                             v-for="subject in cell.subjects"
-                                            :key="`subject-plan-item-${layout.key}-${columnGroup.key}-${row.semester}-${cell.column.key}-${subject.local_id || subject.id || subject.json_code}`"
-                                            class="subject-plan-item">
-                                            <div class="subject-plan-code">{{ subjectOverviewDisplayCode(subject) }}</div>
+                                            :key="`subject-plan-item-${layout.key}-${columnGroup.key}-${row.semester}-${cell.column.key}-${subject.display_key || subject.local_id || subject.id || subject.json_code}`"
+                                            class="subject-plan-item"
+                                            :class="{ 'subject-plan-item--course': cell.subjects.length > 1 }">
+                                            <div class="subject-plan-code">{{ subject.display_code || subjectOverviewDisplayCode(subject) }}</div>
                                             <div class="subject-plan-hours">{{ formatSubjectHours(Number(subject.hours_per_week || 0)) }}</div>
                                         </div>
                                     </div>
@@ -756,11 +757,12 @@ export default {
                     const matchingSubjects = semesterSubjects
                         .filter(subject => column.subjectKeys.includes(this.subjectOverviewSubjectKey(subject)))
                         .sort((firstSubject, secondSubject) => this.compareText(firstSubject.json_code, secondSubject.json_code))
+                    const subjects = this.subjectOverviewCourseItems(this.uniqueSubjectOverviewSubjects(matchingSubjects))
 
                     return {
                         column,
-                        branches: [...new Set(matchingSubjects.map(subject => subject.branch || 'common'))],
-                        subjects: this.uniqueSubjectOverviewSubjects(matchingSubjects),
+                        branches: [...new Set(subjects.map(subject => subject.branch || 'common'))],
+                        subjects,
                     }
                 })
 
@@ -968,6 +970,43 @@ export default {
             if (!this.isSubjectOverviewChoiceSubject(subject)) return displayCode
 
             return `${displayCode}*`
+        },
+        subjectOverviewCourseItems(subjects) {
+            return subjects.flatMap(subject => {
+                const displayCodes = this.subjectOverviewDisplayCodes(subject)
+
+                if (displayCodes.length <= 1) {
+                    return [
+                        {
+                            ...subject,
+                            display_code: this.subjectOverviewDisplayCode(subject),
+                            display_key: `${subject.local_id || subject.id || subject.json_code || ''}`,
+                        },
+                    ]
+                }
+
+                const subjectHours = Number(subject.hours_per_week || 0)
+                const splitHours = subjectHours / displayCodes.length
+
+                return displayCodes.map((displayCode, index) => ({
+                    ...subject,
+                    json_code: displayCode,
+                    hours_per_week: Number.isFinite(splitHours) ? splitHours : subject.hours_per_week,
+                    display_code: this.isSubjectOverviewChoiceSubject(subject) ? `${displayCode}*` : displayCode,
+                    display_key: `${subject.local_id || subject.id || subject.json_code || ''}-${displayCode}-${index}`,
+                }))
+            })
+        },
+        subjectOverviewDisplayCodes(subject) {
+            const displayCode = this.alternativeDisplay(subject.json_code)
+
+            if (displayCode === '-') return [displayCode]
+            if (this.isAlternativeSubjectCode(subject.json_code, subject.json_subject)) return [displayCode]
+
+            return displayCode
+                .split('/')
+                .map(code => code.trim())
+                .filter(Boolean)
         },
         isSubjectOverviewChoiceSubject(subject) {
             return this.subjectOverviewChoiceGroups().some(group =>
@@ -1572,6 +1611,15 @@ export default {
     background: linear-gradient(135deg, #a8e6f4, #72d2e8);
 }
 
+.subject-plan-cell--multi {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    min-height: 58px;
+    padding: 0 4px;
+}
+
 .subject-plan-header-code {
     font-size: 0.78rem;
     font-weight: 850;
@@ -1588,18 +1636,50 @@ export default {
 }
 
 .subject-plan-item + .subject-plan-item {
-    margin-top: 2px;
+    margin-top: 3px;
+}
+
+.subject-plan-cell--multi .subject-plan-item + .subject-plan-item {
+    margin-top: 0;
+}
+
+.subject-plan-item--course {
+    position: relative;
+    display: flex;
+    min-height: 28px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 3px 0;
+}
+
+.subject-plan-item--course + .subject-plan-item--course {
+    border-top: 1px solid rgba(15, 23, 42, 0.42);
 }
 
 .subject-plan-code {
     font-size: 0.78rem;
     line-height: 1.15;
+    overflow-wrap: anywhere;
 }
 
 .subject-plan-hours {
     margin-top: 1px;
     font-size: 0.76rem;
     line-height: 1.1;
+}
+
+.subject-plan-item--course .subject-plan-code {
+    font-weight: 400;
+    text-align: center;
+}
+
+.subject-plan-item--course .subject-plan-hours {
+    min-width: 18px;
+    margin-top: 0;
+    font-weight: 400;
+    text-align: center;
 }
 
 .subject-plan-total {

@@ -14,7 +14,7 @@ use App\Http\Resources\Homepage\RegisterResource;
 use App\Http\Resources\Homepage\SchoolResource;
 use App\Models\Register;
 use App\Models\School;
-use App\Models\SchoolTool;
+use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Services\AdminService;
 use App\Services\RegisterDateBookingService;
@@ -214,11 +214,11 @@ class RegisterController extends Controller
 
     private function isQueueWorking(): bool
     {
-        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
-        if (! $lastHealthAt) {
+        $workerAt = Cache::get('health:worker');
+        if (! $workerAt) {
             return true;
         }
 
-        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+        return Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
     }
 }

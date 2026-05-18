@@ -18,6 +18,7 @@ use App\Http\Resources\Tutoring\OfferNotLoggedInResource;
 use App\Http\Resources\Tutoring\OfferResource;
 use App\Models\School;
 use App\Models\SchoolTool;
+use Illuminate\Support\Facades\Cache;
 use App\Models\TutoringOffer;
 use App\Models\TutoringOfferRequest;
 use App\Models\User;
@@ -356,12 +357,12 @@ class OfferController extends Controller
 
     private function isQueueWorking(): bool
     {
-        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
-        if (! $lastHealthAt) {
+        $workerAt = Cache::get('health:worker');
+        if (! $workerAt) {
             return true;
         }
 
-        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+        return Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
     }
 
     public function clickCount(Request $request)

@@ -1,7 +1,43 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import SubjectsOverview from '@/pages/admin/studentsTimetables/subjectsOverview/SubjectsOverview.vue'
 
 describe('Students timetable subjects overview', () => {
+    it('keeps language alternatives together while splitting shared multi-module courses', () => {
+        const methods = (SubjectsOverview as any).methods
+        const ctx = {
+            ...methods,
+        }
+
+        const languageCourses = methods.subjectOverviewCourseItems.call(ctx, [
+            {
+                id: 1,
+                semester: 8,
+                branch: 'gymnasial',
+                json_code: 'L/F/S2',
+                json_subject: 'L/F/S',
+                name: 'Latein / Französisch / Spanisch 2',
+                hours_per_week: 4,
+            },
+        ])
+        const economyCourses = methods.subjectOverviewCourseItems.call(ctx, [
+            {
+                id: 2,
+                semester: 8,
+                branch: 'wirtschaftskundlich',
+                json_code: 'ÖKO2/ÖKO3',
+                json_subject: 'ÖKO',
+                name: 'Ökonomie',
+                hours_per_week: 4,
+            },
+        ])
+
+        expect(languageCourses).toHaveLength(1)
+        expect(languageCourses[0].hours_per_week).toBe(4)
+        expect(economyCourses.map(course => course.display_code)).toEqual(['ÖKO2', 'ÖKO3'])
+        expect(economyCourses.map(course => course.hours_per_week)).toEqual([2, 2])
+    })
+
     it('adds the subjects overview menu item to the module shell', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
@@ -116,6 +152,11 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('branch-variant-block--gymnasial')
         expect(componentSource).toContain('alternativeDisplay(subject.short_name)')
         expect(componentSource).toContain('subjectOverviewDisplayCode(subject)')
+        expect(componentSource).toContain("'subject-plan-cell--multi': cell.subjects.length > 1")
+        expect(componentSource).toContain("'subject-plan-item--course': cell.subjects.length > 1")
+        expect(componentSource).toContain('subject.display_code || subjectOverviewDisplayCode(subject)')
+        expect(componentSource).toContain('subjectOverviewCourseItems(this.uniqueSubjectOverviewSubjects(matchingSubjects))')
+        expect(componentSource).toContain('subjectOverviewDisplayCodes(subject)')
         expect(componentSource).toContain('isSubjectOverviewChoiceSubject(subject)')
         expect(componentSource).toContain('subjectMatchesSubjectOverviewChoiceGroup(subject, group)')
         expect(componentSource).toContain('subjectOverviewChoiceGroups()')
@@ -150,5 +191,10 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('saveMappings()')
         expect(componentSource).toContain('rawSubjectHours(subjects)')
         expect(componentSource).toContain('subjectOverviewChoiceDuplicateHours(subjects)')
+        expect(componentSource).toContain('.subject-plan-item--course')
+        expect(componentSource).toContain('.subject-plan-item--course + .subject-plan-item--course')
+        expect(componentSource).toContain('border-top: 1px solid rgba(15, 23, 42, 0.42)')
+        expect(componentSource).not.toContain('subject-plan-course-group-label')
+        expect(componentSource).not.toContain('subject-plan-course-divider')
     })
 })

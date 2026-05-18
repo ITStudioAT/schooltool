@@ -24,6 +24,7 @@ use App\Models\Import116;
 use App\Models\Licence;
 use App\Models\School;
 use App\Models\SchoolTool;
+use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Services\AdminService;
 use App\Services\HomepageRoutingService;
@@ -355,12 +356,12 @@ class HomepageController extends Controller
 
     private function isQueueWorking(): bool
     {
-        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
-        if (! $lastHealthAt) {
+        $workerAt = Cache::get('health:worker');
+        if (! $workerAt) {
             return true;
         }
 
-        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+        return Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
     }
 
     public function restaurantMenuPlans(Request $request, RestaurantService $restaurantService)

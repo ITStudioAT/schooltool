@@ -221,9 +221,9 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::apiResource('/admin/users', UserController::class)->names('admin.users');
         Route::post('/admin/impersonation/stop', [ImpersonationController::class, 'stop']);
 
-        Route::get('/admin/test-queue', [HealthController::class, 'testQueue']);
-        Route::get('/admin/test-queue/check', [HealthController::class, 'checkQueueStatus']);
-        Route::get('/admin/test-cron/check', [HealthController::class, 'testCron']);
+        Route::get('/admin/health/status', [HealthController::class, 'status']);
+        Route::get('/admin/health/test-queue', [HealthController::class, 'testQueue']);
+        Route::get('/admin/health/test-queue/check', [HealthController::class, 'checkQueueTest']);
 
         // Notes API - Accessible to all authenticated users
         Route::apiResource('/homepage/notes', NoteController::class);

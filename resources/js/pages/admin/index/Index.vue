@@ -37,21 +37,13 @@
 
                 <div class="admin-kpi-grid">
                     <div class="kpi-card ai-glass-panel">
-                        <div class="kpi-label">Systemtests</div>
+                        <div class="kpi-label">System-Health</div>
                         <div class="kpi-value">
                             <v-icon
                                 size="20"
-                                :icon="test_step == 999 ? 'mdi-checkbox-marked-circle' : 'mdi-progress-clock'"
-                                :color="test_step == 999 && all_tests_result == 1 ? 'success' : test_step == 999 ? 'error' : 'warning'" />
-                            <span>
-                                {{
-                                    test_step == 999
-                                        ? all_tests_result == 1
-                                            ? 'OK'
-                                            : 'Fehler'
-                                        : 'Prüfung läuft / ausstehend'
-                                }}
-                            </span>
+                                :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-checkbox-marked-circle' : 'mdi-alert-circle') : 'mdi-progress-clock'"
+                                :color="health_loaded ? (healthStore.is_healthy ? 'success' : 'error') : 'warning'" />
+                            <span>{{ health_loaded ? (healthStore.is_healthy ? 'OK' : 'Fehler') : 'Wird geladen...' }}</span>
                         </div>
                         <div v-if="isAllowed(['admin', 'super_admin'])" class="mt-3">
                             <div v-if="restart_queues_loading" class="restart-status mb-2">
@@ -64,14 +56,13 @@
                                 color="warning"
                                 prepend-icon="mdi-restart"
                                 :loading="restart_queues_loading"
-                                :disabled="restart_queues_loading || queue_test_status == 'running' || cron_test_status == 'running'"
+                                :disabled="restart_queues_loading || health_loading"
                                 block
                                 @click="restartQueues">
                                 Queues neu starten
                             </v-btn>
                         </div>
                     </div>
-
 
                     <div class="kpi-card ai-glass-panel">
                         <div class="kpi-label">Aktive Lizenzen</div>
@@ -86,107 +77,98 @@
                         <div class="admin-card-head" style="display: flex; justify-content: space-between; align-items: flex-start;">
                             <div>
                                 <div class="admin-card-eyebrow">Monitoring</div>
-                                <h3 class="admin-card-title">System-Checks</h3>
+                                <h3 class="admin-card-title">System-Health</h3>
                             </div>
-                            <v-btn
-                                v-if="isAllowed(['admin', 'super_admin'])"
-                                size="small"
-                                variant="flat"
-                                color="primary"
-                                rounded="lg"
-                                prepend-icon="mdi-refresh"
-                                @click="runTests"
-                                :loading="queue_test_status == 'running' || cron_test_status == 'running'"
-                                :disabled="queue_test_status == 'running'">
-                                Tests prüfen
-                            </v-btn>
+                            <div class="d-flex ga-2">
+                                <v-btn
+                                    v-if="isAllowed(['admin', 'super_admin'])"
+                                    size="small"
+                                    variant="flat"
+                                    color="primary"
+                                    rounded="lg"
+                                    prepend-icon="mdi-refresh"
+                                    @click="refreshHealth"
+                                    :loading="health_loading"
+                                    :disabled="health_loading">
+                                    Status prüfen
+                                </v-btn>
+                                <v-btn
+                                    v-if="isAllowed(['admin', 'super_admin'])"
+                                    size="small"
+                                    variant="tonal"
+                                    color="secondary"
+                                    rounded="lg"
+                                    prepend-icon="mdi-play-circle-outline"
+                                    @click="runQueueTest"
+                                    :loading="queue_test_running"
+                                    :disabled="queue_test_running || health_loading">
+                                    Queue testen
+                                </v-btn>
+                            </div>
                         </div>
 
                         <div class="status-list">
                             <div class="status-row">
                                 <div class="status-copy">
                                     <div class="status-name">Gesamtstatus</div>
-                                    <div class="status-note" v-if="queue_test_status == 'unknown' && cron_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
-                                    <div class="status-note" v-else-if="test_step != 999">Tests aktiv oder noch nicht abgeschlossen</div>
-                                    <div class="status-note" v-else>Letzte Prüfserie abgeschlossen</div>
+                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
+                                    <div class="status-note" v-else-if="healthStore.is_healthy">Scheduler und Worker laufen</div>
+                                    <div class="status-note" v-else>Mindestens ein Dienst antwortet nicht</div>
                                 </div>
-                                <div class="status-badge" :class="queue_test_status == 'unknown' && cron_test_status == 'unknown' ? 'is-waiting' : test_step == 999 ? (all_tests_result == 1 ? 'is-success' : 'is-error') : 'is-waiting'">
+                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.is_healthy ? 'is-success' : 'is-error'">
                                     <v-icon
                                         size="16"
-                                        :icon="
-                                            queue_test_status == 'unknown' && cron_test_status == 'unknown'
-                                                ? 'mdi-help-circle-outline'
-                                                : test_step == 999
-                                                  ? all_tests_result == 1
-                                                      ? 'mdi-check-circle'
-                                                      : 'mdi-alert-circle'
-                                                  : 'mdi-dots-horizontal-circle'
-                                        " />
-                                    <span>
-                                        {{
-                                            queue_test_status == 'unknown' && cron_test_status == 'unknown'
-                                                ? 'Unbekannt'
-                                                : test_step == 999
-                                                  ? all_tests_result == 1
-                                                      ? 'OK'
-                                                      : 'Fehler'
-                                                  : 'Läuft / wartend'
-                                        }}
-                                    </span>
+                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
+                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.is_healthy ? 'OK' : 'Fehler' }}</span>
                                 </div>
                             </div>
 
                             <div class="status-row">
                                 <div class="status-copy">
-                                    <div class="status-name">Warteschlange</div>
-                                    <div class="status-note" v-if="queue_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
-                                    <div class="status-note" v-else-if="queue_test_status == 'waiting'">Test wartend</div>
-                                    <div class="status-note" v-else-if="queue_test_status == 'running'">Queue-Test aktiv</div>
-                                    <div class="status-note" v-else>Queue-Test abgeschlossen</div>
+                                    <div class="status-name">Scheduler</div>
+                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
+                                    <div class="status-note" v-else-if="healthStore.scheduler?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }}</div>
+                                    <div class="status-note" v-else-if="healthStore.scheduler?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }} (veraltet)</div>
+                                    <div class="status-note" v-else>Kein Heartbeat empfangen</div>
                                 </div>
-                                <div class="status-badge" :class="queue_test_status == 'finished' ? (queue_test_result == 1 ? 'is-success' : 'is-error') : queue_test_status == 'running' ? 'is-running' : 'is-waiting'">
+                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.scheduler?.is_healthy ? 'is-success' : 'is-error'">
                                     <v-icon
                                         size="16"
-                                        :class="{ 'mdi-spin': queue_test_status == 'running' }"
-                                        :icon="
-                                            queue_test_status == 'finished'
-                                                ? queue_test_result == 1
-                                                    ? 'mdi-check-circle'
-                                                    : 'mdi-alert-circle'
-                                                : queue_test_status == 'running'
-                                                  ? 'mdi-loading'
-                                                  : queue_test_status == 'unknown'
-                                                    ? 'mdi-help-circle-outline'
-                                                    : 'mdi-clock-outline'
-                                        " />
-                                    <span>{{ queue_test_status == 'unknown' ? 'Unbekannt' : queue_test_status }}</span>
+                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.scheduler?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
+                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.scheduler?.is_healthy ? 'OK' : 'Fehler' }}</span>
                                 </div>
                             </div>
 
                             <div class="status-row">
                                 <div class="status-copy">
-                                    <div class="status-name">Cron / Timer</div>
-                                    <div class="status-note" v-if="cron_test_status == 'finished'">{{ cron_status?.health_at || 'Zeit unbekannt' }}</div>
-                                    <div class="status-note" v-else-if="cron_test_status == 'running'">Prüfung aktiv (1-2 min möglich)</div>
-                                    <div class="status-note" v-else-if="cron_test_status == 'unknown'">Noch keine Prüfung durchgeführt</div>
-                                    <div class="status-note" v-else>Prüfung wartend</div>
+                                    <div class="status-name">Worker</div>
+                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
+                                    <div class="status-note" v-else-if="healthStore.worker?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }}</div>
+                                    <div class="status-note" v-else-if="healthStore.worker?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }} (veraltet)</div>
+                                    <div class="status-note" v-else>Kein Heartbeat empfangen</div>
                                 </div>
-                                <div class="status-badge" :class="cron_test_status == 'finished' ? (cron_test_result == 1 ? 'is-success' : 'is-error') : cron_test_status == 'running' ? 'is-running' : 'is-waiting'">
+                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.worker?.is_healthy ? 'is-success' : 'is-error'">
                                     <v-icon
                                         size="16"
-                                        :class="{ 'mdi-spin': cron_test_status == 'running' }"
-                                        :icon="
-                                            cron_test_status == 'finished'
-                                                ? cron_test_result == 1
-                                                    ? 'mdi-check-circle'
-                                                    : 'mdi-alert-circle'
-                                                : cron_test_status == 'running'
-                                                  ? 'mdi-loading'
-                                                  : cron_test_status == 'unknown'
-                                                    ? 'mdi-help-circle-outline'
-                                                    : 'mdi-clock-outline'
-                                        " />
-                                    <span>{{ cron_test_status == 'unknown' ? 'Unbekannt' : cron_test_status }}</span>
+                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.worker?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
+                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.worker?.is_healthy ? 'OK' : 'Fehler' }}</span>
+                                </div>
+                            </div>
+
+                            <div class="status-row" v-if="queue_test_visible">
+                                <div class="status-copy">
+                                    <div class="status-name">Queue-Test</div>
+                                    <div class="status-note" v-if="queue_test_running">Job wird verarbeitet...</div>
+                                    <div class="status-note" v-else-if="healthStore.queue_test?.is_completed">Verarbeitet in {{ healthStore.queue_test.duration_seconds }}s</div>
+                                    <div class="status-note" v-else-if="healthStore.queue_test?.status === 'dispatched'">Job wartend in Warteschlange</div>
+                                    <div class="status-note" v-else>Test fehlgeschlagen</div>
+                                </div>
+                                <div class="status-badge" :class="queue_test_running ? 'is-running' : healthStore.queue_test?.is_completed ? 'is-success' : 'is-error'">
+                                    <v-icon
+                                        size="16"
+                                        :class="{ 'mdi-spin': queue_test_running }"
+                                        :icon="queue_test_running ? 'mdi-loading' : healthStore.queue_test?.is_completed ? 'mdi-check-circle' : 'mdi-alert-circle'" />
+                                    <span>{{ queue_test_running ? 'Läuft...' : healthStore.queue_test?.is_completed ? 'OK' : 'Fehler' }}</span>
                                 </div>
                             </div>
                         </div>
@@ -443,6 +425,8 @@ export default {
             } else {
                 await this.schoolStore.loadSchoolInfos(this.config?.selected_school?.id)
             }
+            await this.healthStore.fetchStatus()
+            this.health_loaded = true
         }
         this.adminStore.is_loading--
     },
@@ -454,12 +438,10 @@ export default {
             adminStore: null,
             healthStore: null,
             schoolStore: null,
-            test_step: 0,
-            all_tests_result: 0,
-            queue_test_status: 'unknown',
-            queue_test_result: 0,
-            cron_test_status: 'unknown',
-            cron_test_result: 0,
+            health_loaded: false,
+            health_loading: false,
+            queue_test_running: false,
+            queue_test_visible: false,
             activation_dialog_open: false,
             activation_dialog_loading: false,
             activation_dialog_licence: null,
@@ -487,7 +469,6 @@ export default {
 
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'health']),
-        ...mapWritableState(useHealthStore, ['data', 'data_2', 'cron_status']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
         activeLicenceCount() {
             const activeSchoolLicences = this.schoolLicencesWithSchoolLicence.filter((licence) => this.isLicenceActive(licence)).length
@@ -535,7 +516,7 @@ export default {
             return this.config.user.roles.some((role) => roles.includes(role))
         },
         async restartQueues() {
-            if (this.restart_queues_loading || this.queue_test_status == 'running' || this.cron_test_status == 'running') return
+            if (this.restart_queues_loading || this.health_loading) return
             this.restart_queues_loading = true
             this.restart_countdown = 0
             const counterInterval = setInterval(() => {
@@ -543,7 +524,7 @@ export default {
             }, 1000)
             try {
                 await axios.post('/api/admin/restart_queues')
-                await this.runTests()
+                await this.refreshHealth()
                 useNotificationStore().notify({
                     message: 'Queues wurden neu gestartet und geprüft.',
                     type: 'success',
@@ -562,57 +543,55 @@ export default {
                 this.restart_countdown = 0
             }
         },
-        async runTests() {
+        async refreshHealth() {
             if (!this.healthStore) return
-
-            // Cron-Job-Status
-            this.cron_test_status = 'running'
+            this.health_loading = true
             try {
-                await this.healthStore.checkCronStatus()
-                this.cron_test_result = this.cron_status?.is_healthy ?? 0
-            } catch {
-                this.cron_test_result = 0
+                await this.healthStore.fetchStatus()
+                this.health_loaded = true
             } finally {
-                this.cron_test_status = 'finished'
+                this.health_loading = false
             }
-
-            this.test_step = 0
-            this.all_tests_result = 0
-            this.queue_test_status = 'running'
-            this.queue_test_result = 0
-
+        },
+        async runQueueTest() {
+            if (!this.healthStore || this.queue_test_running) return
+            this.queue_test_running = true
+            this.queue_test_visible = true
             try {
-                const queueTestStarted = await this.healthStore.testQueue()
-                const queueTestId = this.data?.testId
-                if (!queueTestStarted || !queueTestId) {
-                    throw new Error('Queue test could not be initialized')
+                const result = await this.healthStore.testQueue()
+                if (!result?.test_id) {
+                    this.queue_test_running = false
+                    return
                 }
 
-                // Mehrmals prüfen bis completed
                 let attempts = 0
-                const maxAttempts = 20
+                const maxAttempts = 15
 
                 while (attempts < maxAttempts) {
-                    const status = await this.healthStore.checkQueueStatus(queueTestId)
-                    if (!status) {
-                        break
-                    }
-
-                    if (status.is_completed) {
-                        this.queue_test_result = 1
-                        break
-                    }
                     await new Promise((resolve) => setTimeout(resolve, 1000))
+                    const status = await this.healthStore.checkQueueTest(result.test_id)
+                    if (!status) break
+                    if (status.is_completed) break
                     attempts++
                 }
             } catch {
-                this.queue_test_result = 0
+                // queue_test store state reflects failure
             } finally {
-                this.queue_test_status = 'finished'
+                this.queue_test_running = false
             }
-
-            this.all_tests_result = this.queue_test_result == 1 && this.cron_test_result == 1 ? 1 : 999
-            this.test_step = 999
+        },
+        formatHeartbeat(isoString) {
+            if (!isoString) return 'Nie'
+            try {
+                const date = new Date(isoString)
+                if (isNaN(date.getTime())) return isoString
+                const hours = String(date.getHours()).padStart(2, '0')
+                const minutes = String(date.getMinutes()).padStart(2, '0')
+                const seconds = String(date.getSeconds()).padStart(2, '0')
+                return `${hours}:${minutes}:${seconds}`
+            } catch {
+                return isoString
+            }
         },
 
         user(id) {

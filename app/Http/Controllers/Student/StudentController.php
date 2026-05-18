@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Teaching\UserResource;
 use App\Models\SchoolTool;
+use Illuminate\Support\Facades\Cache;
 use App\Services\LicenceService;
 use App\Services\StudentService;
 use App\Services\UserService;
@@ -213,11 +214,11 @@ class StudentController extends Controller
 
     private function isQueueWorking(): bool
     {
-        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
-        if (! $lastHealthAt) {
+        $workerAt = Cache::get('health:worker');
+        if (! $workerAt) {
             return true;
         }
 
-        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+        return Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
     }
 }

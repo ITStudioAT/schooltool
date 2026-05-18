@@ -14,6 +14,7 @@ use App\Http\Resources\Homepage\SchoolWithLicenceRecource;
 use App\Http\Resources\Homepage\UserResource;
 use App\Http\Resources\Tutoring\SchoolToolResource;
 use App\Models\SchoolTool;
+use Illuminate\Support\Facades\Cache;
 use App\Models\User;
 use App\Services\Import116Service;
 use App\Services\LicenceService;
@@ -212,11 +213,11 @@ class TutoringController extends Controller
 
     private function isQueueWorking(): bool
     {
-        $lastHealthAt = SchoolTool::query()->whereNotNull('health_at')->max('health_at');
-        if (! $lastHealthAt) {
+        $workerAt = Cache::get('health:worker');
+        if (! $workerAt) {
             return true;
         }
 
-        return Carbon::parse($lastHealthAt)->greaterThan(now()->subMinutes(2));
+        return Carbon::parse($workerAt)->greaterThan(now()->subMinutes(2));
     }
 }

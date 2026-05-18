@@ -11,6 +11,11 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 */
 
+Schedule::command('health:scheduler-heartbeat')
+    ->everyMinute()
+    ->onOneServer()
+    ->withoutOverlapping();
+
 Schedule::job(new HealthJob)
     ->everyMinute()
     ->onOneServer()

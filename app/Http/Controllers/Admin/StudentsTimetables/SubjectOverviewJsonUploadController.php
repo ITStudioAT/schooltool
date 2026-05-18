@@ -352,7 +352,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
     /**
      * @param  array<mixed>  $node
-     * @param  array{name: string, short_name: ?string, json_subject: ?string}  $subject
+     * @param  array{name: string, short_name: ?string, json_subject: ?string, hours_per_week?: ?float}  $subject
      * @return array<string, mixed>
      */
     private function subjectRowFromNode(array $node, array $subject, string $semesterKey, ?string $branch): array
@@ -363,7 +363,7 @@ class SubjectOverviewJsonUploadController extends Controller
             'json_code' => $subject['short_name'] ?: $subject['name'],
             'json_subject' => $subject['json_subject'] ?: $subject['name'],
             'name' => $subject['name'],
-            'hours_per_week' => $this->firstNumericValue($node, ['hours_per_week', 'hours', 'stunden', 'wochenstunden']),
+            'hours_per_week' => $subject['hours_per_week'] ?? $this->firstNumericValue($node, ['hours_per_week', 'hours', 'stunden', 'wochenstunden']),
             'is_active' => true,
         ];
     }
@@ -661,7 +661,7 @@ class SubjectOverviewJsonUploadController extends Controller
 
     /**
      * @param  array<mixed>  $node
-     * @return list<array{name: string, short_name: ?string, json_subject: ?string}>
+     * @return list<array{name: string, short_name: ?string, json_subject: ?string, hours_per_week: ?float}>
      */
     private function subjectsFromNode(array $node, ?string $contextKey, ?string $semester, array $courseAbbreviations): array
     {
@@ -671,13 +671,14 @@ class SubjectOverviewJsonUploadController extends Controller
         $jsonSubject = $rawSubject ?: $this->subjectCodeWithoutModule($shortName);
         $abbreviationKey = $rawSubject ?: $this->subjectCodeWithoutModule($shortName);
         $subjectCodes = $this->subjectCodes($shortName, $abbreviationKey, $courseAbbreviations);
+        $hoursPerWeek = $this->subjectHoursPerCode($node, $subjectCodes);
 
         if (! $semester && ! $this->isSubjectContext($contextKey) && ! $shortName) {
             return [];
         }
 
         return collect($subjectCodes)
-            ->map(function (?string $subjectCode) use ($rawSubject, $explicitName, $jsonSubject, $abbreviationKey, $courseAbbreviations): ?array {
+            ->map(function (?string $subjectCode) use ($rawSubject, $explicitName, $jsonSubject, $abbreviationKey, $courseAbbreviations, $hoursPerWeek): ?array {
                 $name = $abbreviationKey ? ($courseAbbreviations[$abbreviationKey] ?? null) : null;
                 $name = $name ? $this->subjectNameWithModule($name, $abbreviationKey, $subjectCode) : null;
                 $name ??= $explicitName ? $this->subjectNameWithModule($explicitName, $abbreviationKey, $subjectCode) : null;
@@ -695,6 +696,7 @@ class SubjectOverviewJsonUploadController extends Controller
                     'name' => $name,
                     'short_name' => $subjectCode && $subjectCode !== $name ? $subjectCode : null,
                     'json_subject' => $jsonSubject,
+                    'hours_per_week' => $hoursPerWeek,
                 ];
             })
             ->filter()
@@ -783,6 +785,29 @@ class SubjectOverviewJsonUploadController extends Controller
         );
 
         return $matchesAbbreviation ? $codes->all() : [];
+    }
+
+    /**
+     * @param  array<mixed>  $node
+     * @param  list<?string>  $subjectCodes
+     */
+    private function subjectHoursPerCode(array $node, array $subjectCodes): ?float
+    {
+        $hours = $this->firstNumericValue($node, ['hours_per_week', 'hours', 'stunden', 'wochenstunden']);
+
+        if ($hours === null) {
+            return null;
+        }
+
+        $subjectCodeCount = collect($subjectCodes)
+            ->filter(fn (?string $subjectCode): bool => $subjectCode !== null)
+            ->count();
+
+        if ($subjectCodeCount <= 1) {
+            return $hours;
+        }
+
+        return $hours / $subjectCodeCount;
     }
 
     private function subjectNameWithModule(string $name, ?string $abbreviationKey, ?string $code): string
@@ -1013,40 +1038,57 @@ class SubjectOverviewJsonUploadController extends Controller
     private function refreshJsonSubjectRowNames(mixed $authUser, array $subjectRows): void
     {
         $subjectRowsByIdentity = collect($subjectRows)
-            ->keyBy(fn (array $subjectRow): string => $this->subjectRowIdentitySignature($subjectRow));
+            ->keyBy(fn (array $subjectRow): string => $this->subjectRowStableIdentitySignature($subjectRow));
 
         StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->get()
             ->each(function (StudentTimetableSubjectRow $row) use ($subjectRowsByIdentity): void {
-                $subjectRow = $subjectRowsByIdentity->get($this->subjectRowIdentitySignature([
+                $subjectRow = $subjectRowsByIdentity->get($this->subjectRowStableIdentitySignature([
                     'semester' => $row->semester,
                     'branch' => $this->normalizeSubjectBranch($row->branch),
                     'json_code' => $row->json_code,
                     'json_subject' => $row->json_subject,
-                    'hours_per_week' => $row->hours_per_week,
                 ]));
 
-                if (! $subjectRow || ! $this->isStaleJsonSubjectName($row->name, $subjectRow)) {
+                if (! $subjectRow) {
                     return;
                 }
 
-                $row->update(['name' => $subjectRow['name'] ?? null]);
+                $updates = [];
+
+                if ($this->isStaleJsonSubjectName($row->name, $subjectRow)) {
+                    $updates['name'] = $subjectRow['name'] ?? null;
+                }
+
+                $expectedHours = $subjectRow['hours_per_week'] ?? null;
+                if (
+                    $row->source === 'json'
+                    && $expectedHours !== null
+                    && $this->normalizedSubjectHours($row->hours_per_week) !== $this->normalizedSubjectHours($expectedHours)
+                ) {
+                    $updates['hours_per_week'] = $expectedHours;
+                }
+
+                if ($updates === []) {
+                    return;
+                }
+
+                $row->update($updates);
             });
     }
 
     /**
      * @param  array<string, mixed>  $row
      */
-    private function subjectRowIdentitySignature(array $row): string
+    private function subjectRowStableIdentitySignature(array $row): string
     {
         return Str::lower(implode('|', [
             $row['semester'] ?? '',
             $row['branch'] ?? '',
             $row['json_code'] ?? '',
             $row['json_subject'] ?? '',
-            $this->normalizedSubjectHours($row['hours_per_week'] ?? null),
         ]));
     }
 

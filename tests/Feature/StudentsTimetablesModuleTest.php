@@ -518,16 +518,20 @@ it('expands compact multi-module subject codes in subject overview json imports'
         ->assertSuccessful()
         ->assertJsonPath('data.0.analysis.subject_rows.0.json_code', 'ÖKO2')
         ->assertJsonPath('data.0.analysis.subject_rows.0.name', 'Ökonomie 2')
+        ->assertJsonPath('data.0.analysis.subject_rows.0.hours_per_week', 2)
         ->assertJsonPath('data.0.analysis.subject_rows.1.json_code', 'ÖKO3')
-        ->assertJsonPath('data.0.analysis.subject_rows.1.name', 'Ökonomie 3');
+        ->assertJsonPath('data.0.analysis.subject_rows.1.name', 'Ökonomie 3')
+        ->assertJsonPath('data.0.analysis.subject_rows.1.hours_per_week', 2);
 
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/subjects-overview-settings')
         ->assertSuccessful()
         ->assertJsonPath('data.subjects.0.json_code', 'ÖKO2')
         ->assertJsonPath('data.subjects.0.name', 'Ökonomie 2')
+        ->assertJsonPath('data.subjects.0.hours_per_week', '2.00')
         ->assertJsonPath('data.subjects.1.json_code', 'ÖKO3')
-        ->assertJsonPath('data.subjects.1.name', 'Ökonomie 3');
+        ->assertJsonPath('data.subjects.1.name', 'Ökonomie 3')
+        ->assertJsonPath('data.subjects.1.hours_per_week', '2.00');
 });
 
 it('rejects invalid subject overview json uploads', function () {
