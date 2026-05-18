@@ -341,9 +341,14 @@ export default {
             }
 
             const currentPath = this.normalizeAdminPath(this.$route?.path)
+            const exact = !!item.active_exact
 
             return activePaths.some((activePath) => {
                 const normalizedActivePath = this.normalizeAdminPath(activePath)
+
+                if (exact) {
+                    return currentPath === normalizedActivePath
+                }
 
                 return currentPath === normalizedActivePath || currentPath.startsWith(`${normalizedActivePath}/`)
             })

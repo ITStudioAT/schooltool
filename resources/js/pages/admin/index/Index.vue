@@ -1,258 +1,290 @@
 <template>
-    <div class="admin-index-page" v-if="config && config.is_auth">
-        <div class="admin-bg">
-            <div class="admin-bg-image ai-cloudflare-bg-image ai-cloudflare-bg-image--dark"></div>
-            <div class="admin-bg-glow ai-glow-blob admin-bg-glow-left"></div>
-            <div class="admin-bg-glow ai-glow-blob admin-bg-glow-right"></div>
-        </div>
-
-        <section class="admin-hero">
-            <div class="admin-shell ai-shell-1320">
-                <header class="admin-header ai-glass-panel">
-                    <div class="admin-brand">
-                        <div class="admin-brand-badge ai-brand-badge">
-                            <v-icon size="20" color="white">mdi-school</v-icon>
-                        </div>
+    <div v-if="config && config.is_auth" class="admin-dashboard-page">
+        <v-container fluid class="pa-4 pa-md-6" style="max-width: 1200px">
+            <!-- Header -->
+            <v-card flat rounded="xl" class="mb-6">
+                <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-4 py-3">
+                    <div class="d-flex align-center ga-3">
+                        <v-avatar color="primary" rounded="lg" size="42">
+                            <v-icon color="white" size="22">mdi-school</v-icon>
+                        </v-avatar>
                         <div>
-                            <div class="admin-brand-eyebrow">Admin Dashboard</div>
-                            <h1 class="admin-brand-title">SchoolTool</h1>
+                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">Admin Dashboard</div>
+                            <div class="text-h5 font-weight-bold">SchoolTool</div>
                         </div>
                     </div>
+                    <div class="d-flex align-center ga-2 flex-wrap">
+                        <v-chip variant="tonal" size="small" prepend-icon="mdi-tag-outline">
+                            v{{ config?.version }}
+                        </v-chip>
+                        <v-chip
+                            v-if="config?.selected_school?.long_name || config?.selected_school?.name"
+                            variant="tonal" size="small" prepend-icon="mdi-domain">
+                            {{ config?.selected_school?.long_name || config?.selected_school?.name }}
+                        </v-chip>
+                    </div>
+                </v-card-text>
+            </v-card>
 
-                    <div class="admin-header-meta">
-                        <div class="admin-meta-pill">
-                            <span>Version</span>
-                            <strong>{{ config?.version }}</strong>
-                        </div>
-                        <div class="admin-meta-pill" v-if="config?.selected_school?.long_name || config?.selected_school?.name">
-                            <span>Schule</span>
-                            <strong>{{ config?.selected_school?.long_name || config?.selected_school?.name }}</strong>
+            <!-- KPI Card -->
+            <v-card rounded="xl" variant="flat" class="mb-4">
+                <v-card-text class="pa-5 d-flex align-center justify-space-between flex-wrap ga-4">
+                    <div class="d-flex align-center ga-3">
+                        <v-icon
+                            size="28"
+                            :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-checkbox-marked-circle' : 'mdi-alert-circle') : 'mdi-progress-clock'"
+                            :color="health_loaded ? (healthStore.is_healthy ? 'success' : 'error') : 'warning'" />
+                        <div>
+                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">System-Health</div>
+                            <span class="text-h5 font-weight-bold">
+                                {{ health_loaded ? (healthStore.is_healthy ? 'OK' : 'Fehler') : 'Laden...' }}
+                            </span>
                         </div>
                     </div>
-                </header>
-
-                <div class="admin-hero-copy">
-                    <h2 class="admin-hero-title">Zentrale Übersicht</h2>
-                </div>
-
-                <div class="admin-kpi-grid">
-                    <div class="kpi-card ai-glass-panel">
-                        <div class="kpi-label">System-Health</div>
-                        <div class="kpi-value">
-                            <v-icon
-                                size="20"
-                                :icon="health_loaded ? (healthStore.is_healthy ? 'mdi-checkbox-marked-circle' : 'mdi-alert-circle') : 'mdi-progress-clock'"
-                                :color="health_loaded ? (healthStore.is_healthy ? 'success' : 'error') : 'warning'" />
-                            <span>{{ health_loaded ? (healthStore.is_healthy ? 'OK' : 'Fehler') : 'Wird geladen...' }}</span>
+                    <div v-if="isAllowed(['admin', 'super_admin'])" class="d-flex align-center ga-3">
+                        <div v-if="restart_queues_loading" class="d-flex align-center ga-2">
+                            <v-progress-circular indeterminate size="16" width="2" color="warning" />
+                            <span class="text-caption text-medium-emphasis">
+                                Neustart + Tests laufen... {{ restart_countdown }}s
+                            </span>
                         </div>
-                        <div v-if="isAllowed(['admin', 'super_admin'])" class="mt-3">
-                            <div v-if="restart_queues_loading" class="restart-status mb-2">
-                                <v-icon size="16" class="restart-status-icon mdi-spin mr-1">mdi-loading</v-icon>
-                                <span class="text-caption restart-status-text">Neustart + Tests laufen... {{ restart_countdown }}s</span>
-                            </div>
-                            <v-btn
-                                size="small"
-                                variant="flat"
-                                color="warning"
-                                prepend-icon="mdi-restart"
-                                :loading="restart_queues_loading"
-                                :disabled="restart_queues_loading || health_loading"
-                                block
-                                @click="restartQueues">
-                                Queues neu starten
-                            </v-btn>
-                        </div>
+                        <v-btn
+                            size="small" variant="tonal" color="warning"
+                            prepend-icon="mdi-restart"
+                            :loading="restart_queues_loading"
+                            :disabled="restart_queues_loading || health_loading"
+                            @click="restartQueues">
+                            Queues neu starten
+                        </v-btn>
                     </div>
+                </v-card-text>
+            </v-card>
 
-                    <div class="kpi-card ai-glass-panel">
-                        <div class="kpi-label">Aktive Lizenzen</div>
-                        <div class="kpi-value">{{ activeLicenceCount }}</div>
-                        <div class="kpi-sub" v-if="expiredLicenceCount > 0">{{ expiredLicenceCount }} abgelaufen</div>
-                        <div class="kpi-sub" v-else>Keine abgelaufenen Lizenzen</div>
-                    </div>
-                </div>
-
-                <div class="admin-content-grid">
-                    <section class="admin-card ai-glass-panel admin-card-tests">
-                        <div class="admin-card-head" style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div>
-                                <div class="admin-card-eyebrow">Monitoring</div>
-                                <h3 class="admin-card-title">System-Health</h3>
-                            </div>
-                            <div class="d-flex ga-2">
-                                <v-btn
-                                    v-if="isAllowed(['admin', 'super_admin'])"
-                                    size="small"
-                                    variant="flat"
-                                    color="primary"
-                                    rounded="lg"
-                                    prepend-icon="mdi-refresh"
-                                    @click="refreshHealth"
-                                    :loading="health_loading"
-                                    :disabled="health_loading">
-                                    Status prüfen
-                                </v-btn>
-                                <v-btn
-                                    v-if="isAllowed(['admin', 'super_admin'])"
-                                    size="small"
-                                    variant="tonal"
-                                    color="secondary"
-                                    rounded="lg"
-                                    prepend-icon="mdi-play-circle-outline"
-                                    @click="runQueueTest"
-                                    :loading="queue_test_running"
-                                    :disabled="queue_test_running || health_loading">
-                                    Queue testen
-                                </v-btn>
-                            </div>
-                        </div>
-
-                        <div class="status-list">
-                            <div class="status-row">
-                                <div class="status-copy">
-                                    <div class="status-name">Gesamtstatus</div>
-                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
-                                    <div class="status-note" v-else-if="healthStore.is_healthy">Scheduler und Worker laufen</div>
-                                    <div class="status-note" v-else>Mindestens ein Dienst antwortet nicht</div>
-                                </div>
-                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.is_healthy ? 'is-success' : 'is-error'">
-                                    <v-icon
-                                        size="16"
-                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
-                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.is_healthy ? 'OK' : 'Fehler' }}</span>
-                                </div>
-                            </div>
-
-                            <div class="status-row">
-                                <div class="status-copy">
-                                    <div class="status-name">Scheduler</div>
-                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
-                                    <div class="status-note" v-else-if="healthStore.scheduler?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }}</div>
-                                    <div class="status-note" v-else-if="healthStore.scheduler?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }} (veraltet)</div>
-                                    <div class="status-note" v-else>Kein Heartbeat empfangen</div>
-                                </div>
-                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.scheduler?.is_healthy ? 'is-success' : 'is-error'">
-                                    <v-icon
-                                        size="16"
-                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.scheduler?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
-                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.scheduler?.is_healthy ? 'OK' : 'Fehler' }}</span>
-                                </div>
-                            </div>
-
-                            <div class="status-row">
-                                <div class="status-copy">
-                                    <div class="status-name">Worker</div>
-                                    <div class="status-note" v-if="!health_loaded">Wird geladen...</div>
-                                    <div class="status-note" v-else-if="healthStore.worker?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }}</div>
-                                    <div class="status-note" v-else-if="healthStore.worker?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }} (veraltet)</div>
-                                    <div class="status-note" v-else>Kein Heartbeat empfangen</div>
-                                </div>
-                                <div class="status-badge" :class="!health_loaded ? 'is-waiting' : healthStore.worker?.is_healthy ? 'is-success' : 'is-error'">
-                                    <v-icon
-                                        size="16"
-                                        :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.worker?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'" />
-                                    <span>{{ !health_loaded ? 'Laden...' : healthStore.worker?.is_healthy ? 'OK' : 'Fehler' }}</span>
-                                </div>
-                            </div>
-
-                            <div class="status-row" v-if="queue_test_visible">
-                                <div class="status-copy">
-                                    <div class="status-name">Queue-Test</div>
-                                    <div class="status-note" v-if="queue_test_running">Job wird verarbeitet...</div>
-                                    <div class="status-note" v-else-if="healthStore.queue_test?.is_completed">Verarbeitet in {{ healthStore.queue_test.duration_seconds }}s</div>
-                                    <div class="status-note" v-else-if="healthStore.queue_test?.status === 'dispatched'">Job wartend in Warteschlange</div>
-                                    <div class="status-note" v-else>Test fehlgeschlagen</div>
-                                </div>
-                                <div class="status-badge" :class="queue_test_running ? 'is-running' : healthStore.queue_test?.is_completed ? 'is-success' : 'is-error'">
-                                    <v-icon
-                                        size="16"
-                                        :class="{ 'mdi-spin': queue_test_running }"
-                                        :icon="queue_test_running ? 'mdi-loading' : healthStore.queue_test?.is_completed ? 'mdi-check-circle' : 'mdi-alert-circle'" />
-                                    <span>{{ queue_test_running ? 'Läuft...' : healthStore.queue_test?.is_completed ? 'OK' : 'Fehler' }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-
-                    <section class="admin-card ai-glass-panel admin-card-user">
-                        <div class="admin-card-head">
-                            <div>
-                                <div class="admin-card-eyebrow">Account</div>
-                                <h3 class="admin-card-title">Angemeldeter Benutzer</h3>
-                            </div>
-                        </div>
-
-                        <div class="user-block">
-                            <div class="user-avatar" :class="{ 'has-short-code': !!userBadgeShortName(config?.user) }" :title="userBadgeText(config?.user)">
-                                {{ userBadgeText(config?.user) }}
-                            </div>
-                            <div>
-                                <div class="user-name">{{ config?.user?.last_name + ' ' + config?.user?.first_name }}</div>
-                                <div class="user-email">{{ config?.user?.email }}</div>
-                            </div>
-                        </div>
-
-                        <div class="role-list">
-                            <div class="role-pill" v-for="role in config?.user?.roles || []" :key="role">
-                                <v-icon size="14" icon="mdi-shield-account" />
-                                <span>{{ role }}</span>
-                            </div>
-                        </div>
-                    </section>
-
-
-                    <div class="admin-licence-row">
-                        <section class="admin-card ai-glass-panel">
-                            <div class="admin-card-head">
+            <!-- System Health + User -->
+            <v-row>
+                <v-col cols="12" md="6">
+                    <v-card rounded="xl" class="fill-height">
+                        <v-card-text class="pa-5">
+                            <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4">
                                 <div>
-                                    <div class="admin-card-eyebrow">Lizenzen</div>
-                                    <h3 class="admin-card-title">Schullizenzen</h3>
+                                    <div class="text-overline text-medium-emphasis">Monitoring</div>
+                                    <div class="text-h6 font-weight-bold">System-Health</div>
+                                </div>
+                                <div class="d-flex ga-2" v-if="isAllowed(['admin', 'super_admin'])">
+                                    <v-btn
+                                        size="small" variant="tonal" color="primary" rounded="lg"
+                                        prepend-icon="mdi-refresh"
+                                        :loading="health_loading" :disabled="health_loading"
+                                        @click="refreshHealth">
+                                        Status prüfen
+                                    </v-btn>
+                                    <v-btn
+                                        size="small" variant="outlined" rounded="lg"
+                                        prepend-icon="mdi-play-circle-outline"
+                                        :loading="queue_test_running"
+                                        :disabled="queue_test_running || health_loading"
+                                        @click="runQueueTest">
+                                        Queue testen
+                                    </v-btn>
                                 </div>
                             </div>
 
-                            <div class="licence-list" v-if="schoolLicencesWithSchoolLicence.length > 0">
-                                <div v-for="licence in schoolLicencesWithSchoolLicence" :key="licence.id" class="licence-item">
-                                    <div class="licence-name">{{ licence.name }}</div>
-                                    <div class="licence-long" v-if="licence.long_name">{{ licence.long_name }}</div>
-                                    <div class="licence-detail-lines">
-                                        <div class="licence-detail-line">
-                                            <span v-if="isLicenceActive(licence) && licence.valid_until" class="licence-tag is-active">gültig bis {{ formatDateDisplay(licence.valid_until) }}</span>
-                                            <span v-else-if="isLicenceActive(licence)" class="licence-tag is-active">unbegrenzt</span>
-                                            <span v-else class="licence-tag is-expired">abgelaufen</span>
-                                        </div>
+                            <v-list density="compact" rounded="lg" class="pa-0">
+                                <v-list-item rounded="lg" class="mb-1 px-3">
+                                    <template #prepend>
+                                        <v-icon size="20" class="mr-3"
+                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                            :color="!health_loaded ? 'warning' : healthStore.is_healthy ? 'success' : 'error'" />
+                                    </template>
+                                    <v-list-item-title class="font-weight-medium text-body-2">Gesamtstatus</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        <template v-if="!health_loaded">Wird geladen...</template>
+                                        <template v-else-if="healthStore.is_healthy">Scheduler und Worker laufen</template>
+                                        <template v-else>Mindestens ein Dienst antwortet nicht</template>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="!health_loaded ? 'warning' : healthStore.is_healthy ? 'success' : 'error'">
+                                            {{ !health_loaded ? 'Laden...' : healthStore.is_healthy ? 'OK' : 'Fehler' }}
+                                        </v-chip>
+                                    </template>
+                                </v-list-item>
+
+                                <v-list-item rounded="lg" class="mb-1 px-3">
+                                    <template #prepend>
+                                        <v-icon size="20" class="mr-3"
+                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.scheduler?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                            :color="!health_loaded ? 'warning' : healthStore.scheduler?.is_healthy ? 'success' : 'error'" />
+                                    </template>
+                                    <v-list-item-title class="font-weight-medium text-body-2">Scheduler</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        <template v-if="!health_loaded">Wird geladen...</template>
+                                        <template v-else-if="healthStore.scheduler?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }}</template>
+                                        <template v-else-if="healthStore.scheduler?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.scheduler.last_heartbeat) }} (veraltet)</template>
+                                        <template v-else>Kein Heartbeat empfangen</template>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="!health_loaded ? 'warning' : healthStore.scheduler?.is_healthy ? 'success' : 'error'">
+                                            {{ !health_loaded ? 'Laden...' : healthStore.scheduler?.is_healthy ? 'OK' : 'Fehler' }}
+                                        </v-chip>
+                                    </template>
+                                </v-list-item>
+
+                                <v-list-item rounded="lg" class="mb-1 px-3">
+                                    <template #prepend>
+                                        <v-icon size="20" class="mr-3"
+                                            :icon="!health_loaded ? 'mdi-help-circle-outline' : healthStore.worker?.is_healthy ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                            :color="!health_loaded ? 'warning' : healthStore.worker?.is_healthy ? 'success' : 'error'" />
+                                    </template>
+                                    <v-list-item-title class="font-weight-medium text-body-2">Worker</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        <template v-if="!health_loaded">Wird geladen...</template>
+                                        <template v-else-if="healthStore.worker?.is_healthy">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }}</template>
+                                        <template v-else-if="healthStore.worker?.last_heartbeat">Letzter Heartbeat: {{ formatHeartbeat(healthStore.worker.last_heartbeat) }} (veraltet)</template>
+                                        <template v-else>Kein Heartbeat empfangen</template>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="!health_loaded ? 'warning' : healthStore.worker?.is_healthy ? 'success' : 'error'">
+                                            {{ !health_loaded ? 'Laden...' : healthStore.worker?.is_healthy ? 'OK' : 'Fehler' }}
+                                        </v-chip>
+                                    </template>
+                                </v-list-item>
+
+                                <v-list-item v-if="queue_test_visible" rounded="lg" class="px-3">
+                                    <template #prepend>
+                                        <v-icon size="20" class="mr-3"
+                                            :class="{ 'mdi-spin': queue_test_running }"
+                                            :icon="queue_test_running ? 'mdi-loading' : healthStore.queue_test?.is_completed ? 'mdi-check-circle' : 'mdi-alert-circle'"
+                                            :color="queue_test_running ? 'info' : healthStore.queue_test?.is_completed ? 'success' : 'error'" />
+                                    </template>
+                                    <v-list-item-title class="font-weight-medium text-body-2">Queue-Test</v-list-item-title>
+                                    <v-list-item-subtitle class="text-caption">
+                                        <template v-if="queue_test_running">Job wird verarbeitet...</template>
+                                        <template v-else-if="healthStore.queue_test?.is_completed">Verarbeitet in {{ healthStore.queue_test.duration_seconds }}s</template>
+                                        <template v-else-if="healthStore.queue_test?.status === 'dispatched'">Job wartend in Warteschlange</template>
+                                        <template v-else>Test fehlgeschlagen</template>
+                                    </v-list-item-subtitle>
+                                    <template #append>
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="queue_test_running ? 'info' : healthStore.queue_test?.is_completed ? 'success' : 'error'">
+                                            {{ queue_test_running ? 'Läuft...' : healthStore.queue_test?.is_completed ? 'OK' : 'Fehler' }}
+                                        </v-chip>
+                                    </template>
+                                </v-list-item>
+                            </v-list>
+                        </v-card-text>
+                    </v-card>
+                </v-col>
+
+                <v-col cols="12" md="6">
+                    <v-card rounded="xl" class="fill-height">
+                        <v-card-text class="pa-5">
+                            <div class="mb-4">
+                                <div class="text-overline text-medium-emphasis">Account</div>
+                                <div class="text-h6 font-weight-bold">Angemeldeter Benutzer</div>
+                            </div>
+
+                            <v-sheet rounded="lg" color="grey-lighten-5" class="pa-4 d-flex align-center ga-3">
+                                <v-avatar color="primary" rounded="lg" size="44" :title="userBadgeText(config?.user)">
+                                    <span class="text-body-2 font-weight-bold text-white">{{ userBadgeText(config?.user) }}</span>
+                                </v-avatar>
+                                <div class="overflow-hidden">
+                                    <div class="text-body-1 font-weight-bold text-truncate">
+                                        {{ config?.user?.last_name }} {{ config?.user?.first_name }}
                                     </div>
+                                    <div class="text-body-2 text-medium-emphasis text-truncate">{{ config?.user?.email }}</div>
                                 </div>
-                            </div>
-                            <div v-else class="empty-state">Keine Schullizenzen vorhanden.</div>
-                        </section>
+                            </v-sheet>
 
-                        <section class="admin-card ai-glass-panel">
-                            <div class="admin-card-head">
-                                <div>
-                                    <div class="admin-card-eyebrow">Lizenzen</div>
-                                    <h3 class="admin-card-title">Meine Lizenzen</h3>
-                                </div>
+                            <div class="d-flex flex-wrap ga-2 mt-4">
+                                <v-chip
+                                    v-for="role in config?.user?.roles || []" :key="role"
+                                    variant="tonal" size="small" prepend-icon="mdi-shield-account">
+                                    {{ role }}
+                                </v-chip>
+                            </div>
+                        </v-card-text>
+                    </v-card>
+                </v-col>
+            </v-row>
+
+            <!-- Licence Cards -->
+            <v-row class="mt-1">
+                <v-col cols="12" md="6">
+                    <v-card rounded="xl" class="fill-height">
+                        <v-card-text class="pa-5">
+                            <div class="mb-4">
+                                <div class="text-overline text-medium-emphasis">Lizenzen</div>
+                                <div class="text-h6 font-weight-bold">Schullizenzen</div>
                             </div>
 
-                            <div class="licence-list" v-if="myLicenceEntries.length > 0">
-                                <div v-for="entry in myLicenceEntries" :key="entry.key" class="licence-item">
-                                    <div class="licence-name">{{ entry.licence_name }}</div>
-                                    <div class="licence-detail-lines">
-                                        <div class="licence-detail-line">
-                                            <span>{{ entry.type_label }}</span>
-                                            <span v-if="entry.is_active && entry.valid_until" class="licence-tag is-active">gültig bis {{ formatDateDisplay(entry.valid_until) }}</span>
-                                            <span v-else-if="entry.is_active" class="licence-tag is-active">unbegrenzt</span>
-                                            <span v-else class="licence-tag is-expired">abgelaufen</span>
-                                        </div>
+                            <template v-if="schoolLicencesWithSchoolLicence.length > 0">
+                                <v-sheet
+                                    v-for="licence in schoolLicencesWithSchoolLicence" :key="licence.id"
+                                    rounded="lg" border class="pa-3 mb-2">
+                                    <div class="font-weight-bold text-body-2">{{ licence.name }}</div>
+                                    <div v-if="licence.long_name" class="text-caption text-medium-emphasis mt-1">
+                                        {{ licence.long_name }}
                                     </div>
-                                </div>
+                                    <div class="mt-2">
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="isLicenceActive(licence) ? 'success' : 'error'">
+                                            <template v-if="isLicenceActive(licence) && licence.valid_until">
+                                                gültig bis {{ formatDateDisplay(licence.valid_until) }}
+                                            </template>
+                                            <template v-else-if="isLicenceActive(licence)">unbegrenzt</template>
+                                            <template v-else>abgelaufen</template>
+                                        </v-chip>
+                                    </div>
+                                </v-sheet>
+                            </template>
+
+                            <v-sheet v-else rounded="lg" class="pa-6 text-center" color="grey-lighten-5">
+                                <v-icon size="36" color="grey-lighten-1" class="mb-2">mdi-certificate-outline</v-icon>
+                                <div class="text-body-2 text-medium-emphasis">Keine Schullizenzen vorhanden.</div>
+                            </v-sheet>
+                        </v-card-text>
+                    </v-card>
+                </v-col>
+
+                <v-col cols="12" md="6">
+                    <v-card rounded="xl" class="fill-height">
+                        <v-card-text class="pa-5">
+                            <div class="mb-4">
+                                <div class="text-overline text-medium-emphasis">Lizenzen</div>
+                                <div class="text-h6 font-weight-bold">Meine Lizenzen</div>
                             </div>
-                            <div v-else class="empty-state">Keine persönlichen Lizenzen vorhanden.</div>
-                        </section>
-                    </div>
-                </div>
-            </div>
-        </section>
+
+                            <template v-if="myLicenceEntries.length > 0">
+                                <v-sheet
+                                    v-for="entry in myLicenceEntries" :key="entry.key"
+                                    rounded="lg" border class="pa-3 mb-2">
+                                    <div class="font-weight-bold text-body-2">{{ entry.licence_name }}</div>
+                                    <div class="d-flex align-center ga-2 mt-2 flex-wrap">
+                                        <v-chip size="x-small" variant="tonal">{{ entry.type_label }}</v-chip>
+                                        <v-chip size="x-small" variant="tonal"
+                                            :color="entry.is_active ? 'success' : 'error'">
+                                            <template v-if="entry.is_active && entry.valid_until">
+                                                gültig bis {{ formatDateDisplay(entry.valid_until) }}
+                                            </template>
+                                            <template v-else-if="entry.is_active">unbegrenzt</template>
+                                            <template v-else>abgelaufen</template>
+                                        </v-chip>
+                                    </div>
+                                </v-sheet>
+                            </template>
+
+                            <v-sheet v-else rounded="lg" class="pa-6 text-center" color="grey-lighten-5">
+                                <v-icon size="36" color="grey-lighten-1" class="mb-2">mdi-account-key-outline</v-icon>
+                                <div class="text-body-2 text-medium-emphasis">Keine persönlichen Lizenzen vorhanden.</div>
+                            </v-sheet>
+                        </v-card-text>
+                    </v-card>
+                </v-col>
+            </v-row>
+        </v-container>
 
         <v-dialog v-model="activation_dialog_open" max-width="560">
             <v-card>
@@ -1032,19 +1064,9 @@ export default {
 }
 </script>
 
-<style scoped src="../../../../css/admin-index-page.css"></style>
-
 <style scoped>
-.user-avatar.has-short-code,
-.person-avatar.has-short-code {
-    width: auto;
-    min-width: 38px;
-    max-width: 120px;
-    padding: 0 10px;
-    font-size: 0.72rem;
-    line-height: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.admin-dashboard-page {
+    min-height: 100vh;
+    background: rgb(var(--v-theme-surface-variant), 0.08);
 }
 </style>

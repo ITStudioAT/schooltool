@@ -62,9 +62,9 @@ class AdminNavigationService
             'ABA' => self::ABA_DASHBOARD_ROLES,
         ]);
 
-        $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'is_active' => true];
+        $menu[] = ['title' => 'Home', 'icon' => 'mdi-home', 'to' => '/admin', 'active_paths' => ['/admin'], 'active_exact' => true, 'is_active' => true];
         if ($isSuperAdmin || $user->hasAnyRole(self::ADMIN_SHELL_ROLES)) {
-            $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'is_active' => true];
+            $menu[] = ['title' => 'Einstellungen', 'icon' => 'mdi-cog', 'to' => '/admin/settings', 'active_paths' => ['/admin/settings'], 'is_active' => true];
         }
 
         $registerLicenceStatus = $licenceStatuses['Anmeldetool'] ?? 'missing';
