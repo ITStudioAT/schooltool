@@ -264,10 +264,19 @@ export default {
             return
         }
         await this.studentStore.loadConfig()
-        if (this.selected_school_id) {
+        const schoolShortName = String(this.$route.query.school || '').trim()
+        const selectedSchoolFromUrl = schoolShortName
+            ? this.schools?.find((item) => item.short_name === schoolShortName)
+            : null
+
+        if (selectedSchoolFromUrl) {
+            this.selected_school_id = selectedSchoolFromUrl.id
+            this.school = selectedSchoolFromUrl
+        } else if (this.selected_school_id) {
             this.school = this.schools?.find((item) => Number(item.id) === Number(this.selected_school_id)) || null
         } else if (this.schools?.length === 1) {
             this.selected_school_id = this.schools[0].id
+            this.school = this.schools[0]
         }
     },
 

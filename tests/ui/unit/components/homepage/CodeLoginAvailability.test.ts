@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import RegisterPage from '@/pages/homepage/register/Register.vue'
 import StudentPage from '@/pages/homepage/student/Student.vue'
@@ -40,6 +42,16 @@ describe('code login availability guards', () => {
         await (StudentPage as any).methods.submitCode.call(context)
 
         expect(loginStepCode).not.toHaveBeenCalled()
+    })
+
+    it('student page preselects the school from the login URL', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/student/Student.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain("const schoolShortName = String(this.$route.query.school || '').trim()")
+        expect(source).toContain('const selectedSchoolFromUrl = schoolShortName')
+        expect(source).toContain('this.selected_school_id = selectedSchoolFromUrl.id')
+        expect(source).toContain('this.school = selectedSchoolFromUrl')
     })
 
     it('tutoring page blocks unknown password flow when queue is down', async () => {

@@ -33,4 +33,16 @@ describe('homepage index visibility', () => {
         expect(source).toContain('school-logo-box--dark')
         expect(source).toContain('school-select-icon--dark-logo')
     })
+
+    it('routes public apps to their app login pages so code login remains available', () => {
+        const componentPath = resolve(process.cwd(), 'resources/js/pages/homepage/index/Index.vue')
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('const publicToolRoute = this.publicToolRoute(tool, school)')
+        expect(source).toContain("Anmeldetool: '/homepage/register'")
+        expect(source).toContain("Nachhilfetool: '/homepage/tutoring_overview'")
+        expect(source).toContain("Lehrertool: '/homepage/student'")
+        expect(source).toContain("Restaurant: '/homepage/restaurant'")
+        expect(source).toContain('school: school.short_name')
+    })
 })

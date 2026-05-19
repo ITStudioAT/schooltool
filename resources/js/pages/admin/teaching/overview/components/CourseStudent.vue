@@ -373,6 +373,36 @@
                                         <div v-if="entryComment(item.entry)" class="text-caption font-weight-bold entry-work-comment-line">
                                             {{ entryComment(item.entry) }}
                                         </div>
+                                        <div v-if="!entryIsDerivedFromWork(item.entry)" class="entry-actions d-flex align-center ga-1" @click.stop>
+                                            <v-btn
+                                                v-if="delete_entry_id !== item.entry.id"
+                                                :data-testid="`student-entry-delete-start-${item.entry.id}`"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="tonal"
+                                                :disabled="isSavingMutation"
+                                                @click.stop="delete_entry_id = item.entry.id" />
+                                            <v-btn
+                                                v-if="delete_entry_id === item.entry.id"
+                                                :data-testid="`student-entry-delete-cancel-${item.entry.id}`"
+                                                icon="mdi-delete-off"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                :disabled="isSavingMutation"
+                                                @click.stop="delete_entry_id = null" />
+                                            <v-btn
+                                                v-if="delete_entry_id === item.entry.id"
+                                                :data-testid="`student-entry-delete-confirm-${item.entry.id}`"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="error"
+                                                variant="tonal"
+                                                :loading="isSavingAction('delete-entry')"
+                                                :disabled="isSavingMutation"
+                                                @click.stop="deleteEntry(item.entry)" />
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -422,6 +452,8 @@
                                         </div>
                                         <div class="behaviour-actions d-flex align-center ga-1">
                                             <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editBehaviourEntry(item.entry)" />
+                                        </div>
+                                        <div class="delete-actions d-flex align-center ga-1">
                                             <v-btn
                                                 v-if="delete_behaviour_id !== item.entry.id"
                                                 icon="mdi-delete"
@@ -466,6 +498,8 @@
                                     <div class="star-description text-caption flex-grow-1">{{ star.comment }}</div>
                                     <div class="star-actions d-flex align-center ga-1">
                                         <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editStarEntry(star)" />
+                                    </div>
+                                    <div class="delete-actions d-flex align-center ga-1">
                                         <v-btn v-if="delete_star_id !== star.id" icon="mdi-delete" size="x-small" color="warning" variant="tonal" @click="delete_star_id = star.id" />
                                         <v-btn v-if="delete_star_id === star.id" icon="mdi-delete-off" size="x-small" color="success" variant="tonal" @click="delete_star_id = null" />
                                         <v-btn v-if="delete_star_id === star.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteStarEntry(star.id)" />
@@ -515,31 +549,35 @@
                                         <div class="notification-description text-caption flex-grow-1">
                                             {{ item.entry.description || '' }}
                                         </div>
-                                        <v-btn
-                                            v-if="!item.entry.done_date"
-                                            icon="mdi-check"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            :loading="isSavingAction('complete-notification')"
-                                            :disabled="isSavingMutation"
-                                            @click="completeNotificationToday(item.entry)" />
-                                        <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
-                                        <v-btn
-                                            v-if="delete_notification_id !== item.entry.id"
-                                            icon="mdi-delete"
-                                            size="x-small"
-                                            color="warning"
-                                            variant="tonal"
-                                            @click="delete_notification_id = item.entry.id" />
-                                        <v-btn
-                                            v-if="delete_notification_id === item.entry.id"
-                                            icon="mdi-delete-off"
-                                            size="x-small"
-                                            color="success"
-                                            variant="tonal"
-                                            @click="delete_notification_id = null" />
-                                        <v-btn v-if="delete_notification_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteNotificationEntry(item.entry)" />
+                                        <div class="notification-actions d-flex align-center ga-1">
+                                            <v-btn
+                                                v-if="!item.entry.done_date"
+                                                icon="mdi-check"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                :loading="isSavingAction('complete-notification')"
+                                                :disabled="isSavingMutation"
+                                                @click="completeNotificationToday(item.entry)" />
+                                            <v-btn icon="mdi-pencil" size="x-small" color="primary" variant="tonal" @click="editNotificationEntry(item.entry)" />
+                                        </div>
+                                        <div class="delete-actions d-flex align-center ga-1">
+                                            <v-btn
+                                                v-if="delete_notification_id !== item.entry.id"
+                                                icon="mdi-delete"
+                                                size="x-small"
+                                                color="warning"
+                                                variant="tonal"
+                                                @click="delete_notification_id = item.entry.id" />
+                                            <v-btn
+                                                v-if="delete_notification_id === item.entry.id"
+                                                icon="mdi-delete-off"
+                                                size="x-small"
+                                                color="success"
+                                                variant="tonal"
+                                                @click="delete_notification_id = null" />
+                                            <v-btn v-if="delete_notification_id === item.entry.id" icon="mdi-delete" size="x-small" color="error" variant="tonal" @click="deleteNotificationEntry(item.entry)" />
+                                        </div>
                                     </div>
                                 </v-list-item>
                             </template>
@@ -1448,6 +1486,7 @@ export default {
                 this.behaviour_form = this.emptyBehaviourForm()
                 this.show_star_form = false
                 this.star_form = this.emptyStarForm()
+                this.delete_entry_id = null
                 this.delete_star_id = null
                 this.delete_behaviour_id = null
                 this.delete_notification_id = null
@@ -1568,6 +1607,7 @@ export default {
             this.behaviourEntryStore?.clear()
             this.show_star_form = false
             this.star_form = this.emptyStarForm()
+            this.delete_entry_id = null
             this.delete_star_id = null
             this.delete_behaviour_id = null
             this.delete_notification_id = null
@@ -3191,8 +3231,25 @@ export default {
 }
 
 .notification-description {
+    flex-basis: 100%;
+    min-width: 120px;
+    margin-top: 2px;
+    order: 2;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+}
+
+.notification-actions {
+    margin-left: auto;
+    flex: 0 0 auto;
+    order: 1;
+}
+
+.delete-actions {
+    flex: 0 0 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
+    order: 3;
 }
 
 .entry-description {
@@ -3200,8 +3257,9 @@ export default {
 }
 
 .entry-actions {
-    margin-left: auto;
-    flex: 0 0 auto;
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
 }
 
 @media (max-width: 700px) {
@@ -3217,12 +3275,6 @@ export default {
         flex-basis: 100%;
         min-width: 100%;
         margin-top: 2px;
-    }
-
-    .entry-actions {
-        margin-left: 0;
-        width: 100%;
-        justify-content: flex-end;
     }
 
     .entry-work-title-line {

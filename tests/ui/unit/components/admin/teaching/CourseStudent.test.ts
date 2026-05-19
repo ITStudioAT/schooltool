@@ -324,6 +324,26 @@ describe('CourseStudent course-specific definitions', () => {
 })
 
 describe('CourseStudent entry title rendering', () => {
+    it('renders two-step delete controls for manual student entries', () => {
+        const componentPath = resolve(
+            process.cwd(),
+            'resources/js/pages/admin/teaching/overview/components/CourseStudent.vue',
+        )
+        const source = readFileSync(componentPath, 'utf8')
+
+        expect(source).toContain('v-if="!entryIsDerivedFromWork(item.entry)" class="entry-actions d-flex align-center ga-1" @click.stop')
+        expect(source).toContain(':data-testid="`student-entry-delete-start-${item.entry.id}`"')
+        expect(source).toContain('@click.stop="delete_entry_id = item.entry.id"')
+        expect(source).toContain(':data-testid="`student-entry-delete-cancel-${item.entry.id}`"')
+        expect(source).toContain('@click.stop="delete_entry_id = null"')
+        expect(source).toContain(':data-testid="`student-entry-delete-confirm-${item.entry.id}`"')
+        expect(source).toContain('@click.stop="deleteEntry(item.entry)"')
+        expect(source).toContain("isSavingAction('delete-entry')")
+        expect(source).toContain('.entry-actions {')
+        expect(source).toContain('justify-content: flex-end;')
+        expect(source).not.toContain('.entry-actions {\n    margin-left: auto;')
+    })
+
     it('renders work title as text line instead of chip in entries list', () => {
         const componentPath = resolve(
             process.cwd(),
@@ -390,6 +410,7 @@ describe('CourseStudent entry title rendering', () => {
 
         expect(source).toContain('<v-list-item v-for="star in studentStars" :key="star.id" class="course-student-entry-grid__item">')
         expect(source).toContain('class="star-row entry-list-row d-flex align-center ga-2 w-100" :class="starEntryBackgroundClass(star)"')
+        expect(source).toContain('class="delete-actions d-flex align-center ga-1"')
         expect(source).toContain('<v-list-item v-if="!studentStars.length" class="course-student-entry-grid__full">')
     })
 
@@ -404,6 +425,8 @@ describe('CourseStudent entry title rendering', () => {
         expect(source).toContain('<v-list-item v-if="item.kind === \'header\'" class="course-student-entry-grid__full">')
         expect(source).toContain('<v-list-item v-else class="course-student-entry-grid__item">')
         expect(source).toContain('class="entry-row entry-list-row d-flex align-center ga-2 w-100" :class="entryTypeBackgroundClass(item.entry)"')
+        expect(source).toContain('class="notification-actions d-flex align-center ga-1"')
+        expect(source).toContain('.delete-actions {')
         expect(source).toContain('<v-list-item v-if="!filteredNotificationEntries?.length" class="course-student-entry-grid__full">')
     })
 

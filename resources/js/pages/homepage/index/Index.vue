@@ -552,17 +552,12 @@ export default {
                 return
             }
 
-            if (tool === 'Restaurant') {
-                this.$router.push('/homepage/restaurant?school=' + school.short_name)
+            const publicToolRoute = this.publicToolRoute(tool, school)
+            if (publicToolRoute) {
+                this.$router.push(publicToolRoute)
+
                 return
             }
-
-            this.selected_tool = tool
-            this.loginStep = 'EMAIL'
-            this.loginData = { email: '', password: '', remember: true, token_2fa: '' }
-            this.loginPasswordVisible = false
-            this.$router.replace({ query: { ...this.$route.query, tool } })
-            this.step = 'login'
         },
 
         navigateToTool() {
@@ -576,6 +571,24 @@ export default {
             const path = toolRoutes[this.selected_tool]
             if (path && school) {
                 this.$router.push(path + '?school=' + school.short_name)
+            }
+        },
+
+        publicToolRoute(tool, school) {
+            const toolRoutes = {
+                Anmeldetool: '/homepage/register',
+                Nachhilfetool: '/homepage/tutoring_overview',
+                Lehrertool: '/homepage/student',
+                Restaurant: '/homepage/restaurant',
+            }
+            const path = toolRoutes[tool]
+            if (!path || !school?.short_name) return null
+
+            return {
+                path,
+                query: {
+                    school: school.short_name,
+                },
             }
         },
 
