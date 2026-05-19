@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" md="6" lg="7" xl="4">
+    <v-col cols="12" class="pb-0">
         <v-sheet rounded="xl" class="st-subnav mb-2">
             <div class="st-subnav__inner">
                 <div class="st-subnav__items">
@@ -17,6 +17,11 @@
             </div>
         </v-sheet>
 
+    </v-col>
+
+    <Overview v-if="subAction === 'overview'" />
+
+    <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
             <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
                 <v-icon color="primary" size="22">mdi-import</v-icon>
@@ -213,6 +218,239 @@
                                                 <td>{{ appointment.subject || '-' }}</td>
                                             </tr>
                                         </template>
+                                    </tbody>
+                                </v-table>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
+                </section>
+
+                <section
+                    v-if="activeImportPage === 'anrechnungen' && activeRecognitionDataset"
+                    class="st-main-dataset-summary mb-4">
+                    <div class="st-main-dataset-summary__header">
+                        <v-icon icon="mdi-database-outline" color="primary" size="20" />
+                        <div class="st-main-dataset-summary__title">
+                            <div class="text-caption text-medium-emphasis">Hauptdatenbestand</div>
+                            <div class="font-weight-bold">{{ activeRecognitionDataset.name || 'Aktive Anrechnungen' }}</div>
+                        </div>
+                        <v-chip size="small" color="primary" variant="tonal">
+                            {{ activeRecognitionDataset.table || 'student_timetable_recognition_rows' }}
+                        </v-chip>
+                    </div>
+
+                    <div class="st-main-dataset-summary__grid">
+                        <div
+                            v-for="item in recognitionDatasetSummaryItems"
+                            :key="item.label"
+                            class="st-main-dataset-summary__item">
+                            <span>{{ item.label }}</span>
+                            <strong>{{ item.value }}</strong>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    v-if="activeImportPage === 'anrechnungen' && activeRecognitionSubjectGradeCounts.length"
+                    class="st-course-summary mb-4">
+                    <v-expansion-panels variant="accordion">
+                        <v-expansion-panel elevation="0" class="st-course-summary__panel">
+                            <v-expansion-panel-title>
+                                <div class="st-course-summary__title">
+                                    <v-icon icon="mdi-book-open-variant-outline" color="primary" size="18" />
+                                    <span class="font-weight-medium">Fächer</span>
+                                    <v-chip size="x-small" color="primary" variant="tonal">
+                                        {{ activeRecognitionSubjectGradeCounts.length }}
+                                    </v-chip>
+                                </div>
+                            </v-expansion-panel-title>
+                            <v-expansion-panel-text>
+                                <v-table density="compact" class="st-import-history-subject-table">
+                                    <colgroup>
+                                        <col class="st-import-history-label-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>Fach</th>
+                                            <th class="text-right">1-4</th>
+                                            <th class="text-right">5</th>
+                                            <th class="text-right">N</th>
+                                            <th class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">
+                                                <v-icon icon="mdi-sigma" size="14" title="Summe" />
+                                            </th>
+                                            <th class="text-right st-import-history-teacher-divider">A</th>
+                                            <th class="text-right">B</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template
+                                            v-for="subjectItem in activeRecognitionSubjectGradeCounts"
+                                            :key="subjectItem.subject">
+                                            <tr>
+                                                <td>{{ subjectItem.subject }}</td>
+                                                <td class="text-right">{{ subjectItem.one_to_four_count || 0 }}</td>
+                                                <td class="text-right">{{ subjectItem.five_count || 0 }}</td>
+                                                <td class="text-right">{{ subjectItem.n_count || 0 }}</td>
+                                                <td class="text-right st-import-history-subject-total-cell">
+                                                    {{ recognitionSubjectCountedTotal(subjectItem) }}
+                                                </td>
+                                                <td class="text-right">{{ subjectItem.other_count || 0 }}</td>
+                                                <td class="text-right">{{ subjectItem.b_count || 0 }}</td>
+                                            </tr>
+                                            <tr class="st-import-history-subject-percent-row">
+                                                <td></td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(subjectItem.one_to_four_count, recognitionSubjectCountedTotal(subjectItem)) }}
+                                                </td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(subjectItem.five_count, recognitionSubjectCountedTotal(subjectItem)) }}
+                                                </td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(subjectItem.n_count, recognitionSubjectCountedTotal(subjectItem)) }}
+                                                </td>
+                                                <td class="text-right st-import-history-subject-total-cell"></td>
+                                                <td class="text-right"></td>
+                                                <td class="text-right"></td>
+                                            </tr>
+                                        </template>
+                                        <tr class="st-import-history-subject-sum-row">
+                                            <td>Summe</td>
+                                            <td class="text-right">{{ activeRecognitionGradeCounts?.one_to_four || 0 }}</td>
+                                            <td class="text-right">{{ activeRecognitionGradeCounts?.five || 0 }}</td>
+                                            <td class="text-right">{{ activeRecognitionGradeCounts?.n || 0 }}</td>
+                                            <td class="text-right st-import-history-subject-total-cell">
+                                                {{ recognitionGradeCountedTotal(activeRecognitionGradeCounts) }}
+                                            </td>
+                                            <td class="text-right">{{ activeRecognitionGradeCounts?.other || 0 }}</td>
+                                            <td class="text-right">{{ activeRecognitionGradeCounts?.b || 0 }}</td>
+                                        </tr>
+                                        <tr class="st-import-history-subject-percent-row st-import-history-subject-sum-percent-row">
+                                            <td></td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(activeRecognitionGradeCounts?.one_to_four, recognitionGradeCountedTotal(activeRecognitionGradeCounts)) }}
+                                            </td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(activeRecognitionGradeCounts?.five, recognitionGradeCountedTotal(activeRecognitionGradeCounts)) }}
+                                            </td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(activeRecognitionGradeCounts?.n, recognitionGradeCountedTotal(activeRecognitionGradeCounts)) }}
+                                            </td>
+                                            <td class="text-right st-import-history-subject-total-cell"></td>
+                                            <td class="text-right"></td>
+                                            <td class="text-right"></td>
+                                        </tr>
+                                    </tbody>
+                                </v-table>
+                            </v-expansion-panel-text>
+                        </v-expansion-panel>
+                    </v-expansion-panels>
+                </section>
+
+                <section
+                    v-if="activeImportPage === 'anrechnungen' && activeRecognitionTeacherCodes.length"
+                    class="st-course-summary mb-4">
+                    <v-expansion-panels variant="accordion">
+                        <v-expansion-panel elevation="0" class="st-course-summary__panel">
+                            <v-expansion-panel-title>
+                                <div class="st-course-summary__title">
+                                    <v-icon icon="mdi-account-tie-outline" color="primary" size="18" />
+                                    <span class="font-weight-medium">Lehrer</span>
+                                    <v-chip size="x-small" color="primary" variant="tonal">
+                                        {{ activeRecognitionTeacherCodes.length }}
+                                    </v-chip>
+                                </div>
+                            </v-expansion-panel-title>
+                            <v-expansion-panel-text>
+                                <v-table density="compact" class="st-import-history-teacher-table">
+                                    <colgroup>
+                                        <col class="st-import-history-label-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                        <col class="st-import-history-count-col" />
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>Alle Lehrer</th>
+                                            <th class="text-right">1-4</th>
+                                            <th class="text-right">5</th>
+                                            <th class="text-right">N</th>
+                                            <th class="text-right">
+                                                <v-icon icon="mdi-sigma" size="14" title="Summe" />
+                                            </th>
+                                            <th class="text-right">A</th>
+                                            <th class="text-right">B</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template
+                                            v-for="teacherItem in activeRecognitionTeacherCodes"
+                                            :key="teacherItem.code">
+                                            <tr>
+                                                <td>{{ teacherItem.code }}</td>
+                                                <td class="text-right">{{ teacherItem.one_to_four_count || 0 }}</td>
+                                                <td class="text-right">{{ teacherItem.five_count || 0 }}</td>
+                                                <td class="text-right">{{ teacherItem.n_count || 0 }}</td>
+                                                <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">
+                                                    {{ recognitionTeacherCountedTotal(teacherItem) }}
+                                                </td>
+                                                <td class="text-right st-import-history-teacher-divider">{{ teacherItem.other_count || 0 }}</td>
+                                                <td class="text-right">{{ teacherItem.b_count || 0 }}</td>
+                                            </tr>
+                                            <tr class="st-import-history-teacher-percent-row">
+                                                <td class="st-import-history-teacher-subjects-cell">
+                                                    {{ recognitionTeacherSubjectsLabel(teacherItem) }}
+                                                </td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(teacherItem.one_to_four_count, recognitionTeacherCountedTotal(teacherItem)) }}
+                                                </td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(teacherItem.five_count, recognitionTeacherCountedTotal(teacherItem)) }}
+                                                </td>
+                                                <td class="text-right">
+                                                    {{ recognitionSubjectPercentage(teacherItem.n_count, recognitionTeacherCountedTotal(teacherItem)) }}
+                                                </td>
+                                                <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell"></td>
+                                                <td class="text-right st-import-history-teacher-divider"></td>
+                                                <td class="text-right"></td>
+                                            </tr>
+                                        </template>
+                                        <tr class="st-import-history-teacher-sum-row">
+                                            <td>Summe</td>
+                                            <td class="text-right">{{ recognitionTeacherOneToFourTotal(activeRecognitionTeacherCodes) }}</td>
+                                            <td class="text-right">{{ recognitionTeacherFiveTotal(activeRecognitionTeacherCodes) }}</td>
+                                            <td class="text-right">{{ recognitionTeacherNTotal(activeRecognitionTeacherCodes) }}</td>
+                                            <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">
+                                                {{ recognitionTeacherTotal(activeRecognitionTeacherCodes) }}
+                                            </td>
+                                            <td class="text-right st-import-history-teacher-divider">
+                                                {{ recognitionTeacherOtherTotal(activeRecognitionTeacherCodes) }}
+                                            </td>
+                                            <td class="text-right">{{ recognitionTeacherBTotal(activeRecognitionTeacherCodes) }}</td>
+                                        </tr>
+                                        <tr class="st-import-history-teacher-percent-row st-import-history-teacher-sum-percent-row">
+                                            <td></td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(recognitionTeacherOneToFourTotal(activeRecognitionTeacherCodes), recognitionTeacherTotal(activeRecognitionTeacherCodes)) }}
+                                            </td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(recognitionTeacherFiveTotal(activeRecognitionTeacherCodes), recognitionTeacherTotal(activeRecognitionTeacherCodes)) }}
+                                            </td>
+                                            <td class="text-right">
+                                                {{ recognitionSubjectPercentage(recognitionTeacherNTotal(activeRecognitionTeacherCodes), recognitionTeacherTotal(activeRecognitionTeacherCodes)) }}
+                                            </td>
+                                            <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell"></td>
+                                            <td class="text-right st-import-history-teacher-divider"></td>
+                                            <td class="text-right"></td>
+                                        </tr>
                                     </tbody>
                                 </v-table>
                             </v-expansion-panel-text>
@@ -583,164 +821,6 @@
                                             </small>
                                         </strong>
                                     </div>
-                                    <v-expansion-panels flat variant="accordion" class="st-import-history-subject-panels">
-                                        <v-expansion-panel>
-                                            <v-expansion-panel-title>
-                                                <div class="st-import-history-subject-title">
-                                                    <span>Fächer</span>
-                                                    <strong>Anzahl {{ importItem.imported_subjects_count || 0 }}</strong>
-                                                </div>
-                                            </v-expansion-panel-title>
-                                            <v-expansion-panel-text>
-                                                <v-table
-                                                    v-if="importItem.subject_grade_counts?.length"
-                                                    density="compact"
-                                                    class="st-import-history-subject-table">
-                                                    <colgroup>
-                                                        <col class="st-import-history-label-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                    </colgroup>
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Fach</th>
-                                                            <th class="text-right">1-4</th>
-                                                            <th class="text-right">5</th>
-                                                            <th class="text-right">N</th>
-                                                            <th class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">
-                                                                <v-icon icon="mdi-sigma" size="14" title="Summe" />
-                                                            </th>
-                                                            <th class="text-right st-import-history-teacher-divider">A</th>
-                                                            <th class="text-right">B</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <template v-for="subjectItem in importItem.subject_grade_counts" :key="subjectItem.subject">
-                                                            <tr>
-                                                                <td>{{ subjectItem.subject }}</td>
-                                                                <td class="text-right">{{ subjectItem.one_to_four_count || 0 }}</td>
-                                                                <td class="text-right">{{ subjectItem.five_count || 0 }}</td>
-                                                                <td class="text-right">{{ subjectItem.n_count || 0 }}</td>
-                                                                <td class="text-right st-import-history-subject-total-cell">{{ recognitionSubjectCountedTotal(subjectItem) }}</td>
-                                                                <td class="text-right">{{ subjectItem.other_count || 0 }}</td>
-                                                                <td class="text-right">{{ subjectItem.b_count || 0 }}</td>
-                                                            </tr>
-                                                            <tr class="st-import-history-subject-percent-row">
-                                                                <td></td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(subjectItem.one_to_four_count, recognitionSubjectCountedTotal(subjectItem)) }}</td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(subjectItem.five_count, recognitionSubjectCountedTotal(subjectItem)) }}</td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(subjectItem.n_count, recognitionSubjectCountedTotal(subjectItem)) }}</td>
-                                                                <td class="text-right st-import-history-subject-total-cell"></td>
-                                                                <td class="text-right"></td>
-                                                                <td class="text-right"></td>
-                                                            </tr>
-                                                        </template>
-                                                        <tr class="st-import-history-subject-sum-row">
-                                                            <td>Summe</td>
-                                                            <td class="text-right">{{ importItem.grade_counts?.one_to_four || 0 }}</td>
-                                                            <td class="text-right">{{ importItem.grade_counts?.five || 0 }}</td>
-                                                            <td class="text-right">{{ importItem.grade_counts?.n || 0 }}</td>
-                                                            <td class="text-right st-import-history-subject-total-cell">{{ recognitionGradeCountedTotal(importItem.grade_counts) }}</td>
-                                                            <td class="text-right">{{ importItem.grade_counts?.other || 0 }}</td>
-                                                            <td class="text-right">{{ importItem.grade_counts?.b || 0 }}</td>
-                                                        </tr>
-                                                        <tr class="st-import-history-subject-percent-row st-import-history-subject-sum-percent-row">
-                                                            <td></td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(importItem.grade_counts?.one_to_four, recognitionGradeCountedTotal(importItem.grade_counts)) }}</td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(importItem.grade_counts?.five, recognitionGradeCountedTotal(importItem.grade_counts)) }}</td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(importItem.grade_counts?.n, recognitionGradeCountedTotal(importItem.grade_counts)) }}</td>
-                                                            <td class="text-right st-import-history-subject-total-cell"></td>
-                                                            <td class="text-right"></td>
-                                                            <td class="text-right"></td>
-                                                        </tr>
-                                                    </tbody>
-                                                </v-table>
-                                            </v-expansion-panel-text>
-                                        </v-expansion-panel>
-                                    </v-expansion-panels>
-                                    <v-expansion-panels flat variant="accordion" class="st-import-history-teacher-panels">
-                                        <v-expansion-panel>
-                                            <v-expansion-panel-title>
-                                                <div class="st-import-history-subject-title">
-                                                    <span>Lehrer</span>
-                                                    <strong>Anzahl {{ importItem.imported_teachers_count || 0 }}</strong>
-                                                </div>
-                                            </v-expansion-panel-title>
-                                            <v-expansion-panel-text>
-                                                <v-table
-                                                    v-if="importItem.teacher_codes?.length"
-                                                    density="compact"
-                                                    class="st-import-history-teacher-table">
-                                                    <colgroup>
-                                                        <col class="st-import-history-label-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                        <col class="st-import-history-count-col" />
-                                                    </colgroup>
-                                                    <thead>
-                                                        <tr>
-                                                            <th>Alle Lehrer</th>
-                                                            <th class="text-right">1-4</th>
-                                                            <th class="text-right">5</th>
-                                                            <th class="text-right">N</th>
-                                                            <th class="text-right">
-                                                                <v-icon icon="mdi-sigma" size="14" title="Summe" />
-                                                            </th>
-                                                            <th class="text-right">A</th>
-                                                            <th class="text-right">B</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <template v-for="teacherItem in importItem.teacher_codes" :key="teacherItem.code">
-                                                            <tr>
-                                                                <td>{{ teacherItem.code }}</td>
-                                                                <td class="text-right">{{ teacherItem.one_to_four_count || 0 }}</td>
-                                                                <td class="text-right">{{ teacherItem.five_count || 0 }}</td>
-                                                                <td class="text-right">{{ teacherItem.n_count || 0 }}</td>
-                                                                <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">{{ recognitionTeacherCountedTotal(teacherItem) }}</td>
-                                                                <td class="text-right st-import-history-teacher-divider">{{ teacherItem.other_count || 0 }}</td>
-                                                                <td class="text-right">{{ teacherItem.b_count || 0 }}</td>
-                                                            </tr>
-                                                            <tr class="st-import-history-teacher-percent-row">
-                                                                <td class="st-import-history-teacher-subjects-cell">{{ recognitionTeacherSubjectsLabel(teacherItem) }}</td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(teacherItem.one_to_four_count, recognitionTeacherCountedTotal(teacherItem)) }}</td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(teacherItem.five_count, recognitionTeacherCountedTotal(teacherItem)) }}</td>
-                                                                <td class="text-right">{{ recognitionSubjectPercentage(teacherItem.n_count, recognitionTeacherCountedTotal(teacherItem)) }}</td>
-                                                                <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell"></td>
-                                                                <td class="text-right st-import-history-teacher-divider"></td>
-                                                                <td class="text-right"></td>
-                                                            </tr>
-                                                        </template>
-                                                        <tr class="st-import-history-teacher-sum-row">
-                                                            <td>Summe</td>
-                                                            <td class="text-right">{{ recognitionTeacherOneToFourTotal(importItem.teacher_codes) }}</td>
-                                                            <td class="text-right">{{ recognitionTeacherFiveTotal(importItem.teacher_codes) }}</td>
-                                                            <td class="text-right">{{ recognitionTeacherNTotal(importItem.teacher_codes) }}</td>
-                                                            <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell">{{ recognitionTeacherTotal(importItem.teacher_codes) }}</td>
-                                                            <td class="text-right st-import-history-teacher-divider">{{ recognitionTeacherOtherTotal(importItem.teacher_codes) }}</td>
-                                                            <td class="text-right">{{ recognitionTeacherBTotal(importItem.teacher_codes) }}</td>
-                                                        </tr>
-                                                        <tr class="st-import-history-teacher-percent-row st-import-history-teacher-sum-percent-row">
-                                                            <td></td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(recognitionTeacherOneToFourTotal(importItem.teacher_codes), recognitionTeacherTotal(importItem.teacher_codes)) }}</td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(recognitionTeacherFiveTotal(importItem.teacher_codes), recognitionTeacherTotal(importItem.teacher_codes)) }}</td>
-                                                            <td class="text-right">{{ recognitionSubjectPercentage(recognitionTeacherNTotal(importItem.teacher_codes), recognitionTeacherTotal(importItem.teacher_codes)) }}</td>
-                                                            <td class="text-right st-import-history-teacher-divider st-import-history-teacher-total-cell"></td>
-                                                            <td class="text-right st-import-history-teacher-divider"></td>
-                                                            <td class="text-right"></td>
-                                                        </tr>
-                                                    </tbody>
-                                                </v-table>
-                                            </v-expansion-panel-text>
-                                        </v-expansion-panel>
-                                    </v-expansion-panels>
                                 </div>
                                 <v-alert
                                     v-if="recognitionImportIsProcessing(importItem)"
@@ -975,16 +1055,6 @@
             </v-card-text>
         </v-card>
 
-        <v-card v-else rounded="xl" class="st-dummy-card">
-            <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
-                <v-icon color="primary" size="22">mdi-calendar-clock-outline</v-icon>
-                Stundenplan Center
-            </v-card-title>
-            <v-card-text class="px-4 pb-4 text-medium-emphasis">
-                Hier entsteht das Stundenplan Center.
-            </v-card-text>
-        </v-card>
-
         <v-dialog v-model="schoolyearDialog" max-width="500" persistent>
             <v-card rounded="lg">
                 <v-card-title class="d-flex align-center ga-2">
@@ -1081,6 +1151,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import Overview from '../overview/Overview.vue'
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',
@@ -1098,7 +1169,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload },
+    components: { FileUpload, Overview },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1111,6 +1182,7 @@ export default {
                 recognitions: null,
                 mainDataset: null,
                 subjectDataset: null,
+                recognitionDataset: null,
             },
             imports: [],
             recognitionImports: [],
@@ -1243,6 +1315,22 @@ export default {
         activeRecognitionImport() {
             return this.importButtonInfo.recognitions
         },
+        activeRecognitionDataset() {
+            return this.importButtonInfo.recognitionDataset
+        },
+        activeRecognitionGradeCounts() {
+            return this.activeRecognitionDataset?.grade_counts || {}
+        },
+        activeRecognitionSubjectGradeCounts() {
+            const subjectGradeCounts = this.activeRecognitionDataset?.subject_grade_counts
+
+            return Array.isArray(subjectGradeCounts) ? subjectGradeCounts : []
+        },
+        activeRecognitionTeacherCodes() {
+            const teacherCodes = this.activeRecognitionDataset?.teacher_codes
+
+            return Array.isArray(teacherCodes) ? teacherCodes : []
+        },
         subjectDataset() {
             return this.importButtonInfo.subjectDataset || {}
         },
@@ -1370,6 +1458,26 @@ export default {
                 {
                     label: 'Zuletzt geändert',
                     value: this.formatDate(this.subjectDataset.updated_at) || '-',
+                },
+            ]
+        },
+        recognitionDatasetSummaryItems() {
+            return [
+                {
+                    label: 'Einträge',
+                    value: Number(this.activeRecognitionDataset?.entries_count || 0),
+                },
+                {
+                    label: 'Fächer',
+                    value: Number(this.activeRecognitionDataset?.subjects_count || 0),
+                },
+                {
+                    label: 'Lehrer',
+                    value: Number(this.activeRecognitionDataset?.teachers_count || 0),
+                },
+                {
+                    label: 'Studierende',
+                    value: Number(this.activeRecognitionDataset?.students_count || 0),
                 },
             ]
         },
@@ -1613,6 +1721,7 @@ export default {
                     recognitions: this.recognitionImports[0] || null,
                     mainDataset: timetableResponse.data?.main_dataset || null,
                     subjectDataset: subjectsResponse.data?.active_dataset || null,
+                    recognitionDataset: recognitionsResponse.data?.active_dataset || null,
                 }
                 this.syncSingleDateAppointmentActivation()
                 this.updatePolling()
@@ -1624,6 +1733,7 @@ export default {
                     recognitions: null,
                     mainDataset: null,
                     subjectDataset: null,
+                    recognitionDataset: null,
                 }
                 this.recognitionImports = []
                 this.activeSingleDateAppointmentKeys = []
@@ -2385,46 +2495,6 @@ export default {
 .st-import-history-meta-item .st-import-history-inline-detail {
     display: inline;
     margin-top: 0;
-}
-
-.st-import-history-subject-panels {
-    grid-column: 1 / -1;
-}
-
-.st-import-history-teacher-panels {
-    grid-column: 1 / -1;
-}
-
-.st-import-history-subject-panels :deep(.v-expansion-panel-title) {
-    min-height: 38px;
-    padding: 8px 12px;
-}
-
-.st-import-history-teacher-panels :deep(.v-expansion-panel-title) {
-    min-height: 38px;
-    padding: 8px 12px;
-}
-
-.st-import-history-subject-panels :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0 12px 12px;
-}
-
-.st-import-history-teacher-panels :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0 12px 12px;
-}
-
-.st-import-history-subject-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    color: rgba(30, 64, 175, 0.92);
-    font-size: 0.78rem;
-}
-
-.st-import-history-subject-title span,
-.st-import-history-subject-title strong {
-    font-weight: 700;
 }
 
 .st-import-history-subject-table,

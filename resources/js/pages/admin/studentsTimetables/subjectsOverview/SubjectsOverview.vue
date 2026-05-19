@@ -37,12 +37,12 @@
             </v-card-text>
         </v-card>
 
-        <v-card v-if="['overview', 'subject-plan'].includes(subject_action)" rounded="lg" border class="subject-overview-card mb-4">
+        <v-card v-if="subject_action === 'subject-plan'" rounded="lg" border class="subject-overview-card mb-4">
             <v-card-title class="subject-overview-card__title d-flex align-center ga-2">
-                <v-icon :icon="subject_action === 'subject-plan' ? 'mdi-table-large' : 'mdi-view-dashboard-outline'" />
-                {{ subject_action === 'subject-plan' ? 'Fächerübersicht' : 'Übersicht' }}
+                <v-icon icon="mdi-table-large" />
+                Fächerübersicht
                 <v-chip size="x-small" color="primary" variant="tonal">
-                    {{ subject_action === 'subject-plan' ? subjectRows.length : imports.length }}
+                    {{ subjectRows.length }}
                 </v-chip>
             </v-card-title>
             <v-card-text class="subject-overview-card__text">
@@ -152,144 +152,6 @@
                     </div>
                 </div>
 
-                <div v-if="subject_action === 'overview' && imports.length" class="d-flex align-center ga-2 mb-3">
-                    <v-icon icon="mdi-history" size="18" color="primary" />
-                    <span class="text-subtitle-2 font-weight-bold">Importverlauf</span>
-                    <v-chip size="x-small" color="primary" variant="tonal">
-                        {{ imports.length }}
-                    </v-chip>
-                </div>
-
-                <v-expansion-panels v-if="subject_action === 'overview' && imports.length" variant="accordion" multiple>
-                    <v-expansion-panel
-                        v-for="importItem in imports"
-                        :key="importItem.filename"
-                        elevation="0"
-                        class="subject-import-panel">
-                        <v-expansion-panel-title>
-                            <div class="subject-import-title">
-                                <v-icon icon="mdi-code-json" color="primary" size="18" />
-                                <div class="flex-grow-1">
-                                    <div class="font-weight-medium">{{ importItem.filename }}</div>
-                                    <div class="text-caption text-medium-emphasis">
-                                        {{ formatDate(importItem.uploaded_at) }} · {{ formatFileSize(importItem.size) }}
-                                    </div>
-                                </div>
-                                <v-chip size="x-small" color="primary" variant="tonal">
-                                    {{ importSubjectCountLabel(importItem.analysis) }}
-                                </v-chip>
-                            </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                            <div class="d-flex align-center ga-2 mb-3">
-                                <v-icon icon="mdi-chart-box-outline" size="18" color="primary" />
-                                <span class="text-subtitle-2 font-weight-bold">Analyse</span>
-                            </div>
-
-                            <v-alert
-                                v-if="!importItem.analysis?.semesters?.length"
-                                type="info"
-                                variant="tonal"
-                                class="mb-0">
-                                Keine Fächer oder Semester in der JSON-Datei erkannt.
-                            </v-alert>
-
-                            <div v-else class="subject-analysis-grid">
-                                <section
-                                    v-for="semester in importItem.analysis.semesters"
-                                    :key="`${importItem.filename}-${semester.key}`"
-                                    class="subject-analysis-block">
-                                    <div class="subject-analysis-block__header">
-                                        <span>{{ semester.label }}</span>
-                                        <v-chip size="x-small" color="primary" variant="tonal">
-                                            {{ semester.subjects_count }}
-                                        </v-chip>
-                                    </div>
-
-                                    <div v-if="semester.branch_variants?.length" class="branch-variant-list">
-                                        <div
-                                            v-for="branch in semester.branch_variants"
-                                            :key="`${semester.key}-${branch.key}`"
-                                            class="branch-variant-block"
-                                            :class="branchVariantClass(branch.key)">
-                                            <div class="branch-variant-block__header">
-                                                <span>{{ displayBranchVariantLabel(branch) }}</span>
-                                                <v-chip size="x-small" color="primary" variant="tonal">
-                                                    {{ branch.subjects_count }}
-                                                </v-chip>
-                                            </div>
-                                            <div v-if="branch.different_subjects?.length" class="branch-subject-groups">
-                                                <div v-if="branch.common_subjects?.length" class="subject-chip-row">
-                                                    <v-chip
-                                                        v-for="subject in branch.common_subjects"
-                                                        :key="`${semester.key}-${branch.key}-common-${subject.name}`"
-                                                        size="small"
-                                                        color="primary"
-                                                        variant="tonal"
-                                                        class="subject-chip">
-                                                        <strong v-if="subject.short_name">{{
-                                                            alternativeDisplay(subject.short_name)
-                                                        }}</strong>
-                                                        <span v-if="subject.short_name" class="mx-1">·</span>
-                                                        <span>{{ alternativeDisplay(subject.name) }}</span>
-                                                    </v-chip>
-                                                </div>
-                                                <div
-                                                    class="subject-chip-row"
-                                                    :class="{
-                                                        'branch-different-subjects': branch.common_subjects?.length,
-                                                    }">
-                                                    <v-chip
-                                                        v-for="subject in branch.different_subjects"
-                                                        :key="`${semester.key}-${branch.key}-different-${subject.name}`"
-                                                        size="small"
-                                                        color="primary"
-                                                        variant="tonal"
-                                                        class="subject-chip">
-                                                        <strong v-if="subject.short_name">{{
-                                                            alternativeDisplay(subject.short_name)
-                                                        }}</strong>
-                                                        <span v-if="subject.short_name" class="mx-1">·</span>
-                                                        <span>{{ alternativeDisplay(subject.name) }}</span>
-                                                    </v-chip>
-                                                </div>
-                                            </div>
-                                            <div v-else class="subject-chip-row">
-                                                <v-chip
-                                                    v-for="subject in branch.subjects"
-                                                    :key="`${semester.key}-${branch.key}-${subject.name}`"
-                                                    size="small"
-                                                    color="primary"
-                                                    variant="tonal"
-                                                    class="subject-chip">
-                                                    <strong v-if="subject.short_name">{{
-                                                        alternativeDisplay(subject.short_name)
-                                                    }}</strong>
-                                                    <span v-if="subject.short_name" class="mx-1">·</span>
-                                                    <span>{{ alternativeDisplay(subject.name) }}</span>
-                                                </v-chip>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div v-else class="subject-chip-row">
-                                        <v-chip
-                                            v-for="subject in semester.subjects"
-                                            :key="`${semester.key}-${subject.name}`"
-                                            size="small"
-                                            color="primary"
-                                            variant="tonal"
-                                            class="subject-chip">
-                                            <strong v-if="subject.short_name">{{ alternativeDisplay(subject.short_name) }}</strong>
-                                            <span v-if="subject.short_name" class="mx-1">·</span>
-                                            <span>{{ alternativeDisplay(subject.name) }}</span>
-                                        </v-chip>
-                                    </div>
-                                </section>
-                            </div>
-                        </v-expansion-panel-text>
-                    </v-expansion-panel>
-                </v-expansion-panels>
             </v-card-text>
         </v-card>
 
@@ -653,19 +515,9 @@ export default {
         subjectNavigationItems() {
             return [
                 {
-                    key: 'overview',
-                    label: 'Übersicht',
-                    icon: 'mdi-view-dashboard-outline',
-                },
-                {
                     key: 'subject-plan',
                     label: 'Grafik',
                     icon: 'mdi-table-large',
-                },
-                {
-                    key: 'import',
-                    label: 'Import',
-                    icon: 'mdi-upload',
                 },
                 {
                     key: 'subjects',
@@ -812,9 +664,9 @@ export default {
     },
     methods: {
         normalizedSubjectAction(subsection) {
-            const allowedActions = ['overview', 'subject-plan', 'import', 'subjects', 'mapping']
+            const allowedActions = ['subject-plan', 'import', 'subjects', 'mapping']
 
-            return allowedActions.includes(subsection) ? subsection : 'overview'
+            return allowedActions.includes(subsection) ? subsection : 'subject-plan'
         },
         handleSubjectNavigation(key) {
             this.subject_action = this.normalizedSubjectAction(key)
@@ -877,38 +729,6 @@ export default {
             this.uploadedFilename = ''
             this.uploadError = 'Die JSON-Datei konnte nicht gespeichert werden.'
             this.refreshFilePond++
-        },
-        formatDate(dateString) {
-            if (!dateString) return '-'
-
-            return new Date(dateString).toLocaleDateString('de-AT', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-            })
-        },
-        formatFileSize(size) {
-            const bytes = Number(size || 0)
-            if (bytes < 1024) return `${bytes} B`
-
-            return `${(bytes / 1024).toFixed(1)} KB`
-        },
-        branchVariantClass(branchKey) {
-            if (branchKey === 'common') return 'branch-variant-block--common'
-            if (branchKey === 'wirtschaftskundlich') return 'branch-variant-block--wirtschaft'
-            if (branchKey === 'gymnasial') return 'branch-variant-block--gymnasial'
-
-            return ''
-        },
-        importSubjectCountLabel(analysis = {}) {
-            const subjectsTotal = analysis?.subjects_total || 0
-            const courseRowsTotal = analysis?.subject_rows?.length || 0
-
-            if (!courseRowsTotal || courseRowsTotal === subjectsTotal) return `${subjectsTotal} Fächer`
-
-            return `${subjectsTotal} Fächer / ${courseRowsTotal} Kurse`
         },
         subjectOverviewGridStyle(columnGroup) {
             const sumColumnCount = columnGroup.showSum ? 1 : 0
@@ -1413,9 +1233,6 @@ export default {
 
             return this.displayValue(branch)
         },
-        displayBranchVariantLabel(branch) {
-            return branch.label || this.displayBranch(branch.key)
-        },
         async saveSubjectRows() {
             this.subjectsSaving = true
             this.settingsError = ''
@@ -1491,10 +1308,6 @@ export default {
     background: rgb(var(--v-theme-primary)) !important;
     border-color: rgba(30, 64, 175, 0.52) !important;
     color: rgb(var(--v-theme-on-primary)) !important;
-}
-
-.subject-import-panel {
-    border: 1px solid rgba(25, 118, 210, 0.16);
 }
 
 .subject-section-card {
@@ -1738,123 +1551,6 @@ export default {
     background: #72d2e8;
 }
 
-.subject-import-panel + .subject-import-panel {
-    margin-top: 4px;
-}
-
-.subject-import-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    min-width: 0;
-}
-
-.subject-import-title .font-weight-medium {
-    font-size: 0.86rem;
-    line-height: 1.2;
-}
-
-.subject-import-title .text-caption {
-    font-size: 0.68rem !important;
-}
-
-.subject-analysis-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-}
-
-.subject-analysis-block {
-    border: 1px solid rgba(25, 118, 210, 0.16);
-    border-radius: 6px;
-    padding: 6px;
-    background: #f8fbff;
-}
-
-.subject-analysis-block__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    line-height: 1.2;
-    margin-bottom: 5px;
-}
-
-.subject-chip-row {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.subject-chip {
-    min-height: 20px;
-    height: auto;
-    width: 100%;
-    font-size: 0.7rem;
-    justify-content: flex-start;
-}
-
-.subject-chip :deep(.v-chip__content) {
-    display: block;
-    line-height: 1.15;
-    overflow: hidden;
-    padding: 2px 6px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.branch-subject-groups {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.branch-different-subjects {
-    border-top: 1px solid rgba(15, 23, 42, 0.18);
-    padding-top: 5px;
-}
-
-.branch-variant-list {
-    display: grid;
-    gap: 5px;
-    grid-template-columns: minmax(0, 1fr);
-}
-
-.branch-variant-block {
-    border: 1px solid rgba(25, 118, 210, 0.18);
-    border-radius: 6px;
-    padding: 6px;
-}
-
-.branch-variant-block--common {
-    background: #f8fafc;
-    border-color: rgba(100, 116, 139, 0.24);
-}
-
-.branch-variant-block--wirtschaft {
-    background: #bbf7d0;
-    border-color: rgba(22, 101, 52, 0.42);
-}
-
-.branch-variant-block--gymnasial {
-    background: #bfdbfe;
-    border-color: rgba(30, 64, 175, 0.42);
-}
-
-.branch-variant-block__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-    font-size: 0.76rem;
-    font-weight: 750;
-    line-height: 1.2;
-    margin-bottom: 4px;
-}
-
 .subjects-settings-table-wrap {
     overflow-x: auto;
 }
@@ -2005,10 +1701,6 @@ export default {
     .subject-plan-cell--header.subject-plan-cell--semester,
     .subject-plan-cell--footer.subject-plan-cell--semester {
         font-size: 0.62rem;
-    }
-
-    .subject-analysis-grid {
-        grid-template-columns: minmax(0, 1fr);
     }
 }
 

@@ -521,6 +521,23 @@ it('stores filtered recognition csv uploads for the selected school', function (
         ->assertJsonPath('data.0.students_without_grades_count', 1)
         ->assertJsonPath('data.0.imported_subjects_count', 6)
         ->assertJsonPath('data.0.imported_teachers_count', 2)
+        ->assertJsonPath('active_dataset.name', 'Aktive Anrechnungen')
+        ->assertJsonPath('active_dataset.table', 'student_timetable_recognition_rows')
+        ->assertJsonPath('active_dataset.entries_count', 11)
+        ->assertJsonPath('active_dataset.subjects_count', 6)
+        ->assertJsonPath('active_dataset.teachers_count', 2)
+        ->assertJsonPath('active_dataset.students_count', 8)
+        ->assertJsonPath('active_dataset.grade_counts.one_to_four', 2)
+        ->assertJsonPath('active_dataset.grade_counts.five', 2)
+        ->assertJsonPath('active_dataset.grade_counts.n', 2)
+        ->assertJsonPath('active_dataset.subject_grade_counts.0.subject', 'Biologie')
+        ->assertJsonPath('active_dataset.subject_grade_counts.0.b_count', 2)
+        ->assertJsonPath('active_dataset.subject_grade_counts.1.subject', 'Deutsch')
+        ->assertJsonPath('active_dataset.subject_grade_counts.1.one_to_four_count', 2)
+        ->assertJsonPath('active_dataset.teacher_codes.0.code', 'AB')
+        ->assertJsonPath('active_dataset.teacher_codes.0.five_count', 1)
+        ->assertJsonPath('active_dataset.teacher_codes.1.code', 'Unbekannt')
+        ->assertJsonPath('active_dataset.teacher_codes.1.one_to_four_count', 2)
         ->assertJsonPath('data.0.teacher_codes.0.code', 'AB')
         ->assertJsonPath('data.0.teacher_codes.0.subjects.0', 'Geschichte')
         ->assertJsonPath('data.0.teacher_codes.0.one_to_four_count', 0)
@@ -577,6 +594,54 @@ it('stores filtered recognition csv uploads for the selected school', function (
             ->where('student_timetable_recognition_import_id', $import->id)
             ->exists())->toBeFalse()
         ->and(File::exists($storedPath))->toBeFalse();
+});
+
+it('counts recognition students from collapsed scientific notation exports by student names', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $import = StudentTimetableRecognitionImport::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'user_id' => $user->id,
+        'original_filename' => 'noten.csv',
+        'stored_filename' => 'noten.csv',
+        'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/noten.csv",
+        'total_rows' => 4,
+        'imported_rows' => 4,
+        'skipped_rows' => 0,
+        'import_status' => 'completed',
+        'imported_at' => now(),
+    ]);
+
+    collect([
+        ['familienname' => 'Abdi', 'vorname' => 'Yasmin', 'gegenstand' => 'D', 'note' => 'B'],
+        ['familienname' => 'Abdi', 'vorname' => 'Yasmin', 'gegenstand' => 'E', 'note' => 'N'],
+        ['familienname' => 'Imeri', 'vorname' => 'Alina', 'gegenstand' => 'BU', 'note' => 'B'],
+        ['familienname' => 'Ohne', 'vorname' => 'Note', 'gegenstand' => 'M', 'note' => ''],
+    ])->each(fn (array $row, int $index): StudentTimetableRecognitionRow => StudentTimetableRecognitionRow::query()->create([
+        'student_timetable_recognition_import_id' => $import->id,
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $schoolyear->id,
+        'row_number' => $index + 2,
+        'subject' => $row['gegenstand'],
+        'grade' => $row['note'],
+        'note' => $row['note'],
+        'raw_data' => [
+            ...$row,
+            'schuelerinnenkennzahl' => '5,01126E+13',
+        ],
+    ]));
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/recognitions-csv')
+        ->assertSuccessful()
+        ->assertJsonPath('data.0.imported_students_count', 3)
+        ->assertJsonPath('data.0.students_without_grades_count', 1)
+        ->assertJsonPath('active_dataset.students_count', 3);
 });
 
 it('keeps subject overview json import history for a schoolyear', function () {

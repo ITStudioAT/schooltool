@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
 use App\Models\StudentTimetableRecognitionImport;
+use App\Models\StudentTimetableRecognitionRow;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\RecognitionImportService;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +37,7 @@ class RecognitionCsvUploadController extends Controller
         return response()->json([
             'data' => $imports,
             'total' => $imports->count(),
+            'active_dataset' => $this->recognitionDatasetMetadata((int) $authUser->school_id, (int) $authUser->schoolyear_id),
         ]);
     }
 
@@ -158,23 +160,115 @@ class RecognitionCsvUploadController extends Controller
         ];
     }
 
+    private function recognitionDatasetMetadata(int $schoolId, int $schoolyearId): array
+    {
+        $rows = StudentTimetableRecognitionRow::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->get(['note', 'subject', 'raw_data', 'updated_at']);
+
+        return [
+            'name' => 'Aktive Anrechnungen',
+            'table' => 'student_timetable_recognition_rows',
+            'entries_count' => $rows->count(),
+            'subjects_count' => $this->importedSubjectsCount($rows),
+            'teachers_count' => $this->importedTeachersCount($rows),
+            'students_count' => $this->importedStudentsCount($rows),
+            'grade_counts' => $this->gradeCounts($rows),
+            'subject_grade_counts' => $this->subjectGradeCounts($rows),
+            'teacher_codes' => $this->teacherRows($rows),
+            'updated_at' => $rows->max('updated_at')?->toISOString(),
+        ];
+    }
+
     private function importedStudentsCount(Collection $rows): int
     {
-        return $rows
-            ->map(fn ($row): string => trim((string) ($row->raw_data['schuelerinnenkennzahl'] ?? '')))
-            ->filter()
-            ->unique()
-            ->count();
+        if ($this->usesStudentNameFallback($rows)) {
+            return $rows
+                ->map(fn ($row): string => $this->recognitionStudentNameIdentifier($row))
+                ->filter()
+                ->unique()
+                ->count();
+        }
+
+        return $this->recognitionStudentIdentifiers($rows)->count();
     }
 
     private function studentsWithoutGradesCount(Collection $rows): int
     {
+        $usesStudentNameFallback = $this->usesStudentNameFallback($rows);
+
         return $rows
-            ->groupBy(fn ($row): string => trim((string) ($row->raw_data['schuelerinnenkennzahl'] ?? '')))
+            ->groupBy(fn ($row): string => $usesStudentNameFallback
+                ? $this->recognitionStudentNameIdentifier($row)
+                : $this->recognitionStudentIdentifier($row))
             ->reject(fn (Collection $studentRows, string $studentIdentifier): bool => $studentIdentifier === '')
             ->filter(fn (Collection $studentRows): bool => $studentRows
                 ->every(fn ($row): bool => trim((string) $row->note) === ''))
             ->count();
+    }
+
+    private function usesStudentNameFallback(Collection $rows): bool
+    {
+        $studentIdentifiers = $this->recognitionStudentIdentifiers($rows);
+
+        return $studentIdentifiers->count() === 1
+            && $this->isScientificNotationIdentifier((string) $studentIdentifiers->first())
+            && $rows
+                ->map(fn ($row): string => $this->recognitionStudentNameIdentifier($row))
+                ->filter()
+                ->unique()
+                ->count() > 1;
+    }
+
+    private function recognitionStudentIdentifiers(Collection $rows): Collection
+    {
+        return $rows
+            ->map(fn ($row): string => $this->recognitionStudentIdentifier($row))
+            ->filter()
+            ->unique();
+    }
+
+    private function recognitionStudentIdentifier($row): string
+    {
+        return $this->rawDataValue($row, [
+            'schuelerinnenkennzahl',
+            'schülerinnenkennzahl',
+            'schã¼lerinnenkennzahl',
+            'schÃ¼lerinnenkennzahl',
+        ]);
+    }
+
+    private function recognitionStudentNameIdentifier($row): string
+    {
+        $student = trim((string) ($row->student ?? ''));
+        if ($student !== '') {
+            return Str::lower($student);
+        }
+
+        $familyName = $this->rawDataValue($row, ['familienname']);
+        $firstName = $this->rawDataValue($row, ['vorname']);
+
+        return Str::lower(trim("{$familyName}|{$firstName}", '|'));
+    }
+
+    private function isScientificNotationIdentifier(string $identifier): bool
+    {
+        return preg_match('/^\d+(?:[,.]\d+)?e[+-]?\d+$/i', trim($identifier)) === 1;
+    }
+
+    private function rawDataValue($row, array $keys): string
+    {
+        $rawData = is_array($row->raw_data) ? $row->raw_data : [];
+        $lowerKeys = array_map(fn (string $key): string => Str::lower($key), $keys);
+
+        foreach ($rawData as $key => $value) {
+            if (in_array(Str::lower((string) $key), $lowerKeys, true)) {
+                return trim((string) $value);
+            }
+        }
+
+        return '';
     }
 
     private function importedSubjectsCount(Collection $rows): int

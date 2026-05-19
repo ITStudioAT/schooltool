@@ -55,7 +55,6 @@
 
         <v-row class="w-100" dense>
             <Timetable v-if="main_action === 'timetable'" />
-            <Overview v-if="main_action === 'overview'" />
             <Import v-if="main_action === 'import'" />
             <RobotTimetable v-if="main_action === 'robot'" />
             <SubjectsOverview v-if="main_action === 'subjects-overview'" />
@@ -71,16 +70,16 @@ import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
-const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const RobotTimetable = defineAsyncComponent(() => import('./robot/RobotTimetable.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
+
+const mainSectionKeys = ['timetable', 'subjects-overview', 'import', 'robot']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
-        Overview,
         Import,
         RobotTimetable,
         SubjectsOverview,
@@ -118,20 +117,6 @@ export default {
                     roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
                 {
-                    key: 'overview',
-                    label: 'Übersicht',
-                    meta: 'Tagesansicht',
-                    icon: 'mdi-view-dashboard-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
-                },
-                {
-                    key: 'import',
-                    label: 'Stundenplan',
-                    meta: 'Import',
-                    icon: 'mdi-upload',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
-                },
-                {
                     key: 'subjects-overview',
                     label: 'Fächer',
                     meta: 'Überblick',
@@ -153,11 +138,6 @@ export default {
                     label: 'Stundenplan',
                     icon: 'mdi-calendar-clock-outline',
                     note: 'Stundenplan Center.',
-                },
-                overview: {
-                    label: 'Übersicht',
-                    icon: 'mdi-view-dashboard-outline',
-                    note: 'Tagesansicht.',
                 },
                 import: {
                     label: 'Stundenplan',
@@ -182,13 +162,21 @@ export default {
         this.schoolyearStore = useSchoolyearStore()
         this.schoolyearStore.index()
         const section = this.$route.params.section
-        if (section && this.navigationItems.some((item) => item.key === section)) {
+        if (this.redirectLegacyOverviewSection(section)) {
+            return
+        }
+
+        if (section && mainSectionKeys.includes(section)) {
             this.main_action = section
         }
     },
     watch: {
         '$route.params.section'(section) {
-            if (section && this.navigationItems.some((item) => item.key === section)) {
+            if (this.redirectLegacyOverviewSection(section)) {
+                return
+            }
+
+            if (section && mainSectionKeys.includes(section)) {
                 this.main_action = section
 
                 return
@@ -198,13 +186,23 @@ export default {
         },
     },
     methods: {
+        redirectLegacyOverviewSection(section) {
+            if (section !== 'overview') {
+                return false
+            }
+
+            this.main_action = 'timetable'
+            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+
+            return true
+        },
         handleNavigation(key) {
             this.main_action = key
             const paths = {
                 timetable: '/admin/students-timetables/timetable/overview',
                 import: '/admin/students-timetables/import/overview',
                 robot: '/admin/students-timetables/robot',
-                'subjects-overview': '/admin/students-timetables/subjects-overview/overview',
+                'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',
             }
             const path = paths[key] || `/admin/students-timetables/${key}`
 
