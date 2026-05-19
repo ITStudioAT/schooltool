@@ -517,6 +517,39 @@ describe('dashboardMenu', function () {
             ->and($teachingItem['active_paths'])->toBe(['/admin/teaching']);
     });
 
+    it('adds active paths to route-backed dashboard module menu items', function () {
+        $school = School::factory()->create();
+        SchoolTool::factory()->create([
+            'school_id' => $school->id,
+            'register_visible_admin' => true,
+            'tutoring_visible_admin' => true,
+            'materials_visible_admin' => true,
+            'students_timetables_visible_admin' => true,
+            'aba_visible_admin' => true,
+        ]);
+
+        $user = User::factory()->create(['school_id' => $school->id]);
+        $user->assignRole([
+            Role::firstOrCreate(['name' => 'register_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'tutoring_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'materials_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'studentstimetables_admin', 'guard_name' => 'web']),
+            Role::firstOrCreate(['name' => 'aba_teacher', 'guard_name' => 'web']),
+        ]);
+
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+        ($this->attachActiveLicences)($user, ['Anmeldetool', 'Nachhilfetool', 'Materialientool', 'StudentsTimetables', 'ABA']);
+
+        $menuByTitle = collect($this->service->dashboardMenu())->keyBy('title');
+
+        expect($menuByTitle->get('Anmeldetool')['active_paths'])->toBe(['/admin/register_system'])
+            ->and($menuByTitle->get('Nachhilfe')['active_paths'])->toBe(['/admin/tutoring'])
+            ->and($menuByTitle->get('Materialien')['active_paths'])->toBe(['/admin/materials'])
+            ->and($menuByTitle->get('Schülerstundenpläne')['active_paths'])->toBe(['/admin/students-timetables'])
+            ->and($menuByTitle->get('ABA')['active_paths'])->toBe(['/admin/aba']);
+    });
+
     it('hides materials menu item when admin visibility is disabled', function () {
         $school = School::factory()->create();
         SchoolTool::factory()->create([

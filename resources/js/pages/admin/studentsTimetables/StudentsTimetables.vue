@@ -39,10 +39,10 @@
                     v-for="item in navigationItems"
                     :key="item.key"
                     rounded="xl"
-                    :color="main_action === item.key ? 'primary' : 'secondary'"
-                    :variant="main_action === item.key ? 'flat' : 'tonal'"
+                    :color="activeNavigationKey === item.key ? 'primary' : 'secondary'"
+                    :variant="activeNavigationKey === item.key ? 'flat' : 'tonal'"
                     class="st-nav__button"
-                    :class="main_action === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
+                    :class="activeNavigationKey === item.key ? 'st-nav__button--active' : 'st-nav__button--idle'"
                     @click="handleNavigation(item.key)">
                     <v-icon size="18" :icon="item.icon" class="mr-2" />
                     <span class="st-nav__button-copy">
@@ -56,7 +56,6 @@
         <v-row class="w-100" dense>
             <Timetable v-if="main_action === 'timetable'" />
             <Import v-if="main_action === 'import'" />
-            <RobotTimetable v-if="main_action === 'robot'" />
             <SubjectsOverview v-if="main_action === 'subjects-overview'" />
         </v-row>
     </v-container>
@@ -71,17 +70,15 @@ import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
 const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
-const RobotTimetable = defineAsyncComponent(() => import('./robot/RobotTimetable.vue'))
 const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/SubjectsOverview.vue'))
 
-const mainSectionKeys = ['timetable', 'subjects-overview', 'import', 'robot']
+const mainSectionKeys = ['timetable', 'subjects-overview', 'import']
 
 export default {
     components: {
         AdminSectionHero,
         Timetable,
         Import,
-        RobotTimetable,
         SubjectsOverview,
     },
     data() {
@@ -99,7 +96,7 @@ export default {
         },
         headerChips() {
             const chips = []
-            const section = this.navigationItems.find((item) => item.key === this.main_action)
+            const section = this.navigationItems.find((item) => item.key === this.activeNavigationKey)
             if (section?.roles) {
                 section.roles.forEach((role) => {
                     chips.push({ key: `role-${role}`, text: role, icon: 'mdi-shield-account-outline' })
@@ -117,20 +114,27 @@ export default {
                     roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
                 {
+                    key: 'imports',
+                    label: 'Importe',
+                    meta: 'Stundenplan',
+                    icon: 'mdi-import',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                },
+                {
                     key: 'subjects-overview',
                     label: 'Fächer',
                     meta: 'Überblick',
                     icon: 'mdi-book-open-page-variant-outline',
                     roles: ['super_admin', 'admin', 'studentstimetables_admin'],
                 },
-                {
-                    key: 'robot',
-                    label: 'Roboter',
-                    meta: 'Stundenplan',
-                    icon: 'mdi-robot-outline',
-                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
-                },
             ]
+        },
+        activeNavigationKey() {
+            if (this.$route.params.section === 'timetable' && this.$route.params.subsection === 'imports') {
+                return 'imports'
+            }
+
+            return this.main_action
         },
         activeSection() {
             const sections = {
@@ -139,15 +143,15 @@ export default {
                     icon: 'mdi-calendar-clock-outline',
                     note: 'Stundenplan Center.',
                 },
+                imports: {
+                    label: 'Importe',
+                    icon: 'mdi-import',
+                    note: 'Stundenplan-Importe.',
+                },
                 import: {
                     label: 'Stundenplan',
                     icon: 'mdi-upload',
                     note: 'Stundenplan importieren.',
-                },
-                robot: {
-                    label: 'Roboter',
-                    icon: 'mdi-robot-outline',
-                    note: 'Stundenplan-Auswahl.',
                 },
                 'subjects-overview': {
                     label: 'Fächer',
@@ -155,14 +159,14 @@ export default {
                     note: 'Fächer, Import und Zuordnung.',
                 },
             }
-            return sections[this.main_action] || sections.timetable
+            return sections[this.activeNavigationKey] || sections.timetable
         },
     },
     created() {
         this.schoolyearStore = useSchoolyearStore()
         this.schoolyearStore.index()
         const section = this.$route.params.section
-        if (this.redirectLegacyOverviewSection(section)) {
+        if (this.redirectLegacySection(section)) {
             return
         }
 
@@ -172,7 +176,7 @@ export default {
     },
     watch: {
         '$route.params.section'(section) {
-            if (this.redirectLegacyOverviewSection(section)) {
+            if (this.redirectLegacySection(section)) {
                 return
             }
 
@@ -186,22 +190,29 @@ export default {
         },
     },
     methods: {
-        redirectLegacyOverviewSection(section) {
-            if (section !== 'overview') {
-                return false
+        redirectLegacySection(section) {
+            if (section === 'overview') {
+                this.main_action = 'timetable'
+                this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+
+                return true
             }
 
-            this.main_action = 'timetable'
-            this.$router.replace({ path: '/admin/students-timetables/timetable/overview' })
+            if (section === 'robot') {
+                this.main_action = 'timetable'
+                this.$router.replace({ path: '/admin/students-timetables/timetable/robot' })
 
-            return true
+                return true
+            }
+
+            return false
         },
         handleNavigation(key) {
-            this.main_action = key
+            this.main_action = key === 'imports' ? 'timetable' : key
             const paths = {
                 timetable: '/admin/students-timetables/timetable/overview',
+                imports: '/admin/students-timetables/timetable/imports',
                 import: '/admin/students-timetables/import/overview',
-                robot: '/admin/students-timetables/robot',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/subject-plan',
             }
             const path = paths[key] || `/admin/students-timetables/${key}`

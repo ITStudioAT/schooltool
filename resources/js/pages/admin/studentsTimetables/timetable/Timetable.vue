@@ -21,6 +21,8 @@
 
     <Overview v-if="subAction === 'overview'" />
 
+    <RobotTimetable v-else-if="subAction === 'robot'" />
+
     <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
             <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
@@ -1152,6 +1154,7 @@ import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
 import Overview from '../overview/Overview.vue'
+import RobotTimetable from '../robot/RobotTimetable.vue'
 
 const SECTION_LABELS = {
     VV: 'Kopfdaten / Version',
@@ -1169,7 +1172,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload, Overview },
+    components: { FileUpload, Overview, RobotTimetable },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),
@@ -1212,7 +1215,7 @@ export default {
         subnavItems() {
             return [
                 { key: 'overview', label: 'Übersicht' },
-                { key: 'imports', label: 'Importe' },
+                { key: 'robot', label: 'Roboter' },
             ]
         },
         importButtons() {
@@ -1589,7 +1592,7 @@ export default {
     },
     methods: {
         normalizedSubAction(subsection) {
-            const allowed = ['overview', 'imports']
+            const allowed = ['overview', 'robot', 'imports']
             return allowed.includes(subsection) ? subsection : 'overview'
         },
         normalizedImportPage(detail) {

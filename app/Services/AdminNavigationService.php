@@ -88,6 +88,7 @@ class AdminNavigationService
                     'title' => 'Anmeldetool',
                     'icon' => 'mdi-calendar-cursor',
                     'to' => '/admin/register_system',
+                    'active_paths' => ['/admin/register_system'],
                     'is_active' => ($registerLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($registerLicenceStatus, $registerModuleStatus, 'Anmeldetool');
             }
@@ -100,6 +101,7 @@ class AdminNavigationService
                     'title' => 'Nachhilfe',
                     'icon' => 'mdi-cast-education',
                     'to' => '/admin/tutoring',
+                    'active_paths' => ['/admin/tutoring'],
                     'is_active' => ($tutoringLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($tutoringLicenceStatus, $tutoringModuleStatus, 'Nachhilfe');
             }
@@ -126,6 +128,7 @@ class AdminNavigationService
                     'title' => 'ABA',
                     'icon' => 'mdi-certificate-outline',
                     'to' => '/admin/aba',
+                    'active_paths' => ['/admin/aba'],
                     'is_active' => ($abaLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($abaLicenceStatus, $abaModuleStatus, 'ABA');
             }
@@ -138,6 +141,7 @@ class AdminNavigationService
                     'title' => 'Materialien',
                     'icon' => 'mdi-folder-multiple-outline',
                     'to' => '/admin/materials',
+                    'active_paths' => ['/admin/materials'],
                     'is_active' => ($materialsLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($materialsLicenceStatus, $materialsModuleStatus, 'Materialien');
             }
@@ -163,6 +167,7 @@ class AdminNavigationService
                     'title' => 'Schülerstundenpläne',
                     'icon' => 'mdi-calendar-clock',
                     'to' => '/admin/students-timetables',
+                    'active_paths' => ['/admin/students-timetables'],
                     'is_active' => ($studentsTimetablesLicenceStatus === 'active'),
                 ] + $this->dashboardStatusMeta($studentsTimetablesLicenceStatus, $studentsTimetablesModuleStatus, 'Schülerstundenpläne');
             }

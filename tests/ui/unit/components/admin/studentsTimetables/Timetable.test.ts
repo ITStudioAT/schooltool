@@ -10,8 +10,15 @@ describe('Students timetable timetable page', () => {
         )
 
         expect(componentSource).toContain("import Overview from '../overview/Overview.vue'")
+        expect(componentSource).toContain("import RobotTimetable from '../robot/RobotTimetable.vue'")
         expect(componentSource).toContain('<Overview v-if="subAction === \'overview\'" />')
-        expect(componentSource).toContain("const allowed = ['overview', 'imports']")
+        expect(componentSource).toContain('<RobotTimetable v-else-if="subAction === \'robot\'" />')
+        expect(componentSource).toContain("{ key: 'overview', label: 'Übersicht' }")
+        expect(componentSource).toContain("{ key: 'robot', label: 'Roboter' }")
+        expect(componentSource).not.toContain("{ key: 'imports', label: 'Importe' }")
+        expect(componentSource.indexOf("{ key: 'overview', label: 'Übersicht' }"))
+            .toBeLessThan(componentSource.indexOf("{ key: 'robot', label: 'Roboter' }"))
+        expect(componentSource).toContain("const allowed = ['overview', 'robot', 'imports']")
         expect(componentSource).not.toContain('Hier entsteht das Stundenplan Center.')
     })
 
