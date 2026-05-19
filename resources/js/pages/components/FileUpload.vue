@@ -12,6 +12,7 @@
                 : '<strong>Ziehen Sie ein Bild hierher oder <i>klicken Sie hier.</i></strong>'
         "
         :allow-replace="true"
+        :allow-multiple="allowMultipleSafe"
         :chunk-uploads="true"
         :chunk-force="true"
         :allow-file-type-validation="allowedFileTypesSafe.length > 0"
@@ -68,7 +69,7 @@ import FilePondPluginImagePreview from 'filepond-plugin-image-preview'
 const FilePond = vueFilePond(FilePondPluginFileValidateType, FilePondPluginImagePreview)
 
 export default {
-    props: ['path', 'shortLabel', 'refreshFilePond', 'fileLabel', 'allowedFileTypes'],
+    props: ['path', 'shortLabel', 'refreshFilePond', 'fileLabel', 'allowedFileTypes', 'allowMultiple'],
     emits: [, 'fileUploadFinished', 'error', 'uploadStart'],
 
     components: { FilePond },
@@ -109,6 +110,10 @@ export default {
 
         allowedFileTypesSafe() {
             return this.allowedFileTypes || []
+        },
+
+        allowMultipleSafe() {
+            return Boolean(this.allowMultiple)
         },
     },
 

@@ -20,8 +20,10 @@ use App\Models\Schoolyear;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Process;
 use Spatie\Permission\Models\Role;
 
 uses(RefreshDatabase::class);
@@ -114,6 +116,41 @@ test('config returns user data when authenticated', function () {
         ])
         ->assertJsonStructure([
             'user' => ['id', 'email', 'first_name', 'last_name'],
+        ]);
+});
+
+test('authenticated config includes environment versions', function () {
+    Cache::forget('admin.environment_versions');
+    Cache::forget('admin.environment_versions.v2');
+    Process::fake([
+        '*' => Process::sequence()
+            ->push(Process::result(output: 'Composer version 2.8.12 2025-09-19 13:41:59'))
+            ->push(Process::result(output: '10.9.2'))
+            ->push(Process::result(output: 'v22.16.0')),
+    ]);
+
+    $this->actingAs($this->user);
+
+    $this->getJson('/api/admin/config')
+        ->assertSuccessful()
+        ->assertJsonPath('environment_versions.app', config('schooltool.version', 'x.x.x'))
+        ->assertJsonPath('environment_versions.laravel', app()->version())
+        ->assertJsonPath('environment_versions.php', PHP_VERSION)
+        ->assertJsonPath('environment_versions.composer', '2.8.12')
+        ->assertJsonPath('environment_versions.npm', '10.9.2')
+        ->assertJsonPath('environment_versions.node', 'v22.16.0')
+        ->assertJsonStructure([
+            'environment_versions' => [
+                'app',
+                'laravel',
+                'php',
+                'composer',
+                'npm',
+                'node',
+                'vue',
+                'vuetify',
+                'vite',
+            ],
         ]);
 });
 

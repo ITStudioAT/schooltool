@@ -33,12 +33,17 @@ use App\Traits\HasRoleTrait;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
 use Lab404\Impersonate\Services\ImpersonateManager;
+use Throwable;
 
 class AdminController extends Controller
 {
     use HasRoleTrait;
+
+    private const string ENVIRONMENT_VERSIONS_CACHE_KEY = 'admin.environment_versions.v2';
 
     public function config(Request $request)
     {
@@ -127,11 +132,95 @@ class AdminController extends Controller
 
         $data['health']['queue_working'] = true;
 
+        if ($user) {
+            $data['environment_versions'] = $this->environmentVersions();
+        }
+
         if ($includeSchoolInfos && $user?->selectedSchool && $this->canLoadSchoolInfos($user)) {
             $data['school_infos'] = app(SchoolService::class)->schoolInfos($user->selectedSchool->id);
         }
 
         return $data;
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function environmentVersions(): array
+    {
+        return Cache::remember(self::ENVIRONMENT_VERSIONS_CACHE_KEY, now()->addMinutes(10), fn (): array => [
+            'app' => config('schooltool.version', 'x.x.x'),
+            'laravel' => app()->version(),
+            'php' => PHP_VERSION,
+            'composer' => $this->composerVersion(),
+            'npm' => $this->commandVersion(['npm', '--version']),
+            'node' => $this->commandVersion(['node', '--version']),
+            'vue' => $this->packageLockVersion('vue'),
+            'vuetify' => $this->packageLockVersion('vuetify'),
+            'vite' => $this->packageLockVersion('vite'),
+        ]);
+    }
+
+    private function composerVersion(): ?string
+    {
+        $pattern = '/Composer(?: version)?\s+(?<version>\d+(?:\.\d+)+)/';
+
+        return $this->commandVersion(['composer', '--version', '--no-ansi'], $pattern)
+            ?? $this->commandVersion('composer --version --no-ansi', $pattern);
+    }
+
+    /**
+     * @param  array<int, string>|string  $command
+     */
+    private function commandVersion(array|string $command, ?string $pattern = null): ?string
+    {
+        try {
+            $result = Process::timeout(2)
+                ->path(base_path())
+                ->run($command);
+
+            if (! $result->successful()) {
+                return null;
+            }
+
+            $output = trim($result->output() ?: $result->errorOutput());
+            if ($output === '') {
+                return null;
+            }
+
+            $firstLine = trim(strtok($output, "\r\n") ?: $output);
+            if ($pattern && preg_match($pattern, $firstLine, $matches)) {
+                return $matches['version'] ?? $matches[1] ?? $firstLine;
+            }
+
+            return $firstLine;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function packageLockVersion(string $package): ?string
+    {
+        $path = base_path('package-lock.json');
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $contents = file_get_contents($path);
+        if ($contents === false) {
+            return null;
+        }
+
+        $lock = json_decode($contents, true);
+        if (! is_array($lock)) {
+            return null;
+        }
+
+        $packageData = $lock['packages']["node_modules/{$package}"] ?? null;
+
+        return is_array($packageData) && isset($packageData['version'])
+            ? (string) $packageData['version']
+            : null;
     }
 
     private function canLoadSchoolInfos(User $user): bool

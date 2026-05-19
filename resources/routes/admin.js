@@ -47,7 +47,7 @@ export const routes = [
     { path: '/admin/materials/subjects-overview', component: MaterialsSubjectsOverview, meta: { capability: 'materials' } },
     { path: '/admin/restaurant/:section?', component: Restaurant, meta: { capability: 'restaurant' } },
     { path: '/admin/menu-plans', component: MenuPlansEntry, meta: { capability: 'restaurant' } },
-    { path: '/admin/students-timetables/:section?/:subsection?', component: StudentsTimetables, meta: { capability: 'students_timetables' } },
+    { path: '/admin/students-timetables/:section?/:subsection?/:detail?/:action?', component: StudentsTimetables, meta: { capability: 'students_timetables' } },
     { path: '/admin/aba', component: Aba, meta: { capability: 'aba' } },
     { path: '/admin/aba/details/:abaId', component: AbaDetails, meta: { capability: 'aba' } },
 ]

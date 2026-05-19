@@ -1,6 +1,6 @@
 <template>
     <div v-if="config && config.is_auth" class="admin-dashboard-page">
-        <v-container fluid class="pa-4 pa-md-6" style="max-width: 1200px">
+        <v-container fluid class="admin-dashboard-page__content pa-4 pa-md-6">
             <!-- Header -->
             <v-card flat rounded="xl" class="mb-6">
                 <v-card-text class="d-flex align-center justify-space-between flex-wrap ga-4 py-3">
@@ -23,6 +23,31 @@
                             {{ config?.selected_school?.long_name || config?.selected_school?.name }}
                         </v-chip>
                     </div>
+                </v-card-text>
+            </v-card>
+
+            <v-card rounded="xl" variant="flat" class="mb-4">
+                <v-card-text class="pa-5">
+                    <div class="d-flex align-start justify-space-between flex-wrap ga-3">
+                        <div>
+                            <div class="text-overline text-medium-emphasis mb-n1" style="line-height: 1.4">Versionen</div>
+                            <div class="admin-dashboard-page__app-version">
+                                v{{ appVersion }}
+                            </div>
+                        </div>
+                        <v-icon icon="mdi-source-branch" size="28" color="primary" />
+                    </div>
+
+                    <v-row dense class="mt-4">
+                        <v-col v-for="item in versionItems" :key="item.key" cols="6" sm="4" md="3">
+                            <v-sheet rounded="lg" border class="pa-3">
+                                <div class="text-caption text-medium-emphasis">{{ item.label }}</div>
+                                <div class="text-body-2 font-weight-bold text-truncate" :title="item.value">
+                                    {{ item.value }}
+                                </div>
+                            </v-sheet>
+                        </v-col>
+                    </v-row>
                 </v-card-text>
             </v-card>
 
@@ -502,6 +527,26 @@ export default {
     computed: {
         ...mapWritableState(useAdminStore, ['config', 'health']),
         ...mapWritableState(useSchoolStore, ['school_licences', 'school_admins']),
+        appVersion() {
+            return this.config?.environment_versions?.app || this.config?.version || 'x.x.x'
+        },
+        versionItems() {
+            const versions = this.config?.environment_versions || {}
+
+            return [
+                { key: 'laravel', label: 'Laravel', value: versions.laravel },
+                { key: 'php', label: 'PHP', value: versions.php },
+                { key: 'composer', label: 'Composer', value: versions.composer },
+                { key: 'npm', label: 'npm', value: versions.npm },
+                { key: 'node', label: 'Node.js', value: versions.node },
+                { key: 'vue', label: 'Vue', value: versions.vue },
+                { key: 'vuetify', label: 'Vuetify', value: versions.vuetify },
+                { key: 'vite', label: 'Vite', value: versions.vite },
+            ].map((item) => ({
+                ...item,
+                value: item.value || 'nicht verfügbar',
+            }))
+        },
         activeLicenceCount() {
             const activeSchoolLicences = this.schoolLicencesWithSchoolLicence.filter((licence) => this.isLicenceActive(licence)).length
             const activePersonalLicences = this.myLicenceEntries.filter((entry) => this.isMyLicenceEntryActive(entry)).length
@@ -1068,5 +1113,17 @@ export default {
 .admin-dashboard-page {
     min-height: 100vh;
     background: rgb(var(--v-theme-surface-variant), 0.08);
+}
+
+.admin-dashboard-page__content {
+    max-width: 1200px;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+.admin-dashboard-page__app-version {
+    font-size: 1.85rem;
+    font-weight: 700;
+    line-height: 1.15;
 }
 </style>

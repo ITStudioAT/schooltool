@@ -47,6 +47,7 @@ use App\Http\Controllers\Admin\SchoolController;
 use App\Http\Controllers\Admin\SchoolToolController;
 use App\Http\Controllers\Admin\SchoolyearController;
 use App\Http\Controllers\Admin\SpaRoleController;
+use App\Http\Controllers\Admin\StudentsTimetables\RecognitionCsvUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\StudentsTimetablesController;
 use App\Http\Controllers\Admin\StudentsTimetables\SubjectOverviewJsonUploadController;
 use App\Http\Controllers\Admin\StudentsTimetables\TimetableFileUploadController;
@@ -156,6 +157,11 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::put('/admin/students-timetables/subjects-overview-settings/mappings', [SubjectOverviewJsonUploadController::class, 'updateMappings']);
         Route::post('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'upload']);
         Route::patch('/admin/students-timetables/upload', [TimetableFileUploadController::class, 'uploadNext']);
+        Route::get('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'index']);
+        Route::post('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'upload']);
+        Route::patch('/admin/students-timetables/recognitions-csv', [RecognitionCsvUploadController::class, 'uploadNext']);
+        Route::delete('/admin/students-timetables/recognitions-csv/{recognitionImport}', [RecognitionCsvUploadController::class, 'destroy'])
+            ->whereNumber('recognitionImport');
         Route::get('/admin/students-timetables/imports', [TimetableImportController::class, 'index']);
         Route::put('/admin/students-timetables/imports/single-date-appointments', [TimetableImportController::class, 'updateSingleDateAppointments']);
         Route::get('/admin/students-timetables/imports/{timetableImport}', [TimetableImportController::class, 'show']);

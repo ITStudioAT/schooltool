@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\StudentsTimetables\ProcessRecognitionCsvImportJob;
 use App\Jobs\StudentsTimetables\ProcessTimetableUnimportJob;
 use App\Models\Licence;
 use App\Models\School;
@@ -8,12 +9,16 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEntry;
 use App\Models\StudentTimetableOverviewSelection;
+use App\Models\StudentTimetableRecognitionImport;
+use App\Models\StudentTimetableRecognitionRow;
+use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Models\TeachingSchoolHour;
 use App\Models\TimetableImport;
 use App\Models\User;
 use App\Services\AdminNavigationService;
+use App\Services\StudentsTimetables\RecognitionImportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
@@ -259,7 +264,11 @@ it('stores a subject overview json file for the selected school', function () {
         ->assertSuccessful()
         ->assertJsonPath('total', 1)
         ->assertJsonPath('data.0.filename', $storedFilename)
+        ->assertJsonPath('data.0.original_filename', 'faecher.json')
         ->assertJsonPath('data.0.analysis.subjects_total', 8)
+        ->assertJsonPath('active_dataset.table', 'student_timetable_subject_rows')
+        ->assertJsonPath('active_dataset.subject_rows_count', 9)
+        ->assertJsonPath('active_dataset.semesters_count', 4)
         ->assertJsonPath('data.0.analysis.semesters.0.label', '1. Semester')
         ->assertJsonPath('data.0.analysis.semesters.0.subjects_count', 2)
         ->assertJsonPath('data.0.analysis.semesters.0.subjects.0.name', 'Deutsch')
@@ -318,7 +327,16 @@ it('stores a subject overview json file for the selected school', function () {
         ->toHaveCount(1)
         ->and($semesters[1]['branch_variants'])->toHaveCount(1)
         ->and($semesters[2]['branch_variants'])->toHaveCount(1)
-        ->and($semesters[3]['branch_variants'])->toHaveCount(3);
+        ->and($semesters[3]['branch_variants'])->toHaveCount(3)
+        ->and(StudentTimetableSubjectImport::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->where('stored_filename', $storedFilename)
+            ->where('subjects_total', 8)
+            ->where('subject_rows_total', 9)
+            ->where('semesters_total', 4)
+            ->where('branches_total', 2)
+            ->exists())->toBeTrue();
 
     StudentTimetableSubjectRow::query()
         ->where('school_id', $user->school_id)
@@ -387,7 +405,181 @@ it('stores a subject overview json file for the selected school', function () {
         ->assertJsonPath('data.mappings.0.note', 'manuell');
 });
 
-it('keeps only the latest subject overview json import for a schoolyear', function () {
+it('stores filtered recognition csv uploads for the selected school', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
+    Queue::fake([ProcessRecognitionCsvImportJob::class]);
+
+    $csv = implode("\n", [
+        'Studierende;SchÃ¼lerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;LehrerkÃ¼rzel',
+        'Max Muster;100;Deutsch;1;0;0/0;',
+        'Ohne Wert;300;Mathematik;;0;0/0;',
+        'Kolloq Wert;200;Englisch;N;1;0/0;',
+        'Modul Wert;200;Biologie;B;0;1/0;',
+        'Lehrer Wert;;Geschichte;5;0;0/0;AB',
+        'Lehrer Ohne Note;;Geschichte;;0;0/0;CD',
+        'Max Zwei;101;Deutsch;2;0;0/0;',
+        'Berta Wert;102;Biologie;B;0;0/0;',
+        'Nora Wert;103;Englisch;N;0;0/0;',
+        'Fritz Wert;104;Geschichte;5;0;0/0;',
+        'Sonder Wert;105;Musik;A;0;0/0;',
+        'Ohne Note Wert;106;Physik;;1;0/0;',
+        '',
+    ]);
+
+    $uploadId = $this->actingAs($user)
+        ->withHeader('Upload-Name', 'anrechnungen.csv')
+        ->post('/api/admin/students-timetables/recognitions-csv')
+        ->assertSuccessful()
+        ->getContent();
+
+    $response = $this->actingAs($user)
+        ->call('PATCH', "/api/admin/students-timetables/recognitions-csv?patch={$uploadId}", [], [], [], [
+            'HTTP_UPLOAD_NAME' => 'anrechnungen.csv',
+            'HTTP_UPLOAD_LENGTH' => strlen($csv),
+        ], $csv);
+
+    $response->assertSuccessful();
+
+    $storedFilename = $response->getContent();
+    $storedPath = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/{$storedFilename}");
+
+    expect($storedFilename)
+        ->toStartWith('anrechnungen_')
+        ->and(str_ends_with($storedFilename, '.csv'))->toBeTrue()
+        ->and(File::exists($storedPath))->toBeTrue();
+
+    $storedContents = File::get($storedPath);
+
+    expect($storedContents)
+        ->toContain('Ohne Wert');
+
+    $import = StudentTimetableRecognitionImport::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->firstOrFail();
+
+    Queue::assertPushed(ProcessRecognitionCsvImportJob::class, fn (ProcessRecognitionCsvImportJob $job): bool => $job->recognitionImportId === $import->id);
+
+    expect($import->original_filename)->toBe('anrechnungen.csv')
+        ->and($import->stored_filename)->toBe($storedFilename)
+        ->and($import->total_rows)->toBe(0)
+        ->and($import->imported_rows)->toBe(0)
+        ->and($import->skipped_rows)->toBe(0)
+        ->and($import->import_status)->toBe('pending')
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->exists())->toBeFalse();
+
+    app(RecognitionImportService::class)->processImport($import);
+
+    $import->refresh();
+    $storedContents = File::get($storedPath);
+
+    expect($storedContents)
+        ->toContain('Max Muster')
+        ->toContain('Kolloq Wert')
+        ->toContain('Modul Wert')
+        ->toContain('Lehrer Wert')
+        ->not->toContain('Ohne Wert');
+
+    expect($import->original_filename)->toBe('anrechnungen.csv')
+        ->and($import->stored_filename)->toBe($storedFilename)
+        ->and($import->total_rows)->toBe(12)
+        ->and($import->imported_rows)->toBe(11)
+        ->and($import->skipped_rows)->toBe(1)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->pluck('student')
+            ->all())->toBe([
+                'Max Muster',
+                'Kolloq Wert',
+                'Modul Wert',
+                'Lehrer Wert',
+                'Lehrer Ohne Note',
+                'Max Zwei',
+                'Berta Wert',
+                'Nora Wert',
+                'Fritz Wert',
+                'Sonder Wert',
+                'Ohne Note Wert',
+            ]);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/recognitions-csv')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.original_filename', 'anrechnungen.csv')
+        ->assertJsonPath('data.0.imported_rows', 11)
+        ->assertJsonPath('data.0.skipped_rows', 1)
+        ->assertJsonPath('data.0.imported_students_count', 8)
+        ->assertJsonPath('data.0.students_without_grades_count', 1)
+        ->assertJsonPath('data.0.imported_subjects_count', 6)
+        ->assertJsonPath('data.0.imported_teachers_count', 2)
+        ->assertJsonPath('data.0.teacher_codes.0.code', 'AB')
+        ->assertJsonPath('data.0.teacher_codes.0.subjects.0', 'Geschichte')
+        ->assertJsonPath('data.0.teacher_codes.0.one_to_four_count', 0)
+        ->assertJsonPath('data.0.teacher_codes.0.five_count', 1)
+        ->assertJsonPath('data.0.teacher_codes.0.n_count', 0)
+        ->assertJsonPath('data.0.teacher_codes.0.other_count', 0)
+        ->assertJsonPath('data.0.teacher_codes.0.b_count', 0)
+        ->assertJsonPath('data.0.teacher_codes.1.code', 'Unbekannt')
+        ->assertJsonPath('data.0.teacher_codes.1.subjects.0', 'Biologie')
+        ->assertJsonPath('data.0.teacher_codes.1.subjects.1', 'Deutsch')
+        ->assertJsonPath('data.0.teacher_codes.1.one_to_four_count', 2)
+        ->assertJsonPath('data.0.teacher_codes.1.five_count', 1)
+        ->assertJsonPath('data.0.teacher_codes.1.n_count', 2)
+        ->assertJsonPath('data.0.teacher_codes.1.other_count', 1)
+        ->assertJsonPath('data.0.teacher_codes.1.b_count', 2)
+        ->assertJsonPath('data.0.grade_counts.total', 9)
+        ->assertJsonPath('data.0.grade_counts.n', 2)
+        ->assertJsonPath('data.0.grade_counts.b', 2)
+        ->assertJsonPath('data.0.grade_counts.one_to_four', 2)
+        ->assertJsonPath('data.0.grade_counts.five', 2)
+        ->assertJsonPath('data.0.grade_counts.other', 1)
+        ->assertJsonPath('data.0.grade_counts.other_details.0.note', 'A')
+        ->assertJsonPath('data.0.grade_counts.other_details.0.count', 1)
+        ->assertJsonPath('data.0.subject_grade_counts.0.subject', 'Biologie')
+        ->assertJsonPath('data.0.subject_grade_counts.0.one_to_four_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.0.b_count', 2)
+        ->assertJsonPath('data.0.subject_grade_counts.0.five_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.0.n_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.0.other_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.0.total_count', 2)
+        ->assertJsonPath('data.0.subject_grade_counts.1.subject', 'Deutsch')
+        ->assertJsonPath('data.0.subject_grade_counts.1.one_to_four_count', 2)
+        ->assertJsonPath('data.0.subject_grade_counts.1.b_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.1.five_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.1.n_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.1.other_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.1.total_count', 2)
+        ->assertJsonPath('data.0.subject_grade_counts.5.subject', 'Physik')
+        ->assertJsonPath('data.0.subject_grade_counts.5.one_to_four_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.5.b_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.5.five_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.5.n_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.5.other_count', 0)
+        ->assertJsonPath('data.0.subject_grade_counts.5.total_count', 0)
+        ->assertJsonPath('data.0.import_status', 'completed');
+
+    $this->actingAs($user)
+        ->deleteJson("/api/admin/students-timetables/recognitions-csv/{$import->id}")
+        ->assertSuccessful()
+        ->assertJsonPath('deleted', true);
+
+    expect(StudentTimetableRecognitionImport::query()->whereKey($import->id)->exists())->toBeFalse()
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $import->id)
+            ->exists())->toBeFalse()
+        ->and(File::exists($storedPath))->toBeFalse();
+});
+
+it('keeps subject overview json import history for a schoolyear', function () {
     $user = createStudentsTimetablesUserWithLicence();
     $schoolyear = Schoolyear::factory()->create([
         'school_id' => $user->school_id,
@@ -448,9 +640,9 @@ it('keeps only the latest subject overview json import for a schoolyear', functi
 
     $storedDirectory = storage_path("app/private/{$user->school_id}/student-timetable-subjects/{$schoolyear->id}");
 
-    expect(File::exists("{$storedDirectory}/{$firstFilename}"))->toBeFalse()
+    expect(File::exists("{$storedDirectory}/{$firstFilename}"))->toBeTrue()
         ->and(File::exists("{$storedDirectory}/{$secondFilename}"))->toBeTrue()
-        ->and(File::glob("{$storedDirectory}/*.json"))->toHaveCount(1);
+        ->and(File::glob("{$storedDirectory}/*.json"))->toHaveCount(2);
 
     $stalePath = "{$storedDirectory}/faecher-stale_20260101_000000.json";
     File::put($stalePath, $firstJson);
@@ -459,13 +651,19 @@ it('keeps only the latest subject overview json import for a schoolyear', functi
     $this->actingAs($user)
         ->getJson('/api/admin/students-timetables/subjects-overview-json')
         ->assertSuccessful()
-        ->assertJsonPath('total', 1)
+        ->assertJsonPath('total', 2)
         ->assertJsonPath('data.0.filename', $secondFilename)
         ->assertJsonPath('data.0.analysis.semesters.0.label', '2. Semester')
-        ->assertJsonPath('data.0.analysis.semesters.0.subjects.0.name', 'Mathematik');
+        ->assertJsonPath('data.0.analysis.semesters.0.subjects.0.name', 'Mathematik')
+        ->assertJsonPath('data.1.filename', $firstFilename)
+        ->assertJsonPath('data.1.analysis.semesters.0.label', '1. Semester');
 
-    expect(File::exists($stalePath))->toBeFalse()
-        ->and(File::glob("{$storedDirectory}/*.json"))->toHaveCount(1);
+    expect(File::exists($stalePath))->toBeTrue()
+        ->and(File::glob("{$storedDirectory}/*.json"))->toHaveCount(3)
+        ->and(StudentTimetableSubjectImport::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->count())->toBe(2);
 });
 
 it('expands compact multi-module subject codes in subject overview json imports', function () {

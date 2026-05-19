@@ -54,6 +54,7 @@
         </v-sheet>
 
         <v-row class="w-100" dense>
+            <Timetable v-if="main_action === 'timetable'" />
             <Overview v-if="main_action === 'overview'" />
             <Import v-if="main_action === 'import'" />
             <RobotTimetable v-if="main_action === 'robot'" />
@@ -69,6 +70,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import AdminSectionHero from '@/pages/admin/components/AdminSectionHero.vue'
 
+const Timetable = defineAsyncComponent(() => import('./timetable/Timetable.vue'))
 const Overview = defineAsyncComponent(() => import('./overview/Overview.vue'))
 const Import = defineAsyncComponent(() => import('./import/Import.vue'))
 const RobotTimetable = defineAsyncComponent(() => import('./robot/RobotTimetable.vue'))
@@ -77,6 +79,7 @@ const SubjectsOverview = defineAsyncComponent(() => import('./subjectsOverview/S
 export default {
     components: {
         AdminSectionHero,
+        Timetable,
         Overview,
         Import,
         RobotTimetable,
@@ -84,7 +87,7 @@ export default {
     },
     data() {
         return {
-            main_action: 'overview',
+            main_action: 'timetable',
         }
     },
     computed: {
@@ -107,6 +110,13 @@ export default {
         },
         navigationItems() {
             return [
+                {
+                    key: 'timetable',
+                    label: 'Stundenplan',
+                    meta: 'Center',
+                    icon: 'mdi-calendar-clock-outline',
+                    roles: ['super_admin', 'admin', 'studentstimetables_admin'],
+                },
                 {
                     key: 'overview',
                     label: 'Übersicht',
@@ -139,10 +149,15 @@ export default {
         },
         activeSection() {
             const sections = {
+                timetable: {
+                    label: 'Stundenplan',
+                    icon: 'mdi-calendar-clock-outline',
+                    note: 'Stundenplan Center.',
+                },
                 overview: {
                     label: 'Übersicht',
                     icon: 'mdi-view-dashboard-outline',
-                    note: 'Stundenplan-Übersicht.',
+                    note: 'Tagesansicht.',
                 },
                 import: {
                     label: 'Stundenplan',
@@ -160,7 +175,7 @@ export default {
                     note: 'Fächer, Import und Zuordnung.',
                 },
             }
-            return sections[this.main_action] || sections.overview
+            return sections[this.main_action] || sections.timetable
         },
     },
     created() {
@@ -179,13 +194,14 @@ export default {
                 return
             }
 
-            this.main_action = 'overview'
+            this.main_action = 'timetable'
         },
     },
     methods: {
         handleNavigation(key) {
             this.main_action = key
             const paths = {
+                timetable: '/admin/students-timetables/timetable/overview',
                 import: '/admin/students-timetables/import/overview',
                 robot: '/admin/students-timetables/robot',
                 'subjects-overview': '/admin/students-timetables/subjects-overview/overview',

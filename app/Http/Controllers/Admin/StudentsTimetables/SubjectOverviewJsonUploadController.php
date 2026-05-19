@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\StudentsTimetables;
 
 use App\Http\Controllers\Controller;
+use App\Models\StudentTimetableSubjectImport;
 use App\Models\StudentTimetableSubjectMapping;
 use App\Models\StudentTimetableSubjectRow;
 use App\Services\FileUploadService;
@@ -22,24 +23,21 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $latestPath = $this->jsonFiles($authUser)->first();
+        $this->importLegacyJsonIfMissing($authUser);
 
-        if ($latestPath) {
-            $this->deleteOtherJsonFiles($authUser, $latestPath);
-        }
-
-        $files = collect($latestPath ? [$latestPath] : [])
-            ->map(fn (string $path): array => [
-                'filename' => basename($path),
-                'size' => filesize($path) ?: 0,
-                'uploaded_at' => date('c', filemtime($path) ?: time()),
-                'analysis' => $this->analyzeJsonFile($path),
-            ])
+        $imports = StudentTimetableSubjectImport::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderByDesc('imported_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (StudentTimetableSubjectImport $import): array => $this->subjectImportPayload($import))
             ->values();
 
         return response()->json([
-            'data' => $files,
-            'total' => $files->count(),
+            'data' => $imports,
+            'total' => $imports->count(),
+            'active_dataset' => $this->activeSubjectDatasetMetadata($authUser),
         ]);
     }
 
@@ -49,7 +47,7 @@ class SubjectOverviewJsonUploadController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
-        $this->seedEditableDataFromLatestJsonIfMissing($authUser);
+        $this->seedEditableDataFromLatestImportIfMissing($authUser);
 
         return response()->json([
             'data' => $this->editableSettingsData($authUser),
@@ -179,8 +177,11 @@ class SubjectOverviewJsonUploadController extends Controller
         $storedPath = storage_path("{$uploadPath}/{$result}");
 
         $this->ensureStoredFileContainsJson("{$uploadPath}/{$result}");
-        $this->deleteOtherJsonFiles($authUser, $storedPath);
-        $this->seedEditableDataFromJsonPath($authUser, $storedPath);
+        $analysis = $this->analyzeJsonFile($storedPath);
+        $originalFilename = $request->header('Upload-Name') ?: $storedName;
+        $this->createSubjectImport($authUser, $originalFilename, $result, "{$uploadPath}/{$result}", $storedPath, $analysis);
+        $this->replaceSubjectRowsFromAnalysis($authUser, $analysis);
+        $this->seedDefaultSubjectMappings($authUser, collect($analysis['subject_rows'] ?? [])->pluck('json_subject')->filter()->unique()->values()->all());
 
         return response($result, 200)->header('Content-Type', 'text/plain');
     }
@@ -979,54 +980,180 @@ class SubjectOverviewJsonUploadController extends Controller
             ->values();
     }
 
-    private function deleteOtherJsonFiles(mixed $authUser, string $keptPath): void
+    private function importLegacyJsonIfMissing(mixed $authUser): void
     {
-        $keptPath = realpath($keptPath) ?: $keptPath;
+        if (StudentTimetableSubjectImport::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->exists()) {
+            return;
+        }
 
-        $this->jsonFiles($authUser)
-            ->reject(fn (string $path): bool => (realpath($path) ?: $path) === $keptPath)
-            ->each(fn (string $path): bool => @unlink($path));
-    }
-
-    private function seedEditableDataFromLatestJsonIfMissing(mixed $authUser): void
-    {
         $path = $this->latestJsonPath($authUser);
 
         if (! $path) {
             return;
         }
 
-        $this->seedEditableDataFromJsonPath($authUser, $path);
+        $analysis = $this->analyzeJsonFile($path);
+        $filename = basename($path);
+
+        $this->createSubjectImport(
+            $authUser,
+            $filename,
+            $filename,
+            $this->relativeStoragePath($path),
+            $path,
+            $analysis,
+            filemtime($path) ?: null,
+        );
     }
 
-    private function seedEditableDataFromJsonPath(mixed $authUser, string $path): void
-    {
-        $analysis = $this->analyzeJsonFile($path);
-        $subjectRows = $analysis['subject_rows'] ?? [];
+    /**
+     * @param  array<string, mixed>  $analysis
+     */
+    private function createSubjectImport(
+        mixed $authUser,
+        string $originalFilename,
+        string $storedFilename,
+        string $filePath,
+        string $absolutePath,
+        array $analysis,
+        ?int $importedAtTimestamp = null,
+    ): StudentTimetableSubjectImport {
+        return StudentTimetableSubjectImport::create([
+            'school_id' => $authUser->school_id,
+            'schoolyear_id' => $authUser->schoolyear_id,
+            'user_id' => $authUser->id,
+            'original_filename' => $originalFilename,
+            'stored_filename' => $storedFilename,
+            'file_path' => $filePath,
+            'file_size' => filesize($absolutePath) ?: 0,
+            'analysis' => $analysis,
+            'subjects_total' => (int) ($analysis['subjects_total'] ?? 0),
+            'subject_rows_total' => count($analysis['subject_rows'] ?? []),
+            'semesters_total' => count($analysis['semesters'] ?? []),
+            'branches_total' => count($analysis['branches'] ?? []),
+            'imported_at' => $importedAtTimestamp ? now()->setTimestamp($importedAtTimestamp) : now(),
+        ]);
+    }
 
-        if (! StudentTimetableSubjectRow::query()
+    private function relativeStoragePath(string $path): string
+    {
+        $storageRoot = str_replace('\\', '/', storage_path());
+        $normalizedPath = str_replace('\\', '/', $path);
+
+        return Str::after($normalizedPath, "{$storageRoot}/");
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     */
+    private function replaceSubjectRowsFromAnalysis(mixed $authUser, array $analysis): void
+    {
+        $subjectRows = collect($analysis['subject_rows'] ?? [])
+            ->values()
+            ->map(fn (array $subjectRow, int $index): array => [
+                'school_id' => $authUser->school_id,
+                'schoolyear_id' => $authUser->schoolyear_id,
+                'semester' => $subjectRow['semester'] ?? null,
+                'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
+                'json_code' => $subjectRow['json_code'] ?? null,
+                'json_subject' => $subjectRow['json_subject'] ?? null,
+                'name' => $subjectRow['name'] ?? null,
+                'hours_per_week' => $subjectRow['hours_per_week'] ?? null,
+                'is_active' => true,
+                'sort_order' => $index,
+                'source' => 'json',
+            ]);
+
+        DB::transaction(function () use ($authUser, $subjectRows): void {
+            StudentTimetableSubjectRow::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->delete();
+
+            $subjectRows->each(fn (array $subjectRow): StudentTimetableSubjectRow => StudentTimetableSubjectRow::create($subjectRow));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function subjectImportPayload(StudentTimetableSubjectImport $import): array
+    {
+        return [
+            'id' => $import->id,
+            'filename' => $import->stored_filename,
+            'original_filename' => $import->original_filename,
+            'stored_filename' => $import->stored_filename,
+            'file_path' => $import->file_path,
+            'size' => $import->file_size,
+            'uploaded_at' => $import->imported_at?->toIso8601String(),
+            'analysis' => $import->analysis ?? [],
+            'subjects_total' => $import->subjects_total,
+            'subject_rows_total' => $import->subject_rows_total,
+            'semesters_total' => $import->semesters_total,
+            'branches_total' => $import->branches_total,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function activeSubjectDatasetMetadata(mixed $authUser): array
+    {
+        $baseQuery = StudentTimetableSubjectRow::query()
             ->where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
-            ->exists()) {
-            collect($subjectRows)
-                ->values()
-                ->each(function (array $subjectRow, int $index) use ($authUser): void {
-                    StudentTimetableSubjectRow::create([
-                        'school_id' => $authUser->school_id,
-                        'schoolyear_id' => $authUser->schoolyear_id,
-                        'semester' => $subjectRow['semester'] ?? null,
-                        'branch' => $this->normalizeSubjectBranch($subjectRow['branch'] ?? null),
-                        'json_code' => $subjectRow['json_code'] ?? null,
-                        'json_subject' => $subjectRow['json_subject'] ?? null,
-                        'name' => $subjectRow['name'] ?? null,
-                        'hours_per_week' => $subjectRow['hours_per_week'] ?? null,
-                        'is_active' => true,
-                        'sort_order' => $index,
-                        'source' => 'json',
-                    ]);
-                });
-        } else {
+            ->where('is_active', true);
+
+        return [
+            'name' => 'Aktive Fächer',
+            'table' => 'student_timetable_subject_rows',
+            'subjects_count' => (clone $baseQuery)
+                ->whereNotNull('name')
+                ->distinct('name')
+                ->count('name'),
+            'subject_rows_count' => (clone $baseQuery)->count(),
+            'semesters_count' => (clone $baseQuery)
+                ->whereNotNull('semester')
+                ->distinct('semester')
+                ->count('semester'),
+            'branches_count' => (clone $baseQuery)
+                ->whereNotNull('branch')
+                ->distinct('branch')
+                ->count('branch'),
+            'updated_at' => (clone $baseQuery)->max('updated_at'),
+        ];
+    }
+
+    private function seedEditableDataFromLatestImportIfMissing(mixed $authUser): void
+    {
+        $this->importLegacyJsonIfMissing($authUser);
+
+        $hasSubjectRows = StudentTimetableSubjectRow::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->exists();
+
+        $import = StudentTimetableSubjectImport::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderByDesc('imported_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $import) {
+            return;
+        }
+
+        $subjectRows = $import->analysis['subject_rows'] ?? [];
+
+        if ($hasSubjectRows) {
             $this->refreshJsonSubjectRowNames($authUser, $subjectRows);
+        } else {
+            $this->replaceSubjectRowsFromAnalysis($authUser, $import->analysis ?? []);
         }
 
         $this->seedDefaultSubjectMappings($authUser, collect($subjectRows)->pluck('json_subject')->filter()->unique()->values()->all());

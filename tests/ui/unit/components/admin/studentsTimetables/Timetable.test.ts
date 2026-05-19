@@ -1,0 +1,531 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+import Timetable from '@/pages/admin/studentsTimetables/timetable/Timetable.vue'
+
+describe('Students timetable timetable page', () => {
+    it('shows import buttons that open import subpages', () => {
+        const componentSource = readFileSync(
+            'resources/js/pages/admin/studentsTimetables/timetable/Timetable.vue',
+            'utf8',
+        )
+        const routeSource = readFileSync('resources/routes/admin.js', 'utf8')
+
+        expect(componentSource).toContain('v-if="subAction === \'imports\' && !activeImportPage"')
+        expect(componentSource).toContain('Importe')
+        expect(componentSource).toContain('importButtons()')
+        expect(componentSource).toContain("label: 'Stundenplan'")
+        expect(componentSource).toContain("label: 'Fächer'")
+        expect(componentSource).toContain("label: 'Anrechnungen'")
+        expect(componentSource).toContain(':prepend-icon="button.icon"')
+        expect(componentSource).toContain('/api/admin/students-timetables/imports')
+        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-json')
+        expect(componentSource).toContain('Letzter Import:')
+        expect(componentSource).toContain('@click="openImportPage(button.key)"')
+        expect(componentSource).toContain('openImportPage(key)')
+        expect(componentSource).toContain('/admin/students-timetables/timetable/imports/${this.importPage}')
+        expect(componentSource).toContain('activeImportButton')
+        expect(componentSource).toContain('st-import-page-title')
+        expect(componentSource).toContain('class="st-import-back-button"')
+        expect(componentSource).toContain('margin-left: auto')
+        expect(componentSource.indexOf('class="st-import-back-button"'))
+            .toBeLessThan(componentSource.indexOf('@click="closeImportPage"'))
+        expect(componentSource).toContain('st-import-file-info-card')
+        expect(componentSource).toContain('Benötigte Importdatei')
+        expect(componentSource.indexOf('<span class="st-import-page-title__label">{{ activeImportButton.label }}</span>'))
+            .toBeLessThan(componentSource.indexOf('<span class="font-weight-bold">Benötigte Importdatei</span>'))
+        expect(componentSource).toContain('st-import-file-info-card__button')
+        expect(componentSource).toContain('@click="closeImportPage"')
+        expect(componentSource).toContain('to="/admin/students-timetables/timetable/imports/stundenplan/import"')
+        expect(componentSource.indexOf('class="st-import-file-info-card__button"'))
+            .toBeLessThan(componentSource.indexOf('to="/admin/students-timetables/timetable/imports/stundenplan/import"'))
+        expect(componentSource).toContain('activeImportSubPage === \'import\'')
+        expect(componentSource).toContain('TXT-Datei importieren')
+        expect(componentSource).toContain('JSON-Datei importieren')
+        expect(componentSource).toContain('activeImportUploadTitle')
+        expect(componentSource).toContain('activeImportUploadPath')
+        expect(componentSource).toContain('activeImportAllowedFileTypes')
+        expect(componentSource).toContain('activeImportUploadVisible')
+        expect(componentSource).toContain('Schuljahr ändern')
+        expect(componentSource).toContain('@click.prevent="openSchoolyearEdit"')
+        expect(componentSource).toContain('v-model="schoolyearDialog"')
+        expect(componentSource).toContain('saveSchoolyear')
+        expect(componentSource).toContain('useSchoolyearStore')
+        expect(componentSource).toContain('useValidationRulesSetup')
+        expect(componentSource).toContain('/api/admin/students-timetables/upload')
+        expect(componentSource).toContain('/api/admin/students-timetables/subjects-overview-json')
+        expect(componentSource).toContain("['application/json']")
+        expect(componentSource).toContain("['text/plain']")
+        expect(componentSource).toContain('activeImportUploadSuccessLabel')
+        expect(componentSource).toContain("return this.activeImportPage === 'faecher' ? 'JSON-Datei' : 'TXT-Datei'")
+        expect(componentSource).toContain('refreshFilePond')
+        expect(componentSource).toContain('onImportUploadStart')
+        expect(componentSource).toContain('onUploadFinished')
+        expect(componentSource).toContain('onUploadError')
+        expect(componentSource).toContain('TXT-Datei (.txt)')
+        expect(componentSource).toContain('Untis-Export')
+        expect(componentSource).toContain('Tabstopps / tabulatorgetrennt')
+        expect(componentSource).toContain('TT-Einträge mit Stundenplan-Zeilen')
+        expect(componentSource).toContain('Folgende Einträge dürfen in der Untis-Datei enthalten sein:')
+        expect(componentSource).toContain('mdi-information-outline')
+        expect(componentSource).not.toContain('<span>Info:</span>')
+        expect(componentSource).toContain('allowedUntisEntryTypes')
+        expect(componentSource).toContain('st-import-file-info-note')
+        expect(componentSource).toContain('st-import-history-card')
+        expect(componentSource).toContain('Importverlauf')
+        expect(componentSource).toContain('per_page: 100')
+        expect(componentSource).toContain('openDeleteDialog(importItem)')
+        expect(componentSource).toContain('deleteImport()')
+        expect(componentSource).toContain('Import löschen')
+        expect(componentSource).toContain('sectionLabel(code)')
+        expect(componentSource).toContain('statusText(importItem)')
+        expect(componentSource).toContain('importProgress(importItem)')
+        expect(componentSource).toContain('updatePolling()')
+        expect(componentSource).toContain('st-main-dataset-summary')
+        expect(componentSource).toContain("activeImportPage === 'faecher' && activeSubjectImport")
+        expect(componentSource).toContain('Importdaten')
+        expect(componentSource).toContain('Aktive Fächer')
+        expect(componentSource).toContain('student_timetable_subject_rows')
+        expect(componentSource).toContain('active_dataset')
+        expect(componentSource).toContain('subjectDataset')
+        expect(componentSource).toContain('subjectImportSummaryItems')
+        expect(componentSource).toContain('Semester')
+        expect(componentSource).toContain('Fächer')
+        expect(componentSource).not.toContain("label: 'Kurszeilen'")
+        expect(componentSource).not.toContain("label: 'Dateigröße'")
+        expect(componentSource).toContain('Zweige')
+        expect(componentSource).not.toContain('subject_rows_count')
+        expect(componentSource).toContain('Noch keine Fächer-Datei importiert.')
+        expect(componentSource).toContain('st-subject-summary')
+        expect(componentSource).toContain('activeSubjectRows')
+        expect(componentSource).toContain('activeSubjectRowsBySemester')
+        expect(componentSource).toContain('Alle Fächer')
+        expect(componentSource).toContain('st-subject-semester-block')
+        expect(componentSource).toContain('st-subject-branch-block')
+        expect(componentSource).toContain('st-subject-pill')
+        expect(componentSource).toContain('subjectRowKey(subjectRow)')
+        expect(componentSource).toContain('subjectHoursLabel(subjectRow)')
+        expect(componentSource).toContain('subjectBranchGroupLabel(branch)')
+        expect(componentSource).toContain('subjectBranchBlockClass(branchGroup.key)')
+        expect(componentSource).toContain("activeImportPage === 'faecher'")
+        expect(componentSource).toContain('mdi-file-code-outline')
+        expect(componentSource).toContain('Prompt kopieren')
+        expect(componentSource).toContain('copySubjectImportPrompt')
+        expect(componentSource).toContain('navigator.clipboard.writeText(this.subjectImportPrompt)')
+        expect(componentSource).toContain('https://abendgymnasium.salzburg.at/vollstudium/')
+        expect(componentSource).toContain('ÖKO 2/3')
+        expect(componentSource).toContain('wirtschaftskundlich')
+        expect(componentSource).toContain('gymnasial')
+        expect(componentSource).toContain('to="/admin/students-timetables/timetable/imports/faecher/import"')
+        expect(componentSource).toContain('JSON-Datei (.json)')
+        expect(componentSource).toContain('KI-generiert')
+        expect(componentSource).toContain('JSON mit Semestern, Fächern und Zweigen')
+        expect(componentSource).toContain('Fächer, Wochenstunden, Semester und Zweig-Varianten')
+        expect(componentSource).not.toContain('Der Import schreibt die aktiven Fächer in die Tabelle student_timetable_subject_rows.')
+        expect(componentSource).toContain('st-subject-import-history-list')
+        expect(componentSource).toContain('st-subject-import-history-item')
+        expect(componentSource).toContain('activeSubjectImport.original_filename || activeSubjectImport.filename')
+        expect(componentSource).toContain('subjectImportCountLabel(activeSubjectImport)')
+        expect(componentSource).toContain('Letzter Import')
+        expect(componentSource).not.toContain('subjectImports')
+        expect(componentSource.indexOf('to="/admin/students-timetables/timetable/imports/faecher/import"'))
+            .toBeLessThan(componentSource.indexOf('subjectImportCountLabel(activeSubjectImport)'))
+        expect(componentSource).toContain("activeImportPage === 'anrechnungen'")
+        expect(componentSource).toContain('CSV-Datei (.csv)')
+        expect(componentSource).toContain('Sokrates Bund')
+        expect(componentSource).toContain('Studierende, Fächer, Noten')
+        expect(componentSource).toContain('to="/admin/students-timetables/timetable/imports/anrechnungen/import"')
+        expect(componentSource).toContain('CSV-Datei importieren')
+        expect(componentSource).toContain('Anrechnungen · Sokrates Bund')
+        expect(componentSource).toContain('/api/admin/students-timetables/recognitions-csv')
+        expect(componentSource).toContain('recognitionImports')
+        expect(componentSource).toContain('recognitionsResponse.data?.data || []')
+        expect(componentSource).toContain(`if (this.activeImportPage === 'anrechnungen') {
+                this.uploadedFilename = file?.name || 'gespeichert'
+                this.refreshFilePond++
+                this.loadImportButtonInfo()
+                this.closeImportUploadPage()`)
+        expect(componentSource).toContain('recognitionStatusText(importItem)')
+        expect(componentSource).toContain('recognitionStatusColor(importItem)')
+        expect(componentSource).toContain('recognitionImportIsProcessing(importItem)')
+        expect(componentSource).toContain('v-if="recognitionImports.length" variant="accordion" multiple')
+        expect(componentSource).toContain('<div class="st-import-history-meta-section">Gesamt</div>')
+        expect(componentSource).toContain('Gesamtzeilen')
+        expect(componentSource).toContain('Importierte Zeilen')
+        expect(componentSource).toContain('Importierte Studierende')
+        expect(componentSource).not.toContain('Studierende ohne Noten')
+        expect(componentSource).toContain('Übersprungene Zeilen')
+        expect(componentSource).toContain('st-import-history-meta-section')
+        expect(componentSource).toContain('st-import-history-subject-panels')
+        expect(componentSource).toContain('st-import-history-subject-title')
+        expect(componentSource).toContain('st-import-history-teacher-panels')
+        expect(componentSource).toContain('<v-expansion-panels flat variant="accordion" class="st-import-history-teacher-panels">')
+        expect(componentSource).not.toContain('Fächer relativ')
+        expect(componentSource).toContain('Importierte Noten')
+        expect(componentSource).toContain('Noten N')
+        expect(componentSource).toContain('Noten B')
+        expect(componentSource).toContain('Noten 1-4')
+        expect(componentSource).toContain('Noten 5')
+        expect(componentSource).toContain('Sonstige Noten')
+        expect(componentSource).toContain('Anzahl')
+        expect(componentSource).toContain('Anzahl {{ importItem.imported_subjects_count || 0 }}')
+        expect(componentSource).toContain('<v-expansion-panels flat variant="accordion" class="st-import-history-subject-panels">')
+        expect(componentSource).toContain('<v-expansion-panel-title>')
+        expect(componentSource).toContain('<v-expansion-panel-text>')
+        expect(componentSource).toContain('v-if="importItem.subject_grade_counts?.length"')
+        expect(componentSource).toContain('class="st-import-history-subject-table"')
+        expect(componentSource).toContain('Fach')
+        expect(componentSource).toContain('<th class="text-right">1-4</th>')
+        expect(componentSource).toContain('<th class="text-right">5</th>')
+        expect(componentSource).toContain('<th class="text-right">N</th>')
+        expect(componentSource).toContain('<v-icon icon="mdi-sigma" size="14" title="Summe" />')
+        expect(componentSource).toContain('<th class="text-right">A</th>')
+        expect(componentSource).toContain('<th class="text-right">B</th>')
+        expect(componentSource).toContain('<template v-for="subjectItem in importItem.subject_grade_counts" :key="subjectItem.subject">')
+        expect(componentSource).toContain('{{ subjectItem.subject }}')
+        expect(componentSource).toContain('{{ subjectItem.one_to_four_count || 0 }}')
+        expect(componentSource).toContain('{{ subjectItem.b_count || 0 }}')
+        expect(componentSource).toContain('{{ subjectItem.five_count || 0 }}')
+        expect(componentSource).toContain('{{ subjectItem.n_count || 0 }}')
+        expect(componentSource).toContain('{{ subjectItem.other_count || 0 }}')
+        expect(componentSource).toContain('{{ recognitionSubjectCountedTotal(subjectItem) }}')
+        expect(componentSource).toContain('st-import-history-subject-total-cell')
+        expect(componentSource).toContain(':deep(th:not(:last-child))')
+        expect(componentSource).toContain('border-right: 1px solid rgba(25, 118, 210, 0.16);')
+        expect(componentSource).toContain('st-import-history-subject-percent-row')
+        expect(componentSource).toContain('recognitionSubjectPercentage(subjectItem.one_to_four_count, recognitionSubjectCountedTotal(subjectItem))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(recognitionSubjectCountedTotal(subjectItem), recognitionSubjectCountedTotal(subjectItem))')
+        expect(componentSource).toContain('st-import-history-subject-sum-row')
+        expect(componentSource).toContain('st-import-history-subject-sum-percent-row')
+        expect(componentSource).toContain('recognitionGradeCountedTotal(importItem.grade_counts)')
+        expect(componentSource).toContain('recognitionSubjectPercentage(importItem.grade_counts?.one_to_four, recognitionGradeCountedTotal(importItem.grade_counts))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(recognitionGradeCountedTotal(importItem.grade_counts), recognitionGradeCountedTotal(importItem.grade_counts))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(subjectItem.other_count, recognitionSubjectCountedTotal(subjectItem))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(subjectItem.b_count, recognitionSubjectCountedTotal(subjectItem))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(importItem.grade_counts?.other, recognitionGradeCountedTotal(importItem.grade_counts))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(importItem.grade_counts?.b, recognitionGradeCountedTotal(importItem.grade_counts))')
+        expect(componentSource).toContain('Summe')
+        expect(componentSource).not.toContain('Meiste N')
+        expect(componentSource).not.toContain('Meiste B')
+        expect(componentSource).not.toContain('Meiste 1-4')
+        expect(componentSource).not.toContain('Meiste 5')
+        expect(componentSource).toContain('importItem.total_rows || 0')
+        expect(componentSource).toContain('importItem.imported_rows || 0')
+        expect(componentSource).toContain('importItem.imported_students_count || 0')
+        expect(componentSource).not.toContain('importItem.students_without_grades_count || 0')
+        expect(componentSource).toContain('importItem.skipped_rows || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.total || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.n || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.b || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.one_to_four || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.five || 0')
+        expect(componentSource).toContain('importItem.grade_counts?.other || 0')
+        expect(componentSource).toContain('importItem.imported_subjects_count || 0')
+        expect(componentSource).toContain('Anzahl {{ importItem.imported_teachers_count || 0 }}')
+        expect(componentSource).toContain('v-if="importItem.teacher_codes?.length"')
+        expect(componentSource).toContain('class="st-import-history-teacher-table"')
+        expect(componentSource).toContain('Alle Lehrer')
+        expect(componentSource).toContain('<th class="text-right">1-4</th>')
+        expect(componentSource).toContain('<template v-for="teacherItem in importItem.teacher_codes" :key="teacherItem.code">')
+        expect(componentSource).toContain(':key="teacherItem.code"')
+        expect(componentSource).toContain('{{ teacherItem.code }}')
+        expect(componentSource).toContain('{{ teacherItem.one_to_four_count || 0 }}')
+        expect(componentSource).toContain('{{ teacherItem.five_count || 0 }}')
+        expect(componentSource).toContain('{{ teacherItem.n_count || 0 }}')
+        expect(componentSource).toContain('{{ recognitionTeacherCountedTotal(teacherItem) }}')
+        expect(componentSource).toContain('st-import-history-teacher-percent-row')
+        expect(componentSource).toContain('st-import-history-teacher-subjects-cell')
+        expect(componentSource).toContain('{{ recognitionTeacherSubjectsLabel(teacherItem) }}')
+        expect(componentSource).toContain('color: rgba(0, 0, 0, 0.5);')
+        expect(componentSource).toContain('font-size: 0.68rem;')
+        expect(componentSource).toContain('padding: 0 4px !important;')
+        expect(componentSource).toContain('padding: 0 2px !important;')
+        expect(componentSource).toContain('recognitionSubjectPercentage(teacherItem.one_to_four_count, recognitionTeacherCountedTotal(teacherItem))')
+        expect(componentSource).toContain('recognitionSubjectPercentage(teacherItem.five_count, recognitionTeacherCountedTotal(teacherItem))')
+        expect(componentSource).toContain('recognitionSubjectPercentage(teacherItem.n_count, recognitionTeacherCountedTotal(teacherItem))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(recognitionTeacherCountedTotal(teacherItem), recognitionTeacherCountedTotal(teacherItem))')
+        expect(componentSource).toContain('{{ teacherItem.other_count || 0 }}')
+        expect(componentSource).toContain('{{ teacherItem.b_count || 0 }}')
+        expect(componentSource).toContain('st-import-history-teacher-divider')
+        expect(componentSource).toContain('st-import-history-teacher-total-cell')
+        expect(componentSource).toContain('st-import-history-teacher-sum-row')
+        expect(componentSource).toContain('recognitionTeacherOneToFourTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('recognitionTeacherFiveTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('recognitionTeacherNTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('recognitionTeacherTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('recognitionTeacherOtherTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('recognitionTeacherBTotal(importItem.teacher_codes)')
+        expect(componentSource).toContain('st-import-history-teacher-sum-percent-row')
+        expect(componentSource).toContain('recognitionSubjectPercentage(recognitionTeacherOneToFourTotal(importItem.teacher_codes), recognitionTeacherTotal(importItem.teacher_codes))')
+        expect(componentSource).not.toContain('recognitionSubjectPercentage(recognitionTeacherTotal(importItem.teacher_codes), recognitionTeacherTotal(importItem.teacher_codes))')
+        expect(componentSource).toContain('importItem.subject_grade_counts')
+        expect(componentSource).toContain('st-import-history-label-col')
+        expect(componentSource).toContain('st-import-history-count-col')
+        expect(componentSource).toContain('width: 150px;')
+        expect(componentSource).toContain('min-width: 150px;')
+        expect(componentSource).toContain('max-width: 150px;')
+        expect(componentSource).toContain('width: 48px;')
+        expect(componentSource).toContain('width: 100%;')
+        expect(componentSource).not.toContain('max-width: 430px;')
+        expect(componentSource).toContain('recognitionOtherGradesLabel(importItem.grade_counts?.other_details)')
+        expect(componentSource).toContain(
+            'v-if="recognitionOtherGradesLabel(importItem.grade_counts?.other_details) !== \'-\'"',
+        )
+        expect(componentSource).toContain('({{ recognitionOtherGradesLabel(importItem.grade_counts?.other_details) }})')
+        expect(componentSource).toContain('st-import-history-meta-item small')
+        expect(componentSource).toContain('st-import-history-inline-detail')
+        expect(componentSource).toContain('.st-import-history-meta-item .st-import-history-inline-detail')
+        expect(componentSource).toContain('display: inline;')
+        expect(componentSource).not.toContain('recognitionSubjectLeaderLabel(')
+        expect(componentSource).not.toContain('recognitionSubjectRelativeLeaderLabel(')
+        expect(componentSource).toContain('importItem.grade_counts?.one_to_four')
+        expect(componentSource).toContain('importItem.grade_counts?.b')
+        expect(componentSource).toContain('importItem.grade_counts?.five')
+        expect(componentSource).toContain('importItem.grade_counts?.n')
+        expect(componentSource.indexOf('<div class="st-import-history-meta-section">Gesamt</div>'))
+            .toBeLessThan(componentSource.indexOf('Gesamtzeilen'))
+        expect(componentSource.indexOf('importItem.skipped_rows || 0'))
+            .toBeLessThan(componentSource.indexOf('importItem.imported_students_count || 0'))
+        expect(componentSource.indexOf('importItem.imported_students_count || 0'))
+            .toBeLessThan(componentSource.indexOf('Importierte Noten'))
+        expect(componentSource.indexOf('Importierte Noten'))
+            .toBeLessThan(componentSource.indexOf('Noten 1-4'))
+        expect(componentSource.indexOf('Noten 1-4'))
+            .toBeLessThan(componentSource.indexOf('Noten B'))
+        expect(componentSource.indexOf('Noten B'))
+            .toBeLessThan(componentSource.indexOf('Noten 5'))
+        expect(componentSource.indexOf('Noten 5'))
+            .toBeLessThan(componentSource.indexOf('Noten N'))
+        expect(componentSource.indexOf('Noten N'))
+            .toBeLessThan(componentSource.indexOf('Sonstige Noten'))
+        expect(componentSource.indexOf('Sonstige Noten'))
+            .toBeLessThan(componentSource.indexOf('st-import-history-subject-panels'))
+        expect(componentSource.indexOf('st-import-history-subject-panels'))
+            .toBeLessThan(componentSource.indexOf('importItem.imported_subjects_count || 0'))
+        expect(componentSource.indexOf('importItem.imported_subjects_count || 0'))
+            .toBeLessThan(componentSource.indexOf('v-if="importItem.subject_grade_counts?.length"'))
+        expect(componentSource.indexOf('st-import-history-subject-panels'))
+            .toBeLessThan(componentSource.indexOf('st-import-history-teacher-panels'))
+        expect(componentSource.indexOf('st-import-history-teacher-panels'))
+            .toBeLessThan(componentSource.indexOf('importItem.imported_teachers_count || 0'))
+        expect(componentSource.indexOf('importItem.imported_teachers_count || 0'))
+            .toBeLessThan(componentSource.indexOf('v-if="importItem.teacher_codes?.length"'))
+        expect(componentSource.indexOf('<template v-for="subjectItem in importItem.subject_grade_counts" :key="subjectItem.subject">'))
+            .toBeLessThan(componentSource.indexOf('st-import-history-subject-percent-row'))
+        expect(componentSource.indexOf('st-import-history-subject-percent-row'))
+            .toBeLessThan(componentSource.indexOf('st-import-history-subject-sum-row'))
+        expect(componentSource.indexOf('st-import-history-subject-sum-row'))
+            .toBeLessThan(componentSource.indexOf('st-import-history-subject-sum-percent-row'))
+        const subjectSumHeaderIndex = componentSource.indexOf('<v-icon icon="mdi-sigma" size="14" title="Summe" />')
+        const subjectOtherHeaderIndex = componentSource.indexOf('<th class="text-right">A</th>', subjectSumHeaderIndex)
+        const subjectBHeaderIndex = componentSource.indexOf('<th class="text-right">B</th>', subjectOtherHeaderIndex)
+
+        expect(subjectSumHeaderIndex).toBeLessThan(subjectOtherHeaderIndex)
+        expect(subjectOtherHeaderIndex).toBeLessThan(subjectBHeaderIndex)
+        expect(componentSource).toContain('Abgeschlossen')
+        expect(componentSource).toContain('Fehlgeschlagen')
+        expect(componentSource).toContain('Wartet')
+        expect(componentSource).toContain('Läuft')
+        expect(componentSource).toContain('Import wird verarbeitet.')
+        expect(componentSource).toContain('recognitionImports.some(importItem => this.recognitionImportIsProcessing(importItem))')
+        expect(componentSource).toContain('Anrechnungs-Import löschen')
+        expect(componentSource).toContain('Danach kann diese Datei erneut importiert werden.')
+        expect(componentSource).toContain('openRecognitionDeleteDialog(importItem)')
+        expect(componentSource).toContain('deleteRecognitionImport()')
+        expect(componentSource).toContain('/api/admin/students-timetables/recognitions-csv/${this.recognitionDeleteTargetImport.id}')
+        expect(componentSource).toContain('recognitionImportDetail')
+        expect(componentSource).toContain('importItem?.imported_rows')
+        expect(componentSource).toContain("if (this.activeImportPage === 'anrechnungen') return true")
+        expect(componentSource).toContain("if (this.activeImportPage === 'anrechnungen') return 'CSV-Datei'")
+        expect(componentSource).toContain("this.uploadError = 'Die CSV-Datei konnte nicht gespeichert werden.'")
+        expect(componentSource).toContain(':allowMultiple="activeImportUploadAllowsMultiple"')
+        expect(componentSource).toContain("return this.activeImportPage === 'anrechnungen'")
+        expect(componentSource).not.toContain('Anrechnungen-Konfiguration')
+        expect(componentSource).not.toContain('JSON mit Schülern, Fächern und Anrechnungen')
+        expect(componentSource).not.toContain('Anrechnungen, Fachzuordnungen und Gültigkeiten')
+        expect(componentSource).toContain('Noch keine Anrechnungs-Datei importiert.')
+        expect(componentSource).toContain('Hauptdatenbestand')
+        expect(componentSource).toContain('student_timetable_entries')
+        expect(componentSource).toContain('Zeitraum')
+        expect(componentSource).toContain('Stundenplan-Einträge')
+        expect(componentSource).toContain('Verschiedene Kurse')
+        expect(componentSource).toContain('Zuletzt geändert')
+        expect(componentSource).toContain('timetableResponse.data?.main_dataset')
+        expect(componentSource).toContain('st-course-summary')
+        expect(componentSource).toContain('<v-expansion-panels variant="accordion">')
+        expect(componentSource).toContain('activeDatasetCourses')
+        expect(componentSource).toContain('Alle Kurse')
+        expect(componentSource).toContain('Wochenstd.')
+        expect(componentSource).toContain('datasetCourseWeeklyHoursLabel(courseItem)')
+        expect(componentSource).toContain('datasetCourseDateRangeLabel(courseItem)')
+        expect(componentSource).toContain('st-single-date-summary')
+        expect(componentSource).toContain('activeDatasetSingleDateCourses')
+        expect(componentSource).toContain('activeDatasetSingleDateAppointmentsCount')
+        expect(componentSource).toContain('Einzeltermine')
+        expect(componentSource).toContain('singleDateAppointmentTimeLabel(appointment)')
+        expect(componentSource).toContain('formatDateWithWeekdayLabel(appointment.date)')
+        expect(componentSource).toContain('label="Aktiv"')
+        expect(componentSource).toContain('setAllSingleDateAppointmentsActive')
+        expect(componentSource).toContain('setCourseSingleDateAppointmentsActive(courseItem, $event)')
+        expect(componentSource).toContain('setSingleDateAppointmentActive(courseItem, appointment, $event)')
+        expect(componentSource).toContain('/api/admin/students-timetables/imports/single-date-appointments')
+        expect(componentSource).toContain('singleDateActivationPayload()')
+        expect(routeSource).toContain('/admin/students-timetables/:section?/:subsection?/:detail?/:action?')
+    })
+
+    it('formats import button metadata', () => {
+        const methods = (Timetable as any).methods
+
+        expect(methods.importedTtCount({
+            sections: { TT: 9 },
+            tt_skipped_invalid: 2,
+        })).toBe(7)
+
+        expect(methods.subjectImportCountLabel({
+            analysis: { subjects_total: 12 },
+        })).toBe('12 Fächer')
+
+        expect(methods.subjectImportCountLabel({})).toBe('')
+        expect(methods.formatFileSize(1536)).toBe('1.5 KB')
+        expect((Timetable as any).computed.subjectImportPrompt()).toContain('course_abbreviations')
+        expect((Timetable as any).computed.subjectImportPrompt()).toContain('https://abendgymnasium.salzburg.at/vollstudium/')
+        expect((Timetable as any).computed.subjectImportPrompt()).toContain('herunterladbare .json-Datei')
+        expect((Timetable as any).computed.subjectImportPrompt()).toContain('faecher-vollstudium-abendgymnasium.json')
+
+        expect((Timetable as any).computed.activeImportUploadPath.call({ activeImportPage: 'faecher' }))
+            .toBe('/api/admin/students-timetables/subjects-overview-json')
+        expect((Timetable as any).computed.activeImportAllowedFileTypes.call({ activeImportPage: 'faecher' }))
+            .toEqual(['application/json'])
+
+        expect(methods.subjectHoursLabel({ hours_per_week: '2.50' })).toBe('2.5')
+        expect(methods.subjectBranchLabel({ branch: 'wirtschaftskundlich' })).toBe('Wirtschaftskundlicher Zweig')
+        expect(methods.subjectBranchLabel({})).toBe('Gemeinsam')
+        expect(methods.subjectBranchGroupLabel('common')).toBe('alle')
+        expect(methods.subjectBranchBlockClass('gymnasial')).toBe('st-subject-branch-block--gymnasial')
+        expect(methods.compareText('D10', 'D2')).toBeGreaterThan(0)
+
+        expect(methods.dateRangeLabel({
+            tt_first_date: '2026-02-16',
+            tt_last_date: '2026-07-11',
+        })).toBe('2026-02-16 - 2026-07-11')
+
+        expect(methods.sectionLabel('TT')).toBe('Stundenplan-Einträge')
+        expect((Timetable as any).computed.allowedUntisEntryTypes()).toBe('VV, SU, TE, RM, KL, GR, LS, TT')
+        expect(methods.statusText({ import_status: 'completed' })).toBe('Abgeschlossen')
+        expect(methods.importProgress({ progress_current: 25, progress_total: 100 })).toBe(25)
+        expect(methods.recognitionOtherGradesLabel([{ note: 'A', count: 2 }, { note: 'X', count: 1 }]))
+            .toBe('A: 2 · X: 1')
+        expect(methods.recognitionOtherGradesLabel([])).toBe('-')
+        expect(methods.recognitionSubjectPercentage(2, 8)).toBe('25.0%')
+        expect(methods.recognitionSubjectPercentage(0, 0)).toBe('-')
+        expect(methods.recognitionSubjectCountedTotal({
+            one_to_four_count: 2,
+            five_count: 1,
+            n_count: 3,
+            other_count: 4,
+            b_count: 5,
+        })).toBe(6)
+        expect(methods.recognitionGradeCountedTotal({
+            one_to_four: 20,
+            five: 4,
+            n: 6,
+            other: 8,
+            b: 10,
+        })).toBe(30)
+        expect(methods.recognitionTeacherOneToFourTotal([
+            { one_to_four_count: 2 },
+            { one_to_four_count: 3 },
+            {},
+        ])).toBe(5)
+        expect(methods.recognitionTeacherOneToFourTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherFiveTotal([
+            { five_count: 1 },
+            { five_count: 4 },
+            {},
+        ])).toBe(5)
+        expect(methods.recognitionTeacherFiveTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherNTotal([
+            { n_count: 2 },
+            { n_count: 4 },
+            {},
+        ])).toBe(6)
+        expect(methods.recognitionTeacherNTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherCountedTotal({
+            one_to_four_count: 2,
+            five_count: 1,
+            n_count: 3,
+        })).toBe(6)
+        expect(methods.recognitionTeacherTotal([
+            { one_to_four_count: 2, five_count: 1, n_count: 3 },
+            { one_to_four_count: 4, five_count: 0, n_count: 2 },
+            {},
+        ])).toBe(12)
+        expect(methods.recognitionTeacherTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherOtherTotal([
+            { other_count: 2 },
+            { other_count: 3 },
+            {},
+        ])).toBe(5)
+        expect(methods.recognitionTeacherOtherTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherBTotal([
+            { b_count: 2 },
+            { b_count: 4 },
+            {},
+        ])).toBe(6)
+        expect(methods.recognitionTeacherBTotal(null)).toBe(0)
+        expect(methods.recognitionTeacherSubjectsLabel({
+            subjects: ['Deutsch', 'Mathematik'],
+        })).toBe('Deutsch, Mathematik')
+        expect(methods.recognitionTeacherSubjectsLabel({})).toBe('')
+
+        expect(methods.datasetDateRangeLabel({
+            first_date: '2026-02-16',
+            last_date: '2026-07-11',
+        })).toBe('2026-02-16 - 2026-07-11')
+
+        expect(methods.datasetCourseDateRangeLabel({
+            first_date: '2026-02-16',
+            last_date: '2026-07-11',
+        })).toBe('2026-02-16 - 2026-07-11')
+
+        expect(methods.datasetCourseWeeklyHoursLabel({ weekly_hours: 4 })).toBe('4')
+        expect(methods.datasetCourseWeeklyHoursLabel({})).toBe('-')
+
+        expect(methods.formatDateWithWeekdayLabel('2026-02-17')).toBe('Di, 17.02.2026')
+        expect(methods.singleDateAppointmentTimeLabel({
+            period: '14',
+            starts_at: '20:25',
+            ends_at: '21:10',
+        })).toBe('14. Std. 20:25-21:10')
+
+        const appointments = [
+            {
+                date: '2026-02-17',
+                period: '14',
+                starts_at: '20:25',
+                subject: 'LPT',
+                teacher: 'AB',
+                entry_ids: [1],
+            },
+            {
+                date: '2026-02-18',
+                period: '10',
+                starts_at: '17:05',
+                subject: 'LPT',
+                teacher: 'AB',
+                entry_ids: [2],
+            },
+        ]
+        const courseItem = { name: 'LPT-ALT', appointments }
+        const firstKey = methods.singleDateAppointmentKey(courseItem, appointments[0])
+        const payloadContext = {
+            activeDatasetSingleDateCourses: [courseItem],
+            activeSingleDateAppointmentKeySet: new Set([firstKey]),
+            singleDateAppointmentKey: methods.singleDateAppointmentKey,
+        }
+
+        expect(methods.singleDateActivationPayload.call(payloadContext)).toEqual([
+            { entry_ids: [1], active: true },
+            { entry_ids: [2], active: false },
+        ])
+    })
+})
