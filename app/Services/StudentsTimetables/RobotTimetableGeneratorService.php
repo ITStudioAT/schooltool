@@ -1,0 +1,1727 @@
+<?php
+
+namespace App\Services\StudentsTimetables;
+
+use App\Models\StudentTimetableSubjectMapping;
+use App\Models\StudentTimetableSubjectRow;
+use App\Models\User;
+use Illuminate\Support\Collection;
+
+class RobotTimetableGeneratorService
+{
+    /**
+     * @param  array<string, mixed>  $settings
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>}
+     */
+    public function countFullGreenTimetablesForUser(
+        User $authUser,
+        array $settings,
+        StudentTimetableOverviewService $overviewService,
+        ?string $selectedTimetableType = null,
+        int $selectedTimetableNumber = 1,
+    ): array {
+        $subjectRows = StudentTimetableSubjectRow::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (StudentTimetableSubjectRow $row): array => $row->toArray())
+            ->all();
+
+        $subjectMappings = StudentTimetableSubjectMapping::query()
+            ->where('school_id', $authUser->school_id)
+            ->where('schoolyear_id', $authUser->schoolyear_id)
+            ->orderBy('json_subject')
+            ->orderBy('tt_subject')
+            ->get()
+            ->map(fn (StudentTimetableSubjectMapping $mapping): array => $mapping->toArray())
+            ->all();
+
+        return $this->countFullGreenTimetables(
+            subjectRows: $subjectRows,
+            subjectMappings: $subjectMappings,
+            courseGroups: $overviewService->courseGroupsForUser($authUser),
+            settings: $settings,
+            selectedTimetableType: $selectedTimetableType,
+            selectedTimetableNumber: $selectedTimetableNumber,
+        );
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>}
+     */
+    public function countFullGreenTimetables(
+        array $subjectRows,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+        ?string $selectedTimetableType = null,
+        int $selectedTimetableNumber = 1,
+    ): array {
+        $selectedCourses = $this->selectedCourses($subjectRows, $subjectMappings, $courseGroups, $settings);
+
+        if ($selectedCourses === []) {
+            return [
+                'full_green_timetable_count' => 0,
+                'green_timetable_count' => 0,
+                'selected_course_count' => 0,
+                'selected_timetable' => null,
+            ];
+        }
+
+        $candidateOptions = collect($selectedCourses)
+            ->map(fn (array $course): array => $this->completeRegularOptionsForCourse(
+                $course,
+                $courseGroups,
+                $subjectMappings,
+                $settings,
+            ))
+            ->all();
+
+        if (collect($candidateOptions)->contains(fn (array $options): bool => $options === [])) {
+            return [
+                'full_green_timetable_count' => 0,
+                'green_timetable_count' => 0,
+                'selected_course_count' => count($selectedCourses),
+                'selected_timetable' => null,
+            ];
+        }
+
+        usort($candidateOptions, fn (array $firstOptions, array $secondOptions): int => count($firstOptions) <=> count($secondOptions));
+        $counts = $this->countDateCompatibleCombinations($candidateOptions);
+        $selectedTimetable = $this->selectedTimetable(
+            $candidateOptions,
+            $counts,
+            $selectedTimetableType,
+            $selectedTimetableNumber,
+        );
+
+        return [
+            'full_green_timetable_count' => $counts['full_green_timetable_count'],
+            'green_timetable_count' => $counts['green_timetable_count'],
+            'selected_course_count' => count($selectedCourses),
+            'selected_timetable' => $selectedTimetable,
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectRows
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private function selectedCourses(array $subjectRows, array $subjectMappings, array $courseGroups, array $settings): array
+    {
+        $courses = collect($subjectRows)
+            ->filter(fn (array $subject): bool => ($subject['is_active'] ?? true) !== false)
+            ->filter(fn (array $subject): bool => (int) ($subject['semester'] ?? 0) === (int) data_get($settings, 'selection.semester', 1))
+            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedBranch($subject, $settings))
+            ->filter(fn (array $subject): bool => $this->subjectMatchesSelectedChoices($subject, $settings))
+            ->flatMap(fn (array $subject): array => $this->selectedCoursesFromSubject($subject, $subjectMappings, $courseGroups, $settings))
+            ->sortBy(fn (array $course): string => $this->normalizedCourseCode($course['code'] ?? ''))
+            ->values()
+            ->all();
+
+        return collect($courses)
+            ->filter(fn (array $course): bool => $this->courseSelected($course, $courseGroups, $subjectMappings, $settings))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     */
+    private function subjectMatchesSelectedBranch(array $subject, array $settings): bool
+    {
+        $branch = (string) ($subject['branch'] ?? '');
+
+        return $branch === '' || $branch === 'common' || $branch === (string) data_get($settings, 'selection.branch', '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     */
+    private function subjectMatchesSelectedChoices(array $subject, array $settings): bool
+    {
+        if ($this->isArtsSubject($subject)) {
+            return $this->subjectBaseKey($subject) === (string) data_get($settings, 'selection.artsSubject', 'ME');
+        }
+
+        if ($this->isLanguageSubject($subject)) {
+            return $this->languageSubjectMatchesSelection($subject, $settings);
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     */
+    private function languageSubjectMatchesSelection(array $subject, array $settings): bool
+    {
+        $languageCode = $this->languageSubjectCode($subject);
+
+        return $languageCode === '' || $languageCode === (string) data_get($settings, 'selection.language', 'L');
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function languageSubjectCode(array $subject): string
+    {
+        $baseKey = $this->normalizedCourseCode($this->subjectBaseKey($subject));
+
+        if (in_array($baseKey, ['L', 'F', 'S'], true)) {
+            return $baseKey;
+        }
+
+        if ($baseKey !== 'L/F/S') {
+            return '';
+        }
+
+        $jsonCodeParts = collect($this->courseCodeAliasParts($this->courseCodeWithoutModule($subject['json_code'] ?? '')))
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->all();
+
+        return count($jsonCodeParts) === 1 && in_array($jsonCodeParts[0], ['L', 'F', 'S'], true)
+            ? $jsonCodeParts[0]
+            : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private function selectedCoursesFromSubject(
+        array $subject,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+    ): array {
+        return collect($this->subjectCourseVariants($subject))
+            ->map(fn (array $courseSubject): array => $this->selectedCourseFromSubject(
+                $courseSubject,
+                $subjectMappings,
+                $courseGroups,
+                $settings,
+            ))
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @return list<array<string, mixed>>
+     */
+    private function subjectCourseVariants(array $subject): array
+    {
+        if ($this->isReligionSubject($subject) || $this->isLanguageSubject($subject)) {
+            return [$subject];
+        }
+
+        $courseCodes = $this->courseCodeAliasParts($subject['json_code'] ?? '');
+        if (count($courseCodes) <= 1) {
+            return [$subject];
+        }
+
+        $splitHours = (float) ($subject['hours_per_week'] ?? 0) / count($courseCodes);
+
+        return collect($courseCodes)
+            ->map(fn (string $courseCode): array => [
+                ...$subject,
+                'json_code' => $courseCode,
+                'hours_per_week' => is_finite($splitHours) ? $splitHours : ($subject['hours_per_week'] ?? 0),
+            ])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return array<string, mixed>
+     */
+    private function selectedCourseFromSubject(
+        array $subject,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+    ): array {
+        $selectedCourseCode = $this->selectedCourseCode($subject, $settings);
+
+        return [
+            'key' => implode('|', [
+                $subject['id'] ?? $subject['local_id'] ?? '',
+                $subject['semester'] ?? '',
+                $subject['branch'] ?? 'common',
+                $subject['json_code'] ?? '',
+                $subject['json_subject'] ?? '',
+                $subject['name'] ?? '',
+                $selectedCourseCode,
+            ]),
+            'code' => $selectedCourseCode,
+            'name' => $subject['name'] ?? $subject['json_subject'] ?? $subject['json_code'] ?? '',
+            'ttCode' => $this->selectedCourseTimetableCodes($subject, $subjectMappings, $courseGroups, $settings)[0] ?? '',
+            'ttCodes' => $this->selectedCourseTimetableCodes($subject, $subjectMappings, $courseGroups, $settings),
+            'hours' => (float) ($subject['hours_per_week'] ?? 0),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     */
+    private function selectedCourseCode(array $subject, array $settings): string
+    {
+        if ($this->isReligionSubject($subject)) {
+            return (string) data_get($settings, 'selection.religion', 'ETH').$this->subjectModuleNumber($subject);
+        }
+
+        if ($this->isLanguageSubject($subject)) {
+            return (string) data_get($settings, 'selection.language', 'L').$this->subjectModuleNumber($subject);
+        }
+
+        return $this->alternativeDisplay($subject['json_code'] ?? $subject['json_subject'] ?? $subject['name'] ?? '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    private function selectedCourseTimetableCodes(
+        array $subject,
+        array $subjectMappings,
+        array $courseGroups,
+        array $settings,
+    ): array {
+        if ($this->isLanguageSubject($subject)) {
+            return [$this->selectedCourseCode($subject, $settings)];
+        }
+
+        $moduleNumber = $this->subjectModuleNumber($subject);
+        $jsonSubjectAliases = $this->subjectMappingJsonAliases($subject, $settings);
+        $mappingCodes = collect($this->activeSubjectMappings($subjectMappings))
+            ->filter(fn (array $mapping): bool => in_array($this->normalizedCourseCode($mapping['json_subject'] ?? ''), $jsonSubjectAliases, true))
+            ->flatMap(fn (array $mapping): array => $this->timetableCodesForSubjectMapping($mapping, $subject, $moduleNumber, $settings, $courseGroups))
+            ->all();
+
+        return collect([
+            ...$mappingCodes,
+            ...$this->timetableCodesForMappedSubject($subject['tt_subject'] ?? '', $moduleNumber, $courseGroups, $subjectMappings),
+        ])
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $mapping
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<string>
+     */
+    private function timetableCodesForSubjectMapping(
+        array $mapping,
+        array $subject,
+        string $fallbackModuleNumber,
+        array $settings,
+        array $courseGroups,
+    ): array {
+        $moduleNumbers = $this->selectedSubjectMappedModuleNumbers($subject, (string) ($mapping['json_subject'] ?? ''), $settings);
+        $mappedModuleNumbers = $moduleNumbers !== [] ? $moduleNumbers : [$fallbackModuleNumber];
+
+        return collect($mappedModuleNumbers)
+            ->flatMap(fn (string $moduleNumber): array => $this->timetableCodesForMappedSubject(
+                (string) ($mapping['tt_subject'] ?? ''),
+                $moduleNumber,
+                $courseGroups,
+                [$mapping],
+            ))
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    private function selectedSubjectMappedModuleNumbers(array $subject, string $jsonSubject, array $settings): array
+    {
+        $normalizedJsonSubject = $this->normalizedCourseModuleBase($jsonSubject, []);
+
+        return collect($this->selectedCourseCodeParts($subject, $settings))
+            ->map(fn (string $code): array => $this->courseCodeModuleParts($code, []))
+            ->filter(fn (array $parts): bool => $parts['module'] !== '' && $this->normalizedCourseModuleBase($parts['base'], []) === $normalizedJsonSubject)
+            ->pluck('module')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    private function selectedCourseCodeParts(array $subject, array $settings): array
+    {
+        return collect([
+            $subject['json_code'] ?? '',
+            $this->selectedCourseCode($subject, $settings),
+        ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return list<string>
+     */
+    private function timetableCodesForMappedSubject(
+        string $value,
+        string $moduleNumber,
+        array $courseGroups,
+        array $subjectMappings,
+    ): array {
+        $exactCode = $this->normalizedCourseCode($value);
+        $moduleCode = $this->normalizedCourseCode($this->timetableCodeWithModule($value, $moduleNumber));
+
+        if ($exactCode === '') {
+            return [];
+        }
+
+        return collect([
+            $moduleCode,
+            $exactCode !== $moduleCode && $this->timetableCourseCodeExists($exactCode, $courseGroups, $subjectMappings) ? $exactCode : '',
+        ])
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     * @param  array<string, mixed>  $settings
+     * @return list<string>
+     */
+    private function subjectMappingJsonAliases(array $subject, array $settings): array
+    {
+        return collect([
+            $this->subjectBaseKey($subject),
+            $subject['json_subject'] ?? '',
+            $this->courseCodeWithoutModule($subject['json_code'] ?? ''),
+            $this->courseCodeWithoutModule($this->selectedCourseCode($subject, $settings)),
+        ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return list<array<string, mixed>>
+     */
+    private function activeSubjectMappings(array $subjectMappings): array
+    {
+        return collect($subjectMappings)
+            ->filter(fn (array $mapping): bool => ($mapping['is_active'] ?? true) !== false)
+            ->values()
+            ->all();
+    }
+
+    private function timetableCodeWithModule(string $value, string $moduleNumber): string
+    {
+        if (trim($value) === '') {
+            return '';
+        }
+
+        if ($moduleNumber !== '' && ! preg_match('/\d/u', $value)) {
+            return "{$value}{$moduleNumber}";
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function timetableCourseCodeExists(string $code, array $courseGroups, array $subjectMappings): bool
+    {
+        $normalizedCode = $this->normalizedCourseCode($code);
+
+        if ($normalizedCode === '') {
+            return false;
+        }
+
+        return collect($courseGroups)
+            ->contains(fn (array $courseGroup): bool => in_array($normalizedCode, $this->courseGroupCodes($courseGroup, $subjectMappings), true));
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     */
+    private function courseSelected(array $course, array $courseGroups, array $subjectMappings, array $settings): bool
+    {
+        $groups = $this->courseGroupItems($course, $courseGroups, $subjectMappings);
+
+        if ($groups === []) {
+            return ! in_array($course['key'] ?? '', $settings['deselected_course_keys'] ?? [], true);
+        }
+
+        return collect($groups)
+            ->contains(fn (array $group): bool => $this->courseGroupSelected($course, $group, $settings));
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return list<array<string, mixed>>
+     */
+    private function courseGroupItems(array $course, array $courseGroups, array $subjectMappings): array
+    {
+        return collect($courseGroups)
+            ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course, $subjectMappings))
+            ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
+            ->map(fn ($courseGroups, string $title): array => ['title' => $title])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $group
+     * @param  array<string, mixed>  $settings
+     */
+    private function courseGroupSelected(array $course, array $group, array $settings): bool
+    {
+        return ! in_array($this->courseGroupSelectionKey($course, $group), $settings['deselected_course_group_keys'] ?? [], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $settings
+     */
+    private function courseGroupSelectedByLabel(array $course, string $label, array $settings): bool
+    {
+        return $this->courseGroupSelected($course, ['title' => $label], $settings);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $group
+     */
+    private function courseGroupSelectionKey(array $course, array $group): string
+    {
+        return collect([
+            $course['key'] ?? $course['code'] ?? '',
+            $group['title'] ?? $group['label'] ?? '',
+        ])
+            ->filter()
+            ->implode('|');
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @param  array<string, mixed>  $settings
+     * @return list<array<string, mixed>>
+     */
+    private function completeRegularOptionsForCourse(
+        array $course,
+        array $courseGroups,
+        array $subjectMappings,
+        array $settings,
+    ): array {
+        $matchingCourseGroups = collect($courseGroups)
+            ->filter(fn (array $courseGroup): bool => $this->courseGroupMatchesCourse($courseGroup, $course, $subjectMappings))
+            ->filter(fn (array $courseGroup): bool => $this->courseGroupSelectedByLabel($course, $this->courseGroupOptionLabel($courseGroup), $settings))
+            ->values();
+        $occasionalCourseGroupsByLabel = $matchingCourseGroups
+            ->filter(fn (array $courseGroup): bool => $this->isOccasionalCourseGroup($courseGroup))
+            ->filter(fn (array $courseGroup): bool => $this->weekdayTimeAvailable(
+                (int) ($courseGroup['weekday'] ?? 0),
+                (int) ($courseGroup['hour'] ?? 0),
+                $settings,
+            ))
+            ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup));
+
+        $entries = $matchingCourseGroups
+            ->filter(fn (array $courseGroup): bool => ! $this->isOccasionalCourseGroup($courseGroup))
+            ->groupBy(fn (array $courseGroup): string => $this->courseGroupOptionLabel($courseGroup))
+            ->map(function ($courseGroups, string $label) use ($course, $occasionalCourseGroupsByLabel): array {
+                $uniqueCourseGroups = $this->uniqueCourseGroupsBySlot($courseGroups->values()->all());
+                $occasionalCourseGroups = $this->uniqueCourseGroupsByDateSlotSignature(
+                    $occasionalCourseGroupsByLabel->get($label, collect())->values()->all(),
+                );
+
+                return [
+                    'key' => "{$course['code']}-{$label}",
+                    'label' => $label,
+                    'course' => $course,
+                    'courseGroups' => $uniqueCourseGroups,
+                    'occasionalCourseGroups' => $occasionalCourseGroups,
+                ];
+            })
+            ->filter(fn (array $option): bool => $option['courseGroups'] !== [])
+            ->filter(fn (array $option): bool => collect($option['courseGroups'])->every(
+                fn (array $courseGroup): bool => $this->weekdayTimeAvailable(
+                    (int) ($courseGroup['weekday'] ?? 0),
+                    (int) ($courseGroup['hour'] ?? 0),
+                    $settings,
+                ),
+            ))
+            ->sortBy(fn (array $option): string => $this->optionSortValue($option))
+            ->values()
+            ->all();
+
+        if ($entries === []) {
+            return $this->occasionalOnlyOptionsForCourse($course, $occasionalCourseGroupsByLabel);
+        }
+
+        return $this->mergeTimetableOptionsBySlots([
+            ...$this->completeTimetableOptionsForCourse($course, $entries),
+            ...$this->shorterRegularOptionsForCourse($course, $entries),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  Collection<string, Collection<int, array<string, mixed>>>  $occasionalCourseGroupsByLabel
+     * @return list<array<string, mixed>>
+     */
+    private function occasionalOnlyOptionsForCourse(array $course, Collection $occasionalCourseGroupsByLabel): array
+    {
+        return $occasionalCourseGroupsByLabel
+            ->map(function ($courseGroups, string $label) use ($course): array {
+                return [
+                    'key' => "{$course['code']}-{$label}",
+                    'label' => $label,
+                    'course' => $course,
+                    'courseGroups' => [],
+                    'occasionalCourseGroups' => $this->uniqueCourseGroupsByDateSlotSignature($courseGroups->values()->all()),
+                ];
+            })
+            ->filter(fn (array $option): bool => $option['occasionalCourseGroups'] !== [])
+            ->sortBy(fn (array $option): string => $this->optionSortValue($option))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $entries
+     * @return list<array<string, mixed>>
+     */
+    private function completeTimetableOptionsForCourse(array $course, array $entries): array
+    {
+        $requiredSlotCount = $this->requiredSlotCountForCourse($course);
+        $exactOptions = collect($entries)
+            ->filter(fn (array $entry): bool => count($entry['courseGroups']) === $requiredSlotCount)
+            ->values()
+            ->all();
+
+        if ($exactOptions !== []) {
+            return $exactOptions;
+        }
+
+        $combinedOptions = [];
+        $this->buildCourseEntryCombinations($entries, $requiredSlotCount, 0, [], $combinedOptions);
+
+        if ($combinedOptions !== []) {
+            return $combinedOptions;
+        }
+
+        if ($this->entriesContainAlternativeGroupChoices($entries)) {
+            return $entries;
+        }
+
+        $entriesWithEnoughSlots = collect($entries)
+            ->filter(fn (array $entry): bool => count($entry['courseGroups']) >= $requiredSlotCount)
+            ->sortBy(fn (array $option): string => $this->optionSortValue($option))
+            ->values()
+            ->all();
+
+        if ($entriesWithEnoughSlots !== []) {
+            return $entriesWithEnoughSlots;
+        }
+
+        return collect($entries)
+            ->sortBy(fn (array $option): string => $this->optionSortValue($option))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $entries
+     * @return list<array<string, mixed>>
+     */
+    private function shorterRegularOptionsForCourse(array $course, array $entries): array
+    {
+        $requiredSlotCount = $this->requiredSlotCountForCourse($course);
+
+        return collect($entries)
+            ->filter(fn (array $entry): bool => count($entry['courseGroups']) < $requiredSlotCount)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     */
+    private function entriesContainAlternativeGroupChoices(array $entries): bool
+    {
+        $alternativeKeys = collect($entries)
+            ->map(fn (array $entry): string => $this->courseEntryAlternativeKey($entry))
+            ->filter()
+            ->values()
+            ->all();
+
+        return collect($alternativeKeys)
+            ->contains(fn (string $alternativeKey, int $index): bool => array_search($alternativeKey, $alternativeKeys, true) !== $index);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueCourseGroupsBySlot(array $courseGroups): array
+    {
+        $groupsBySlot = [];
+
+        foreach ($courseGroups as $courseGroup) {
+            $groupsBySlot[$this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? '')] ??= $courseGroup;
+        }
+
+        usort($groupsBySlot, function (array $firstGroup, array $secondGroup): int {
+            if ((int) ($firstGroup['weekday'] ?? 0) !== (int) ($secondGroup['weekday'] ?? 0)) {
+                return (int) ($firstGroup['weekday'] ?? 0) <=> (int) ($secondGroup['weekday'] ?? 0);
+            }
+
+            return (int) ($firstGroup['hour'] ?? 0) <=> (int) ($secondGroup['hour'] ?? 0);
+        });
+
+        return array_values($groupsBySlot);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<array<string, mixed>>
+     */
+    private function uniqueCourseGroupsByDateSlotSignature(array $courseGroups): array
+    {
+        $groupsByDateSlotSignature = [];
+
+        foreach ($courseGroups as $courseGroup) {
+            $dateSlotSignature = collect($this->courseGroupDateSlotKeysForGroup($courseGroup))
+                ->sort()
+                ->implode('|');
+
+            $groupsByDateSlotSignature[$dateSlotSignature] ??= $courseGroup;
+        }
+
+        usort($groupsByDateSlotSignature, function (array $firstGroup, array $secondGroup): int {
+            if ((int) ($firstGroup['weekday'] ?? 0) !== (int) ($secondGroup['weekday'] ?? 0)) {
+                return (int) ($firstGroup['weekday'] ?? 0) <=> (int) ($secondGroup['weekday'] ?? 0);
+            }
+
+            return (int) ($firstGroup['hour'] ?? 0) <=> (int) ($secondGroup['hour'] ?? 0);
+        });
+
+        return array_values($groupsByDateSlotSignature);
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function requiredSlotCountForCourse(array $course): int
+    {
+        return max(1, (int) round((float) ($course['hours'] ?? 0)));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     * @param  list<array<string, mixed>>  $selectedEntries
+     * @param  list<array<string, mixed>>  $combinations
+     */
+    private function buildCourseEntryCombinations(
+        array $entries,
+        int $requiredSlotCount,
+        int $entryIndex,
+        array $selectedEntries,
+        array &$combinations,
+    ): void {
+        $selectedSlotCount = collect($selectedEntries)
+            ->sum(fn (array $entry): int => count($entry['courseGroups']));
+
+        if ($selectedSlotCount === $requiredSlotCount) {
+            $combinations[] = $this->combinedCourseOption($selectedEntries);
+
+            return;
+        }
+
+        if ($selectedSlotCount > $requiredSlotCount || $entryIndex >= count($entries)) {
+            return;
+        }
+
+        for ($index = $entryIndex; $index < count($entries); $index++) {
+            $entry = $entries[$index];
+
+            if ($this->courseEntriesOverlap($selectedEntries, $entry) || $this->courseEntriesAreAlternatives($selectedEntries, $entry)) {
+                continue;
+            }
+
+            $this->buildCourseEntryCombinations(
+                $entries,
+                $requiredSlotCount,
+                $index + 1,
+                [...$selectedEntries, $entry],
+                $combinations,
+            );
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     * @return array<string, mixed>
+     */
+    private function combinedCourseOption(array $entries): array
+    {
+        return [
+            'key' => collect($entries)->pluck('key')->implode('|'),
+            'label' => collect($entries)->pluck('label')->implode(' + '),
+            'course' => $entries[0]['course'] ?? [],
+            'courseGroups' => collect($entries)->flatMap(fn (array $entry): array => $entry['courseGroups'])->values()->all(),
+            'occasionalCourseGroups' => collect($entries)
+                ->flatMap(fn (array $entry): array => $entry['occasionalCourseGroups'] ?? [])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $selectedEntries
+     * @param  array<string, mixed>  $nextEntry
+     */
+    private function courseEntriesOverlap(array $selectedEntries, array $nextEntry): bool
+    {
+        $usedSlotKeys = collect($selectedEntries)
+            ->flatMap(fn (array $entry): array => collect($entry['courseGroups'])
+                ->map(fn (array $courseGroup): string => $this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? ''))
+                ->all())
+            ->all();
+
+        return collect($nextEntry['courseGroups'])
+            ->contains(fn (array $courseGroup): bool => in_array($this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? ''), $usedSlotKeys, true));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $selectedEntries
+     * @param  array<string, mixed>  $nextEntry
+     */
+    private function courseEntriesAreAlternatives(array $selectedEntries, array $nextEntry): bool
+    {
+        $nextAlternativeKey = $this->courseEntryAlternativeKey($nextEntry);
+
+        if ($nextAlternativeKey === '') {
+            return false;
+        }
+
+        return collect($selectedEntries)
+            ->contains(fn (array $entry): bool => $this->courseEntryAlternativeKey($entry) === $nextAlternativeKey);
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function courseEntryAlternativeKey(array $entry): string
+    {
+        $normalizedLabel = preg_replace('/\s+/u', '', $this->normalizedCourseCode($entry['label'] ?? '')) ?: '';
+
+        if (preg_match('/(^|-)GRP\d+(?=-|$)/u', $normalizedLabel)) {
+            $withoutGroup = preg_replace('/(^|-)GRP\d+(?=-|$)/u', '$1', $normalizedLabel) ?: '';
+            $withoutGroup = preg_replace('/-+/u', '-', $withoutGroup) ?: '';
+
+            return trim($withoutGroup, '-');
+        }
+
+        preg_match('/^([A-ZÄÖÜ]+[0-9]+)(?=-)/u', $normalizedLabel, $match);
+
+        return $match[1] ?? '';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $options
+     * @return list<array<string, mixed>>
+     */
+    private function mergeTimetableOptionsBySlots(array $options): array
+    {
+        $optionsBySlotSignature = [];
+
+        foreach ($options as $option) {
+            $optionsBySlotSignature[$this->timetableOptionSlotSignature($option)] ??= $option;
+        }
+
+        usort($optionsBySlotSignature, fn (array $firstOption, array $secondOption): int => $this->optionSortValue($firstOption) <=> $this->optionSortValue($secondOption));
+
+        return array_values($optionsBySlotSignature);
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     */
+    private function timetableOptionSlotSignature(array $option): string
+    {
+        $regularSlotSignature = collect($option['courseGroups'])
+            ->map(fn (array $courseGroup): string => $this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? ''))
+            ->sort()
+            ->implode('|');
+        $occasionalSlotSignature = collect($option['occasionalCourseGroups'] ?? [])
+            ->flatMap(fn (array $courseGroup): array => $this->courseGroupDateSlotKeysForGroup($courseGroup))
+            ->sort()
+            ->implode('|');
+
+        return "{$regularSlotSignature}::{$occasionalSlotSignature}";
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $candidateOptions
+     * @param  array<string, true>  $usedRegularDateKeys
+     * @param  array<string, true>  $usedAllDateKeys
+     * @return array{full_green_timetable_count: int, green_timetable_count: int}
+     */
+    private function countDateCompatibleCombinations(
+        array $candidateOptions,
+        int $candidateIndex = 0,
+        array $usedRegularDateKeys = [],
+        array $usedAllDateKeys = [],
+        bool $isFullGreenCandidate = true,
+    ): array {
+        if ($candidateIndex >= count($candidateOptions)) {
+            return [
+                'full_green_timetable_count' => $isFullGreenCandidate ? 1 : 0,
+                'green_timetable_count' => $isFullGreenCandidate ? 0 : 1,
+            ];
+        }
+
+        $counts = [
+            'full_green_timetable_count' => 0,
+            'green_timetable_count' => 0,
+        ];
+
+        foreach ($candidateOptions[$candidateIndex] as $option) {
+            $regularDateKeys = $this->courseGroupDateSlotKeys($option['courseGroups'] ?? []);
+
+            if ($this->dateKeysHaveInternalOverlap($regularDateKeys) || $this->dateKeysOverlap($regularDateKeys, $usedRegularDateKeys)) {
+                continue;
+            }
+
+            $allDateKeys = $this->courseGroupDateSlotKeys([
+                ...($option['courseGroups'] ?? []),
+                ...($option['occasionalCourseGroups'] ?? []),
+            ]);
+            $nextIsFullGreenCandidate = $isFullGreenCandidate
+                && ! $this->dateKeysHaveInternalOverlap($allDateKeys)
+                && ! $this->dateKeysOverlap($allDateKeys, $usedAllDateKeys);
+
+            $nextCounts = $this->countDateCompatibleCombinations(
+                $candidateOptions,
+                $candidateIndex + 1,
+                $this->mergeDateKeys($usedRegularDateKeys, $regularDateKeys),
+                $nextIsFullGreenCandidate ? $this->mergeDateKeys($usedAllDateKeys, $allDateKeys) : $usedAllDateKeys,
+                $nextIsFullGreenCandidate,
+            );
+
+            $counts['full_green_timetable_count'] += $nextCounts['full_green_timetable_count'];
+            $counts['green_timetable_count'] += $nextCounts['green_timetable_count'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $candidateOptions
+     * @param  array{full_green_timetable_count: int, green_timetable_count: int}  $counts
+     * @return ?array<string, mixed>
+     */
+    private function selectedTimetable(
+        array $candidateOptions,
+        array $counts,
+        ?string $selectedTimetableType,
+        int $selectedTimetableNumber,
+    ): ?array {
+        if (! in_array($selectedTimetableType, ['full_green', 'green'], true)) {
+            return null;
+        }
+
+        $countKey = "{$selectedTimetableType}_timetable_count";
+        $availableCount = (int) ($counts[$countKey] ?? 0);
+
+        if ($availableCount <= 0) {
+            return null;
+        }
+
+        $requestedNumber = min(max(1, $selectedTimetableNumber), $availableCount);
+        $remainingNumber = $requestedNumber;
+        $selectedOptions = $this->findDateCompatibleCombination($candidateOptions, $selectedTimetableType, $remainingNumber);
+
+        return $selectedOptions === null
+            ? null
+            : $this->timetableFromOptions($selectedOptions, $selectedTimetableType, $requestedNumber);
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $candidateOptions
+     * @param  array<string, true>  $usedRegularDateKeys
+     * @param  array<string, true>  $usedAllDateKeys
+     * @param  list<array<string, mixed>>  $selectedOptions
+     * @return ?list<array<string, mixed>>
+     */
+    private function findDateCompatibleCombination(
+        array $candidateOptions,
+        string $selectedTimetableType,
+        int &$remainingNumber,
+        int $candidateIndex = 0,
+        array $usedRegularDateKeys = [],
+        array $usedAllDateKeys = [],
+        bool $isFullGreenCandidate = true,
+        array $selectedOptions = [],
+    ): ?array {
+        if ($candidateIndex >= count($candidateOptions)) {
+            $timetableType = $isFullGreenCandidate ? 'full_green' : 'green';
+
+            if ($timetableType !== $selectedTimetableType) {
+                return null;
+            }
+
+            $remainingNumber--;
+
+            return $remainingNumber === 0 ? $selectedOptions : null;
+        }
+
+        foreach ($candidateOptions[$candidateIndex] as $option) {
+            $regularDateKeys = $this->courseGroupDateSlotKeys($option['courseGroups'] ?? []);
+
+            if ($this->dateKeysHaveInternalOverlap($regularDateKeys) || $this->dateKeysOverlap($regularDateKeys, $usedRegularDateKeys)) {
+                continue;
+            }
+
+            $allDateKeys = $this->courseGroupDateSlotKeys([
+                ...($option['courseGroups'] ?? []),
+                ...($option['occasionalCourseGroups'] ?? []),
+            ]);
+            $nextIsFullGreenCandidate = $isFullGreenCandidate
+                && ! $this->dateKeysHaveInternalOverlap($allDateKeys)
+                && ! $this->dateKeysOverlap($allDateKeys, $usedAllDateKeys);
+            $combination = $this->findDateCompatibleCombination(
+                $candidateOptions,
+                $selectedTimetableType,
+                $remainingNumber,
+                $candidateIndex + 1,
+                $this->mergeDateKeys($usedRegularDateKeys, $regularDateKeys),
+                $nextIsFullGreenCandidate ? $this->mergeDateKeys($usedAllDateKeys, $allDateKeys) : $usedAllDateKeys,
+                $nextIsFullGreenCandidate,
+                [...$selectedOptions, $option],
+            );
+
+            if ($combination !== null) {
+                return $combination;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $options
+     * @return array<string, mixed>
+     */
+    private function timetableFromOptions(array $options, string $type, int $number): array
+    {
+        $slots = [];
+
+        foreach ($options as $option) {
+            $course = $this->optionSelectedCourse($option);
+
+            foreach ($option['courseGroups'] ?? [] as $courseGroup) {
+                $slotKey = $this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? '');
+                $slots[$slotKey] ??= $this->timetableSlot($course, $option, $courseGroup);
+            }
+        }
+
+        $appointmentItems = [];
+
+        foreach ($options as $option) {
+            $course = $this->optionSelectedCourse($option);
+
+            foreach ($option['occasionalCourseGroups'] ?? [] as $courseGroup) {
+                $appointmentItems[] = [
+                    'appointment' => $this->occasionalAppointment($course, $option, $courseGroup),
+                    'course' => $course,
+                    'courseGroup' => $courseGroup,
+                    'conflicts' => [],
+                ];
+            }
+        }
+
+        foreach ($appointmentItems as $index => $appointmentItem) {
+            $slotKey = $this->slotKey($appointmentItem['courseGroup']['weekday'] ?? '', $appointmentItem['courseGroup']['hour'] ?? '');
+            $existingSlot = $slots[$slotKey] ?? null;
+
+            if ($existingSlot !== null && $this->courseGroupsDateSlotOverlap($appointmentItem['courseGroup'], $existingSlot['courseGroup'] ?? [])) {
+                $appointmentItems[$index]['conflicts'][] = $this->courseProblemLabel($existingSlot);
+            }
+
+            foreach ($appointmentItems as $otherIndex => $otherAppointmentItem) {
+                if ($otherIndex <= $index) {
+                    continue;
+                }
+
+                if (! $this->courseGroupsDateSlotOverlap($appointmentItem['courseGroup'], $otherAppointmentItem['courseGroup'])) {
+                    continue;
+                }
+
+                $appointmentItems[$index]['conflicts'][] = $this->courseProblemLabel($otherAppointmentItem['course']);
+                $appointmentItems[$otherIndex]['conflicts'][] = $this->courseProblemLabel($appointmentItem['course']);
+            }
+        }
+
+        $occasionalAppointments = collect($appointmentItems)
+            ->map(function (array $appointmentItem): array {
+                $conflicts = collect($appointmentItem['conflicts'])
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                return [
+                    ...$appointmentItem['appointment'],
+                    'conflictLabel' => $conflicts === [] ? '' : 'überschneidet sich mit '.implode(', ', $conflicts),
+                ];
+            })
+            ->sortBy(fn (array $appointment): string => $appointment['sortValue'] ?? '')
+            ->values()
+            ->all();
+
+        return [
+            'key' => "backend-{$type}-{$number}",
+            'number' => $number,
+            'type' => $type,
+            'slots' => $slots,
+            'occasionalAppointments' => $occasionalAppointments,
+            'problems' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     * @return array<string, mixed>
+     */
+    private function optionSelectedCourse(array $option): array
+    {
+        return is_array($option['course'] ?? null) ? $option['course'] : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $option
+     * @param  array<string, mixed>  $courseGroup
+     * @return array<string, mixed>
+     */
+    private function timetableSlot(array $course, array $option, array $courseGroup): array
+    {
+        return [
+            'key' => $course['key'] ?? $course['code'] ?? '',
+            'code' => $course['code'] ?? '',
+            'name' => $course['name'] ?? '',
+            'sourceLabel' => $option['label'] ?? $this->courseGroupOptionLabel($courseGroup),
+            'alternativeLabels' => [$option['label'] ?? $this->courseGroupOptionLabel($courseGroup)],
+            'courseGroup' => $courseGroup,
+            'conflicts' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @param  array<string, mixed>  $option
+     * @param  array<string, mixed>  $courseGroup
+     * @return array<string, mixed>
+     */
+    private function occasionalAppointment(array $course, array $option, array $courseGroup): array
+    {
+        $dates = $this->courseGroupDates($courseGroup);
+
+        return [
+            'key' => implode('|', [
+                $course['key'] ?? $course['code'] ?? '',
+                $option['key'] ?? $option['label'] ?? '',
+                $courseGroup['key'] ?? '',
+                $courseGroup['weekday'] ?? '',
+                $courseGroup['hour'] ?? '',
+                implode(',', $dates),
+            ]),
+            'courseKey' => $course['key'] ?? $course['code'] ?? '',
+            'code' => $course['code'] ?? '',
+            'name' => $course['name'] ?? '',
+            'sourceLabel' => $option['label'] ?? $this->courseGroupOptionLabel($courseGroup),
+            'dateTimeLabel' => $this->courseGroupDateTimeLabel($courseGroup),
+            'date' => $dates[0] ?? '',
+            'dateLabel' => implode(', ', $dates),
+            'weekday' => (int) ($courseGroup['weekday'] ?? 0),
+            'hour' => (int) ($courseGroup['hour'] ?? 0),
+            'timeFrom' => $courseGroup['time_from'] ?? $courseGroup['from'] ?? '',
+            'timeUntil' => $courseGroup['time_until'] ?? $courseGroup['until'] ?? '',
+            'details' => $this->courseGroupDetailsLabel($courseGroup),
+            'conflictLabel' => '',
+            'sortValue' => implode('|', [
+                $dates[0] ?? '',
+                str_pad((string) ($courseGroup['weekday'] ?? ''), 2, '0', STR_PAD_LEFT),
+                str_pad((string) ($courseGroup['hour'] ?? ''), 2, '0', STR_PAD_LEFT),
+                $course['code'] ?? '',
+            ]),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     */
+    private function courseGroupsDateSlotOverlap(array $firstCourseGroup, array $secondCourseGroup): bool
+    {
+        $firstDateKeys = $this->courseGroupDateSlotKeysForGroup($firstCourseGroup);
+        $secondDateKeys = $this->courseGroupDateSlotKeysForGroup($secondCourseGroup);
+
+        return collect($firstDateKeys)
+            ->contains(fn (string $dateKey): bool => in_array($dateKey, $secondDateKeys, true));
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     */
+    private function courseProblemLabel(array $course): string
+    {
+        return collect([
+            $course['code'] ?? '',
+            $course['name'] ?? '',
+        ])
+            ->filter()
+            ->unique()
+            ->implode(' - ');
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupDateTimeLabel(array $courseGroup): string
+    {
+        $dates = $this->courseGroupDates($courseGroup);
+        $dateLabel = implode(', ', $dates);
+        $hourLabel = trim((string) ($courseGroup['hour'] ?? ''));
+
+        return collect([
+            $dateLabel,
+            $hourLabel !== '' ? "{$hourLabel}. Stunde" : '',
+        ])
+            ->filter()
+            ->implode(' ');
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupDetailsLabel(array $courseGroup): string
+    {
+        $rooms = is_array($courseGroup['rooms'] ?? null)
+            ? implode(', ', array_filter(array_map(fn (mixed $room): string => trim((string) $room), $courseGroup['rooms'])))
+            : trim((string) ($courseGroup['room'] ?? $courseGroup['rooms'] ?? ''));
+
+        return collect([
+            trim((string) ($courseGroup['teacher'] ?? '')),
+            $rooms,
+        ])
+            ->filter()
+            ->unique()
+            ->implode(' · ');
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $courseGroups
+     * @return list<string>
+     */
+    private function courseGroupDateSlotKeys(array $courseGroups): array
+    {
+        return collect($courseGroups)
+            ->flatMap(fn (array $courseGroup): array => $this->courseGroupDateSlotKeysForGroup($courseGroup))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return list<string>
+     */
+    private function courseGroupDateSlotKeysForGroup(array $courseGroup): array
+    {
+        $hour = (string) ($courseGroup['hour'] ?? '');
+        $dates = $this->courseGroupDates($courseGroup);
+
+        if ($dates === []) {
+            return [$this->slotKey($courseGroup['weekday'] ?? '', $hour)];
+        }
+
+        return collect($dates)
+            ->map(fn (string $date): string => "{$date}|{$hour}")
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return list<string>
+     */
+    private function courseGroupDates(array $courseGroup): array
+    {
+        if (! is_array($courseGroup['dates'] ?? null)) {
+            return [];
+        }
+
+        return collect($courseGroup['dates'])
+            ->map(fn (mixed $date): string => trim((string) $date))
+            ->filter()
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $dateKeys
+     */
+    private function dateKeysHaveInternalOverlap(array $dateKeys): bool
+    {
+        return count($dateKeys) !== count(array_unique($dateKeys));
+    }
+
+    /**
+     * @param  list<string>  $dateKeys
+     * @param  array<string, true>  $usedDateKeys
+     */
+    private function dateKeysOverlap(array $dateKeys, array $usedDateKeys): bool
+    {
+        return collect($dateKeys)
+            ->contains(fn (string $dateKey): bool => isset($usedDateKeys[$dateKey]));
+    }
+
+    /**
+     * @param  array<string, true>  $usedDateKeys
+     * @param  list<string>  $dateKeys
+     * @return array<string, true>
+     */
+    private function mergeDateKeys(array $usedDateKeys, array $dateKeys): array
+    {
+        foreach ($dateKeys as $dateKey) {
+            $usedDateKeys[$dateKey] = true;
+        }
+
+        return $usedDateKeys;
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function weekdayTimeAvailable(int $weekday, int $time, array $settings): bool
+    {
+        return $this->constraintValueSelected($settings, 'availableWeekdays', $weekday)
+            && $this->constraintValueSelected($settings, 'availableTimes', $time)
+            && ! $this->constraintValueSelected($settings, 'excludedWeekdayTimes', "{$weekday}-{$time}");
+    }
+
+    /**
+     * @param  array<string, mixed>  $settings
+     */
+    private function constraintValueSelected(array $settings, string $key, int|string $value): bool
+    {
+        $values = data_get($settings, "constraints.{$key}", []);
+
+        if (! is_array($values)) {
+            return false;
+        }
+
+        return collect($values)
+            ->contains(fn (mixed $item): bool => (string) $item === (string) $value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $option
+     */
+    private function optionSortValue(array $option): string
+    {
+        $firstCourseGroup = $option['courseGroups'][0] ?? [];
+
+        return implode('|', [
+            str_pad((string) ($firstCourseGroup['weekday'] ?? 99), 2, '0', STR_PAD_LEFT),
+            str_pad((string) ($firstCourseGroup['hour'] ?? 99), 2, '0', STR_PAD_LEFT),
+            $option['label'] ?? '',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @param  array<string, mixed>  $course
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function courseGroupMatchesCourse(array $courseGroup, array $course, array $subjectMappings): bool
+    {
+        $courseAliases = $this->courseCodeAliases($course);
+
+        if ($courseAliases === []) {
+            return false;
+        }
+
+        $courseGroupCodes = $this->courseGroupCodes($courseGroup, $subjectMappings);
+
+        if (! collect($courseAliases)->contains(fn (string $courseAlias): bool => in_array($courseAlias, $courseGroupCodes, true))) {
+            return false;
+        }
+
+        $leadingCourseCodes = $this->courseGroupLeadingCodes($courseGroup);
+
+        return ! $this->courseGroupHasConflictingModuleCode($leadingCourseCodes, $courseAliases, $subjectMappings);
+    }
+
+    /**
+     * @param  list<string>  $leadingCourseCodes
+     * @param  list<string>  $courseAliases
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function courseGroupHasConflictingModuleCode(array $leadingCourseCodes, array $courseAliases, array $subjectMappings): bool
+    {
+        $aliasesWithModule = collect($courseAliases)
+            ->map(fn (string $alias): array => $this->courseCodeModuleParts($alias, $subjectMappings))
+            ->filter(fn (array $parts): bool => $parts['module'] !== '')
+            ->values()
+            ->all();
+
+        if ($aliasesWithModule === []) {
+            return false;
+        }
+
+        return collect($leadingCourseCodes)
+            ->map(fn (string $code): array => $this->courseCodeModuleParts($code, $subjectMappings))
+            ->filter(fn (array $parts): bool => $parts['module'] !== '')
+            ->contains(function (array $parts) use ($aliasesWithModule): bool {
+                $aliasesWithSameBase = collect($aliasesWithModule)
+                    ->filter(fn (array $aliasParts): bool => $aliasParts['base'] === $parts['base'])
+                    ->values();
+
+                return $aliasesWithSameBase->isNotEmpty()
+                    && ! $aliasesWithSameBase->contains(fn (array $aliasParts): bool => $aliasParts['module'] === $parts['module']);
+            });
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return array{base: string, module: string}
+     */
+    private function courseCodeModuleParts(string $value, array $subjectMappings): array
+    {
+        $normalizedValue = $this->normalizedCourseCode($value);
+
+        if (! preg_match('/^([A-ZÄÖÜ]+)(\d+)$/u', $normalizedValue, $match)) {
+            return [
+                'base' => $this->normalizedCourseModuleBase($normalizedValue, $subjectMappings),
+                'module' => '',
+            ];
+        }
+
+        return [
+            'base' => $this->normalizedCourseModuleBase($match[1], $subjectMappings),
+            'module' => $match[2],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $subjectMappings
+     */
+    private function normalizedCourseModuleBase(string $value, array $subjectMappings): string
+    {
+        $normalizedValue = $this->normalizedCourseCode($value);
+        $mapping = collect($this->activeSubjectMappings($subjectMappings))
+            ->first(fn (array $subjectMapping): bool => in_array($normalizedValue, [
+                $this->normalizedCourseCode($subjectMapping['json_subject'] ?? ''),
+                $this->normalizedCourseCode($subjectMapping['tt_subject'] ?? ''),
+            ], true));
+
+        return $this->normalizedCourseCode($mapping['json_subject'] ?? '') ?: $normalizedValue;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @return list<string>
+     */
+    private function courseGroupLeadingCodes(array $courseGroup): array
+    {
+        return collect([
+            $courseGroup['class_name'] ?? '',
+            $courseGroup['display_label'] ?? '',
+            $courseGroup['title'] ?? '',
+        ])
+            ->flatMap(fn (string $value): array => $this->leadingCourseCodesFromValue($value))
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     * @param  list<array<string, mixed>>  $subjectMappings
+     * @return list<string>
+     */
+    private function courseGroupCodes(array $courseGroup, array $subjectMappings): array
+    {
+        return collect([
+            ...$this->courseGroupLeadingCodes($courseGroup),
+            ...collect([
+                $courseGroup['course'] ?? '',
+                $courseGroup['subject'] ?? '',
+            ])->flatMap(fn (string $value): array => $this->courseCodeTokensFromValue($value))->all(),
+        ])
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->map(fn (string $value): string => $this->normalizedCourseModuleBase($value, $subjectMappings) === $value ? $value : $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $course
+     * @return list<string>
+     */
+    private function courseCodeAliases(array $course): array
+    {
+        return collect([
+            $course['ttCode'] ?? '',
+            ...(is_array($course['ttCodes'] ?? null) ? $course['ttCodes'] : []),
+            $course['code'] ?? '',
+            $this->defaultTimetableCodeAlias($course['code'] ?? ''),
+        ])
+            ->flatMap(fn (string $value): array => $this->courseCodeAliasParts($value))
+            ->flatMap(fn (string $value): array => [
+                $value,
+                $this->defaultTimetableCodeAlias($value),
+            ])
+            ->map(fn (string $value): string => $this->normalizedCourseCode($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function defaultTimetableCodeAlias(string $value): string
+    {
+        $normalizedValue = $this->normalizedCourseCode($value);
+
+        if (! preg_match('/^([A-ZÄÖÜ]+)(\d*)$/u', $normalizedValue, $match)) {
+            return '';
+        }
+
+        $aliases = [
+            'GS' => 'GPB',
+            'GW' => 'GWB',
+            'ME' => 'MU',
+            'LPT' => 'LET',
+        ];
+
+        return isset($aliases[$match[1]]) ? $aliases[$match[1]].($match[2] ?? '') : '';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function courseCodeAliasParts(string $value): array
+    {
+        $normalizedValue = trim($value);
+
+        if ($normalizedValue === '') {
+            return [];
+        }
+
+        return collect(explode('/', $normalizedValue))
+            ->map(fn (string $part): string => trim($part))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function leadingCourseCodesFromValue(string $value): array
+    {
+        $firstSegment = trim(preg_split('/\s+-\s+|[-\s]/u', $value)[0] ?? '');
+
+        return $this->courseCodeTokensFromValue($firstSegment);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function courseCodeTokensFromValue(string $value): array
+    {
+        preg_match_all('/[A-Za-zÄÖÜäöüß]+[0-9]*/u', $value, $matches);
+
+        return $matches[0] ?? [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupOptionLabel(array $courseGroup): string
+    {
+        return (string) (
+            $courseGroup['class_name']
+            ?? $courseGroup['display_label']
+            ?? $courseGroup['title']
+            ?? $courseGroup['course']
+            ?? $courseGroup['subject']
+            ?? 'Ohne Bezeichnung'
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function isOccasionalCourseGroup(array $courseGroup): bool
+    {
+        $datesCount = $this->courseGroupDatesCount($courseGroup);
+
+        return $datesCount !== null && $datesCount > 0 && $datesCount <= 2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $courseGroup
+     */
+    private function courseGroupDatesCount(array $courseGroup): ?int
+    {
+        if (is_numeric($courseGroup['dates_count'] ?? null)) {
+            return (int) $courseGroup['dates_count'];
+        }
+
+        if (is_array($courseGroup['dates'] ?? null)) {
+            return collect($courseGroup['dates'])->filter()->count();
+        }
+
+        return null;
+    }
+
+    private function slotKey(int|string $weekday, int|string $time): string
+    {
+        return "{$weekday}-{$time}";
+    }
+
+    private function normalizedCourseCode(string $value): string
+    {
+        return preg_replace('/\s+/u', '', mb_strtoupper(trim($value), 'UTF-8')) ?: '';
+    }
+
+    private function courseCodeWithoutModule(string $value): string
+    {
+        return preg_replace('/\d+$/u', '', $value) ?: '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function subjectBaseKey(array $subject): string
+    {
+        $jsonSubject = trim((string) ($subject['json_subject'] ?? ''));
+
+        return $jsonSubject !== ''
+            ? $jsonSubject
+            : $this->courseCodeWithoutModule((string) ($subject['json_code'] ?? ''));
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function subjectModuleNumber(array $subject): string
+    {
+        preg_match('/(\d+)$/u', (string) ($subject['json_code'] ?? ''), $match);
+
+        return $match[1] ?? '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function isReligionSubject(array $subject): bool
+    {
+        return $this->subjectBaseKey($subject) === 'R/ET';
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function isLanguageSubject(array $subject): bool
+    {
+        $baseKey = $this->normalizedCourseCode($this->subjectBaseKey($subject));
+
+        return $baseKey === 'L/F/S' || in_array($baseKey, ['L', 'F', 'S'], true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $subject
+     */
+    private function isArtsSubject(array $subject): bool
+    {
+        return in_array($this->subjectBaseKey($subject), ['ME', 'BE'], true);
+    }
+
+    private function alternativeDisplay(string $value): string
+    {
+        $normalizedValue = trim($value);
+
+        if (! str_contains($normalizedValue, '/')) {
+            return $normalizedValue !== '' ? $normalizedValue : '-';
+        }
+
+        return collect(explode('/', $normalizedValue))
+            ->map(fn (string $part): string => trim($part))
+            ->filter()
+            ->implode(' / ');
+    }
+}

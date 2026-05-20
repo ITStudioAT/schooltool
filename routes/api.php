@@ -147,6 +147,7 @@ Route::middleware(['api', 'throttle:global', 'throttle:api'])->group(function ()
         Route::get('/admin/students-timetables', [StudentsTimetablesController::class, 'index']);
         Route::get('/admin/students-timetables/school-hours', [StudentsTimetablesController::class, 'schoolHours']);
         Route::get('/admin/students-timetables/course-groups', [StudentsTimetablesController::class, 'courseGroups']);
+        Route::post('/admin/students-timetables/robot/full-green-count', [StudentsTimetablesController::class, 'robotFullGreenCount']);
         Route::get('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'overviewSelections']);
         Route::put('/admin/students-timetables/overview-selections', [StudentsTimetablesController::class, 'updateOverviewSelections']);
         Route::get('/admin/students-timetables/subjects-overview-json', [SubjectOverviewJsonUploadController::class, 'index']);

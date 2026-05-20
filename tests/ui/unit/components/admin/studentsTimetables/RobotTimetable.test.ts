@@ -126,6 +126,38 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('v-model="courseItemPanels"')
         expect(componentSource).toContain('@update:model-value="setCourseSelected(course, $event)"')
         expect(componentSource).toContain('Stundenpläne erstellen')
+        expect(componentSource).toContain('Volle grüne Stundenpläne')
+        expect(componentSource).toContain('Grüne Stundenpläne')
+        expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
+        expect(componentSource).toContain("selectedTimetableResultType === 'full_green'")
+        expect(componentSource).toContain("selectedTimetableResultType === 'green'")
+        expect(componentSource).toContain("setSelectedTimetableResultType('full_green', $event)")
+        expect(componentSource).toContain("setSelectedTimetableResultType('green', $event)")
+        expect(componentSource).toContain('setSelectedTimetableResultType(type, selected)')
+        expect(componentSource).toContain('robot-count-card--selected')
+        expect(componentSource).toContain('fullGreenTimetableNumber')
+        expect(componentSource).toContain('greenTimetableNumber')
+        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0\"")
+        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'green' && greenTimetableCount > 0\"")
+        expect(componentSource).toContain('icon="mdi-chevron-left"')
+        expect(componentSource).toContain('icon="mdi-chevron-right"')
+        expect(componentSource).toContain("moveTimetableResultCounter('full_green', -1)")
+        expect(componentSource).toContain("moveTimetableResultCounter('green', 1)")
+        expect(componentSource).toContain('normalizeTimetableResultCounters()')
+        expect(componentSource).toContain('robot-count-card__counter')
+        expect(componentSource).toContain('selected_timetable_type: this.selectedTimetableResultType')
+        expect(componentSource).toContain('selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType)')
+        expect(componentSource).toContain('backendTimetableFromResponse(response.data.data.selected_timetable)')
+        expect(componentSource).toContain('selectedRobotTimetable()')
+        expect(componentSource).toContain('robotTimetableSlot(weekday, time)')
+        expect(componentSource).toContain('robotTimetableCellClasses(weekday, time)')
+        expect(componentSource).toContain('robotTimetableOccasionalMarkers(weekday, time)')
+        expect(componentSource).toContain('selectedOccasionalAppointmentGroupsForTimetable(timetable)')
+        expect(componentSource).toContain('@click="loadFullGreenTimetableCount"')
+        expect(componentSource).toContain("axios.post('/api/admin/students-timetables/robot/full-green-count'")
+        expect(componentSource).toContain('emptyTimetableWeekdays()')
+        expect(componentSource).toContain('emptyTimetableTimes()')
+        expect(componentSource).toContain('fullGreenTimetableCountLabel()')
         expect(componentSource).toContain('robot-generator__actions')
         expect(componentSource).toContain('generateTimetables()')
         expect(componentSource).toContain('generatedTimetables')
@@ -143,7 +175,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('generatedWeekdays()')
         expect(componentSource).toContain('generatedTimes()')
         expect(componentSource).toContain('clearGeneratedTimetables()')
-        expect(componentSource).toContain('Stundenplan {{ timetable.number }}')
+        expect(componentSource).toContain('<div class="robot-course-list__title">Stundenplan</div>')
         expect(componentSource).toContain('robot-generated-grid')
         expect(componentSource).toContain('robot-generated-cell__details')
         expect(componentSource).toContain('generatedSlotDetails(slot)')
@@ -151,25 +183,28 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-generated-cell__conflicts')
         expect(componentSource).toContain('generatedSlotConflicts(slot)')
         expect(componentSource).toContain('generatedSlotConflictBlocks(slot)')
-        expect(componentSource).toContain('generatedCellOccasionalMarkers(timetable, weekday.value, time.value)')
+        expect(componentSource).toContain('generatedCellOccasionalMarkers(timetable, weekday, time)')
         expect(componentSource).toContain('robot-generated-cell__occasional-marker')
         expect(componentSource).toContain('robot-generated-appointments')
         expect(componentSource).toContain('displayedTimetableProblems(timetable)')
         expect(componentSource).toContain('problemIsCoveredByOccasionalAppointments(problem)')
         expect(componentSource).toContain('groupedOccasionalAppointments(timetable)')
+        expect(componentSource).toContain('v-for="row in group.rows"')
+        expect(componentSource).toContain("'robot-generated-appointment--clear': !row.hasConflict")
+        expect(componentSource).toContain("'robot-generated-appointment--conflict': row.hasConflict")
+        expect(componentSource).toContain("row.hasConflict ? 'mdi-alert-circle-outline' : 'mdi-check-circle-outline'")
         expect(componentSource).toContain('occasionalAppointmentGroupTitle(appointment)')
         expect(componentSource).toContain('defaultOccasionalAppointmentGroupSelections(timetable)')
         expect(componentSource).toContain('lowestConflictOccasionalAppointmentGroup(groups)')
         expect(componentSource).toContain('occasionalAppointmentGroupConflictCount(group)')
-        expect(componentSource).toContain('occasionalAppointmentGroupSelectable(timetable, appointmentGroup)')
+        expect(componentSource).toContain('occasionalAppointmentGroupSelectable(timetable, group)')
         expect(componentSource).toContain('occasionalAppointmentGroupHasAlternatives(timetable, group)')
         expect(componentSource).toContain('occasionalAppointmentGroupMatchesScheduledCourse(timetable, group)')
-        expect(componentSource).toContain('setOccasionalAppointmentGroupSelected(timetable, appointmentGroup, $event)')
+        expect(componentSource).toContain('setOccasionalAppointmentGroupSelected(timetable, group, selected)')
         expect(componentSource).toContain('selectedOccasionalAppointmentGroups')
         expect(componentSource).toContain('robot-generated-appointment-group__check')
         expect(componentSource).toContain('occasionalAppointments')
         expect(componentSource).toContain('occasionalAppointmentItem(course, option, courseGroup, existingSlot = null)')
-        expect(componentSource).toContain('robot-generated-cell--affected')
         expect(componentSource).toContain('timetableWithOccasionalSlots')
         expect(componentSource).toContain('visibleOccasionalOptionsForCombination(candidateSet, slots)')
         expect(componentSource).toContain('scheduledCourseOptionLabels(course, slots)')
@@ -1287,15 +1322,63 @@ describe('Students timetable robot page', () => {
                     code: 'LPT',
                     name: 'Lern- und Präsentationstechniken',
                     sourceLabel: 'LPT-1CK-DREI',
-                    dateTimeLabel: 'Mi, 18.02.2026 10. 17:05-17:50',
+                    dateTimeLabel: 'Mi, 18.02.2026 10. Stunde',
                     date: '2026-02-18',
                     dateLabel: 'Mi, 18.02.2026',
                     weekday: 3,
                     hour: 10,
-                    timeFrom: '17:05',
-                    timeUntil: '17:50',
-                    conflictLabel: 'überschneidet sich mit D1 - Deutsch 1',
+                    timeFrom: '',
+                    timeUntil: '',
+                    conflictLabel: '',
                     sortValue: '2026-02-18|03|10|LPT',
+                },
+                {
+                    key: 'lpt-4',
+                    courseKey: 'LPT',
+                    code: 'LPT',
+                    name: 'Lern- und Präsentationstechniken',
+                    sourceLabel: 'LPT-1CK-DREI',
+                    dateTimeLabel: 'Mi, 18.02.2026 11. Stunde',
+                    date: '2026-02-18',
+                    dateLabel: 'Mi, 18.02.2026',
+                    weekday: 3,
+                    hour: 11,
+                    timeFrom: '',
+                    timeUntil: '',
+                    conflictLabel: '',
+                    sortValue: '2026-02-18|03|11|LPT',
+                },
+                {
+                    key: 'lpt-5',
+                    courseKey: 'LPT',
+                    code: 'LPT',
+                    name: 'Lern- und Präsentationstechniken',
+                    sourceLabel: 'LPT-1CK-DREI',
+                    dateTimeLabel: 'Mi, 18.02.2026 12. Stunde',
+                    date: '2026-02-18',
+                    dateLabel: 'Mi, 18.02.2026',
+                    weekday: 3,
+                    hour: 12,
+                    timeFrom: '',
+                    timeUntil: '',
+                    conflictLabel: '',
+                    sortValue: '2026-02-18|03|12|LPT',
+                },
+                {
+                    key: 'lpt-6',
+                    courseKey: 'LPT',
+                    code: 'LPT',
+                    name: 'Lern- und Präsentationstechniken',
+                    sourceLabel: 'LPT-1CK-DREI',
+                    dateTimeLabel: 'Mi, 18.02.2026 13. Stunde',
+                    date: '2026-02-18',
+                    dateLabel: 'Mi, 18.02.2026',
+                    weekday: 3,
+                    hour: 13,
+                    timeFrom: '',
+                    timeUntil: '',
+                    conflictLabel: '',
+                    sortValue: '2026-02-18|03|13|LPT',
                 },
                 {
                     key: 'lpt-1',
@@ -1337,11 +1420,13 @@ describe('Students timetable robot page', () => {
                 rows: [
                     {
                         dateTimeLabel: 'Di, 17.02.2026 14.-15., 20:25-21:55',
+                        hasConflict: true,
                         metaLabel: 'überschneidet sich mit D1 - Deutsch 1',
                     },
                     {
-                        dateTimeLabel: 'Mi, 18.02.2026 10. 17:05-17:50',
-                        metaLabel: 'überschneidet sich mit D1 - Deutsch 1',
+                        dateTimeLabel: 'Mi, 18.02.2026 10.-13. Stunde',
+                        hasConflict: false,
+                        metaLabel: '',
                     },
                 ],
             },
@@ -2309,6 +2394,276 @@ describe('Students timetable robot page', () => {
         expect(ctx.generatedTimetables[0].slots['1-2'].code).toBe('GW1')
         expect(ctx.generatedTimetables[0].slots['1-2'].isConflictPreview).toBe(true)
         expect(methods.generatedSlotConflicts.call(ctx, ctx.generatedTimetables[0].slots['1-2'])).toEqual([])
+    })
+
+    it('prefers a free regular weekday when single appointments complete a partial course option', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            generationError: '',
+            generationProblems: [],
+            generatedTimetables: [],
+            selectedCourses: [
+                { key: 'BU2', code: 'BU2', name: 'Biologie 2', branch: 'alle', hours: 4 },
+                { key: 'D1', code: 'D1', name: 'Deutsch 1', branch: 'alle', hours: 1 },
+            ],
+            configuredCourseGroups: [
+                { key: 'bu-4a-mo', class_name: 'BU2-4A-KOW', course: 'BU', subject: 'BU', weekday: 1, hour: 1, dates_count: 18 },
+                { key: 'bu-4a-tu', class_name: 'BU2-4A-KOW', course: 'BU', subject: 'BU', weekday: 2, hour: 1, dates_count: 18 },
+                { key: 'bu-4a-we-1', class_name: 'BU2-4A-KOW', course: 'BU', subject: 'BU', weekday: 3, hour: 1, dates_count: 18 },
+                { key: 'bu-4a-we-2', class_name: 'BU2-4A-KOW', course: 'BU', subject: 'BU', weekday: 3, hour: 2, dates_count: 18 },
+                { key: 'bu-2s-fr-1', class_name: 'BU2-2S-WIN', course: 'BU', subject: 'BU', weekday: 5, hour: 1, dates_count: 18 },
+                { key: 'bu-2s-fr-2', class_name: 'BU2-2S-WIN', course: 'BU', subject: 'BU', weekday: 5, hour: 2, dates_count: 18 },
+                { key: 'bu-2s-single-1', class_name: 'BU2-2S-WIN', course: 'BU', subject: 'BU', weekday: 5, hour: 3, dates: ['2026-03-06'], dates_count: 1 },
+                { key: 'bu-2s-single-2', class_name: 'BU2-2S-WIN', course: 'BU', subject: 'BU', weekday: 5, hour: 4, dates: ['2026-03-06'], dates_count: 1 },
+                { key: 'd-mo', class_name: 'D1-1C-GOS', course: 'D1', subject: 'D', weekday: 1, hour: 3, dates_count: 18 },
+            ],
+            constraints: {
+                availableWeekdays: [1, 2, 3, 4, 5],
+                excludedWeekdayTimes: [],
+                availableTimes: [1, 2, 3, 4],
+            },
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+                { title: 'Mittwoch', shortTitle: 'Mi', value: 3 },
+                { title: 'Donnerstag', shortTitle: 'Do', value: 4 },
+                { title: 'Freitag', shortTitle: 'Fr', value: 5 },
+            ],
+            timeOptions: [
+                { title: '1. Stunde', shortTitle: '1. Stunde', value: 1 },
+                { title: '2. Stunde', shortTitle: '2. Stunde', value: 2 },
+                { title: '3. Stunde', shortTitle: '3. Stunde', value: 3 },
+                { title: '4. Stunde', shortTitle: '4. Stunde', value: 4 },
+            ],
+            schoolHours: [
+                { hour: 1, from: '17:50:00', until: '18:35:00' },
+                { hour: 2, from: '18:45:00', until: '19:30:00' },
+                { hour: 3, from: '19:30:00', until: '20:15:00' },
+                { hour: 4, from: '20:25:00', until: '21:10:00' },
+            ],
+        }
+
+        methods.generateTimetables.call(ctx)
+
+        const firstTimetable = ctx.generatedTimetables[0]
+        const regularBiologySlots = Object.values(firstTimetable.slots)
+            .filter(slot => slot?.code === 'BU2')
+
+        expect(ctx.generationError).toBe('')
+        expect(regularBiologySlots).toHaveLength(2)
+        expect(regularBiologySlots.map(slot => slot.sourceLabel)).toEqual([
+            'BU2-2S-WIN',
+            'BU2-2S-WIN',
+        ])
+        expect(Object.keys(firstTimetable.slots).some(slotKey => slotKey.startsWith('3-'))).toBe(false)
+        expect(firstTimetable.occasionalAppointments.filter(appointment => appointment.sourceLabel === 'BU2-2S-WIN')).toHaveLength(2)
+    })
+
+    it('does not rank a replaced same-slot course as scheduled', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            generationError: '',
+            generationProblems: [],
+            generatedTimetables: [],
+            selectedCourses: [
+                { key: 'E4', code: 'E4', name: 'Englisch 4', branch: 'alle', hours: 1 },
+                { key: 'M4', code: 'M4', name: 'Mathematik 4', branch: 'alle', hours: 1 },
+            ],
+            configuredCourseGroups: [
+                { key: 'e4-sa', class_name: 'E4-2S-KÖN', course: 'E4', subject: 'E', weekday: 6, hour: 4, dates: ['2026-02-21', '2026-03-07', '2026-03-21'], dates_count: 3 },
+                { key: 'm4-sa', class_name: 'M4-3U-ALT', course: 'M4', subject: 'M', weekday: 6, hour: 4, dates: ['2026-02-28', '2026-03-14', '2026-03-28'], dates_count: 3 },
+                { key: 'm4-fr', class_name: 'M4-3R-SCHM', course: 'M4', subject: 'M', weekday: 5, hour: 4, dates_count: 18 },
+            ],
+            constraints: {
+                availableWeekdays: [5, 6],
+                excludedWeekdayTimes: [],
+                availableTimes: [4],
+            },
+            weekdayOptions: [
+                { title: 'Freitag', shortTitle: 'Fr', value: 5 },
+                { title: 'Samstag', shortTitle: 'Sa', value: 6 },
+            ],
+            timeOptions: [
+                { title: '4. Stunde', shortTitle: '4. Stunde', value: 4 },
+            ],
+            schoolHours: [
+                { hour: 4, from: '20:25:00', until: '21:10:00' },
+            ],
+        }
+
+        methods.generateTimetables.call(ctx)
+
+        const scheduledCodes = Object.values(ctx.generatedTimetables[0].slots)
+            .filter(slot => slot && !slot.isConflictPreview)
+            .map(slot => slot.code)
+            .sort()
+
+        expect(scheduledCodes).toEqual(['E4', 'M4'])
+        expect(ctx.generatedTimetables[0].slots['6-4'].code).toBe('E4')
+        expect(ctx.generatedTimetables[0].slots['5-4'].code).toBe('M4')
+    })
+
+    it('shows every complete regular-green timetable in addition to the top tier', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            generationError: '',
+            generationProblems: [],
+            generatedTimetables: [],
+            selectedCourses: [
+                { key: 'A1', code: 'A1', name: 'Course A', branch: 'alle', hours: 1 },
+                { key: 'B1', code: 'B1', name: 'Course B', branch: 'alle', hours: 1 },
+            ],
+            configuredCourseGroups: [
+                { key: 'a-mo', class_name: 'A1-MO', course: 'A1', subject: 'A', weekday: 1, hour: 1, dates_count: 18 },
+                { key: 'a-tu', class_name: 'A1-TU', course: 'A1', subject: 'A', weekday: 2, hour: 1, dates_count: 18 },
+                { key: 'b-mo', class_name: 'B1-MO', course: 'B1', subject: 'B', weekday: 1, hour: 2, dates_count: 18 },
+                { key: 'b-tu', class_name: 'B1-TU', course: 'B1', subject: 'B', weekday: 2, hour: 2, dates_count: 18 },
+            ],
+            constraints: {
+                availableWeekdays: [1, 2, 3],
+                excludedWeekdayTimes: [],
+                availableTimes: [1, 2],
+            },
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+                { title: 'Mittwoch', shortTitle: 'Mi', value: 3 },
+            ],
+            timeOptions: [
+                { title: '1. Stunde', shortTitle: '1. Stunde', value: 1 },
+                { title: '2. Stunde', shortTitle: '2. Stunde', value: 2 },
+            ],
+            schoolHours: [
+                { hour: 1, from: '17:50:00', until: '18:35:00' },
+                { hour: 2, from: '18:45:00', until: '19:30:00' },
+            ],
+        }
+
+        methods.generateTimetables.call(ctx)
+
+        expect(ctx.generatedTimetables).toHaveLength(4)
+        expect(ctx.generatedTimetables.every(timetable => timetable.problems.length === 0)).toBe(true)
+        expect(ctx.generatedTimetables.map(timetable => Object.keys(timetable.slots).sort())).toEqual([
+            ['1-1', '1-2'],
+            ['2-1', '2-2'],
+            ['1-1', '2-2'],
+            ['1-2', '2-1'],
+        ])
+    })
+
+    it('keeps only the all-green timetables with the fewest used days when there are many results', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            generationError: '',
+            generationProblems: [],
+            generatedTimetables: [],
+            selectedCourses: [
+                { key: 'A1', code: 'A1', name: 'Course A', branch: 'alle', hours: 1 },
+                { key: 'B1', code: 'B1', name: 'Course B', branch: 'alle', hours: 1 },
+                { key: 'C1', code: 'C1', name: 'Course C', branch: 'alle', hours: 1 },
+            ],
+            configuredCourseGroups: [
+                { key: 'a-mo', class_name: 'A1-MO', course: 'A1', subject: 'A', weekday: 1, hour: 1, dates_count: 18 },
+                { key: 'a-tu', class_name: 'A1-TU', course: 'A1', subject: 'A', weekday: 2, hour: 1, dates_count: 18 },
+                { key: 'a-we', class_name: 'A1-WE', course: 'A1', subject: 'A', weekday: 3, hour: 1, dates_count: 18 },
+                { key: 'b-mo', class_name: 'B1-MO', course: 'B1', subject: 'B', weekday: 1, hour: 2, dates_count: 18 },
+                { key: 'b-tu', class_name: 'B1-TU', course: 'B1', subject: 'B', weekday: 2, hour: 2, dates_count: 18 },
+                { key: 'b-we', class_name: 'B1-WE', course: 'B1', subject: 'B', weekday: 3, hour: 2, dates_count: 18 },
+                { key: 'c-mo', class_name: 'C1-MO', course: 'C1', subject: 'C', weekday: 1, hour: 3, dates_count: 18 },
+                { key: 'c-tu', class_name: 'C1-TU', course: 'C1', subject: 'C', weekday: 2, hour: 3, dates_count: 18 },
+                { key: 'c-we', class_name: 'C1-WE', course: 'C1', subject: 'C', weekday: 3, hour: 3, dates_count: 18 },
+            ],
+            constraints: {
+                availableWeekdays: [1, 2, 3],
+                excludedWeekdayTimes: [],
+                availableTimes: [1, 2, 3],
+            },
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+                { title: 'Mittwoch', shortTitle: 'Mi', value: 3 },
+            ],
+            timeOptions: [
+                { title: '1. Stunde', shortTitle: '1. Stunde', value: 1 },
+                { title: '2. Stunde', shortTitle: '2. Stunde', value: 2 },
+                { title: '3. Stunde', shortTitle: '3. Stunde', value: 3 },
+            ],
+            schoolHours: [
+                { hour: 1, from: '17:50:00', until: '18:35:00' },
+                { hour: 2, from: '18:45:00', until: '19:30:00' },
+                { hour: 3, from: '19:30:00', until: '20:15:00' },
+            ],
+        }
+
+        methods.generateTimetables.call(ctx)
+
+        const usedWeekdays = ctx.generatedTimetables.map(timetable =>
+            [...new Set(Object.values(timetable.slots)
+                .map(slot => Number(slot?.courseGroup?.weekday)))]
+                .sort(),
+        )
+
+        expect(ctx.generatedTimetables).toHaveLength(3)
+        expect(ctx.generatedTimetables.every(timetable => timetable.problems.length === 0)).toBe(true)
+        expect(usedWeekdays).toEqual([[1], [2], [3]])
+    })
+
+    it('treats shorter regular TT variants as valid course options', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            generationError: '',
+            generationProblems: [],
+            generatedTimetables: [],
+            selectedCourses: [
+                { key: 'F3', code: 'F3', name: 'Französisch 3', branch: 'alle', hours: 4 },
+            ],
+            configuredCourseGroups: [
+                { key: 'f3-4a-th-11', class_name: 'F3-4A-NIE', course: 'F', subject: 'F', weekday: 4, hour: 11, dates_count: 18 },
+                { key: 'f3-4a-th-12', class_name: 'F3-4A-NIE', course: 'F', subject: 'F', weekday: 4, hour: 12, dates_count: 18 },
+                { key: 'f3-4a-fr-10', class_name: 'F3-4A-NIE', course: 'F', subject: 'F', weekday: 5, hour: 10, dates_count: 18 },
+                { key: 'f3-4a-fr-11', class_name: 'F3-4A-NIE', course: 'F', subject: 'F', weekday: 5, hour: 11, dates_count: 18 },
+                { key: 'f3-3ru-fr-10', class_name: 'F3-3RU+4F-NIE', course: 'F', subject: 'F', weekday: 5, hour: 10, dates_count: 18 },
+                { key: 'f3-3ru-fr-11', class_name: 'F3-3RU+4F-NIE', course: 'F', subject: 'F', weekday: 5, hour: 11, dates_count: 18 },
+            ],
+            constraints: {
+                availableWeekdays: [1, 2, 3, 4, 5],
+                excludedWeekdayTimes: [],
+                availableTimes: [10, 11, 12],
+            },
+            weekdayOptions: [
+                { title: 'Montag', shortTitle: 'Mo', value: 1 },
+                { title: 'Dienstag', shortTitle: 'Di', value: 2 },
+                { title: 'Mittwoch', shortTitle: 'Mi', value: 3 },
+                { title: 'Donnerstag', shortTitle: 'Do', value: 4 },
+                { title: 'Freitag', shortTitle: 'Fr', value: 5 },
+            ],
+            timeOptions: [
+                { title: '10. Stunde', shortTitle: '10. Stunde', value: 10 },
+                { title: '11. Stunde', shortTitle: '11. Stunde', value: 11 },
+                { title: '12. Stunde', shortTitle: '12. Stunde', value: 12 },
+            ],
+            schoolHours: [
+                { hour: 10, from: '17:05:00', until: '17:50:00' },
+                { hour: 11, from: '17:50:00', until: '18:35:00' },
+                { hour: 12, from: '18:45:00', until: '19:30:00' },
+            ],
+        }
+
+        methods.generateTimetables.call(ctx)
+
+        expect(ctx.generationError).toBe('')
+        expect(ctx.generatedTimetables.map(timetable => timetable.problems)).toEqual([[], []])
+        expect(ctx.generatedTimetables.map(timetable =>
+            Object.values(timetable.slots)[0]?.sourceLabel,
+        )).toEqual([
+            'F3-3RU+4F-NIE',
+            'F3-4A-NIE',
+        ])
     })
 
     it('does not show timetable variants where a course is softly skipped', () => {
