@@ -33,6 +33,10 @@ if not exist package-lock.json (
 REM 1) Install deps deterministically from the lockfile
 echo [BUILD] Installing dependencies...
 set PUPPETEER_SKIP_DOWNLOAD=1
+if not defined NPM_CONFIG_CACHE set "NPM_CONFIG_CACHE=%CD%\storage\framework\npm-cache"
+set "npm_config_cache=%NPM_CONFIG_CACHE%"
+if not exist "%NPM_CONFIG_CACHE%" mkdir "%NPM_CONFIG_CACHE%"
+echo Using npm cache: %NPM_CONFIG_CACHE%
 call npm ci
 if errorlevel 1 (
   echo [ERROR] npm ci failed. See output above.

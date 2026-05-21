@@ -13,13 +13,27 @@ use Mockery;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 
-function fakeAppUpdateFiles(array $missingPaths = []): void
-{
+function fakeAppUpdateFiles(
+    array $missingPaths = [],
+    bool $nodeModulesExists = false,
+    bool $nodeModulesDeleteSucceeds = true,
+): void {
     File::shouldReceive('exists')
         ->andReturnUsing(function (string $path) use ($missingPaths): bool {
             return ! in_array($path, $missingPaths, true);
         });
 
+    File::shouldReceive('ensureDirectoryExists')
+        ->zeroOrMoreTimes()
+        ->andReturnNull();
+    File::shouldReceive('isDirectory')
+        ->zeroOrMoreTimes()
+        ->with(base_path('node_modules'))
+        ->andReturn($nodeModulesExists);
+    File::shouldReceive('deleteDirectory')
+        ->zeroOrMoreTimes()
+        ->with(base_path('node_modules'))
+        ->andReturn($nodeModulesDeleteSucceeds);
     File::shouldReceive('delete')
         ->zeroOrMoreTimes()
         ->andReturnTrue();
@@ -79,9 +93,12 @@ function fakeAppUpdateProcesses(string|array|null $npmCiError = null): void
 /**
  * @return array{exit_code: int, output: string}
  */
-function runAppUpdateCommand(InstallUpdateService $install, RecordsCreateService $records): array
-{
-    $command = app()->make(AppUpdateCommand::class);
+function runAppUpdateCommand(
+    InstallUpdateService $install,
+    RecordsCreateService $records,
+    ?AppUpdateCommand $command = null,
+): array {
+    $command ??= app()->make(AppUpdateCommand::class);
     $input = new ArrayInput([]);
     $output = new BufferedOutput;
 
@@ -94,6 +111,17 @@ function runAppUpdateCommand(InstallUpdateService $install, RecordsCreateService
         'exit_code' => $exitCode,
         'output' => $output->fetch(),
     ];
+}
+
+function appUpdateCommandWithNodeModulesCleanup(): AppUpdateCommand
+{
+    return new class extends AppUpdateCommand
+    {
+        protected function shouldCleanNodeModulesBeforeNpmCi(): bool
+        {
+            return true;
+        }
+    };
 }
 
 it('runs the full update workflow end to end', function (): void {
@@ -142,23 +170,29 @@ it('runs the full update workflow end to end', function (): void {
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(5)->andReturn('');
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 
     expect($result['exit_code'])->toBe(0);
     expect($result['output'])->toContain('▶ PREFLIGHT VALIDATION');
+    expect($result['output'])->toContain('Using npm cache: '.base_path('storage/framework/npm-cache'));
     expect($result['output'])->toContain('▶ INSTALLING FRONTEND DEPENDENCIES');
     expect($result['output'])->toContain('▶ BUILDING FRONTEND');
     expect($result['output'])->toContain('▶ CLEARING CONFIG CACHE');
     expect($result['output'])->toContain('▶ MIGRATIONS');
     expect($result['output'])->toContain('▶ LICENCE BACKFILL');
+    expect($result['output'])->toContain('▶ TEACHING WORK GROUP INDEX BACKFILL');
 
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'node --version'));
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm --version'));
     Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'check_node_version.cjs'));
+    Process::assertRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci')
+        && ($process->environment['NPM_CONFIG_CACHE'] ?? null) === base_path('storage/framework/npm-cache')
+        && ($process->environment['npm_config_cache'] ?? null) === base_path('storage/framework/npm-cache'));
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
     Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm run build'), 1);
 });
@@ -220,6 +254,69 @@ it('stops before backend work when npm ci fails', function (): void {
     $install->shouldNotHaveReceived('clearDebugbar');
     $install->shouldNotHaveReceived('normalizeRestaurantUserRoles');
     $records->shouldNotHaveReceived('initRecords');
+});
+
+it('removes existing node modules before npm ci on non windows hosts', function (): void {
+    fakeAppUpdateFiles(nodeModulesExists: true);
+    fakeAppUpdateProcesses();
+
+    $install = Mockery::mock(InstallUpdateService::class);
+    $records = Mockery::mock(RecordsCreateService::class);
+
+    $install->shouldReceive('clearModels')->once();
+    $install->shouldReceive('createRoles')->once();
+    $install->shouldReceive('findOrCreateFolders')->once();
+    $install->shouldReceive('pruneOrphanPrivateSchoolFolders')
+        ->once()
+        ->andReturn(['deleted' => [], 'failed' => []]);
+    $install->shouldReceive('clearDebugbar')->once();
+    $install->shouldReceive('normalizeRestaurantUserRoles')
+        ->once()
+        ->andReturn([
+            'restaurant_confirmed_backfilled' => 0,
+            'lunch_user_roles_assigned' => 0,
+            'lunch_candidate_roles_removed' => 0,
+        ]);
+    $records->shouldReceive('initRecords')->once();
+
+    app()->instance(InstallUpdateService::class, $install);
+    app()->instance(RecordsCreateService::class, $records);
+
+    Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
+
+    $result = runAppUpdateCommand($install, $records, appUpdateCommandWithNodeModulesCleanup());
+
+    expect($result['exit_code'])->toBe(0);
+    expect($result['output'])->toContain('Removing existing node_modules before npm ci for a clean install.');
+
+    File::shouldHaveReceived('deleteDirectory')
+        ->once()
+        ->with(base_path('node_modules'));
+    Process::assertRanTimes(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'), 1);
+});
+
+it('stops before npm ci when node modules cleanup fails on non windows hosts', function (): void {
+    fakeAppUpdateFiles(nodeModulesExists: true, nodeModulesDeleteSucceeds: false);
+    fakeAppUpdateProcesses();
+
+    Artisan::spy();
+
+    $install = Mockery::spy(InstallUpdateService::class);
+    $records = Mockery::spy(RecordsCreateService::class);
+
+    $result = runAppUpdateCommand($install, $records, appUpdateCommandWithNodeModulesCleanup());
+
+    expect($result['exit_code'])->toBe(1);
+    expect($result['output'])->toContain('Could not remove existing node_modules');
+
+    Process::assertNotRan(fn ($process) => str_contains(implode(' ', $process->command), 'npm ci'));
+    Artisan::shouldNotHaveReceived('call');
 });
 
 it('stops when the school user licence backfill fails', function (): void {
@@ -291,9 +388,10 @@ it('retries npm ci when a windows lock error is transient', function (): void {
     Artisan::shouldReceive('call')->with('config:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('migrate', ['--force' => true])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('schooltool:backfill-school-user-licences', [])->once()->andReturn(0);
+    Artisan::shouldReceive('call')->with('schooltool:backfill-teaching-course-work-group-students', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('optimize:clear', [])->once()->andReturn(0);
     Artisan::shouldReceive('call')->with('queue:restart', [])->once()->andReturn(0);
-    Artisan::shouldReceive('output')->times(5)->andReturn('');
+    Artisan::shouldReceive('output')->times(6)->andReturn('');
 
     $result = runAppUpdateCommand($install, $records);
 

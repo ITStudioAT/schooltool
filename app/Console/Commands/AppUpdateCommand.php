@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Process;
 
 class AppUpdateCommand extends Command
 {
+    private const string NPM_CACHE_RELATIVE_PATH = 'storage/framework/npm-cache';
+
     private const int WINDOWS_NPM_CI_MAX_ATTEMPTS = 3;
 
     private const int WINDOWS_NPM_CI_RETRY_DELAY_SECONDS = 2;
@@ -169,7 +171,12 @@ class AppUpdateCommand extends Command
 
     private function runFrontendUpdate(): bool
     {
+        $this->prepareNpmCacheDirectory();
         $this->prepareWindowsFrontendInstall();
+
+        if (! $this->prepareNonWindowsFrontendInstall()) {
+            return false;
+        }
 
         $this->info('▶ INSTALLING FRONTEND DEPENDENCIES');
         if (! $this->runNpmCi()) {
@@ -177,7 +184,7 @@ class AppUpdateCommand extends Command
         }
 
         $this->info('▶ BUILDING FRONTEND');
-        if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1'])) {
+        if (! $this->runProcess(['npm', 'run', 'build'], 'npm run build', 900, $this->frontendEnvironment())) {
             return false;
         }
 
@@ -192,7 +199,7 @@ class AppUpdateCommand extends Command
         $combinedOutput = '';
 
         for ($attempt = 1; $attempt <= $attemptLimit; $attempt++) {
-            $result = $this->executeProcess(['npm', 'ci'], 900, ['PUPPETEER_SKIP_DOWNLOAD' => '1']);
+            $result = $this->executeProcess(['npm', 'ci'], 900, $this->frontendEnvironment());
 
             if ($result->successful()) {
                 return true;
@@ -216,9 +223,61 @@ class AppUpdateCommand extends Command
         }
 
         $this->error('❌ npm ci failed — aborting update.');
+        $this->maybeShowNpmCachePermissionHint($combinedOutput);
         $this->maybeShowWindowsNodeModulesHint($combinedOutput);
 
         return false;
+    }
+
+    private function prepareNonWindowsFrontendInstall(): bool
+    {
+        if (! $this->shouldCleanNodeModulesBeforeNpmCi()) {
+            return true;
+        }
+
+        $nodeModulesPath = base_path('node_modules');
+        if (! File::isDirectory($nodeModulesPath)) {
+            return true;
+        }
+
+        $this->warn('Removing existing node_modules before npm ci for a clean install.');
+
+        if (File::deleteDirectory($nodeModulesPath)) {
+            return true;
+        }
+
+        $this->error("❌ Could not remove existing node_modules at {$nodeModulesPath}; fix ownership/permissions and rerun app:update.");
+
+        return false;
+    }
+
+    protected function shouldCleanNodeModulesBeforeNpmCi(): bool
+    {
+        return PHP_OS_FAMILY !== 'Windows';
+    }
+
+    private function prepareNpmCacheDirectory(): void
+    {
+        File::ensureDirectoryExists($this->npmCacheDirectory());
+
+        $this->line("Using npm cache: {$this->npmCacheDirectory()}");
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function frontendEnvironment(): array
+    {
+        return [
+            'PUPPETEER_SKIP_DOWNLOAD' => '1',
+            'NPM_CONFIG_CACHE' => $this->npmCacheDirectory(),
+            'npm_config_cache' => $this->npmCacheDirectory(),
+        ];
+    }
+
+    private function npmCacheDirectory(): string
+    {
+        return base_path(self::NPM_CACHE_RELATIVE_PATH);
     }
 
     private function prepareWindowsFrontendInstall(): void
@@ -298,6 +357,18 @@ class AppUpdateCommand extends Command
         }
 
         return true;
+    }
+
+    private function maybeShowNpmCachePermissionHint(string $output): void
+    {
+        $normalizedOutput = strtolower($output);
+
+        if (! str_contains($normalizedOutput, 'cache folder contains root-owned files')
+            && ! (str_contains($normalizedOutput, 'eacces') && str_contains($normalizedOutput, '/.npm'))) {
+            return;
+        }
+
+        $this->warn("Hint: npm reported an unwritable home cache. app:update uses {$this->npmCacheDirectory()}; if this persists, remove any shell override for npm_config_cache/NPM_CONFIG_CACHE.");
     }
 
     private function maybeShowWindowsNodeModulesHint(string $output): void
