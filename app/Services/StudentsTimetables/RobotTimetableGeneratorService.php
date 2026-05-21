@@ -12,7 +12,7 @@ class RobotTimetableGeneratorService
     /**
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, conflict_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
      */
     public function countFullGreenTimetablesForUser(
         User $authUser,
@@ -57,7 +57,7 @@ class RobotTimetableGeneratorService
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, conflict_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
      */
     public function countFullGreenTimetables(
         array $subjectRows,
@@ -76,6 +76,7 @@ class RobotTimetableGeneratorService
             return [
                 'full_green_timetable_count' => 0,
                 'green_timetable_count' => 0,
+                'conflict_timetable_count' => 0,
                 'selected_course_count' => 0,
                 'selected_timetable' => null,
                 'quality_counters' => $this->qualityCountersFromSummary($qualitySummary),
@@ -96,6 +97,7 @@ class RobotTimetableGeneratorService
             return [
                 'full_green_timetable_count' => 0,
                 'green_timetable_count' => 0,
+                'conflict_timetable_count' => 0,
                 'selected_course_count' => count($selectedCourses),
                 'selected_timetable' => null,
                 'quality_counters' => $this->qualityCountersFromSummary($qualitySummary),
@@ -104,7 +106,7 @@ class RobotTimetableGeneratorService
         }
 
         usort($candidateOptions, fn (array $firstOptions, array $secondOptions): int => count($firstOptions) <=> count($secondOptions));
-        $selectedType = in_array($selectedTimetableType, ['full_green', 'green'], true) ? $selectedTimetableType : null;
+        $selectedType = $this->validTimetableResultType($selectedTimetableType) ? $selectedTimetableType : null;
         $selectedBucket = [];
         $qualityMetricCombinationCounts = [];
         $counts = $this->countDateCompatibleCombinations(
@@ -126,6 +128,7 @@ class RobotTimetableGeneratorService
         return [
             'full_green_timetable_count' => $counts['full_green_timetable_count'],
             'green_timetable_count' => $counts['green_timetable_count'],
+            'conflict_timetable_count' => $counts['conflict_timetable_count'],
             'selected_course_count' => count($selectedCourses),
             'selected_timetable' => $selectedTimetable,
             'quality_counters' => $this->qualityCountersFromSummary($qualitySummary, $selectedTimetable['metrics'] ?? null),
@@ -981,7 +984,7 @@ class RobotTimetableGeneratorService
      * @param  array<string, array<string, mixed>>  $qualitySummary
      * @param  array<string, int>  $qualityMetricCombinationCounts
      * @param  list<array{metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
-     * @return array{full_green_timetable_count: int, green_timetable_count: int}
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, conflict_timetable_count: int}
      */
     private function countDateCompatibleCombinations(
         array $candidateOptions,
@@ -989,6 +992,7 @@ class RobotTimetableGeneratorService
         array $usedRegularDateKeys = [],
         array $usedAllDateKeys = [],
         bool $isFullGreenCandidate = true,
+        bool $hasRegularConflict = false,
         array $selectedOptions = [],
         array $evaluationCriteria = [],
         array &$qualitySummary = [],
@@ -998,7 +1002,9 @@ class RobotTimetableGeneratorService
         array &$selectedBucket = [],
     ): array {
         if ($candidateIndex >= count($candidateOptions)) {
-            $timetableType = $isFullGreenCandidate ? 'full_green' : 'green';
+            $timetableType = $hasRegularConflict
+                ? 'conflict'
+                : ($isFullGreenCandidate ? 'full_green' : 'green');
             $metrics = $this->qualityMetricsForOptions($selectedOptions);
 
             if ($this->shouldRecordQualityMetricsForType($selectedTimetableType, $timetableType)) {
@@ -1021,20 +1027,27 @@ class RobotTimetableGeneratorService
             }
 
             return [
-                'full_green_timetable_count' => $isFullGreenCandidate ? 1 : 0,
-                'green_timetable_count' => $isFullGreenCandidate ? 0 : 1,
+                'full_green_timetable_count' => $timetableType === 'full_green' ? 1 : 0,
+                'green_timetable_count' => $timetableType === 'green' ? 1 : 0,
+                'conflict_timetable_count' => $timetableType === 'conflict' ? 1 : 0,
             ];
         }
 
         $counts = [
             'full_green_timetable_count' => 0,
             'green_timetable_count' => 0,
+            'conflict_timetable_count' => 0,
         ];
 
         foreach ($candidateOptions[$candidateIndex] as $option) {
             $regularDateKeys = $this->courseGroupDateSlotKeys($option['courseGroups'] ?? []);
+            $nextHasRegularConflict = $hasRegularConflict
+                || $this->dateKeysHaveInternalOverlap($regularDateKeys)
+                || $this->dateKeysOverlap($regularDateKeys, $usedRegularDateKeys);
 
-            if ($this->dateKeysHaveInternalOverlap($regularDateKeys) || $this->dateKeysOverlap($regularDateKeys, $usedRegularDateKeys)) {
+            if ($nextHasRegularConflict && ! $this->shouldRecordQualityMetricsForType($selectedTimetableType, 'conflict')) {
+                $counts['conflict_timetable_count'] += $this->remainingCombinationCount($candidateOptions, $candidateIndex + 1);
+
                 continue;
             }
 
@@ -1043,6 +1056,7 @@ class RobotTimetableGeneratorService
                 ...($option['occasionalCourseGroups'] ?? []),
             ]);
             $nextIsFullGreenCandidate = $isFullGreenCandidate
+                && ! $nextHasRegularConflict
                 && ! $this->dateKeysHaveInternalOverlap($allDateKeys)
                 && ! $this->dateKeysOverlap($allDateKeys, $usedAllDateKeys);
 
@@ -1052,6 +1066,7 @@ class RobotTimetableGeneratorService
                 $this->mergeDateKeys($usedRegularDateKeys, $regularDateKeys),
                 $nextIsFullGreenCandidate ? $this->mergeDateKeys($usedAllDateKeys, $allDateKeys) : $usedAllDateKeys,
                 $nextIsFullGreenCandidate,
+                $nextHasRegularConflict,
                 [...$selectedOptions, $option],
                 $evaluationCriteria,
                 $qualitySummary,
@@ -1063,9 +1078,19 @@ class RobotTimetableGeneratorService
 
             $counts['full_green_timetable_count'] += $nextCounts['full_green_timetable_count'];
             $counts['green_timetable_count'] += $nextCounts['green_timetable_count'];
+            $counts['conflict_timetable_count'] += $nextCounts['conflict_timetable_count'];
         }
 
         return $counts;
+    }
+
+    /**
+     * @param  list<list<array<string, mixed>>>  $candidateOptions
+     */
+    private function remainingCombinationCount(array $candidateOptions, int $candidateIndex): int
+    {
+        return collect(array_slice($candidateOptions, $candidateIndex))
+            ->reduce(fn (int $count, array $options): int => $count * count($options), 1);
     }
 
     /**
@@ -1129,6 +1154,11 @@ class RobotTimetableGeneratorService
         return $selectedTimetableType === null || $selectedTimetableType === $timetableType;
     }
 
+    private function validTimetableResultType(?string $selectedTimetableType): bool
+    {
+        return in_array($selectedTimetableType, ['full_green', 'green', 'conflict'], true);
+    }
+
     /**
      * @param  list<array{metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
      * @return ?array<string, mixed>
@@ -1139,7 +1169,7 @@ class RobotTimetableGeneratorService
         int $selectedTimetableNumber,
         array $qualitySummary,
     ): ?array {
-        if (! in_array($selectedTimetableType, ['full_green', 'green'], true) || $selectedBucket === []) {
+        if (! $this->validTimetableResultType($selectedTimetableType) || $selectedBucket === []) {
             return null;
         }
 
@@ -1207,6 +1237,7 @@ class RobotTimetableGeneratorService
             'gap_count' => $this->courseGroupGapCount($regularCourseGroups, $occasionalCourseGroups),
             'starts_from_period_10' => $this->courseGroupsStartAtOrAfter($allCourseGroups, 10),
             'ends_by_period_13' => $this->courseGroupsEndAtOrBefore($allCourseGroups, 13),
+            'regular_conflict_count' => $this->regularConflictCountForOptions($options),
         ];
     }
 
@@ -1240,6 +1271,28 @@ class RobotTimetableGeneratorService
                 $qualitySummary[$key]['count'] = (int) ($summary['count'] ?? 0) + 1;
             }
         }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $options
+     */
+    private function regularConflictCountForOptions(array $options): int
+    {
+        $courseGroups = collect($options)
+            ->flatMap(fn (array $option): array => $option['courseGroups'] ?? [])
+            ->values()
+            ->all();
+        $conflictCount = 0;
+
+        foreach ($courseGroups as $firstIndex => $firstCourseGroup) {
+            foreach (array_slice($courseGroups, $firstIndex + 1) as $secondCourseGroup) {
+                if ($this->courseGroupsDateSlotOverlap($firstCourseGroup, $secondCourseGroup)) {
+                    $conflictCount++;
+                }
+            }
+        }
+
+        return $conflictCount;
     }
 
     /**
@@ -1330,6 +1383,13 @@ class RobotTimetableGeneratorService
      */
     private function compareTimetableCandidates(array $firstCandidate, array $secondCandidate, array $evaluationCriteria): int
     {
+        $firstConflictCount = (int) ($firstCandidate['metrics']['regular_conflict_count'] ?? 0);
+        $secondConflictCount = (int) ($secondCandidate['metrics']['regular_conflict_count'] ?? 0);
+
+        if ($firstConflictCount !== $secondConflictCount) {
+            return $firstConflictCount <=> $secondConflictCount;
+        }
+
         foreach ($evaluationCriteria as $criterion) {
             $key = (string) ($criterion['key'] ?? '');
             $firstValue = $this->qualityMetricValue($key, $criterion['option'] ?? null, $firstCandidate['metrics']);
@@ -1556,16 +1616,23 @@ class RobotTimetableGeneratorService
         array $metrics,
         array $qualitySummary,
     ): array {
-        $slots = [];
+        $slotEntries = [];
 
         foreach ($options as $option) {
             $course = $this->optionSelectedCourse($option);
 
             foreach ($option['courseGroups'] ?? [] as $courseGroup) {
                 $slotKey = $this->slotKey($courseGroup['weekday'] ?? '', $courseGroup['hour'] ?? '');
-                $slots[$slotKey] ??= $this->timetableSlot($course, $option, $courseGroup);
+                $slotEntries[$slotKey][] = $this->timetableSlot($course, $option, $courseGroup);
             }
         }
+
+        $regularProblems = [];
+        $slots = collect($slotEntries)
+            ->map(function (array $entries) use (&$regularProblems): array {
+                return $this->timetableSlotWithRegularConflicts($entries, $regularProblems);
+            })
+            ->all();
 
         $appointmentItems = [];
 
@@ -1629,7 +1696,112 @@ class RobotTimetableGeneratorService
             'qualityCriteria' => $this->qualityCountersFromSummary($qualitySummary, $metrics),
             'slots' => $slots,
             'occasionalAppointments' => $occasionalAppointments,
-            'problems' => [],
+            'problems' => $this->uniqueStrings($regularProblems),
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     * @param  list<string>  $regularProblems
+     * @return array<string, mixed>
+     */
+    private function timetableSlotWithRegularConflicts(array $entries, array &$regularProblems): array
+    {
+        $slot = $entries[0] ?? [];
+        $conflictingEntryIndexes = [];
+
+        foreach ($entries as $firstIndex => $firstEntry) {
+            foreach (array_slice($entries, $firstIndex + 1, null, true) as $secondIndex => $secondEntry) {
+                if (! $this->courseGroupsDateSlotOverlap($firstEntry['courseGroup'] ?? [], $secondEntry['courseGroup'] ?? [])) {
+                    continue;
+                }
+
+                $conflictingEntryIndexes[$firstIndex] = true;
+                $conflictingEntryIndexes[$secondIndex] = true;
+                $regularProblems[] = $this->regularConflictProblem($firstEntry, $secondEntry);
+            }
+        }
+
+        foreach (array_keys($conflictingEntryIndexes) as $entryIndex) {
+            if ($entryIndex === 0) {
+                continue;
+            }
+
+            $this->addSlotConflict($slot, $entries[$entryIndex]);
+        }
+
+        return $slot;
+    }
+
+    /**
+     * @param  array<string, mixed>  $slot
+     * @param  array<string, mixed>  $conflictSlot
+     */
+    private function addSlotConflict(array &$slot, array $conflictSlot): void
+    {
+        $label = collect([
+            $this->courseProblemLabel($conflictSlot),
+            $this->courseGroupDateTimeLabel($conflictSlot['courseGroup'] ?? []),
+        ])
+            ->filter()
+            ->implode(' ');
+
+        if ($label === '') {
+            return;
+        }
+
+        $slot['conflicts'] ??= [];
+
+        if (collect($slot['conflicts'])->contains(fn (array $conflict): bool => ($conflict['label'] ?? '') === $label)) {
+            return;
+        }
+
+        $slot['conflicts'][] = [
+            'key' => $conflictSlot['key'] ?? $label,
+            'label' => $label,
+            'sortValue' => implode('|', [
+                $conflictSlot['courseGroup']['weekday'] ?? '',
+                str_pad((string) ($conflictSlot['courseGroup']['hour'] ?? ''), 2, '0', STR_PAD_LEFT),
+                $conflictSlot['code'] ?? '',
+            ]),
+            'code' => $conflictSlot['code'] ?? '',
+            'name' => $conflictSlot['name'] ?? '',
+            'sourceLabel' => $conflictSlot['sourceLabel'] ?? '',
+            'alternativeLabels' => $conflictSlot['alternativeLabels'] ?? [],
+            'courseGroup' => $conflictSlot['courseGroup'] ?? [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstSlot
+     * @param  array<string, mixed>  $secondSlot
+     */
+    private function regularConflictProblem(array $firstSlot, array $secondSlot): string
+    {
+        $details = $this->limitedProblemDetailLabels($this->overlappingDateSlotLabels(
+            $firstSlot['courseGroup'] ?? [],
+            $secondSlot['courseGroup'] ?? [],
+        ));
+        $detailLabel = $details === [] ? '' : ' ('.implode(', ', $details).')';
+
+        return "{$this->courseProblemLabel($firstSlot)} überschneidet sich mit {$this->courseProblemLabel($secondSlot)}{$detailLabel}.";
+    }
+
+    /**
+     * @param  list<string>  $details
+     * @return list<string>
+     */
+    private function limitedProblemDetailLabels(array $details): array
+    {
+        $limit = 5;
+
+        if (count($details) <= $limit) {
+            return $details;
+        }
+
+        return [
+            ...array_slice($details, 0, $limit),
+            'weitere '.(count($details) - $limit).' Termine',
         ];
     }
 
@@ -1712,7 +1884,67 @@ class RobotTimetableGeneratorService
         $secondDateKeys = $this->courseGroupDateSlotKeysForGroup($secondCourseGroup);
 
         return collect($firstDateKeys)
-            ->contains(fn (string $dateKey): bool => in_array($dateKey, $secondDateKeys, true));
+            ->contains(fn (string $dateKey): bool => collect($secondDateKeys)
+                ->contains(fn (string $secondDateKey): bool => $this->dateSlotKeysOverlap($dateKey, $secondDateKey)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $firstCourseGroup
+     * @param  array<string, mixed>  $secondCourseGroup
+     * @return list<string>
+     */
+    private function overlappingDateSlotLabels(array $firstCourseGroup, array $secondCourseGroup): array
+    {
+        $labels = [];
+
+        foreach ($this->courseGroupDateSlotKeysForGroup($firstCourseGroup) as $firstDateKey) {
+            foreach ($this->courseGroupDateSlotKeysForGroup($secondCourseGroup) as $secondDateKey) {
+                if (! $this->dateSlotKeysOverlap($firstDateKey, $secondDateKey)) {
+                    continue;
+                }
+
+                $labels[] = $this->dateSlotKeyOverlapLabel($firstDateKey, $secondDateKey);
+            }
+        }
+
+        return $this->uniqueStrings($labels);
+    }
+
+    private function dateSlotKeyOverlapLabel(string $firstDateKey, string $secondDateKey): string
+    {
+        $firstParts = explode('|', $firstDateKey);
+        $secondParts = explode('|', $secondDateKey);
+        $datedParts = ($firstParts[0] ?? '') === 'date'
+            ? $firstParts
+            : (($secondParts[0] ?? '') === 'date' ? $secondParts : null);
+
+        if ($datedParts !== null) {
+            return collect([
+                $datedParts[1] ?? '',
+                trim((string) ($datedParts[3] ?? '')) !== '' ? ($datedParts[3] ?? '').'. Stunde' : '',
+            ])
+                ->filter()
+                ->implode(', ');
+        }
+
+        return collect([
+            $this->weekdayShortLabel((int) ($firstParts[1] ?? 0)),
+            trim((string) ($firstParts[2] ?? '')) !== '' ? ($firstParts[2] ?? '').'. Stunde' : '',
+        ])
+            ->filter()
+            ->implode(', ');
+    }
+
+    private function weekdayShortLabel(int $weekday): string
+    {
+        return [
+            1 => 'Mo',
+            2 => 'Di',
+            3 => 'Mi',
+            4 => 'Do',
+            5 => 'Fr',
+            6 => 'Sa',
+        ][$weekday] ?? (string) $weekday;
     }
 
     /**
@@ -1777,20 +2009,35 @@ class RobotTimetableGeneratorService
     }
 
     /**
+     * @param  list<string>  $values
+     * @return list<string>
+     */
+    private function uniqueStrings(array $values): array
+    {
+        return collect($values)
+            ->map(fn (string $value): string => trim($value))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @param  array<string, mixed>  $courseGroup
      * @return list<string>
      */
     private function courseGroupDateSlotKeysForGroup(array $courseGroup): array
     {
         $hour = (string) ($courseGroup['hour'] ?? '');
+        $weekday = (string) ($courseGroup['weekday'] ?? '');
         $dates = $this->courseGroupDates($courseGroup);
 
         if ($dates === []) {
-            return [$this->slotKey($courseGroup['weekday'] ?? '', $hour)];
+            return [$this->recurringDateSlotKey($weekday, $hour)];
         }
 
         return collect($dates)
-            ->map(fn (string $date): string => "{$date}|{$hour}")
+            ->map(fn (string $date): string => $this->datedDateSlotKey($date, $weekday, $hour))
             ->all();
     }
 
@@ -1818,7 +2065,15 @@ class RobotTimetableGeneratorService
      */
     private function dateKeysHaveInternalOverlap(array $dateKeys): bool
     {
-        return count($dateKeys) !== count(array_unique($dateKeys));
+        foreach ($dateKeys as $index => $dateKey) {
+            foreach (array_slice($dateKeys, $index + 1) as $otherDateKey) {
+                if ($this->dateSlotKeysOverlap($dateKey, $otherDateKey)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -1827,8 +2082,43 @@ class RobotTimetableGeneratorService
      */
     private function dateKeysOverlap(array $dateKeys, array $usedDateKeys): bool
     {
+        $usedDateKeyValues = array_keys($usedDateKeys);
+
         return collect($dateKeys)
-            ->contains(fn (string $dateKey): bool => isset($usedDateKeys[$dateKey]));
+            ->contains(fn (string $dateKey): bool => collect($usedDateKeyValues)
+                ->contains(fn (string $usedDateKey): bool => $this->dateSlotKeysOverlap($dateKey, $usedDateKey)));
+    }
+
+    private function recurringDateSlotKey(string $weekday, string $hour): string
+    {
+        return "weekly|{$weekday}|{$hour}";
+    }
+
+    private function datedDateSlotKey(string $date, string $weekday, string $hour): string
+    {
+        return "date|{$date}|{$weekday}|{$hour}";
+    }
+
+    private function dateSlotKeysOverlap(string $firstDateKey, string $secondDateKey): bool
+    {
+        $firstParts = explode('|', $firstDateKey);
+        $secondParts = explode('|', $secondDateKey);
+
+        if (($firstParts[0] ?? '') === 'weekly' && ($secondParts[0] ?? '') === 'weekly') {
+            return ($firstParts[1] ?? '') === ($secondParts[1] ?? '')
+                && ($firstParts[2] ?? '') === ($secondParts[2] ?? '');
+        }
+
+        if (($firstParts[0] ?? '') === 'date' && ($secondParts[0] ?? '') === 'date') {
+            return ($firstParts[1] ?? '') === ($secondParts[1] ?? '')
+                && ($firstParts[3] ?? '') === ($secondParts[3] ?? '');
+        }
+
+        $weeklyParts = ($firstParts[0] ?? '') === 'weekly' ? $firstParts : $secondParts;
+        $datedParts = ($firstParts[0] ?? '') === 'date' ? $firstParts : $secondParts;
+
+        return ($weeklyParts[1] ?? '') === ($datedParts[2] ?? '')
+            && ($weeklyParts[2] ?? '') === ($datedParts[3] ?? '');
     }
 
     /**

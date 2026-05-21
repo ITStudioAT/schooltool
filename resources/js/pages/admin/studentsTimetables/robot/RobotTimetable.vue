@@ -198,166 +198,222 @@
                         {{ fullGreenTimetableCountError }}
                     </v-alert>
 
-                    <div
-                        class="robot-count-card"
-                        :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'full_green' }">
-                        <div class="robot-count-card__content">
-                            <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
-                            <div class="robot-count-card__value">
-                                <v-progress-circular
-                                    v-if="fullGreenTimetableCountLoading"
-                                    indeterminate
-                                    size="22"
-                                    width="2"
-                                    color="primary" />
-                                <template v-else>
-                                    {{ fullGreenTimetableCountLabel }}
-                                </template>
-                            </div>
+                    <template v-if="selectedRobotTimetable">
+                        <div class="robot-count-cards">
                             <div
-                                v-if="selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0"
-                                class="robot-count-card__counter">
-                                <v-btn
-                                    icon="mdi-chevron-left"
-                                    size="x-small"
-                                    variant="text"
-                                    :disabled="fullGreenTimetableNumber <= 1"
-                                    aria-label="Vorheriger voller grüner Stundenplan"
-                                    @click="moveTimetableResultCounter('full_green', -1)" />
-                                <div class="robot-count-card__counter-value">
-                                    {{ fullGreenTimetableNumber }} / {{ fullGreenTimetableCount }}
-                                </div>
-                                <v-btn
-                                    icon="mdi-chevron-right"
-                                    size="x-small"
-                                    variant="text"
-                                    :disabled="fullGreenTimetableNumber >= fullGreenTimetableCount"
-                                    aria-label="Nächster voller grüner Stundenplan"
-                                    @click="moveTimetableResultCounter('full_green', 1)" />
-                            </div>
-                        </div>
-                        <div class="robot-count-card__actions">
-                            <v-switch
-                                :model-value="selectedTimetableResultType === 'full_green'"
-                                color="success"
-                                inset
-                                hide-details
-                                density="compact"
-                                aria-label="Volle grüne Stundenpläne auswählen"
-                                @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
-                            <v-icon icon="mdi-check-circle-outline" color="success" />
-                        </div>
-                    </div>
-
-                    <div
-                        class="robot-count-card robot-count-card--green"
-                        :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'green' }">
-                        <div class="robot-count-card__content">
-                            <div class="robot-count-card__label">Grüne Stundenpläne</div>
-                            <div class="robot-count-card__value">
-                                <v-progress-circular
-                                    v-if="fullGreenTimetableCountLoading"
-                                    indeterminate
-                                    size="22"
-                                    width="2"
-                                    color="primary" />
-                                <template v-else>
-                                    {{ greenTimetableCountLabel }}
-                                </template>
-                            </div>
-                            <div
-                                v-if="selectedTimetableResultType === 'green' && greenTimetableCount > 0"
-                                class="robot-count-card__counter">
-                                <v-btn
-                                    icon="mdi-chevron-left"
-                                    size="x-small"
-                                    variant="text"
-                                    :disabled="greenTimetableNumber <= 1"
-                                    aria-label="Vorheriger grüner Stundenplan"
-                                    @click="moveTimetableResultCounter('green', -1)" />
-                                <div class="robot-count-card__counter-value">
-                                    {{ greenTimetableNumber }} / {{ greenTimetableCount }}
-                                </div>
-                                <v-btn
-                                    icon="mdi-chevron-right"
-                                    size="x-small"
-                                    variant="text"
-                                    :disabled="greenTimetableNumber >= greenTimetableCount"
-                                    aria-label="Nächster grüner Stundenplan"
-                                    @click="moveTimetableResultCounter('green', 1)" />
-                            </div>
-                        </div>
-                        <div class="robot-count-card__actions">
-                            <v-switch
-                                :model-value="selectedTimetableResultType === 'green'"
-                                color="primary"
-                                inset
-                                hide-details
-                                density="compact"
-                                aria-label="Grüne Stundenpläne auswählen"
-                                @update:modelValue="setSelectedTimetableResultType('green', $event)" />
-                            <v-icon icon="mdi-calendar-check-outline" color="primary" />
-                        </div>
-                    </div>
-
-                    <div class="robot-quality-card">
-                        <div class="robot-quality-card__header">
-                            <div>
-                                <div class="robot-quality-card__title">Qualitätskriterien</div>
-                                <div class="robot-quality-card__meta">
-                                    Erreichte aktive Bewertungskriterien
-                                </div>
-                            </div>
-                            <v-icon icon="mdi-chart-box-outline" color="primary" />
-                        </div>
-
-                        <div v-if="qualityCriterionRows.length" class="robot-quality-card__items">
-                            <div class="robot-quality-card__item robot-quality-card__item--summary">
-                                <div class="robot-quality-card__item-copy">
-                                    <div class="robot-quality-card__item-label">
-                                        Alle Qualitätskriterien erfüllt
+                                class="robot-count-card"
+                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'full_green' }">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Volle grüne Stundenpläne</div>
+                                    <div class="robot-count-card__value">
+                                        <v-progress-circular
+                                            v-if="fullGreenTimetableCountLoading"
+                                            indeterminate
+                                            size="22"
+                                            width="2"
+                                            color="primary" />
+                                        <template v-else>
+                                            {{ fullGreenTimetableCountLabel }}
+                                        </template>
                                     </div>
-                                    <div class="robot-quality-card__item-meta">
-                                        {{ allQualityCriteriaCountDetail() }}
+                                    <div
+                                        v-if="selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0"
+                                        class="robot-count-card__counter">
+                                        <v-btn
+                                            icon="mdi-chevron-left"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="fullGreenTimetableNumber <= 1"
+                                            aria-label="Vorheriger voller grüner Stundenplan"
+                                            @click="moveTimetableResultCounter('full_green', -1)" />
+                                        <div class="robot-count-card__counter-value">
+                                            {{ fullGreenTimetableNumber }} / {{ fullGreenTimetableCount }}
+                                        </div>
+                                        <v-btn
+                                            icon="mdi-chevron-right"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="fullGreenTimetableNumber >= fullGreenTimetableCount"
+                                            aria-label="Nächster voller grüner Stundenplan"
+                                            @click="moveTimetableResultCounter('full_green', 1)" />
                                     </div>
                                 </div>
-                                <div class="robot-quality-card__item-count">
-                                    {{ allQualityCriteriaCountLabel() }}
+                                <div class="robot-count-card__actions">
+                                    <v-switch
+                                        :model-value="selectedTimetableResultType === 'full_green'"
+                                        color="success"
+                                        inset
+                                        hide-details
+                                        density="compact"
+                                        aria-label="Volle grüne Stundenpläne auswählen"
+                                        @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
+                                    <v-icon icon="mdi-check-circle-outline" color="success" />
                                 </div>
                             </div>
 
                             <div
-                                v-for="counter in qualityCriterionRows"
-                                :key="counter.key"
-                                class="robot-quality-card__item">
-                                <div class="robot-quality-card__item-copy">
-                                    <div class="robot-quality-card__item-label">
-                                        {{ counter.label }}
+                                class="robot-count-card robot-count-card--green"
+                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'green' }">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Grüne Stundenpläne</div>
+                                    <div class="robot-count-card__value">
+                                        <v-progress-circular
+                                            v-if="fullGreenTimetableCountLoading"
+                                            indeterminate
+                                            size="22"
+                                            width="2"
+                                            color="primary" />
+                                        <template v-else>
+                                            {{ greenTimetableCountLabel }}
+                                        </template>
                                     </div>
-                                    <div class="robot-quality-card__item-meta">
-                                        {{ qualityCounterDetail(counter) }}
+                                    <div
+                                        v-if="selectedTimetableResultType === 'green' && greenTimetableCount > 0"
+                                        class="robot-count-card__counter">
+                                        <v-btn
+                                            icon="mdi-chevron-left"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="greenTimetableNumber <= 1"
+                                            aria-label="Vorheriger grüner Stundenplan"
+                                            @click="moveTimetableResultCounter('green', -1)" />
+                                        <div class="robot-count-card__counter-value">
+                                            {{ greenTimetableNumber }} / {{ greenTimetableCount }}
+                                        </div>
+                                        <v-btn
+                                            icon="mdi-chevron-right"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="greenTimetableNumber >= greenTimetableCount"
+                                            aria-label="Nächster grüner Stundenplan"
+                                            @click="moveTimetableResultCounter('green', 1)" />
                                     </div>
                                 </div>
-                                <v-checkbox-btn
-                                    :model-value="counter.enabled === true"
-                                    color="primary"
-                                    density="compact"
-                                    :disabled="fullGreenTimetableCountLoading"
-                                    :aria-label="`${counter.label} für diese Berechnung verwenden`"
-                                    @update:model-value="setEvaluationCriterionEnabled(counter, $event)"
-                                    class="robot-quality-card__item-check" />
-                                <div class="robot-quality-card__item-count">
-                                    {{ qualityCounterCountLabel(counter) }}
+                                <div class="robot-count-card__actions">
+                                    <v-switch
+                                        :model-value="selectedTimetableResultType === 'green'"
+                                        color="primary"
+                                        inset
+                                        hide-details
+                                        density="compact"
+                                        aria-label="Grüne Stundenpläne auswählen"
+                                        @update:modelValue="setSelectedTimetableResultType('green', $event)" />
+                                    <v-icon icon="mdi-calendar-check-outline" color="primary" />
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="showConflictTimetableResults"
+                                class="robot-count-card robot-count-card--conflict"
+                                :class="{ 'robot-count-card--selected': selectedTimetableResultType === 'conflict' }">
+                                <div class="robot-count-card__content">
+                                    <div class="robot-count-card__label">Stundenpläne mit Konflikten</div>
+                                    <div class="robot-count-card__value">
+                                        <v-progress-circular
+                                            v-if="fullGreenTimetableCountLoading"
+                                            indeterminate
+                                            size="22"
+                                            width="2"
+                                            color="primary" />
+                                        <template v-else>
+                                            {{ conflictTimetableCountLabel }}
+                                        </template>
+                                    </div>
+                                    <div
+                                        v-if="selectedTimetableResultType === 'conflict' && conflictTimetableCount > 0"
+                                        class="robot-count-card__counter">
+                                        <v-btn
+                                            icon="mdi-chevron-left"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="conflictTimetableNumber <= 1"
+                                            aria-label="Vorheriger Stundenplan mit Konflikten"
+                                            @click="moveTimetableResultCounter('conflict', -1)" />
+                                        <div class="robot-count-card__counter-value">
+                                            {{ conflictTimetableNumber }} / {{ conflictTimetableCount }}
+                                        </div>
+                                        <v-btn
+                                            icon="mdi-chevron-right"
+                                            size="x-small"
+                                            variant="text"
+                                            :disabled="conflictTimetableNumber >= conflictTimetableCount"
+                                            aria-label="Nächster Stundenplan mit Konflikten"
+                                            @click="moveTimetableResultCounter('conflict', 1)" />
+                                    </div>
+                                </div>
+                                <div class="robot-count-card__actions">
+                                    <v-switch
+                                        :model-value="selectedTimetableResultType === 'conflict'"
+                                        color="warning"
+                                        inset
+                                        hide-details
+                                        density="compact"
+                                        aria-label="Stundenpläne mit Konflikten auswählen"
+                                        @update:modelValue="setSelectedTimetableResultType('conflict', $event)" />
+                                    <v-icon icon="mdi-alert-circle-outline" color="warning" />
                                 </div>
                             </div>
                         </div>
 
-                        <v-alert v-else type="info" variant="tonal" density="compact" class="mb-0">
-                            Keine aktiven Bewertungskriterien gespeichert.
-                        </v-alert>
-                    </div>
+                        <div class="robot-quality-card">
+                            <div class="robot-quality-card__header">
+                                <div>
+                                    <div class="robot-quality-card__title">Qualitätskriterien</div>
+                                    <div class="robot-quality-card__meta">
+                                        Erreichte aktive Bewertungskriterien
+                                    </div>
+                                </div>
+                                <v-icon icon="mdi-chart-box-outline" color="primary" />
+                            </div>
 
-                    <div class="robot-generated">
+                            <div v-if="qualityCriterionRows.length" class="robot-quality-card__items">
+                                <div class="robot-quality-card__item robot-quality-card__item--summary">
+                                    <div class="robot-quality-card__item-copy">
+                                        <div class="robot-quality-card__item-label">
+                                            Alle Qualitätskriterien erfüllt
+                                        </div>
+                                        <div class="robot-quality-card__item-meta">
+                                            {{ allQualityCriteriaCountDetail() }}
+                                        </div>
+                                    </div>
+                                    <div class="robot-quality-card__item-count">
+                                        {{ allQualityCriteriaCountLabel() }}
+                                    </div>
+                                </div>
+
+                                <div
+                                    v-for="counter in qualityCriterionRows"
+                                    :key="counter.key"
+                                    class="robot-quality-card__item">
+                                    <div class="robot-quality-card__item-copy">
+                                        <div class="robot-quality-card__item-label">
+                                            {{ counter.label }}
+                                        </div>
+                                        <div class="robot-quality-card__item-meta">
+                                            {{ qualityCounterDetail(counter) }}
+                                        </div>
+                                    </div>
+                                    <v-checkbox-btn
+                                        :model-value="counter.enabled === true"
+                                        color="primary"
+                                        density="compact"
+                                        :disabled="fullGreenTimetableCountLoading"
+                                        :aria-label="`${counter.label} für diese Berechnung verwenden`"
+                                        @update:model-value="setEvaluationCriterionEnabled(counter, $event)"
+                                        class="robot-quality-card__item-check" />
+                                    <div class="robot-quality-card__item-count">
+                                        {{ qualityCounterCountLabel(counter) }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <v-alert v-else type="info" variant="tonal" density="compact" class="mb-0">
+                                Keine aktiven Bewertungskriterien gespeichert.
+                            </v-alert>
+                        </div>
+                    </template>
+
+                    <div v-if="selectedRobotTimetable" class="robot-generated">
                         <div class="robot-course-list__header">
                             <div class="robot-course-list__title">Stundenplan</div>
                         </div>
@@ -373,6 +429,19 @@
                                     :color="qualityCounterReached(counter) ? 'success' : 'error'"
                                     size="16" />
                             </span>
+                        </div>
+
+                        <div
+                            v-if="displayedTimetableProblems(selectedRobotTimetable).length"
+                            class="robot-generated-timetable__problems robot-problems">
+                            <div class="robot-problems__title">Konflikte</div>
+                            <ul class="robot-problems__details">
+                                <li
+                                    v-for="problem in displayedTimetableProblems(selectedRobotTimetable)"
+                                    :key="problem">
+                                    {{ problemSummary(problem) }}
+                                </li>
+                            </ul>
                         </div>
 
                         <div
@@ -636,11 +705,13 @@ export default {
             generatedTimetables: [],
             fullGreenTimetableCount: null,
             greenTimetableCount: null,
+            conflictTimetableCount: null,
             qualityCounters: [],
             allQualityCriteriaCount: null,
             evaluationCriteria: [],
             fullGreenTimetableNumber: 1,
             greenTimetableNumber: 1,
+            conflictTimetableNumber: 1,
             fullGreenTimetableCountError: '',
             fullGreenTimetableCountLoading: false,
             fullGreenTimetableCountRequestId: 0,
@@ -920,6 +991,20 @@ export default {
 
             return new Intl.NumberFormat('de-AT').format(this.greenTimetableCount)
         },
+        conflictTimetableCountLabel() {
+            if (!this.selectedCourses.length) return '0'
+            if (this.conflictTimetableCount === null) return '-'
+
+            return new Intl.NumberFormat('de-AT').format(this.conflictTimetableCount)
+        },
+        hasGreenTimetableResults() {
+            return this.timetableResultCount('full_green') > 0
+                || this.timetableResultCount('green') > 0
+        },
+        showConflictTimetableResults() {
+            return !this.hasGreenTimetableResults
+                && this.timetableResultCount('conflict') > 0
+        },
     },
     watch: {
         'config.selected_schoolyear.id'() {
@@ -1052,6 +1137,7 @@ export default {
             ) {
                 this.fullGreenTimetableCount = 0
                 this.greenTimetableCount = 0
+                this.conflictTimetableCount = 0
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = 0
                 this.generatedTimetables = []
@@ -1081,6 +1167,7 @@ export default {
 
                 this.fullGreenTimetableCount = Number(response.data?.data?.full_green_timetable_count || 0)
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
+                this.conflictTimetableCount = Number(response.data?.data?.conflict_timetable_count || 0)
                 this.qualityCounters = response.data?.data?.quality_counters || []
                 this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
                 const selectedResultTypeChanged = this.autoSelectTimetableResultType()
@@ -1103,11 +1190,12 @@ export default {
 
                 this.fullGreenTimetableCount = null
                 this.greenTimetableCount = null
+                this.conflictTimetableCount = null
                 this.qualityCounters = []
                 this.allQualityCriteriaCount = null
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
-                this.fullGreenTimetableCountError = 'Die Anzahl der grünen Stundenpläne konnte nicht berechnet werden.'
+                this.fullGreenTimetableCountError = 'Die Anzahl der Stundenpläne konnte nicht berechnet werden.'
             } finally {
                 if (requestId === this.fullGreenTimetableCountRequestId) {
                     this.fullGreenTimetableCountLoading = false
@@ -1115,10 +1203,22 @@ export default {
             }
         },
         autoSelectTimetableResultType() {
-            if (this.timetableResultCount(this.selectedTimetableResultType) > 0) return false
+            const selectableResultTypes = this.hasGreenTimetableResults
+                ? ['full_green', 'green']
+                : ['full_green', 'green', 'conflict']
 
-            if (this.selectedTimetableResultType === 'full_green' && this.greenTimetableCount > 0) {
-                this.selectedTimetableResultType = 'green'
+            if (
+                selectableResultTypes.includes(this.selectedTimetableResultType)
+                && this.timetableResultCount(this.selectedTimetableResultType) > 0
+            ) {
+                return false
+            }
+
+            const nextResultType = selectableResultTypes
+                .find(type => this.timetableResultCount(type) > 0)
+
+            if (nextResultType) {
+                this.selectedTimetableResultType = nextResultType
 
                 return true
             }
@@ -1130,6 +1230,7 @@ export default {
         },
         setSelectedTimetableResultType(type, selected) {
             if (selected === false && this.selectedTimetableResultType === type) return
+            if (type === 'conflict' && !this.showConflictTimetableResults) return
 
             this.selectedTimetableResultType = type
             if (this.timetableResultCount(type) > 0) {
@@ -1151,6 +1252,12 @@ export default {
         setTimetableResultCounter(type, value) {
             const counter = this.normalizedTimetableResultCounter(value, this.timetableResultCount(type))
 
+            if (type === 'conflict') {
+                this.conflictTimetableNumber = counter
+
+                return
+            }
+
             if (type === 'green') {
                 this.greenTimetableNumber = counter
 
@@ -1162,12 +1269,19 @@ export default {
         normalizeTimetableResultCounters() {
             this.setTimetableResultCounter('full_green', this.fullGreenTimetableNumber)
             this.setTimetableResultCounter('green', this.greenTimetableNumber)
+            this.setTimetableResultCounter('conflict', this.conflictTimetableNumber)
         },
         timetableResultCounter(type) {
+            if (type === 'conflict') return this.conflictTimetableNumber
+
             return type === 'green' ? this.greenTimetableNumber : this.fullGreenTimetableNumber
         },
         timetableResultCount(type) {
-            const count = type === 'green' ? this.greenTimetableCount : this.fullGreenTimetableCount
+            const count = {
+                full_green: this.fullGreenTimetableCount,
+                green: this.greenTimetableCount,
+                conflict: this.conflictTimetableCount,
+            }[type]
 
             return Math.max(0, Number(count || 0))
         },
@@ -1617,6 +1731,7 @@ export default {
             this.generatedTimetables = []
             this.fullGreenTimetableCount = null
             this.greenTimetableCount = null
+            this.conflictTimetableCount = null
             this.qualityCounters = []
             this.allQualityCriteriaCount = null
             this.normalizeTimetableResultCounters()
@@ -1639,7 +1754,11 @@ export default {
                 return 'Noch keine Berechnung.'
             }
 
-            return 'Alle ausgewählten Kriterien erreichen den Bestwert.'
+            const selectedLabel = this.activeQualityCriterionRows.every(counter => this.qualityCounterReached(counter))
+                ? 'erfüllt'
+                : 'nicht erfüllt'
+
+            return `Ausgewählt: ${selectedLabel}`
         },
         qualityCounterCountLabel(counter) {
             if (counter?.enabled !== true) return '-'
@@ -2339,12 +2458,42 @@ export default {
                 .filter(appointment =>
                     Number(appointment?.weekday) === Number(weekday)
                     && Number(appointment?.hour) === Number(time)
-                    && this.occasionalAppointmentSelectedForTimetable(timetable, appointment),
+                    && this.occasionalAppointmentSelectedForTimetable(timetable, appointment)
+                    && this.occasionalAppointmentVisibleInTimetableCell(timetable, appointment),
                 )
                 .map(appointment => ({
                     key: appointment.key,
                     code: appointment.code,
                 }))
+        },
+        occasionalAppointmentVisibleInTimetableCell(timetable, appointment) {
+            const slot = timetable?.slots?.[this.slotKey(appointment?.weekday, appointment?.hour)]
+
+            if (!slot) return true
+
+            return this.occasionalAppointmentConflictsWithSlot(appointment, slot)
+        },
+        occasionalAppointmentConflictsWithSlot(appointment, slot) {
+            if (String(appointment?.conflictLabel || '').trim()) return true
+
+            const appointmentDates = this.dateValuesForOccasionalAppointment(appointment)
+            const slotDates = this.dateValuesForCourseGroup(slot?.courseGroup)
+
+            if (!appointmentDates.length || !slotDates.length) return true
+
+            return appointmentDates.some(date => slotDates.includes(date))
+        },
+        dateValuesForOccasionalAppointment(appointment) {
+            if (appointment?.date) return [String(appointment.date)]
+
+            return this.dateValuesForCourseGroup(appointment)
+        },
+        dateValuesForCourseGroup(courseGroup) {
+            return Array.isArray(courseGroup?.dates)
+                ? courseGroup.dates
+                    .map(date => String(date || '').trim())
+                    .filter(Boolean)
+                : []
         },
         occasionalAppointmentSelectedForTimetable(timetable, appointment) {
             const courseKey = String(appointment?.courseKey || appointment?.code || '').trim()
@@ -4093,12 +4242,18 @@ export default {
     margin-top: 14px;
 }
 
+.robot-count-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+
 .robot-count-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-top: 12px;
     padding: 12px;
     border: 1px solid rgba(var(--v-theme-success), 0.28);
     border-radius: 8px;
@@ -4108,6 +4263,11 @@ export default {
 .robot-count-card--green {
     border-color: rgba(var(--v-theme-primary), 0.24);
     background: rgba(var(--v-theme-primary), 0.06);
+}
+
+.robot-count-card--conflict {
+    border-color: rgba(var(--v-theme-warning), 0.34);
+    background: rgba(var(--v-theme-warning), 0.1);
 }
 
 .robot-count-card--selected {
@@ -4168,6 +4328,12 @@ export default {
 
 .robot-count-card__actions :deep(.v-input) {
     flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+    .robot-count-cards {
+        grid-template-columns: 1fr;
+    }
 }
 
 .robot-quality-card {

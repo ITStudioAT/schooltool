@@ -151,20 +151,32 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
         expect(componentSource).toContain("selectedTimetableResultType === 'full_green'")
         expect(componentSource).toContain("selectedTimetableResultType === 'green'")
+        expect(componentSource).toContain("selectedTimetableResultType === 'conflict'")
         expect(componentSource).toContain("setSelectedTimetableResultType('full_green', $event)")
         expect(componentSource).toContain("setSelectedTimetableResultType('green', $event)")
+        expect(componentSource).toContain("setSelectedTimetableResultType('conflict', $event)")
         expect(componentSource).toContain('setSelectedTimetableResultType(type, selected)')
         expect(componentSource).toContain('robot-count-card--selected')
+        expect(componentSource).toContain('robot-count-cards')
+        expect(componentSource).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
         expect(componentSource).toContain('fullGreenTimetableNumber')
         expect(componentSource).toContain('greenTimetableNumber')
+        expect(componentSource).toContain('conflictTimetableNumber')
+        expect(componentSource).toContain('hasGreenTimetableResults()')
+        expect(componentSource).toContain('showConflictTimetableResults()')
+        expect(componentSource).toContain('v-if="showConflictTimetableResults"')
         expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0\"")
         expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'green' && greenTimetableCount > 0\"")
+        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'conflict' && conflictTimetableCount > 0\"")
         expect(componentSource).toContain('icon="mdi-chevron-left"')
         expect(componentSource).toContain('icon="mdi-chevron-right"')
         expect(componentSource).toContain("moveTimetableResultCounter('full_green', -1)")
         expect(componentSource).toContain("moveTimetableResultCounter('green', 1)")
+        expect(componentSource).toContain("moveTimetableResultCounter('conflict', 1)")
         expect(componentSource).toContain('normalizeTimetableResultCounters()')
         expect(componentSource).toContain('robot-count-card__counter')
+        expect(componentSource).toContain('Stundenpläne mit Konflikten')
+        expect(componentSource).toContain('conflict_timetable_count')
         expect(componentSource).toContain('selected_timetable_type: this.selectedTimetableResultType')
         expect(componentSource).toContain('selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType)')
         expect(componentSource).toContain('backendTimetableFromResponse(response.data.data.selected_timetable)')
@@ -196,6 +208,8 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('generatedWeekdays()')
         expect(componentSource).toContain('generatedTimes()')
         expect(componentSource).toContain('clearGeneratedTimetables()')
+        expect(componentSource).toContain('<template v-if="selectedRobotTimetable">')
+        expect(componentSource).toContain('<div v-if="selectedRobotTimetable" class="robot-generated">')
         expect(componentSource).toContain('<div class="robot-course-list__title">Stundenplan</div>')
         expect(componentSource).toContain('robot-generated-grid')
         expect(componentSource).toContain('robot-generated-cell__details')
@@ -400,7 +414,10 @@ describe('Students timetable robot page', () => {
         const methods = (RobotTimetable as any).methods
         const ctx = {
             ...methods,
-            activeQualityCriterionRows: [{ key: 'free_days' }, { key: 'few_gaps' }],
+            activeQualityCriterionRows: [
+                { key: 'free_days', enabled: true, selected_reached: true },
+                { key: 'few_gaps', enabled: true, selected_reached: true },
+            ],
             allQualityCriteriaCount: 12,
             selectedTimetableResultType: 'green',
             fullGreenTimetableCount: 4,
@@ -408,7 +425,69 @@ describe('Students timetable robot page', () => {
         }
 
         expect(methods.allQualityCriteriaCountLabel.call(ctx)).toBe('12 / 48')
-        expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Alle ausgewählten Kriterien erreichen den Bestwert.')
+        expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: erfüllt')
+    })
+
+    it('shows when the selected robot timetable does not match all active quality criteria', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            activeQualityCriterionRows: [
+                { key: 'free_days', enabled: true, selected_reached: true },
+                { key: 'few_gaps', enabled: true, selected_reached: false },
+            ],
+            allQualityCriteriaCount: 12,
+            selectedTimetableResultType: 'green',
+            fullGreenTimetableCount: 4,
+            greenTimetableCount: 48,
+        }
+
+        expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Ausgewählt: nicht erfüllt')
+    })
+
+    it('falls back to conflict timetables when no green result exists', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'full_green',
+            fullGreenTimetableCount: 0,
+            greenTimetableCount: 0,
+            conflictTimetableCount: 12,
+        }
+
+        expect(methods.autoSelectTimetableResultType.call(ctx)).toBe(true)
+        expect(ctx.selectedTimetableResultType).toBe('conflict')
+    })
+
+    it('hides conflict timetables when green results are available', () => {
+        const computed = (RobotTimetable as any).computed
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            fullGreenTimetableCount: 1,
+            greenTimetableCount: 0,
+            conflictTimetableCount: 12,
+        }
+
+        expect(computed.hasGreenTimetableResults.call(ctx)).toBe(true)
+        ctx.hasGreenTimetableResults = computed.hasGreenTimetableResults.call(ctx)
+
+        expect(computed.showConflictTimetableResults.call(ctx)).toBe(false)
+    })
+
+    it('moves away from conflict timetables when green results become available', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'conflict',
+            hasGreenTimetableResults: true,
+            fullGreenTimetableCount: 0,
+            greenTimetableCount: 3,
+            conflictTimetableCount: 12,
+        }
+
+        expect(methods.autoSelectTimetableResultType.call(ctx)).toBe(true)
+        expect(ctx.selectedTimetableResultType).toBe('green')
     })
 
     it('edits the robot selection through a draft dialog', () => {
@@ -1724,6 +1803,88 @@ describe('Students timetable robot page', () => {
 
         expect(methods.generatedCellOccasionalMarkers.call(ctx, timetable, 5, 8)).toEqual([
             { key: 'eth-1', code: 'ETH1' },
+        ])
+    })
+
+    it('does not overlay a non-conflicting one-off appointment on an occupied timetable cell', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+        const timetable = {
+            selectedOccasionalAppointmentGroups: {},
+            slots: {
+                '3-14': {
+                    key: 'E7',
+                    code: 'E7',
+                    name: 'Englisch 7',
+                    sourceLabel: 'E7-4Q-RIE',
+                    courseGroup: {
+                        dates: ['2026-05-13', '2026-05-20'],
+                    },
+                },
+            },
+            occasionalAppointments: [
+                {
+                    key: 'm7-1',
+                    courseKey: 'M7',
+                    code: 'M7',
+                    name: 'Mathematik 7',
+                    sourceLabel: 'M7-4Q-MAL',
+                    dateTimeLabel: 'Mi, 24.06.2026 14. 20:25-21:10',
+                    date: '2026-06-24',
+                    weekday: 3,
+                    hour: 14,
+                    sortValue: '2026-06-24|03|14|M7',
+                },
+            ],
+        }
+        const group = methods.groupedOccasionalAppointments.call(ctx, timetable)[0]
+
+        methods.setOccasionalAppointmentGroupSelected.call(ctx, timetable, group, true)
+
+        expect(methods.generatedCellOccasionalMarkers.call(ctx, timetable, 3, 14)).toEqual([])
+    })
+
+    it('overlays a conflicting one-off appointment on an occupied timetable cell', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+        }
+        const timetable = {
+            selectedOccasionalAppointmentGroups: {},
+            slots: {
+                '3-14': {
+                    key: 'E7',
+                    code: 'E7',
+                    name: 'Englisch 7',
+                    sourceLabel: 'E7-4Q-RIE',
+                    courseGroup: {
+                        dates: ['2026-05-13', '2026-05-20'],
+                    },
+                },
+            },
+            occasionalAppointments: [
+                {
+                    key: 'm7-1',
+                    courseKey: 'M7',
+                    code: 'M7',
+                    name: 'Mathematik 7',
+                    sourceLabel: 'M7-4Q-MAL',
+                    dateTimeLabel: 'Mi, 13.05.2026 14. 20:25-21:10',
+                    date: '2026-05-13',
+                    weekday: 3,
+                    hour: 14,
+                    sortValue: '2026-05-13|03|14|M7',
+                },
+            ],
+        }
+        const group = methods.groupedOccasionalAppointments.call(ctx, timetable)[0]
+
+        methods.setOccasionalAppointmentGroupSelected.call(ctx, timetable, group, true)
+
+        expect(methods.generatedCellOccasionalMarkers.call(ctx, timetable, 3, 14)).toEqual([
+            { key: 'm7-1', code: 'M7' },
         ])
     })
 

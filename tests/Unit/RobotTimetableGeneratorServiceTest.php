@@ -42,7 +42,67 @@ it('does not count combinations with timetable collisions', function () {
 
     expect($result)
         ->full_green_timetable_count->toBe(3)
-        ->green_timetable_count->toBe(0);
+        ->green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1);
+});
+
+it('returns complete timetables with regular conflicts when no green timetable is possible', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('INF3', 1),
+            robotSubjectRow('ÖKO2', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('INF3-a', 'INF3', 5, 3),
+            robotCourseGroup('ÖKO2-a', 'ÖKO2', 5, 3),
+        ],
+        settings: robotSettings(),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(0)
+        ->conflict_timetable_count->toBe(1)
+        ->and($result['selected_timetable'])
+        ->not->toBeNull()
+        ->type->toBe('conflict')
+        ->and($result['selected_timetable']['slots']['5-3']['conflicts'])
+        ->toHaveCount(1)
+        ->and($result['selected_timetable']['problems'][0])
+        ->toContain('überschneidet sich mit');
+});
+
+it('selects conflict timetables with fewer regular conflicts first', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('A1', 2),
+            robotSubjectRow('B1', 1),
+            robotSubjectRow('C1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('A1-a', 'A1', 1, 1),
+            robotCourseGroup('A1-a', 'A1', 1, 2),
+            robotCourseGroup('A1-z', 'A1', 2, 1),
+            robotCourseGroup('A1-z', 'A1', 2, 2),
+            robotCourseGroup('B1-a', 'B1', 1, 1),
+            robotCourseGroup('C1-a', 'C1', 1, 2),
+            robotCourseGroup('C1-z', 'C1', 2, 1),
+        ],
+        settings: robotSettings(),
+        selectedTimetableType: 'conflict',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->conflict_timetable_count->toBe(3)
+        ->and($result['selected_timetable']['metrics']['regular_conflict_count'])
+        ->toBe(1)
+        ->and($result['selected_timetable']['problems'])
+        ->toHaveCount(1);
 });
 
 it('excludes options outside the selected time constraints', function () {
@@ -131,6 +191,53 @@ it('counts full green timetables when attached one-off appointments do not overl
     expect($result)
         ->full_green_timetable_count->toBe(1)
         ->green_timetable_count->toBe(0);
+});
+
+it('does not count a timetable as full green when a one-off appointment overlaps a recurring lesson', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('E7', 1),
+            robotSubjectRow('M7', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('E7-a', 'E7', 3, 9),
+            robotCourseGroup('M7-a', 'M7', 1, 8),
+            robotCourseGroup('M7-a', 'M7', 3, 9, ['2026-05-13'], 1),
+        ],
+        settings: robotSettings(),
+        selectedTimetableType: 'green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(0)
+        ->green_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['type'])->toBe('green')
+        ->and($result['selected_timetable']['occasionalAppointments'][0]['conflictLabel'])
+        ->toContain('überschneidet sich mit E7');
+});
+
+it('keeps one-off appointments on different dates full green even when they share weekday and hour', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('A1', 1),
+            robotSubjectRow('B1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('A1-a', 'A1', 1, 8, ['2026-03-02'], 1),
+            robotCourseGroup('B1-a', 'B1', 1, 8, ['2026-03-09'], 1),
+        ],
+        settings: robotSettings(),
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->green_timetable_count->toBe(0)
+        ->and($result['selected_timetable']['type'])->toBe('full_green');
 });
 
 it('keeps courses with only one-off appointments as valid alternatives', function () {
