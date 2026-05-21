@@ -15,6 +15,7 @@ describe('Students timetable evaluation settings', () => {
 
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/evaluation-settings')")
         expect(componentSource).toContain("axios.put('/api/admin/students-timetables/evaluation-settings'")
+        expect(componentSource).toContain('Einzeltermine werden nicht berücksichtigt.')
         expect(componentSource).toContain('v-model="criterion.enabled"')
         expect(componentSource).toContain('v-model="criterion.option"')
         expect(componentSource).toContain('mdi-arrow-up')

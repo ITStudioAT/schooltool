@@ -98,6 +98,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('unavailableTimes()')
         expect(componentSource).toContain('Nicht verwendete Stunden')
         expect(componentSource).toContain("axios.get('/api/admin/students-timetables/school-hours')")
+        expect(componentSource).toContain("axios.get('/api/admin/students-timetables/evaluation-settings')")
         expect(componentSource).toContain('defaultTimeOptions()')
         expect(componentSource).toContain('timeOptionTitle(schoolHour)')
         expect(componentSource).toContain('timeOptionShortTitle(schoolHour)')
@@ -130,9 +131,21 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('Grüne Stundenpläne')
         expect(componentSource).toContain('qualityCounters')
         expect(componentSource).toContain('quality_counters')
+        expect(componentSource).toContain('allQualityCriteriaCount')
+        expect(componentSource).toContain('all_quality_criteria_count')
+        expect(componentSource).toContain('evaluationCriteria')
+        expect(componentSource).toContain('evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria)')
+        expect(componentSource).toContain('enabledEvaluationCriteriaFromSettings')
+        expect(componentSource).toContain('qualityCriterionRows()')
+        expect(componentSource).toContain('activeQualityCriterionRows()')
         expect(componentSource).toContain('Qualitätskriterien')
+        expect(componentSource).toContain('Alle Qualitätskriterien erfüllt')
+        expect(componentSource).toContain('allQualityCriteriaCountLabel()')
+        expect(componentSource).toContain('allQualityCriteriaCountDetail()')
         expect(componentSource).toContain('qualityCounterCountLabel(counter)')
         expect(componentSource).toContain('qualityCounterDetail(counter)')
+        expect(componentSource).toContain('resetQualityCounterSelection()')
+        expect(componentSource).toContain('setEvaluationCriterionEnabled(counter, $event)')
         expect(componentSource).toContain('<v-checkbox-btn')
         expect(componentSource).toContain('qualityCounterReached(counter)')
         expect(componentSource).toContain("selectedTimetableResultType: 'full_green'")
@@ -252,6 +265,150 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('robot-course-columns')
         expect(componentSource).toContain('Keine passenden Kurse gefunden.')
         expect(componentSource).toContain('Kurse')
+    })
+
+    it('resets selected quality counter checks before recalculating ranking', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            allQualityCriteriaCount: 2,
+            qualityCounters: [
+                {
+                    key: 'free_days',
+                    selected_value: 5,
+                    selected_label: '5 freie Tage',
+                    selected_reached: true,
+                    count: 3,
+                    total: 4,
+                },
+            ],
+        }
+
+        methods.resetQualityCounterSelection.call(ctx)
+
+        expect(ctx.allQualityCriteriaCount).toBeNull()
+        expect(ctx.qualityCounters).toEqual([
+            {
+                key: 'free_days',
+                selected_value: null,
+                selected_label: '-',
+                selected_reached: false,
+                count: 3,
+                total: 4,
+            },
+        ])
+    })
+
+    it('serializes robot quality criteria for one calculation run', () => {
+        const methods = (RobotTimetable as any).methods
+        const criteria = [
+            {
+                key: 'free_days',
+                label: 'Anzahl freie Tage',
+                enabled: true,
+                priority: 4,
+                option: null,
+                options: [],
+            },
+            {
+                key: 'few_gaps',
+                label: 'Wenig Lücken',
+                enabled: false,
+                priority: 2,
+                option: null,
+                options: [],
+            },
+        ]
+
+        expect(methods.storageEvaluationCriteria.call(methods, criteria)).toEqual([
+            {
+                key: 'free_days',
+                enabled: true,
+                priority: 1,
+                option: null,
+            },
+            {
+                key: 'few_gaps',
+                enabled: false,
+                priority: 2,
+                option: null,
+            },
+        ])
+    })
+
+    it('shows only saved enabled quality criteria on the robot page', () => {
+        const methods = (RobotTimetable as any).methods
+        const criteria = [
+            {
+                key: 'free_days',
+                label: 'Anzahl freie Tage',
+                enabled: true,
+                priority: 1,
+            },
+            {
+                key: 'few_gaps',
+                label: 'Wenig Lücken',
+                enabled: false,
+                priority: 2,
+            },
+        ]
+
+        expect(methods.enabledEvaluationCriteriaFromSettings.call(methods, criteria)).toEqual([
+            {
+                key: 'free_days',
+                label: 'Anzahl freie Tage',
+                enabled: true,
+                priority: 1,
+                option: null,
+                options: [],
+            },
+        ])
+    })
+
+    it('toggles a robot quality criterion and clears the previous ranking', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            evaluationCriteria: [
+                { key: 'free_days', enabled: false, priority: 1, option: null, options: [] },
+            ],
+            loading: true,
+            generationError: 'old',
+            generationProblems: ['old'],
+            generatedTimetables: [{ key: 'old' }],
+            fullGreenTimetableCount: 2,
+            greenTimetableCount: 3,
+            qualityCounters: [{ key: 'free_days' }],
+            fullGreenTimetableNumber: 1,
+            greenTimetableNumber: 1,
+            fullGreenTimetableCountError: 'old',
+            normalizeTimetableResultCounters() {},
+            loadFullGreenTimetableCountCalled: false,
+            loadFullGreenTimetableCount() {
+                this.loadFullGreenTimetableCountCalled = true
+            },
+        }
+
+        methods.setEvaluationCriterionEnabled.call(ctx, { key: 'free_days' }, true)
+
+        expect(ctx.evaluationCriteria[0].enabled).toBe(true)
+        expect(ctx.generatedTimetables).toEqual([])
+        expect(ctx.qualityCounters).toEqual([])
+        expect(ctx.loadFullGreenTimetableCountCalled).toBe(false)
+    })
+
+    it('shows the count of timetables that match all active quality criteria', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            activeQualityCriterionRows: [{ key: 'free_days' }, { key: 'few_gaps' }],
+            allQualityCriteriaCount: 12,
+            selectedTimetableResultType: 'green',
+            fullGreenTimetableCount: 4,
+            greenTimetableCount: 48,
+        }
+
+        expect(methods.allQualityCriteriaCountLabel.call(ctx)).toBe('12 / 48')
+        expect(methods.allQualityCriteriaCountDetail.call(ctx)).toBe('Alle ausgewählten Kriterien erreichen den Bestwert.')
     })
 
     it('edits the robot selection through a draft dialog', () => {
@@ -1675,7 +1832,7 @@ describe('Students timetable robot page', () => {
             'LPT-1R-ENNS',
             'LPT-1U-HER',
         ])
-        expect(computed.generatedTimes.call(ctx).map(time => time.value)).toEqual([7, 14])
+        expect(computed.generatedTimes.call(ctx).map(time => time.value)).toEqual([7, 8, 9, 10, 11, 12, 13, 14])
     })
 
     it('keeps pure one-off alternatives together when regular courses are scheduled', () => {

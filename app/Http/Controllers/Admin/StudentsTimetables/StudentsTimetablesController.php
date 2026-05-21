@@ -79,14 +79,23 @@ class StudentsTimetablesController extends Controller
             'deselected_course_group_keys.*' => ['string', 'max:255'],
             'selected_timetable_type' => ['nullable', 'string', 'in:full_green,green'],
             'selected_timetable_number' => ['nullable', 'integer', 'min:1', 'max:1000000'],
+            'evaluation_criteria' => ['sometimes', 'array'],
+            'evaluation_criteria.*.key' => ['required_with:evaluation_criteria', 'string', Rule::in($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'evaluation_criteria.*.enabled' => ['required_with:evaluation_criteria', 'boolean'],
+            'evaluation_criteria.*.priority' => ['required_with:evaluation_criteria', 'integer', 'between:1,'.count($evaluationSettingsService->criterionKeys()), 'distinct'],
+            'evaluation_criteria.*.option' => ['nullable', 'string', Rule::in($evaluationSettingsService->optionValues())],
         ]);
+
+        $evaluationCriteria = array_key_exists('evaluation_criteria', $validated)
+            ? $evaluationSettingsService->activeCriteriaForRun($validated['evaluation_criteria'])
+            : $evaluationSettingsService->activeCriteriaForUser($authUser);
 
         return response()->json([
             'data' => $generatorService->countFullGreenTimetablesForUser(
                 $authUser,
                 $validated,
                 $overviewService,
-                $evaluationSettingsService->activeCriteriaForUser($authUser),
+                $evaluationCriteria,
                 $validated['selected_timetable_type'] ?? null,
                 (int) ($validated['selected_timetable_number'] ?? 1),
             ),

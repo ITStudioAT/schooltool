@@ -25,6 +25,14 @@
                     {{ error }}
                 </v-alert>
 
+                <v-alert
+                    type="info"
+                    variant="tonal"
+                    density="comfortable"
+                    class="mb-3">
+                    Einzeltermine werden nicht berücksichtigt.
+                </v-alert>
+
                 <v-skeleton-loader v-if="loading" type="list-item-three-line@5" />
 
                 <div v-else class="st-evaluation-settings-list">

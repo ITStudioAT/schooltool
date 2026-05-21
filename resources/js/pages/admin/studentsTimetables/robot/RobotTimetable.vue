@@ -311,28 +311,41 @@
                             <v-icon icon="mdi-chart-box-outline" color="primary" />
                         </div>
 
-                        <div v-if="qualityCounters.length" class="robot-quality-card__items">
-                            <div
-                                v-for="counter in qualityCounters"
-                                :key="counter.key"
-                                class="robot-quality-card__item">
-                                <div class="robot-quality-card__item-main">
-                                    <v-checkbox-btn
-                                        :model-value="qualityCounterReached(counter)"
-                                        color="success"
-                                        density="compact"
-                                        readonly
-                                        :aria-label="`${counter.label} erreicht`"
-                                        class="robot-quality-card__item-check" />
-                                    <div class="robot-quality-card__item-copy">
-                                        <div class="robot-quality-card__item-label">
-                                            {{ counter.label }}
-                                        </div>
-                                        <div class="robot-quality-card__item-meta">
-                                            {{ qualityCounterDetail(counter) }}
-                                        </div>
+                        <div v-if="qualityCriterionRows.length" class="robot-quality-card__items">
+                            <div class="robot-quality-card__item robot-quality-card__item--summary">
+                                <div class="robot-quality-card__item-copy">
+                                    <div class="robot-quality-card__item-label">
+                                        Alle Qualitätskriterien erfüllt
+                                    </div>
+                                    <div class="robot-quality-card__item-meta">
+                                        {{ allQualityCriteriaCountDetail() }}
                                     </div>
                                 </div>
+                                <div class="robot-quality-card__item-count">
+                                    {{ allQualityCriteriaCountLabel() }}
+                                </div>
+                            </div>
+
+                            <div
+                                v-for="counter in qualityCriterionRows"
+                                :key="counter.key"
+                                class="robot-quality-card__item">
+                                <div class="robot-quality-card__item-copy">
+                                    <div class="robot-quality-card__item-label">
+                                        {{ counter.label }}
+                                    </div>
+                                    <div class="robot-quality-card__item-meta">
+                                        {{ qualityCounterDetail(counter) }}
+                                    </div>
+                                </div>
+                                <v-checkbox-btn
+                                    :model-value="counter.enabled === true"
+                                    color="primary"
+                                    density="compact"
+                                    :disabled="fullGreenTimetableCountLoading"
+                                    :aria-label="`${counter.label} für diese Berechnung verwenden`"
+                                    @update:model-value="setEvaluationCriterionEnabled(counter, $event)"
+                                    class="robot-quality-card__item-check" />
                                 <div class="robot-quality-card__item-count">
                                     {{ qualityCounterCountLabel(counter) }}
                                 </div>
@@ -347,6 +360,19 @@
                     <div class="robot-generated">
                         <div class="robot-course-list__header">
                             <div class="robot-course-list__title">Stundenplan</div>
+                        </div>
+
+                        <div v-if="activeQualityCriterionRows.length" class="robot-quality-summary">
+                            <span
+                                v-for="counter in activeQualityCriterionRows"
+                                :key="`quality-summary-${counter.key}`"
+                                class="robot-quality-summary__item">
+                                <span class="robot-quality-summary__label">{{ counter.label }}:</span>
+                                <v-icon
+                                    :icon="qualityCounterReached(counter) ? 'mdi-check-circle' : 'mdi-close-circle'"
+                                    :color="qualityCounterReached(counter) ? 'success' : 'error'"
+                                    size="16" />
+                            </span>
                         </div>
 
                         <div
@@ -611,6 +637,8 @@ export default {
             fullGreenTimetableCount: null,
             greenTimetableCount: null,
             qualityCounters: [],
+            allQualityCriteriaCount: null,
+            evaluationCriteria: [],
             fullGreenTimetableNumber: 1,
             greenTimetableNumber: 1,
             fullGreenTimetableCountError: '',
@@ -789,6 +817,19 @@ export default {
         configuredCourseGroups() {
             return Array.isArray(this.courseGroups) ? this.courseGroups : []
         },
+        qualityCriterionRows() {
+            const countersByKey = new Map((this.qualityCounters || []).map(counter => [counter.key, counter]))
+            const sourceCriteria = this.evaluationCriteria.length ? this.evaluationCriteria : this.qualityCounters
+
+            return sourceCriteria.map(criterion => ({
+                ...criterion,
+                ...(countersByKey.get(criterion.key) || {}),
+                enabled: criterion.enabled === true,
+            }))
+        },
+        activeQualityCriterionRows() {
+            return this.qualityCriterionRows.filter(criterion => criterion.enabled === true)
+        },
         unavailableWeekdays() {
             return this.weekdayOptions
                 .map(weekday => weekday.value)
@@ -831,18 +872,21 @@ export default {
                 return this.timeOptions.filter(time => this.constraintSelected('availableTimes', time.value))
             }
 
-            const configuredTimes = this.timeOptions.filter(time => generatedTimeValues.has(Number(time.value)))
-            const configuredTimeValues = new Set(configuredTimes.map(time => Number(time.value)))
-            const missingTimes = [...generatedTimeValues]
-                .filter(time => !configuredTimeValues.has(time))
-                .map(time => ({
+            if (!generatedTimeValues.size) return []
+
+            const firstGeneratedTime = Math.min(...generatedTimeValues)
+            const lastGeneratedTime = Math.max(...generatedTimeValues)
+            const configuredTimesByValue = new Map(this.timeOptions.map(time => [Number(time.value), time]))
+
+            return Array.from(
+                { length: (lastGeneratedTime - firstGeneratedTime) + 1 },
+                (value, index) => firstGeneratedTime + index,
+            )
+                .map(time => configuredTimesByValue.get(time) || {
                     title: `${time}. Stunde`,
                     shortTitle: `${time}. Stunde`,
                     value: time,
-                }))
-
-            return [...configuredTimes, ...missingTimes]
-                .sort((firstTime, secondTime) => firstTime.value - secondTime.value)
+                })
         },
         selectedRobotTimetable() {
             return this.generatedTimetables[0] || null
@@ -927,16 +971,18 @@ export default {
             this.generationError = ''
             this.generationProblems = []
             try {
-                const [settingsResponse, schoolHoursResponse, courseGroupsResponse] = await Promise.all([
+                const [settingsResponse, schoolHoursResponse, courseGroupsResponse, evaluationSettingsResponse] = await Promise.all([
                     axios.get('/api/admin/students-timetables/subjects-overview-settings'),
                     axios.get('/api/admin/students-timetables/school-hours'),
                     axios.get('/api/admin/students-timetables/course-groups'),
+                    axios.get('/api/admin/students-timetables/evaluation-settings'),
                 ])
 
                 this.subjectRows = settingsResponse.data.data?.subjects || []
                 this.subjectMappings = settingsResponse.data.data?.mappings || []
                 this.schoolHours = schoolHoursResponse.data?.data || []
                 this.courseGroups = courseGroupsResponse.data?.data || []
+                this.evaluationCriteria = this.enabledEvaluationCriteriaFromSettings(evaluationSettingsResponse.data?.data?.criteria || [])
                 this.restoreLastRobotState()
                 this.syncAvailableTimes()
             } catch {
@@ -944,6 +990,7 @@ export default {
                 this.courseGroups = []
                 this.subjectMappings = []
                 this.subjectRows = []
+                this.evaluationCriteria = []
                 this.error = 'Die Kurse konnten nicht geladen werden.'
             } finally {
                 this.loading = false
@@ -1006,6 +1053,7 @@ export default {
                 this.fullGreenTimetableCount = 0
                 this.greenTimetableCount = 0
                 this.qualityCounters = []
+                this.allQualityCriteriaCount = 0
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountLoading = false
@@ -1016,6 +1064,7 @@ export default {
             const requestId = this.fullGreenTimetableCountRequestId + 1
             this.fullGreenTimetableCountRequestId = requestId
             this.fullGreenTimetableCountLoading = true
+            this.resetQualityCounterSelection()
 
             try {
                 const response = await axios.post('/api/admin/students-timetables/robot/full-green-count', {
@@ -1025,6 +1074,7 @@ export default {
                     deselected_course_group_keys: this.deselectedCourseGroupKeys,
                     selected_timetable_type: this.selectedTimetableResultType,
                     selected_timetable_number: this.timetableResultCounter(this.selectedTimetableResultType),
+                    evaluation_criteria: this.storageEvaluationCriteria(this.evaluationCriteria),
                 })
 
                 if (requestId !== this.fullGreenTimetableCountRequestId) return
@@ -1032,7 +1082,19 @@ export default {
                 this.fullGreenTimetableCount = Number(response.data?.data?.full_green_timetable_count || 0)
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
                 this.qualityCounters = response.data?.data?.quality_counters || []
+                this.allQualityCriteriaCount = Number(response.data?.data?.all_quality_criteria_count || 0)
+                const selectedResultTypeChanged = this.autoSelectTimetableResultType()
                 this.normalizeTimetableResultCounters()
+
+                if (selectedResultTypeChanged && this.timetableResultCount(this.selectedTimetableResultType) > 0) {
+                    this.qualityCounters = []
+                    this.allQualityCriteriaCount = null
+                    this.generatedTimetables = []
+                    this.loadFullGreenTimetableCount()
+
+                    return
+                }
+
                 this.generatedTimetables = response.data?.data?.selected_timetable
                     ? [this.backendTimetableFromResponse(response.data.data.selected_timetable)]
                     : []
@@ -1042,6 +1104,7 @@ export default {
                 this.fullGreenTimetableCount = null
                 this.greenTimetableCount = null
                 this.qualityCounters = []
+                this.allQualityCriteriaCount = null
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountError = 'Die Anzahl der grünen Stundenpläne konnte nicht berechnet werden.'
@@ -1050,6 +1113,20 @@ export default {
                     this.fullGreenTimetableCountLoading = false
                 }
             }
+        },
+        autoSelectTimetableResultType() {
+            if (this.timetableResultCount(this.selectedTimetableResultType) > 0) return false
+
+            if (this.selectedTimetableResultType === 'full_green' && this.greenTimetableCount > 0) {
+                this.selectedTimetableResultType = 'green'
+
+                return true
+            }
+
+            const wasFullGreenSelected = this.selectedTimetableResultType === 'full_green'
+            this.selectedTimetableResultType = 'full_green'
+
+            return !wasFullGreenSelected
         },
         setSelectedTimetableResultType(type, selected) {
             if (selected === false && this.selectedTimetableResultType === type) return
@@ -1107,6 +1184,8 @@ export default {
                 key: timetable?.key || `backend-${this.selectedTimetableResultType}`,
                 number: Number(timetable?.number || this.timetableResultCounter(this.selectedTimetableResultType)),
                 type: timetable?.type || this.selectedTimetableResultType,
+                metrics: timetable?.metrics || {},
+                qualityCriteria: Array.isArray(timetable?.qualityCriteria) ? timetable.qualityCriteria : [],
                 slots: timetable?.slots || {},
                 occasionalAppointments: Array.isArray(timetable?.occasionalAppointments)
                     ? timetable.occasionalAppointments
@@ -1539,18 +1618,104 @@ export default {
             this.fullGreenTimetableCount = null
             this.greenTimetableCount = null
             this.qualityCounters = []
+            this.allQualityCriteriaCount = null
             this.normalizeTimetableResultCounters()
             this.fullGreenTimetableCountError = ''
         },
+        allQualityCriteriaCountLabel() {
+            if (!this.activeQualityCriterionRows.length) return '-'
+            if (this.allQualityCriteriaCount === null) return '-'
+
+            return `${this.formatNumber(this.allQualityCriteriaCount)} / ${
+                this.formatNumber(this.timetableResultCount(this.selectedTimetableResultType))
+            }`
+        },
+        allQualityCriteriaCountDetail() {
+            if (!this.activeQualityCriterionRows.length) {
+                return 'Keine Kriterien für diese Berechnung ausgewählt.'
+            }
+
+            if (this.allQualityCriteriaCount === null) {
+                return 'Noch keine Berechnung.'
+            }
+
+            return 'Alle ausgewählten Kriterien erreichen den Bestwert.'
+        },
         qualityCounterCountLabel(counter) {
+            if (counter?.enabled !== true) return '-'
+
             return `${this.formatNumber(counter?.count || 0)} / ${this.formatNumber(counter?.total || 0)}`
         },
         qualityCounterDetail(counter) {
+            if (counter?.enabled !== true) return 'Nicht berücksichtigt.'
+
             const bestLabel = String(counter?.best_label || '').trim()
+            const selectedLabel = String(counter?.selected_label || '').trim()
+
+            if (selectedLabel && selectedLabel !== '-' && bestLabel && bestLabel !== '-') {
+                return `Ausgewählt: ${selectedLabel} · Bestwert: ${bestLabel}`
+            }
 
             return bestLabel && bestLabel !== '-' ? `Bestwert: ${bestLabel}` : 'Noch keine Berechnung.'
         },
+        resetQualityCounterSelection() {
+            this.allQualityCriteriaCount = null
+            this.qualityCounters = this.qualityCounters.map(counter => ({
+                ...counter,
+                selected_value: null,
+                selected_label: '-',
+                selected_reached: false,
+            }))
+        },
+        normalizedEvaluationCriteria(criteria) {
+            return this.cloneCriteria(criteria)
+                .map((criterion, index) => ({
+                    ...criterion,
+                    enabled: criterion.enabled === true,
+                    priority: Number(criterion.priority || index + 1),
+                    option: criterion.option || null,
+                    options: Array.isArray(criterion.options) ? criterion.options : [],
+                }))
+        },
+        enabledEvaluationCriteriaFromSettings(criteria) {
+            return this.normalizedEvaluationCriteria(criteria)
+                .filter(criterion => criterion.enabled === true)
+        },
+        storageEvaluationCriteria(criteria) {
+            return this.normalizedEvaluationCriteria(criteria)
+                .map((criterion, index) => ({
+                    key: criterion.key,
+                    enabled: criterion.enabled === true,
+                    priority: index + 1,
+                    option: criterion.option || null,
+                }))
+        },
+        setEvaluationCriterionEnabled(criterion, enabled) {
+            this.evaluationCriteria = this.normalizedEvaluationCriteria(this.evaluationCriteria)
+                .map(item => item.key === criterion.key ? { ...item, enabled: enabled === true } : item)
+
+            this.clearGeneratedTimetables()
+
+            if (this.timetableCalculationReady()) {
+                this.loadFullGreenTimetableCount()
+            }
+        },
+        timetableCalculationReady() {
+            return !this.loading
+                && (this.subjectRows || []).length > 0
+                && (this.courseGroups || []).length > 0
+                && (this.selectedCourses || []).length > 0
+        },
+        cloneCriteria(criteria) {
+            return JSON.parse(JSON.stringify(criteria || []))
+        },
         qualityCounterReached(counter) {
+            if (counter?.enabled !== true) return false
+
+            if (Object.prototype.hasOwnProperty.call(counter || {}, 'selected_reached')) {
+                return counter?.selected_reached === true
+            }
+
             return Number(counter?.count || 0) > 0
         },
         formatNumber(value) {
@@ -4038,35 +4203,27 @@ export default {
 }
 
 .robot-quality-card__item {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: start;
+    gap: 4px 10px;
     border: 1px solid rgba(var(--v-theme-primary), 0.1);
     border-radius: 8px;
     padding: 8px 10px;
     background: rgba(var(--v-theme-primary), 0.04);
 }
 
-.robot-quality-card__item-main {
-    display: grid;
-    flex: 0 1 360px;
-    grid-template-columns: 28px minmax(0, 1fr);
-    align-items: flex-start;
-    gap: 10px;
-    min-width: min(100%, 300px);
-}
-
 .robot-quality-card__item-check {
-    width: 28px;
-    height: 28px;
-}
-
-.robot-quality-card__item-check :deep(.v-selection-control) {
-    min-height: 28px;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
 }
 
 .robot-quality-card__item-copy {
+    grid-column: 1;
+    grid-row: 1;
     min-width: 0;
 }
 
@@ -4083,17 +4240,19 @@ export default {
 }
 
 .robot-quality-card__item-count {
-    flex: 1 1 220px;
-    width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: start;
     min-width: 72px;
     border-radius: 999px;
-    padding: 4px 8px;
+    padding: 4px 12px;
     background: rgba(var(--v-theme-primary), 0.12);
     color: rgb(var(--v-theme-primary));
     font-size: 0.78rem;
     font-weight: 800;
     text-align: center;
     white-space: nowrap;
+    width: fit-content;
 }
 
 .robot-generated-timetable + .robot-generated-timetable {
@@ -4227,6 +4386,27 @@ export default {
     color: #991b1b;
     font-size: 0.7rem;
     font-weight: 750;
+}
+
+.robot-quality-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    margin-bottom: 8px;
+    font-size: 0.78rem;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.robot-quality-summary__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.robot-quality-summary__label {
+    font-weight: 600;
 }
 
 .robot-generated-grid {
@@ -4526,7 +4706,11 @@ export default {
 
 @media (max-width: 700px) {
     .robot-quality-card__item {
-        align-items: stretch;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .robot-quality-card__item-count {
+        grid-column: 1 / -1;
     }
 
     .robot-timetable-grid {

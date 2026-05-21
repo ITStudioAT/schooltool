@@ -12,7 +12,7 @@ class RobotTimetableGeneratorService
     /**
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>}
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
      */
     public function countFullGreenTimetablesForUser(
         User $authUser,
@@ -57,7 +57,7 @@ class RobotTimetableGeneratorService
      * @param  list<array<string, mixed>>  $courseGroups
      * @param  array<string, mixed>  $settings
      * @param  list<array<string, mixed>>  $evaluationCriteria
-     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>}
+     * @return array{full_green_timetable_count: int, green_timetable_count: int, selected_course_count: int, selected_timetable: ?array<string, mixed>, quality_counters: list<array<string, mixed>>, all_quality_criteria_count: int}
      */
     public function countFullGreenTimetables(
         array $subjectRows,
@@ -68,6 +68,7 @@ class RobotTimetableGeneratorService
         ?string $selectedTimetableType = null,
         int $selectedTimetableNumber = 1,
     ): array {
+        $evaluationCriteria = $this->normalizedEvaluationCriteria($evaluationCriteria);
         $qualitySummary = $this->emptyQualitySummary($evaluationCriteria);
         $selectedCourses = $this->selectedCourses($subjectRows, $subjectMappings, $courseGroups, $settings);
 
@@ -78,6 +79,7 @@ class RobotTimetableGeneratorService
                 'selected_course_count' => 0,
                 'selected_timetable' => null,
                 'quality_counters' => $this->qualityCountersFromSummary($qualitySummary),
+                'all_quality_criteria_count' => 0,
             ];
         }
 
@@ -97,29 +99,71 @@ class RobotTimetableGeneratorService
                 'selected_course_count' => count($selectedCourses),
                 'selected_timetable' => null,
                 'quality_counters' => $this->qualityCountersFromSummary($qualitySummary),
+                'all_quality_criteria_count' => 0,
             ];
         }
 
         usort($candidateOptions, fn (array $firstOptions, array $secondOptions): int => count($firstOptions) <=> count($secondOptions));
         $selectedType = in_array($selectedTimetableType, ['full_green', 'green'], true) ? $selectedTimetableType : null;
         $selectedBucket = [];
+        $qualityMetricCombinationCounts = [];
         $counts = $this->countDateCompatibleCombinations(
             $candidateOptions,
             evaluationCriteria: $evaluationCriteria,
             qualitySummary: $qualitySummary,
+            qualityMetricCombinationCounts: $qualityMetricCombinationCounts,
             selectedTimetableType: $selectedType,
             selectedTimetableLimit: max(1, $selectedTimetableNumber),
             selectedBucket: $selectedBucket,
         );
-        $selectedTimetable = $this->selectedTimetable($selectedBucket, $selectedType, $selectedTimetableNumber);
+        $selectedTimetable = $this->selectedTimetable(
+            $selectedBucket,
+            $selectedType,
+            $selectedTimetableNumber,
+            $qualitySummary,
+        );
 
         return [
             'full_green_timetable_count' => $counts['full_green_timetable_count'],
             'green_timetable_count' => $counts['green_timetable_count'],
             'selected_course_count' => count($selectedCourses),
             'selected_timetable' => $selectedTimetable,
-            'quality_counters' => $this->qualityCountersFromSummary($qualitySummary),
+            'quality_counters' => $this->qualityCountersFromSummary($qualitySummary, $selectedTimetable['metrics'] ?? null),
+            'all_quality_criteria_count' => $this->allQualityCriteriaCount($qualityMetricCombinationCounts, $qualitySummary),
         ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @return list<array<string, mixed>>
+     */
+    private function normalizedEvaluationCriteria(array $evaluationCriteria): array
+    {
+        return collect($evaluationCriteria)
+            ->values()
+            ->map(function (array $criterion, int $index): array {
+                $criterion['__sort_index'] = $index;
+
+                return $criterion;
+            })
+            ->filter(fn (array $criterion): bool => ($criterion['enabled'] ?? true) !== false)
+            ->sort(function (array $firstCriterion, array $secondCriterion): int {
+                $firstPriority = (int) ($firstCriterion['priority'] ?? ((int) $firstCriterion['__sort_index'] + 1));
+                $secondPriority = (int) ($secondCriterion['priority'] ?? ((int) $secondCriterion['__sort_index'] + 1));
+
+                if ($firstPriority !== $secondPriority) {
+                    return $firstPriority <=> $secondPriority;
+                }
+
+                return (int) $firstCriterion['__sort_index'] <=> (int) $secondCriterion['__sort_index'];
+            })
+            ->map(function (array $criterion): array {
+                unset($criterion['__sort_index']);
+
+                return $criterion;
+            })
+            ->values()
+            ->all();
     }
 
     /**
@@ -935,6 +979,7 @@ class RobotTimetableGeneratorService
      * @param  array<string, true>  $usedAllDateKeys
      * @param  list<array<string, mixed>>  $evaluationCriteria
      * @param  array<string, array<string, mixed>>  $qualitySummary
+     * @param  array<string, int>  $qualityMetricCombinationCounts
      * @param  list<array{metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
      * @return array{full_green_timetable_count: int, green_timetable_count: int}
      */
@@ -947,6 +992,7 @@ class RobotTimetableGeneratorService
         array $selectedOptions = [],
         array $evaluationCriteria = [],
         array &$qualitySummary = [],
+        array &$qualityMetricCombinationCounts = [],
         ?string $selectedTimetableType = null,
         int $selectedTimetableLimit = 1,
         array &$selectedBucket = [],
@@ -954,7 +1000,11 @@ class RobotTimetableGeneratorService
         if ($candidateIndex >= count($candidateOptions)) {
             $timetableType = $isFullGreenCandidate ? 'full_green' : 'green';
             $metrics = $this->qualityMetricsForOptions($selectedOptions);
-            $this->recordQualityMetrics($qualitySummary, $metrics);
+
+            if ($this->shouldRecordQualityMetricsForType($selectedTimetableType, $timetableType)) {
+                $this->recordQualityMetrics($qualitySummary, $metrics);
+                $this->recordQualityMetricCombination($qualityMetricCombinationCounts, $evaluationCriteria, $metrics);
+            }
 
             if ($selectedTimetableType === $timetableType) {
                 $this->recordSelectedTimetableCandidate(
@@ -1005,6 +1055,7 @@ class RobotTimetableGeneratorService
                 [...$selectedOptions, $option],
                 $evaluationCriteria,
                 $qualitySummary,
+                $qualityMetricCombinationCounts,
                 $selectedTimetableType,
                 $selectedTimetableLimit,
                 $selectedBucket,
@@ -1018,6 +1069,67 @@ class RobotTimetableGeneratorService
     }
 
     /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  list<array<string, mixed>>  $evaluationCriteria
+     * @param  array<string, int|bool>  $metrics
+     */
+    private function recordQualityMetricCombination(
+        array &$qualityMetricCombinationCounts,
+        array $evaluationCriteria,
+        array $metrics,
+    ): void {
+        if ($evaluationCriteria === []) {
+            return;
+        }
+
+        $values = collect($evaluationCriteria)
+            ->map(fn (array $criterion): int|bool => $this->qualityMetricValue(
+                (string) ($criterion['key'] ?? ''),
+                $criterion['option'] ?? null,
+                $metrics,
+            ))
+            ->all();
+        $signature = $this->qualityMetricCombinationSignature($values);
+        $qualityMetricCombinationCounts[$signature] = (int) ($qualityMetricCombinationCounts[$signature] ?? 0) + 1;
+    }
+
+    /**
+     * @param  array<string, int>  $qualityMetricCombinationCounts
+     * @param  array<string, array<string, mixed>>  $qualitySummary
+     */
+    private function allQualityCriteriaCount(array $qualityMetricCombinationCounts, array $qualitySummary): int
+    {
+        if ($qualitySummary === []) {
+            return 0;
+        }
+
+        $bestValues = collect($qualitySummary)
+            ->pluck('best_value')
+            ->all();
+
+        if (collect($bestValues)->contains(fn (mixed $value): bool => $value === null)) {
+            return 0;
+        }
+
+        return (int) ($qualityMetricCombinationCounts[$this->qualityMetricCombinationSignature($bestValues)] ?? 0);
+    }
+
+    /**
+     * @param  list<int|bool|null>  $values
+     */
+    private function qualityMetricCombinationSignature(array $values): string
+    {
+        return collect($values)
+            ->map(fn (int|bool|null $value): string => is_bool($value) ? 'bool:'.(int) $value : 'int:'.(int) $value)
+            ->implode('|');
+    }
+
+    private function shouldRecordQualityMetricsForType(?string $selectedTimetableType, string $timetableType): bool
+    {
+        return $selectedTimetableType === null || $selectedTimetableType === $timetableType;
+    }
+
+    /**
      * @param  list<array{metrics: array<string, int|bool>, options: list<array<string, mixed>>, type: string, number: int}>  $selectedBucket
      * @return ?array<string, mixed>
      */
@@ -1025,6 +1137,7 @@ class RobotTimetableGeneratorService
         array $selectedBucket,
         ?string $selectedTimetableType,
         int $selectedTimetableNumber,
+        array $qualitySummary,
     ): ?array {
         if (! in_array($selectedTimetableType, ['full_green', 'green'], true) || $selectedBucket === []) {
             return null;
@@ -1035,7 +1148,13 @@ class RobotTimetableGeneratorService
 
         return $selectedCandidate === null
             ? null
-            : $this->timetableFromOptions($selectedCandidate['options'], $selectedTimetableType, $requestedNumber);
+            : $this->timetableFromOptions(
+                $selectedCandidate['options'],
+                $selectedTimetableType,
+                $requestedNumber,
+                $selectedCandidate['metrics'],
+                $qualitySummary,
+            );
     }
 
     /**
@@ -1069,6 +1188,10 @@ class RobotTimetableGeneratorService
             ->flatMap(fn (array $option): array => $option['courseGroups'] ?? [])
             ->values()
             ->all();
+        $occasionalCourseGroups = collect($options)
+            ->flatMap(fn (array $option): array => $option['occasionalCourseGroups'] ?? [])
+            ->values()
+            ->all();
         $allCourseGroups = collect($options)
             ->flatMap(fn (array $option): array => [
                 ...($option['courseGroups'] ?? []),
@@ -1081,7 +1204,7 @@ class RobotTimetableGeneratorService
             'saturday_free_all_appointments' => ! $this->courseGroupsUseWeekday($allCourseGroups, 6),
             'saturday_free_ignore_single_date_appointments' => ! $this->courseGroupsUseWeekday($regularCourseGroups, 6),
             'free_days' => max(0, 6 - count($this->courseGroupWeekdays($allCourseGroups))),
-            'gap_count' => $this->courseGroupGapCount($allCourseGroups),
+            'gap_count' => $this->courseGroupGapCount($regularCourseGroups, $occasionalCourseGroups),
             'starts_from_period_10' => $this->courseGroupsStartAtOrAfter($allCourseGroups, 10),
             'ends_by_period_13' => $this->courseGroupsEndAtOrBefore($allCourseGroups, 13),
         ];
@@ -1123,21 +1246,58 @@ class RobotTimetableGeneratorService
      * @param  array<string, array<string, mixed>>  $qualitySummary
      * @return list<array<string, mixed>>
      */
-    private function qualityCountersFromSummary(array $qualitySummary): array
+    private function qualityCountersFromSummary(array $qualitySummary, ?array $selectedMetrics = null): array
     {
         return collect($qualitySummary)
             ->values()
             ->map(fn (array $summary): array => [
-                'key' => $summary['key'] ?? '',
-                'label' => $summary['label'] ?? '',
-                'description' => $summary['description'] ?? '',
-                'option' => $summary['option'] ?? null,
-                'count' => (int) ($summary['count'] ?? 0),
-                'total' => (int) ($summary['total'] ?? 0),
-                'best_value' => $summary['best_value'] ?? null,
-                'best_label' => $summary['best_label'] ?? '-',
+                ...$this->qualityCounterPayload($summary),
+                ...$this->selectedQualityCounterPayload($summary, $selectedMetrics),
             ])
             ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $summary
+     * @return array<string, mixed>
+     */
+    private function qualityCounterPayload(array $summary): array
+    {
+        return [
+            'key' => $summary['key'] ?? '',
+            'label' => $summary['label'] ?? '',
+            'description' => $summary['description'] ?? '',
+            'option' => $summary['option'] ?? null,
+            'count' => (int) ($summary['count'] ?? 0),
+            'total' => (int) ($summary['total'] ?? 0),
+            'best_value' => $summary['best_value'] ?? null,
+            'best_label' => $summary['best_label'] ?? '-',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $summary
+     * @param  ?array<string, int|bool>  $selectedMetrics
+     * @return array<string, mixed>
+     */
+    private function selectedQualityCounterPayload(array $summary, ?array $selectedMetrics): array
+    {
+        if ($selectedMetrics === null) {
+            return [
+                'selected_value' => null,
+                'selected_label' => '-',
+                'selected_reached' => false,
+            ];
+        }
+
+        $key = (string) ($summary['key'] ?? '');
+        $selectedValue = $this->qualityMetricValue($key, $summary['option'] ?? null, $selectedMetrics);
+
+        return [
+            'selected_value' => $selectedValue,
+            'selected_label' => is_bool($selectedValue) ? ($selectedValue ? 'erfüllt' : 'nicht erfüllt') : $this->qualityMetricLabel($key, $selectedValue),
+            'selected_reached' => $this->qualityMetricValueReachedBest($key, $selectedValue, $summary['best_value'] ?? null),
+        ];
     }
 
     /**
@@ -1223,6 +1383,15 @@ class RobotTimetableGeneratorService
         };
     }
 
+    private function qualityMetricValueReachedBest(string $key, int|bool $value, mixed $bestValue): bool
+    {
+        if (is_bool($value)) {
+            return $value === true && $bestValue === true;
+        }
+
+        return is_numeric($bestValue) && (int) $bestValue === $value;
+    }
+
     /**
      * @param  list<array<string, mixed>>  $courseGroups
      */
@@ -1247,13 +1416,22 @@ class RobotTimetableGeneratorService
     }
 
     /**
-     * @param  list<array<string, mixed>>  $courseGroups
+     * @param  list<array<string, mixed>>  $regularCourseGroups
+     * @param  list<array<string, mixed>>  $occasionalCourseGroups
      */
-    private function courseGroupGapCount(array $courseGroups): int
+    private function courseGroupGapCount(array $regularCourseGroups, array $occasionalCourseGroups = []): int
     {
-        return collect($courseGroups)
+        $occasionalHoursByWeekday = collect($occasionalCourseGroups)
             ->groupBy(fn (array $courseGroup): int => (int) ($courseGroup['weekday'] ?? 0))
-            ->sum(function (Collection $weekdayCourseGroups): int {
+            ->map(fn (Collection $weekdayCourseGroups): Collection => $weekdayCourseGroups
+                ->map(fn (array $courseGroup): int => (int) ($courseGroup['hour'] ?? 0))
+                ->filter(fn (int $hour): bool => $hour > 0)
+                ->unique()
+                ->values());
+
+        return collect($regularCourseGroups)
+            ->groupBy(fn (array $courseGroup): int => (int) ($courseGroup['weekday'] ?? 0))
+            ->sum(function (Collection $weekdayCourseGroups, int $weekday) use ($occasionalHoursByWeekday): int {
                 $hours = $weekdayCourseGroups
                     ->map(fn (array $courseGroup): int => (int) ($courseGroup['hour'] ?? 0))
                     ->filter(fn (int $hour): bool => $hour > 0)
@@ -1265,7 +1443,15 @@ class RobotTimetableGeneratorService
                     return 0;
                 }
 
-                return max(0, (int) $hours->last() - (int) $hours->first() + 1 - $hours->count());
+                $firstHour = (int) $hours->first();
+                $lastHour = (int) $hours->last();
+                $regularGapCount = max(0, $lastHour - $firstHour + 1 - $hours->count());
+                $occasionalGapCount = $occasionalHoursByWeekday
+                    ->get($weekday, collect())
+                    ->filter(fn (int $hour): bool => $hour > $firstHour && $hour < $lastHour && ! $hours->contains($hour))
+                    ->count();
+
+                return max($regularGapCount, $occasionalGapCount);
             });
     }
 
@@ -1363,8 +1549,13 @@ class RobotTimetableGeneratorService
      * @param  list<array<string, mixed>>  $options
      * @return array<string, mixed>
      */
-    private function timetableFromOptions(array $options, string $type, int $number): array
-    {
+    private function timetableFromOptions(
+        array $options,
+        string $type,
+        int $number,
+        array $metrics,
+        array $qualitySummary,
+    ): array {
         $slots = [];
 
         foreach ($options as $option) {
@@ -1434,6 +1625,8 @@ class RobotTimetableGeneratorService
             'key' => "backend-{$type}-{$number}",
             'number' => $number,
             'type' => $type,
+            'metrics' => $metrics,
+            'qualityCriteria' => $this->qualityCountersFromSummary($qualitySummary, $metrics),
             'slots' => $slots,
             'occasionalAppointments' => $occasionalAppointments,
             'problems' => [],

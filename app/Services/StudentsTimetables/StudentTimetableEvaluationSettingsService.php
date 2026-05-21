@@ -16,17 +16,6 @@ class StudentTimetableEvaluationSettingsService
             'key' => 'saturday_free',
             'label' => 'Samstag kein Unterricht',
             'description' => 'Samstagstermine werden bei der späteren Bewertung vermieden.',
-            'default_option' => 'all_appointments',
-            'options' => [
-                [
-                    'value' => 'all_appointments',
-                    'label' => 'Alle Termine zählen',
-                ],
-                [
-                    'value' => 'ignore_single_date_appointments',
-                    'label' => 'Einzeltermine egal',
-                ],
-            ],
         ],
         [
             'key' => 'free_days',
@@ -41,12 +30,12 @@ class StudentTimetableEvaluationSettingsService
         [
             'key' => 'starts_from_period_10',
             'label' => 'Unterricht idealerweise ab 10. Stunde',
-            'description' => 'Frühere Unterrichtsstarts werden später nachrangig bewertet. Einzeltermine werden nicht berücksichtigt.',
+            'description' => 'Frühere Unterrichtsstarts werden später nachrangig bewertet.',
         ],
         [
             'key' => 'ends_by_period_13',
             'label' => 'Unterricht nicht länger als 13. Stunde',
-            'description' => 'Stundenpläne mit Unterricht nach der 13. Stunde werden später nachrangig bewertet. Einzeltermine werden nicht berücksichtigt.',
+            'description' => 'Stundenpläne mit Unterricht nach der 13. Stunde werden später nachrangig bewertet.',
         ],
     ];
 
@@ -69,6 +58,19 @@ class StudentTimetableEvaluationSettingsService
     public function activeCriteriaForUser(User $user): array
     {
         return collect($this->settingsForUser($user)['criteria'])
+            ->filter(fn (array $criterion): bool => ($criterion['enabled'] ?? false) === true)
+            ->sortBy('priority')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $criteria
+     * @return array<int, array<string, mixed>>
+     */
+    public function activeCriteriaForRun(array $criteria): array
+    {
+        return collect($this->payloadFromStoredSettings($this->settingsPayloadForStorage($criteria))['criteria'])
             ->filter(fn (array $criterion): bool => ($criterion['enabled'] ?? false) === true)
             ->sortBy('priority')
             ->values()

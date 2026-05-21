@@ -7,6 +7,7 @@ use App\Models\SchoolTool;
 use App\Models\Schoolyear;
 use App\Models\StudentTimetableEvaluationSetting;
 use App\Models\User;
+use App\Services\StudentsTimetables\StudentTimetableEvaluationSettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 
@@ -55,8 +56,8 @@ it('returns default timetable evaluation settings for the active schoolyear', fu
         ->assertJsonPath('data.version', 1)
         ->assertJsonPath('data.criteria.0.key', 'saturday_free')
         ->assertJsonPath('data.criteria.0.enabled', false)
-        ->assertJsonPath('data.criteria.0.option', 'all_appointments')
-        ->assertJsonPath('data.criteria.0.options.1.value', 'ignore_single_date_appointments')
+        ->assertJsonPath('data.criteria.0.option', null)
+        ->assertJsonPath('data.criteria.0.options', [])
         ->assertJsonPath('data.criteria.4.key', 'ends_by_period_13');
 });
 
@@ -74,7 +75,6 @@ it('persists timetable evaluation settings with priorities and options', functio
                 'key' => 'saturday_free',
                 'enabled' => true,
                 'priority' => 2,
-                'option' => 'ignore_single_date_appointments',
             ],
             [
                 'key' => 'free_days',
@@ -100,7 +100,7 @@ it('persists timetable evaluation settings with priorities and options', functio
         ->assertJsonPath('message', 'Bewertungseinstellungen wurden gespeichert.')
         ->assertJsonPath('data.criteria.0.key', 'few_gaps')
         ->assertJsonPath('data.criteria.1.key', 'saturday_free')
-        ->assertJsonPath('data.criteria.1.option', 'ignore_single_date_appointments')
+        ->assertJsonPath('data.criteria.1.option', null)
         ->assertJsonPath('data.criteria.4.key', 'ends_by_period_13');
 
     $settings = StudentTimetableEvaluationSetting::query()
@@ -119,7 +119,7 @@ it('persists timetable evaluation settings with priorities and options', functio
                 ->key->toBe('saturday_free')
                 ->enabled->toBeTrue()
                 ->priority->toBe(2)
-                ->option->toBe('ignore_single_date_appointments'),
+                ->option->toBeNull(),
             fn ($criterion) => $criterion
                 ->key->toBe('free_days')
                 ->enabled->toBeTrue()
@@ -133,6 +133,58 @@ it('persists timetable evaluation settings with priorities and options', functio
                 ->enabled->toBeTrue()
                 ->priority->toBe(5),
         );
+});
+
+it('builds active run criteria from a submitted payload without persisting it', function () {
+    $user = createEvaluationSettingsUser();
+
+    StudentTimetableEvaluationSetting::query()->create([
+        'school_id' => $user->school_id,
+        'schoolyear_id' => $user->schoolyear_id,
+        'settings' => [
+            'criteria' => [
+                [
+                    'key' => 'saturday_free',
+                    'enabled' => true,
+                    'priority' => 1,
+                    'option' => null,
+                ],
+                [
+                    'key' => 'free_days',
+                    'enabled' => false,
+                    'priority' => 2,
+                    'option' => null,
+                ],
+            ],
+        ],
+    ]);
+
+    $criteria = (new StudentTimetableEvaluationSettingsService)->activeCriteriaForRun([
+        [
+            'key' => 'saturday_free',
+            'enabled' => false,
+            'priority' => 1,
+        ],
+        [
+            'key' => 'free_days',
+            'enabled' => true,
+            'priority' => 2,
+        ],
+    ]);
+
+    expect($criteria)
+        ->toHaveCount(1)
+        ->sequence(fn ($criterion) => $criterion
+            ->key->toBe('free_days')
+            ->label->toBe('Anzahl freie Tage')
+            ->enabled->toBeTrue()
+            ->priority->toBe(2));
+
+    expect(StudentTimetableEvaluationSetting::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $user->schoolyear_id)
+        ->firstOrFail()
+        ->settings['criteria'][0]['enabled'])->toBeTrue();
 });
 
 function createEvaluationSettingsUser(): User

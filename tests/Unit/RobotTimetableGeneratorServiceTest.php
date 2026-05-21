@@ -226,6 +226,7 @@ it('uses active evaluation settings to rank selected timetables and count reache
     expect($result)
         ->full_green_timetable_count->toBe(2)
         ->green_timetable_count->toBe(0)
+        ->all_quality_criteria_count->toBe(1)
         ->and($result['selected_timetable']['slots'])
         ->toHaveKey('1-10')
         ->not->toHaveKey('1-1')
@@ -242,6 +243,202 @@ it('uses active evaluation settings to rank selected timetables and count reache
                 ->total->toBe(2)
                 ->best_label->toBe('4 freie Tage'),
         );
+});
+
+it('ranks selected timetables by checked criteria priority before lower criteria', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            robotSubjectRow('D1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-early', 'M1', 1, 1),
+            robotCourseGroup('M1-late', 'M1', 1, 10),
+            robotCourseGroup('D1-early', 'D1', 1, 2),
+            robotCourseGroup('D1-late', 'D1', 2, 11),
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 10, 11],
+                'excludedWeekdayTimes' => [],
+            ],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 2,
+            ],
+            [
+                'key' => 'starts_from_period_10',
+                'label' => 'Unterricht idealerweise ab 10. Stunde',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+            [
+                'key' => 'saturday_free',
+                'label' => 'Samstag kein Unterricht',
+                'enabled' => false,
+                'priority' => 3,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(4)
+        ->all_quality_criteria_count->toBe(0)
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('1-10')
+        ->toHaveKey('2-11')
+        ->not->toHaveKey('1-1')
+        ->not->toHaveKey('1-2')
+        ->and($result['quality_counters'])
+        ->sequence(
+            fn ($counter) => $counter
+                ->key->toBe('starts_from_period_10'),
+            fn ($counter) => $counter
+                ->key->toBe('free_days'),
+        );
+});
+
+it('counts quality criteria only for the selected timetable result type', function () {
+    $evaluationCriteria = [
+        [
+            'key' => 'saturday_free',
+            'label' => 'Samstag kein Unterricht',
+            'enabled' => true,
+            'priority' => 1,
+        ],
+        [
+            'key' => 'free_days',
+            'label' => 'Anzahl freie Tage',
+            'enabled' => true,
+            'priority' => 2,
+        ],
+    ];
+    $arguments = [
+        'subjectRows' => [
+            robotSubjectRow('M1', 1),
+            robotSubjectRow('LPT', 1),
+        ],
+        'subjectMappings' => [],
+        'courseGroups' => [
+            robotCourseGroup('M1-a', 'M1', 1, 1, ['2026-03-02']),
+            robotCourseGroup('LPT-a', 'LPT', 1, 1, ['2026-03-02'], 1),
+            robotCourseGroup('LPT-b', 'LPT', 2, 1, ['2026-03-03'], 1),
+        ],
+        'settings' => robotSettings(),
+        'evaluationCriteria' => $evaluationCriteria,
+        'selectedTimetableNumber' => 1,
+    ];
+
+    $fullGreenResult = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        ...$arguments,
+        selectedTimetableType: 'full_green',
+    );
+    $greenResult = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        ...$arguments,
+        selectedTimetableType: 'green',
+    );
+
+    expect($fullGreenResult)
+        ->full_green_timetable_count->toBe(1)
+        ->green_timetable_count->toBe(1)
+        ->and(array_column($fullGreenResult['quality_counters'], 'total'))->toBe([1, 1])
+        ->and($greenResult)
+        ->full_green_timetable_count->toBe(1)
+        ->green_timetable_count->toBe(1)
+        ->and(array_column($greenResult['quality_counters'], 'total'))->toBe([1, 1]);
+});
+
+it('marks quality criteria reached only when the selected timetable hits the best value', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            robotSubjectRow('D1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('M1-b', 'M1', 2, 1),
+            robotCourseGroup('D1-a', 'D1', 1, 2),
+            robotCourseGroup('D1-b', 'D1', 2, 2),
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2],
+                'excludedWeekdayTimes' => [],
+            ],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 3,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(4)
+        ->and($result['quality_counters'][0])
+        ->count->toBe(2)
+        ->total->toBe(4)
+        ->best_value->toBe(5)
+        ->selected_value->toBe(4)
+        ->selected_reached->toBeFalse()
+        ->and($result['selected_timetable']['qualityCriteria'][0])
+        ->selected_reached->toBeFalse();
+});
+
+it('counts one-off appointments between regular lessons as gaps', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            robotSubjectRow('D1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-a', 'M1', 1, 1),
+            robotCourseGroup('M1-a', 'M1', 1, 2, ['2026-03-02'], 1),
+            robotCourseGroup('D1-a', 'D1', 1, 3),
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 2, 3],
+                'excludedWeekdayTimes' => [],
+            ],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'few_gaps',
+                'label' => 'Wenig Lücken',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(1)
+        ->and($result['selected_timetable']['metrics']['gap_count'])
+        ->toBe(1)
+        ->and($result['quality_counters'][0])
+        ->best_value->toBe(1)
+        ->best_label->toBe('1 Lücken')
+        ->selected_value->toBe(1);
 });
 
 /**
