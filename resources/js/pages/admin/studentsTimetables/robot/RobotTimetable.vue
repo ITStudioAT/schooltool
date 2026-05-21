@@ -300,6 +300,50 @@
                         </div>
                     </div>
 
+                    <div class="robot-quality-card">
+                        <div class="robot-quality-card__header">
+                            <div>
+                                <div class="robot-quality-card__title">Qualitätskriterien</div>
+                                <div class="robot-quality-card__meta">
+                                    Erreichte aktive Bewertungskriterien
+                                </div>
+                            </div>
+                            <v-icon icon="mdi-chart-box-outline" color="primary" />
+                        </div>
+
+                        <div v-if="qualityCounters.length" class="robot-quality-card__items">
+                            <div
+                                v-for="counter in qualityCounters"
+                                :key="counter.key"
+                                class="robot-quality-card__item">
+                                <div class="robot-quality-card__item-main">
+                                    <v-checkbox-btn
+                                        :model-value="qualityCounterReached(counter)"
+                                        color="success"
+                                        density="compact"
+                                        readonly
+                                        :aria-label="`${counter.label} erreicht`"
+                                        class="robot-quality-card__item-check" />
+                                    <div class="robot-quality-card__item-copy">
+                                        <div class="robot-quality-card__item-label">
+                                            {{ counter.label }}
+                                        </div>
+                                        <div class="robot-quality-card__item-meta">
+                                            {{ qualityCounterDetail(counter) }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="robot-quality-card__item-count">
+                                    {{ qualityCounterCountLabel(counter) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <v-alert v-else type="info" variant="tonal" density="compact" class="mb-0">
+                            Keine aktiven Bewertungskriterien gespeichert.
+                        </v-alert>
+                    </div>
+
                     <div class="robot-generated">
                         <div class="robot-course-list__header">
                             <div class="robot-course-list__title">Stundenplan</div>
@@ -566,6 +610,7 @@ export default {
             generatedTimetables: [],
             fullGreenTimetableCount: null,
             greenTimetableCount: null,
+            qualityCounters: [],
             fullGreenTimetableNumber: 1,
             greenTimetableNumber: 1,
             fullGreenTimetableCountError: '',
@@ -960,6 +1005,7 @@ export default {
             ) {
                 this.fullGreenTimetableCount = 0
                 this.greenTimetableCount = 0
+                this.qualityCounters = []
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountLoading = false
@@ -985,6 +1031,7 @@ export default {
 
                 this.fullGreenTimetableCount = Number(response.data?.data?.full_green_timetable_count || 0)
                 this.greenTimetableCount = Number(response.data?.data?.green_timetable_count || 0)
+                this.qualityCounters = response.data?.data?.quality_counters || []
                 this.normalizeTimetableResultCounters()
                 this.generatedTimetables = response.data?.data?.selected_timetable
                     ? [this.backendTimetableFromResponse(response.data.data.selected_timetable)]
@@ -994,6 +1041,7 @@ export default {
 
                 this.fullGreenTimetableCount = null
                 this.greenTimetableCount = null
+                this.qualityCounters = []
                 this.generatedTimetables = []
                 this.normalizeTimetableResultCounters()
                 this.fullGreenTimetableCountError = 'Die Anzahl der grünen Stundenpläne konnte nicht berechnet werden.'
@@ -1490,8 +1538,23 @@ export default {
             this.generatedTimetables = []
             this.fullGreenTimetableCount = null
             this.greenTimetableCount = null
+            this.qualityCounters = []
             this.normalizeTimetableResultCounters()
             this.fullGreenTimetableCountError = ''
+        },
+        qualityCounterCountLabel(counter) {
+            return `${this.formatNumber(counter?.count || 0)} / ${this.formatNumber(counter?.total || 0)}`
+        },
+        qualityCounterDetail(counter) {
+            const bestLabel = String(counter?.best_label || '').trim()
+
+            return bestLabel && bestLabel !== '-' ? `Bestwert: ${bestLabel}` : 'Noch keine Berechnung.'
+        },
+        qualityCounterReached(counter) {
+            return Number(counter?.count || 0) > 0
+        },
+        formatNumber(value) {
+            return new Intl.NumberFormat('de-AT').format(Number(value || 0))
         },
         generatedSlotDetails(slot) {
             const courseGroup = slot?.courseGroup || {}
@@ -3942,6 +4005,97 @@ export default {
     flex: 0 0 auto;
 }
 
+.robot-quality-card {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.18);
+    border-radius: 8px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.robot-quality-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.robot-quality-card__title {
+    font-size: 0.92rem;
+    font-weight: 750;
+}
+
+.robot-quality-card__meta {
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    font-size: 0.78rem;
+}
+
+.robot-quality-card__items {
+    display: grid;
+    gap: 6px;
+}
+
+.robot-quality-card__item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    border: 1px solid rgba(var(--v-theme-primary), 0.1);
+    border-radius: 8px;
+    padding: 8px 10px;
+    background: rgba(var(--v-theme-primary), 0.04);
+}
+
+.robot-quality-card__item-main {
+    display: grid;
+    flex: 0 1 360px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    align-items: flex-start;
+    gap: 10px;
+    min-width: min(100%, 300px);
+}
+
+.robot-quality-card__item-check {
+    width: 28px;
+    height: 28px;
+}
+
+.robot-quality-card__item-check :deep(.v-selection-control) {
+    min-height: 28px;
+}
+
+.robot-quality-card__item-copy {
+    min-width: 0;
+}
+
+.robot-quality-card__item-label {
+    font-size: 0.84rem;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: break-word;
+}
+
+.robot-quality-card__item-meta {
+    color: rgba(var(--v-theme-on-surface), 0.6);
+    font-size: 0.74rem;
+}
+
+.robot-quality-card__item-count {
+    flex: 1 1 220px;
+    width: 100%;
+    min-width: 72px;
+    border-radius: 999px;
+    padding: 4px 8px;
+    background: rgba(var(--v-theme-primary), 0.12);
+    color: rgb(var(--v-theme-primary));
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+}
+
 .robot-generated-timetable + .robot-generated-timetable {
     margin-top: 12px;
 }
@@ -4371,6 +4525,10 @@ export default {
 }
 
 @media (max-width: 700px) {
+    .robot-quality-card__item {
+        align-items: stretch;
+    }
+
     .robot-timetable-grid {
         grid-template-columns: minmax(0, 1fr);
     }

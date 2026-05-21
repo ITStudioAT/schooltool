@@ -1175,7 +1175,7 @@ export default {
     setup() {
         return useValidationRulesSetup()
     },
-    components: { FileUpload, Overview, RobotTimetable },
+    components: { EvaluationSettings, FileUpload, Overview, RobotTimetable },
     data() {
         return {
             subAction: this.normalizedSubAction(this.$route.params.subsection),

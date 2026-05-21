@@ -186,6 +186,64 @@ it('returns the selected timetable for the requested result type and number', fu
         ->toContain('überschneidet sich mit');
 });
 
+it('uses active evaluation settings to rank selected timetables and count reached criteria', function () {
+    $result = (new RobotTimetableGeneratorService)->countFullGreenTimetables(
+        subjectRows: [
+            robotSubjectRow('M1', 1),
+            robotSubjectRow('D1', 1),
+        ],
+        subjectMappings: [],
+        courseGroups: [
+            robotCourseGroup('M1-early', 'M1', 1, 1),
+            robotCourseGroup('M1-late', 'M1', 1, 10),
+            robotCourseGroup('D1-late', 'D1', 2, 11),
+        ],
+        settings: robotSettings([
+            'constraints' => [
+                'availableWeekdays' => [1, 2, 3, 4, 5, 6],
+                'availableTimes' => [1, 10, 11],
+                'excludedWeekdayTimes' => [],
+            ],
+        ]),
+        evaluationCriteria: [
+            [
+                'key' => 'starts_from_period_10',
+                'label' => 'Unterricht idealerweise ab 10. Stunde',
+                'enabled' => true,
+                'priority' => 1,
+            ],
+            [
+                'key' => 'free_days',
+                'label' => 'Anzahl freie Tage',
+                'enabled' => true,
+                'priority' => 2,
+            ],
+        ],
+        selectedTimetableType: 'full_green',
+        selectedTimetableNumber: 1,
+    );
+
+    expect($result)
+        ->full_green_timetable_count->toBe(2)
+        ->green_timetable_count->toBe(0)
+        ->and($result['selected_timetable']['slots'])
+        ->toHaveKey('1-10')
+        ->not->toHaveKey('1-1')
+        ->and($result['quality_counters'])
+        ->sequence(
+            fn ($counter) => $counter
+                ->key->toBe('starts_from_period_10')
+                ->count->toBe(1)
+                ->total->toBe(2)
+                ->best_label->toBe('erfüllt'),
+            fn ($counter) => $counter
+                ->key->toBe('free_days')
+                ->count->toBe(2)
+                ->total->toBe(2)
+                ->best_label->toBe('4 freie Tage'),
+        );
+});
+
 /**
  * @return array<string, mixed>
  */
