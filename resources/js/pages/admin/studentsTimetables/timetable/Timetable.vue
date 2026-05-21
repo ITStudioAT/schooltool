@@ -23,6 +23,8 @@
 
     <RobotTimetable v-else-if="subAction === 'robot'" />
 
+    <EvaluationSettings v-else-if="subAction === 'settings'" />
+
     <v-col v-else cols="12" md="6" lg="7" xl="4">
         <v-card v-if="subAction === 'imports' && !activeImportPage" rounded="xl" class="st-dummy-card">
             <v-card-title class="d-flex align-center ga-2 pt-4 px-4">
@@ -1153,6 +1155,7 @@ import { useAdminStore } from '@/stores/admin/AdminStore'
 import { useSchoolyearStore } from '@/stores/admin/SchoolyearStore'
 import { useValidationRulesSetup } from '@/helpers/rules'
 import FileUpload from '@/pages/components/FileUpload.vue'
+import EvaluationSettings from '../evaluationSettings/EvaluationSettings.vue'
 import Overview from '../overview/Overview.vue'
 import RobotTimetable from '../robot/RobotTimetable.vue'
 
@@ -1216,6 +1219,7 @@ export default {
             return [
                 { key: 'overview', label: 'Übersicht' },
                 { key: 'robot', label: 'Roboter' },
+                { key: 'settings', label: 'Einstellungen' },
             ]
         },
         importButtons() {
@@ -1592,7 +1596,7 @@ export default {
     },
     methods: {
         normalizedSubAction(subsection) {
-            const allowed = ['overview', 'robot', 'imports']
+            const allowed = ['overview', 'robot', 'settings', 'imports']
             return allowed.includes(subsection) ? subsection : 'overview'
         },
         normalizedImportPage(detail) {
