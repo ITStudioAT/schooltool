@@ -48,135 +48,110 @@
                         @click="openConstraintsDialog" />
                 </div>
 
-                <v-expansion-panels
-                    v-model="courseSelectionPanels"
-                    multiple
-                    variant="accordion"
-                    class="robot-course-list robot-course-panels">
-                    <v-expansion-panel value="courses" rounded="lg" class="robot-course-panel">
-                        <v-expansion-panel-title class="robot-course-panel__title">
-                            <div class="robot-course-list__header robot-course-list__header--panel">
-                                <div class="robot-course-list__title">Kurse</div>
-                                <v-chip size="x-small" color="primary" variant="tonal">
-                                    {{ selectedCourses.length }} / {{ availableCourses.length }}
-                                </v-chip>
-                                <v-chip size="x-small" color="secondary" variant="tonal">
-                                    {{ formatHours(selectedCoursesHours) }} Std.
-                                </v-chip>
-                            </div>
-                        </v-expansion-panel-title>
-                        <v-expansion-panel-text>
-                            <div class="robot-course-list__actions">
-                                <v-btn
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="primary"
-                                    prepend-icon="mdi-check-all"
-                                    @click="selectAllCourses">
-                                    Alle auswählen
-                                </v-btn>
-                                <v-btn
-                                    size="x-small"
-                                    variant="tonal"
-                                    color="secondary"
-                                    prepend-icon="mdi-close-box-multiple-outline"
-                                    @click="deselectAllCourses">
-                                    Alle abwählen
-                                </v-btn>
-                            </div>
+                <div class="robot-course-list robot-course-panel">
+                    <div class="robot-course-panel__title">
+                        <div class="robot-course-list__header robot-course-list__header--panel">
+                            <div class="robot-course-list__title">Kurse</div>
+                            <v-chip size="x-small" color="primary" variant="tonal">
+                                {{ selectedCourses.length }} / {{ availableCourses.length }}
+                            </v-chip>
+                            <v-chip size="x-small" color="secondary" variant="tonal">
+                                {{ formatHours(selectedCoursesHours) }} Std.
+                            </v-chip>
+                        </div>
+                    </div>
+                    <div class="robot-course-panel__body">
+                        <v-alert v-if="!loading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
+                            Keine passenden Kurse gefunden.
+                        </v-alert>
 
-                            <v-alert v-if="!loading && !availableCourses.length" type="info" variant="tonal" class="mb-0">
-                                Keine passenden Kurse gefunden.
-                            </v-alert>
+                        <v-alert v-else-if="!selectedCourses.length" type="warning" variant="tonal" class="mb-3">
+                            Keine Kurse ausgewählt.
+                        </v-alert>
 
-                            <v-alert v-else-if="!selectedCourses.length" type="warning" variant="tonal" class="mb-3">
-                                Keine Kurse ausgewählt.
-                            </v-alert>
-
-                            <div v-if="availableCourses.length" class="robot-course-columns">
-                                <div
-                                    v-for="(courseColumn, columnIndex) in availableCourseColumns"
-                                    :key="`course-column-${columnIndex}`"
-                                    class="robot-course-item-list">
-                                    <div class="robot-course-item-header">
-                                        <div>Aktiv</div>
-                                        <div>Code</div>
-                                        <div>Bezeichnung</div>
-                                        <div>Zweig</div>
-                                        <div class="text-right">Std.</div>
-                                    </div>
-                                    <v-expansion-panels
-                                        v-model="courseItemPanels"
-                                        multiple
-                                        variant="accordion"
-                                        class="robot-course-item-panels">
-                                        <v-expansion-panel
-                                            v-for="course in courseColumn"
-                                            :key="course.key"
-                                            :value="course.key"
-                                            class="robot-course-item-panel"
-                                            :class="{ 'robot-course-item-panel--disabled': !courseSelected(course) }">
-                                            <v-expansion-panel-title class="robot-course-item-panel__title">
-                                                <div class="robot-course-item-row">
-                                                    <div class="robot-course-item-row__select">
-                                                        <v-checkbox
-                                                            :model-value="courseFullySelected(course)"
-                                                            :indeterminate="coursePartiallySelected(course)"
-                                                            :aria-label="`${course.code} auswählen`"
-                                                            density="compact"
-                                                            color="primary"
-                                                            hide-details
-                                                            @click.stop
-                                                            @update:model-value="setCourseSelected(course, $event)" />
-                                                    </div>
-                                                    <div class="robot-course-item-row__code">{{ course.code }}</div>
-                                                    <div>{{ course.name }}</div>
-                                                    <div>{{ course.branch }}</div>
-                                                    <div class="text-right">{{ formatHours(course.hours) }}</div>
+                        <div v-if="availableCourses.length" class="robot-course-columns">
+                            <div
+                                v-for="(courseColumn, columnIndex) in availableCourseColumns"
+                                :key="`course-column-${columnIndex}`"
+                                class="robot-course-item-list">
+                                <div class="robot-course-item-header">
+                                    <div>Aktiv</div>
+                                    <div>Code</div>
+                                    <div>Bezeichnung</div>
+                                    <div>Zweig</div>
+                                    <div class="text-right">Std.</div>
+                                </div>
+                                <v-expansion-panels
+                                    v-model="courseItemPanels"
+                                    multiple
+                                    variant="accordion"
+                                    class="robot-course-item-panels">
+                                    <v-expansion-panel
+                                        v-for="course in courseColumn"
+                                        :key="course.key"
+                                        :value="course.key"
+                                        class="robot-course-item-panel"
+                                        :class="{ 'robot-course-item-panel--disabled': !courseSelected(course) }">
+                                        <v-expansion-panel-title class="robot-course-item-panel__title">
+                                            <div class="robot-course-item-row">
+                                                <div class="robot-course-item-row__select">
+                                                    <v-checkbox
+                                                        :model-value="courseFullySelected(course)"
+                                                        :indeterminate="coursePartiallySelected(course)"
+                                                        :aria-label="`${course.code} auswählen`"
+                                                        density="compact"
+                                                        color="primary"
+                                                        hide-details
+                                                        @click.stop
+                                                        @update:model-value="setCourseSelected(course, $event)" />
                                                 </div>
-                                            </v-expansion-panel-title>
-                                            <v-expansion-panel-text>
-                                                <div class="robot-course-item-details">
-                                                    <div class="robot-course-item-details__section">
-                                                        <div class="robot-course-item-details__title">Stundenplan</div>
+                                                <div class="robot-course-item-row__code">{{ course.code }}</div>
+                                                <div>{{ course.name }}</div>
+                                                <div>{{ course.branch }}</div>
+                                                <div class="text-right">{{ formatHours(course.hours) }}</div>
+                                            </div>
+                                        </v-expansion-panel-title>
+                                        <v-expansion-panel-text>
+                                            <div class="robot-course-item-details">
+                                                <div class="robot-course-item-details__section">
+                                                    <div class="robot-course-item-details__title">Stundenplan</div>
+                                                    <div
+                                                        v-if="courseGroupItems(course).length"
+                                                        class="robot-course-item-detail-list">
                                                         <div
-                                                            v-if="courseGroupItems(course).length"
-                                                            class="robot-course-item-detail-list">
-                                                            <div
-                                                                v-for="group in courseGroupItems(course)"
-                                                                :key="group.key"
-                                                                class="robot-course-item-detail"
-                                                                :class="{ 'robot-course-item-detail--disabled': !courseGroupSelected(course, group) }">
-                                                                <div class="robot-course-item-detail__main">
-                                                                    <v-checkbox
-                                                                        :model-value="courseGroupSelected(course, group)"
-                                                                        :aria-label="`${group.title} auswählen`"
-                                                                        density="compact"
-                                                                        color="primary"
-                                                                        hide-details
-                                                                        class="robot-course-item-detail__check"
-                                                                        @click.stop
-                                                                        @update:model-value="setCourseGroupSelected(course, group, $event)" />
-                                                                    <span>{{ group.title }}:</span>
-                                                                </div>
-                                                                <div class="robot-course-item-detail__meta">
-                                                                    {{ group.meta }}
-                                                                </div>
+                                                            v-for="group in courseGroupItems(course)"
+                                                            :key="group.key"
+                                                            class="robot-course-item-detail"
+                                                            :class="{ 'robot-course-item-detail--disabled': !courseGroupSelected(course, group) }">
+                                                            <div class="robot-course-item-detail__main">
+                                                                <v-checkbox
+                                                                    :model-value="courseGroupSelected(course, group)"
+                                                                    :aria-label="`${group.title} auswählen`"
+                                                                    density="compact"
+                                                                    color="primary"
+                                                                    hide-details
+                                                                    class="robot-course-item-detail__check"
+                                                                    @click.stop
+                                                                    @update:model-value="setCourseGroupSelected(course, group, $event)" />
+                                                                <span>{{ group.title }}:</span>
+                                                            </div>
+                                                            <div class="robot-course-item-detail__meta">
+                                                                {{ group.meta }}
                                                             </div>
                                                         </div>
-                                                        <div v-else class="robot-course-item-details__empty">
-                                                            Keine TT-Stunden.
-                                                        </div>
+                                                    </div>
+                                                    <div v-else class="robot-course-item-details__empty">
+                                                        Keine TT-Stunden.
                                                     </div>
                                                 </div>
-                                            </v-expansion-panel-text>
-                                        </v-expansion-panel>
-                                    </v-expansion-panels>
-                                </div>
+                                            </div>
+                                        </v-expansion-panel-text>
+                                    </v-expansion-panel>
+                                </v-expansion-panels>
                             </div>
-                        </v-expansion-panel-text>
-                    </v-expansion-panel>
-                </v-expansion-panels>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="robot-generator">
                     <div class="robot-generator__actions">
@@ -216,27 +191,6 @@
                                             {{ fullGreenTimetableCountLabel }}
                                         </template>
                                     </div>
-                                    <div
-                                        v-if="selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0"
-                                        class="robot-count-card__counter">
-                                        <v-btn
-                                            icon="mdi-chevron-left"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="fullGreenTimetableNumber <= 1"
-                                            aria-label="Vorheriger voller grüner Stundenplan"
-                                            @click="moveTimetableResultCounter('full_green', -1)" />
-                                        <div class="robot-count-card__counter-value">
-                                            {{ fullGreenTimetableNumber }} / {{ fullGreenTimetableCount }}
-                                        </div>
-                                        <v-btn
-                                            icon="mdi-chevron-right"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="fullGreenTimetableNumber >= fullGreenTimetableCount"
-                                            aria-label="Nächster voller grüner Stundenplan"
-                                            @click="moveTimetableResultCounter('full_green', 1)" />
-                                    </div>
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
@@ -245,6 +199,7 @@
                                         inset
                                         hide-details
                                         density="compact"
+                                        :disabled="!isTimetableResultTypeSelectable('full_green')"
                                         aria-label="Volle grüne Stundenpläne auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('full_green', $event)" />
                                     <v-icon icon="mdi-check-circle-outline" color="success" />
@@ -267,27 +222,6 @@
                                             {{ greenTimetableCountLabel }}
                                         </template>
                                     </div>
-                                    <div
-                                        v-if="selectedTimetableResultType === 'green' && greenTimetableCount > 0"
-                                        class="robot-count-card__counter">
-                                        <v-btn
-                                            icon="mdi-chevron-left"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="greenTimetableNumber <= 1"
-                                            aria-label="Vorheriger grüner Stundenplan"
-                                            @click="moveTimetableResultCounter('green', -1)" />
-                                        <div class="robot-count-card__counter-value">
-                                            {{ greenTimetableNumber }} / {{ greenTimetableCount }}
-                                        </div>
-                                        <v-btn
-                                            icon="mdi-chevron-right"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="greenTimetableNumber >= greenTimetableCount"
-                                            aria-label="Nächster grüner Stundenplan"
-                                            @click="moveTimetableResultCounter('green', 1)" />
-                                    </div>
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
@@ -296,6 +230,7 @@
                                         inset
                                         hide-details
                                         density="compact"
+                                        :disabled="!isTimetableResultTypeSelectable('green')"
                                         aria-label="Grüne Stundenpläne auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('green', $event)" />
                                     <v-icon icon="mdi-calendar-check-outline" color="primary" />
@@ -319,27 +254,6 @@
                                             {{ conflictTimetableCountLabel }}
                                         </template>
                                     </div>
-                                    <div
-                                        v-if="selectedTimetableResultType === 'conflict' && conflictTimetableCount > 0"
-                                        class="robot-count-card__counter">
-                                        <v-btn
-                                            icon="mdi-chevron-left"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="conflictTimetableNumber <= 1"
-                                            aria-label="Vorheriger Stundenplan mit Konflikten"
-                                            @click="moveTimetableResultCounter('conflict', -1)" />
-                                        <div class="robot-count-card__counter-value">
-                                            {{ conflictTimetableNumber }} / {{ conflictTimetableCount }}
-                                        </div>
-                                        <v-btn
-                                            icon="mdi-chevron-right"
-                                            size="x-small"
-                                            variant="text"
-                                            :disabled="conflictTimetableNumber >= conflictTimetableCount"
-                                            aria-label="Nächster Stundenplan mit Konflikten"
-                                            @click="moveTimetableResultCounter('conflict', 1)" />
-                                    </div>
                                 </div>
                                 <div class="robot-count-card__actions">
                                     <v-switch
@@ -348,6 +262,7 @@
                                         inset
                                         hide-details
                                         density="compact"
+                                        :disabled="!isTimetableResultTypeSelectable('conflict')"
                                         aria-label="Stundenpläne mit Konflikten auswählen"
                                         @update:modelValue="setSelectedTimetableResultType('conflict', $event)" />
                                     <v-icon icon="mdi-alert-circle-outline" color="warning" />
@@ -382,12 +297,12 @@
                                 </div>
 
                                 <div
-                                    v-for="counter in qualityCriterionRows"
+                                    v-for="(counter, counterIndex) in qualityCriterionRows"
                                     :key="counter.key"
                                     class="robot-quality-card__item">
                                     <div class="robot-quality-card__item-copy">
                                         <div class="robot-quality-card__item-label">
-                                            {{ counter.label }}
+                                            {{ counterIndex + 1 }}. {{ counter.label }}
                                         </div>
                                         <div class="robot-quality-card__item-meta">
                                             {{ qualityCounterDetail(counter) }}
@@ -414,8 +329,31 @@
                     </template>
 
                     <div v-if="selectedRobotTimetable" class="robot-generated">
-                        <div class="robot-course-list__header">
+                        <div class="robot-course-list__header robot-generated-header">
                             <div class="robot-course-list__title">Stundenplan</div>
+                            <div
+                                v-if="selectedTimetableResultCount > 0"
+                                class="robot-timetable-selector">
+                                <v-btn
+                                    icon="mdi-chevron-left"
+                                    size="small"
+                                    variant="tonal"
+                                    color="primary"
+                                    :disabled="timetableResultCounter(selectedTimetableResultType) <= 1"
+                                    :aria-label="`Vorheriger ${selectedTimetableResultTitle}`"
+                                    @click="moveTimetableResultCounter(selectedTimetableResultType, -1)" />
+                                <div class="robot-timetable-selector__value" aria-live="polite">
+                                    {{ timetableResultCounter(selectedTimetableResultType) }} / {{ selectedTimetableResultCount }}
+                                </div>
+                                <v-btn
+                                    icon="mdi-chevron-right"
+                                    size="small"
+                                    variant="tonal"
+                                    color="primary"
+                                    :disabled="timetableResultCounter(selectedTimetableResultType) >= selectedTimetableResultCount"
+                                    :aria-label="`Nächster ${selectedTimetableResultTitle}`"
+                                    @click="moveTimetableResultCounter(selectedTimetableResultType, 1)" />
+                            </div>
                         </div>
 
                         <div v-if="activeQualityCriterionRows.length" class="robot-quality-summary">
@@ -581,6 +519,15 @@
                             density="compact"
                             hide-details="auto" />
                         <v-select
+                            v-model="selectionDraft.language"
+                            :items="languageOptions"
+                            item-title="title"
+                            item-value="value"
+                            label="Sprache"
+                            variant="outlined"
+                            density="compact"
+                            hide-details="auto" />
+                        <v-select
                             v-model="selectionDraft.branch"
                             :items="branchOptions"
                             item-title="title"
@@ -595,15 +542,6 @@
                             item-title="title"
                             item-value="value"
                             label="ME / BE"
-                            variant="outlined"
-                            density="compact"
-                            hide-details="auto" />
-                        <v-select
-                            v-model="selectionDraft.language"
-                            :items="languageOptions"
-                            item-title="title"
-                            item-value="value"
-                            label="Sprache"
                             variant="outlined"
                             density="compact"
                             hide-details="auto" />
@@ -716,7 +654,6 @@ export default {
             fullGreenTimetableCountLoading: false,
             fullGreenTimetableCountRequestId: 0,
             selectedTimetableResultType: 'full_green',
-            courseSelectionPanels: ['courses'],
             courseItemPanels: [],
             schoolHours: [],
             courseGroups: [],
@@ -829,16 +766,16 @@ export default {
             return [
                 { key: 'semester', label: 'Semester', value: this.selectedOptionTitle(this.semesterOptions, this.selection.semester) },
                 { key: 'religion', label: 'Ethik / Religion', value: this.selectedOptionTitle(this.religionOptions, this.selection.religion) },
+                { key: 'language', label: 'Sprache', value: this.selectedOptionTitle(this.languageOptions, this.selection.language) },
                 { key: 'branch', label: 'Zweig', value: this.selectedOptionTitle(this.branchOptions, this.selection.branch) },
                 { key: 'artsSubject', label: 'ME / BE', value: this.selectedOptionTitle(this.artsSubjectOptions, this.selection.artsSubject) },
-                { key: 'language', label: 'Sprache', value: this.selectedOptionTitle(this.languageOptions, this.selection.language) },
             ]
         },
         selectedConstraintSummary() {
             return [
                 {
                     key: 'unavailableWeekdays',
-                    label: 'Nicht möglich',
+                    label: 'Zeitliche Einschränkungen',
                     value: this.selectedOptionTitles(this.weekdayOptions, this.unavailableWeekdays, ', '),
                 },
                 {
@@ -858,7 +795,7 @@ export default {
 
             return [{
                 key: 'none',
-                label: 'Nicht möglich',
+                label: 'Zeitliche Einschränkungen',
                 value: 'Keine Einschränkungen',
             }]
         },
@@ -1004,6 +941,16 @@ export default {
         showConflictTimetableResults() {
             return !this.hasGreenTimetableResults
                 && this.timetableResultCount('conflict') > 0
+        },
+        selectedTimetableResultCount() {
+            return this.timetableResultCount(this.selectedTimetableResultType)
+        },
+        selectedTimetableResultTitle() {
+            return {
+                full_green: 'voller grüner Stundenplan',
+                green: 'grüner Stundenplan',
+                conflict: 'Stundenplan mit Konflikten',
+            }[this.selectedTimetableResultType] || 'Stundenplan'
         },
     },
     watch: {
@@ -1229,8 +1176,8 @@ export default {
             return !wasFullGreenSelected
         },
         setSelectedTimetableResultType(type, selected) {
-            if (selected === false && this.selectedTimetableResultType === type) return
-            if (type === 'conflict' && !this.showConflictTimetableResults) return
+            if (selected === false) return
+            if (!this.isTimetableResultTypeSelectable(type)) return
 
             this.selectedTimetableResultType = type
             if (this.timetableResultCount(type) > 0) {
@@ -1240,6 +1187,14 @@ export default {
             }
 
             this.generatedTimetables = []
+        },
+        isTimetableResultTypeSelectable(type) {
+            if (type === 'conflict') {
+                return this.showConflictTimetableResults
+                    && this.timetableResultCount(type) > 0
+            }
+
+            return this.timetableResultCount(type) > 0
         },
         moveTimetableResultCounter(type, direction) {
             const previousCounter = this.timetableResultCounter(type)
@@ -2280,20 +2235,6 @@ export default {
             ])
 
             return previousCount !== this.deselectedCourseGroupKeys.length
-        },
-        selectAllCourses() {
-            this.deselectedCourseKeys = []
-            this.deselectedCourseGroupKeys = []
-            this.clearGeneratedTimetables()
-            this.saveLastRobotState()
-        },
-        deselectAllCourses() {
-            this.deselectedCourseKeys = this.availableCourses.map(course => course.key)
-            this.deselectedCourseGroupKeys = this.uniqueValues(
-                this.availableCourses.flatMap(course => this.courseGroupSelectionKeys(course)),
-            )
-            this.clearGeneratedTimetables()
-            this.saveLastRobotState()
         },
         generatedSlotDateLabel(slot) {
             if (!slot?.isOccasional) return ''
@@ -4206,12 +4147,9 @@ export default {
     margin-top: 14px;
 }
 
-.robot-course-panels :deep(.v-expansion-panel-text__wrapper) {
-    padding: 0 12px 12px;
-}
-
 .robot-course-panel {
     border: 1px solid rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
     background: #ffffff;
 }
 
@@ -4220,11 +4158,8 @@ export default {
     padding: 8px 12px;
 }
 
-.robot-course-list__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-bottom: 8px;
+.robot-course-panel__body {
+    padding: 0 12px 12px;
 }
 
 .robot-generator {
@@ -4296,29 +4231,6 @@ export default {
     line-height: 1.1;
 }
 
-.robot-count-card__counter {
-    display: inline-grid;
-    grid-template-columns: 28px minmax(64px, auto) 28px;
-    gap: 4px;
-    align-items: center;
-    margin-top: 6px;
-}
-
-.robot-count-card__counter :deep(.v-btn) {
-    width: 28px;
-    height: 28px;
-}
-
-.robot-count-card__counter-value {
-    min-width: 64px;
-    color: rgba(var(--v-theme-on-surface), 0.78);
-    font-size: 0.78rem;
-    font-weight: 750;
-    line-height: 1;
-    text-align: center;
-    white-space: nowrap;
-}
-
 .robot-count-card__actions {
     display: flex;
     flex: 0 0 auto;
@@ -4365,7 +4277,12 @@ export default {
 
 .robot-quality-card__items {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+}
+
+.robot-quality-card__item--summary {
+    grid-column: 1 / -1;
 }
 
 .robot-quality-card__item {
@@ -4729,6 +4646,39 @@ export default {
     margin-bottom: 8px;
 }
 
+.robot-generated-header {
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.robot-timetable-selector {
+    display: inline-grid;
+    grid-template-columns: 34px minmax(104px, auto) 34px;
+    gap: 8px;
+    align-items: center;
+    margin-left: auto;
+    border: 1px solid rgba(var(--v-theme-primary), 0.28);
+    border-radius: 8px;
+    padding: 5px 8px;
+    background: rgba(var(--v-theme-primary), 0.07);
+}
+
+.robot-timetable-selector :deep(.v-btn) {
+    width: 34px;
+    height: 34px;
+}
+
+.robot-timetable-selector__value {
+    min-width: 104px;
+    color: rgba(var(--v-theme-on-surface), 0.92);
+    font-size: 1.02rem;
+    font-weight: 850;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+}
+
 .robot-course-list__header--panel {
     margin-bottom: 0;
 }
@@ -4871,6 +4821,10 @@ export default {
 }
 
 @media (max-width: 700px) {
+    .robot-quality-card__items {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .robot-quality-card__item {
         grid-template-columns: minmax(0, 1fr);
     }

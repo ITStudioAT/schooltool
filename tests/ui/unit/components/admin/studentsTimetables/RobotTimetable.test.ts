@@ -76,7 +76,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('Samstag')
         expect(componentSource).toContain('1}. Stunde')
         expect(componentSource).not.toContain('<div class="robot-constraints__title">Zeitvorgaben</div>')
-        expect(componentSource).toContain('Nicht möglich')
+        expect(componentSource).toContain('Zeitliche Einschränkungen')
         expect(componentSource).toContain('Keine Zeiten')
         expect(componentSource).toContain('robot-selected-cards')
         expect(componentSource).toContain('robot-selected-card')
@@ -119,11 +119,12 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('coursePartiallySelected(course)')
         expect(componentSource).toContain('setCourseSelected(course, selected)')
         expect(componentSource).toContain('courseGroupSelectionKeys(course)')
-        expect(componentSource).toContain('selectAllCourses()')
-        expect(componentSource).toContain('deselectAllCourses()')
-        expect(componentSource).toContain('Alle auswählen')
-        expect(componentSource).toContain('Alle abwählen')
-        expect(componentSource).toContain('v-model="courseSelectionPanels"')
+        expect(componentSource).not.toContain('selectAllCourses()')
+        expect(componentSource).not.toContain('deselectAllCourses()')
+        expect(componentSource).not.toContain('Alle auswählen')
+        expect(componentSource).not.toContain('Alle abwählen')
+        expect(componentSource).toContain('robot-course-panel__body')
+        expect(componentSource).not.toContain('courseSelectionPanels')
         expect(componentSource).toContain('v-model="courseItemPanels"')
         expect(componentSource).toContain('@update:model-value="setCourseSelected(course, $event)"')
         expect(componentSource).toContain('Stundenpläne erstellen')
@@ -140,6 +141,11 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('activeQualityCriterionRows()')
         expect(componentSource).toContain('Qualitätskriterien')
         expect(componentSource).toContain('Alle Qualitätskriterien erfüllt')
+        expect(componentSource).toContain('v-for="(counter, counterIndex) in qualityCriterionRows"')
+        expect(componentSource).toContain('{{ counterIndex + 1 }}. {{ counter.label }}')
+        expect(componentSource).toContain('robot-quality-card__item--summary')
+        expect(componentSource).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))')
+        expect(componentSource).toContain('grid-column: 1 / -1')
         expect(componentSource).toContain('allQualityCriteriaCountLabel()')
         expect(componentSource).toContain('allQualityCriteriaCountDetail()')
         expect(componentSource).toContain('qualityCounterCountLabel(counter)')
@@ -156,6 +162,9 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain("setSelectedTimetableResultType('green', $event)")
         expect(componentSource).toContain("setSelectedTimetableResultType('conflict', $event)")
         expect(componentSource).toContain('setSelectedTimetableResultType(type, selected)')
+        expect(componentSource).toContain('isTimetableResultTypeSelectable(type)')
+        expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('full_green')"`)
+        expect(componentSource).toContain(`:disabled="!isTimetableResultTypeSelectable('green')"`)
         expect(componentSource).toContain('robot-count-card--selected')
         expect(componentSource).toContain('robot-count-cards')
         expect(componentSource).toContain('grid-template-columns: repeat(auto-fit, minmax(220px, 1fr))')
@@ -165,16 +174,17 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('hasGreenTimetableResults()')
         expect(componentSource).toContain('showConflictTimetableResults()')
         expect(componentSource).toContain('v-if="showConflictTimetableResults"')
-        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'full_green' && fullGreenTimetableCount > 0\"")
-        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'green' && greenTimetableCount > 0\"")
-        expect(componentSource).toContain("v-if=\"selectedTimetableResultType === 'conflict' && conflictTimetableCount > 0\"")
+        expect(componentSource).toContain('selectedTimetableResultCount()')
+        expect(componentSource).toContain('selectedTimetableResultTitle()')
+        expect(componentSource).toContain('robot-timetable-selector')
+        expect(componentSource).toContain('v-if="selectedTimetableResultCount > 0"')
+        expect(componentSource).toContain('aria-live="polite"')
+        expect(componentSource).toContain('grid-template-columns: 34px minmax(104px, auto) 34px')
         expect(componentSource).toContain('icon="mdi-chevron-left"')
         expect(componentSource).toContain('icon="mdi-chevron-right"')
-        expect(componentSource).toContain("moveTimetableResultCounter('full_green', -1)")
-        expect(componentSource).toContain("moveTimetableResultCounter('green', 1)")
-        expect(componentSource).toContain("moveTimetableResultCounter('conflict', 1)")
+        expect(componentSource).toContain('moveTimetableResultCounter(selectedTimetableResultType, -1)')
+        expect(componentSource).toContain('moveTimetableResultCounter(selectedTimetableResultType, 1)')
         expect(componentSource).toContain('normalizeTimetableResultCounters()')
-        expect(componentSource).toContain('robot-count-card__counter')
         expect(componentSource).toContain('Stundenpläne mit Konflikten')
         expect(componentSource).toContain('conflict_timetable_count')
         expect(componentSource).toContain('selected_timetable_type: this.selectedTimetableResultType')
@@ -210,6 +220,7 @@ describe('Students timetable robot page', () => {
         expect(componentSource).toContain('clearGeneratedTimetables()')
         expect(componentSource).toContain('<template v-if="selectedRobotTimetable">')
         expect(componentSource).toContain('<div v-if="selectedRobotTimetable" class="robot-generated">')
+        expect(componentSource).toContain('<div class="robot-course-list__header robot-generated-header">')
         expect(componentSource).toContain('<div class="robot-course-list__title">Stundenplan</div>')
         expect(componentSource).toContain('robot-generated-grid')
         expect(componentSource).toContain('robot-generated-cell__details')
@@ -490,6 +501,33 @@ describe('Students timetable robot page', () => {
         expect(ctx.selectedTimetableResultType).toBe('green')
     })
 
+    it('does not select green result types without available timetables', () => {
+        const methods = (RobotTimetable as any).methods
+        const ctx = {
+            ...methods,
+            selectedTimetableResultType: 'conflict',
+            fullGreenTimetableCount: 0,
+            greenTimetableCount: 0,
+            conflictTimetableCount: 4,
+            showConflictTimetableResults: true,
+            generatedTimetables: [{ key: 'current' }],
+            loadFullGreenTimetableCountCalled: false,
+            loadFullGreenTimetableCount() {
+                this.loadFullGreenTimetableCountCalled = true
+            },
+        }
+
+        expect(methods.isTimetableResultTypeSelectable.call(ctx, 'full_green')).toBe(false)
+        expect(methods.isTimetableResultTypeSelectable.call(ctx, 'green')).toBe(false)
+
+        methods.setSelectedTimetableResultType.call(ctx, 'full_green', true)
+        methods.setSelectedTimetableResultType.call(ctx, 'green', true)
+
+        expect(ctx.selectedTimetableResultType).toBe('conflict')
+        expect(ctx.generatedTimetables).toEqual([{ key: 'current' }])
+        expect(ctx.loadFullGreenTimetableCountCalled).toBe(false)
+    })
+
     it('edits the robot selection through a draft dialog', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
@@ -543,9 +581,9 @@ describe('Students timetable robot page', () => {
         expect(computed.selectedSummary.call(ctx).map(item => item.value)).toEqual([
             'Semester 3',
             'Rk - Religion katholisch',
+            'F - Französisch',
             'Gymnasialer Zweig',
             'BE - Bildnerische Erziehung',
-            'F - Französisch',
         ])
     })
 
@@ -2313,7 +2351,7 @@ describe('Students timetable robot page', () => {
         )
     })
 
-    it('can select and deselect courses for timetable generation', () => {
+    it('can select and deselect individual courses for timetable generation', () => {
         const computed = (RobotTimetable as any).computed
         const methods = (RobotTimetable as any).methods
         const ctx = {
@@ -2335,7 +2373,8 @@ describe('Students timetable robot page', () => {
         expect(ctx.deselectedCourseKeys).toEqual([])
         expect(computed.selectedCourses.call(ctx).map(course => course.code)).toEqual(['INF1', 'GW1'])
 
-        methods.deselectAllCourses.call(ctx)
+        methods.setCourseSelected.call(ctx, ctx.availableCourses[0], false)
+        methods.setCourseSelected.call(ctx, ctx.availableCourses[1], false)
         expect(computed.selectedCourses.call(ctx)).toEqual([])
     })
 

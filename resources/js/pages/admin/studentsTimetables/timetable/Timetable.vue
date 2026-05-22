@@ -1588,6 +1588,9 @@ export default {
         },
         '$route.params.detail'(detail) {
             this.importPage = this.normalizedImportPage(detail)
+            this.uploadedFilename = ''
+            this.uploadError = ''
+            this.loadImportButtonInfo()
         },
         '$route.params.action'(action) {
             this.importSubPage = this.normalizedImportSubPage(action)
@@ -1624,7 +1627,10 @@ export default {
         openImportPage(key) {
             this.importPage = this.normalizedImportPage(key)
             this.importSubPage = ''
+            this.uploadedFilename = ''
+            this.uploadError = ''
             this.$router.replace({ path: `/admin/students-timetables/timetable/imports/${this.importPage}` })
+            this.loadImportButtonInfo()
         },
         closeImportPage() {
             this.importPage = ''

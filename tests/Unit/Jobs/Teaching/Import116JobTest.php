@@ -19,6 +19,7 @@ use App\Models\Import116;
 use App\Models\School;
 use App\Models\SchoolTool;
 use App\Models\Schoolyear;
+use App\Models\TeachingCourse;
 use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\UserGroupMember;
@@ -29,6 +30,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -438,6 +440,69 @@ describe('linked user profile sync', function () {
             ->and($user->schoolclass)->toBe('2B')
             ->and($user->sex)->toBe('m')
             ->and($user->import116_id)->toBe($record->id);
+    });
+});
+
+describe('teaching course student sync', function () {
+    test('merges duplicate import and user course student rows without unique constraint errors', function () {
+        $student = User::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'email' => 'course.student@test.local',
+        ]);
+
+        $record = Import116::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'student_code' => 'COURSE001',
+            'email' => 'course.student@test.local',
+            'user_id' => $student->id,
+            'import_user_id' => $this->admin->id,
+        ]);
+
+        $course = TeachingCourse::factory()->create([
+            'school_id' => $this->school->id,
+            'schoolyear_id' => $this->schoolyear->id,
+            'user_id' => $this->admin->id,
+        ]);
+
+        $now = now();
+        $sourceId = DB::table('teaching_course_students')->insertGetId([
+            'teaching_course_id' => $course->id,
+            'user_id' => null,
+            'import116_id' => $record->id,
+            'comment' => 'Import comment',
+            'deleted_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $targetId = DB::table('teaching_course_students')->insertGetId([
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => null,
+            'comment' => null,
+            'deleted_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $job = new Import116Job($this->admin, 'test/path', $this->schoolyear->id);
+        $method = new ReflectionMethod($job, 'syncTeachingCourseStudentsToCurrentRecord');
+        $method->setAccessible(true);
+        $method->invoke($job, $record);
+
+        $this->assertDatabaseMissing('teaching_course_students', [
+            'id' => $sourceId,
+        ]);
+        $this->assertDatabaseHas('teaching_course_students', [
+            'id' => $targetId,
+            'teaching_course_id' => $course->id,
+            'user_id' => $student->id,
+            'import116_id' => $record->id,
+            'comment' => 'Import comment',
+        ]);
+
+        expect(DB::table('teaching_course_students')->where('teaching_course_id', $course->id)->count())->toBe(1);
     });
 });
 

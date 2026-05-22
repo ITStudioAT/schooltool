@@ -192,13 +192,7 @@ class Import116Job implements ShouldQueue
                     $this->syncImport116ReferencesToCurrentRecord($schoolId, $record);
                     $this->syncLinkedUsersToCurrentRecord($schoolId, $record);
 
-                    // Keep TeachingCourseStudents in sync: update user_id where still null.
-                    if ($record->user_id) {
-                        DB::table('teaching_course_students')
-                            ->where('import116_id', $record->id)
-                            ->whereNull('user_id')
-                            ->update(['user_id' => $record->user_id]);
-                    }
+                    $this->syncTeachingCourseStudentsToCurrentRecord($record);
                 });
 
                 $this->deleteMissingImport116Rows($schoolId, $schoolyearId, $seenCodes);
@@ -479,6 +473,87 @@ class Import116Job implements ShouldQueue
             $linkedUser->import116_id = (int) $record->id;
             $linkedUser->save();
         }
+    }
+
+    private function syncTeachingCourseStudentsToCurrentRecord(Import116 $record): void
+    {
+        if (! $record->user_id || ! Schema::hasTable('teaching_course_students')) {
+            return;
+        }
+
+        DB::table('teaching_course_students')
+            ->where('import116_id', (int) $record->id)
+            ->whereNull('user_id')
+            ->orderBy('id')
+            ->get()
+            ->each(function (object $sourceRow) use ($record): void {
+                $targetRow = DB::table('teaching_course_students')
+                    ->where('teaching_course_id', $sourceRow->teaching_course_id)
+                    ->where('user_id', (int) $record->user_id)
+                    ->where('id', '!=', (int) $sourceRow->id)
+                    ->orderByRaw('deleted_at IS NULL DESC')
+                    ->orderBy('id')
+                    ->first();
+
+                if (! $targetRow) {
+                    DB::table('teaching_course_students')
+                        ->where('id', (int) $sourceRow->id)
+                        ->update([
+                            'user_id' => (int) $record->user_id,
+                            'updated_at' => now(),
+                        ]);
+
+                    return;
+                }
+
+                $sourceIsActive = $sourceRow->deleted_at === null;
+                $targetIsActive = $targetRow->deleted_at === null;
+
+                if ($sourceIsActive && ! $targetIsActive) {
+                    DB::table('teaching_course_students')
+                        ->where('id', (int) $targetRow->id)
+                        ->delete();
+
+                    DB::table('teaching_course_students')
+                        ->where('id', (int) $sourceRow->id)
+                        ->update($this->mergedTeachingCourseStudentPayload($sourceRow, $targetRow, [
+                            'user_id' => (int) $record->user_id,
+                            'import116_id' => (int) $record->id,
+                            'deleted_at' => null,
+                        ]));
+
+                    return;
+                }
+
+                DB::table('teaching_course_students')
+                    ->where('id', (int) $sourceRow->id)
+                    ->delete();
+
+                DB::table('teaching_course_students')
+                    ->where('id', (int) $targetRow->id)
+                    ->update($this->mergedTeachingCourseStudentPayload($targetRow, $sourceRow, [
+                        'import116_id' => (int) $record->id,
+                        'deleted_at' => ($sourceIsActive || $targetIsActive) ? null : $targetRow->deleted_at,
+                    ]));
+            });
+    }
+
+    private function mergedTeachingCourseStudentPayload(object $primaryRow, object $secondaryRow, array $overrides): array
+    {
+        $payload = [
+            'comment' => $primaryRow->comment ?: $secondaryRow->comment,
+            'sem_1_grade' => $primaryRow->sem_1_grade ?: $secondaryRow->sem_1_grade,
+            'sem_2_grade' => $primaryRow->sem_2_grade ?: $secondaryRow->sem_2_grade,
+            'sem_grade' => $primaryRow->sem_grade ?: $secondaryRow->sem_grade,
+            'behaviour_1_grade' => $primaryRow->behaviour_1_grade ?: $secondaryRow->behaviour_1_grade,
+            'behaviour_2_grade' => $primaryRow->behaviour_2_grade ?: $secondaryRow->behaviour_2_grade,
+            'behaviour_grade' => $primaryRow->behaviour_grade ?: $secondaryRow->behaviour_grade,
+            'stars' => $primaryRow->stars ?: $secondaryRow->stars,
+            'canceled_at' => $primaryRow->canceled_at ?: $secondaryRow->canceled_at,
+            'updated_at' => now(),
+        ];
+
+        return array_merge($payload, $overrides);
     }
 
     private function snapshotImport116(Import116 $record): array

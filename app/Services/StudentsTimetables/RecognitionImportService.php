@@ -78,35 +78,37 @@ class RecognitionImportService
                 ->values();
 
             if ($rows->isNotEmpty()) {
-                StudentTimetableRecognitionRow::query()
-                    ->where('school_id', $import->school_id)
-                    ->where('schoolyear_id', $import->schoolyear_id)
-                    ->whereIn('identity_hash', $rows->pluck('identity_hash')->all())
-                    ->delete();
+                $rows->pluck('identity_hash')->chunk(500)->each(
+                    fn ($hashes) => StudentTimetableRecognitionRow::query()
+                        ->where('school_id', $import->school_id)
+                        ->where('schoolyear_id', $import->schoolyear_id)
+                        ->whereIn('identity_hash', $hashes->all())
+                        ->delete()
+                );
 
                 $now = now();
 
-                DB::table('student_timetable_recognition_rows')->insert(
-                    $rows
-                        ->map(fn (array $row): array => [
-                            'student_timetable_recognition_import_id' => $import->id,
-                            'school_id' => $row['school_id'],
-                            'schoolyear_id' => $row['schoolyear_id'],
-                            'row_number' => $row['row_number'],
-                            'student' => $row['student'],
-                            'subject' => $row['subject'],
-                            'grade' => $row['grade'],
-                            'note' => $row['note'],
-                            'colloquia' => $row['colloquia'],
-                            'module_repetitions' => $row['module_repetitions'],
-                            'teacher_code' => $row['teacher_code'],
-                            'identity_hash' => $row['identity_hash'],
-                            'raw_data' => json_encode($row['raw_data'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ])
-                        ->all()
-                );
+                $rows
+                    ->map(fn (array $row): array => [
+                        'student_timetable_recognition_import_id' => $import->id,
+                        'school_id' => $row['school_id'],
+                        'schoolyear_id' => $row['schoolyear_id'],
+                        'row_number' => $row['row_number'],
+                        'student_code' => $row['student_code'],
+                        'student' => $row['student'],
+                        'subject' => $row['subject'],
+                        'grade' => $row['grade'],
+                        'note' => $row['note'],
+                        'colloquia' => $row['colloquia'],
+                        'module_repetitions' => $row['module_repetitions'],
+                        'teacher_code' => $row['teacher_code'],
+                        'identity_hash' => $row['identity_hash'],
+                        'raw_data' => json_encode($row['raw_data'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ])
+                    ->chunk(500)
+                    ->each(fn ($chunk) => DB::table('student_timetable_recognition_rows')->insert($chunk->all()));
             }
 
             $import->update([
@@ -175,6 +177,7 @@ class RecognitionImportService
      *     records: array<int, array{
      *         row_number: int,
      *         raw_data: array<string, string>,
+     *         student_code: ?string,
      *         student: ?string,
      *         subject: ?string,
      *         grade: ?string,
@@ -337,6 +340,7 @@ class RecognitionImportService
      * @return array{
      *     row_number: int,
      *     raw_data: array<string, string>,
+     *     student_code: ?string,
      *     student: ?string,
      *     subject: ?string,
      *     grade: ?string,
@@ -351,6 +355,7 @@ class RecognitionImportService
         return [
             'row_number' => $rowNumber,
             'raw_data' => $record,
+            'student_code' => $this->firstRecordValue($record, ['schuelerinnenkennzahl']),
             'student' => $this->firstRecordValue($record, ['studierende', 'schueler', 'schuelerin', 'student']),
             'subject' => $this->firstRecordValue($record, ['gegenstand', 'fach', 'faecher']),
             'grade' => $this->firstRecordValue($record, ['note']),

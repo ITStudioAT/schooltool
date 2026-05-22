@@ -718,7 +718,13 @@ it('does not duplicate active recognition rows when the same csv is imported aga
     expect(StudentTimetableRecognitionRow::query()
         ->where('school_id', $user->school_id)
         ->where('schoolyear_id', $schoolyear->id)
-        ->count())->toBe(2);
+        ->count())->toBe(2)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->orderBy('row_number')
+            ->pluck('student_code')
+            ->all())->toBe(['100', '200']);
 
     $secondImport = $createImport('anrechnungen_second.csv');
     $service->processImport($secondImport);

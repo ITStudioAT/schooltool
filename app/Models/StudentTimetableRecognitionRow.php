@@ -12,6 +12,7 @@ class StudentTimetableRecognitionRow extends Model
         'school_id',
         'schoolyear_id',
         'row_number',
+        'student_code',
         'student',
         'subject',
         'grade',

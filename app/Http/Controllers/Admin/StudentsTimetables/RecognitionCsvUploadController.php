@@ -441,7 +441,7 @@ class RecognitionCsvUploadController extends Controller
 
     private function studentNumberIdentifierExpression(): string
     {
-        return "NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.schuelerinnenkennzahl')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schülerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schã¼lerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schÃ¼lerinnenkennzahl\"')))), '')";
+        return "NULLIF(TRIM(COALESCE(student_code, JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.schuelerinnenkennzahl')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schülerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schã¼lerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schÃ¼lerinnenkennzahl\"')))), '')";
     }
 
     private function studentNameIdentifierExpression(): string
