@@ -19,6 +19,7 @@ class StudentTimetableRecognitionRow extends Model
         'colloquia',
         'module_repetitions',
         'teacher_code',
+        'identity_hash',
         'raw_data',
     ];
 

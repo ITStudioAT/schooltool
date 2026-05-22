@@ -23,16 +23,50 @@ class TimetableImportController extends Controller
             abort(403, 'Sie haben keine Berechtigung.');
         }
 
+        if ($request->boolean('summary')) {
+            $import = TimetableImport::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->orderByDesc('imported_at')
+                ->orderByDesc('id')
+                ->first([
+                    'id',
+                    'original_filename',
+                    'stored_filename',
+                    'sections',
+                    'tt_skipped_invalid',
+                    'import_status',
+                    'progress_current',
+                    'progress_total',
+                    'import_message',
+                    'import_error',
+                    'started_at',
+                    'finished_at',
+                    'imported_at',
+                ]);
+
+            return response()->json([
+                'data' => $import ? [$import] : [],
+                'total' => $import ? 1 : 0,
+                'main_dataset' => null,
+            ]);
+        }
+
         $perPage = min(max($request->integer('per_page', 25), 1), 100);
 
         $imports = TimetableImport::where('school_id', $authUser->school_id)
             ->where('schoolyear_id', $authUser->schoolyear_id)
             ->orderByDesc('imported_at')
+            ->orderByDesc('id')
             ->paginate($perPage);
 
         return response()->json([
             ...$imports->toArray(),
-            'main_dataset' => $this->mainDatasetMetadata((int) $authUser->school_id, (int) $authUser->schoolyear_id),
+            'main_dataset' => $this->mainDatasetMetadata(
+                (int) $authUser->school_id,
+                (int) $authUser->schoolyear_id,
+                $request->boolean('include_single_date_courses', true),
+            ),
         ]);
     }
 
@@ -119,7 +153,7 @@ class TimetableImportController extends Controller
         ]);
     }
 
-    private function mainDatasetMetadata(int $schoolId, int $schoolyearId): array
+    private function mainDatasetMetadata(int $schoolId, int $schoolyearId, bool $includeSingleDateCourses = true): array
     {
         $baseQuery = StudentTimetableEntry::where('school_id', $schoolId)
             ->where('schoolyear_id', $schoolyearId)
@@ -135,7 +169,9 @@ class TimetableImportController extends Controller
             'last_date' => (clone $baseQuery)->max('date'),
             'updated_at' => (clone $baseQuery)->max('updated_at'),
             'courses' => $courses,
-            'single_date_courses' => $this->mainDatasetSingleDateCourses($schoolId, $schoolyearId),
+            'single_date_courses' => $includeSingleDateCourses
+                ? $this->mainDatasetSingleDateCourses($schoolId, $schoolyearId)
+                : [],
         ];
     }
 

@@ -381,48 +381,59 @@ class TimetableImportService
             return;
         }
 
-        $schoolId = (int) $rows->first()['school_id'];
-        $schoolyearId = (int) $rows->first()['schoolyear_id'];
-        $identityHashes = $rows->pluck('identity_hash')->all();
         $now = now();
 
-        DB::transaction(function () use ($rows, $schoolId, $schoolyearId, $identityHashes, $now): void {
-            StudentTimetableEntry::query()
-                ->where('school_id', $schoolId)
-                ->where('schoolyear_id', $schoolyearId)
-                ->whereIn('identity_hash', $identityHashes)
-                ->delete();
-
-            DB::table('student_timetable_entries')->insert(
-                $rows
-                    ->map(fn (array $row): array => [
-                        'school_id' => $row['school_id'],
-                        'schoolyear_id' => $row['schoolyear_id'],
-                        'timetable_import_id' => $row['timetable_import_id'],
-                        'line_number' => $row['line_number'],
-                        'date' => $row['date'],
-                        'semester' => $row['semester'],
-                        'source_identifier' => $row['source_identifier'],
-                        'period' => $row['period'],
-                        'starts_at' => $row['starts_at'],
-                        'ends_at' => $row['ends_at'],
-                        'subject' => $row['subject'],
-                        'teacher' => $row['teacher'],
-                        'room' => $row['room'],
-                        'class_name' => $row['class_name'],
-                        'course' => $row['course'],
-                        'module_code' => $row['module_code'],
-                        'student_group' => $row['student_group'],
-                        'is_active' => $row['is_active'],
-                        'identity_hash' => $row['identity_hash'],
-                        'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-                        'raw_line' => $row['raw_line'],
-                        'created_at' => $now,
-                        'updated_at' => $now,
-                    ])
-                    ->all()
-            );
-        });
+        DB::table('student_timetable_entries')->upsert(
+            $rows
+                ->map(fn (array $row): array => [
+                    'school_id' => $row['school_id'],
+                    'schoolyear_id' => $row['schoolyear_id'],
+                    'timetable_import_id' => $row['timetable_import_id'],
+                    'line_number' => $row['line_number'],
+                    'date' => $row['date'],
+                    'semester' => $row['semester'],
+                    'source_identifier' => $row['source_identifier'],
+                    'period' => $row['period'],
+                    'starts_at' => $row['starts_at'],
+                    'ends_at' => $row['ends_at'],
+                    'subject' => $row['subject'],
+                    'teacher' => $row['teacher'],
+                    'room' => $row['room'],
+                    'class_name' => $row['class_name'],
+                    'course' => $row['course'],
+                    'module_code' => $row['module_code'],
+                    'student_group' => $row['student_group'],
+                    'is_active' => $row['is_active'],
+                    'identity_hash' => $row['identity_hash'],
+                    'raw_columns' => json_encode($row['raw_columns'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                    'raw_line' => $row['raw_line'],
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])
+                ->all(),
+            ['school_id', 'schoolyear_id', 'identity_hash'],
+            [
+                'timetable_import_id',
+                'line_number',
+                'date',
+                'semester',
+                'source_identifier',
+                'period',
+                'starts_at',
+                'ends_at',
+                'subject',
+                'teacher',
+                'room',
+                'class_name',
+                'course',
+                'module_code',
+                'student_group',
+                'is_active',
+                'raw_columns',
+                'raw_line',
+                'updated_at',
+            ],
+        );
     }
 
     /**

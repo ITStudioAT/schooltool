@@ -38,6 +38,108 @@ describe('Students timetable subjects overview', () => {
         expect(economyCourses.map(course => course.hours_per_week)).toEqual([2, 2])
     })
 
+    it('shows imported separate L F S language rows in the L/F/S subject plan column', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const ctx: any = {
+            ...methods,
+            activeSubjectRows: [
+                {
+                    id: 1,
+                    semester: 2,
+                    branch: null,
+                    json_code: 'L1',
+                    json_subject: 'L',
+                    name: 'Latein 1',
+                    hours_per_week: 4,
+                },
+                {
+                    id: 2,
+                    semester: 2,
+                    branch: null,
+                    json_code: 'F1',
+                    json_subject: 'F',
+                    name: 'Französisch 1',
+                    hours_per_week: 4,
+                },
+                {
+                    id: 3,
+                    semester: 2,
+                    branch: null,
+                    json_code: 'S1',
+                    json_subject: 'S',
+                    name: 'Spanisch 1',
+                    hours_per_week: 4,
+                },
+            ],
+        }
+        ctx.subjectOverviewColumns = computed.subjectOverviewColumns.call(ctx)
+        ctx.subjectOverviewSemesters = [2]
+
+        const [row] = computed.subjectOverviewRows.call(ctx)
+        const languageCell = row.cells.find(cell => cell.column.key === 'L/F/S')
+
+        expect(languageCell.subjects.map(subject => subject.display_code)).toEqual(['F1/L1/S1*'])
+        expect(languageCell.subjects.map(subject => subject.hours_per_week)).toEqual([4])
+        expect(row.totals.map(total => total.value)).toEqual(['4'])
+    })
+
+    it('marks BE and ME alternatives per branch and counts each branch choice once', () => {
+        const methods = (SubjectsOverview as any).methods
+        const computed = (SubjectsOverview as any).computed
+        const ctx: any = {
+            ...methods,
+            activeSubjectRows: [
+                {
+                    id: 1,
+                    semester: 7,
+                    branch: 'gymnasial',
+                    json_code: 'BE1',
+                    json_subject: 'BE',
+                    name: 'Bildnerische Erziehung 1',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 2,
+                    semester: 7,
+                    branch: 'gymnasial',
+                    json_code: 'ME1',
+                    json_subject: 'ME',
+                    name: 'Musikerziehung 1',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 3,
+                    semester: 7,
+                    branch: 'wirtschaftskundlich',
+                    json_code: 'BE1',
+                    json_subject: 'BE',
+                    name: 'Bildnerische Erziehung 1',
+                    hours_per_week: 2,
+                },
+                {
+                    id: 4,
+                    semester: 7,
+                    branch: 'wirtschaftskundlich',
+                    json_code: 'ME1',
+                    json_subject: 'ME',
+                    name: 'Musikerziehung 1',
+                    hours_per_week: 2,
+                },
+            ],
+        }
+        ctx.subjectOverviewColumns = computed.subjectOverviewColumns.call(ctx)
+        ctx.subjectOverviewSemesters = [7]
+
+        const [row] = computed.subjectOverviewRows.call(ctx)
+        const artCells = row.cells.filter(cell => ['BE', 'ME'].includes(cell.column.key))
+        const grandTotals = computed.subjectOverviewGrandTotals.call(ctx)
+
+        expect(artCells.flatMap(cell => cell.subjects.map(subject => subject.display_code))).toEqual(['ME1*', 'BE1*'])
+        expect(row.totals.map(total => total.value)).toEqual(['2'])
+        expect(grandTotals.map(total => total.value)).toEqual(['2'])
+    })
+
     it('adds the subjects overview menu item to the module shell', () => {
         const componentSource = readFileSync(
             'resources/js/pages/admin/studentsTimetables/StudentsTimetables.vue',
@@ -115,6 +217,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subjectOverviewSplitColumnGroups')
         expect(componentSource).toContain('subjectOverviewRows')
         expect(componentSource).toContain('subjectOverviewFooter')
+        expect(componentSource).toContain('subjectOverviewGrandTotals')
         expect(componentSource).toContain('subjectOverviewGridStyle(columnGroup)')
         expect(componentSource).toContain('subjectOverviewCellsForColumns(row, columnGroup.columns)')
         expect(componentSource).toContain('subjectOverviewFooterForColumns(columnGroup.columns)')
@@ -169,13 +272,16 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('subject.display_code || subjectOverviewDisplayCode(subject)')
         expect(componentSource).toContain('subjectOverviewCourseItems(this.uniqueSubjectOverviewSubjects(matchingSubjects))')
         expect(componentSource).toContain('subjectOverviewDisplayCodes(subject)')
+        expect(componentSource).toContain('subjectOverviewMergedChoiceSubjects(subjects)')
+        expect(componentSource).toContain('subjectOverviewMergeableChoiceGroupForSubject(subject)')
         expect(componentSource).toContain('isSubjectOverviewChoiceSubject(subject)')
         expect(componentSource).toContain('subjectMatchesSubjectOverviewChoiceGroup(subject, group)')
         expect(componentSource).toContain('subjectOverviewChoiceGroups()')
         expect(componentSource).toContain("codes: ['R/ET1']")
         expect(componentSource).toContain("choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET']")
-        expect(componentSource).toContain("codes: ['BE1', 'ME1']")
-        expect(componentSource).toContain("codes: ['BE2', 'ME2']")
+        expect(componentSource).toContain('subjectOverviewLanguageChoiceGroups()')
+        expect(componentSource).toContain('subjectOverviewArtChoiceGroups()')
+        expect(componentSource).toContain("return this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])")
         expect(componentSource).toContain('alternativeParts(value)')
         expect(componentSource).toContain('subjectNameLines(subject)')
         expect(componentSource).toContain('isAlternativeSubjectCode(subject.json_code, subject.json_subject)')
@@ -203,6 +309,7 @@ describe('Students timetable subjects overview', () => {
         expect(componentSource).toContain('saveMappings()')
         expect(componentSource).toContain('rawSubjectHours(subjects)')
         expect(componentSource).toContain('subjectOverviewChoiceDuplicateHours(subjects)')
+        expect(componentSource).toContain('subject-plan-grand-total')
         expect(componentSource).toContain('.subject-plan-item--course')
         expect(componentSource).toContain('.subject-plan-item--course + .subject-plan-item--course')
         expect(componentSource).toContain('border-top: 1px solid rgba(15, 23, 42, 0.42)')

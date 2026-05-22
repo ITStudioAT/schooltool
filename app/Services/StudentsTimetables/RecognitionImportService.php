@@ -13,6 +13,8 @@ use RuntimeException;
 
 class RecognitionImportService
 {
+    private const IDENTITY_SEPARATOR = "\x1F";
+
     public function createQueuedImport(
         User $user,
         string $storedFilename,
@@ -61,18 +63,57 @@ class RecognitionImportService
         DB::transaction(function () use ($import, $filterResult, $storedPath): void {
             $import->rows()->delete();
 
-            collect($filterResult['records'])
-                ->each(fn (array $record): StudentTimetableRecognitionRow => $import->rows()->create([
+            $rows = collect($filterResult['records'])
+                ->map(fn (array $record): array => [
                     'school_id' => $import->school_id,
                     'schoolyear_id' => $import->schoolyear_id,
                     ...$record,
-                ]));
+                    'identity_hash' => $this->recognitionRowIdentityHash(
+                        (int) $import->school_id,
+                        (int) $import->schoolyear_id,
+                        $record['raw_data'],
+                    ),
+                ])
+                ->keyBy(fn (array $row): string => $row['identity_hash'])
+                ->values();
+
+            if ($rows->isNotEmpty()) {
+                StudentTimetableRecognitionRow::query()
+                    ->where('school_id', $import->school_id)
+                    ->where('schoolyear_id', $import->schoolyear_id)
+                    ->whereIn('identity_hash', $rows->pluck('identity_hash')->all())
+                    ->delete();
+
+                $now = now();
+
+                DB::table('student_timetable_recognition_rows')->insert(
+                    $rows
+                        ->map(fn (array $row): array => [
+                            'student_timetable_recognition_import_id' => $import->id,
+                            'school_id' => $row['school_id'],
+                            'schoolyear_id' => $row['schoolyear_id'],
+                            'row_number' => $row['row_number'],
+                            'student' => $row['student'],
+                            'subject' => $row['subject'],
+                            'grade' => $row['grade'],
+                            'note' => $row['note'],
+                            'colloquia' => $row['colloquia'],
+                            'module_repetitions' => $row['module_repetitions'],
+                            'teacher_code' => $row['teacher_code'],
+                            'identity_hash' => $row['identity_hash'],
+                            'raw_data' => json_encode($row['raw_data'], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ])
+                        ->all()
+                );
+            }
 
             $import->update([
                 'file_size' => is_file($storedPath) ? (filesize($storedPath) ?: 0) : 0,
                 'total_rows' => $filterResult['total_rows'],
-                'imported_rows' => $filterResult['imported_rows'],
-                'skipped_rows' => $filterResult['skipped_rows'],
+                'imported_rows' => $rows->count(),
+                'skipped_rows' => $filterResult['total_rows'] - $rows->count(),
                 'import_status' => 'completed',
                 'import_message' => 'Import abgeschlossen.',
             ]);
@@ -318,6 +359,20 @@ class RecognitionImportService
             'module_repetitions' => $this->firstRecordValue($record, ['modulwiederholungen']),
             'teacher_code' => $this->firstRecordValue($record, ['lehrerkuerzel', 'lehrerkurzel', 'lehrerkürzel', 'lehrerkã¼rzel']),
         ];
+    }
+
+    /**
+     * @param  array<string, string>  $rawData
+     */
+    private function recognitionRowIdentityHash(int $schoolId, int $schoolyearId, array $rawData): string
+    {
+        ksort($rawData);
+
+        return hash('sha256', implode(self::IDENTITY_SEPARATOR, [
+            $schoolId,
+            $schoolyearId,
+            json_encode($rawData, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        ]));
     }
 
     /**

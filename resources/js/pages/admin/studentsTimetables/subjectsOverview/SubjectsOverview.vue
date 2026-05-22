@@ -131,7 +131,15 @@
                                         {{ total.value }}
                                     </span>
                                 </div>
-                                <div v-if="columnGroup.showSum" class="subject-plan-cell subject-plan-cell--footer subject-plan-cell--sum"></div>
+                                <div v-if="columnGroup.showSum" class="subject-plan-cell subject-plan-cell--footer subject-plan-cell--sum">
+                                    <span
+                                        v-for="total in subjectOverviewGrandTotals"
+                                        :key="`subject-plan-grand-total-${layout.key}-${columnGroup.key}-${total.value}-${total.class}`"
+                                        class="subject-plan-total"
+                                        :class="total.class">
+                                        {{ total.value }}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -559,7 +567,7 @@ export default {
                 { key: 'GW', label: 'GW', subjectKeys: ['GW'] },
                 { key: 'LPT/VWA', label: 'LPT/VWA', subjectKeys: ['LPT', 'VWA'] },
                 { key: 'R/ET', label: 'R/ET', subjectKeys: ['R/ET'] },
-                { key: 'L/F/S', label: 'L/F/S', subjectKeys: ['L/F/S'] },
+                { key: 'L/F/S', label: 'L/F/S', subjectKeys: ['L/F/S', 'L', 'F', 'S'] },
                 { key: 'D', label: 'D', subjectKeys: ['D'] },
                 { key: 'E', label: 'E', subjectKeys: ['E'] },
                 { key: 'M', label: 'M', subjectKeys: ['M'] },
@@ -646,6 +654,11 @@ export default {
                     ),
                 ),
             }))
+        },
+        subjectOverviewGrandTotals() {
+            return this.subjectOverviewTotals(
+                this.uniqueSubjectOverviewTotalSubjects(this.activeSubjectRows),
+            )
         },
         subjectOverviewHasBranches() {
             return this.activeSubjectRows.some(subject => this.isBranchSubject(subject))
@@ -785,6 +798,8 @@ export default {
             return 'subject-plan-cell--filled'
         },
         subjectOverviewDisplayCode(subject) {
+            if (subject.display_code) return subject.display_code
+
             const displayCode = this.alternativeDisplay(subject.json_code)
 
             if (!this.isSubjectOverviewChoiceSubject(subject)) return displayCode
@@ -792,7 +807,7 @@ export default {
             return `${displayCode}*`
         },
         subjectOverviewCourseItems(subjects) {
-            return subjects.flatMap(subject => {
+            return this.subjectOverviewMergedChoiceSubjects(subjects).flatMap(subject => {
                 const displayCodes = this.subjectOverviewDisplayCodes(subject)
 
                 if (displayCodes.length <= 1) {
@@ -817,7 +832,60 @@ export default {
                 }))
             })
         },
+        subjectOverviewMergedChoiceSubjects(subjects) {
+            const usedSubjectIndexes = new Set()
+
+            return subjects.flatMap((subject, subjectIndex) => {
+                if (usedSubjectIndexes.has(subjectIndex)) return []
+
+                const choiceGroup = this.subjectOverviewMergeableChoiceGroupForSubject(subject)
+                if (!choiceGroup) return [subject]
+
+                const choiceSubjects = subjects
+                    .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+                    .filter(({ candidate, candidateIndex }) =>
+                        !usedSubjectIndexes.has(candidateIndex)
+                        && this.subjectMatchesSubjectOverviewChoiceGroup(candidate, choiceGroup),
+                    )
+
+                if (choiceSubjects.length < 2) return [subject]
+
+                choiceSubjects.forEach(({ candidateIndex }) => usedSubjectIndexes.add(candidateIndex))
+
+                const sortedSubjects = choiceSubjects
+                    .map(({ candidate }) => candidate)
+                    .sort((firstSubject, secondSubject) => this.compareText(firstSubject.json_code, secondSubject.json_code))
+                const displayCodes = sortedSubjects
+                    .map(candidate => this.alternativeDisplay(candidate.json_code))
+                    .filter(displayCode => displayCode !== '-')
+                const subjectHours = Math.max(...sortedSubjects.map(candidate => Number(candidate.hours_per_week || 0)))
+
+                return [
+                    {
+                        ...sortedSubjects[0],
+                        branch: choiceGroup.branch === 'common' ? null : choiceGroup.branch,
+                        json_code: displayCodes.join('/'),
+                        hours_per_week: Number.isFinite(subjectHours) ? subjectHours : sortedSubjects[0].hours_per_week,
+                        display_code: `${displayCodes.join('/')}*`,
+                        display_key: [
+                            'choice',
+                            choiceGroup.semester,
+                            choiceGroup.branch,
+                            displayCodes.join('/'),
+                        ].join('-'),
+                    },
+                ]
+            })
+        },
+        subjectOverviewMergeableChoiceGroupForSubject(subject) {
+            return this.subjectOverviewChoiceGroups().find(group =>
+                !group.choices
+                && this.subjectMatchesSubjectOverviewChoiceGroup(subject, group),
+            ) || null
+        },
         subjectOverviewDisplayCodes(subject) {
+            if (subject.display_code) return [subject.display_code]
+
             const displayCode = this.alternativeDisplay(subject.json_code)
 
             if (displayCode === '-') return [displayCode]
@@ -830,13 +898,13 @@ export default {
         },
         isSubjectOverviewChoiceSubject(subject) {
             return this.subjectOverviewChoiceGroups().some(group =>
-                Number(subject.semester) === group.semester && group.codes.includes(String(subject.json_code || '')),
+                this.subjectMatchesSubjectOverviewChoiceGroup(subject, group),
             )
         },
         subjectMatchesSubjectOverviewChoiceGroup(subject, group) {
             return (
                 Number(subject.semester) === group.semester
-                && subject.branch === group.branch
+                && this.subjectOverviewChoiceGroupBranch(subject) === group.branch
                 && group.codes.includes(String(subject.json_code || ''))
             )
         },
@@ -866,17 +934,49 @@ export default {
                     codes: ['R/ET4'],
                     choices: ['Rev', 'Ris', 'Rk', 'Ror', 'ET'],
                 },
-                {
-                    semester: 7,
-                    branch: 'wirtschaftskundlich',
-                    codes: ['BE1', 'ME1'],
-                },
-                {
-                    semester: 8,
-                    branch: 'gymnasial',
-                    codes: ['BE2', 'ME2'],
-                },
+                ...this.subjectOverviewLanguageChoiceGroups(),
+                ...this.subjectOverviewArtChoiceGroups(),
             ]
+        },
+        subjectOverviewLanguageChoiceGroups() {
+            return this.subjectOverviewAlternativeChoiceGroups(['L', 'F', 'S'])
+        },
+        subjectOverviewArtChoiceGroups() {
+            return this.subjectOverviewAlternativeChoiceGroups(['BE', 'ME'])
+        },
+        subjectOverviewAlternativeChoiceGroups(subjectKeys) {
+            const alternativeSubjects = (this.activeSubjectRows || []).filter(subject =>
+                subjectKeys.includes(this.subjectOverviewSubjectKey(subject)),
+            )
+            const groups = new Map()
+
+            alternativeSubjects.forEach(subject => {
+                const groupKey = [
+                    Number(subject.semester) || 0,
+                    this.subjectOverviewChoiceGroupBranch(subject),
+                ].join('|')
+                const group = groups.get(groupKey) || {
+                    semester: Number(subject.semester) || 0,
+                    branch: this.subjectOverviewChoiceGroupBranch(subject),
+                    codes: new Set(),
+                    subjects: new Set(),
+                }
+
+                group.codes.add(String(subject.json_code || ''))
+                group.subjects.add(this.subjectOverviewSubjectKey(subject))
+                groups.set(groupKey, group)
+            })
+
+            return [...groups.values()]
+                .filter(group => group.semester > 0 && group.subjects.size > 1)
+                .map(group => ({
+                    semester: group.semester,
+                    branch: group.branch,
+                    codes: [...group.codes],
+                }))
+        },
+        subjectOverviewChoiceGroupBranch(subject = {}) {
+            return subject.branch || 'common'
         },
         uniqueSubjectOverviewSubjects(subjects) {
             const seenSubjectKeys = new Set()

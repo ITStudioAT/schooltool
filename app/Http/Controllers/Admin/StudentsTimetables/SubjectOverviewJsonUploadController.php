@@ -17,10 +17,35 @@ use Illuminate\Support\Str;
 
 class SubjectOverviewJsonUploadController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        if ($request->boolean('summary')) {
+            $import = StudentTimetableSubjectImport::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->orderByDesc('imported_at')
+                ->orderByDesc('id')
+                ->first([
+                    'id',
+                    'stored_filename',
+                    'original_filename',
+                    'file_size',
+                    'subjects_total',
+                    'subject_rows_total',
+                    'semesters_total',
+                    'branches_total',
+                    'imported_at',
+                ]);
+
+            return response()->json([
+                'data' => $import ? [$this->subjectImportSummaryPayload($import)] : [],
+                'total' => $import ? 1 : 0,
+                'active_dataset' => null,
+            ]);
         }
 
         $this->importLegacyJsonIfMissing($authUser);
@@ -1091,6 +1116,25 @@ class SubjectOverviewJsonUploadController extends Controller
             'size' => $import->file_size,
             'uploaded_at' => $import->imported_at?->toIso8601String(),
             'analysis' => $import->analysis ?? [],
+            'subjects_total' => $import->subjects_total,
+            'subject_rows_total' => $import->subject_rows_total,
+            'semesters_total' => $import->semesters_total,
+            'branches_total' => $import->branches_total,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function subjectImportSummaryPayload(StudentTimetableSubjectImport $import): array
+    {
+        return [
+            'id' => $import->id,
+            'filename' => $import->stored_filename,
+            'original_filename' => $import->original_filename,
+            'stored_filename' => $import->stored_filename,
+            'size' => $import->file_size,
+            'uploaded_at' => $import->imported_at?->toIso8601String(),
             'subjects_total' => $import->subjects_total,
             'subject_rows_total' => $import->subject_rows_total,
             'semesters_total' => $import->semesters_total,

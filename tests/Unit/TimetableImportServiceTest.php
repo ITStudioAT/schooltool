@@ -261,6 +261,38 @@ it('updates matching timetable rows and keeps previous unmatched entries', funct
     ]);
 });
 
+it('does not duplicate active timetable entries when the same file is imported again', function () {
+    $firstFilePath = "{$this->storageDirectory}/same-first.txt";
+    File::put($firstFilePath, implode(PHP_EOL, [
+        'TT	100	20260215	1	MATH	AB	R101	1A	MATH-1	GRP-A',
+        'TT	200	20260216	2	BIO	CD	R102	1A	BIO-1	GRP-B',
+    ]));
+
+    $firstImport = $this->service->createImport(
+        $this->user,
+        'same-first.txt',
+        'same-first.txt',
+        'app/private/testing/student-timetables/same-first.txt',
+        $this->schoolyear->id,
+    );
+
+    $secondFilePath = "{$this->storageDirectory}/same-second.txt";
+    File::put($secondFilePath, File::get($firstFilePath));
+
+    $secondImport = $this->service->createImport(
+        $this->user,
+        'same-second.txt',
+        'same-second.txt',
+        'app/private/testing/student-timetables/same-second.txt',
+        $this->schoolyear->id,
+    );
+
+    expect(TimetableImport::where('school_id', $this->school->id)->count())->toBe(2)
+        ->and(StudentTimetableEntry::where('school_id', $this->school->id)->count())->toBe(2)
+        ->and(StudentTimetableEntry::where('timetable_import_id', $firstImport->id)->count())->toBe(0)
+        ->and(StudentTimetableEntry::where('timetable_import_id', $secondImport->id)->count())->toBe(2);
+});
+
 it('unimports a run by rebuilding the active timetable from remaining imports', function () {
     $firstFilePath = "{$this->storageDirectory}/restore-first.txt";
     File::put($firstFilePath, implode(PHP_EOL, [

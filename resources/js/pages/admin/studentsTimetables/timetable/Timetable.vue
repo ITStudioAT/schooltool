@@ -1,5 +1,5 @@
 <template>
-    <v-col cols="12" class="pb-0">
+    <v-col v-if="showTimetableSubnav" cols="12" class="pb-0">
         <v-sheet rounded="xl" class="st-subnav mb-2">
             <div class="st-subnav__inner">
                 <div class="st-subnav__items">
@@ -1222,6 +1222,9 @@ export default {
                 { key: 'settings', label: 'Einstellungen' },
             ]
         },
+        showTimetableSubnav() {
+            return this.subAction !== 'imports'
+        },
         importButtons() {
             return [
                 {
@@ -1565,7 +1568,9 @@ export default {
                 '- Gemeinsame Faecher kommen in common_courses.',
                 '- Zweig-spezifische Faecher kommen unter branches.wirtschaftskundlich oder branches.gymnasial.',
                 '- ÖKO 2/3 darf nicht als ein einzelnes Fach verloren gehen: bilde daraus getrennte Kurse ÖKO2 und ÖKO3, wenn beide Module gemeint sind. Teile die Wochenstunden sinnvoll auf, falls die Grafik nur eine Gesamtsumme zeigt.',
-                '- Sprachen: Unterscheide Deutsch, Englisch und weitere Sprachen sauber. Wahlsprachen wie Latein, Franzoesisch oder Spanisch als eigene Kuerzel L, F, S fuehren; keine Sprachoption zusammenmischen.',
+                '- Wahlalternativen werden als eigene Kursobjekte importiert, aber in der Anzeige zusammengefasst und nur einmal gezaehlt.',
+                '- Sprachen: Unterscheide Deutsch, Englisch und weitere Sprachen sauber. Wahlsprachen wie Latein, Franzoesisch oder Spanisch als eigene Kuerzel L, F, S fuehren; nicht als einzelnes Kursobjekt L/F/S importieren. Beispiel: F1, L1 und S1 jeweils mit 4 Wochenstunden importieren; die Anzeige zeigt F1/L1/S1* mit 4 Wochenstunden.',
+                '- Kunst/Musik: Bildnerische Erziehung und Musikerziehung sind Wahlalternativen, wenn sie in derselben Semester-/Zweig-Position stehen. Beispiel: BE1 und ME1 jeweils als eigenes Kursobjekt mit denselben Wochenstunden importieren; die Anzeige markiert sie mit * und zaehlt die Wochenstunden nur einmal.',
                 '- Zweige: Wirtschaftskundliche Inhalte nur dem wirtschaftskundlichen Zweig zuordnen; gymnasiale/sprachliche Inhalte nur dem gymnasialen Zweig zuordnen.',
                 '- Wenn in der Grafik ein Fach in mehreren Semestern vorkommt, lege fuer jedes Semester einen eigenen Kurs mit passender Nummer an.',
                 '- Verwende Dezimalzahlen fuer halbe Wochenstunden, falls noetig.',
@@ -1712,12 +1717,29 @@ export default {
 
             this.loadingImportButtonInfo = true
             try {
+                const shouldLoadFullTimetableImports = this.activeImportPage === 'stundenplan'
+                const shouldLoadFullSubjectImports = this.activeImportPage === 'faecher'
+                const shouldLoadFullRecognitionImports = this.activeImportPage === 'anrechnungen'
+
                 const [timetableResponse, subjectsResponse, recognitionsResponse] = await Promise.all([
                     axios.get('/api/admin/students-timetables/imports', {
-                        params: { page: 1, per_page: 100 },
+                        params: {
+                            page: 1,
+                            per_page: shouldLoadFullTimetableImports ? 100 : 1,
+                            include_single_date_courses: shouldLoadFullTimetableImports ? 1 : 0,
+                            summary: shouldLoadFullTimetableImports ? 0 : 1,
+                        },
                     }),
-                    axios.get('/api/admin/students-timetables/subjects-overview-json'),
-                    axios.get('/api/admin/students-timetables/recognitions-csv'),
+                    axios.get('/api/admin/students-timetables/subjects-overview-json', {
+                        params: {
+                            summary: shouldLoadFullSubjectImports ? 0 : 1,
+                        },
+                    }),
+                    axios.get('/api/admin/students-timetables/recognitions-csv', {
+                        params: {
+                            summary: shouldLoadFullRecognitionImports ? 0 : 1,
+                        },
+                    }),
                 ])
                 this.imports = timetableResponse.data?.data || []
                 this.recognitionImports = recognitionsResponse.data?.data || []

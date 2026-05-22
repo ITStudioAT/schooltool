@@ -7,20 +7,47 @@ use App\Models\StudentTimetableRecognitionImport;
 use App\Models\StudentTimetableRecognitionRow;
 use App\Services\FileUploadService;
 use App\Services\StudentsTimetables\RecognitionImportService;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
 class RecognitionCsvUploadController extends Controller
 {
-    public function index(RecognitionImportService $service): JsonResponse
+    public function index(Request $request, RecognitionImportService $service): JsonResponse
     {
         if (! $authUser = $this->userHasRole(['admin', 'studentstimetables_admin'])) {
             abort(403, 'Sie haben keine Berechtigung.');
+        }
+
+        if ($request->boolean('summary')) {
+            $import = StudentTimetableRecognitionImport::query()
+                ->where('school_id', $authUser->school_id)
+                ->where('schoolyear_id', $authUser->schoolyear_id)
+                ->orderByDesc('imported_at')
+                ->orderByDesc('id')
+                ->first([
+                    'id',
+                    'stored_filename',
+                    'original_filename',
+                    'file_size',
+                    'total_rows',
+                    'imported_rows',
+                    'skipped_rows',
+                    'import_status',
+                    'import_message',
+                    'imported_at',
+                ]);
+
+            return response()->json([
+                'data' => $import ? [$this->recognitionImportSummaryPayload($import)] : [],
+                'total' => $import ? 1 : 0,
+                'active_dataset' => null,
+            ]);
         }
 
         $service->importLegacyCsvFilesIfMissing($authUser);
@@ -136,8 +163,11 @@ class RecognitionCsvUploadController extends Controller
 
     private function recognitionImportPayload(StudentTimetableRecognitionImport $import): array
     {
-        $rows = $import->rows()->get(['note', 'subject', 'raw_data']);
-        $gradeCounts = $this->gradeCounts($rows);
+        $summary = $this->recognitionRowsSummary($this->recognitionRowsQuery(
+            (int) $import->school_id,
+            (int) $import->schoolyear_id,
+            (int) $import->id,
+        ));
 
         return [
             'id' => $import->id,
@@ -148,13 +178,32 @@ class RecognitionCsvUploadController extends Controller
             'total_rows' => $import->total_rows,
             'imported_rows' => $import->imported_rows,
             'skipped_rows' => $import->skipped_rows,
-            'imported_students_count' => $this->importedStudentsCount($rows),
-            'students_without_grades_count' => $this->studentsWithoutGradesCount($rows),
-            'imported_subjects_count' => $this->importedSubjectsCount($rows),
-            'imported_teachers_count' => $this->importedTeachersCount($rows),
-            'teacher_codes' => $this->teacherRows($rows),
-            'grade_counts' => $gradeCounts,
-            'subject_grade_counts' => $this->subjectGradeCounts($rows),
+            'imported_students_count' => $summary['students_count'],
+            'students_without_grades_count' => $summary['students_without_grades_count'],
+            'imported_subjects_count' => $summary['subjects_count'],
+            'imported_teachers_count' => $summary['teachers_count'],
+            'teacher_codes' => $summary['teacher_codes'],
+            'grade_counts' => $summary['grade_counts'],
+            'subject_grade_counts' => $summary['subject_grade_counts'],
+            'import_status' => $import->import_status,
+            'import_message' => $import->import_message,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function recognitionImportSummaryPayload(StudentTimetableRecognitionImport $import): array
+    {
+        return [
+            'id' => $import->id,
+            'filename' => $import->stored_filename,
+            'original_filename' => $import->original_filename,
+            'uploaded_at' => $import->imported_at?->toISOString(),
+            'size' => $import->file_size,
+            'total_rows' => $import->total_rows,
+            'imported_rows' => $import->imported_rows,
+            'skipped_rows' => $import->skipped_rows,
             'import_status' => $import->import_status,
             'import_message' => $import->import_message,
         ];
@@ -162,180 +211,135 @@ class RecognitionCsvUploadController extends Controller
 
     private function recognitionDatasetMetadata(int $schoolId, int $schoolyearId): array
     {
-        $rows = StudentTimetableRecognitionRow::query()
-            ->where('school_id', $schoolId)
-            ->where('schoolyear_id', $schoolyearId)
-            ->get(['note', 'subject', 'raw_data', 'updated_at']);
+        $summary = $this->recognitionRowsSummary($this->recognitionRowsQuery($schoolId, $schoolyearId));
 
         return [
             'name' => 'Aktive Anrechnungen',
             'table' => 'student_timetable_recognition_rows',
-            'entries_count' => $rows->count(),
-            'subjects_count' => $this->importedSubjectsCount($rows),
-            'teachers_count' => $this->importedTeachersCount($rows),
-            'students_count' => $this->importedStudentsCount($rows),
-            'grade_counts' => $this->gradeCounts($rows),
-            'subject_grade_counts' => $this->subjectGradeCounts($rows),
-            'teacher_codes' => $this->teacherRows($rows),
-            'updated_at' => $rows->max('updated_at')?->toISOString(),
+            'entries_count' => $summary['entries_count'],
+            'subjects_count' => $summary['subjects_count'],
+            'teachers_count' => $summary['teachers_count'],
+            'students_count' => $summary['students_count'],
+            'grade_counts' => $summary['grade_counts'],
+            'subject_grade_counts' => $summary['subject_grade_counts'],
+            'teacher_codes' => $summary['teacher_codes'],
+            'updated_at' => $summary['updated_at'],
         ];
     }
 
-    private function importedStudentsCount(Collection $rows): int
+    private function recognitionRowsQuery(int $schoolId, int $schoolyearId, ?int $importId = null): Builder
     {
-        if ($this->usesStudentNameFallback($rows)) {
-            return $rows
-                ->map(fn ($row): string => $this->recognitionStudentNameIdentifier($row))
-                ->filter()
-                ->unique()
-                ->count();
-        }
-
-        return $this->recognitionStudentIdentifiers($rows)->count();
+        return StudentTimetableRecognitionRow::query()
+            ->where('school_id', $schoolId)
+            ->where('schoolyear_id', $schoolyearId)
+            ->when($importId !== null, fn (Builder $query): Builder => $query
+                ->where('student_timetable_recognition_import_id', $importId));
     }
 
-    private function studentsWithoutGradesCount(Collection $rows): int
+    /**
+     * @return array{
+     *     entries_count: int,
+     *     subjects_count: int,
+     *     teachers_count: int,
+     *     students_count: int,
+     *     students_without_grades_count: int,
+     *     grade_counts: array<string, mixed>,
+     *     subject_grade_counts: list<array<string, mixed>>,
+     *     teacher_codes: list<array<string, mixed>>,
+     *     updated_at: ?string,
+     * }
+     */
+    private function recognitionRowsSummary(Builder $query): array
     {
-        $usesStudentNameFallback = $this->usesStudentNameFallback($rows);
+        $teacherRows = $this->teacherRowsForQuery(clone $query);
+        $updatedAt = (clone $query)->max('updated_at');
 
-        return $rows
-            ->groupBy(fn ($row): string => $usesStudentNameFallback
-                ? $this->recognitionStudentNameIdentifier($row)
-                : $this->recognitionStudentIdentifier($row))
-            ->reject(fn (Collection $studentRows, string $studentIdentifier): bool => $studentIdentifier === '')
-            ->filter(fn (Collection $studentRows): bool => $studentRows
-                ->every(fn ($row): bool => trim((string) $row->note) === ''))
+        return [
+            'entries_count' => (clone $query)->count(),
+            'subjects_count' => $this->countDistinctExpression(clone $query, $this->nonEmptyColumnExpression('subject')),
+            'teachers_count' => count($teacherRows),
+            'students_count' => $this->studentsCountForQuery(clone $query),
+            'students_without_grades_count' => $this->studentsWithoutGradesCountForQuery(clone $query),
+            'grade_counts' => $this->gradeCountsForQuery(clone $query),
+            'subject_grade_counts' => $this->subjectGradeCountsForQuery(clone $query),
+            'teacher_codes' => $teacherRows,
+            'updated_at' => $updatedAt ? CarbonImmutable::parse($updatedAt)->toISOString() : null,
+        ];
+    }
+
+    private function countDistinctExpression(Builder $query, string $expression): int
+    {
+        return (int) $query
+            ->selectRaw("COUNT(DISTINCT {$expression}) as aggregate")
+            ->value('aggregate');
+    }
+
+    private function studentsCountForQuery(Builder $query): int
+    {
+        $expression = $this->usesStudentNameFallbackForQuery(clone $query)
+            ? $this->studentNameIdentifierExpression()
+            : $this->studentNumberIdentifierExpression();
+
+        return $this->countDistinctExpression($query, $expression);
+    }
+
+    private function studentsWithoutGradesCountForQuery(Builder $query): int
+    {
+        $expression = $this->usesStudentNameFallbackForQuery(clone $query)
+            ? $this->studentNameIdentifierExpression()
+            : $this->studentNumberIdentifierExpression();
+
+        return $query
+            ->selectRaw("{$expression} as student_identifier")
+            ->selectRaw("SUM(CASE WHEN {$this->noteExpression()} IS NOT NULL THEN 1 ELSE 0 END) as graded_rows")
+            ->whereRaw("{$expression} IS NOT NULL")
+            ->groupBy('student_identifier')
+            ->havingRaw('graded_rows = 0')
+            ->get()
             ->count();
     }
 
-    private function usesStudentNameFallback(Collection $rows): bool
+    private function usesStudentNameFallbackForQuery(Builder $query): bool
     {
-        $studentIdentifiers = $this->recognitionStudentIdentifiers($rows);
+        $identifierExpression = $this->studentNumberIdentifierExpression();
+        $identifiers = (clone $query)
+            ->selectRaw("{$identifierExpression} as student_identifier")
+            ->whereRaw("{$identifierExpression} IS NOT NULL")
+            ->distinct()
+            ->pluck('student_identifier');
 
-        return $studentIdentifiers->count() === 1
-            && $this->isScientificNotationIdentifier((string) $studentIdentifiers->first())
-            && $rows
-                ->map(fn ($row): string => $this->recognitionStudentNameIdentifier($row))
-                ->filter()
-                ->unique()
-                ->count() > 1;
+        return $identifiers->count() === 1
+            && $this->isScientificNotationIdentifier((string) $identifiers->first())
+            && $this->countDistinctExpression(clone $query, $this->studentNameIdentifierExpression()) > 1;
     }
 
-    private function recognitionStudentIdentifiers(Collection $rows): Collection
+    private function gradeCountsForQuery(Builder $query): array
     {
-        return $rows
-            ->map(fn ($row): string => $this->recognitionStudentIdentifier($row))
-            ->filter()
-            ->unique();
-    }
+        $gradeExpression = $this->gradeExpression();
+        $counts = $query
+            ->selectRaw("COUNT({$gradeExpression}) as total")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five")
+            ->first();
 
-    private function recognitionStudentIdentifier($row): string
-    {
-        return $this->rawDataValue($row, [
-            'schuelerinnenkennzahl',
-            'schülerinnenkennzahl',
-            'schã¼lerinnenkennzahl',
-            'schÃ¼lerinnenkennzahl',
-        ]);
-    }
+        $total = (int) ($counts?->getAttribute('total') ?? 0);
+        $n = (int) ($counts?->getAttribute('n') ?? 0);
+        $b = (int) ($counts?->getAttribute('b') ?? 0);
+        $oneToFour = (int) ($counts?->getAttribute('one_to_four') ?? 0);
+        $five = (int) ($counts?->getAttribute('five') ?? 0);
 
-    private function recognitionStudentNameIdentifier($row): string
-    {
-        $student = trim((string) ($row->student ?? ''));
-        if ($student !== '') {
-            return Str::lower($student);
-        }
-
-        $familyName = $this->rawDataValue($row, ['familienname']);
-        $firstName = $this->rawDataValue($row, ['vorname']);
-
-        return Str::lower(trim("{$familyName}|{$firstName}", '|'));
-    }
-
-    private function isScientificNotationIdentifier(string $identifier): bool
-    {
-        return preg_match('/^\d+(?:[,.]\d+)?e[+-]?\d+$/i', trim($identifier)) === 1;
-    }
-
-    private function rawDataValue($row, array $keys): string
-    {
-        $rawData = is_array($row->raw_data) ? $row->raw_data : [];
-        $lowerKeys = array_map(fn (string $key): string => Str::lower($key), $keys);
-
-        foreach ($rawData as $key => $value) {
-            if (in_array(Str::lower((string) $key), $lowerKeys, true)) {
-                return trim((string) $value);
-            }
-        }
-
-        return '';
-    }
-
-    private function importedSubjectsCount(Collection $rows): int
-    {
-        return $rows
-            ->map(fn ($row): string => $this->recognitionSubject($row))
-            ->filter()
-            ->unique()
-            ->count();
-    }
-
-    private function importedTeachersCount(Collection $rows): int
-    {
-        return $this->teacherRows($rows)->count();
-    }
-
-    private function teacherRows(Collection $rows): Collection
-    {
-        return $rows
-            ->filter(fn ($row): bool => trim((string) $row->note) !== '')
-            ->groupBy(fn ($row): string => $this->recognitionTeacherCode($row))
-            ->sortBy(fn (Collection $teacherRows, string $teacherCode): string => $teacherCode === '' ? 'ZZZZZZZZ' : $teacherCode)
-            ->map(fn (Collection $teacherRows, string $teacherCode): array => [
-                'code' => $teacherCode === '' ? 'Unbekannt' : $teacherCode,
-                'subjects' => $teacherRows
-                    ->map(fn ($row): string => $this->recognitionSubject($row))
-                    ->filter()
-                    ->unique()
-                    ->sort()
-                    ->values()
-                    ->all(),
-                'one_to_four_count' => $teacherRows
-                    ->filter(fn ($row): bool => in_array(Str::upper(trim((string) $row->note)), ['1', '2', '3', '4'], true))
-                    ->count(),
-                'five_count' => $teacherRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === '5')
-                    ->count(),
-                'n_count' => $teacherRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === 'N')
-                    ->count(),
-                'other_count' => $teacherRows
-                    ->filter(fn ($row): bool => $this->isOtherGrade($row))
-                    ->count(),
-                'b_count' => $teacherRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === 'B')
-                    ->count(),
-            ])
-            ->values();
-    }
-
-    private function gradeCounts(Collection $rows): array
-    {
-        $grades = $rows
-            ->map(fn ($row): string => Str::upper(trim((string) $row->note)))
-            ->filter();
-        $n = $grades->filter(fn (string $grade): bool => $grade === 'N')->count();
-        $b = $grades->filter(fn (string $grade): bool => $grade === 'B')->count();
-        $oneToFour = $grades->filter(fn (string $grade): bool => in_array($grade, ['1', '2', '3', '4'], true))->count();
-        $five = $grades->filter(fn (string $grade): bool => $grade === '5')->count();
-        $total = $grades->count();
-        $otherDetails = $grades
-            ->reject(fn (string $grade): bool => $grade === 'N' || $grade === 'B' || $grade === '5' || in_array($grade, ['1', '2', '3', '4'], true))
-            ->countBy()
-            ->sortKeys()
-            ->map(fn (int $count, string $grade): array => [
-                'note' => $grade,
-                'count' => $count,
+        $otherDetails = (clone $query)
+            ->selectRaw("{$gradeExpression} as note, COUNT(*) as count")
+            ->whereRaw("{$gradeExpression} IS NOT NULL")
+            ->whereRaw("{$gradeExpression} NOT IN ('N', 'B', '5', '1', '2', '3', '4')")
+            ->groupBy('note')
+            ->orderBy('note')
+            ->get()
+            ->map(fn (StudentTimetableRecognitionRow $row): array => [
+                'note' => (string) $row->getAttribute('note'),
+                'count' => (int) $row->getAttribute('count'),
             ])
             ->values()
             ->all();
@@ -351,59 +355,102 @@ class RecognitionCsvUploadController extends Controller
         ];
     }
 
-    private function subjectGradeCounts(Collection $rows): array
+    private function subjectGradeCountsForQuery(Builder $query): array
     {
-        return $rows
-            ->groupBy(fn ($row): string => $this->recognitionSubject($row))
-            ->reject(fn (Collection $subjectRows, string $subject): bool => $subject === '')
-            ->sortKeys()
-            ->map(fn (Collection $subjectRows, string $subject): array => [
-                'subject' => $subject,
-                'one_to_four_count' => $subjectRows
-                    ->filter(fn ($row): bool => in_array(Str::upper(trim((string) $row->note)), ['1', '2', '3', '4'], true))
-                    ->count(),
-                'b_count' => $subjectRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === 'B')
-                    ->count(),
-                'five_count' => $subjectRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === '5')
-                    ->count(),
-                'n_count' => $subjectRows
-                    ->filter(fn ($row): bool => Str::upper(trim((string) $row->note)) === 'N')
-                    ->count(),
-                'other_count' => $subjectRows
-                    ->filter(fn ($row): bool => $this->isOtherGrade($row))
-                    ->count(),
-                'total_count' => $subjectRows
-                    ->filter(fn ($row): bool => trim((string) $row->note) !== '')
-                    ->count(),
+        $gradeExpression = $this->gradeExpression();
+        $subjectExpression = $this->nonEmptyColumnExpression('subject');
+
+        return $query
+            ->selectRaw("{$subjectExpression} as subject")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n_count")
+            ->selectRaw("SUM(CASE WHEN {$this->isOtherGradeSql($gradeExpression)} THEN 1 ELSE 0 END) as other_count")
+            ->selectRaw("COUNT({$gradeExpression}) as total_count")
+            ->whereRaw("{$subjectExpression} IS NOT NULL")
+            ->groupBy('subject')
+            ->orderBy('subject')
+            ->get()
+            ->map(fn (StudentTimetableRecognitionRow $row): array => [
+                'subject' => (string) $row->getAttribute('subject'),
+                'one_to_four_count' => (int) $row->getAttribute('one_to_four_count'),
+                'b_count' => (int) $row->getAttribute('b_count'),
+                'five_count' => (int) $row->getAttribute('five_count'),
+                'n_count' => (int) $row->getAttribute('n_count'),
+                'other_count' => (int) $row->getAttribute('other_count'),
+                'total_count' => (int) $row->getAttribute('total_count'),
             ])
             ->values()
             ->all();
     }
 
-    private function isOtherGrade($row): bool
+    private function teacherRowsForQuery(Builder $query): array
     {
-        $grade = Str::upper(trim((string) $row->note));
+        $gradeExpression = $this->gradeExpression();
+        $teacherExpression = $this->nonEmptyColumnExpression('teacher_code');
 
-        return $grade !== ''
-            && $grade !== 'N'
-            && $grade !== 'B'
-            && $grade !== '5'
-            && ! in_array($grade, ['1', '2', '3', '4'], true);
+        return $query
+            ->selectRaw("{$teacherExpression} as teacher_code")
+            ->selectRaw("GROUP_CONCAT(DISTINCT {$this->nonEmptyColumnExpression('subject')} ORDER BY {$this->nonEmptyColumnExpression('subject')} SEPARATOR '\x1F') as subjects")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} IN ('1', '2', '3', '4') THEN 1 ELSE 0 END) as one_to_four_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = '5' THEN 1 ELSE 0 END) as five_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'N' THEN 1 ELSE 0 END) as n_count")
+            ->selectRaw("SUM(CASE WHEN {$this->isOtherGradeSql($gradeExpression)} THEN 1 ELSE 0 END) as other_count")
+            ->selectRaw("SUM(CASE WHEN {$gradeExpression} = 'B' THEN 1 ELSE 0 END) as b_count")
+            ->whereRaw("{$gradeExpression} IS NOT NULL")
+            ->groupBy('teacher_code')
+            ->orderByRaw("CASE WHEN {$teacherExpression} IS NULL THEN 1 ELSE 0 END")
+            ->orderBy('teacher_code')
+            ->get()
+            ->map(fn (StudentTimetableRecognitionRow $row): array => [
+                'code' => $row->getAttribute('teacher_code') === null ? 'Unbekannt' : (string) $row->getAttribute('teacher_code'),
+                'subjects' => collect(explode("\x1F", (string) $row->getAttribute('subjects')))
+                    ->filter()
+                    ->values()
+                    ->all(),
+                'one_to_four_count' => (int) $row->getAttribute('one_to_four_count'),
+                'five_count' => (int) $row->getAttribute('five_count'),
+                'n_count' => (int) $row->getAttribute('n_count'),
+                'other_count' => (int) $row->getAttribute('other_count'),
+                'b_count' => (int) $row->getAttribute('b_count'),
+            ])
+            ->values()
+            ->all();
     }
 
-    private function recognitionSubject($row): string
+    private function noteExpression(): string
     {
-        return trim((string) ($row->raw_data['gegenstand'] ?? $row->subject ?? ''));
+        return "NULLIF(TRIM(COALESCE(note, '')), '')";
     }
 
-    private function recognitionTeacherCode($row): string
+    private function gradeExpression(): string
     {
-        return trim((string) ($row->raw_data['lehrerkuerzel']
-            ?? $row->raw_data['lehrerkurzel']
-            ?? $row->raw_data['lehrerkürzel']
-            ?? $row->raw_data['lehrerkã¼rzel']
-            ?? ''));
+        return "UPPER({$this->noteExpression()})";
+    }
+
+    private function nonEmptyColumnExpression(string $column): string
+    {
+        return "NULLIF(TRIM(COALESCE({$column}, '')), '')";
+    }
+
+    private function isOtherGradeSql(string $gradeExpression): string
+    {
+        return "{$gradeExpression} IS NOT NULL AND {$gradeExpression} NOT IN ('N', 'B', '5', '1', '2', '3', '4')";
+    }
+
+    private function studentNumberIdentifierExpression(): string
+    {
+        return "NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.schuelerinnenkennzahl')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schülerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schã¼lerinnenkennzahl\"')), JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.\"schÃ¼lerinnenkennzahl\"')))), '')";
+    }
+
+    private function studentNameIdentifierExpression(): string
+    {
+        return "LOWER(NULLIF(TRIM(COALESCE(NULLIF(TRIM(COALESCE(student, '')), ''), NULLIF(TRIM(CONCAT_WS('|', NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.familienname')), '')), ''), NULLIF(TRIM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(raw_data, '$.vorname')), '')), ''))), ''))), ''))";
+    }
+
+    private function isScientificNotationIdentifier(string $identifier): bool
+    {
+        return preg_match('/^\d+(?:[,.]\d+)?e[+-]?\d+$/i', trim($identifier)) === 1;
     }
 }

@@ -338,6 +338,20 @@ it('stores a subject overview json file for the selected school', function () {
             ->where('branches_total', 2)
             ->exists())->toBeTrue();
 
+    $summaryResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/subjects-overview-json?summary=1')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.filename', $storedFilename)
+        ->assertJsonPath('data.0.original_filename', 'faecher.json')
+        ->assertJsonPath('data.0.subjects_total', 8)
+        ->assertJsonPath('data.0.semesters_total', 4)
+        ->assertJsonPath('active_dataset', null);
+
+    expect($summaryResponse->json('data.0'))
+        ->not->toHaveKey('analysis')
+        ->not->toHaveKey('file_path');
+
     StudentTimetableSubjectRow::query()
         ->where('school_id', $user->school_id)
         ->where('schoolyear_id', $schoolyear->id)
@@ -584,6 +598,21 @@ it('stores filtered recognition csv uploads for the selected school', function (
         ->assertJsonPath('data.0.subject_grade_counts.5.total_count', 0)
         ->assertJsonPath('data.0.import_status', 'completed');
 
+    $summaryResponse = $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/recognitions-csv?summary=1')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.original_filename', 'anrechnungen.csv')
+        ->assertJsonPath('data.0.imported_rows', 11)
+        ->assertJsonPath('data.0.skipped_rows', 1)
+        ->assertJsonPath('data.0.import_status', 'completed')
+        ->assertJsonPath('active_dataset', null);
+
+    expect($summaryResponse->json('data.0'))
+        ->not->toHaveKey('teacher_codes')
+        ->not->toHaveKey('subject_grade_counts')
+        ->not->toHaveKey('grade_counts');
+
     $this->actingAs($user)
         ->deleteJson("/api/admin/students-timetables/recognitions-csv/{$import->id}")
         ->assertSuccessful()
@@ -642,6 +671,77 @@ it('counts recognition students from collapsed scientific notation exports by st
         ->assertJsonPath('data.0.imported_students_count', 3)
         ->assertJsonPath('data.0.students_without_grades_count', 1)
         ->assertJsonPath('active_dataset.students_count', 3);
+});
+
+it('does not duplicate active recognition rows when the same csv is imported again', function () {
+    $user = createStudentsTimetablesUserWithLicence(roleName: 'studentstimetables_admin');
+    $schoolyear = Schoolyear::factory()->create([
+        'school_id' => $user->school_id,
+    ]);
+    $user->forceFill(['schoolyear_id' => $schoolyear->id])->save();
+
+    $directory = storage_path("app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}");
+
+    File::deleteDirectory(storage_path("app/private/{$user->school_id}/recognition-imports"));
+    File::ensureDirectoryExists($directory);
+
+    $csv = implode("\n", [
+        'Studierende;SchülerInnenkennzahl;Gegenstand;Note;Kolloquien;Modulwiederholungen;Lehrerkürzel',
+        'Max Muster;100;Deutsch;1;0;0/0;',
+        'Kolloq Wert;200;Englisch;N;1;0/0;',
+        '',
+    ]);
+
+    $createImport = function (string $filename) use ($user, $schoolyear, $directory, $csv): StudentTimetableRecognitionImport {
+        File::put("{$directory}/{$filename}", $csv);
+
+        return StudentTimetableRecognitionImport::query()->create([
+            'school_id' => $user->school_id,
+            'schoolyear_id' => $schoolyear->id,
+            'user_id' => $user->id,
+            'original_filename' => 'anrechnungen.csv',
+            'stored_filename' => $filename,
+            'file_path' => "app/private/{$user->school_id}/recognition-imports/{$schoolyear->id}/{$filename}",
+            'file_size' => strlen($csv),
+            'total_rows' => 0,
+            'imported_rows' => 0,
+            'skipped_rows' => 0,
+            'import_status' => 'pending',
+            'imported_at' => now(),
+        ]);
+    };
+
+    $service = app(RecognitionImportService::class);
+    $firstImport = $createImport('anrechnungen_first.csv');
+    $service->processImport($firstImport);
+
+    expect(StudentTimetableRecognitionRow::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->count())->toBe(2);
+
+    $secondImport = $createImport('anrechnungen_second.csv');
+    $service->processImport($secondImport);
+
+    expect(StudentTimetableRecognitionImport::query()
+        ->where('school_id', $user->school_id)
+        ->where('schoolyear_id', $schoolyear->id)
+        ->count())->toBe(2)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('school_id', $user->school_id)
+            ->where('schoolyear_id', $schoolyear->id)
+            ->count())->toBe(2)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $firstImport->id)
+            ->count())->toBe(0)
+        ->and(StudentTimetableRecognitionRow::query()
+            ->where('student_timetable_recognition_import_id', $secondImport->id)
+            ->count())->toBe(2);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/recognitions-csv')
+        ->assertSuccessful()
+        ->assertJsonPath('active_dataset.entries_count', 2);
 });
 
 it('keeps subject overview json import history for a schoolyear', function () {
@@ -954,6 +1054,20 @@ it('returns the requested timetable import history for the selected schoolyear',
         ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.ends_at', '08:45')
         ->assertJsonPath('main_dataset.single_date_courses.1.appointments.0.active', true)
         ->assertJsonPath('main_dataset.single_date_courses.1.appointments.1.period', '2');
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports?per_page=20&include_single_date_courses=0')
+        ->assertSuccessful()
+        ->assertJsonPath('main_dataset.entries_count', 4)
+        ->assertJsonPath('main_dataset.single_date_courses', []);
+
+    $this->actingAs($user)
+        ->getJson('/api/admin/students-timetables/imports?summary=1')
+        ->assertSuccessful()
+        ->assertJsonPath('total', 1)
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.original_filename', 'stundenplan-1.txt')
+        ->assertJsonPath('main_dataset', null);
 });
 
 it('saves active states for single-date timetable appointments', function () {
